@@ -1,0 +1,391 @@
+package com.boldwallet
+
+import android.util.Log
+import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.Promise
+import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.bridge.ReactContextBaseJavaModule
+import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.modules.core.DeviceEventManagerModule
+import tss.Tss
+
+import java.net.NetworkInterface
+import java.net.Inet4Address
+import java.util.Collections
+
+class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
+    ReactContextBaseJavaModule(reactContext) {
+
+    private var eventName: String = ""
+
+    init {
+        eventName = "BBMT_LIB_ANDROID"
+    }
+
+    @ReactMethod
+    fun addListener(eventName: String) {
+
+    }
+
+    @ReactMethod
+    fun removeListeners(count: Int) {
+
+    }
+
+    private fun sendLogEvent(tag: String, msg: String) {
+        try {
+            val params = Arguments.createMap()
+            params.putString("tag", tag)
+            params.putString("message", msg)
+            reactApplicationContext
+                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                .emit(eventName, params)
+        } catch (_: Throwable) {
+
+        }
+    }
+
+    override fun getName(): String {
+        return "BBMTLibNativeModule"
+    }
+
+    private fun ld(tag: String, debug: String) {
+        sendLogEvent(tag, debug)
+        Log.d(tag, debug)
+    }
+
+    override fun getConstants(): MutableMap<String, Any> {
+        return mutableMapOf(
+            "LOG_EVENT_NAME" to "BBMT_LIB_ANDROID"
+        )
+    }
+
+    @ReactMethod
+    fun setBtcNetwork(network: String, promise: Promise) {
+        try {
+            Tss.setNetwork(network)
+            val result = Tss.getNetwork()
+            ld("setBtcNetwork", result)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            ld("setBtcNetwork", "error: ${e.stackTraceToString()}")
+            promise.reject(e)
+        }
+    }
+
+    @ReactMethod
+    fun estimateFee(senderAddress: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
+        Thread {
+            try {
+                val wif = ""
+                val publicKey = "123456789012345678901234567890123"
+                val preview = 1L
+                val amt = amountSatoshi.toLong()
+                val result =
+                    Tss.sendBitcoin(wif, publicKey, senderAddress, receiverAddress, preview, amt)
+                ld("estimateFee", result)
+                promise.resolve(result)
+            } catch (e: Exception) {
+                ld("estimateFee", "error: ${e.stackTraceToString()}")
+                promise.reject(e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun mpcSendBTC(
+        // tss
+        server: String,
+        partyID: String,
+        partiesCSV: String,
+        sessionID: String,
+        sessionKey: String,
+        encKey: String,
+        decKey: String,
+        keyshare: String,
+        derivation: String,
+        // btc
+        publicKey: String,
+        senderAddress: String,
+        receiverAddress: String,
+        amountSatoshi: String,
+        feeSatoshi: String,
+        promise: Promise) {
+        Thread {
+            try {
+                val result = Tss.mpcSendBTC(server,
+                    partyID,
+                    partiesCSV,
+                    sessionID,
+                    sessionKey,
+                    encKey,
+                    decKey,
+                    keyshare,
+                    derivation,
+                    publicKey,
+                    senderAddress,
+                    receiverAddress,
+                    amountSatoshi.toLong(),
+                    feeSatoshi.toLong())
+                ld("mpcSendBTC", result)
+                promise.resolve(result)
+            } catch (e: Exception) {
+                ld("mpcSendBTC", "error: ${e.stackTraceToString()}")
+                promise.reject(e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun runRelay(port: String, promise: Promise) {
+        try {
+            val result = Tss.runRelay(port)
+            ld("runRelay",result)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            ld("runRelay", "error: ${e.stackTraceToString()}")
+            promise.reject(e)
+        }
+    }
+
+    @ReactMethod
+    fun stopRelay(tag: String, promise: Promise) {
+        try {
+            val result = Tss.stopRelay()
+            ld("stopRelay","$tag:$result")
+            promise.resolve(result)
+        } catch (e: Exception) {
+            ld("stopRelay", "error: ${e.stackTraceToString()}")
+            promise.reject(e)
+        }
+    }
+
+    @ReactMethod
+    fun publishData(port: String, timeout: String, encKey: String, raw: String,
+                    promise: Promise) {
+        Thread {
+            try {
+                val output = Tss.publishData(port, timeout, encKey, raw)
+                ld("publishData", output)
+                promise.resolve(raw)
+            } catch (e: Throwable) {
+                ld("publishData", "error: ${e.message}")
+                promise.resolve("")
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun fetchData(url: String, decKey: String, promise: Promise) {
+        Thread {
+            try {
+                val raw = Tss.fetchData(url, decKey)
+                ld("fetchData", raw)
+                promise.resolve(raw)
+            } catch (e: Throwable) {
+                ld("fetchData", "error: ${e.message}")
+                promise.resolve("")
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun listenForPeer(id: String, pubkey: String, port: String, timeout: String, promise: Promise) {
+        Thread {
+            try {
+                val peer = Tss.listenForPeer(id, pubkey, port, timeout)
+                ld("listenForPeer", peer)
+                promise.resolve(peer)
+            } catch (e: Throwable) {
+                ld("listenForPeer", "error: ${e.message}")
+                promise.resolve("")
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun discoverPeer(id: String, pubkey: String, localIP: String, port: String, timeout: String, promise: Promise) {
+        Thread {
+            try {
+                val peer = Tss.discoverPeer(id, pubkey, localIP, port, timeout)
+                ld("discoverPeer", peer)
+                promise.resolve(peer)
+            } catch (e: Throwable) {
+                ld("discoverPeer", "error: ${e.message}")
+                promise.resolve("")
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun getLanIp(tag: String, promise: Promise) {
+        try {
+            val interfaces = Collections.list(NetworkInterface.getNetworkInterfaces())
+            var fallbackIp: String? = null
+            for (networkInterface in interfaces) {
+                val addresses = networkInterface.inetAddresses
+                for (inetAddress in Collections.list(addresses)) {
+                    if (!inetAddress.isLoopbackAddress && inetAddress is Inet4Address) {
+                        val ip = inetAddress.hostAddress
+                        if (ip != null) {
+                            if (isClassC(ip)) {
+                                ld("getLanIp", ip)
+                                promise.resolve(ip)
+                                return
+                            }
+                            fallbackIp = ip
+                        }
+                    }
+                }
+            }
+            fallbackIp?.let {
+                ld("getLanIp (Fallback)", it)
+                promise.resolve(it)
+                return
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        ld("getLanIp", "")
+        promise.resolve("")
+    }
+
+    private fun isClassC(ip: String): Boolean {
+        val parts = ip.split(".").mapNotNull { it.toIntOrNull() }
+        return parts.size == 4 && parts[0] in 192..223
+    }
+
+    @ReactMethod
+    fun mpcTssSetup(
+        server: String,
+        partyID: String,
+        ppmFile: String,
+        partiesCSV: String,
+        sessionID: String,
+        sessionKey: String,
+        encKey: String,
+        decKey: String,
+        chaincode: String,
+        promise: Promise
+    ) {
+        Thread {
+            try {
+                val result = Tss.joinKeygen(
+                    ppmFile,
+                    partyID,
+                    partiesCSV,
+                    encKey,
+                    decKey,
+                    sessionID,
+                    server,
+                    chaincode,
+                    sessionKey
+                )
+                ld("mpcTssSetup", result.toString())
+                promise.resolve(result)
+            } catch (e: Exception) {
+                ld("mpcTssSetup", "error: ${e.stackTraceToString()}")
+                promise.reject(e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun preparams(partyID: String, timeout: String, promise: Promise) {
+        Thread {
+            try {
+                val result = Tss.localPreParams(partyID, timeout.toLong())
+                ld("preparams", result.toString())
+                promise.resolve(result)
+            } catch (e: Exception) {
+                ld("preparams", "error: ${e.stackTraceToString()}")
+                promise.reject(e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun recoverPubkey(r: String, s: String, v: String, h: String, promise: Promise) {
+        try {
+            val result = Tss.secP256k1Recover(r, s, v, h)
+            ld("recoverPubkey", result)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            ld("recoverPubkey", "error: ${e.stackTraceToString()}")
+            promise.reject(e)
+        }
+    }
+
+    @ReactMethod
+    fun derivePubkey(hexPubkey: String, hexChaincode: String, path: String, promise: Promise) {
+        try {
+            val result = Tss.getDerivedPubKey(hexPubkey, hexChaincode, path, false)
+            ld("derivePubkey", result)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            ld("derivePubkey", "error: ${e.stackTraceToString()}")
+            promise.reject(e)
+        }
+    }
+
+    @ReactMethod
+    fun p2khAddress(compressedPubkey: String, network: String, promise: Promise) {
+        try {
+            val result = Tss.convertPubKeyToBTCAddress(compressedPubkey, network)
+            ld("p2khAddress", result)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            ld("p2khAddress", "error: ${e.stackTraceToString()}")
+            promise.reject(e)
+        }
+    }
+
+    @ReactMethod
+    fun eciesKeypair(promise: Promise) {
+        try {
+            val result = Tss.generateKeyPair()
+            ld("eciesKeypair", result)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            ld("eciesKeypair", "error: ${e.stackTraceToString()}")
+            promise.resolve(e.message)
+        }
+    }
+
+    @ReactMethod
+    fun aesEncrypt(data: String, key: String, promise: Promise) {
+        try {
+            val result = Tss.aesEncrypt(data, key)
+            ld("aesEncrypt", result)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            ld("aesEncrypt", "error: ${e.stackTraceToString()}")
+            promise.resolve(e.message)
+        }
+    }
+
+    @ReactMethod
+    fun aesDecrypt(data: String, key: String, promise: Promise) {
+        try {
+            val result = Tss.aesDecrypt(data, key)
+            ld("aesDecrypt", result)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            ld("aesDecrypt", "error: ${e.stackTraceToString()}")
+            promise.resolve(e.message)
+        }
+    }
+
+    @ReactMethod
+    fun sha256(msg: String, promise: Promise) {
+        try {
+            val result = Tss.sha256(msg)
+            ld("sha256", result)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            ld("sha256", "error: ${e.stackTraceToString()}")
+            promise.reject(e)
+        }
+    }
+}
