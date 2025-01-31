@@ -49,6 +49,12 @@ const App = () => {
         const {available, biometryType} =
           await rnBiometrics.isSensorAvailable();
 
+        // If no biometric, PIN, or password is available, fallback as authenticated
+        if (!available) {
+          setIsAuthenticated(true);
+          return;
+        }
+
         if (
           available &&
           (biometryType === BiometryTypes.TouchID ||
