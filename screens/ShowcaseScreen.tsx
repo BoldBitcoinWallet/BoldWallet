@@ -136,7 +136,7 @@ const ShowcaseScreen = ({navigation}: any) => {
           />
           <Text style={styles.heroSubtitle}>
             Roam the world with Peace of Mind {'\n'}Self-Custody MPC Powered
-            Bitcoin Wallet
+            ₿itcoin Wallet
           </Text>
         </View>
       </ScrollView>
