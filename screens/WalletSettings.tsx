@@ -49,7 +49,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   };
 
   const handleResetWallet = async () => {
-    if (deleteInput.trim() === 'delete my wallet') {
+    if (deleteInput.trim().toLowerCase() === 'delete my wallet') {
       try {
         setIsDeleting(true);
         setIsModalVisible(false);
@@ -282,7 +282,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               <View style={styles.modalContent}>
                 <Text style={styles.modalTitle}>Confirm Wallet Deletion</Text>
                 <Text style={styles.modalDescription}>
-                  Type "delete my wallet" to confirm. This action is
+                  Type "delete my wallet" to confirm.{'\n'}This action is
                   irreversible.
                 </Text>
                 <TextInput
@@ -457,10 +457,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cancelButton: {
-    backgroundColor: '#7f8c8d',
+    backgroundColor: theme.colors.secondary,
   },
   confirmButton: {
-    backgroundColor: '#e74c3c',
+    backgroundColor: theme.colors.accent,
   },
   halfOpacity: {
     opacity: 0.5,

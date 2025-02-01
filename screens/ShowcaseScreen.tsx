@@ -29,7 +29,7 @@ const ShowcaseScreen = ({navigation}: any) => {
   const [fileContent, setFileContent] = useState('');
   const [agreeToTerms, setAgreeToTerms] = useState(false);
 
-  const fadeAnim = useRef(new Animated.Value(0.7)).current; // Start at 0.3 opacity
+  const fadeAnim = useRef(new Animated.Value(0.7)).current;
 
   useEffect(() => {
     Animated.loop(
@@ -131,12 +131,12 @@ const ShowcaseScreen = ({navigation}: any) => {
             Seedless.{'\n'}Hardware-Free.{'\n'}Limitless.
           </Text>
           <Animated.Image
-            style={[styles.storeIcon, {opacity: fadeAnim}]} // Apply animation to opacity
+            style={[styles.storeIcon, {opacity: fadeAnim}]}
             source={require('../assets/playstore-icon.png')}
           />
           <Text style={styles.heroSubtitle}>
-            Roam the world with Peace of Mind {'\n'}Self-Custody MPC Powered
-            ₿itcoin Wallet
+            Roam the world with Peace of Mind {'\n'}
+            Self-Custody Superior ₿itcoin Wallet
           </Text>
         </View>
       </ScrollView>
@@ -246,13 +246,11 @@ const styles = StyleSheet.create({
   storeIcon: {
     width: 128,
     height: 128,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 4},
-    shadowRadius: 10,
   },
   bottomActions: {
     alignItems: 'center',
     width: '100%',
+    marginBottom: 10,
   },
   ctaButtons: {
     flexDirection: 'row',
