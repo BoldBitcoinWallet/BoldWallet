@@ -339,7 +339,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.colors.primary,
   },
   toggleContainer: {
     flexDirection: 'row',
@@ -363,10 +363,12 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 24,
-    color: '#34495e',
+    color: theme.colors.white,
   },
   termsLink: {
     color: theme.colors.accent,
+    fontWeight: 'bold',
+    textAlign: 'center',
     textDecorationLine: 'underline',
   },
   section: {
@@ -398,7 +400,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   deleteButton: {
-    backgroundColor: theme.colors.danger,
+    backgroundColor: theme.colors.accent,
   },
   backupButton: {
     backgroundColor: theme.colors.secondary,
