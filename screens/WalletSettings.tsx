@@ -158,8 +158,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Factory Reset Wallet</Text>
             <Text style={styles.sectionDescription}>
-              Always ensure your two keyshares are backed up. If you lose your
-              share, your wallet cannot be recovered. This irreversible.
+              Always ensure your two keyshares are backed up. If you lose one of
+              your keyshares, your wallet cannot be recovered. This
+              irreversible.
             </Text>
             <TouchableOpacity
               style={[styles.button, styles.deleteButton]}
