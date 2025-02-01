@@ -17,20 +17,17 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
 
     private var eventName: String = ""
+    private  var useLog = true
 
     init {
         eventName = "BBMT_LIB_ANDROID"
     }
 
     @ReactMethod
-    fun addListener(eventName: String) {
-
-    }
+    fun addListener(eventName: String) { }
 
     @ReactMethod
-    fun removeListeners(count: Int) {
-
-    }
+    fun removeListeners(count: Int) { }
 
     private fun sendLogEvent(tag: String, msg: String) {
         try {
@@ -50,14 +47,23 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     private fun ld(tag: String, debug: String) {
-        sendLogEvent(tag, debug)
-        Log.d(tag, debug)
+        if(useLog) {
+            sendLogEvent(tag, debug)
+            Log.d(tag, debug)
+        }
     }
 
     override fun getConstants(): MutableMap<String, Any> {
         return mutableMapOf(
             "LOG_EVENT_NAME" to "BBMT_LIB_ANDROID"
         )
+    }
+
+    @ReactMethod
+    fun disableLogging(tag: String, promise: Promise) {
+        useLog = false
+        Tss.disableLogs()
+        promise.resolve(tag)
     }
 
     @ReactMethod

@@ -101,6 +101,11 @@ RCT_EXTERN_METHOD(setBtcNetwork:(NSString *)network
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+// Call disableLogs
+RCT_EXTERN_METHOD(disableLogging:(NSString *)tag
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 // Call estimateFee
 RCT_EXTERN_METHOD(estimateFee:(NSString *)senderAddress
                   receiverAddress:(NSString *)receiverAddress

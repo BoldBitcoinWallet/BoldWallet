@@ -22,19 +22,37 @@ const rnBiometrics = new ReactNativeBiometrics({allowDeviceCredentials: true});
 
 const App = () => {
   useEffect(() => {
-    const logEmitter = new NativeEventEmitter(BBMTLibNativeModule);
     let subscription: EmitterSubscription | undefined;
-    if (Platform.OS === 'android') {
-      logEmitter.removeAllListeners('BBMT_LIB_ANDROID');
-      subscription = logEmitter.addListener('BBMT_LIB_ANDROID', async log => {
-        console.log('BBMT_LIB_ANDROID', log);
-      });
-    }
-    if (Platform.OS === 'ios') {
-      logEmitter.removeAllListeners('BBMT_LIB_IOS');
-      subscription = logEmitter.addListener('BBMT_LIB_IOS', async log => {
-        console.log('BBMT_LIB_IOS', log);
-      });
+    if (!__DEV__) {
+      BBMTLibNativeModule.disableLogging('ok')
+        .then((feedback: any) => {
+          if (feedback === 'ok') {
+            console.log = () => {};
+            console.warn = () => {};
+            console.error = () => {};
+            console.debug = () => {};
+            console.info = () => {};
+          } else {
+            console.warn('could not disable logging');
+          }
+        })
+        .catch((e: Error) => {
+          console.error('error while disabling logging', e);
+        });
+    } else {
+      const logEmitter = new NativeEventEmitter(BBMTLibNativeModule);
+      if (Platform.OS === 'android') {
+        logEmitter.removeAllListeners('BBMT_LIB_ANDROID');
+        subscription = logEmitter.addListener('BBMT_LIB_ANDROID', async log => {
+          console.log('BBMT_LIB_ANDROID', log);
+        });
+      }
+      if (Platform.OS === 'ios') {
+        logEmitter.removeAllListeners('BBMT_LIB_IOS');
+        subscription = logEmitter.addListener('BBMT_LIB_IOS', async log => {
+          console.log('BBMT_LIB_IOS', log);
+        });
+      }
     }
     return () => {
       subscription?.remove();
