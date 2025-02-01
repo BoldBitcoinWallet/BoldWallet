@@ -13,6 +13,7 @@ import Network
 @objc(BBMTLibNativeModule)
 class BBMTLibNativeModule: RCTEventEmitter {
   
+  var useLog: Bool = true
   
   override func supportedEvents() -> [String] {
     return ["BBMT_LIB_IOS"]
@@ -29,9 +30,11 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
   
   private func sendLogEvent(_ tag: String, _ message: String) {
-    let params: [String: Any] = ["tag": tag, "message": message]
-    print(tag + ": " + message);
-    sendEvent(withName: "BBMT_LIB_IOS", body: params)
+    if useLog {
+      let params: [String: Any] = ["tag": tag, "message": message]
+      print(tag + ": " + message);
+      sendEvent(withName: "BBMT_LIB_IOS", body: params)
+    }
   }
   
   @objc func publishData(_ port: String, timeout: String, encKey: String, raw: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
@@ -103,19 +106,19 @@ class BBMTLibNativeModule: RCTEventEmitter {
         guard self != nil else { return }
         var error: NSError?
         let output = TssMpcSendBTC(server,
-                                 partyID,
-                                 partiesCSV,
-                                 sessionID,
-                                 sessionKey,
-                                 encKey,
-                                 decKey,
-                                 keyshare,
-                                 derivation,
-                                 publicKey,
-                                 senderAddress,
-                                 receiverAddress,
-                                 Int64(amountSatoshi) ?? 0,
-                                 Int64(feeSatoshi) ?? 0, &error)
+                                   partyID,
+                                   partiesCSV,
+                                   sessionID,
+                                   sessionKey,
+                                   encKey,
+                                   decKey,
+                                   keyshare,
+                                   derivation,
+                                   publicKey,
+                                   senderAddress,
+                                   receiverAddress,
+                                   Int64(amountSatoshi) ?? 0,
+                                   Int64(feeSatoshi) ?? 0, &error)
         self?.resolve("mpcSendBTC", output, error, resolver)
       }
     }
@@ -160,54 +163,54 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
   
   @objc func getLanIp(_ tag: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
-      var address: String?
-      var classCAddress: String? // Variable to store Class C IP if found
-      var ifaddr: UnsafeMutablePointer<ifaddrs>? = nil
-      
-      if getifaddrs(&ifaddr) == 0 {
-          var ptr = ifaddr
-          while ptr != nil {
-              defer { ptr = ptr?.pointee.ifa_next }
-              guard let interface = ptr?.pointee else { continue }
-              let addrFamily = interface.ifa_addr.pointee.sa_family
-              if addrFamily == UInt8(AF_INET) || addrFamily == UInt8(AF_INET6),
-                 let name = interface.ifa_name {
-                  let interfaceName = String(cString: name)
-                  if interfaceName == "en0" {
-                      var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-                      if getnameinfo(
-                          interface.ifa_addr,
-                          socklen_t(interface.ifa_addr.pointee.sa_len),
-                          &hostname,
-                          socklen_t(hostname.count),
-                          nil,
-                          0,
-                          NI_NUMERICHOST
-                      ) == 0 {
-                          let ipAddress = String(cString: hostname)
-                          if isClassC(ipAddress) {
-                              classCAddress = ipAddress
-                          } else if address == nil {
-                              address = ipAddress
-                          }
-                      }
-                  }
+    var address: String?
+    var classCAddress: String? // Variable to store Class C IP if found
+    var ifaddr: UnsafeMutablePointer<ifaddrs>? = nil
+    
+    if getifaddrs(&ifaddr) == 0 {
+      var ptr = ifaddr
+      while ptr != nil {
+        defer { ptr = ptr?.pointee.ifa_next }
+        guard let interface = ptr?.pointee else { continue }
+        let addrFamily = interface.ifa_addr.pointee.sa_family
+        if addrFamily == UInt8(AF_INET) || addrFamily == UInt8(AF_INET6),
+           let name = interface.ifa_name {
+          let interfaceName = String(cString: name)
+          if interfaceName == "en0" {
+            var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            if getnameinfo(
+              interface.ifa_addr,
+              socklen_t(interface.ifa_addr.pointee.sa_len),
+              &hostname,
+              socklen_t(hostname.count),
+              nil,
+              0,
+              NI_NUMERICHOST
+            ) == 0 {
+              let ipAddress = String(cString: hostname)
+              if isClassC(ipAddress) {
+                classCAddress = ipAddress
+              } else if address == nil {
+                address = ipAddress
               }
+            }
           }
-          freeifaddrs(ifaddr)
+        }
       }
-      if let classC = classCAddress {
-          sendLogEvent("getLanIp", classC)
-          resolver(classC)
-      } else {
-          sendLogEvent("getLanIp", address ?? "")
-          resolver(address ?? "")
-      }
+      freeifaddrs(ifaddr)
+    }
+    if let classC = classCAddress {
+      sendLogEvent("getLanIp", classC)
+      resolver(classC)
+    } else {
+      sendLogEvent("getLanIp", address ?? "")
+      resolver(address ?? "")
+    }
   }
   
   private func isClassC(_ ip: String) -> Bool {
-      let parts = ip.split(separator: ".").compactMap { Int($0) }
-      return parts.count == 4 && parts[0] >= 192 && parts[0] <= 223
+    let parts = ip.split(separator: ".").compactMap { Int($0) }
+    return parts.count == 4 && parts[0] >= 192 && parts[0] <= 223
   }
   
   @objc func eciesKeypair(_ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
@@ -277,14 +280,20 @@ class BBMTLibNativeModule: RCTEventEmitter {
     let output = TssJoinKeygen(ppmFile, partyID, partiesCSV, encKey, decKey, sessionID, server, chaincode, "",  &error)
     resolve("mpcTssSetup", output, error, resolver)
   }
-
+  
+  @objc func disableLogging(_ tag: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    useLog = false
+    TssDisableLogs()
+    resolver(tag)
+  }
+  
   @objc override func startObserving() {
-    print("Start observing BBMT_LIB_IOS")
-}
+  }
+  
+  @objc override func stopObserving() {
 
-@objc override func stopObserving() {
-    print("Stop observing BBMT_LIB_IOS")
-}
+  }
   
   @objc override static func requiresMainQueueSetup() -> Bool {
     return false

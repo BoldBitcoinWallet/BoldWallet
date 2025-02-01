@@ -74,7 +74,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         );
         let net = await EncryptedStorage.getItem('network');
         if (!net) {
-          net = 'testnet3';
+          net = 'mainnet';
           await EncryptedStorage.setItem('network', net);
         }
         const netParams = await BBMTLibNativeModule.setBtcNetwork(net);

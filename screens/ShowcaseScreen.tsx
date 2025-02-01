@@ -1,5 +1,5 @@
 import {CommonActions} from '@react-navigation/native';
-import React, {useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,9 @@ import {
   TextInput,
   Button,
   Linking,
+  ScrollView,
+  Animated,
+  Easing,
 } from 'react-native';
 import DocumentPicker from 'react-native-document-picker';
 import EncryptedStorage from 'react-native-encrypted-storage';
@@ -24,7 +27,28 @@ const ShowcaseScreen = ({navigation}: any) => {
   const [modalVisible, setModalVisible] = useState(false);
   const [password, setPassword] = useState('');
   const [fileContent, setFileContent] = useState('');
-  const [agreeToTerms, setAgreeToTerms] = useState(false); // Track if checkbox is checked
+  const [agreeToTerms, setAgreeToTerms] = useState(false);
+
+  const fadeAnim = useRef(new Animated.Value(0.7)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 1000,
+          easing: Easing.cubic,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 0.7,
+          duration: 1000,
+          easing: Easing.cubic,
+          useNativeDriver: true,
+        }),
+      ]),
+    ).start();
+  }, [fadeAnim]);
 
   const handleContentUri = async (uri: any) => {
     try {
@@ -101,60 +125,59 @@ const ShowcaseScreen = ({navigation}: any) => {
 
   return (
     <View style={styles.container}>
-      <View style={styles.heroSection}>
-        <Text style={styles.heroTitle}>
-          Seedless.{'\n'}Hardware-Free.{'\n'}Limitless.
-        </Text>
-        <Image
-          style={styles.storeIcon}
-          source={require('../assets/playstore-icon.png')}
-        />
-        <Text style={styles.heroSubtitle}>
-          Roam the world with Peace of Mind {'\n'}Self-Custody MPC Powered
-          Bitcoin Wallet
-        </Text>
-      </View>
-
-      <View style={styles.ctaButtons}>
-        <TouchableOpacity
-          style={[styles.ctaButton, !agreeToTerms && styles.disabledButton]}
-          onPress={() => navigation.navigate('📱📱 Pairing')}
-          disabled={!agreeToTerms}>
-          <Text style={styles.ctaButtonText}>Setup Wallet</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.ctaButtonRestore,
-            !agreeToTerms && styles.disabledButton,
-          ]}
-          onPress={handleRestoreWallet}
-          disabled={!agreeToTerms}>
-          <Text style={styles.ctaButtonText}>Restore Wallet</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Terms and Checkbox */}
-      <View style={styles.termsContainer}>
-        <Text style={styles.termsText}>By Using Bold</Text>
-      </View>
-      <View style={styles.termsContainer}>
-        <TouchableOpacity
-          style={styles.checkboxContainer}
-          onPress={() => setAgreeToTerms(prev => !prev)}>
-          <View
-            style={[styles.checkbox, agreeToTerms && styles.checkboxChecked]}
-          />
-        </TouchableOpacity>
-        <Text style={styles.termsText}>
-          You agree to our{' '}
-          <Text
-            style={styles.termsLink}
-            onPress={() =>
-              Linking.openURL('https://boldbitcoin.github.io/welcome#terms')
-            }>
-            Terms and Conditions
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
+        <View style={styles.heroSection}>
+          <Text style={styles.heroTitle}>
+            Seedless.{'\n'}Hardware-Free.{'\n'}Limitless.
           </Text>
-        </Text>
+          <Animated.Image
+            style={[styles.storeIcon, {opacity: fadeAnim}]}
+            source={require('../assets/playstore-icon.png')}
+          />
+          <Text style={styles.heroSubtitle}>
+            Roam the world with Peace of Mind {'\n'}
+            Self-Custody Superior ₿itcoin Wallet
+          </Text>
+        </View>
+      </ScrollView>
+
+      <View style={styles.bottomActions}>
+        <View style={styles.termsContainer}>
+          <TouchableOpacity
+            style={styles.checkboxContainer}
+            onPress={() => setAgreeToTerms(prev => !prev)}>
+            <View
+              style={[styles.checkbox, agreeToTerms && styles.checkboxChecked]}
+            />
+          </TouchableOpacity>
+          <Text style={styles.termsText}>
+            You agree to our{' '}
+            <Text
+              style={styles.termsLink}
+              onPress={() =>
+                Linking.openURL('https://boldbitcoin.github.io/welcome#terms')
+              }>
+              Terms and Conditions
+            </Text>
+          </Text>
+        </View>
+        <View style={styles.ctaButtons}>
+          <TouchableOpacity
+            style={[styles.ctaButton, !agreeToTerms && styles.disabledButton]}
+            onPress={() => navigation.navigate('📱📱 Pairing')}
+            disabled={!agreeToTerms}>
+            <Text style={styles.ctaButtonText}>Setup Wallet</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.ctaButtonRestore,
+              !agreeToTerms && styles.disabledButton,
+            ]}
+            onPress={handleRestoreWallet}
+            disabled={!agreeToTerms}>
+            <Text style={styles.ctaButtonText}>Restore Wallet</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Password Prompt Modal */}
@@ -197,40 +220,43 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
+  scrollContainer: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   heroSection: {
-    padding: 20,
     alignItems: 'center',
     justifyContent: 'center',
     textAlign: 'center',
   },
   heroTitle: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '700',
     color: theme.colors.primary,
-    marginTop: 80,
-    marginBottom: 10,
+    marginTop: 0,
     textAlign: 'center',
   },
   heroSubtitle: {
-    fontSize: 18,
+    fontSize: 16,
     color: theme.colors.secondary,
-    maxWidth: 600,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 30,
   },
   storeIcon: {
-    width: 200,
-    height: 200,
-    marginBottom: 30,
+    width: 128,
+    height: 128,
+  },
+  bottomActions: {
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 10,
   },
   ctaButtons: {
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 15,
-    bottom: 40,
-    position: 'absolute',
-    width: '100%',
+    marginBottom: 20,
   },
   ctaButton: {
     backgroundColor: theme.colors.primary,
@@ -260,7 +286,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 20,
+    marginBottom: 20,
   },
   termsText: {
     fontSize: 14,
@@ -284,11 +310,6 @@ const styles = StyleSheet.create({
   },
   checkboxChecked: {
     backgroundColor: theme.colors.primary,
-  },
-  checkboxLabel: {
-    marginLeft: 5,
-    fontSize: 14,
-    color: theme.colors.text,
   },
   modalOverlay: {
     flex: 1,

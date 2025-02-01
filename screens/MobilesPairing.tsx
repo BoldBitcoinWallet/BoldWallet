@@ -16,6 +16,7 @@ import {
   Platform,
   KeyboardAvoidingView,
   SafeAreaView,
+  Linking,
 } from 'react-native';
 import {NativeModules} from 'react-native';
 import DeviceInfo from 'react-native-device-info';
@@ -76,7 +77,7 @@ const MobilesPairing = ({navigation}: any) => {
   const isSendBitcoin = route.params?.mode === 'send_btc';
   const title = isSendBitcoin
     ? '🗝 Co-Signing Your Transaction'
-    : 'Self Custody Control \n MPC-TSS Security Grade';
+    : 'Self Custody Superior Control \n Threshold Signatures Scheme Grade';
 
   const [checks, setChecks] = useState({
     sameNetwork: false,
@@ -625,8 +626,8 @@ const MobilesPairing = ({navigation}: any) => {
                   source={require('../assets/playstore-icon.png')}
                 />
                 <Text style={styles.securityText}>{title}</Text>
-                <Text style={styles.checklistTitle}>
-                  Please Check Before Proceeding
+                <Text style={styles.checklistPairing}>
+                  Please Check Before Proceeding:
                 </Text>
                 {[
                   {
@@ -743,9 +744,21 @@ const MobilesPairing = ({navigation}: any) => {
                     (!isPreParamsReady && (
                       <View style={styles.informationCard}>
                         <Text style={styles.informationText}>
-                          Next, Preparation of devices security parameters for
-                          MPC 📱📱 is needed. This may take few seconds up to a
-                          minute depending on your device performance.
+                          Bold Wallet implements{' '}
+                          <Text
+                            style={styles.termsLink}
+                            onPress={() =>
+                              Linking.openURL(
+                                'https://www.binance.com/en/square/post/17681517589057',
+                              )
+                            }>
+                            Multi Party Computation with Threshold Signatures
+                            Scheme
+                          </Text>{' '}
+                          to secure your wallet 🛡. Security Parameters
+                          generation on both devices is needed 📱📱 . This may
+                          take seconds up to a minute given your device
+                          performance.
                         </Text>
                         <TouchableOpacity
                           style={styles.checkboxContainer}
@@ -767,8 +780,8 @@ const MobilesPairing = ({navigation}: any) => {
                             isPreparing
                               ? styles.hidden
                               : isPrepared
-                              ? styles.clickButton
-                              : styles.clickButtonOff
+                              ? styles.clickPrepare
+                              : styles.clickPrepareOff
                           }
                           onPress={preparams}>
                           <Text style={styles.clickButtonText}>
@@ -858,14 +871,12 @@ const MobilesPairing = ({navigation}: any) => {
                     <View style={styles.informationCard}>
                       <Text style={styles.statusText}>
                         ☑️ Device Keyshare Generated.{'\n\n'}
-                        Backing up your keyshares is crucial for recovering your
-                        wallet. After generating keyshares on both devices, make
-                        sure to store each one in a separate, secure and
-                        discrete location (e.g., iCloud, Google Drive, or
-                        Self-email...). This reduces the risk of someone
-                        accessing both keyshares simultaneously. Remember,
-                        you’ll need both keyshares to recover your wallet
-                        anytime successfully.
+                        Backing up your keyshares is essential for wallet
+                        recovery. After generating keyshares on both devices,
+                        store each one in separate, secure locations (e.g.,
+                        iCloud, Google Drive, or email). This ensures no one can
+                        access both keyshares at once. Remember, you’ll need
+                        both to recover your wallet.
                       </Text>
                       {/* Password Input */}
                       <TextInput
@@ -897,13 +908,13 @@ const MobilesPairing = ({navigation}: any) => {
                         style={styles.backupButton}
                         onPress={backupShare}>
                         <Text style={styles.backupButtonText}>
-                          Backup {localDevice} Keyshare ↗️
+                          Backup {shareName} 📤
                         </Text>
                       </TouchableOpacity>
                       <Text style={styles.statusText}>
-                        Your keyshare backups are securely encrypted with a 🗝
-                        password of your own. Please ensure you never forget it,
-                        as recovery without it is impossible.
+                        🗝 Your keyshare backups are encrypted with a password
+                        you create. Never forget it—recovery without it is
+                        impossible.
                       </Text>
                     </View>
                   </>
@@ -948,8 +959,8 @@ const MobilesPairing = ({navigation}: any) => {
                       <TouchableOpacity
                         style={
                           allBackupChecked
-                            ? styles.pairButtonOn
-                            : styles.pairButtonOff
+                            ? styles.proceedButtonOn
+                            : styles.proceedButtonOff
                         }
                         onPress={() => {
                           navigation.dispatch(
@@ -1063,7 +1074,7 @@ export default MobilesPairing;
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: theme.colors.primary,
   },
   flexContainer: {
     flex: 1,
@@ -1074,6 +1085,11 @@ const styles = StyleSheet.create({
   innerContainer: {
     alignItems: 'center',
     padding: 20,
+  },
+  termsLink: {
+    color: theme.colors.accent,
+    fontWeight: 'bold',
+    textDecorationLine: 'underline',
   },
   header: {
     fontSize: 20,
@@ -1129,17 +1145,20 @@ const styles = StyleSheet.create({
     elevation: 2,
     padding: 15,
   },
+  checklistPairing: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: theme.colors.text,
+  },
   checklistTitle: {
     fontSize: 18,
-    marginTop: 20,
-    marginBottom: 30,
     fontWeight: 'bold',
     color: theme.colors.text,
   },
   checkboxContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
     paddingVertical: 8,
   },
   checkbox: {
@@ -1231,8 +1250,8 @@ const styles = StyleSheet.create({
     marginTop: 15,
   },
   pairButtonOn: {
-    marginTop: 40,
-    marginBottom: 40,
+    marginTop: 20,
+    marginBottom: 10,
     backgroundColor: theme.colors.primary,
     borderRadius: 8,
     paddingVertical: 12,
@@ -1246,8 +1265,31 @@ const styles = StyleSheet.create({
   },
   pairButtonOff: {
     opacity: 0.5,
-    marginTop: 40,
-    marginBottom: 40,
+    marginTop: 20,
+    marginBottom: 10,
+    backgroundColor: theme.colors.accent,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  proceedButtonOn: {
+    marginTop: 20,
+    backgroundColor: theme.colors.primary,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: theme.colors.text,
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  proceedButtonOff: {
+    opacity: 0.5,
+    marginTop: 20,
     backgroundColor: theme.colors.accent,
     borderRadius: 8,
     paddingVertical: 12,
@@ -1299,13 +1341,14 @@ const styles = StyleSheet.create({
   informationLeftText: {
     fontSize: 16,
     color: theme.colors.text,
-    textAlign: 'justify',
+    textAlign: 'left',
   },
   backupButton: {
     marginTop: 10,
     marginBottom: 10,
-    backgroundColor: theme.colors.primary,
-    borderRadius: 4,
+    backgroundColor: theme.colors.subPrimary,
+    width: 200,
+    borderRadius: 8,
     paddingVertical: 12,
     paddingHorizontal: 12,
     alignItems: 'center',
@@ -1320,7 +1363,7 @@ const styles = StyleSheet.create({
     display: 'none',
   },
   clickButton: {
-    marginTop: 10,
+    marginTop: 20,
     marginBottom: 20,
     backgroundColor: theme.colors.primary,
     borderRadius: 8,
@@ -1331,7 +1374,28 @@ const styles = StyleSheet.create({
   },
   clickButtonOff: {
     opacity: 0.5,
-    marginTop: 10,
+    marginTop: 20,
+    marginBottom: 20,
+    backgroundColor: theme.colors.accent,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clickPrepare: {
+    marginTop: 20,
+    marginBottom: 20,
+    backgroundColor: theme.colors.primary,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clickPrepareOff: {
+    opacity: 0.5,
+    marginTop: 20,
     marginBottom: 20,
     backgroundColor: theme.colors.accent,
     borderRadius: 8,
@@ -1343,6 +1407,7 @@ const styles = StyleSheet.create({
   clickButtonText: {
     color: theme.colors.background,
     fontWeight: 'bold',
+    fontSize: 15,
   },
   input: {
     borderWidth: 1,
