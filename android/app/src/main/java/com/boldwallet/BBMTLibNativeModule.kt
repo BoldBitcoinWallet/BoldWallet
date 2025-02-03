@@ -162,7 +162,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             promise.resolve(result)
         } catch (e: Exception) {
             ld("stopRelay", "error: ${e.stackTraceToString()}")
-            promise.reject(e)
+            promise.resolve(tag)
         }
     }
 
