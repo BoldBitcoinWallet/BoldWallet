@@ -206,8 +206,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       Alert.alert('Error', 'Total amount including fee exceeds wallet balance');
       return;
     }
-
-    onSend(address, btcAmount.times(E8), estimatedFee);
+    onSend(address, Big(inBtcAmount).times(1e8), estimatedFee);
   };
 
   const renderFeeSection = () => {
