@@ -3,7 +3,6 @@ import React, {useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
-  Image,
   StyleSheet,
   TouchableOpacity,
   Alert,

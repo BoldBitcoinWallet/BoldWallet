@@ -30,6 +30,7 @@ import {
 } from '@react-navigation/native';
 import Share from 'react-native-share';
 import theme from '../theme';
+import Big from 'big.js';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -66,11 +67,11 @@ const MobilesPairing = ({navigation}: any) => {
 
   type RouteParams = {
     mode?: string;
-    toAddress: string;
-    satoshiAmount: Big;
-    usdAmount: Big;
-    satoshiFees: Big;
-    usdFees: Big;
+    toAddress?: string;
+    satoshiAmount?: string;
+    usdAmount?: string;
+    satoshiFees?: string;
+    usdFees?: string;
   };
 
   const route = useRoute<RouteProp<{params: RouteParams}>>();
@@ -132,14 +133,14 @@ const MobilesPairing = ({navigation}: any) => {
     return input.replace(/[^a-zA-Z0-9]/g, '_');
   };
 
-  const formatUSD = (price: Big) =>
+  const formatUSD = (price: string) =>
     new Intl.NumberFormat('en-US', {
       style: 'decimal',
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(price.toNumber());
+    }).format(Number(price));
 
-  const sat2btcStr = (sats: Big) => sats.div(1e8).toFixed(8);
+  const sat2btcStr = (sats: string) => Big(sats).div(1e8).toFixed(8);
 
   const preparams = () => {
     setIsPreparing(true);
@@ -252,6 +253,7 @@ const MobilesPairing = ({navigation}: any) => {
 
     try {
       if (isMaster) {
+        await BBMTLibNativeModule.stopRelay('stop');
         const relay = await BBMTLibNativeModule.runRelay(String(discoveryPort));
         console.log('relay start:', relay, localDevice);
       }
@@ -280,10 +282,17 @@ const MobilesPairing = ({navigation}: any) => {
       const decKey = kp.privateKey;
       const sessionKey = '';
       const decoded = data.split(':');
+      console.log('public-decoded', decoded);
       const satoshiAmount = `${decoded[1]}`;
       const satoshiFees = `${decoded[2]}`;
       const peerShare = `${decoded[3]}`;
-      if (peerShare === partyID) {
+
+      console.log('starting...', {
+        peerShare,
+        partyID,
+      });
+
+      if (!isMaster && peerShare === partyID) {
         throw 'Please Use Two Different Shares per Device';
       }
       try {
@@ -359,7 +368,9 @@ const MobilesPairing = ({navigation}: any) => {
           }
           setDoingMPC(false);
         });
-    } catch (e) {
+    } catch (e: any) {
+      Alert.alert('Operation Error', e?.message || e);
+      console.log(localDevice, 'keysign error', e);
       if (isMaster) {
         await waitMS(2000);
         stopRelay();
@@ -519,8 +530,8 @@ const MobilesPairing = ({navigation}: any) => {
           if (isSendBitcoin) {
             const jks = await EncryptedStorage.getItem('keyshare');
             const ks = JSON.parse(jks || '{}');
-            _data += ':' + route.params.satoshiAmount.toString();
-            _data += ':' + route.params.satoshiFees.toString();
+            _data += ':' + route.params.satoshiAmount;
+            _data += ':' + route.params.satoshiFees;
             _data += ':' + ks.local_party_key;
           }
           console.log('publishing data', _data, 'peer pubkey', _peerPubkey);

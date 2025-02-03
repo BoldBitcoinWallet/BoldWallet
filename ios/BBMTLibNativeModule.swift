@@ -292,7 +292,6 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
   
   @objc override func stopObserving() {
-
   }
   
   @objc override static func requiresMainQueueSetup() -> Bool {
