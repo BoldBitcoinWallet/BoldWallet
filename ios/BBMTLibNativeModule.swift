@@ -143,7 +143,13 @@ class BBMTLibNativeModule: RCTEventEmitter {
       guard self != nil else { return }
       var error: NSError?
       let output = TssListenForPeer(id, pubkey, port, timeout, &error)
-      self?.resolve("listenForPeer", output, error, resolver)
+       if error == nil {
+        self?.sendLogEvent("listenForPeer", output)
+        resolver(output)
+      } else {
+        self?.sendLogEvent("listenForPeer", error!.localizedDescription)
+        resolver("")
+      }
     }
   }
   

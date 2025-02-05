@@ -501,6 +501,7 @@ const MobilesPairing = ({navigation}: any) => {
         discoverPeerPromise(stringToHex(deviceName), kp.publicKey, ip);
       }
       const result = await Promise.race(promises);
+      console.log('promise race result:', result);
       if (result) {
         console.log('Got Result', result);
         const raw = result.split(',');
@@ -591,7 +592,7 @@ const MobilesPairing = ({navigation}: any) => {
     pubkey: string,
     ip: string,
   ): Promise<string | null> => {
-    const until = Date.now() + timeout;
+    const until = Date.now() + timeout * 1000;
     const discoveryTimeout = 10;
     while (Date.now() < until) {
       try {
@@ -603,12 +604,14 @@ const MobilesPairing = ({navigation}: any) => {
           String(discoveryTimeout),
         );
         if (result) {
+          console.log('discoverPeer result', result);
           return result;
         }
       } catch (error) {
         console.warn('DiscoverPeer Error:', error);
       }
     }
+    console.log('discoverPeer ended');
     return '';
   };
 
