@@ -575,6 +575,7 @@ const MobilesPairing = ({navigation}: any) => {
           privateKey,
         );
         if (rawFetched) {
+          console.log('rawFetched:', rawFetched);
           return rawFetched;
         } else {
           console.log('emptydata, retrying...');

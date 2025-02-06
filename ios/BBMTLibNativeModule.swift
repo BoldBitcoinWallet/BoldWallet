@@ -49,7 +49,13 @@ class BBMTLibNativeModule: RCTEventEmitter {
   @objc func fetchData(_ url: String, decKey: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
     var error: NSError?
     let output = TssFetchData(url, decKey, &error)
-    resolve("fetchData", output, error, resolver)
+    if error == nil {
+        self.sendLogEvent("fetchData", output)
+        resolver(output)
+      } else {
+        self.sendLogEvent("fetchData", error!.localizedDescription)
+        resolver("")
+      }
   }
   
   @objc func setBtcNetwork(_ network: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
