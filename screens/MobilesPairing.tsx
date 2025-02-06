@@ -498,14 +498,18 @@ const MobilesPairing = ({navigation}: any) => {
       const promises = [listenForPeerPromise(kp, stringToHex(deviceName))];
       if (ip) {
         setLocalIP(ip);
-        discoverPeerPromise(stringToHex(deviceName), kp.publicKey, ip);
+        const discovery = discoverPeerPromise(
+          stringToHex(deviceName),
+          kp.publicKey,
+          ip,
+        );
+        promises.push(discovery);
       }
+
       const result = await Promise.race(promises);
       console.log('promise race result:', result);
-
-      await Promise.all(promises);
-
       if (result) {
+        await Promise.allSettled(promises);
         console.log('Got Result', result);
         const raw = result.split(',');
         console.log({deviceName, raw});
@@ -527,8 +531,6 @@ const MobilesPairing = ({navigation}: any) => {
         setIsMaster(master);
 
         setStatus('Devices Discovery Completed');
-        await waitMS(1000);
-
         if (master) {
           let _data = randomSeed(64);
           if (isSendBitcoin) {
@@ -539,6 +541,7 @@ const MobilesPairing = ({navigation}: any) => {
             _data += ':' + ks.local_party_key;
           }
           console.log('publishing data', _data, 'peer pubkey', _peerPubkey);
+          await waitMS(1000);
           await BBMTLibNativeModule.publishData(
             String(discoveryPort),
             String(timeout),
@@ -548,7 +551,7 @@ const MobilesPairing = ({navigation}: any) => {
           setData(_data);
           console.log('data published');
         } else {
-          await waitMS(2000);
+          await waitMS(3000);
           const peerURL = `http://${_peerIP}:${discoveryPort}`;
           const rawFetched = await fetchData(peerURL, kp.privateKey);
           console.log('fetched data', rawFetched);
