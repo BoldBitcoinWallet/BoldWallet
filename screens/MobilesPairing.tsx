@@ -547,10 +547,7 @@ const MobilesPairing = ({navigation}: any) => {
         } else {
           await waitMS(2000);
           const peerURL = `http://${_peerIP}:${discoveryPort}`;
-          const rawFetched = await BBMTLibNativeModule.fetchData(
-            peerURL,
-            kp.privateKey,
-          );
+          const rawFetched = await fetchData(peerURL, kp.privateKey);
           console.log('fetched data', rawFetched);
           setData(rawFetched);
         }
@@ -567,6 +564,24 @@ const MobilesPairing = ({navigation}: any) => {
     } finally {
       setIsPairing(false);
     }
+  }
+
+  async function fetchData(peerURL: string, privateKey: string) {
+    let retries = 3;
+    while (retries-- > 0) {
+      try {
+        const rawFetched = await BBMTLibNativeModule.fetchData(
+          peerURL,
+          privateKey,
+        );
+        if (rawFetched) {
+          return rawFetched;
+        } else {
+          console.log('emptydata, retrying...');
+        }
+      } catch (e) {}
+    }
+    throw "couldn't fetch data";
   }
 
   async function listenForPeerPromise(
