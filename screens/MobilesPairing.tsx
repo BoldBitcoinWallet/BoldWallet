@@ -502,6 +502,9 @@ const MobilesPairing = ({navigation}: any) => {
       }
       const result = await Promise.race(promises);
       console.log('promise race result:', result);
+
+      await Promise.allSettled(promises);
+
       if (result) {
         console.log('Got Result', result);
         const raw = result.split(',');
