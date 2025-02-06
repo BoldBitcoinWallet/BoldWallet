@@ -579,6 +579,7 @@ const MobilesPairing = ({navigation}: any) => {
           return rawFetched;
         } else {
           console.log('emptydata, retrying...');
+          await waitMS(2000);
         }
       } catch (e) {}
     }
