@@ -18,9 +18,11 @@ import {debounce} from 'lodash';
 const TransactionList = ({
   address,
   baseApi,
+  onReload,
 }: {
   address: string;
   baseApi: string;
+  onReload: () => Promise<any>;
 }) => {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -164,6 +166,9 @@ const TransactionList = ({
     setIsRefreshing(true);
     await fetchTransactions(`${baseApi}/address/${address}/txs`);
     setIsRefreshing(false);
+    if (onReload) {
+      onReload();
+    }
   }, [address, baseApi, fetchTransactions, isRefreshing]);
 
   // Initial fetch
@@ -195,9 +200,9 @@ const TransactionList = ({
     const finalSentAmount = Math.max(0, sentAmount - changeAmount - fee);
 
     return {
-      sent: (finalSentAmount / 1e8),
-      changeAmount: (changeAmount / 1e8),
-      received: (receivedAmount / 1e8),
+      sent: finalSentAmount / 1e8,
+      changeAmount: changeAmount / 1e8,
+      received: receivedAmount / 1e8,
     };
   }, []);
 
@@ -241,7 +246,9 @@ const TransactionList = ({
       const shortTxId = `${item.txid.slice(0, 4)}...${item.txid.slice(-4)}`;
       const explorerLink = `${baseApi.replace('api', '')}tx/${item.txid}`;
 
-      let info = status.includes('Sen') ? `-${sent.toFixed(8)} BTC` : `+${received.toFixed(8)} BTC`;
+      let info = status.includes('Sen')
+        ? `-${sent.toFixed(8)} BTC`
+        : `+${received.toFixed(8)} BTC`;
       let finalStatus = status;
 
       if (sent === 0 && received === changeAmount) {
