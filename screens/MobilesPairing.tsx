@@ -503,7 +503,7 @@ const MobilesPairing = ({navigation}: any) => {
       const result = await Promise.race(promises);
       console.log('promise race result:', result);
 
-      await Promise.allSettled(promises);
+      await Promise.all(promises);
 
       if (result) {
         console.log('Got Result', result);
