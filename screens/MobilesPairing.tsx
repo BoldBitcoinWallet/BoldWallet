@@ -30,6 +30,7 @@ import {
 } from '@react-navigation/native';
 import Share from 'react-native-share';
 import theme from '../theme';
+import Big from 'big.js';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -56,7 +57,6 @@ const MobilesPairing = ({navigation}: any) => {
   const [prepCounter, setPrepCounter] = useState(0);
   const [keypair, setKeypair] = useState('');
   const [peerPubkey, setPeerPubkey] = useState('');
-  const [data, setData] = useState('');
   const [shareName, setShareName] = useState('');
 
   const [keyshare, setKeyshare] = useState('');
@@ -66,11 +66,11 @@ const MobilesPairing = ({navigation}: any) => {
 
   type RouteParams = {
     mode?: string;
-    toAddress: string;
-    satoshiAmount: Big;
-    usdAmount: Big;
-    satoshiFees: Big;
-    usdFees: Big;
+    toAddress?: string;
+    satoshiAmount?: string;
+    usdAmount?: string;
+    satoshiFees?: string;
+    usdFees?: string;
   };
 
   const route = useRoute<RouteProp<{params: RouteParams}>>();
@@ -132,23 +132,23 @@ const MobilesPairing = ({navigation}: any) => {
     return input.replace(/[^a-zA-Z0-9]/g, '_');
   };
 
-  const formatUSD = (price: Big) =>
+  const formatUSD = (price: string) =>
     new Intl.NumberFormat('en-US', {
       style: 'decimal',
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(price.toNumber());
+    }).format(Number(price));
 
-  const sat2btcStr = (sats: Big) => sats.div(1e8).toFixed(8);
+  const sat2btcStr = (sats: string) => Big(sats).div(1e8).toFixed(8);
 
-  const preparams = () => {
+  const preparams = async () => {
     setIsPreparing(true);
     setIsPreParamsReady(false);
     setPrepCounter(0);
+    const timeoutMinutes = 2;
     const path = `${RNFS.DocumentDirectoryPath}/${normalizeAlphaNumUnderscore(
       localDevice!!,
     )}.json`;
-    const timeoutMinutes = 2;
     BBMTLibNativeModule.preparams(path, String(timeoutMinutes))
       .then(() => {
         setIsPreParamsReady(true);
@@ -162,6 +162,34 @@ const MobilesPairing = ({navigation}: any) => {
         setPrepCounter(0);
       });
   };
+
+  async function initSession() {
+    if (isMaster) {
+      let _data = randomSeed(64);
+      if (isSendBitcoin) {
+        const jks = await EncryptedStorage.getItem('keyshare');
+        const ks = JSON.parse(jks || '{}');
+        _data += ':' + route.params.satoshiAmount;
+        _data += ':' + route.params.satoshiFees;
+        _data += ':' + ks.local_party_key;
+      }
+      console.log('publishing data', _data, 'peer pubkey', peerPubkey);
+      await BBMTLibNativeModule.publishData(
+        String(discoveryPort),
+        String(timeout),
+        peerPubkey,
+        _data,
+      );
+      console.log('data published');
+      return _data;
+    } else {
+      const kp = JSON.parse(keypair);
+      const peerURL = `http://${peerIP}:${discoveryPort}`;
+      const rawFetched = await fetchData(peerURL, kp.privateKey);
+      console.log('fetched data', rawFetched);
+      return rawFetched;
+    }
+  }
 
   const randomSeed = (length = 32) => {
     let result = '';
@@ -180,7 +208,10 @@ const MobilesPairing = ({navigation}: any) => {
       setMpcDone(false);
       setPrepCounter(0);
 
+      const data = await initSession();
+      console.log('got session data', data);
       if (isMaster) {
+        await BBMTLibNativeModule.stopRelay('stop');
         const relay = await BBMTLibNativeModule.runRelay(String(discoveryPort));
         console.log('relay start:', relay, localDevice);
       }
@@ -251,7 +282,11 @@ const MobilesPairing = ({navigation}: any) => {
     setPrepCounter(0);
 
     try {
+      const data = await initSession();
+      console.log('session init done');
+
       if (isMaster) {
+        await BBMTLibNativeModule.stopRelay('stop');
         const relay = await BBMTLibNativeModule.runRelay(String(discoveryPort));
         console.log('relay start:', relay, localDevice);
       }
@@ -280,10 +315,17 @@ const MobilesPairing = ({navigation}: any) => {
       const decKey = kp.privateKey;
       const sessionKey = '';
       const decoded = data.split(':');
+      console.log('public-decoded', decoded);
       const satoshiAmount = `${decoded[1]}`;
       const satoshiFees = `${decoded[2]}`;
       const peerShare = `${decoded[3]}`;
-      if (peerShare === partyID) {
+
+      console.log('starting...', {
+        peerShare,
+        partyID,
+      });
+
+      if (!isMaster && peerShare === partyID) {
         throw 'Please Use Two Different Shares per Device';
       }
       try {
@@ -359,7 +401,9 @@ const MobilesPairing = ({navigation}: any) => {
           }
           setDoingMPC(false);
         });
-    } catch (e) {
+    } catch (e: any) {
+      Alert.alert('Operation Error', e?.message || e);
+      console.log(localDevice, 'keysign error', e);
       if (isMaster) {
         await waitMS(2000);
         stopRelay();
@@ -487,9 +531,15 @@ const MobilesPairing = ({navigation}: any) => {
       const promises = [listenForPeerPromise(kp, stringToHex(deviceName))];
       if (ip) {
         setLocalIP(ip);
-        discoverPeerPromise(stringToHex(deviceName), kp.publicKey, ip);
+        promises.push(
+          discoverPeerPromise(stringToHex(deviceName), kp.publicKey, ip),
+        );
       }
-      const result = await Promise.race(promises);
+
+      const result = await promises[0];
+      await Promise.allSettled(promises);
+
+      console.log('promise race result:', result);
       if (result) {
         console.log('Got Result', result);
         const raw = result.split(',');
@@ -512,36 +562,6 @@ const MobilesPairing = ({navigation}: any) => {
         setIsMaster(master);
 
         setStatus('Devices Discovery Completed');
-        await waitMS(1000);
-
-        if (master) {
-          let _data = randomSeed(64);
-          if (isSendBitcoin) {
-            const jks = await EncryptedStorage.getItem('keyshare');
-            const ks = JSON.parse(jks || '{}');
-            _data += ':' + route.params.satoshiAmount.toString();
-            _data += ':' + route.params.satoshiFees.toString();
-            _data += ':' + ks.local_party_key;
-          }
-          console.log('publishing data', _data, 'peer pubkey', _peerPubkey);
-          await BBMTLibNativeModule.publishData(
-            String(discoveryPort),
-            String(timeout),
-            _peerPubkey,
-            _data,
-          );
-          setData(_data);
-          console.log('data published');
-        } else {
-          await waitMS(2000);
-          const peerURL = `http://${_peerIP}:${discoveryPort}`;
-          const rawFetched = await BBMTLibNativeModule.fetchData(
-            peerURL,
-            kp.privateKey,
-          );
-          console.log('fetched data', rawFetched);
-          setData(rawFetched);
-        }
       } else {
         setStatus('Pairing timed out. Please try again.');
         Alert.alert('Pairing Timeout', 'No peer device was detected.');
@@ -555,6 +575,26 @@ const MobilesPairing = ({navigation}: any) => {
     } finally {
       setIsPairing(false);
     }
+  }
+
+  async function fetchData(peerURL: string, privateKey: string) {
+    let retries = 3;
+    while (retries-- > 0) {
+      try {
+        const rawFetched = await BBMTLibNativeModule.fetchData(
+          peerURL,
+          privateKey,
+        );
+        if (rawFetched) {
+          console.log('rawFetched:', rawFetched);
+          return rawFetched;
+        } else {
+          console.log('emptydata, retrying...');
+          await waitMS(2000);
+        }
+      } catch (e) {}
+    }
+    throw "couldn't fetch data";
   }
 
   async function listenForPeerPromise(
@@ -580,7 +620,7 @@ const MobilesPairing = ({navigation}: any) => {
     pubkey: string,
     ip: string,
   ): Promise<string | null> => {
-    const until = Date.now() + timeout;
+    const until = Date.now() + timeout * 1000;
     const discoveryTimeout = 10;
     while (Date.now() < until) {
       try {
@@ -592,12 +632,14 @@ const MobilesPairing = ({navigation}: any) => {
           String(discoveryTimeout),
         );
         if (result) {
+          console.log('discoverPeer result', result);
           return result;
         }
       } catch (error) {
         console.warn('DiscoverPeer Error:', error);
       }
     }
+    console.log('discoverPeer ended');
     return '';
   };
 

@@ -49,7 +49,13 @@ class BBMTLibNativeModule: RCTEventEmitter {
   @objc func fetchData(_ url: String, decKey: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
     var error: NSError?
     let output = TssFetchData(url, decKey, &error)
-    resolve("fetchData", output, error, resolver)
+    if error == nil {
+        self.sendLogEvent("fetchData", output)
+        resolver(output)
+      } else {
+        self.sendLogEvent("fetchData", error!.localizedDescription)
+        resolver("")
+      }
   }
   
   @objc func setBtcNetwork(_ network: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
@@ -143,7 +149,13 @@ class BBMTLibNativeModule: RCTEventEmitter {
       guard self != nil else { return }
       var error: NSError?
       let output = TssListenForPeer(id, pubkey, port, timeout, &error)
-      self?.resolve("listenForPeer", output, error, resolver)
+       if error == nil {
+        self?.sendLogEvent("listenForPeer", output)
+        resolver(output)
+      } else {
+        self?.sendLogEvent("listenForPeer", error!.localizedDescription)
+        resolver("")
+      }
     }
   }
   
@@ -292,7 +304,6 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
   
   @objc override func stopObserving() {
-
   }
   
   @objc override static func requiresMainQueueSetup() -> Bool {

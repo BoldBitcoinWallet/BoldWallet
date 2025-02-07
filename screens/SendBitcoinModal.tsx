@@ -99,7 +99,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   // Create a debounced version of getEstimateFee
   const debouncedGetFee = useCallback(
     debounce(async (addr: string, amt: string) => {
-      if (!addr || !amt) {
+      if (!addr || !amt || btcAmount.eq(0)) {
         setEstimatedFee(null);
         return;
       }
@@ -115,16 +115,25 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       BBMTLibNativeModule.estimateFee(
         walletAddress,
         addr,
-        amount.times(E8).toFixed(0),
+        amount.times(1e8).toFixed(0),
       )
         .then((fee: string) => {
           if (fee) {
+            console.log('got fees:', fee);
             const feeAmt = Big(fee).times(1.25).lt(512)
               ? Big(512)
               : Big(fee).times(1.25);
             setEstimatedFee(feeAmt);
-            if (amount.eq(walletBalance)) {
-              setBtcAmount(walletBalance.minus(feeAmt.div(E8)));
+            console.log({
+              inBtcAmount,
+              walletBalance,
+            });
+            if (inBtcAmount === walletBalance.toString()) {
+              console.log({
+                inBtcAmount,
+                walletBalance,
+              });
+              setInBtcAmount(walletBalance.minus(feeAmt.div(1e8)).toString());
             }
           }
         })
@@ -136,7 +145,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
           setIsCalculatingFee(false);
         });
     }, 1000),
-    [walletBalance, walletAddress],
+    [inBtcAmount, walletAddress],
   );
 
   // Update fee when inputs change
@@ -190,14 +199,14 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       Alert.alert('Error', 'Please wait for fee estimation');
       return;
     }
-    const feeBTC = estimatedFee.div(E8);
-    const totalAmount = btcAmount.add(feeBTC);
+    const feeBTC = estimatedFee.div(1e8);
+    const totalAmount = Big(inBtcAmount).add(feeBTC);
+    console.log({totalAmount, feeBTC, btcAmount, walletBalance});
     if (totalAmount.gt(walletBalance)) {
       Alert.alert('Error', 'Total amount including fee exceeds wallet balance');
       return;
     }
-
-    onSend(address, btcAmount.times(E8), estimatedFee);
+    onSend(address, Big(inBtcAmount).times(1e8), estimatedFee);
   };
 
   const renderFeeSection = () => {
@@ -377,6 +386,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
+    maxHeight: 50,
     backgroundColor: '#FFF',
     marginBottom: 10,
   },
@@ -391,6 +401,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     paddingRight: 80,
+    maxHeight: 50,
     fontSize: 14,
     backgroundColor: '#FFF',
   },

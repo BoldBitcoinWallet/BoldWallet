@@ -8,18 +8,17 @@ import {
   NativeModules,
   ActivityIndicator,
   Image,
-  Linking,
+  Share,
 } from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
-import QRCode from 'react-native-qrcode-svg';
 import SendBitcoinModal from './SendBitcoinModal';
 import theme from '../theme';
 import Toast from 'react-native-toast-message';
 import TransactionList from './TransactionList';
-import Clipboard from '@react-native-clipboard/clipboard';
 import {useCameraPermission} from 'react-native-vision-camera';
 import {CommonActions} from '@react-navigation/native';
 import Big from 'big.js';
+import ReceiveModal from './ReceiveModal';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -44,6 +43,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [party, setParty] = useState<string>('');
   const {hasPermission, requestPermission} = useCameraPermission();
   const [isBlurred, setIsBlurred] = useState<boolean>(true);
+  const [isReceiveModalVisible, setIsReceiveModalVisible] = useState(false);
+
+  const handleShare = () => {
+    let qrCodeImage = '';
+    Share.share({
+      message: address, // Share the address text
+      url: `data:image/png;base64,${qrCodeImage}`,
+    }).catch(error => console.log('Error sharing: ', error));
+  };
 
   useEffect(() => {
     const requestCameraAccess = async () => {
@@ -154,21 +162,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       EncryptedStorage.getItem('mode').then(mode =>
         setIsBlurred(mode === 'private'),
       );
+      const intervalId = setInterval(fetchWalletBalance, 60000);
+      return () => clearInterval(intervalId);
     }
   }, [address, fetchWalletBalance]);
-
-  const copyToClipboard = useCallback(() => {
-    Toast.show({
-      type: 'success',
-      text1: 'Address Copied to Clipboard',
-      position: 'top',
-    });
-    Clipboard.setString(address);
-  }, [address]);
-
-  const refreshBalance = useCallback(() => {
-    fetchWalletBalance();
-  }, [fetchWalletBalance]);
 
   const handleBlurred = () => {
     const blurr = !isBlurred;
@@ -259,7 +256,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       fontWeight: '600',
     },
     party: {
-      marginTop: 8,
+      marginBottom: 8,
       fontSize: 12,
       color: theme.colors.textOnPrimary,
       textAlign: 'center',
@@ -354,24 +351,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               {isBlurred ? '* * *' : balanceUSD}
             </Text>
           </TouchableOpacity>
-          {loading ? (
-            <ActivityIndicator size="small" color="#4CAF50" />
-          ) : (
-            <TouchableOpacity onPress={refreshBalance}>
-              <View style={styles.qrContainer}>
-                {address && <QRCode value={address} size={120} />}
-              </View>
-            </TouchableOpacity>
-          )}
+          {loading ? <ActivityIndicator size="small" color="#4CAF50" /> : <></>}
           <Text style={styles.party}>
             {party} - {network}
-          </Text>
-          <Text
-            style={styles.address}
-            onPress={() =>
-              Linking.openURL(`${apiBase.replace('api', '')}address/${address}`)
-            }>
-            {address}
           </Text>
           <View style={styles.actions}>
             <TouchableOpacity
@@ -386,14 +368,20 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.actionButton, styles.receiveButton]}
-              onPress={copyToClipboard}>
+              onPress={() => setIsReceiveModalVisible(true)}>
               <Text style={styles.actionButtonText}>Receive</Text>
             </TouchableOpacity>
           </View>
         </View>
       </View>
       <Toast />
-      {!loading && <TransactionList address={address} baseApi={apiBase} />}
+      {!loading && (
+        <TransactionList
+          address={address}
+          baseApi={apiBase}
+          onReload={fetchWalletBalance}
+        />
+      )}
       {isSendModalVisible && (
         <SendBitcoinModal
           visible={isSendModalVisible}
@@ -402,6 +390,16 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           walletAddress={address}
           onClose={() => setIsSendModalVisible(false)}
           onSend={handleSend}
+        />
+      )}
+
+      {isReceiveModalVisible && (
+        <ReceiveModal
+          address={address}
+          baseApi={apiBase}
+          network={network}
+          visible={isReceiveModalVisible}
+          onClose={() => setIsReceiveModalVisible(false)}
         />
       )}
     </SafeAreaView>
