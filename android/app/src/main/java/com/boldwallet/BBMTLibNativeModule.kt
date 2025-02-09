@@ -80,13 +80,51 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun setFeePolicy(policy: String, promise: Promise) {
+        try {
+            val result = Tss.useFeePolicy(policy)
+            ld("setFeePolicy", result)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            ld("setFeePolicy", "error: ${e.stackTraceToString()}")
+            promise.reject(e)
+        }
+    }
+
+    @ReactMethod
+    fun totalUTXO(address: String, promise: Promise) {
+        try {
+            val result = Tss.totalUTXO(address)
+            ld("totalUTXO", result)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            ld("totalUTXO", "error: ${e.stackTraceToString()}")
+            promise.reject(e)
+        }
+    }
+
+
+    @ReactMethod
+    fun setAPI(network: String, baseAPI: String, promise: Promise) {
+        try {
+            val result = Tss.useAPI(network, baseAPI)
+            ld("setAPI", result)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            ld("setAPI", "error: ${e.stackTraceToString()}")
+            promise.reject(e)
+        }
+    }
+
+    @ReactMethod
     fun estimateFee(senderAddress: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
         Thread {
             try {
                 val wif = ""
-                val publicKey = "123456789012345678901234567890123"
                 val preview = 1L
                 val amt = amountSatoshi.toLong()
+                val publicKey = "123456789012345678901234567890123"
+                // when preview is 1 - no need to wif and publicKey, use dummy ones
                 val result =
                     Tss.sendBitcoin(wif, publicKey, senderAddress, receiverAddress, preview, amt)
                 ld("estimateFee", result)

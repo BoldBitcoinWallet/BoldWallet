@@ -26,8 +26,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isBackupModalVisible, setIsBackupModalVisible] = useState(false);
-  const [isTestnet, setIsTestnet] = useState(true); // Track network type
+  const [isTestnet, setIsTestnet] = useState(true);
   const [party, setParty] = useState('');
+  const [baseAPI, setBaseAPI] = useState('');
 
   useEffect(() => {
     EncryptedStorage.getItem('keyshare').then(ks => {
@@ -37,14 +38,50 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     EncryptedStorage.getItem('network').then(net => {
       setIsTestnet(net !== 'mainnet');
     });
+    EncryptedStorage.getItem('api').then(api => {
+      if (api) {
+        setBaseAPI(api);
+      }
+    });
   }, []);
 
   const toggleNetwork = (value: boolean) => {
     setIsTestnet(value);
     EncryptedStorage.setItem('network', value ? 'testnet3' : 'mainnet');
+    if (
+      baseAPI === 'https://mempool.space/api' ||
+      baseAPI === 'https://mempool.space/testnet/api'
+    ) {
+      resetAPI();
+    }
     navigation.reset({
       index: 0,
       routes: [{name: 'Bold Home'}],
+    });
+  };
+
+  const resetAPI = async () => {
+    EncryptedStorage.getItem('network').then(net => {
+      if (net === 'mainnet') {
+        const api = 'https://mempool.space/api';
+        EncryptedStorage.setItem('api', api);
+        BBMTLibNativeModule.setAPI(net, api);
+        setBaseAPI(api);
+      } else {
+        const api = 'https://mempool.space/testnet/api';
+        EncryptedStorage.setItem('api', api);
+        BBMTLibNativeModule.setAPI(net, api);
+        setBaseAPI(api);
+      }
+    });
+  };
+
+  const saveAPI = async (api: string) => {
+    setBaseAPI(api);
+    console.log('value', api);
+    EncryptedStorage.getItem('network').then(net => {
+      EncryptedStorage.setItem('api', api);
+      BBMTLibNativeModule.setAPI(net, api);
     });
   };
 
@@ -141,6 +178,30 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
           {/* Backup Wallet Section */}
           <View style={styles.section}>
+            <Text style={styles.sectionTitle}>API Base</Text>
+            <Text style={styles.sectionDescription}>
+              Point to your own APIs, compatible with Mempool.space only. Reset
+              to default if that's not compatible or you don't know what you're
+              doing.
+            </Text>
+            <TextInput
+              style={styles.inputAPI}
+              returnKeyType="done"
+              value={baseAPI}
+              onChangeText={saveAPI}
+              placeholder="Your Mempool Endpoint"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TouchableOpacity
+              style={[styles.button, styles.backupButton]}
+              onPress={() => resetAPI()}>
+              <Text style={styles.buttonText}>Reset Default</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Backup Wallet Section */}
+          <View style={styles.section}>
             <Text style={styles.sectionTitle}>Backup Wallet Keyshare</Text>
             <Text style={styles.sectionDescription}>
               To recover your wallet, you need to backup both keyshares
@@ -176,20 +237,18 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               This app uses the following services:
             </Text>
             <View style={styles.apiItem}>
-              <Text style={styles.apiName}>Blockstream APIs</Text>
+              <Text style={styles.apiName}>Mempool.Space APIs</Text>
               <Text style={styles.apiDescription}>
-                We use Blockstream APIs for fetching balances, UTXOs,
+                We use Mempool.Space APIs for fetching balances, UTXOs,
                 transaction history, and network fees estimations. For more
                 info:
                 {'\n'}
                 <Text
                   style={styles.linkText}
                   onPress={() =>
-                    Linking.openURL(
-                      'https://github.com/blockstream/esplora/blob/master/API.md',
-                    )
+                    Linking.openURL('https://mempool.space/docs/api/rest')
                   }>
-                  Blockstream/esplora/blob/master/API.md
+                  APIs Docs
                 </Text>
               </Text>
             </View>
@@ -341,6 +400,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.primary,
   },
+  inputAPI: {
+    borderWidth: 1,
+    borderColor: theme.colors.secondary,
+    borderRadius: 8,
+    padding: 12,
+    maxHeight: 50,
+    fontSize: 14,
+    backgroundColor: '#FFF',
+  },
   toggleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -455,6 +523,27 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginHorizontal: 8,
     alignItems: 'center',
+  },
+  saveResetButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+  },
+  saveButton: {
+    flex: 1,
+    backgroundColor: theme.colors.primary,
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  resetButton: {
+    flex: 1,
+    backgroundColor: theme.colors.secondary,
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginLeft: 10,
   },
   cancelButton: {
     backgroundColor: theme.colors.secondary,

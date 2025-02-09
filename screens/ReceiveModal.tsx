@@ -1,11 +1,10 @@
-import React, {useCallback} from 'react';
+import React, {useCallback, useRef} from 'react';
 import {
   View,
   Text,
   Modal,
   TouchableOpacity,
   StyleSheet,
-  Share,
   Image,
   Linking,
 } from 'react-native';
@@ -13,6 +12,7 @@ import theme from '../theme';
 import Toast from 'react-native-toast-message';
 import QRCode from 'react-native-qrcode-svg';
 import Clipboard from '@react-native-clipboard/clipboard';
+import Share from 'react-native-share';
 
 const ReceiveModal: React.FC<{
   visible: boolean;
@@ -21,6 +21,8 @@ const ReceiveModal: React.FC<{
   network: string;
   onClose: () => void;
 }> = ({visible, address, baseApi, network, onClose}) => {
+  const refQrCode = useRef();
+
   const copyToClipboard = useCallback(() => {
     Toast.show({
       type: 'success',
@@ -30,13 +32,17 @@ const ReceiveModal: React.FC<{
     Clipboard.setString(address);
   }, [address]);
 
-  const shareAddress = async () => {
-    try {
-      await Share.share({
-        message: `Here's my Bitcoin address: ${address}`,
+  const shareQRCode = async () => {
+    if (refQrCode && refQrCode.current) {
+      await Share.open({
+        title: 'Bitcoin Receive Address',
+        message: `Bitcoin ${network}, Deposit Address: ${address}`,
+        url: `data:image/png;base64,${refQrCode.current}`,
+        isNewTask: true,
+        type: 'image/png',
+        filename: `BTC-${network}-Address`,
+        failOnCancel: false,
       });
-    } catch (error) {
-      console.error('Error sharing address:', error);
     }
   };
 
@@ -49,7 +55,7 @@ const ReceiveModal: React.FC<{
       <View style={styles.modalContainer}>
         <View style={styles.modalContent}>
           <Text style={styles.textReceive}>
-            {network === 'mainnet' ? 'Mainnnet' : 'Testnet'} - Deposit Address
+            Bitcoin {network === 'mainnet' ? 'Mainnnet' : 'Testnet'} - Address
           </Text>
 
           {/* Close Button */}
@@ -58,11 +64,19 @@ const ReceiveModal: React.FC<{
           </TouchableOpacity>
 
           {/* QR Code */}
-          <View
-            style={styles.qrContainer}
-            onTouchEndCapture={() => copyToClipboard()}>
-            <QRCode value={address} size={200} />
-          </View>
+          <TouchableOpacity style={styles.qrContainer} onPress={shareQRCode}>
+            <QRCode
+              value={address}
+              size={200}
+              getRef={c => {
+                if (c?.toDataURL) {
+                  c?.toDataURL((base64Image: any) => {
+                    refQrCode.current = base64Image;
+                  });
+                }
+              }}
+            />
+          </TouchableOpacity>
 
           {/* Address and Copy Button */}
           <View style={styles.addressContainer}>
@@ -74,24 +88,17 @@ const ReceiveModal: React.FC<{
                 )
               }>
               {address}
+              <TouchableOpacity
+                onPress={copyToClipboard}
+                style={styles.iconContainer}>
+                <Image
+                  source={require('../assets/paste-icon.png')}
+                  style={styles.iconImage}
+                  resizeMode="contain"
+                />
+              </TouchableOpacity>
             </Text>
-
-            <TouchableOpacity
-              onPress={copyToClipboard}
-              style={styles.pasteIconContainer}>
-              <Image
-                source={require('../assets/paste-icon.png')}
-                style={styles.iconImage}
-                resizeMode="contain"
-              />
-            </TouchableOpacity>
           </View>
-
-          {/* Share Button */}
-          <TouchableOpacity style={styles.button} onPress={shareAddress}>
-            <Text style={styles.buttonText}>Share</Text>
-          </TouchableOpacity>
-
           <Toast />
         </View>
       </View>
@@ -104,7 +111,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)', // Transparent background
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
   },
   modalContent: {
     backgroundColor: theme.colors.white,
@@ -118,6 +125,7 @@ const styles = StyleSheet.create({
     top: 20,
     left: 20,
     padding: 8,
+    fontSize: 16,
     fontWeight: 'bold',
   },
   closeButton: {
@@ -126,11 +134,11 @@ const styles = StyleSheet.create({
     right: 20,
     backgroundColor: theme.colors.cardBackground,
     padding: 8,
+    color: theme.colors.accent,
     borderRadius: 50,
   },
   closeButtonText: {
     fontSize: 16,
-    color: theme.colors.white,
   },
   qrContainer: {
     marginTop: 60,
@@ -138,22 +146,23 @@ const styles = StyleSheet.create({
   addressContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 10,
+    marginTop: 10,
+    marginBottom: 10,
   },
   addressText: {
     fontSize: 13,
     textDecorationLine: 'underline',
     color: theme.colors.primary,
-    flex: 1,
     textAlign: 'center',
     fontWeight: 'bold',
   },
-  pasteIconContainer: {
-    padding: 10,
+  iconContainer: {
+    paddingTop: 20,
+    paddingLeft: 10,
   },
   iconImage: {
-    width: 20,
-    height: 20,
+    width: 24,
+    height: 24,
   },
   button: {
     backgroundColor: theme.colors.accent,

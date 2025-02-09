@@ -8,7 +8,6 @@ import {
   NativeModules,
   ActivityIndicator,
   Image,
-  Share,
 } from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import SendBitcoinModal from './SendBitcoinModal';
@@ -45,14 +44,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [isBlurred, setIsBlurred] = useState<boolean>(true);
   const [isReceiveModalVisible, setIsReceiveModalVisible] = useState(false);
 
-  const handleShare = () => {
-    let qrCodeImage = '';
-    Share.share({
-      message: address, // Share the address text
-      url: `data:image/png;base64,${qrCodeImage}`,
-    }).catch(error => console.log('Error sharing: ', error));
-  };
-
   useEffect(() => {
     const requestCameraAccess = async () => {
       if (!hasPermission) {
@@ -87,12 +78,27 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         }
         const netParams = await BBMTLibNativeModule.setBtcNetwork(net);
         net = netParams.split('@')[0];
+
         let base = netParams.split('@')[1];
+        console.log('apiBase', base);
         setApiBase(base);
         setParty(ks.local_party_key);
+
         const btcAddress = await BBMTLibNativeModule.p2khAddress(btcPub, net);
         setAddress(btcAddress);
         setNetwork(net!!);
+
+        // override APIs if set
+        let api = await EncryptedStorage.getItem('api');
+        if (api) {
+          console.log('switching to net:', net, 'api:', api);
+          setApiBase(api);
+          BBMTLibNativeModule.setAPI(net, api);
+        } else {
+          console.log('using net:', net, 'api:', base);
+          await EncryptedStorage.setItem('api', base);
+          BBMTLibNativeModule.setAPI(net, base);
+        }
       } catch (error) {
         console.error('Error initializing wallet:', error);
       } finally {
@@ -135,16 +141,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
   const fetchWalletBalance = useCallback(async () => {
     try {
-      const response = await fetch(apiBase + `/address/${address}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch wallet balance');
-      }
-      const data = await response.json();
-      const balance =
-        data.chain_stats.funded_txo_sum - data.chain_stats.spent_txo_sum;
-      setBalanceBTC((balance / 1e8).toFixed(8));
+      const totalUTXO = await BBMTLibNativeModule.totalUTXO(address);
+      const balance = Big(totalUTXO);
+
+      setBalanceBTC(balance.div(1e8).toFixed(8));
       if (btcRate) {
-        setBalanceUSD(`$${formatUSD((btcRate * balance) / 1e8)}`);
+        setBalanceUSD(
+          `$${formatUSD(Big(balance).mul(btcRate).div(1e8).toNumber())}`,
+        );
       }
     } catch (error) {
       console.error('Error fetching wallet balance');
@@ -154,7 +158,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     } finally {
       setLoading(false);
     }
-  }, [address, btcRate, showErrorToast, apiBase]);
+  }, [address, btcRate, showErrorToast]);
 
   useEffect(() => {
     if (address) {
@@ -174,26 +178,27 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   };
 
   const handleSend = async (to: string, amountSats: Big, feeSats: Big) => {
-    const toAddress = to;
-    const satoshiAmount = amountSats.toString().split('.')[0];
-    const usdAmount = amountSats.times(btcRate).div(1e8).toFixed(2);
-    const satoshiFees = feeSats.toString().split('.')[0];
-    const usdFees = feeSats.times(btcRate).div(1e8).toFixed(2);
-    navigation.dispatch(
-      CommonActions.navigate({
-        name: '📱📱 Pairing',
-        params: {
-          mode: 'send_btc',
-          toAddress,
-          satoshiAmount,
-          usdAmount,
-          satoshiFees,
-          usdFees,
-        },
-      }),
-    );
-
-    setIsSendModalVisible(false);
+    if (amountSats.gt(0) && feeSats.gt(0) && to) {
+      const toAddress = to;
+      const satoshiAmount = amountSats.toString().split('.')[0];
+      const usdAmount = amountSats.times(btcRate).div(1e8).toFixed(2);
+      const satoshiFees = feeSats.toString().split('.')[0];
+      const usdFees = feeSats.times(btcRate).div(1e8).toFixed(2);
+      navigation.dispatch(
+        CommonActions.navigate({
+          name: '📱📱 Pairing',
+          params: {
+            mode: 'send_btc',
+            toAddress,
+            satoshiAmount,
+            usdAmount,
+            satoshiFees,
+            usdFees,
+          },
+        }),
+      );
+      setIsSendModalVisible(false);
+    }
   };
 
   const styles = StyleSheet.create({

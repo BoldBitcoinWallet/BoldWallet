@@ -267,6 +267,25 @@ class BBMTLibNativeModule: RCTEventEmitter {
     resolve("p2khAddress", output, error, resolver)
   }
   
+  @objc func setFeePolicy(_ policy: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
+    var error: NSError?
+    let output = TssUseFeePolicy(policy, &error)
+    resolve("setFeePolicy", output, error, resolver)
+  }
+  
+  
+  @objc func setAPI(_ network: String, baseAPI: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
+    var error: NSError?
+    let output = TssUseAPI(network, baseAPI, &error)
+    resolve("setAPI", output, error, resolver)
+  }
+
+  @objc func totalUTXO(_ address: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
+    var error: NSError?
+    let output = TssTotalUTXO(address, &error)
+    resolve("totalUTXO", output, error, resolver)
+  }
+
   @objc func preparams(_ outFile: String, timeout: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
     var error: NSError?
     var success: ObjCBool = false

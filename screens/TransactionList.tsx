@@ -23,6 +23,7 @@ const TransactionList = ({
   address: string;
   baseApi: string;
   onReload: () => Promise<any>;
+  onTxs: (txs: any) => Promise<any>;
 }) => {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -60,7 +61,13 @@ const TransactionList = ({
       });
       if (isMounted.current) {
         const newTransactions = response.data;
-        setTransactions(newTransactions);
+
+        setTransactions(
+          newTransactions.sort(
+            (a: any, b: any) => b.status.block_height - a.status.block_height,
+          ),
+        );
+
         setHasMoreTransactions(newTransactions.length > 0);
         if (newTransactions.length > 0) {
           setLastSeenTxId(newTransactions[newTransactions.length - 1].txid);
@@ -125,7 +132,9 @@ const TransactionList = ({
           },
         );
 
-        if (!isMounted.current) return;
+        if (!isMounted.current) {
+          return;
+        }
 
         const newTransactions = response.data;
         if (newTransactions.length <= 1) {
@@ -161,7 +170,9 @@ const TransactionList = ({
 
   // Optimized refresh handler
   const onRefresh = useCallback(async () => {
-    if (isRefreshing) return;
+    if (isRefreshing) {
+      return;
+    }
 
     setIsRefreshing(true);
     await fetchTransactions(`${baseApi}/address/${address}/txs`);
@@ -169,7 +180,7 @@ const TransactionList = ({
     if (onReload) {
       onReload();
     }
-  }, [address, baseApi, fetchTransactions, isRefreshing]);
+  }, [address, baseApi, fetchTransactions, isRefreshing, onReload]);
 
   // Initial fetch
   useEffect(() => {
