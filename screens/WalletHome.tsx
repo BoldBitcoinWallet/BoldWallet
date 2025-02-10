@@ -43,6 +43,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const {hasPermission, requestPermission} = useCameraPermission();
   const [isBlurred, setIsBlurred] = useState<boolean>(true);
   const [isReceiveModalVisible, setIsReceiveModalVisible] = useState(false);
+  const [pendingSent, setPendingSent] = useState(0);
 
   useEffect(() => {
     const requestCameraAccess = async () => {
@@ -113,12 +114,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     const fetchBtcPrice = async () => {
       try {
         setLoading(true);
-        const response = await fetch(
-          'https://api.coindesk.com/v1/bpi/currentprice/BTC.json',
-        );
+        const response = await fetch('https://mempool.space/api/v1/prices');
         const data = await response.json();
-        setBtcRate(parseFloat(data.bpi.USD.rate_float));
-        setBtcPrice(`$${formatUSD(data.bpi.USD.rate_float)}`);
+        setBtcRate(parseFloat(data.USD));
+        setBtcPrice(`$${formatUSD(data.USD)}`);
       } catch (error) {
         console.error('Error fetching BTC price:', error);
         setBtcPrice('Unavailable');
@@ -139,12 +138,20 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     });
   }, []);
 
+  async function refreshWalletBalance(
+    pendingTxs: any[],
+    pendingSentTotal: number,
+  ) {
+    console.log('pending txs', pendingTxs);
+    console.log('pending sent', pendingSentTotal);
+    setPendingSent(pendingSentTotal);
+  }
+
   const fetchWalletBalance = useCallback(async () => {
     try {
       const totalUTXO = await BBMTLibNativeModule.totalUTXO(address);
       const balance = Big(totalUTXO);
-
-      setBalanceBTC(balance.div(1e8).toFixed(8));
+      setBalanceBTC(balance.sub(pendingSent).div(1e8).toFixed(8));
       if (btcRate) {
         setBalanceUSD(
           `$${formatUSD(Big(balance).mul(btcRate).div(1e8).toNumber())}`,
@@ -158,7 +165,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     } finally {
       setLoading(false);
     }
-  }, [address, btcRate, showErrorToast]);
+  }, [address, btcRate, showErrorToast, pendingSent]);
 
   useEffect(() => {
     if (address) {
@@ -384,6 +391,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         <TransactionList
           address={address}
           baseApi={apiBase}
+          onUpdate={refreshWalletBalance}
           onReload={fetchWalletBalance}
         />
       )}

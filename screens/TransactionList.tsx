@@ -19,11 +19,12 @@ const TransactionList = ({
   address,
   baseApi,
   onReload,
+  onUpdate,
 }: {
   address: string;
   baseApi: string;
+  onUpdate: (pendingTxs: any[], pending: number) => Promise<any>;
   onReload: () => Promise<any>;
-  onTxs: (txs: any) => Promise<any>;
 }) => {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -36,6 +37,20 @@ const TransactionList = ({
   // Add refs to track mounting state and prevent memory leaks
   const isMounted = useRef(true);
   const abortController = useRef<AbortController | null>(null);
+
+  const updatePendings = function (txs: any[]) {
+    let pending = 0;
+    let pendingTxs = txs
+      .filter(tx => !tx.status || !tx.status.confirmed)
+      .map(tx => {
+        const {sent} = getTransactionAmounts(tx, address);
+        if (!isNaN(sent) && sent > 0) {
+          pending += Number(sent);
+        }
+        return tx;
+      });
+    onUpdate(pendingTxs, pending);
+  };
 
   const fetchTransactions = useCallback(async (url: string) => {
     // Check both loading state and our ref
@@ -60,14 +75,11 @@ const TransactionList = ({
         signal: abortController.current.signal,
       });
       if (isMounted.current) {
-        const newTransactions = response.data;
-
-        setTransactions(
-          newTransactions.sort(
-            (a: any, b: any) => b.status.block_height - a.status.block_height,
-          ),
+        const newTransactions = response.data.sort(
+          (a: any, b: any) => b.status.block_height - a.status.block_height,
         );
-
+        updatePendings(newTransactions);
+        setTransactions(newTransactions);
         setHasMoreTransactions(newTransactions.length > 0);
         if (newTransactions.length > 0) {
           setLastSeenTxId(newTransactions[newTransactions.length - 1].txid);
@@ -147,7 +159,9 @@ const TransactionList = ({
           const filteredTransactions = newTransactions.filter(
             (tx: any) => !existingIds.has(tx.txid),
           );
-          return [...prevTransactions, ...filteredTransactions];
+          const txs = [...prevTransactions, ...filteredTransactions];
+          updatePendings(txs);
+          return txs;
         });
 
         setLastSeenTxId(newTransactions[newTransactions.length - 1].txid);
