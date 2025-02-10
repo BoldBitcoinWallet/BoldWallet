@@ -38,169 +38,6 @@ const TransactionList = ({
   const isMounted = useRef(true);
   const abortController = useRef<AbortController | null>(null);
 
-  const updatePendings = function (txs: any[]) {
-    let pending = 0;
-    let pendingTxs = txs
-      .filter(tx => !tx.status || !tx.status.confirmed)
-      .map(tx => {
-        const {sent} = getTransactionAmounts(tx, address);
-        if (!isNaN(sent) && sent > 0) {
-          pending += Number(sent);
-        }
-        return tx;
-      });
-    onUpdate(pendingTxs, pending);
-  };
-
-  const fetchTransactions = useCallback(async (url: string) => {
-    // Check both loading state and our ref
-    if (loading || !isMounted.current || isFetching.current) {
-      console.log('Skipping duplicate fetch...');
-      return;
-    }
-
-    // Set our fetching ref
-    isFetching.current = true;
-    console.log('fetching...');
-
-    // Cancel any ongoing requests
-    if (abortController.current) {
-      abortController.current.abort();
-    }
-    abortController.current = new AbortController();
-
-    setLoading(true);
-    try {
-      const response = await axios.get(url, {
-        signal: abortController.current.signal,
-      });
-      if (isMounted.current) {
-        const newTransactions = response.data.sort(
-          (a: any, b: any) => b.status.block_height - a.status.block_height,
-        );
-        updatePendings(newTransactions);
-        setTransactions(newTransactions);
-        setHasMoreTransactions(newTransactions.length > 0);
-        if (newTransactions.length > 0) {
-          setLastSeenTxId(newTransactions[newTransactions.length - 1].txid);
-        }
-      }
-    } catch (error: any) {
-      if (error.name === 'CanceledError') {
-        console.log('Request canceled');
-      } else {
-        console.error('Error fetching transactions:', error);
-        Toast.show({
-          type: 'error',
-          text1: 'Error loading transactions',
-          text2: 'Please try again later',
-        });
-      }
-    } finally {
-      if (isMounted.current) {
-        setLoading(false);
-        isFetching.current = false;
-      }
-    }
-  }, []);
-
-  // Modify the initial useEffect to handle cleanup properly
-  useEffect(() => {
-    let ignore = false;
-
-    const initialFetch = async () => {
-      if (!ignore) {
-        await fetchTransactions(`${baseApi}/address/${address}/txs`);
-      }
-    };
-
-    initialFetch();
-
-    return () => {
-      ignore = true;
-      if (abortController.current) {
-        abortController.current.abort();
-      }
-    };
-  }, [address, baseApi, fetchTransactions]);
-  // Debounced fetch more implementation
-  const debouncedFetchMore = useCallback(
-    debounce(async () => {
-      if (
-        loadingMore ||
-        !lastSeenTxId ||
-        !hasMoreTransactions ||
-        !isMounted.current
-      ) {
-        return;
-      }
-
-      setLoadingMore(true);
-      try {
-        const response = await axios.get(
-          `${baseApi}/address/${address}/txs/chain/${lastSeenTxId}`,
-          {
-            signal: abortController.current?.signal,
-          },
-        );
-
-        if (!isMounted.current) {
-          return;
-        }
-
-        const newTransactions = response.data;
-        if (newTransactions.length <= 1) {
-          setHasMoreTransactions(false);
-          return;
-        }
-
-        setTransactions(prevTransactions => {
-          const existingIds = new Set(prevTransactions.map(tx => tx.txid));
-          const filteredTransactions = newTransactions.filter(
-            (tx: any) => !existingIds.has(tx.txid),
-          );
-          const txs = [...prevTransactions, ...filteredTransactions];
-          updatePendings(txs);
-          return txs;
-        });
-
-        setLastSeenTxId(newTransactions[newTransactions.length - 1].txid);
-      } catch (error: any) {
-        if (error.name !== 'CanceledError') {
-          console.error('Error fetching more transactions:', error);
-          Toast.show({
-            type: 'error',
-            text1: 'Error loading more transactions',
-          });
-        }
-      } finally {
-        if (isMounted.current) {
-          setLoadingMore(false);
-        }
-      }
-    }, 500),
-    [loadingMore, lastSeenTxId, hasMoreTransactions, address, baseApi],
-  );
-
-  // Optimized refresh handler
-  const onRefresh = useCallback(async () => {
-    if (isRefreshing) {
-      return;
-    }
-
-    setIsRefreshing(true);
-    await fetchTransactions(`${baseApi}/address/${address}/txs`);
-    setIsRefreshing(false);
-    if (onReload) {
-      onReload();
-    }
-  }, [address, baseApi, fetchTransactions, isRefreshing, onReload]);
-
-  // Initial fetch
-  useEffect(() => {
-    fetchTransactions(`${baseApi}/address/${address}/txs`);
-  }, [address, baseApi, fetchTransactions]);
-
   // Memoized transaction amount calculator
   const getTransactionAmounts = useCallback((tx: any, addr: string) => {
     const sentAmount = tx.vin.reduce((total: number, input: any) => {
@@ -230,6 +67,172 @@ const TransactionList = ({
       received: receivedAmount / 1e8,
     };
   }, []);
+
+  const updatePendings = useCallback(
+    function (txs: any[]) {
+      let pending = 0;
+      let pendingTxs = txs
+        .filter(tx => !tx.status || !tx.status.confirmed)
+        .map(tx => {
+          const {sent} = getTransactionAmounts(tx, address);
+          if (!isNaN(sent) && sent > 0) {
+            pending += Number(sent);
+          }
+          return tx;
+        });
+      onUpdate(pendingTxs, pending);
+    },
+    [address, getTransactionAmounts, onUpdate],
+  );
+
+  const fetchTransactions = useCallback(
+    async (url: string) => {
+      // Check both loading state and our ref
+      if (loading || !isMounted.current || isFetching.current) {
+        console.log('Skipping duplicate fetch...');
+        return;
+      }
+
+      // Set our fetching ref
+      isFetching.current = true;
+      console.log('fetching...');
+
+      // Cancel any ongoing requests
+      if (abortController.current) {
+        abortController.current.abort();
+      }
+      abortController.current = new AbortController();
+
+      setLoading(true);
+      try {
+        const response = await axios.get(url, {
+          signal: abortController.current.signal,
+        });
+        if (isMounted.current) {
+          const newTransactions = response.data.sort(
+            (a: any, b: any) => b.status.block_height - a.status.block_height,
+          );
+          updatePendings(newTransactions);
+          setTransactions(newTransactions);
+          setHasMoreTransactions(newTransactions.length > 0);
+          if (newTransactions.length > 0) {
+            setLastSeenTxId(newTransactions[newTransactions.length - 1].txid);
+          }
+        }
+      } catch (error: any) {
+        if (error.name === 'CanceledError') {
+          console.log('Request canceled');
+        } else {
+          console.error('Error fetching transactions:', error);
+          Toast.show({
+            type: 'error',
+            text1: 'Error loading transactions',
+            text2: 'Please try again later',
+          });
+        }
+      } finally {
+        if (isMounted.current) {
+          setLoading(false);
+          isFetching.current = false;
+        }
+      }
+    },
+    [loading, updatePendings],
+  );
+
+  // Modify the initial useEffect to handle cleanup properly
+  useEffect(() => {
+    let ignore = false;
+
+    const initialFetch = async () => {
+      if (!ignore) {
+        await fetchTransactions(`${baseApi}/address/${address}/txs`);
+      }
+    };
+
+    initialFetch();
+
+    return () => {
+      ignore = true;
+      if (abortController.current) {
+        abortController.current.abort();
+      }
+    };
+  }, [address, baseApi, fetchTransactions]);
+  // Debounced fetch more implementation
+  const debouncedFetchMore = debounce(async () => {
+    if (
+      loadingMore ||
+      !lastSeenTxId ||
+      !hasMoreTransactions ||
+      !isMounted.current
+    ) {
+      return;
+    }
+
+    setLoadingMore(true);
+    try {
+      const response = await axios.get(
+        `${baseApi}/address/${address}/txs/chain/${lastSeenTxId}`,
+        {
+          signal: abortController.current?.signal,
+        },
+      );
+
+      if (!isMounted.current) {
+        return;
+      }
+
+      const newTransactions = response.data;
+      if (newTransactions.length <= 1) {
+        setHasMoreTransactions(false);
+        return;
+      }
+
+      setTransactions(prevTransactions => {
+        const existingIds = new Set(prevTransactions.map(tx => tx.txid));
+        const filteredTransactions = newTransactions.filter(
+          (tx: any) => !existingIds.has(tx.txid),
+        );
+        const txs = [...prevTransactions, ...filteredTransactions];
+        updatePendings(txs);
+        return txs;
+      });
+
+      setLastSeenTxId(newTransactions[newTransactions.length - 1].txid);
+    } catch (error: any) {
+      if (error.name !== 'CanceledError') {
+        console.error('Error fetching more transactions:', error);
+        Toast.show({
+          type: 'error',
+          text1: 'Error loading more transactions',
+        });
+      }
+    } finally {
+      if (isMounted.current) {
+        setLoadingMore(false);
+      }
+    }
+  }, 500);
+
+  // Optimized refresh handler
+  const onRefresh = useCallback(async () => {
+    if (isRefreshing) {
+      return;
+    }
+
+    setIsRefreshing(true);
+    await fetchTransactions(`${baseApi}/address/${address}/txs`);
+    setIsRefreshing(false);
+    if (onReload) {
+      onReload();
+    }
+  }, [address, baseApi, fetchTransactions, isRefreshing, onReload]);
+
+  // Initial fetch
+  useEffect(() => {
+    fetchTransactions(`${baseApi}/address/${address}/txs`);
+  }, [address, baseApi, fetchTransactions]);
 
   // Memoized transaction status checker
   const getTransactionStatus = useCallback(
