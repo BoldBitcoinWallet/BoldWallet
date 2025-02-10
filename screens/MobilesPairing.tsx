@@ -132,14 +132,17 @@ const MobilesPairing = ({navigation}: any) => {
     return input.replace(/[^a-zA-Z0-9]/g, '_');
   };
 
-  const formatUSD = (price: string) =>
+  const formatUSD = (price?: string) =>
     new Intl.NumberFormat('en-US', {
       style: 'decimal',
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(Number(price));
 
-  const sat2btcStr = (sats: string) => Big(sats).div(1e8).toFixed(8);
+  const sat2btcStr = (sats?: string) =>
+    Big(sats || 0)
+      .div(1e8)
+      .toFixed(8);
 
   const preparams = async () => {
     setIsPreparing(true);
@@ -536,7 +539,7 @@ const MobilesPairing = ({navigation}: any) => {
         );
       }
 
-      const result = await Promise.race(promises);
+      const result = await promises[0];
 
       console.log('promise race result:', result);
       if (result) {
