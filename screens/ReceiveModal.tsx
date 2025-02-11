@@ -28,6 +28,7 @@ const ReceiveModal: React.FC<{
       type: 'success',
       text1: 'Address Copied to Clipboard',
       position: 'top',
+      visibilityTime: 325,
     });
     Clipboard.setString(address);
   }, [address]);
@@ -55,7 +56,7 @@ const ReceiveModal: React.FC<{
       <View style={styles.modalContainer}>
         <View style={styles.modalContent}>
           <Text style={styles.textReceive}>
-            Bitcoin {network === 'mainnet' ? 'Mainnnet' : 'Testnet'} - Address
+          🌐 {network === 'mainnet' ? 'Mainnnet' : 'Testnet'} / Bitcoin / Address
           </Text>
 
           {/* Close Button */}
@@ -88,16 +89,16 @@ const ReceiveModal: React.FC<{
                 )
               }>
               {address}
-              <TouchableOpacity
-                onPress={copyToClipboard}
-                style={styles.iconContainer}>
-                <Image
-                  source={require('../assets/paste-icon.png')}
-                  style={styles.iconImage}
-                  resizeMode="contain"
-                />
-              </TouchableOpacity>
             </Text>
+            <TouchableOpacity
+              onPress={copyToClipboard}
+              style={styles.iconContainer}>
+              <Image
+                source={require('../assets/paste-icon.png')}
+                style={styles.iconImage}
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
           </View>
           <Toast />
         </View>
@@ -157,7 +158,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   iconContainer: {
-    paddingTop: 20,
     paddingLeft: 10,
   },
   iconImage: {
