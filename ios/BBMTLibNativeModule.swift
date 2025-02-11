@@ -42,7 +42,13 @@ class BBMTLibNativeModule: RCTEventEmitter {
       guard self != nil else { return }
       var error: NSError?
       let output = TssPublishData(port, timeout, encKey, raw, &error)
-      self?.resolve("publishData", output, error, resolver)
+      if error == nil {
+          self?.sendLogEvent("publishData", output)
+          resolver(output)
+        } else {
+          self?.sendLogEvent("publishData", error!.localizedDescription)
+          resolver("")
+        }
     }
   }
   

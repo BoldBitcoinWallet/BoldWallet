@@ -35,7 +35,7 @@ import Big from 'big.js';
 const {BBMTLibNativeModule} = NativeModules;
 
 const MobilesPairing = ({navigation}: any) => {
-  const timeout = 30;
+  const timeout = 15;
   const discoveryPort = 55055;
 
   const [status, setStatus] = useState('');
@@ -177,14 +177,18 @@ const MobilesPairing = ({navigation}: any) => {
         _data += ':' + ks.local_party_key;
       }
       console.log('publishing data', _data, 'peer pubkey', peerPubkey);
-      await BBMTLibNativeModule.publishData(
+      const published = await BBMTLibNativeModule.publishData(
         String(discoveryPort),
         String(timeout),
         peerPubkey,
         _data,
       );
-      console.log('data published');
-      return _data;
+      if (published) {
+        console.log('data published:', published);
+        return _data;
+      } else {
+        throw "couldn't fetch data, please retry";
+      }
     } else {
       const kp = JSON.parse(keypair);
       const peerURL = `http://${peerIP}:${discoveryPort}`;
@@ -580,8 +584,8 @@ const MobilesPairing = ({navigation}: any) => {
   }
 
   async function fetchData(peerURL: string, privateKey: string) {
-    let retries = 3;
-    while (retries-- > 0) {
+    const until = Date.now() + timeout * 1000;
+    while (Date.now() < until) {
       try {
         const rawFetched = await BBMTLibNativeModule.fetchData(
           peerURL,
@@ -596,7 +600,7 @@ const MobilesPairing = ({navigation}: any) => {
         }
       } catch (e) {}
     }
-    throw "couldn't fetch data";
+    throw "couldn't fetch data, please retry";
   }
 
   async function listenForPeerPromise(
@@ -623,7 +627,7 @@ const MobilesPairing = ({navigation}: any) => {
     ip: string,
   ): Promise<string | null> => {
     const until = Date.now() + timeout * 1000;
-    const discoveryTimeout = 10;
+    const discoveryTimeout = 5;
     while (Date.now() < until) {
       try {
         const result = await BBMTLibNativeModule.discoverPeer(
