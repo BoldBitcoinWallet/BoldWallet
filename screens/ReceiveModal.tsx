@@ -1,4 +1,4 @@
-import React, {useCallback, useRef} from 'react';
+import React, {useCallback, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import Toast from 'react-native-toast-message';
 import QRCode from 'react-native-qrcode-svg';
 import Clipboard from '@react-native-clipboard/clipboard';
 import Share from 'react-native-share';
+import * as RNFS from 'react-native-fs';
 
 const ReceiveModal: React.FC<{
   visible: boolean;
@@ -21,7 +22,7 @@ const ReceiveModal: React.FC<{
   network: string;
   onClose: () => void;
 }> = ({visible, address, baseApi, network, onClose}) => {
-  const refQrCode = useRef();
+  const [base64Image, setBase64Image] = useState('');
 
   const copyToClipboard = useCallback(() => {
     Toast.show({
@@ -33,19 +34,40 @@ const ReceiveModal: React.FC<{
     Clipboard.setString(address);
   }, [address]);
 
-  const shareQRCode = async () => {
-    if (refQrCode && refQrCode.current) {
-      await Share.open({
+  async function shareQRCode() {
+    console.log('shareQRCode...');
+    try {
+      console.log('Sharing QR');
+      const filePath = `${RNFS.TemporaryDirectoryPath}/bitcoin-${network}-address.jpg`;
+      // Check if the file already exists
+      const fileExists = await RNFS.exists(filePath);
+      if (fileExists) {
+        console.log('File Delete.');
+        await RNFS.unlink(filePath);
+      }
+      console.log('File write.');
+      await RNFS.writeFile(filePath, base64Image, 'base64');
+      Share.open({
         title: 'Bitcoin Receive Address',
-        message: `Bitcoin ${network}, Deposit Address: ${address}`,
-        url: `data:image/png;base64,${refQrCode.current}`,
+        message: `${address}`,
+        url: `file://${filePath}`,
+        subject: `Bitcoin ${network} Wallet Address`,
         isNewTask: true,
-        type: 'image/png',
-        filename: `BTC-${network}-Address`,
         failOnCancel: false,
-      });
+      })
+        .then(result => {
+          console.log('Result sharing', result);
+        })
+        .catch((e: any) => {
+          console.error('Error sharing', e);
+        })
+        .finally(() => {
+          RNFS.unlink(filePath);
+        });
+    } catch (error) {
+      console.error('Error preparing image for share:', error);
     }
-  };
+  }
 
   return (
     <Modal
@@ -56,7 +78,8 @@ const ReceiveModal: React.FC<{
       <View style={styles.modalContainer}>
         <View style={styles.modalContent}>
           <Text style={styles.textReceive}>
-          🌐 {network === 'mainnet' ? 'Mainnnet' : 'Testnet'} / Bitcoin / Address
+            🌐 {network === 'mainnet' ? 'Mainnnet' : 'Testnet'} / Bitcoin /
+            Address
           </Text>
 
           {/* Close Button */}
@@ -70,11 +93,16 @@ const ReceiveModal: React.FC<{
               value={address}
               size={200}
               getRef={c => {
-                if (c?.toDataURL) {
-                  c?.toDataURL((base64Image: any) => {
-                    refQrCode.current = base64Image;
-                  });
-                }
+                setTimeout(() => {
+                  if (c) {
+                    c.toDataURL((base64Data: any) => {
+                      if (base64Data) {
+                        console.log('setting base64Data');
+                        setBase64Image(base64Data);
+                      }
+                    });
+                  }
+                }, 500);
               }}
             />
           </TouchableOpacity>
