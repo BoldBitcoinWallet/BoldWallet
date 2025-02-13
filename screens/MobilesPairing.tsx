@@ -332,7 +332,7 @@ const MobilesPairing = ({navigation}: any) => {
         partyID,
       });
 
-      if (!isMaster && peerShare === partyID) {
+      if (peerShare === partyID) {
         throw 'Please Use Two Different Shares per Device';
       }
       try {
