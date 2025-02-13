@@ -43,6 +43,7 @@ const MobilesPairing = ({navigation}: any) => {
   const [localDevice, setLocalDevice] = useState<string | null>(null);
   const [peerIP, setPeerIP] = useState<string | null>(null);
   const [peerDevice, setPeerDevice] = useState<string | null>(null);
+  const [peerParty, setPeerParty] = useState<string | null>(null);
   const [isPairing, setIsPairing] = useState(false);
   const [countdown, setCountdown] = useState(timeout);
   const [isPreParamsReady, setIsPreParamsReady] = useState(false);
@@ -329,10 +330,11 @@ const MobilesPairing = ({navigation}: any) => {
 
       console.log('starting...', {
         peerShare,
+        peerParty,
         partyID,
       });
 
-      if (peerShare === partyID) {
+      if (peerParty === partyID) {
         throw 'Please Use Two Different Shares per Device';
       }
       try {
@@ -529,17 +531,29 @@ const MobilesPairing = ({navigation}: any) => {
     setKeypair(jkp);
 
     const kp = JSON.parse(jkp);
+    const jks = await EncryptedStorage.getItem('keyshare');
+    const ks = JSON.parse(jks || '{}');
+    const localShare = ks.local_party_key;
 
     try {
       const ip = await BBMTLibNativeModule.getLanIp('pairing');
       const deviceName = await DeviceInfo.getDeviceName();
       setLocalDevice(deviceName);
       setStatus('Starting peer discovery...');
-      const promises = [listenForPeerPromise(kp, stringToHex(deviceName))];
+      const promises = [
+        listenForPeerPromise(
+          kp,
+          stringToHex(`${deviceName}@${ks.local_party_key}`),
+        ),
+      ];
       if (ip) {
         setLocalIP(ip);
         promises.push(
-          discoverPeerPromise(stringToHex(deviceName), kp.publicKey, ip),
+          discoverPeerPromise(
+            stringToHex(`${deviceName}@${ks.local_party_key}`),
+            kp.publicKey,
+            ip,
+          ),
         );
       }
 
@@ -551,16 +565,27 @@ const MobilesPairing = ({navigation}: any) => {
         console.log('Got Result', result);
         const raw = result.split(',');
         console.log({deviceName, raw});
+
         const peerInfo = raw[0].split('@');
         const _peerIP = peerInfo[0].split(':')[0];
         setPeerIP(_peerIP);
-        const _peerDevice = hexToString(peerInfo[1]);
+
+        const _peerDevicePartyID = hexToString(peerInfo[1]).split('@');
+        const _peerDevice = _peerDevicePartyID[0];
+        const _peerParty = _peerDevicePartyID[1];
         setPeerDevice(_peerDevice);
+        setPeerParty(_peerParty);
+        if (localShare && _peerParty && localShare === _peerParty) {
+          throw 'Please Use Two Different Shares per Device';
+        }
+
         const _peerPubkey = peerInfo[2];
         setPeerPubkey(_peerPubkey);
+
         const localInfo = raw[1].split('@');
         const _localIP = localInfo[0].split(':')[0];
         setLocalIP(_localIP);
+
         const thisIDs = _localIP.split(':')[0];
         const nextIDs = _peerIP.split(':')[0];
         const thisID = Number(thisIDs.split('.')[3]);
