@@ -35,7 +35,7 @@ import Big from 'big.js';
 const {BBMTLibNativeModule} = NativeModules;
 
 const MobilesPairing = ({navigation}: any) => {
-  const timeout = 15;
+  const timeout = 30;
   const discoveryPort = 55055;
 
   const [status, setStatus] = useState('');
@@ -653,7 +653,7 @@ const MobilesPairing = ({navigation}: any) => {
     ip: string,
   ): Promise<string | null> => {
     const until = Date.now() + timeout * 1000;
-    const discoveryTimeout = 5;
+    const discoveryTimeout = 10;
     while (Date.now() < until) {
       try {
         const result = await BBMTLibNativeModule.discoverPeer(
