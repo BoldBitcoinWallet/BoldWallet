@@ -35,7 +35,7 @@ import Big from 'big.js';
 const {BBMTLibNativeModule} = NativeModules;
 
 const MobilesPairing = ({navigation}: any) => {
-  const timeout = 15;
+  const timeout = 20;
   const discoveryPort = 55055;
 
   const [status, setStatus] = useState('');
