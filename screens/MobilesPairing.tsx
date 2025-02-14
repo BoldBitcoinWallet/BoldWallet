@@ -933,7 +933,7 @@ const MobilesPairing = ({navigation}: any) => {
                         disabled={!isKeygenReady}
                         onPress={mpcTssSetup}>
                         <Text style={styles.clickButtonText}>
-                          Create Wallet
+                          {isMaster ? 'Start' : 'Join'} Wallet Setup
                         </Text>
                       </TouchableOpacity>
                     </View>
