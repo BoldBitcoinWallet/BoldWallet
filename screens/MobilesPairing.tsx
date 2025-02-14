@@ -35,7 +35,7 @@ import Big from 'big.js';
 const {BBMTLibNativeModule} = NativeModules;
 
 const MobilesPairing = ({navigation}: any) => {
-  const timeout = 30;
+  const timeout = 15;
   const discoveryPort = 55055;
 
   const [status, setStatus] = useState('');
@@ -557,9 +557,7 @@ const MobilesPairing = ({navigation}: any) => {
         );
       }
 
-      const result = await promises[0];
-      await Promise.allSettled(promises);
-
+      const result = await Promise.race(promises);
       console.log('promise race result:', result);
       if (result) {
         console.log('Got Result', result);
@@ -647,21 +645,23 @@ const MobilesPairing = ({navigation}: any) => {
     }
   }
 
-  const discoverPeerPromise = async (
+  async function discoverPeerPromise(
     deviceName: string,
     pubkey: string,
     ip: string,
-  ): Promise<string | null> => {
+  ): Promise<string | null> {
     const until = Date.now() + timeout * 1000;
-    const discoveryTimeout = 10;
+    const discoveryTimeout = 3;
+    let backOff = 1;
     while (Date.now() < until) {
       try {
+        backOff *= 2;
         const result = await BBMTLibNativeModule.discoverPeer(
           deviceName,
           pubkey,
           ip,
           String(discoveryPort),
-          String(discoveryTimeout),
+          String(discoveryTimeout + backOff),
         );
         if (result) {
           console.log('discoverPeer result', result);
@@ -673,7 +673,7 @@ const MobilesPairing = ({navigation}: any) => {
     }
     console.log('discoverPeer ended');
     return '';
-  };
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -1130,7 +1130,7 @@ const MobilesPairing = ({navigation}: any) => {
                     disabled={!isKeysignReady}
                     onPress={runKeysign}>
                     <Text style={styles.clickButtonText}>
-                      🗝 Co-Sign Transaction
+                      🗝 {isMaster ? 'Start' : 'Join'} Tx Co-Signing
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -1166,7 +1166,7 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
   header: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
     color: theme.colors.text,
     marginTop: 20,
@@ -1197,7 +1197,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: 'bold',
     color: theme.colors.text,
     marginBottom: 10,

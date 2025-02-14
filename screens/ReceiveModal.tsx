@@ -94,14 +94,12 @@ const ReceiveModal: React.FC<{
               size={200}
               getRef={c => {
                 setTimeout(() => {
-                  if (c) {
-                    c.toDataURL((base64Data: any) => {
-                      if (base64Data) {
-                        console.log('setting base64Data');
-                        setBase64Image(base64Data);
-                      }
-                    });
-                  }
+                  c?.toDataURL((base64Data: any) => {
+                    if (base64Data) {
+                      console.log('setting base64Data');
+                      setBase64Image(base64Data);
+                    }
+                  });
                 }, 500);
               }}
             />

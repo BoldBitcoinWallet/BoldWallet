@@ -265,7 +265,9 @@ const TransactionList = ({
         address,
       );
       const timestamp = item.status.confirmed
-        ? moment(item.status.block_time * 1000).fromNow()
+        ? item.status.block_time * 1000 < Date.now()
+          ? moment(item.status.block_time * 1000).fromNow()
+          : 'recently confirmed'
         : 'Pending confirmation';
 
       const shortTxId = `${item.txid.slice(0, 4)}...${item.txid.slice(-4)}`;
