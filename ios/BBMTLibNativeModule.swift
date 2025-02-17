@@ -42,7 +42,13 @@ class BBMTLibNativeModule: RCTEventEmitter {
       guard self != nil else { return }
       var error: NSError?
       let output = TssPublishData(port, timeout, encKey, raw, &error)
-      self?.resolve("publishData", output, error, resolver)
+      if error == nil {
+        self?.sendLogEvent("publishData", output)
+        resolver(output)
+      } else {
+        self?.sendLogEvent("publishData", error!.localizedDescription)
+        resolver("")
+      }
     }
   }
   
@@ -50,12 +56,12 @@ class BBMTLibNativeModule: RCTEventEmitter {
     var error: NSError?
     let output = TssFetchData(url, decKey, &error)
     if error == nil {
-        self.sendLogEvent("fetchData", output)
-        resolver(output)
-      } else {
-        self.sendLogEvent("fetchData", error!.localizedDescription)
-        resolver("")
-      }
+      self.sendLogEvent("fetchData", output)
+      resolver(output)
+    } else {
+      self.sendLogEvent("fetchData", error!.localizedDescription)
+      resolver("")
+    }
   }
   
   @objc func setBtcNetwork(_ network: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
@@ -149,7 +155,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
       guard self != nil else { return }
       var error: NSError?
       let output = TssListenForPeer(id, pubkey, port, timeout, &error)
-       if error == nil {
+      if error == nil {
         self?.sendLogEvent("listenForPeer", output)
         resolver(output)
       } else {
@@ -176,7 +182,8 @@ class BBMTLibNativeModule: RCTEventEmitter {
   
   @objc func getLanIp(_ tag: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
     var address: String?
-    var classCAddress: String? // Variable to store Class C IP if found
+    var classCAddress: String? // Stores Class C IP
+    var iphoneHotspotIp: String? // Stores iPhone Hotspot IP
     var ifaddr: UnsafeMutablePointer<ifaddrs>? = nil
     
     if getifaddrs(&ifaddr) == 0 {
@@ -185,8 +192,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
         defer { ptr = ptr?.pointee.ifa_next }
         guard let interface = ptr?.pointee else { continue }
         let addrFamily = interface.ifa_addr.pointee.sa_family
-        if addrFamily == UInt8(AF_INET) || addrFamily == UInt8(AF_INET6),
-           let name = interface.ifa_name {
+        if addrFamily == UInt8(AF_INET), let name = interface.ifa_name {
           let interfaceName = String(cString: name)
           if interfaceName == "en0" {
             var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
@@ -202,6 +208,8 @@ class BBMTLibNativeModule: RCTEventEmitter {
               let ipAddress = String(cString: hostname)
               if isClassC(ipAddress) {
                 classCAddress = ipAddress
+              } else if ipAddress.hasPrefix("172.20.10.") {
+                iphoneHotspotIp = ipAddress
               } else if address == nil {
                 address = ipAddress
               }
@@ -211,8 +219,12 @@ class BBMTLibNativeModule: RCTEventEmitter {
       }
       freeifaddrs(ifaddr)
     }
-    if let classC = classCAddress {
-      sendLogEvent("getLanIp", classC)
+    
+    if let hotspotIp = iphoneHotspotIp {
+      sendLogEvent("getLanIp (iPhone Hotspot)", hotspotIp)
+      resolver(hotspotIp)
+    } else if let classC = classCAddress {
+      sendLogEvent("getLanIp (Class C)", classC)
       resolver(classC)
     } else {
       sendLogEvent("getLanIp", address ?? "")
@@ -265,6 +277,25 @@ class BBMTLibNativeModule: RCTEventEmitter {
     var error: NSError?
     let output = TssConvertPubKeyToBTCAddress(compressedPubkey, network, &error)
     resolve("p2khAddress", output, error, resolver)
+  }
+  
+  @objc func setFeePolicy(_ policy: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
+    var error: NSError?
+    let output = TssUseFeePolicy(policy, &error)
+    resolve("setFeePolicy", output, error, resolver)
+  }
+  
+  
+  @objc func setAPI(_ network: String, baseAPI: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
+    var error: NSError?
+    let output = TssUseAPI(network, baseAPI, &error)
+    resolve("setAPI", output, error, resolver)
+  }
+  
+  @objc func totalUTXO(_ address: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
+    var error: NSError?
+    let output = TssTotalUTXO(address, &error)
+    resolve("totalUTXO", output, error, resolver)
   }
   
   @objc func preparams(_ outFile: String, timeout: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {

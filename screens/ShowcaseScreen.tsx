@@ -154,7 +154,7 @@ const ShowcaseScreen = ({navigation}: any) => {
             <Text
               style={styles.termsLink}
               onPress={() =>
-                Linking.openURL('https://boldbitcoin.github.io/welcome#terms')
+                Linking.openURL('https://boldbitcoinwallet.com/#terms')
               }>
               Terms and Conditions
             </Text>

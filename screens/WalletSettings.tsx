@@ -26,8 +26,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isBackupModalVisible, setIsBackupModalVisible] = useState(false);
-  const [isTestnet, setIsTestnet] = useState(true); // Track network type
+  const [isTestnet, setIsTestnet] = useState(true);
   const [party, setParty] = useState('');
+  const [baseAPI, setBaseAPI] = useState('');
 
   useEffect(() => {
     EncryptedStorage.getItem('keyshare').then(ks => {
@@ -37,14 +38,50 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     EncryptedStorage.getItem('network').then(net => {
       setIsTestnet(net !== 'mainnet');
     });
+    EncryptedStorage.getItem('api').then(api => {
+      if (api) {
+        setBaseAPI(api);
+      }
+    });
   }, []);
 
   const toggleNetwork = (value: boolean) => {
     setIsTestnet(value);
     EncryptedStorage.setItem('network', value ? 'testnet3' : 'mainnet');
+    if (
+      baseAPI === 'https://mempool.space/api' ||
+      baseAPI === 'https://mempool.space/testnet/api'
+    ) {
+      resetAPI();
+    }
     navigation.reset({
       index: 0,
       routes: [{name: 'Bold Home'}],
+    });
+  };
+
+  const resetAPI = async () => {
+    EncryptedStorage.getItem('network').then(net => {
+      if (net === 'mainnet') {
+        const api = 'https://mempool.space/api';
+        EncryptedStorage.setItem('api', api);
+        BBMTLibNativeModule.setAPI(net, api);
+        setBaseAPI(api);
+      } else {
+        const api = 'https://mempool.space/testnet/api';
+        EncryptedStorage.setItem('api', api);
+        BBMTLibNativeModule.setAPI(net, api);
+        setBaseAPI(api);
+      }
+    });
+  };
+
+  const saveAPI = async (api: string) => {
+    setBaseAPI(api);
+    console.log('value', api);
+    EncryptedStorage.getItem('network').then(net => {
+      EncryptedStorage.setItem('api', api);
+      BBMTLibNativeModule.setAPI(net, api);
     });
   };
 
@@ -118,26 +155,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.contentContainer}>
-          <Text style={styles.title}>Settings</Text>
-
-          {/* Network */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Network</Text>
-            <View style={styles.toggleContainer}>
-              <Text style={styles.networkLabel}>Mainnet</Text>
-              <Switch
-                trackColor={{
-                  true: theme.colors.primary,
-                  false: theme.colors.accent,
-                }}
-                thumbColor={theme.colors.accent}
-                ios_backgroundColor={theme.colors.secondary}
-                onValueChange={toggleNetwork}
-                value={isTestnet}
-              />
-              <Text style={styles.networkLabel}>Testnet3</Text>
-            </View>
-          </View>
+          <Text style={styles.title}>Backup & Reset</Text>
 
           {/* Backup Wallet Section */}
           <View style={styles.section}>
@@ -169,6 +187,53 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </TouchableOpacity>
           </View>
 
+          <Text style={styles.title}>Advanced</Text>
+
+          {/* Network */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Network</Text>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.networkLabel}>Mainnet</Text>
+              <Switch
+                trackColor={{
+                  true: theme.colors.primary,
+                  false: theme.colors.accent,
+                }}
+                thumbColor={theme.colors.accent}
+                ios_backgroundColor={theme.colors.secondary}
+                onValueChange={toggleNetwork}
+                value={isTestnet}
+              />
+              <Text style={styles.networkLabel}>Testnet3</Text>
+            </View>
+          </View>
+
+          {/* API Wallet Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>API Base</Text>
+            <Text style={styles.sectionDescription}>
+              Point to your own APIs, compatible with Mempool.space only. Reset
+              to default if that's not compatible or you don't know what you're
+              doing.
+            </Text>
+            <TextInput
+              style={styles.inputAPI}
+              returnKeyType="done"
+              value={baseAPI}
+              onChangeText={saveAPI}
+              placeholder="Your Mempool Endpoint"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TouchableOpacity
+              style={[styles.button, styles.backupButton]}
+              onPress={() => resetAPI()}>
+              <Text style={styles.buttonText}>Reset Default</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.title}>Privacy & Terms </Text>
+
           {/* APIs and Services Section */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>APIs and Services</Text>
@@ -176,55 +241,59 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               This app uses the following services:
             </Text>
             <View style={styles.apiItem}>
-              <Text style={styles.apiName}>Blockstream APIs</Text>
+              <Text style={styles.apiName}>Mempool.Space APIs</Text>
               <Text style={styles.apiDescription}>
-                We use Blockstream APIs for fetching balances, UTXOs,
+                We use Mempool.Space APIs for fetching balances, UTXOs,
                 transaction history, and network fees estimations. For more
-                info:
-                {'\n'}
+                info:{' '}
                 <Text
                   style={styles.linkText}
                   onPress={() =>
-                    Linking.openURL(
-                      'https://github.com/blockstream/esplora/blob/master/API.md',
-                    )
+                    Linking.openURL('https://mempool.space/docs/api/rest')
                   }>
-                  Blockstream/esplora/blob/master/API.md
+                  API Docs
                 </Text>
               </Text>
             </View>
             <View style={styles.apiItem}>
-              <Text style={styles.apiName}>CoinDesk APIs</Text>
+              <Text style={styles.apiName}>Data and Security</Text>
               <Text style={styles.apiDescription}>
-                We use CoinDesk APIs to get the latest Bitcoin price:
-                {'\n'}
-                <Text
-                  style={styles.linkText}
-                  onPress={() =>
-                    Linking.openURL(
-                      'https://api.coindesk.com/v1/bpi/currentprice/BTC.json',
-                    )
-                  }>
-                  Coindesk Bitcoin USD Price Index
-                </Text>
+                We do not collect any personal data. BoldBitcoinWallet posses no
+                backend. Wallet generation and transactions signing happen
+                locally between your devices. Opensource mempool.space
+                Self-Hosted APIs are supported to enhance your security and
+                privacy.
               </Text>
             </View>
           </View>
 
-          {/* Data collection */}
+          {/* Terms of Use */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Data Collection</Text>
+            <Text style={styles.sectionTitle}>Terms of Use</Text>
             <Text style={styles.sectionDescription}>
-              We do not collect any user data. All information is fetched in
-              real-time from external APIs, and no personal data is stored or
-              shared.
+              Please review our terms to understand your rights and
+              responsibilities while using this app.
             </Text>
             <Text
               style={styles.termsLink}
               onPress={() =>
-                Linking.openURL('https://boldbitcoin.github.io/welcome#terms')
+                Linking.openURL('https://boldbitcoinwallet.com/#terms')
               }>
-              Terms and Conditions
+              Read Terms of Use
+            </Text>
+
+            {/* Privacy Policy */}
+
+            <Text style={styles.sectionTitle}>Privacy Policy</Text>
+            <Text style={styles.sectionDescription}>
+              Learn more about how we handle your privacy and security.
+            </Text>
+            <Text
+              style={styles.termsLink}
+              onPress={() =>
+                Linking.openURL('https://boldbitcoinwallet.com/#terms')
+              }>
+              Read Privacy Policy
             </Text>
           </View>
 
@@ -322,10 +391,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
 const styles = StyleSheet.create({
   apiItem: {
-    marginBottom: 16,
+    marginBottom: 8,
   },
   apiName: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
     color: theme.colors.primary,
   },
@@ -335,11 +404,21 @@ const styles = StyleSheet.create({
   },
   linkText: {
     color: theme.colors.primary,
+    fontWeight: 'bold',
     textDecorationLine: 'underline',
   },
   container: {
     flex: 1,
     backgroundColor: theme.colors.primary,
+  },
+  inputAPI: {
+    borderWidth: 1,
+    borderColor: theme.colors.secondary,
+    borderRadius: 8,
+    padding: 12,
+    maxHeight: 50,
+    fontSize: 14,
+    backgroundColor: '#FFF',
   },
   toggleContainer: {
     flexDirection: 'row',
@@ -362,6 +441,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: 'bold',
+    marginTop: 10,
     marginBottom: 24,
     color: theme.colors.white,
   },
@@ -370,6 +450,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
     textDecorationLine: 'underline',
+    marginBottom: 10,
   },
   section: {
     marginBottom: 32,
@@ -455,6 +536,27 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginHorizontal: 8,
     alignItems: 'center',
+  },
+  saveResetButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+  },
+  saveButton: {
+    flex: 1,
+    backgroundColor: theme.colors.primary,
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  resetButton: {
+    flex: 1,
+    backgroundColor: theme.colors.secondary,
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginLeft: 10,
   },
   cancelButton: {
     backgroundColor: theme.colors.secondary,

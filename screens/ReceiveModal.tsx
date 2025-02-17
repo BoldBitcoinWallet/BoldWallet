@@ -1,11 +1,10 @@
-import React, {useCallback} from 'react';
+import React, {useCallback, useRef, useState} from 'react';
 import {
   View,
   Text,
   Modal,
   TouchableOpacity,
   StyleSheet,
-  Share,
   Image,
   Linking,
 } from 'react-native';
@@ -13,6 +12,8 @@ import theme from '../theme';
 import Toast from 'react-native-toast-message';
 import QRCode from 'react-native-qrcode-svg';
 import Clipboard from '@react-native-clipboard/clipboard';
+import Share from 'react-native-share';
+import * as RNFS from 'react-native-fs';
 
 const ReceiveModal: React.FC<{
   visible: boolean;
@@ -21,24 +22,52 @@ const ReceiveModal: React.FC<{
   network: string;
   onClose: () => void;
 }> = ({visible, address, baseApi, network, onClose}) => {
+  const [base64Image, setBase64Image] = useState('');
+
   const copyToClipboard = useCallback(() => {
     Toast.show({
       type: 'success',
       text1: 'Address Copied to Clipboard',
       position: 'top',
+      visibilityTime: 325,
     });
     Clipboard.setString(address);
   }, [address]);
 
-  const shareAddress = async () => {
+  async function shareQRCode() {
+    console.log('shareQRCode...');
     try {
-      await Share.share({
-        message: `Here's my Bitcoin address: ${address}`,
-      });
+      console.log('Sharing QR');
+      const filePath = `${RNFS.TemporaryDirectoryPath}/bitcoin-${network}-address.jpg`;
+      // Check if the file already exists
+      const fileExists = await RNFS.exists(filePath);
+      if (fileExists) {
+        console.log('File Delete.');
+        await RNFS.unlink(filePath);
+      }
+      console.log('File write.');
+      await RNFS.writeFile(filePath, base64Image, 'base64');
+      Share.open({
+        title: 'Bitcoin Receive Address',
+        message: `${address}`,
+        url: `file://${filePath}`,
+        subject: `Bitcoin ${network} Wallet Address`,
+        isNewTask: true,
+        failOnCancel: false,
+      })
+        .then(result => {
+          console.log('Result sharing', result);
+        })
+        .catch((e: any) => {
+          console.error('Error sharing', e);
+        })
+        .finally(() => {
+          RNFS.unlink(filePath);
+        });
     } catch (error) {
-      console.error('Error sharing address:', error);
+      console.error('Error preparing image for share:', error);
     }
-  };
+  }
 
   return (
     <Modal
@@ -49,7 +78,8 @@ const ReceiveModal: React.FC<{
       <View style={styles.modalContainer}>
         <View style={styles.modalContent}>
           <Text style={styles.textReceive}>
-            {network === 'mainnet' ? 'Mainnnet' : 'Testnet'} - Deposit Address
+            🌐 {network === 'mainnet' ? 'Mainnnet' : 'Testnet'} / Bitcoin /
+            Address
           </Text>
 
           {/* Close Button */}
@@ -58,11 +88,22 @@ const ReceiveModal: React.FC<{
           </TouchableOpacity>
 
           {/* QR Code */}
-          <View
-            style={styles.qrContainer}
-            onTouchEndCapture={() => copyToClipboard()}>
-            <QRCode value={address} size={200} />
-          </View>
+          <TouchableOpacity style={styles.qrContainer} onPress={shareQRCode}>
+            <QRCode
+              value={address}
+              size={200}
+              getRef={c => {
+                setTimeout(() => {
+                  c?.toDataURL((base64Data: any) => {
+                    if (base64Data) {
+                      console.log('setting base64Data');
+                      setBase64Image(base64Data);
+                    }
+                  });
+                }, 500);
+              }}
+            />
+          </TouchableOpacity>
 
           {/* Address and Copy Button */}
           <View style={styles.addressContainer}>
@@ -75,10 +116,9 @@ const ReceiveModal: React.FC<{
               }>
               {address}
             </Text>
-
             <TouchableOpacity
               onPress={copyToClipboard}
-              style={styles.pasteIconContainer}>
+              style={styles.iconContainer}>
               <Image
                 source={require('../assets/paste-icon.png')}
                 style={styles.iconImage}
@@ -86,12 +126,6 @@ const ReceiveModal: React.FC<{
               />
             </TouchableOpacity>
           </View>
-
-          {/* Share Button */}
-          <TouchableOpacity style={styles.button} onPress={shareAddress}>
-            <Text style={styles.buttonText}>Share</Text>
-          </TouchableOpacity>
-
           <Toast />
         </View>
       </View>
@@ -104,7 +138,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)', // Transparent background
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
   },
   modalContent: {
     backgroundColor: theme.colors.white,
@@ -118,6 +152,7 @@ const styles = StyleSheet.create({
     top: 20,
     left: 20,
     padding: 8,
+    fontSize: 16,
     fontWeight: 'bold',
   },
   closeButton: {
@@ -126,11 +161,11 @@ const styles = StyleSheet.create({
     right: 20,
     backgroundColor: theme.colors.cardBackground,
     padding: 8,
+    color: theme.colors.accent,
     borderRadius: 50,
   },
   closeButtonText: {
     fontSize: 16,
-    color: theme.colors.white,
   },
   qrContainer: {
     marginTop: 60,
@@ -138,22 +173,22 @@ const styles = StyleSheet.create({
   addressContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 10,
+    marginTop: 10,
+    marginBottom: 10,
   },
   addressText: {
     fontSize: 13,
     textDecorationLine: 'underline',
     color: theme.colors.primary,
-    flex: 1,
     textAlign: 'center',
     fontWeight: 'bold',
   },
-  pasteIconContainer: {
-    padding: 10,
+  iconContainer: {
+    paddingLeft: 10,
   },
   iconImage: {
-    width: 20,
-    height: 20,
+    width: 24,
+    height: 24,
   },
   button: {
     backgroundColor: theme.colors.accent,

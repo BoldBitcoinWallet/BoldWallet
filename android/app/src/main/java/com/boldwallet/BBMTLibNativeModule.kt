@@ -80,13 +80,51 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun setFeePolicy(policy: String, promise: Promise) {
+        try {
+            val result = Tss.useFeePolicy(policy)
+            ld("setFeePolicy", result)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            ld("setFeePolicy", "error: ${e.stackTraceToString()}")
+            promise.reject(e)
+        }
+    }
+
+    @ReactMethod
+    fun totalUTXO(address: String, promise: Promise) {
+        try {
+            val result = Tss.totalUTXO(address)
+            ld("totalUTXO", result)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            ld("totalUTXO", "error: ${e.stackTraceToString()}")
+            promise.reject(e)
+        }
+    }
+
+
+    @ReactMethod
+    fun setAPI(network: String, baseAPI: String, promise: Promise) {
+        try {
+            val result = Tss.useAPI(network, baseAPI)
+            ld("setAPI", result)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            ld("setAPI", "error: ${e.stackTraceToString()}")
+            promise.reject(e)
+        }
+    }
+
+    @ReactMethod
     fun estimateFee(senderAddress: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
         Thread {
             try {
                 val wif = ""
-                val publicKey = "123456789012345678901234567890123"
                 val preview = 1L
                 val amt = amountSatoshi.toLong()
+                val publicKey = "123456789012345678901234567890123"
+                // when preview is 1 - no need to wif and publicKey, use dummy ones
                 val result =
                     Tss.sendBitcoin(wif, publicKey, senderAddress, receiverAddress, preview, amt)
                 ld("estimateFee", result)
@@ -228,6 +266,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         try {
             val interfaces = Collections.list(NetworkInterface.getNetworkInterfaces())
             var fallbackIp: String? = null
+            var iphoneHotspotIp: String? = null
+            var classCIP: String? = null
+
             for (networkInterface in interfaces) {
                 val addresses = networkInterface.inetAddresses
                 for (inetAddress in Collections.list(addresses)) {
@@ -235,20 +276,37 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                         val ip = inetAddress.hostAddress
                         if (ip != null) {
                             if (isClassC(ip)) {
-                                ld("getLanIp", ip)
-                                promise.resolve(ip)
-                                return
+                                classCIP = ip
+                                break
                             }
-                            fallbackIp = ip
+                            if (ip.startsWith("172.20.10.")) {
+                                iphoneHotspotIp = ip
+                            } else {
+                                fallbackIp = ip
+                            }
                         }
                     }
                 }
             }
+
+            iphoneHotspotIp?.let {
+                ld("getLanIp (iPhone Hotspot)", it)
+                promise.resolve(it)
+                return
+            }
+
+            classCIP?.let {
+                ld("getLanIp (Class C)", it)
+                promise.resolve(it)
+                return
+            }
+
             fallbackIp?.let {
                 ld("getLanIp (Fallback)", it)
                 promise.resolve(it)
                 return
             }
+
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -256,7 +314,6 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         ld("getLanIp", "")
         promise.resolve("")
     }
-
     private fun isClassC(ip: String): Boolean {
         val parts = ip.split(".").mapNotNull { it.toIntOrNull() }
         return parts.size == 4 && parts[0] in 192..223

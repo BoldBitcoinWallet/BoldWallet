@@ -128,7 +128,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
               inBtcAmount,
               walletBalance,
             });
-            if (inBtcAmount === walletBalance.toString()) {
+            if (Big(inBtcAmount).eq(walletBalance)) {
               console.log({
                 inBtcAmount,
                 walletBalance,

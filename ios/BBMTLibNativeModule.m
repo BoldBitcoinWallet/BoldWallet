@@ -106,6 +106,22 @@ RCT_EXTERN_METHOD(disableLogging:(NSString *)tag
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+// Call setFeePolicy
+RCT_EXTERN_METHOD(setFeePolicy:(NSString *)policy
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+// Call setAPI
+RCT_EXTERN_METHOD(setAPI:(NSString *)network
+                  baseAPI:(NSString *)baseAPI
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+// Call totalUTXO
+RCT_EXTERN_METHOD(totalUTXO:(NSString *)address
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 // Call estimateFee
 RCT_EXTERN_METHOD(estimateFee:(NSString *)senderAddress
                   receiverAddress:(NSString *)receiverAddress

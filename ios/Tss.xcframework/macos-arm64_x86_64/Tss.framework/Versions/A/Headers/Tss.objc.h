@@ -11,6 +11,7 @@
 #include "Universe.objc.h"
 
 
+@class TssFeeResponse;
 @class TssKeygenRequest;
 @class TssKeygenResponse;
 @class TssKeysignRequest;
@@ -44,6 +45,19 @@
 - (BOOL)applyData:(NSString* _Nullable)p0 error:(NSError* _Nullable* _Nullable)error;
 - (TssKeygenResponse* _Nullable)keygenECDSA:(TssKeygenRequest* _Nullable)req error:(NSError* _Nullable* _Nullable)error;
 - (TssKeysignResponse* _Nullable)keysignECDSA:(TssKeysignRequest* _Nullable)req error:(NSError* _Nullable* _Nullable)error;
+@end
+
+@interface TssFeeResponse : NSObject <goSeqRefInterface> {
+}
+@property(strong, readonly) _Nonnull id _ref;
+
+- (nonnull instancetype)initWithRef:(_Nonnull id)ref;
+- (nonnull instancetype)init;
+@property (nonatomic) long fastestFee;
+@property (nonatomic) long halfHourFee;
+@property (nonatomic) long hourFee;
+@property (nonatomic) long economyFee;
+@property (nonatomic) long minimumFee;
 @end
 
 @interface TssKeygenRequest : NSObject <goSeqRefInterface> {
@@ -236,6 +250,8 @@ FOUNDATION_EXPORT void TssClearSessionLog(NSString* _Nullable session);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssConvertPubKeyToBTCAddress(NSString* _Nullable pubKeyCompressed, NSString* _Nullable mainnetORtestnet3, NSError* _Nullable* _Nullable error);
 
+FOUNDATION_EXPORT NSString* _Nonnull TssDecodeAddress(NSString* _Nullable address, NSError* _Nullable* _Nullable error);
+
 FOUNDATION_EXPORT void TssDisableLogs(void);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssDiscoverPeer(NSString* _Nullable id_, NSString* _Nullable pubkey, NSString* _Nullable localIP, NSString* _Nullable port, NSString* _Nullable timeout, NSError* _Nullable* _Nullable error);
@@ -245,11 +261,6 @@ FOUNDATION_EXPORT NSString* _Nonnull TssEciesDecrypt(NSString* _Nullable encrypt
 FOUNDATION_EXPORT NSString* _Nonnull TssEciesEncrypt(NSString* _Nullable data, NSString* _Nullable publicKeyHex, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssFetchData(NSString* _Nullable url, NSString* _Nullable decKey, NSError* _Nullable* _Nullable error);
-
-/**
- * FetchFeeRate fetches fee rates for a given confirmation target
- */
-FOUNDATION_EXPORT BOOL TssFetchFeeRate(long target, double* _Nullable ret0_, NSError* _Nullable* _Nullable error);
 
 // skipped function FetchUTXODetails with unsupported parameter or return types
 
@@ -301,6 +312,8 @@ FOUNDATION_EXPORT NSString* _Nonnull TssPostTx(NSString* _Nullable rawTxHex, NSE
 
 FOUNDATION_EXPORT NSString* _Nonnull TssPublishData(NSString* _Nullable port, NSString* _Nullable timeout, NSString* _Nullable enckey, NSString* _Nullable data, NSError* _Nullable* _Nullable error);
 
+FOUNDATION_EXPORT BOOL TssRecommendedFees(NSString* _Nullable feeType, long* _Nullable ret0_, NSError* _Nullable* _Nullable error);
+
 FOUNDATION_EXPORT NSString* _Nonnull TssRunRelay(NSString* _Nullable port, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssSecP256k1Recover(NSString* _Nullable r, NSString* _Nullable s, NSString* _Nullable v, NSString* _Nullable h, NSError* _Nullable* _Nullable error);
@@ -319,6 +332,12 @@ FOUNDATION_EXPORT NSString* _Nonnull TssSetNetwork(NSString* _Nullable network, 
 FOUNDATION_EXPORT NSString* _Nonnull TssSha256(NSString* _Nullable msg, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssStopRelay(NSError* _Nullable* _Nullable error);
+
+FOUNDATION_EXPORT NSString* _Nonnull TssTotalUTXO(NSString* _Nullable address, NSError* _Nullable* _Nullable error);
+
+FOUNDATION_EXPORT NSString* _Nonnull TssUseAPI(NSString* _Nullable network, NSString* _Nullable base, NSError* _Nullable* _Nullable error);
+
+FOUNDATION_EXPORT NSString* _Nonnull TssUseFeePolicy(NSString* _Nullable feeType, NSError* _Nullable* _Nullable error);
 
 @class TssLocalStateAccessor;
 
