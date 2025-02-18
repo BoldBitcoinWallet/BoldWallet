@@ -388,6 +388,20 @@ const MobilesPairing = ({navigation}: any) => {
       )
         .then(async (txId: any) => {
           console.log(partyID, 'txID', txId);
+          const pendingTxs = JSON.parse(
+            (await EncryptedStorage.getItem('pendingTxs')) || '{}',
+          );
+          pendingTxs[txId] = {
+            from: btcAddress,
+            to: route.params.toAddress,
+            satoshiAmount: route.params.satoshiAmount,
+            satoshiFees: route.params.satoshiFees,
+            sentAt: Date.now(),
+          };
+          await EncryptedStorage.setItem(
+            'pendingTxs',
+            JSON.stringify(pendingTxs),
+          );
           navigation.dispatch(
             CommonActions.reset({
               index: 0,
