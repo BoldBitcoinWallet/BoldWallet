@@ -188,7 +188,7 @@ const MobilesPairing = ({navigation}: any) => {
         console.log('data published:', published);
         return _data;
       } else {
-        throw "couldn't fetch data, please retry";
+        throw "Waited too long for other devices to press (Join Tx Co-Signing)";
       }
     } else {
       const kp = JSON.parse(keypair);
@@ -640,7 +640,7 @@ const MobilesPairing = ({navigation}: any) => {
         }
       } catch (e) {}
     }
-    throw "couldn't fetch data, please retry";
+    throw "Waited too long for other devices to press (Start Tx Co-Signing)";
   }
 
   async function listenForPeerPromise(
