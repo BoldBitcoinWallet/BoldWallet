@@ -7,6 +7,9 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import com.facebook.react.bridge.Callback
+import tss.GoLogListener
+
 import tss.Tss
 
 import java.net.NetworkInterface
@@ -14,20 +17,29 @@ import java.net.Inet4Address
 import java.util.Collections
 
 class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
-    ReactContextBaseJavaModule(reactContext) {
+    ReactContextBaseJavaModule(reactContext), GoLogListener {
 
     private var eventName: String = ""
-    private  var useLog = true
+    private var useLog = true
+    private var logCallback: Callback? = null
 
     init {
-        eventName = "BBMT_LIB_ANDROID"
+        eventName = "BBMT_DROID"
+    }
+
+    override fun onGoLog(msg: String?) {
+        msg?.let { ld("GoLog", it) }
     }
 
     @ReactMethod
-    fun addListener(eventName: String) { }
+    fun addListener(eventName: String) {
+        Tss.setEventListener(this)
+    }
 
     @ReactMethod
-    fun removeListeners(count: Int) { }
+    fun removeListeners(count: Int) {
+        Tss.setEventListener(null)
+    }
 
     private fun sendLogEvent(tag: String, msg: String) {
         try {
@@ -55,8 +67,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     override fun getConstants(): MutableMap<String, Any> {
         return mutableMapOf(
-            "LOG_EVENT_NAME" to "BBMT_LIB_ANDROID"
+            "LOG_EVENT_NAME" to "BBMT_DROID"
         )
+    }
+
+
+    @ReactMethod
+    fun setLogCallback(callback: Callback) {
+        Tss.setNetwork("")
+        logCallback = callback
     }
 
     @ReactMethod

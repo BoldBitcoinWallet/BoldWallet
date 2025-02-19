@@ -319,7 +319,7 @@ const TransactionList = ({
       const txConf = item.sentAt ? false : item.status.confirmed;
 
       const timestamp = txConf
-        ? txTime * 1000 < Date.now()
+        ? txTime < Date.now()
           ? moment(txTime).fromNow()
           : 'Recently confirmed'
         : 'Pending confirmation';
