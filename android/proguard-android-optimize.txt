@@ -1,0 +1,59 @@
+# Optimization configurations
+-optimizations !code/simplification/arithmetic,!field/*,!class/merging/*
+
+-optimizationpasses 5
+-allowaccessmodification
+-dontpreverify
+
+# Keep attributes
+-keepattributes *Annotation*
+
+# Keep public classes
+-keep public class * {
+    public protected *;
+}
+
+# Keep native methods
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
+# Keep setters in Views for animations
+-keepclassmembers public class * extends android.view.View {
+    void set*(***);
+    *** get*();
+}
+
+# Keep Activity methods used in XML onClick attributes
+-keepclassmembers class * extends android.app.Activity {
+    public void *(android.view.View);
+}
+
+# Keep Parcelable implementations
+-keepclassmembers class * implements android.os.Parcelable {
+    public static final android.os.Parcelable$Creator CREATOR;
+}
+
+# Keep resource references
+-keepclassmembers class **.R$* {
+    public static <fields>;
+}
+
+# Suppress warnings for support libraries
+-dontwarn android.support.**
+
+# Keep ML Kit Barcode Scanning classes
+-keep class com.google.mlkit.vision.barcode.** { *; }
+-keep class com.google.mlkit.vision.barcode.internal.** { *; }
+
+# Keep ML Kit Face Detection classes
+-keep class com.google.mlkit.vision.face.** { *; }
+-keep class com.google.mlkit.vision.face.internal.** { *; }
+
+# Keep ML Kit common classes
+-keep class com.google.mlkit.vision.common.** { *; }
+-keep class com.google.mlkit.vision.common.internal.** { *; }
+
+# Keep React Native Camera related classes
+-keep class org.reactnative.camera.** { *; }
+-keep class com.facebook.react.bridge.WritableArray { *; }

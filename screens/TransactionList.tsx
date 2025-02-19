@@ -14,6 +14,7 @@ import Toast from 'react-native-toast-message';
 import moment from 'moment';
 import theme from '../theme';
 import {debounce} from 'lodash';
+import EncryptedStorage from 'react-native-encrypted-storage';
 
 const TransactionList = ({
   address,
@@ -38,7 +39,8 @@ const TransactionList = ({
   const isMounted = useRef(true);
   const abortController = useRef<AbortController | null>(null);
 
-  const updatePendings = function (txs: any[]) {
+  function updatePendings(txs: any[], cached: any) {
+    console.log('cached', cached);
     let pending = 0;
     let pendingTxs = txs
       .filter(tx => !tx.status || !tx.status.confirmed)
@@ -47,10 +49,30 @@ const TransactionList = ({
         if (!isNaN(sent) && sent > 0) {
           pending += Number(sent);
         }
+        if (cached[tx.txid]) {
+          delete cached[tx.txid];
+          console.log('delete from cache', tx.txid);
+          EncryptedStorage.setItem('pendingTxs', JSON.stringify(cached));
+        }
         return tx;
       });
+
+    // any push pending-cached
+    for (const txID in cached) {
+      console.log('prepending from cache', txID, cached[txID]);
+      txs.unshift({
+        txid: txID,
+        from: cached[txID].from,
+        to: cached[txID].to,
+        amount: cached[txID].amount,
+        sentAt: cached[txID].sentAt,
+      });
+    }
+
     onUpdate(pendingTxs, pending);
-  };
+
+    return txs;
+  }
 
   const fetchTransactions = useCallback(async (url: string) => {
     // Check both loading state and our ref
@@ -75,10 +97,15 @@ const TransactionList = ({
         signal: abortController.current.signal,
       });
       if (isMounted.current) {
-        const newTransactions = response.data.sort(
-          (a: any, b: any) => b.status.block_height - a.status.block_height,
+        const cached = JSON.parse(
+          (await EncryptedStorage.getItem('pendingTxs')) || '{}',
         );
-        updatePendings(newTransactions);
+        const newTransactions = updatePendings(
+          response.data.sort(
+            (a: any, b: any) => b.status.block_height - a.status.block_height,
+          ),
+          cached,
+        );
         setTransactions(newTransactions);
         setHasMoreTransactions(newTransactions.length > 0);
         if (newTransactions.length > 0) {
@@ -154,13 +181,17 @@ const TransactionList = ({
           return;
         }
 
+        const cached = JSON.parse(
+          (await EncryptedStorage.getItem('pendingTxs')) || '{}',
+        );
+
         setTransactions(prevTransactions => {
           const existingIds = new Set(prevTransactions.map(tx => tx.txid));
           const filteredTransactions = newTransactions.filter(
             (tx: any) => !existingIds.has(tx.txid),
           );
           const txs = [...prevTransactions, ...filteredTransactions];
-          updatePendings(txs);
+          updatePendings(txs, cached);
           return txs;
         });
 
@@ -203,6 +234,19 @@ const TransactionList = ({
 
   // Memoized transaction amount calculator
   const getTransactionAmounts = useCallback((tx: any, addr: string) => {
+    if (tx.sentAt) {
+      const self =
+        String(tx.from).toLowerCase() === String(tx.to).toLowerCase();
+      const sent = self ? 0 : tx.satoshiAmount;
+      const chng = self ? sent : 0;
+      const rcvd = self ? sent : 0;
+      return {
+        sent: tx.amount / 1e8,
+        changeAmount: chng / 1e8,
+        received: rcvd / 1e8,
+      };
+    }
+
     const sentAmount = tx.vin.reduce((total: number, input: any) => {
       return input.prevout.scriptpubkey_address === addr
         ? total + input.prevout.value
@@ -234,6 +278,12 @@ const TransactionList = ({
   // Memoized transaction status checker
   const getTransactionStatus = useCallback(
     (tx: any) => {
+      if (tx.sentAt) {
+        return {
+          confirmed: false,
+          text: '⏳ Sending',
+        };
+      }
       if (!tx.status.confirmed) {
         return {
           confirmed: false,
@@ -264,10 +314,14 @@ const TransactionList = ({
         item,
         address,
       );
-      const timestamp = item.status.confirmed
-        ? item.status.block_time * 1000 < Date.now()
-          ? moment(item.status.block_time * 1000).fromNow()
-          : 'recently confirmed'
+
+      const txTime = item.sentAt || item.status.block_time * 1000;
+      const txConf = item.sentAt ? false : item.status.confirmed;
+
+      const timestamp = txConf
+        ? txTime * 1000 < Date.now()
+          ? moment(txTime).fromNow()
+          : 'Recently confirmed'
         : 'Pending confirmation';
 
       const shortTxId = `${item.txid.slice(0, 4)}...${item.txid.slice(-4)}`;
