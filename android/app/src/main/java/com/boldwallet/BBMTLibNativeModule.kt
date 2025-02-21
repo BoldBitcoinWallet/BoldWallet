@@ -267,10 +267,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun discoverPeer(id: String, pubkey: String, localIP: String, port: String, timeout: String, promise: Promise) {
+    fun discoverPeer(id: String, pubkey: String, localIP: String, remoteIP: String, port: String, timeout: String, promise: Promise) {
         Thread {
             try {
-                val peer = Tss.discoverPeer(id, pubkey, localIP, port, timeout)
+                val peer = Tss.discoverPeer(id, pubkey, localIP, remoteIP, port, timeout)
                 ld("discoverPeer", peer)
                 promise.resolve(peer)
             } catch (e: Throwable) {
@@ -333,6 +333,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         ld("getLanIp", "")
         promise.resolve("")
     }
+    
     private fun isClassC(ip: String): Boolean {
         val parts = ip.split(".").mapNotNull { it.toIntOrNull() }
         return parts.size == 4 && parts[0] in 192..223

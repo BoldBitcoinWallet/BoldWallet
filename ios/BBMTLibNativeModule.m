@@ -59,6 +59,7 @@ RCT_EXTERN_METHOD(listenForPeer:(NSString *)id
 RCT_EXTERN_METHOD(discoverPeer:(NSString *)id
                   pubkey:(NSString *)pubkey
                   localIp:(NSString *)localIp
+                  remoteIp:(NSString *)remoteIp
                   port:(NSString *)port
                   timeout:(NSString *)timeout
                   resolver:(RCTPromiseResolveBlock)resolve
@@ -76,7 +77,7 @@ RCT_EXTERN_METHOD(stopRelay:(NSString *)tag
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 // Call fetchData
-RCT_EXTERN_METHOD(fetchData:(NSString *)url
+RCT_EXTERN_METHOD(fetchData:(NSString *)url	
                   decKey:(NSString *)decKey
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)

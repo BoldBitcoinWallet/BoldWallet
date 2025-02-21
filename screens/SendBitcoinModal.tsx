@@ -25,6 +25,7 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import debounce from 'lodash/debounce';
 import theme from '../theme';
 import Big from 'big.js';
+import { dbg } from '../utils';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -119,17 +120,17 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       )
         .then((fee: string) => {
           if (fee) {
-            console.log('got fees:', fee);
+            dbg('got fees:', fee);
             const feeAmt = Big(fee).times(1.25).lt(512)
               ? Big(512)
               : Big(fee).times(1.25);
             setEstimatedFee(feeAmt);
-            console.log({
+            dbg('amounts', {
               inBtcAmount,
               walletBalance,
             });
             if (Big(inBtcAmount).eq(walletBalance)) {
-              console.log({
+              dbg({
                 inBtcAmount,
                 walletBalance,
               });
@@ -201,7 +202,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     }
     const feeBTC = estimatedFee.div(1e8);
     const totalAmount = Big(inBtcAmount).add(feeBTC);
-    console.log({totalAmount, feeBTC, btcAmount, walletBalance});
+    dbg({totalAmount, feeBTC, btcAmount, walletBalance});
     if (totalAmount.gt(walletBalance)) {
       Alert.alert('Error', 'Total amount including fee exceeds wallet balance');
       return;

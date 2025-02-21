@@ -18,6 +18,7 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 const {BBMTLibNativeModule} = NativeModules;
 
 import theme from '../theme';
+import { dbg } from '../utils';
 
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [deleteInput, setDeleteInput] = useState('');
@@ -78,7 +79,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
   const saveAPI = async (api: string) => {
     setBaseAPI(api);
-    console.log('value', api);
+    dbg('value', api);
     EncryptedStorage.getItem('network').then(net => {
       EncryptedStorage.setItem('api', api);
       BBMTLibNativeModule.setAPI(net, api);

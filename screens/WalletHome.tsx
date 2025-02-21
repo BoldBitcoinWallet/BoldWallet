@@ -18,6 +18,7 @@ import {useCameraPermission} from 'react-native-vision-camera';
 import {CommonActions} from '@react-navigation/native';
 import Big from 'big.js';
 import ReceiveModal from './ReceiveModal';
+import { dbg } from '../utils';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -81,7 +82,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         net = netParams.split('@')[0];
 
         let base = netParams.split('@')[1];
-        console.log('apiBase', base);
+        dbg('apiBase', base);
         setApiBase(base);
         setParty(ks.local_party_key);
 
@@ -92,11 +93,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         // override APIs if set
         let api = await EncryptedStorage.getItem('api');
         if (api) {
-          console.log('switching to net:', net, 'api:', api);
+          dbg('switching to net:', net, 'api:', api);
           setApiBase(api);
           BBMTLibNativeModule.setAPI(net, api);
         } else {
-          console.log('using net:', net, 'api:', base);
+          dbg('using net:', net, 'api:', base);
           await EncryptedStorage.setItem('api', base);
           BBMTLibNativeModule.setAPI(net, base);
         }
@@ -142,8 +143,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     pendingTxs: any[],
     pendingSentTotal: number,
   ) {
-    console.log('pending txs', pendingTxs);
-    console.log('pending sent', pendingSentTotal);
+    dbg('pending txs', pendingTxs);
+    dbg('pending sent', pendingSentTotal);
     setPendingSent(pendingSentTotal);
   }
 

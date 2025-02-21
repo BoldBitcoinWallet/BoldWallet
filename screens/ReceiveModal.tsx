@@ -14,6 +14,7 @@ import QRCode from 'react-native-qrcode-svg';
 import Clipboard from '@react-native-clipboard/clipboard';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
+import { dbg } from '../utils';
 
 const ReceiveModal: React.FC<{
   visible: boolean;
@@ -35,17 +36,17 @@ const ReceiveModal: React.FC<{
   }, [address]);
 
   async function shareQRCode() {
-    console.log('shareQRCode...');
+    dbg('shareQRCode...');
     try {
-      console.log('Sharing QR');
+      dbg('Sharing QR');
       const filePath = `${RNFS.TemporaryDirectoryPath}/bitcoin-${network}-address.jpg`;
       // Check if the file already exists
       const fileExists = await RNFS.exists(filePath);
       if (fileExists) {
-        console.log('File Delete.');
+        dbg('File Delete.');
         await RNFS.unlink(filePath);
       }
-      console.log('File write.');
+      dbg('File write.');
       await RNFS.writeFile(filePath, base64Image, 'base64');
       Share.open({
         title: 'Bitcoin Receive Address',
@@ -56,7 +57,7 @@ const ReceiveModal: React.FC<{
         failOnCancel: false,
       })
         .then(result => {
-          console.log('Result sharing', result);
+          dbg('Result sharing', result);
         })
         .catch((e: any) => {
           console.error('Error sharing', e);
@@ -96,7 +97,7 @@ const ReceiveModal: React.FC<{
                 setTimeout(() => {
                   c?.toDataURL((base64Data: any) => {
                     if (base64Data) {
-                      console.log('setting base64Data');
+                      dbg('setting base64Data');
                       setBase64Image(base64Data);
                     }
                   });

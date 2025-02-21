@@ -15,6 +15,7 @@ import moment from 'moment';
 import theme from '../theme';
 import {debounce} from 'lodash';
 import EncryptedStorage from 'react-native-encrypted-storage';
+import { dbg } from '../utils';
 
 const TransactionList = ({
   address,
@@ -40,7 +41,7 @@ const TransactionList = ({
   const abortController = useRef<AbortController | null>(null);
 
   function updatePendings(txs: any[], cached: any) {
-    console.log('cached', cached);
+    dbg('cached', cached);
     let pending = 0;
     let pendingTxs = txs
       .filter(tx => !tx.status || !tx.status.confirmed)
@@ -51,7 +52,7 @@ const TransactionList = ({
         }
         if (cached[tx.txid]) {
           delete cached[tx.txid];
-          console.log('delete from cache', tx.txid);
+          dbg('delete from cache', tx.txid);
           EncryptedStorage.setItem('pendingTxs', JSON.stringify(cached));
         }
         return tx;
@@ -59,7 +60,7 @@ const TransactionList = ({
 
     // any push pending-cached
     for (const txID in cached) {
-      console.log('prepending from cache', txID, cached[txID]);
+      dbg('prepending from cache', txID, cached[txID]);
       txs.unshift({
         txid: txID,
         from: cached[txID].from,
@@ -77,13 +78,13 @@ const TransactionList = ({
   const fetchTransactions = useCallback(async (url: string) => {
     // Check both loading state and our ref
     if (loading || !isMounted.current || isFetching.current) {
-      console.log('Skipping duplicate fetch...');
+      dbg('Skipping duplicate fetch...');
       return;
     }
 
     // Set our fetching ref
     isFetching.current = true;
-    console.log('fetching...');
+    dbg('fetching...');
 
     // Cancel any ongoing requests
     if (abortController.current) {
@@ -114,7 +115,7 @@ const TransactionList = ({
       }
     } catch (error: any) {
       if (error.name === 'CanceledError') {
-        console.log('Request canceled');
+        dbg('Request canceled');
       } else {
         console.error('Error fetching transactions:', error);
         Toast.show({
