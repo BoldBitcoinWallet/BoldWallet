@@ -15,7 +15,7 @@ import moment from 'moment';
 import theme from '../theme';
 import {debounce} from 'lodash';
 import EncryptedStorage from 'react-native-encrypted-storage';
-import { dbg } from '../utils';
+import {dbg} from '../utils';
 
 const TransactionList = ({
   address,
@@ -50,15 +50,19 @@ const TransactionList = ({
         if (!isNaN(sent) && sent > 0) {
           pending += Number(sent);
         }
-        if (cached[tx.txid]) {
-          delete cached[tx.txid];
-          dbg('delete from cache', tx.txid);
-          EncryptedStorage.setItem('pendingTxs', JSON.stringify(cached));
-        }
         return tx;
       });
 
-    // any push pending-cached
+    txs.filter(tx => {
+      dbg('checking tx:', tx.txid);
+      if (cached[tx.txid]) {
+        delete cached[tx.txid];
+        dbg('delete from cache', tx.txid);
+        EncryptedStorage.setItem('pendingTxs', JSON.stringify(cached));
+      }
+    });
+
+    // rany push pending-cached
     for (const txID in cached) {
       dbg('prepending from cache', txID, cached[txID]);
       txs.unshift({
