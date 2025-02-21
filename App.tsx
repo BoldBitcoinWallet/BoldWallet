@@ -1,14 +1,14 @@
 // App.tsx
-import React, {useEffect, useState} from 'react';
-import {NavigationContainer} from '@react-navigation/native';
-import {createStackNavigator} from '@react-navigation/stack';
+import React, { useEffect, useState } from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createStackNavigator } from '@react-navigation/stack';
 import ShowcaseScreen from './screens/ShowcaseScreen';
 import WalletHome from './screens/WalletHome';
 import MobilesPairing from './screens/MobilesPairing';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import LoadingScreen from './screens/LoadingScreen';
-import Zeroconf, {ImplType} from 'react-native-zeroconf';
-import ReactNativeBiometrics, {BiometryTypes} from 'react-native-biometrics';
+import Zeroconf, { ImplType } from 'react-native-zeroconf';
+import ReactNativeBiometrics, { BiometryTypes } from 'react-native-biometrics';
 import DeviceInfo from 'react-native-device-info';
 
 import {
@@ -18,12 +18,12 @@ import {
   Platform,
 } from 'react-native';
 import WalletSettings from './screens/WalletSettings';
-import {NativeModules} from 'react-native';
-import {dbg, pinRemoteIP} from './utils';
-const {BBMTLibNativeModule} = NativeModules;
+import { NativeModules } from 'react-native';
+import { dbg, pinRemoteIP } from './utils';
+const { BBMTLibNativeModule } = NativeModules;
 
 const Stack = createStackNavigator();
-const rnBiometrics = new ReactNativeBiometrics({allowDeviceCredentials: true});
+const rnBiometrics = new ReactNativeBiometrics({ allowDeviceCredentials: true });
 
 const App = () => {
   const zeroconf = new Zeroconf();
@@ -37,7 +37,7 @@ const App = () => {
       'local.',
       'bold_bitcoin_wallet',
       55056,
-      {txt: 'bold_bitcoin_wallet', id: deviceID},
+      { txt: 'bold_bitcoin_wallet', id: deviceID },
       ImplType.NSD,
     );
     return () => {
@@ -84,11 +84,11 @@ const App = () => {
       BBMTLibNativeModule.disableLogging('ok')
         .then((feedback: any) => {
           if (feedback === 'ok') {
-            console.log = () => {};
-            console.warn = () => {};
-            console.error = () => {};
-            console.debug = () => {};
-            console.info = () => {};
+            console.log = () => { };
+            console.warn = () => { };
+            console.error = () => { };
+            console.debug = () => { };
+            console.info = () => { };
           } else {
             console.warn('could not disable logging');
           }
@@ -121,7 +121,7 @@ const App = () => {
 
   const authenticateUser = async () => {
     try {
-      const {available, biometryType} = await rnBiometrics.isSensorAvailable();
+      const { available, biometryType } = await rnBiometrics.isSensorAvailable();
 
       if (!available) {
         setIsAuthenticated(true);
@@ -134,7 +134,7 @@ const App = () => {
           biometryType === BiometryTypes.FaceID ||
           biometryType === BiometryTypes.Biometrics)
       ) {
-        const {success} = await rnBiometrics.simplePrompt({
+        const { success } = await rnBiometrics.simplePrompt({
           promptMessage: 'Authenticate to access your wallet',
           fallbackPromptMessage: 'Use your device passcode to unlock',
         });
@@ -153,11 +153,11 @@ const App = () => {
                 },
               },
             ],
-            {cancelable: false},
+            { cancelable: false },
           );
         }
       } else {
-        const {success} = await rnBiometrics.simplePrompt({
+        const { success } = await rnBiometrics.simplePrompt({
           promptMessage: 'Enter your device passcode to unlock',
         });
 
@@ -175,7 +175,7 @@ const App = () => {
                 },
               },
             ],
-            {cancelable: false},
+            { cancelable: false },
           );
         }
       }
@@ -214,7 +214,7 @@ const App = () => {
         <Stack.Screen
           name="📱📱 Pairing"
           component={MobilesPairing}
-          initialParams={{mode: 'setup'}}
+          initialParams={{ mode: 'setup' }}
         />
         <Stack.Screen name="Wallet Settings" component={WalletSettings} />
       </Stack.Navigator>

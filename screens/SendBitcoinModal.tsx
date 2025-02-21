@@ -15,6 +15,7 @@ import {
   Image,
   ActivityIndicator,
   NativeModules,
+  ScrollView,
 } from 'react-native';
 import {
   Camera,
@@ -25,7 +26,8 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import debounce from 'lodash/debounce';
 import theme from '../theme';
 import Big from 'big.js';
-import { dbg } from '../utils';
+import {dbg} from '../utils';
+import EncryptedStorage from 'react-native-encrypted-storage';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -78,6 +80,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   const [isCalculatingFee, setIsCalculatingFee] = useState(false);
 
   const [activeInput, setActiveInput] = useState<'btc' | 'usd' | null>(null);
+  const [feeStrategy, setFeeStrategy] = useState('1hr');
 
   const device = useCameraDevice('back');
   const codeScanner = useCodeScanner({
@@ -90,6 +93,14 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     },
   });
 
+  const feeStrategies = [
+    {label: 'Economy', value: 'eco'},
+    {label: 'Top Priority', value: 'top'},
+    {label: '30 Min', value: '30m'},
+    {label: '1 Hour', value: '1hr'},
+    {label: 'Minimum', value: 'min'},
+  ];
+
   const formatUSD = (price: number) =>
     new Intl.NumberFormat('en-US', {
       style: 'decimal',
@@ -97,7 +108,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       maximumFractionDigits: 2,
     }).format(price);
 
-  // Create a debounced version of getEstimateFee
   const debouncedGetFee = useCallback(
     debounce(async (addr: string, amt: string) => {
       if (!addr || !amt || btcAmount.eq(0)) {
@@ -121,19 +131,9 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
         .then((fee: string) => {
           if (fee) {
             dbg('got fees:', fee);
-            const feeAmt = Big(fee).times(1.25).lt(512)
-              ? Big(512)
-              : Big(fee).times(1.25);
+            const feeAmt = Big(fee);
             setEstimatedFee(feeAmt);
-            dbg('amounts', {
-              inBtcAmount,
-              walletBalance,
-            });
             if (Big(inBtcAmount).eq(walletBalance)) {
-              dbg({
-                inBtcAmount,
-                walletBalance,
-              });
               setInBtcAmount(walletBalance.minus(feeAmt.div(1e8)).toString());
             }
           }
@@ -146,10 +146,19 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
           setIsCalculatingFee(false);
         });
     }, 1000),
-    [inBtcAmount, walletAddress],
+    [inBtcAmount, walletAddress, feeStrategy],
   );
 
-  // Update fee when inputs change
+  useEffect(() => {
+    const initFee = async () => {
+      const feeOption = await EncryptedStorage.getItem('feeStrategy');
+      setFeeStrategy(feeOption || 'eco');
+      BBMTLibNativeModule.setFeePolicy(feeOption || 'eco');
+      console.log('using fee strategy', feeOption);
+    };
+    initFee();
+  }, []);
+
   useEffect(() => {
     if (address && btcAmount) {
       debouncedGetFee(address, btcAmount.toString());
@@ -163,7 +172,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
 
   const handleBtcChange = (text: string) => {
     setActiveInput('btc');
-    setInBtcAmount(text); // Update the raw input value first
+    setInBtcAmount(text);
     try {
       const btc = Big(text || 0);
       setBtcAmount(btc);
@@ -177,11 +186,11 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
 
   const handleUsdChange = (text: string) => {
     setActiveInput('usd');
-    setInUsdAmount(text); // Update the raw input value first
+    setInUsdAmount(text);
     try {
       const usd = Big(text || 0);
       if (activeInput === 'usd') {
-        setBtcAmount(usd.div(btcToUsdRate)); // Sync only if this input is active
+        setBtcAmount(usd.div(btcToUsdRate));
         setInBtcAmount(usd.div(btcToUsdRate).toFixed(8));
       }
     } catch {
@@ -195,6 +204,13 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     setInUsdAmount(walletBalance.times(btcToUsdRate).toFixed(2));
   };
 
+  const handleFeeStrategyChange = (value: string) => {
+    setFeeStrategy(value);
+    console.log('setting fee strategy to', value);
+    BBMTLibNativeModule.setFeePolicy(value);
+    EncryptedStorage.setItem('feeStrategy', value);
+  };
+
   const handleSendClick = () => {
     if (!estimatedFee) {
       Alert.alert('Error', 'Please wait for fee estimation');
@@ -202,7 +218,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     }
     const feeBTC = estimatedFee.div(1e8);
     const totalAmount = Big(inBtcAmount).add(feeBTC);
-    dbg({totalAmount, feeBTC, btcAmount, walletBalance});
     if (totalAmount.gt(walletBalance)) {
       Alert.alert('Error', 'Total amount including fee exceeds wallet balance');
       return;
@@ -216,7 +231,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     }
     return (
       <View style={styles.feeContainer}>
-        <Text style={styles.feeLabel}>Network Fee:</Text>
         {isCalculatingFee ? (
           <View style={styles.feeLoadingContainer}>
             <ActivityIndicator size="small" color={theme.colors.primary} />
@@ -224,6 +238,30 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
           </View>
         ) : estimatedFee ? (
           <View style={styles.feeInfoContainer}>
+            <View style={styles.feeStrategyContainer}>
+              <Text style={styles.label}>Network Fee:</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {feeStrategies.map(strategy => (
+                  <TouchableOpacity
+                    key={strategy.value}
+                    style={[
+                      styles.feeStrategyButton,
+                      feeStrategy === strategy.value &&
+                        styles.feeStrategyButtonSelected,
+                    ]}
+                    onPress={() => handleFeeStrategyChange(strategy.value)}>
+                    <Text
+                      style={[
+                        styles.feeStrategyText,
+                        feeStrategy === strategy.value &&
+                          styles.feeStrategyTextSelected,
+                      ]}>
+                      {strategy.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
             <View style={styles.feeAmountContainer}>
               <Text style={styles.feeAmount}>
                 {estimatedFee.div(E8).toFixed(8)} BTC
@@ -340,7 +378,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                   </TouchableOpacity>
                 </View>
 
-                {/* QR Scanner Modal */}
                 <Modal
                   animationType="slide"
                   transparent={false}
@@ -362,6 +399,36 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
 };
 
 const styles = StyleSheet.create({
+  feeStrategyContainer: {
+    marginBottom: 10,
+  },
+  feeStrategyButton: {
+    backgroundColor: '#e9ecef',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  feeStrategyButtonSelected: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  feeStrategyText: {
+    fontSize: 14,
+    color: '#495057',
+    fontWeight: '600',
+  },
+  feeStrategyTextSelected: {
+    color: '#fff',
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+    color: '#7f8c8d',
+  },
   modalBackdrop: {
     flex: 1,
     justifyContent: 'center',
@@ -464,7 +531,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: theme.colors.text,
-    marginRight: 10, // Add some space between BTC and USD amounts
   },
   feeCalculating: {
     marginLeft: 10,
@@ -472,20 +538,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   feeAmountContainer: {
-    flexDirection: 'row', // Align children in a row
-    alignItems: 'center', // Center items vertically within the row
-    justifyContent: 'space-between', // Space between BTC and USD amounts
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   feeLoadingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center', // Center the loading indicator and text
+    justifyContent: 'center',
     marginTop: 5,
   },
   feeAmountUsd: {
     fontSize: 14,
     color: '#7f8c8d',
-    marginTop: 2,
   },
   sendCancelButtons: {
     flexDirection: 'row',
@@ -515,82 +580,6 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.5,
-  },
-  confirmationBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  confirmationContainer: {
-    width: '90%',
-    backgroundColor: theme.colors.background,
-    borderRadius: 10,
-    padding: 20,
-  },
-  confirmationHeader: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 20,
-    color: theme.colors.text,
-  },
-  confirmationDetails: {
-    marginBottom: 20,
-  },
-  confirmationLabel: {
-    fontSize: 14,
-    color: '#7f8c8d',
-    marginTop: 10,
-  },
-  addressText: {
-    fontSize: 14,
-    color: theme.colors.text,
-    marginTop: 5,
-    marginBottom: 10,
-  },
-  confirmationValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-  },
-  confirmationUsdValue: {
-    fontSize: 14,
-    color: '#7f8c8d',
-    marginBottom: 10,
-  },
-  totalContainer: {
-    marginTop: 15,
-    paddingTop: 15,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.secondary,
-  },
-  totalLabel: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-  },
-  totalValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: theme.colors.primary,
-  },
-  totalUsdValue: {
-    fontSize: 14,
-    color: '#7f8c8d',
-  },
-  confirmationButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-  },
-  confirmButton: {
-    flex: 1,
-    backgroundColor: theme.colors.primary,
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginRight: 10,
   },
   scannerContainer: {
     flex: 1,

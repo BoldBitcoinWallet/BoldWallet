@@ -802,7 +802,7 @@ const MobilesPairing = ({navigation}: any) => {
                     <Text style={styles.checkboxLabel}>{item.label}</Text>
                   </TouchableOpacity>
                 ))}
-                <Text style={styles.securityText}>
+                <Text style={styles.pairingHint}>
                   → For better security, privay and reliability - it's
                   recommended to keep one device in Hotspot mode and connect the
                   other to it.
