@@ -18,7 +18,7 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 const {BBMTLibNativeModule} = NativeModules;
 
 import theme from '../theme';
-import { dbg } from '../utils';
+import {dbg} from '../utils';
 
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [deleteInput, setDeleteInput] = useState('');
@@ -156,6 +156,26 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.contentContainer}>
+          <Text style={styles.title}>Network</Text>
+          {/* Network */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Network</Text>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.networkLabel}>Mainnet</Text>
+              <Switch
+                trackColor={{
+                  true: theme.colors.primary,
+                  false: theme.colors.accent,
+                }}
+                thumbColor={theme.colors.accent}
+                ios_backgroundColor={theme.colors.secondary}
+                onValueChange={toggleNetwork}
+                value={isTestnet}
+              />
+              <Text style={styles.networkLabel}>Testnet3</Text>
+            </View>
+          </View>
+
           <Text style={styles.title}>Backup & Reset</Text>
 
           {/* Backup Wallet Section */}
@@ -189,26 +209,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           </View>
 
           <Text style={styles.title}>Advanced</Text>
-
-          {/* Network */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Network</Text>
-            <View style={styles.toggleContainer}>
-              <Text style={styles.networkLabel}>Mainnet</Text>
-              <Switch
-                trackColor={{
-                  true: theme.colors.primary,
-                  false: theme.colors.accent,
-                }}
-                thumbColor={theme.colors.accent}
-                ios_backgroundColor={theme.colors.secondary}
-                onValueChange={toggleNetwork}
-                value={isTestnet}
-              />
-              <Text style={styles.networkLabel}>Testnet3</Text>
-            </View>
-          </View>
-
           {/* API Wallet Section */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>API Base</Text>
@@ -440,7 +440,7 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   title: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     marginTop: 10,
     marginBottom: 24,
@@ -465,13 +465,13 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     marginBottom: 12,
     color: '#34495e',
   },
   sectionDescription: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#2c3e50',
     marginBottom: 16,
   },
