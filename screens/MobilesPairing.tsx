@@ -583,10 +583,10 @@ const MobilesPairing = ({navigation}: any) => {
       let until = Date.now() + timeout * 1000;
       let result = await Promise.race(promises);
       while (!result && Date.now() < until) {
-        console.log('checking peer...');
+        dbg('checking peer...');
         result = await EncryptedStorage.getItem('peerFound');
         if (result) {
-          console.log('checking peer ok...');
+          dbg('checking peer ok...');
           break;
         } else {
           await waitMS(1000);
@@ -715,7 +715,7 @@ const MobilesPairing = ({navigation}: any) => {
     const discoveryTimeout = 3;
     let backOff = 1;
     const pinnedIP = getPinnedRemoteIP();
-    console.log({
+    dbg({
       pinnedIP,
       ip,
     });

@@ -154,7 +154,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       const feeOption = await EncryptedStorage.getItem('feeStrategy');
       setFeeStrategy(feeOption || 'eco');
       BBMTLibNativeModule.setFeePolicy(feeOption || 'eco');
-      console.log('using fee strategy', feeOption);
+      dbg('using fee strategy', feeOption);
     };
     initFee();
   }, []);
@@ -206,7 +206,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
 
   const handleFeeStrategyChange = (value: string) => {
     setFeeStrategy(value);
-    console.log('setting fee strategy to', value);
+    dbg('setting fee strategy to', value);
     BBMTLibNativeModule.setFeePolicy(value);
     EncryptedStorage.setItem('feeStrategy', value);
   };
