@@ -186,8 +186,6 @@ const App = () => {
   };
 
   const initializeApp = async () => {
-    await authenticateUser();
-
     EncryptedStorage.getItem('keyshare').then(ks => {
       setInitialRoute(ks ? 'Bold Home' : 'Bold BTC Wallet');
     });
