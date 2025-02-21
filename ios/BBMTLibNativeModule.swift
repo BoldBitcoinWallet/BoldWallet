@@ -11,12 +11,18 @@ import SystemConfiguration.CaptiveNetwork
 import Network
 
 @objc(BBMTLibNativeModule)
-class BBMTLibNativeModule: RCTEventEmitter {
+class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol {
   
   var useLog: Bool = true
+
+  func onGoLog(_ message: String?) {
+    if let msg = message {
+      self.sendLogEvent("GoLog", msg)
+    }
+  }
   
   override func supportedEvents() -> [String] {
-    return ["BBMT_LIB_IOS"]
+    return ["BBMT_APPLE"]
   }
   
   private func resolve(_ tag: String, _ output: String, _ error: NSError?, _ resolver: @escaping RCTPromiseResolveBlock) {
@@ -33,7 +39,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
     if useLog {
       let params: [String: Any] = ["tag": tag, "message": message]
       print(tag + ": " + message);
-      sendEvent(withName: "BBMT_LIB_IOS", body: params)
+      sendEvent(withName: "BBMT_APPLE", body: params)
     }
   }
   
@@ -332,9 +338,11 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
   
   @objc override func startObserving() {
+    TssSetEventListener(self)
   }
   
   @objc override func stopObserving() {
+    TssSetEventListener(nil)
   }
   
   @objc override static func requiresMainQueueSetup() -> Bool {

@@ -40,8 +40,10 @@ const MobilesPairing = ({navigation}: any) => {
 
   const [status, setStatus] = useState('');
   const [localIP, setLocalIP] = useState<string | null>(null);
+  const [localID, setLocalID] = useState<string | null>(null);
   const [localDevice, setLocalDevice] = useState<string | null>(null);
   const [peerIP, setPeerIP] = useState<string | null>(null);
+  const [remoteID, setRemoteID] = useState<String | null>(null);
   const [peerDevice, setPeerDevice] = useState<string | null>(null);
   const [peerParty, setPeerParty] = useState<string | null>(null);
   const [isPairing, setIsPairing] = useState(false);
@@ -562,6 +564,12 @@ const MobilesPairing = ({navigation}: any) => {
       ];
       if (ip) {
         setLocalIP(ip);
+        setLocalID(
+          (await BBMTLibNativeModule.sha256(`${deviceName}${ip}`)).substring(
+            0,
+            4,
+          ).toUpperCase(),
+        );
         promises.push(
           discoverPeerPromise(
             stringToHex(`${deviceName}@${ks.local_party_key}`),
@@ -583,10 +591,14 @@ const MobilesPairing = ({navigation}: any) => {
         const peerInfo = raw[0].split('@');
         const _peerIP = peerInfo[0].split(':')[0];
         setPeerIP(_peerIP);
-
         const _peerDevicePartyID = hexToString(peerInfo[1]).split('@');
         const _peerDevice = _peerDevicePartyID[0];
         const _peerParty = _peerDevicePartyID[1];
+        setRemoteID(
+          (
+            await BBMTLibNativeModule.sha256(`${_peerDevice}${_peerIP}`)
+          ).substring(0, 4).toUpperCase(),
+        );
         setPeerDevice(_peerDevice);
         setPeerParty(_peerParty);
         if (localShare && _peerParty && localShare === _peerParty) {
@@ -599,7 +611,11 @@ const MobilesPairing = ({navigation}: any) => {
         const localInfo = raw[1].split('@');
         const _localIP = localInfo[0].split(':')[0];
         setLocalIP(_localIP);
-
+        setLocalID(
+          (
+            await BBMTLibNativeModule.sha256(`${deviceName}${_localIP}`)
+          ).substring(0, 4).toUpperCase(),
+        );
         const thisIDs = _localIP.split(':')[0];
         const nextIDs = _peerIP.split(':')[0];
         const thisID = Number(thisIDs.split('.')[3]);
@@ -772,7 +788,11 @@ const MobilesPairing = ({navigation}: any) => {
                       ]}
                     />
                     {localDevice && (
-                      <Text style={styles.deviceName}>{localDevice}</Text>
+                      <Text style={styles.deviceName}>
+                        {localDevice}
+                        {'\n'}
+                        {localID}
+                      </Text>
                     )}
                   </View>
                   <View style={styles.statusLine}>
@@ -800,13 +820,15 @@ const MobilesPairing = ({navigation}: any) => {
                     {peerIP && (
                       <Text style={styles.deviceName}>
                         {peerDevice || 'Peer Device'}
+                        {'\n'}
+                        {remoteID}
                       </Text>
                     )}
                   </View>
                 </View>
                 {/* Show Countdown Timer During Pairing */}
                 {isPairing && !peerIP && (
-                  <View style={{marginTop: 10}}>
+                  <View style={{marginTop: 20}}>
                     <Text style={styles.statusText}>{status}</Text>
                     <Text style={styles.countdownText}>
                       Time remaining: {countdown} seconds
@@ -1296,7 +1318,7 @@ const styles = StyleSheet.create({
   },
   deviceName: {
     position: 'absolute',
-    bottom: -30,
+    bottom: -40,
     fontSize: 14,
     fontWeight: '500',
     color: theme.colors.text,

@@ -42,15 +42,15 @@ const App = () => {
     } else {
       const logEmitter = new NativeEventEmitter(BBMTLibNativeModule);
       if (Platform.OS === 'android') {
-        logEmitter.removeAllListeners('BBMT_LIB_ANDROID');
-        subscription = logEmitter.addListener('BBMT_LIB_ANDROID', async log => {
-          console.log('BBMT_LIB_ANDROID', log);
+        logEmitter.removeAllListeners('BBMT_DROID');
+        subscription = logEmitter.addListener('BBMT_DROID', async log => {
+          console.log('BBMT_DROID', log.tag, log.message);
         });
       }
       if (Platform.OS === 'ios') {
-        logEmitter.removeAllListeners('BBMT_LIB_IOS');
-        subscription = logEmitter.addListener('BBMT_LIB_IOS', async log => {
-          console.log('BBMT_LIB_IOS', log);
+        logEmitter.removeAllListeners('BBMT_APPLE');
+        subscription = logEmitter.addListener('BBMT_APPLE', async log => {
+          console.log('BBMT_APPLE', log);
         });
       }
     }
