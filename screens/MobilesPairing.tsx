@@ -17,6 +17,8 @@ import {
   KeyboardAvoidingView,
   SafeAreaView,
   Linking,
+  NativeEventEmitter,
+  EmitterSubscription,
 } from 'react-native';
 import {NativeModules} from 'react-native';
 import DeviceInfo from 'react-native-device-info';
@@ -50,6 +52,7 @@ const MobilesPairing = ({navigation}: any) => {
   const [peerParty, setPeerParty] = useState<string | null>(null);
   const [isPairing, setIsPairing] = useState(false);
   const [countdown, setCountdown] = useState(timeout);
+  const [progress, setProgress] = useState(timeout);
   const [isPreParamsReady, setIsPreParamsReady] = useState(false);
   const [isKeygenReady, setIsKeygenReady] = useState(false);
   const [isKeysignReady, setIsKeysignReady] = useState(false);
@@ -486,6 +489,55 @@ const MobilesPairing = ({navigation}: any) => {
       Alert.alert('Error', 'Failed to encrypt or share the keyshare.');
     }
   }
+
+  useEffect(() => {
+    let subscription: EmitterSubscription | undefined;
+    const logEmitter = new NativeEventEmitter(BBMTLibNativeModule);
+    let utxoRange = 0;
+    let utxoIndex = 0;
+    let utxoCount = 0;
+    const processHook = (message: string) => {
+      const msg = JSON.parse(message);
+      if (msg.type === 'keygen') {
+        if (msg.done) {
+          setProgress(100);
+        } else {
+          setProgress(Math.round((100 * (msg.sentNo + msg.receivedNo)) / 10));
+        }
+      } else if (msg.type === 'btc_send') {
+        if (msg.done) {
+          setProgress(100);
+        }
+        if (msg.utxo_total > 0) {
+          utxoCount = msg.utxo_total;
+          utxoIndex = msg.utxo_current;
+          utxoRange = 100 / utxoCount;
+        }
+      } else if (msg.type === 'keysign') {
+        const prgUTXO = (utxoIndex - 1) * utxoRange;
+        setProgress(
+          Math.round(prgUTXO + utxoRange * (msg.sentNo + msg.receivedNo) / 22),
+        );
+      }
+    };
+    if (Platform.OS === 'android') {
+      subscription = logEmitter.addListener('BBMT_DROID', async log => {
+        if (log.tag === 'TssHook') {
+          processHook(log.message);
+        }
+      });
+    }
+    if (Platform.OS === 'ios') {
+      subscription = logEmitter.addListener('BBMT_APPLE', async log => {
+        if (log.tag === 'TssHook') {
+          processHook(log.message);
+        }
+      });
+    }
+    return () => {
+      subscription?.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (isPreparing) {
@@ -995,6 +1047,7 @@ const MobilesPairing = ({navigation}: any) => {
                                 color={theme.colors.primary}
                               />
                               <Text style={styles.countdownText}>
+                                {progress}% {'\n'}
                                 Time Elapsed: {prepCounter} seconds
                               </Text>
                             </View>
@@ -1193,7 +1246,8 @@ const MobilesPairing = ({navigation}: any) => {
                             color={theme.colors.primary}
                           />
                           <Text style={styles.countdownText}>
-                            Time Elapsed: {prepCounter} seconds
+                            {progress}%{'\n'} Time Elapsed: {prepCounter}{' '}
+                            seconds
                           </Text>
                         </View>
                       </View>

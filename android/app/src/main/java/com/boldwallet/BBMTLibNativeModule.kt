@@ -7,8 +7,8 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.modules.core.DeviceEventManagerModule
-import com.facebook.react.bridge.Callback
 import tss.GoLogListener
+import tss.HookListener
 
 import tss.Tss
 
@@ -17,14 +17,20 @@ import java.net.Inet4Address
 import java.util.Collections
 
 class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
-    ReactContextBaseJavaModule(reactContext), GoLogListener {
+    ReactContextBaseJavaModule(reactContext), GoLogListener, HookListener {
 
     private var eventName: String = ""
     private var useLog = true
-    private var logCallback: Callback? = null
 
     init {
         eventName = "BBMT_DROID"
+    }
+
+    override fun onMessage(msg: String?) {
+        msg?.let {
+            sendLogEvent("TssHook", msg)
+        }
+        onGoLog(msg)
     }
 
     override fun onGoLog(msg: String?) {
@@ -34,6 +40,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun addListener(eventName: String) {
         Tss.setEventListener(this)
+        Tss.setHookListener(this)
     }
 
     @ReactMethod
@@ -69,13 +76,6 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         return mutableMapOf(
             "LOG_EVENT_NAME" to "BBMT_DROID"
         )
-    }
-
-
-    @ReactMethod
-    fun setLogCallback(callback: Callback) {
-        Tss.setNetwork("")
-        logCallback = callback
     }
 
     @ReactMethod

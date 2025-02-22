@@ -11,14 +11,23 @@ import SystemConfiguration.CaptiveNetwork
 import Network
 
 @objc(BBMTLibNativeModule)
-class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol {
+class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookListenerProtocol {
   
   var useLog: Bool = true
 
   func onGoLog(_ message: String?) {
     if let msg = message {
-      self.sendLogEvent("GoLog", msg)
+      sendLogEvent("GoLog", msg)
     }
+  }
+  
+  func onMessage(_ message: String?) {
+    if let msg = message {
+      let tag = "TssHook"
+      let params: [String: Any] = ["tag": tag, "message": msg]
+      sendEvent(withName: "BBMT_APPLE", body: params)
+    }
+    onGoLog(message)
   }
   
   override func supportedEvents() -> [String] {
@@ -338,6 +347,7 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol {
   }
   
   @objc override func startObserving() {
+    TssSetHookListener(self)
     TssSetEventListener(self)
   }
   

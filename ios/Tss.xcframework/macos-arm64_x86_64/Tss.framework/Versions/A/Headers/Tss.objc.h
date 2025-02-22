@@ -27,6 +27,8 @@
 @class TssUTXO;
 @protocol TssGoLogListener;
 @class TssGoLogListener;
+@protocol TssHookListener;
+@class TssHookListener;
 @protocol TssLocalStateAccessor;
 @class TssLocalStateAccessor;
 @protocol TssMessenger;
@@ -36,6 +38,10 @@
 
 @protocol TssGoLogListener <NSObject>
 - (void)onGoLog:(NSString* _Nullable)message;
+@end
+
+@protocol TssHookListener <NSObject>
+- (void)onMessage:(NSString* _Nullable)message;
 @end
 
 @protocol TssLocalStateAccessor <NSObject>
@@ -299,6 +305,8 @@ FOUNDATION_EXPORT BOOL TssGetThreshold(long value, long* _Nullable ret0_, NSErro
 // skipped function HashToInt with unsupported parameter or return types
 
 
+FOUNDATION_EXPORT void TssHook(NSString* _Nullable message);
+
 FOUNDATION_EXPORT void TssInitLog(void);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssJoinKeygen(NSString* _Nullable ppmPath, NSString* _Nullable key, NSString* _Nullable partiesCSV, NSString* _Nullable encKey, NSString* _Nullable decKey, NSString* _Nullable session, NSString* _Nullable server, NSString* _Nullable chaincode, NSString* _Nullable sessionKey, NSError* _Nullable* _Nullable error);
@@ -346,6 +354,8 @@ FOUNDATION_EXPORT NSString* _Nonnull TssSessionState(NSString* _Nullable session
  */
 FOUNDATION_EXPORT void TssSetEventListener(id<TssGoLogListener> _Nullable l);
 
+FOUNDATION_EXPORT void TssSetHookListener(id<TssHookListener> _Nullable h);
+
 FOUNDATION_EXPORT NSString* _Nonnull TssSetNetwork(NSString* _Nullable network, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssSha256(NSString* _Nullable msg, NSError* _Nullable* _Nullable error);
@@ -360,6 +370,8 @@ FOUNDATION_EXPORT NSString* _Nonnull TssUseFeePolicy(NSString* _Nullable feeType
 
 @class TssGoLogListener;
 
+@class TssHookListener;
+
 @class TssLocalStateAccessor;
 
 @class TssMessenger;
@@ -372,6 +384,14 @@ FOUNDATION_EXPORT NSString* _Nonnull TssUseFeePolicy(NSString* _Nullable feeType
 
 - (nonnull instancetype)initWithRef:(_Nonnull id)ref;
 - (void)onGoLog:(NSString* _Nullable)message;
+@end
+
+@interface TssHookListener : NSObject <goSeqRefInterface, TssHookListener> {
+}
+@property(strong, readonly) _Nonnull id _ref;
+
+- (nonnull instancetype)initWithRef:(_Nonnull id)ref;
+- (void)onMessage:(NSString* _Nullable)message;
 @end
 
 @interface TssLocalStateAccessor : NSObject <goSeqRefInterface, TssLocalStateAccessor> {
