@@ -19,6 +19,7 @@ import DocumentPicker from 'react-native-document-picker';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import RNFS from 'react-native-fs';
 import theme from '../theme';
+import { dbg } from '../utils';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -69,7 +70,7 @@ const ShowcaseScreen = ({navigation}: any) => {
 
       return content;
     } catch (error) {
-      console.log('Error handling content URI:', error);
+      dbg('Error handling content URI:', error);
       return '';
     }
   };
@@ -87,7 +88,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       setModalVisible(true);
     } catch (err: any) {
       if (DocumentPicker.isCancel(err)) {
-        console.log('User cancelled the picker');
+        dbg('User cancelled the picker');
       } else {
         console.error('Error reading file:', err.message || err);
         Alert.alert('Error', 'Failed to read the file');

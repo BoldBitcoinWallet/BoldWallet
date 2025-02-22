@@ -260,7 +260,7 @@ FOUNDATION_EXPORT NSString* _Nonnull TssDecodeAddress(NSString* _Nullable addres
 
 FOUNDATION_EXPORT void TssDisableLogs(void);
 
-FOUNDATION_EXPORT NSString* _Nonnull TssDiscoverPeer(NSString* _Nullable id_, NSString* _Nullable pubkey, NSString* _Nullable localIP, NSString* _Nullable port, NSString* _Nullable timeout, NSError* _Nullable* _Nullable error);
+FOUNDATION_EXPORT NSString* _Nonnull TssDiscoverPeer(NSString* _Nullable id_, NSString* _Nullable pubkey, NSString* _Nullable localIP, NSString* _Nullable remoteIP, NSString* _Nullable port, NSString* _Nullable timeout, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssEciesDecrypt(NSString* _Nullable encryptedData, NSString* _Nullable privateKeyHex, NSError* _Nullable* _Nullable error);
 

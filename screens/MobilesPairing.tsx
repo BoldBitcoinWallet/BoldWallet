@@ -25,12 +25,14 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 import {
   CommonActions,
   RouteProp,
+  StackActions,
   useFocusEffect,
   useRoute,
 } from '@react-navigation/native';
 import Share from 'react-native-share';
 import theme from '../theme';
 import Big from 'big.js';
+import {dbg, getPinnedRemoteIP} from '../utils';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -179,7 +181,7 @@ const MobilesPairing = ({navigation}: any) => {
         _data += ':' + route.params.satoshiFees;
         _data += ':' + ks.local_party_key;
       }
-      console.log('publishing data', _data, 'peer pubkey', peerPubkey);
+      dbg('publishing data', _data, 'peer pubkey', peerPubkey);
       const published = await BBMTLibNativeModule.publishData(
         String(discoveryPort),
         String(timeout),
@@ -187,7 +189,7 @@ const MobilesPairing = ({navigation}: any) => {
         _data,
       );
       if (published) {
-        console.log('data published:', published);
+        dbg('data published:', published);
         return _data;
       } else {
         throw "Waited too long for other devices to press (Join Tx Co-Signing)";
@@ -196,7 +198,7 @@ const MobilesPairing = ({navigation}: any) => {
       const kp = JSON.parse(keypair);
       const peerURL = `http://${peerIP}:${discoveryPort}`;
       const rawFetched = await fetchData(peerURL, kp.privateKey);
-      console.log('fetched data', rawFetched);
+      dbg('fetched data', rawFetched);
       return rawFetched;
     }
   }
@@ -219,11 +221,11 @@ const MobilesPairing = ({navigation}: any) => {
       setPrepCounter(0);
 
       const data = await initSession();
-      console.log('got session data', data);
+      dbg('got session data', data);
       if (isMaster) {
         await BBMTLibNativeModule.stopRelay('stop');
         const relay = await BBMTLibNativeModule.runRelay(String(discoveryPort));
-        console.log('relay start:', relay, localDevice);
+        dbg('relay start:', relay, localDevice);
       }
 
       await waitMS(2000);
@@ -254,7 +256,7 @@ const MobilesPairing = ({navigation}: any) => {
         data,
       )
         .then(async (result: any) => {
-          console.log('keygen result', result.substring(0, 40));
+          dbg('keygen result', result.substring(0, 40));
           setKeyshare(result);
           await EncryptedStorage.setItem('keyshare', result);
           navigation.dispatch(
@@ -272,7 +274,7 @@ const MobilesPairing = ({navigation}: any) => {
           if (isMaster) {
             await waitMS(2000);
             BBMTLibNativeModule.stopRelay(localDevice);
-            console.log('relay stop:', localDevice);
+            dbg('relay stop:', localDevice);
           }
           setDoingMPC(false);
         });
@@ -280,7 +282,7 @@ const MobilesPairing = ({navigation}: any) => {
       if (isMaster) {
         await waitMS(2000);
         BBMTLibNativeModule.stopRelay(localDevice);
-        console.log('relay stop:', localDevice);
+        dbg('relay stop:', localDevice);
       }
       setDoingMPC(false);
     }
@@ -293,12 +295,12 @@ const MobilesPairing = ({navigation}: any) => {
 
     try {
       const data = await initSession();
-      console.log('session init done');
+      dbg('session init done');
 
       if (isMaster) {
         await BBMTLibNativeModule.stopRelay('stop');
         const relay = await BBMTLibNativeModule.runRelay(String(discoveryPort));
-        console.log('relay start:', relay, localDevice);
+        dbg('relay start:', relay, localDevice);
       }
 
       await waitMS(2000);
@@ -325,12 +327,12 @@ const MobilesPairing = ({navigation}: any) => {
       const decKey = kp.privateKey;
       const sessionKey = '';
       const decoded = data.split(':');
-      console.log('public-decoded', decoded);
+      dbg('public-decoded', decoded);
       const satoshiAmount = `${decoded[1]}`;
       const satoshiFees = `${decoded[2]}`;
       const peerShare = `${decoded[3]}`;
 
-      console.log('starting...', {
+      dbg('starting...', {
         peerShare,
         peerParty,
         partyID,
@@ -340,7 +342,7 @@ const MobilesPairing = ({navigation}: any) => {
         throw 'Please Use Two Different Shares per Device';
       }
       try {
-        console.log(
+        dbg(
           partyID,
           'calling keysign with',
           JSON.stringify(
@@ -389,7 +391,7 @@ const MobilesPairing = ({navigation}: any) => {
         satoshiFees,
       )
         .then(async (txId: any) => {
-          console.log(partyID, 'txID', txId);
+          dbg(partyID, 'txID', txId);
           const pendingTxs = JSON.parse(
             (await EncryptedStorage.getItem('pendingTxs')) || '{}',
           );
@@ -417,7 +419,7 @@ const MobilesPairing = ({navigation}: any) => {
             'Operation Error',
             `Could not sign and send transaction.\n${e?.message}`,
           );
-          console.log(partyID, 'keysign error', e);
+          dbg(partyID, 'keysign error', e);
         })
         .finally(async () => {
           if (isMaster) {
@@ -428,7 +430,7 @@ const MobilesPairing = ({navigation}: any) => {
         });
     } catch (e: any) {
       Alert.alert('Operation Error', e?.message || e);
-      console.log(localDevice, 'keysign error', e);
+      dbg(localDevice, 'keysign error', e);
       if (isMaster) {
         await waitMS(2000);
         stopRelay();
@@ -440,9 +442,9 @@ const MobilesPairing = ({navigation}: any) => {
   function stopRelay() {
     try {
       BBMTLibNativeModule.stopRelay(localDevice);
-      console.log(localDevice, 'relay stop:');
+      dbg(localDevice, 'relay stop:');
     } catch (e) {
-      console.log(localDevice, 'error stoping relay');
+      dbg(localDevice, 'error stoping relay');
     }
   }
 
@@ -550,12 +552,12 @@ const MobilesPairing = ({navigation}: any) => {
     const jks = await EncryptedStorage.getItem('keyshare');
     const ks = JSON.parse(jks || '{}');
     const localShare = ks.local_party_key;
-
     try {
       const ip = await BBMTLibNativeModule.getLanIp('pairing');
       const deviceName = await DeviceInfo.getDeviceName();
       setLocalDevice(deviceName);
       setStatus('Starting peer discovery...');
+      await EncryptedStorage.setItem('peerFound', '');
       const promises = [
         listenForPeerPromise(
           kp,
@@ -565,10 +567,9 @@ const MobilesPairing = ({navigation}: any) => {
       if (ip) {
         setLocalIP(ip);
         setLocalID(
-          (await BBMTLibNativeModule.sha256(`${deviceName}${ip}`)).substring(
-            0,
-            4,
-          ).toUpperCase(),
+          (await BBMTLibNativeModule.sha256(`${deviceName}${ip}`))
+            .substring(0, 4)
+            .toUpperCase(),
         );
         promises.push(
           discoverPeerPromise(
@@ -579,14 +580,24 @@ const MobilesPairing = ({navigation}: any) => {
         );
       }
 
-      const result = await Promise.race(promises);
+      let until = Date.now() + timeout * 1000;
+      let result = await Promise.race(promises);
+      while (!result && Date.now() < until) {
+        dbg('checking peer...');
+        result = await EncryptedStorage.getItem('peerFound');
+        if (result) {
+          dbg('checking peer ok...');
+          break;
+        } else {
+          await waitMS(1000);
+        }
+      }
 
-      await Promise.allSettled(promises);
-      console.log('promise race result:', result);
+      dbg('promise race result:', result);
       if (result) {
-        console.log('Got Result', result);
+        dbg('Got Result', result);
         const raw = result.split(',');
-        console.log({deviceName, raw});
+        dbg({deviceName, raw});
 
         const peerInfo = raw[0].split('@');
         const _peerIP = peerInfo[0].split(':')[0];
@@ -595,9 +606,9 @@ const MobilesPairing = ({navigation}: any) => {
         const _peerDevice = _peerDevicePartyID[0];
         const _peerParty = _peerDevicePartyID[1];
         setRemoteID(
-          (
-            await BBMTLibNativeModule.sha256(`${_peerDevice}${_peerIP}`)
-          ).substring(0, 4).toUpperCase(),
+          (await BBMTLibNativeModule.sha256(`${_peerDevice}${_peerIP}`))
+            .substring(0, 4)
+            .toUpperCase(),
         );
         setPeerDevice(_peerDevice);
         setPeerParty(_peerParty);
@@ -612,9 +623,9 @@ const MobilesPairing = ({navigation}: any) => {
         const _localIP = localInfo[0].split(':')[0];
         setLocalIP(_localIP);
         setLocalID(
-          (
-            await BBMTLibNativeModule.sha256(`${deviceName}${_localIP}`)
-          ).substring(0, 4).toUpperCase(),
+          (await BBMTLibNativeModule.sha256(`${deviceName}${_localIP}`))
+            .substring(0, 4)
+            .toUpperCase(),
         );
         const thisIDs = _localIP.split(':')[0];
         const nextIDs = _peerIP.split(':')[0];
@@ -622,11 +633,14 @@ const MobilesPairing = ({navigation}: any) => {
         const peerID = Number(nextIDs.split('.')[3]);
         const master = thisID > peerID;
         setIsMaster(master);
-
         setStatus('Devices Discovery Completed');
+        await Promise.allSettled(promises).then(() =>
+          EncryptedStorage.removeItem('peerFound'),
+        );
       } else {
         setStatus('Pairing timed out. Please try again.');
         Alert.alert('Pairing Timeout', 'No peer device was detected.');
+        navigation.dispatch(StackActions.replace('📱📱 Pairing', route.params));
       }
     } catch (error) {
       console.error('Pairing Error:', error);
@@ -648,10 +662,10 @@ const MobilesPairing = ({navigation}: any) => {
           privateKey,
         );
         if (rawFetched) {
-          console.log('rawFetched:', rawFetched);
+          dbg('rawFetched:', rawFetched);
           return rawFetched;
         } else {
-          console.log('emptydata, retrying...');
+          dbg('emptydata, retrying...');
           await waitMS(2000);
         }
       } catch (e) {}
@@ -670,11 +684,26 @@ const MobilesPairing = ({navigation}: any) => {
         String(discoveryPort),
         String(timeout),
       );
+      await EncryptedStorage.setItem('peerFound', result);
       return result;
     } catch (error) {
       console.warn('ListenForPeer Error:', error);
       return null;
     }
+  }
+
+  function isSameSubnet(
+    ip1: string,
+    ip2: string,
+    subnetMask = '255.255.255.0',
+  ) {
+    const ipToInt = (ip: string) =>
+      // eslint-disable-next-line no-bitwise
+      ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0);
+
+    const maskInt = ipToInt(subnetMask);
+    // eslint-disable-next-line no-bitwise
+    return (ipToInt(ip1) & maskInt) === (ipToInt(ip2) & maskInt);
   }
 
   async function discoverPeerPromise(
@@ -685,33 +714,45 @@ const MobilesPairing = ({navigation}: any) => {
     const until = Date.now() + timeout * 1000;
     const discoveryTimeout = 3;
     let backOff = 1;
+    const pinnedIP = getPinnedRemoteIP();
+    dbg({
+      pinnedIP,
+      ip,
+    });
     while (Date.now() < until) {
       try {
+        let peerFound = await EncryptedStorage.getItem('peerFound');
+        if (peerFound) {
+          dbg('discoverPeer already found');
+          return peerFound;
+        }
         backOff *= 2;
         const result = await BBMTLibNativeModule.discoverPeer(
           deviceName,
           pubkey,
           ip,
+          isSameSubnet(ip, pinnedIP) ? pinnedIP : '',
           String(discoveryPort),
           String(discoveryTimeout + backOff),
         );
         if (result) {
-          console.log('discoverPeer result', result);
+          dbg('discoverPeer result', result);
+          await EncryptedStorage.setItem('peerFound', result);
           return result;
         }
       } catch (error) {
         console.warn('DiscoverPeer Error:', error);
       }
     }
-    console.log('discoverPeer ended');
+    dbg('discoverPeer ended');
     return '';
   }
 
   useFocusEffect(
     useCallback(() => {
-      console.log('MobilesPairing screen focused');
+      dbg('MobilesPairing screen focused');
       return () => {
-        console.log('MobilesPairing screen blurred');
+        dbg('MobilesPairing screen blurred');
       };
     }, []),
   );
@@ -761,7 +802,11 @@ const MobilesPairing = ({navigation}: any) => {
                     <Text style={styles.checkboxLabel}>{item.label}</Text>
                   </TouchableOpacity>
                 ))}
-
+                <Text style={styles.pairingHint}>
+                  → For better security, privay and reliability - it's
+                  recommended to keep one device in Hotspot mode and connect the
+                  other to it.
+                </Text>
                 {/* Pairing Button */}
                 {!isPairing && !peerIP && (
                   <TouchableOpacity
@@ -833,11 +878,6 @@ const MobilesPairing = ({navigation}: any) => {
                     <Text style={styles.countdownText}>
                       Time remaining: {countdown} seconds
                     </Text>
-                    <ActivityIndicator
-                      size="large"
-                      color={theme.colors.accent}
-                      style={styles.loader}
-                    />
                   </View>
                 )}
               </View>
@@ -1240,6 +1280,14 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     marginBottom: 10,
     textAlign: 'center',
+  },
+  pairingHint: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: theme.colors.secondary,
+    textAlign: 'center',
+    marginBottom: 20,
+    marginTop: 20,
   },
   securityText: {
     fontSize: 15,

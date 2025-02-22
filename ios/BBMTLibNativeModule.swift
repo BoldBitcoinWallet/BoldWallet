@@ -171,11 +171,11 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol {
     }
   }
   
-  @objc func discoverPeer(_ id: String, pubkey: String, localIp: String, port: String, timeout: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
+  @objc func discoverPeer(_ id: String, pubkey: String, localIp: String, remoteIp: String, port: String, timeout: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard self != nil else { return }
       var error: NSError?
-      let output = TssDiscoverPeer(id, pubkey, localIp, port, timeout, &error)
+      let output = TssDiscoverPeer(id, pubkey, localIp, remoteIp, port, timeout, &error)
       if error == nil {
         self?.sendLogEvent("discoverPeer", output)
         resolver(output)
