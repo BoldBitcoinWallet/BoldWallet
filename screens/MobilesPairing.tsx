@@ -496,13 +496,15 @@ const MobilesPairing = ({navigation}: any) => {
     let utxoRange = 0;
     let utxoIndex = 0;
     let utxoCount = 0;
+    const keysignSteps = 36;
+    const keygenSteps = 18;
     const processHook = (message: string) => {
       const msg = JSON.parse(message);
       if (msg.type === 'keygen') {
         if (msg.done) {
           setProgress(100);
         } else {
-          setProgress(Math.round((100 * (msg.sentNo + msg.receivedNo)) / 10));
+          setProgress(Math.round((100 * msg.step) / keygenSteps));
         }
       } else if (msg.type === 'btc_send') {
         if (msg.done) {
@@ -516,7 +518,7 @@ const MobilesPairing = ({navigation}: any) => {
       } else if (msg.type === 'keysign') {
         const prgUTXO = (utxoIndex - 1) * utxoRange;
         setProgress(
-          Math.round(prgUTXO + utxoRange * (msg.sentNo + msg.receivedNo) / 22),
+          Math.round(prgUTXO + (utxoRange * msg.step) / keysignSteps),
         );
       }
     };
