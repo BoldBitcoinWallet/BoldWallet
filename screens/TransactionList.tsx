@@ -69,7 +69,7 @@ const TransactionList = ({
         txid: txID,
         from: cached[txID].from,
         to: cached[txID].to,
-        amount: cached[txID].amount,
+        amount: cached[txID].satoshiAmount,
         sentAt: cached[txID].sentAt,
       });
     }
@@ -242,7 +242,7 @@ const TransactionList = ({
     if (tx.sentAt) {
       const self =
         String(tx.from).toLowerCase() === String(tx.to).toLowerCase();
-      const sent = self ? 0 : tx.satoshiAmount;
+      const sent = self ? 0 : tx.amount;
       const chng = self ? sent : 0;
       const rcvd = self ? sent : 0;
       return {
