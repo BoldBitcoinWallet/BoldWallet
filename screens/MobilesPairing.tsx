@@ -24,6 +24,8 @@ import {NativeModules} from 'react-native';
 import DeviceInfo from 'react-native-device-info';
 import RNFS from 'react-native-fs';
 import EncryptedStorage from 'react-native-encrypted-storage';
+import * as Progress from 'react-native-progress';
+
 import {
   CommonActions,
   RouteProp,
@@ -52,7 +54,7 @@ const MobilesPairing = ({navigation}: any) => {
   const [peerParty, setPeerParty] = useState<string | null>(null);
   const [isPairing, setIsPairing] = useState(false);
   const [countdown, setCountdown] = useState(timeout);
-  const [progress, setProgress] = useState(timeout);
+  const [progress, setProgress] = useState(0);
   const [isPreParamsReady, setIsPreParamsReady] = useState(false);
   const [isKeygenReady, setIsKeygenReady] = useState(false);
   const [isKeysignReady, setIsKeysignReady] = useState(false);
@@ -246,7 +248,7 @@ const MobilesPairing = ({navigation}: any) => {
       const ppm = `${RNFS.DocumentDirectoryPath}/ppm.json`;
 
       setShareName(partyID);
-
+      setProgress(0);
       BBMTLibNativeModule.mpcTssSetup(
         server,
         partyID,
@@ -374,7 +376,7 @@ const MobilesPairing = ({navigation}: any) => {
       } catch (e) {
         console.error('got exception', e);
       }
-
+      setProgress(0);
       await BBMTLibNativeModule.mpcSendBTC(
         // TSS
         server,
@@ -502,8 +504,17 @@ const MobilesPairing = ({navigation}: any) => {
       const msg = JSON.parse(message);
       if (msg.type === 'keygen') {
         if (msg.done) {
+          dbg('progress - keygen done');
           setProgress(100);
         } else {
+          dbg(
+            'progress - keygen: ',
+            Math.round((100 * msg.step) / keygenSteps),
+            'step',
+            msg.step,
+            'time',
+            new Date(msg.time),
+          );
           setProgress(Math.round((100 * msg.step) / keygenSteps));
         }
       } else if (msg.type === 'btc_send') {
@@ -514,9 +525,26 @@ const MobilesPairing = ({navigation}: any) => {
           utxoCount = msg.utxo_total;
           utxoIndex = msg.utxo_current;
           utxoRange = 100 / utxoCount;
+          dbg('progress send_btc', {
+            utxoCount,
+            utxoIndex,
+            utxoRange,
+          });
         }
       } else if (msg.type === 'keysign') {
         const prgUTXO = (utxoIndex - 1) * utxoRange;
+        dbg(
+          'progress - keysign: ',
+          Math.round(prgUTXO + (utxoRange * msg.step) / keysignSteps),
+          'prgUTXO',
+          prgUTXO,
+          'step',
+          msg.step,
+          'range',
+          utxoRange,
+          'time',
+          new Date(msg.time),
+        );
         setProgress(
           Math.round(prgUTXO + (utxoRange * msg.step) / keysignSteps),
         );
@@ -651,7 +679,7 @@ const MobilesPairing = ({navigation}: any) => {
       if (result) {
         dbg('Got Result', result);
         const raw = result.split(',');
-        dbg({deviceName, raw});
+        dbg('raw', {deviceName, raw});
 
         const peerInfo = raw[0].split('@');
         const _peerIP = peerInfo[0].split(':')[0];
@@ -769,7 +797,7 @@ const MobilesPairing = ({navigation}: any) => {
     const discoveryTimeout = 3;
     let backOff = 1;
     const pinnedIP = getPinnedRemoteIP();
-    dbg({
+    dbg('ips', {
       pinnedIP,
       ip,
     });
@@ -1038,19 +1066,37 @@ const MobilesPairing = ({navigation}: any) => {
                       </TouchableOpacity>
 
                       {doingMPC && (
-                        <Modal transparent={true} visible={doingMPC}>
+                        <Modal
+                          transparent={true}
+                          visible={doingMPC}
+                          animationType="fade">
                           <View style={styles.modalOverlay}>
                             <View style={styles.modalContent}>
-                              <Text style={styles.modalText}>
-                                Keygen Please Wait...
+                              {/* Header Text */}
+                              <Text style={styles.modalTitle}>
+                                Finalizing Your Wallet
                               </Text>
-                              <ActivityIndicator
-                                size="small"
+
+                              {/* Subtext */}
+                              <Text style={styles.modalSubtitle}>
+                                Please wait a moment...
+                              </Text>
+
+                              {/* Circular Progress */}
+                              <Progress.Circle
+                                size={60}
+                                progress={progress / 100} // Assuming progress is 0-100
+                                thickness={6}
                                 color={theme.colors.primary}
+                                unfilledColor="#e0e0e0"
+                                borderWidth={0}
+                                showsText={true} // We'll show custom text below
+                                style={styles.progressCircle}
                               />
-                              <Text style={styles.countdownText}>
-                                {progress}% {'\n'}
-                                Time Elapsed: {prepCounter} seconds
+
+                              {/* Progress and Countdown */}
+                              <Text style={styles.progressText}>
+                                ⏲ {prepCounter} sec
                               </Text>
                             </View>
                           </View>
@@ -1237,19 +1283,37 @@ const MobilesPairing = ({navigation}: any) => {
                     </Text>
                   </TouchableOpacity>
                   {doingMPC && (
-                    <Modal transparent={true} visible={doingMPC}>
+                    <Modal
+                      transparent={true}
+                      visible={doingMPC}
+                      animationType="fade">
                       <View style={styles.modalOverlay}>
                         <View style={styles.modalContent}>
-                          <Text style={styles.modalText}>
-                            🗝 Co-Signing Please Wait...
+                          {/* Header Text */}
+                          <Text style={styles.modalTitle}>
+                            🗝 Co-Signing Transaction
                           </Text>
-                          <ActivityIndicator
-                            size="small"
+
+                          {/* Subtext */}
+                          <Text style={styles.modalSubtitle}>
+                            Please wait a moment...
+                          </Text>
+
+                          {/* Circular Progress */}
+                          <Progress.Circle
+                            size={60}
+                            progress={progress / 100} // Assuming progress is 0-100
+                            thickness={6}
                             color={theme.colors.primary}
+                            unfilledColor="#e0e0e0"
+                            borderWidth={0}
+                            showsText={true} // We'll show custom text below
+                            style={styles.progressCircle}
                           />
-                          <Text style={styles.countdownText}>
-                            {progress}%{'\n'} Time Elapsed: {prepCounter}{' '}
-                            seconds
+
+                          {/* Progress and Countdown */}
+                          <Text style={styles.progressText}>
+                            ⏲ {prepCounter} sec
                           </Text>
                         </View>
                       </View>
@@ -1519,18 +1583,41 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   modalOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 100,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)', // Semi-transparent overlay
   },
   modalContent: {
-    backgroundColor: theme.colors.background,
-    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderRadius: 16,
     padding: 20,
     width: '80%',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5, // For Android shadow
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 20,
+  },
+  progressCircle: {
+    marginBottom: 16,
+  },
+  progressText: {
+    fontSize: 16,
+    color: '#333',
+    fontWeight: '500',
   },
   modalText: {
     fontSize: 18,
