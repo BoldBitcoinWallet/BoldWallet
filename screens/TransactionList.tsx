@@ -12,10 +12,10 @@ import {
 import axios from 'axios';
 import Toast from 'react-native-toast-message';
 import moment from 'moment';
-import theme from '../theme';
 import {debounce} from 'lodash';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {dbg} from '../utils';
+import {useTheme} from '../theme';
 
 const TransactionList = ({
   address,
@@ -35,6 +35,8 @@ const TransactionList = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasMoreTransactions, setHasMoreTransactions] = useState(true);
   const isFetching = useRef(false);
+
+  const {theme} = useTheme();
 
   // Add refs to track mounting state and prevent memory leaks
   const isMounted = useRef(true);
@@ -311,6 +313,54 @@ const TransactionList = ({
     [address],
   );
 
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      padding: 10,
+      backgroundColor: theme.colors.background,
+    },
+    transactionItem: {
+      padding: 15,
+      borderBottomWidth: 1,
+      borderBottomColor: '#ddd',
+      marginBottom: 10,
+    },
+    transactionRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    endOfListText: {
+      textAlign: 'center',
+      fontSize: 16,
+      color: theme.colors.text,
+      padding: 10,
+    },
+    status: {
+      fontSize: 16,
+      fontWeight: 'bold',
+      color: theme.colors.text,
+    },
+    amount: {
+      fontSize: 16,
+      fontWeight: 'bold',
+      color: theme.colors.secondary,
+    },
+    txId: {
+      fontSize: 14,
+      marginTop: 8,
+      color: theme.colors.text,
+    },
+    timestamp: {
+      fontSize: 14,
+      color: theme.colors.text,
+    },
+    txLink: {
+      color: theme.colors.secondary,
+      textDecorationLine: 'underline',
+    },
+  });
+
   // Memoized render item
   const renderItem = useCallback(
     ({item}: any) => {
@@ -364,7 +414,19 @@ const TransactionList = ({
         </View>
       );
     },
-    [address, baseApi, getTransactionStatus, getTransactionAmounts],
+    [
+      address,
+      baseApi,
+      getTransactionStatus,
+      getTransactionAmounts,
+      styles.amount,
+      styles.status,
+      styles.timestamp,
+      styles.transactionItem,
+      styles.transactionRow,
+      styles.txId,
+      styles.txLink,
+    ],
   );
 
   return (
@@ -394,53 +456,5 @@ const TransactionList = ({
     </SafeAreaView>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 10,
-    backgroundColor: theme.colors.background,
-  },
-  transactionItem: {
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ddd',
-    marginBottom: 10,
-  },
-  transactionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  endOfListText: {
-    textAlign: 'center',
-    fontSize: 16,
-    color: theme.colors.text,
-    padding: 10,
-  },
-  status: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-  },
-  amount: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: theme.colors.secondary,
-  },
-  txId: {
-    fontSize: 14,
-    marginTop: 8,
-    color: theme.colors.text,
-  },
-  timestamp: {
-    fontSize: 14,
-    color: theme.colors.text,
-  },
-  txLink: {
-    color: theme.colors.secondary,
-    textDecorationLine: 'underline',
-  },
-});
 
 export default TransactionList;

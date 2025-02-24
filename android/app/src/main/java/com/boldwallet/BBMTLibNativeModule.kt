@@ -281,12 +281,16 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun getLanIp(tag: String, promise: Promise) {
+    fun getLanIp(peerIP: String, promise: Promise) {
         try {
             val interfaces = Collections.list(NetworkInterface.getNetworkInterfaces())
             var fallbackIp: String? = null
             var iphoneHotspotIp: String? = null
             var classCIP: String? = null
+            var sameSubnetIp: String? = null
+
+            // Only check subnet if peerIP is not empty and is valid IPv4
+            val checkSubnet = peerIP.isNotEmpty() && peerIP.matches(Regex("^\\d+\\.\\d+\\.\\d+\\.\\d+$"))
 
             for (networkInterface in interfaces) {
                 val addresses = networkInterface.inetAddresses
@@ -294,18 +298,30 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     if (!inetAddress.isLoopbackAddress && inetAddress is Inet4Address) {
                         val ip = inetAddress.hostAddress
                         if (ip != null) {
-                            if (isClassC(ip)) {
-                                classCIP = ip
+                            // Check if this IP is in the same subnet as peerIP
+                            if (checkSubnet && isSameSubnet(ip, peerIP)) {
+                                sameSubnetIp = ip
                                 break
                             }
-                            if (ip.startsWith("172.20.10.")) {
+                            if (isClassC(ip)) {
+                                classCIP = ip
+                            }
+                            else if (ip.startsWith("172.20.10.")) {
                                 iphoneHotspotIp = ip
-                            } else {
+                            }
+                            else {
                                 fallbackIp = ip
                             }
                         }
                     }
                 }
+            }
+
+            // Prioritize same subnet IP first
+            sameSubnetIp?.let {
+                ld("getLanIp (Same Subnet)", it)
+                promise.resolve(it)
+                return
             }
 
             iphoneHotspotIp?.let {
@@ -332,6 +348,22 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
         ld("getLanIp", "")
         promise.resolve("")
+    }
+
+    // Helper function to check if two IPs are in the same subnet
+    private fun isSameSubnet(ip1: String, ip2: String): Boolean {
+        try {
+            val parts1 = ip1.split(".")
+            val parts2 = ip2.split(".")
+
+            // Assuming a typical /24 subnet mask (255.255.255.0)
+            // Compare first 3 octets
+            return parts1[0] == parts2[0] &&
+                    parts1[1] == parts2[1] &&
+                    parts1[2] == parts2[2]
+        } catch (e: Exception) {
+            return false
+        }
     }
     
     private fun isClassC(ip: String): Boolean {

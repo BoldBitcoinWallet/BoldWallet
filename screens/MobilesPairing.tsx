@@ -34,9 +34,9 @@ import {
   useRoute,
 } from '@react-navigation/native';
 import Share from 'react-native-share';
-import theme from '../theme';
 import Big from 'big.js';
 import {dbg, getPinnedRemoteIP} from '../utils';
+import {useTheme} from '../theme';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -73,6 +73,8 @@ const MobilesPairing = ({navigation}: any) => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const confirmPasswordRef = useRef<TextInput>(null);
+
+  const {theme} = useTheme();
 
   type RouteParams = {
     mode?: string;
@@ -635,7 +637,9 @@ const MobilesPairing = ({navigation}: any) => {
     const ks = JSON.parse(jks || '{}');
     const localShare = ks.local_party_key;
     try {
-      const ip = await BBMTLibNativeModule.getLanIp('pairing');
+      dbg('checking lanIP given pinnedRemote', getPinnedRemoteIP());
+      const ip = await BBMTLibNativeModule.getLanIp(getPinnedRemoteIP());
+      dbg('device local lanIP', ip);
       const deviceName = await DeviceInfo.getDeviceName();
       setLocalDevice(deviceName);
       setStatus('Starting peer discovery...');
@@ -838,6 +842,390 @@ const MobilesPairing = ({navigation}: any) => {
       };
     }, []),
   );
+
+  const styles = StyleSheet.create({
+    root: {
+      flex: 1,
+      backgroundColor: theme.colors.primary,
+    },
+    flexContainer: {
+      flex: 1,
+    },
+    scrollContent: {
+      paddingBottom: 20,
+    },
+    innerContainer: {
+      alignItems: 'center',
+      padding: 20,
+    },
+    termsLink: {
+      color: theme.colors.accent,
+      fontWeight: 'bold',
+      textDecorationLine: 'underline',
+    },
+    header: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: theme.colors.text,
+      marginTop: 20,
+      marginBottom: 20,
+      textAlign: 'center',
+    },
+    summaryRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      width: '100%',
+      marginBottom: 10,
+    },
+    label: {
+      fontSize: 16,
+      fontWeight: 'bold',
+      color: theme.colors.text,
+    },
+    address: {
+      fontSize: 14,
+      color: theme.colors.text,
+      textAlign: 'center',
+      flex: 1,
+    },
+    value: {
+      fontSize: 14,
+      color: theme.colors.text,
+      textAlign: 'left',
+      flex: 1,
+    },
+    title: {
+      fontSize: 24,
+      fontWeight: 'bold',
+      color: theme.colors.text,
+      marginBottom: 10,
+      textAlign: 'center',
+    },
+    pairingHint: {
+      fontSize: 15,
+      fontWeight: 'bold',
+      color: theme.colors.secondary,
+      textAlign: 'center',
+      marginBottom: 20,
+      marginTop: 20,
+    },
+    securityText: {
+      fontSize: 15,
+      fontWeight: 'bold',
+      color: theme.colors.secondary,
+      textAlign: 'center',
+      marginBottom: 30,
+    },
+    checklistContainer: {
+      alignSelf: 'stretch',
+      marginBottom: 20,
+      paddingHorizontal: 10,
+      backgroundColor: theme.colors.background,
+      borderRadius: 10,
+      elevation: 2,
+      padding: 15,
+    },
+    checklistPairing: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      marginBottom: 10,
+      color: theme.colors.text,
+    },
+    checklistTitle: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: theme.colors.text,
+    },
+    checkboxContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 8,
+    },
+    checkbox: {
+      width: 24,
+      height: 24,
+      borderRadius: 6,
+      borderWidth: 2,
+      borderColor: theme.colors.primary,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginRight: 10,
+    },
+    checked: {
+      backgroundColor: theme.colors.primary,
+      borderColor: theme.colors.primary,
+    },
+    checkboxLabel: {
+      fontSize: 16,
+      color: theme.colors.text,
+      flex: 1,
+    },
+    deviceContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      position: 'relative',
+      marginBottom: 30,
+    },
+    deviceWrapper: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginHorizontal: 10,
+      position: 'relative',
+    },
+    deviceIcon: {
+      width: 40,
+      height: 40,
+      tintColor: theme.colors.secondary,
+    },
+    deviceActive: {
+      tintColor: theme.colors.primary,
+    },
+    deviceInactive: {
+      tintColor: theme.colors.accent,
+    },
+    deviceName: {
+      position: 'absolute',
+      bottom: -40,
+      fontSize: 14,
+      fontWeight: '500',
+      color: theme.colors.text,
+      textAlign: 'center',
+      width: 200,
+    },
+    statusLine: {
+      width: 100,
+      height: 4,
+      backgroundColor: theme.colors.accent,
+      marginHorizontal: 10,
+      borderRadius: 2,
+      overflow: 'hidden',
+    },
+    connectionLine: {
+      position: 'absolute',
+      top: 0,
+      bottom: 0,
+      backgroundColor: theme.colors.primary,
+    },
+    statusText: {
+      fontSize: 15,
+      color: theme.colors.text,
+      textAlign: 'justify',
+      fontWeight: 'bold',
+    },
+    ipText: {
+      fontSize: 14,
+      color: theme.colors.secondary,
+      marginBottom: 5,
+      textAlign: 'center',
+    },
+    countdownText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: theme.colors.text,
+      marginVertical: 8,
+      textAlign: 'center',
+    },
+    loader: {
+      marginTop: 15,
+    },
+    pairButtonOn: {
+      marginTop: 20,
+      marginBottom: 10,
+      backgroundColor: theme.colors.primary,
+      borderRadius: 8,
+      paddingVertical: 12,
+      paddingHorizontal: 30,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: theme.colors.text,
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 3,
+    },
+    pairButtonOff: {
+      opacity: 0.5,
+      marginTop: 20,
+      marginBottom: 10,
+      backgroundColor: theme.colors.accent,
+      borderRadius: 8,
+      paddingVertical: 12,
+      paddingHorizontal: 30,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    proceedButtonOn: {
+      marginTop: 20,
+      backgroundColor: theme.colors.primary,
+      borderRadius: 8,
+      paddingVertical: 12,
+      paddingHorizontal: 30,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: theme.colors.text,
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 3,
+    },
+    proceedButtonOff: {
+      opacity: 0.5,
+      marginTop: 20,
+      backgroundColor: theme.colors.accent,
+      borderRadius: 8,
+      paddingVertical: 12,
+      paddingHorizontal: 30,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    pairButtonText: {
+      color: theme.colors.background,
+      fontSize: 18,
+      fontWeight: 'bold',
+    },
+    modalOverlay: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: 'rgba(0, 0, 0, 0.5)', // Semi-transparent overlay
+    },
+    modalContent: {
+      backgroundColor: '#fff',
+      borderRadius: 16,
+      padding: 20,
+      width: '80%',
+      alignItems: 'center',
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: 0.25,
+      shadowRadius: 4,
+      elevation: 5, // For Android shadow
+    },
+    modalTitle: {
+      fontSize: 20,
+      fontWeight: 'bold',
+      color: '#333',
+      marginBottom: 8,
+    },
+    modalSubtitle: {
+      fontSize: 14,
+      color: '#666',
+      marginBottom: 20,
+    },
+    progressCircle: {
+      marginBottom: 16,
+    },
+    progressText: {
+      fontSize: 16,
+      color: '#333',
+      fontWeight: '500',
+    },
+    modalText: {
+      fontSize: 18,
+      marginBottom: 10,
+      textAlign: 'center',
+      color: theme.colors.text,
+    },
+    informationCard: {
+      backgroundColor: theme.colors.background,
+      borderRadius: 10,
+      padding: 20,
+      marginVertical: 10,
+      elevation: 2,
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      width: '100%',
+      alignItems: 'center',
+    },
+    informationText: {
+      fontSize: 16,
+      color: theme.colors.text,
+      textAlign: 'center',
+    },
+    informationLeftText: {
+      fontSize: 16,
+      color: theme.colors.text,
+      textAlign: 'left',
+    },
+    backupButton: {
+      marginTop: 10,
+      marginBottom: 10,
+      backgroundColor: theme.colors.subPrimary,
+      width: 200,
+      borderRadius: 8,
+      paddingVertical: 12,
+      paddingHorizontal: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    backupButtonText: {
+      color: theme.colors.background,
+      fontSize: 15,
+      fontWeight: 'bold',
+    },
+    hidden: {
+      display: 'none',
+    },
+    clickButton: {
+      marginTop: 20,
+      marginBottom: 20,
+      backgroundColor: theme.colors.primary,
+      borderRadius: 8,
+      paddingVertical: 12,
+      paddingHorizontal: 30,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    clickButtonOff: {
+      opacity: 0.5,
+      marginTop: 20,
+      marginBottom: 20,
+      backgroundColor: theme.colors.accent,
+      borderRadius: 8,
+      paddingVertical: 12,
+      paddingHorizontal: 30,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    clickPrepare: {
+      marginTop: 20,
+      marginBottom: 20,
+      backgroundColor: theme.colors.primary,
+      borderRadius: 8,
+      paddingVertical: 12,
+      paddingHorizontal: 30,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    clickPrepareOff: {
+      opacity: 0.5,
+      marginTop: 20,
+      marginBottom: 20,
+      backgroundColor: theme.colors.accent,
+      borderRadius: 8,
+      paddingVertical: 12,
+      paddingHorizontal: 30,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    clickButtonText: {
+      color: theme.colors.background,
+      fontWeight: 'bold',
+      fontSize: 15,
+    },
+    input: {
+      borderWidth: 1,
+      borderColor: theme.colors.secondary,
+      borderRadius: 8,
+      padding: 6,
+      width: 200,
+      height: 35,
+      fontSize: 16,
+      backgroundColor: '#FFF',
+      marginBottom: 5,
+      marginTop: 10,
+      textAlign: 'center',
+    },
+  });
 
   return (
     <SafeAreaView style={styles.root}>
@@ -1342,387 +1730,3 @@ const MobilesPairing = ({navigation}: any) => {
 };
 
 export default MobilesPairing;
-
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: theme.colors.primary,
-  },
-  flexContainer: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 20,
-  },
-  innerContainer: {
-    alignItems: 'center',
-    padding: 20,
-  },
-  termsLink: {
-    color: theme.colors.accent,
-    fontWeight: 'bold',
-    textDecorationLine: 'underline',
-  },
-  header: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    marginTop: 20,
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginBottom: 10,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-  },
-  address: {
-    fontSize: 14,
-    color: theme.colors.text,
-    textAlign: 'center',
-    flex: 1,
-  },
-  value: {
-    fontSize: 14,
-    color: theme.colors.text,
-    textAlign: 'left',
-    flex: 1,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    marginBottom: 10,
-    textAlign: 'center',
-  },
-  pairingHint: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: theme.colors.secondary,
-    textAlign: 'center',
-    marginBottom: 20,
-    marginTop: 20,
-  },
-  securityText: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: theme.colors.secondary,
-    textAlign: 'center',
-    marginBottom: 30,
-  },
-  checklistContainer: {
-    alignSelf: 'stretch',
-    marginBottom: 20,
-    paddingHorizontal: 10,
-    backgroundColor: theme.colors.background,
-    borderRadius: 10,
-    elevation: 2,
-    padding: 15,
-  },
-  checklistPairing: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    color: theme.colors.text,
-  },
-  checklistTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-  },
-  checkboxContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: theme.colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  checked: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-  },
-  checkboxLabel: {
-    fontSize: 16,
-    color: theme.colors.text,
-    flex: 1,
-  },
-  deviceContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-    marginBottom: 30,
-  },
-  deviceWrapper: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: 10,
-    position: 'relative',
-  },
-  deviceIcon: {
-    width: 40,
-    height: 40,
-    tintColor: theme.colors.secondary,
-  },
-  deviceActive: {
-    tintColor: theme.colors.primary,
-  },
-  deviceInactive: {
-    tintColor: theme.colors.accent,
-  },
-  deviceName: {
-    position: 'absolute',
-    bottom: -40,
-    fontSize: 14,
-    fontWeight: '500',
-    color: theme.colors.text,
-    textAlign: 'center',
-    width: 200,
-  },
-  statusLine: {
-    width: 100,
-    height: 4,
-    backgroundColor: theme.colors.accent,
-    marginHorizontal: 10,
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  connectionLine: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    backgroundColor: theme.colors.primary,
-  },
-  statusText: {
-    fontSize: 15,
-    color: theme.colors.text,
-    textAlign: 'justify',
-    fontWeight: 'bold',
-  },
-  ipText: {
-    fontSize: 14,
-    color: theme.colors.secondary,
-    marginBottom: 5,
-    textAlign: 'center',
-  },
-  countdownText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: theme.colors.text,
-    marginVertical: 8,
-    textAlign: 'center',
-  },
-  loader: {
-    marginTop: 15,
-  },
-  pairButtonOn: {
-    marginTop: 20,
-    marginBottom: 10,
-    backgroundColor: theme.colors.primary,
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: theme.colors.text,
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  pairButtonOff: {
-    opacity: 0.5,
-    marginTop: 20,
-    marginBottom: 10,
-    backgroundColor: theme.colors.accent,
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  proceedButtonOn: {
-    marginTop: 20,
-    backgroundColor: theme.colors.primary,
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: theme.colors.text,
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  proceedButtonOff: {
-    opacity: 0.5,
-    marginTop: 20,
-    backgroundColor: theme.colors.accent,
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pairButtonText: {
-    color: theme.colors.background,
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)', // Semi-transparent overlay
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    width: '80%',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5, // For Android shadow
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
-  },
-  modalSubtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 20,
-  },
-  progressCircle: {
-    marginBottom: 16,
-  },
-  progressText: {
-    fontSize: 16,
-    color: '#333',
-    fontWeight: '500',
-  },
-  modalText: {
-    fontSize: 18,
-    marginBottom: 10,
-    textAlign: 'center',
-    color: theme.colors.text,
-  },
-  informationCard: {
-    backgroundColor: theme.colors.background,
-    borderRadius: 10,
-    padding: 20,
-    marginVertical: 10,
-    elevation: 2,
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    width: '100%',
-    alignItems: 'center',
-  },
-  informationText: {
-    fontSize: 16,
-    color: theme.colors.text,
-    textAlign: 'center',
-  },
-  informationLeftText: {
-    fontSize: 16,
-    color: theme.colors.text,
-    textAlign: 'left',
-  },
-  backupButton: {
-    marginTop: 10,
-    marginBottom: 10,
-    backgroundColor: theme.colors.subPrimary,
-    width: 200,
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  backupButtonText: {
-    color: theme.colors.background,
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  hidden: {
-    display: 'none',
-  },
-  clickButton: {
-    marginTop: 20,
-    marginBottom: 20,
-    backgroundColor: theme.colors.primary,
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  clickButtonOff: {
-    opacity: 0.5,
-    marginTop: 20,
-    marginBottom: 20,
-    backgroundColor: theme.colors.accent,
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  clickPrepare: {
-    marginTop: 20,
-    marginBottom: 20,
-    backgroundColor: theme.colors.primary,
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  clickPrepareOff: {
-    opacity: 0.5,
-    marginTop: 20,
-    marginBottom: 20,
-    backgroundColor: theme.colors.accent,
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  clickButtonText: {
-    color: theme.colors.background,
-    fontWeight: 'bold',
-    fontSize: 15,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: theme.colors.secondary,
-    borderRadius: 8,
-    padding: 6,
-    width: 200,
-    height: 35,
-    fontSize: 16,
-    backgroundColor: '#FFF',
-    marginBottom: 5,
-    marginTop: 10,
-    textAlign: 'center',
-  },
-});

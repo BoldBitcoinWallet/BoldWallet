@@ -17,8 +17,8 @@ import Share from 'react-native-share';
 import EncryptedStorage from 'react-native-encrypted-storage';
 const {BBMTLibNativeModule} = NativeModules;
 
-import theme from '../theme';
 import {dbg} from '../utils';
+import {useTheme} from '../theme';
 
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [deleteInput, setDeleteInput] = useState('');
@@ -30,6 +30,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [isTestnet, setIsTestnet] = useState(true);
   const [party, setParty] = useState('');
   const [baseAPI, setBaseAPI] = useState('');
+  const [isCryptoVibrant, setIsCryptoVibrant] = useState(false);
+
+  const {theme, toggleTheme} = useTheme();
 
   useEffect(() => {
     EncryptedStorage.getItem('keyshare').then(ks => {
@@ -39,12 +42,24 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     EncryptedStorage.getItem('network').then(net => {
       setIsTestnet(net !== 'mainnet');
     });
+    EncryptedStorage.getItem('theme').then(appTheme => {
+      setIsCryptoVibrant(appTheme === 'cryptoVibrant');
+    });
     EncryptedStorage.getItem('api').then(api => {
       if (api) {
         setBaseAPI(api);
       }
     });
   }, []);
+
+  const handleToggleTheme = (value: boolean) => {
+    setIsCryptoVibrant(value);
+    toggleTheme(value);
+    navigation.reset({
+      index: 0,
+      routes: [{name: 'Bold Home'}],
+    });
+  };
 
   const toggleNetwork = (value: boolean) => {
     setIsTestnet(value);
@@ -152,12 +167,212 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     }
   };
 
+  const styles = StyleSheet.create({
+    apiItem: {
+      marginBottom: 8,
+    },
+    apiName: {
+      fontSize: 14,
+      fontWeight: 'bold',
+      color: theme.colors.primary,
+    },
+    apiDescription: {
+      fontSize: 14,
+      color: '#2c3e50',
+    },
+    linkText: {
+      color: theme.colors.primary,
+      fontWeight: 'bold',
+      textDecorationLine: 'underline',
+    },
+    container: {
+      flex: 1,
+      backgroundColor: theme.colors.primary,
+    },
+    inputAPI: {
+      borderWidth: 1,
+      borderColor: theme.colors.secondary,
+      borderRadius: 8,
+      padding: 12,
+      maxHeight: 50,
+      fontSize: 14,
+      backgroundColor: '#FFF',
+    },
+    toggleContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: 12,
+    },
+    networkLabel: {
+      fontSize: 16,
+      color: '#2c3e50',
+    },
+    scrollContent: {
+      padding: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    contentContainer: {
+      padding: 8,
+    },
+    title: {
+      fontSize: 20,
+      fontWeight: 'bold',
+      marginTop: 10,
+      marginBottom: 24,
+      color: theme.colors.white,
+    },
+    termsLink: {
+      color: theme.colors.accent,
+      fontWeight: 'bold',
+      textAlign: 'center',
+      textDecorationLine: 'underline',
+      marginBottom: 10,
+    },
+    section: {
+      marginBottom: 32,
+      padding: 24,
+      borderRadius: 8,
+      backgroundColor: '#f8f9fa',
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+    sectionTitle: {
+      fontSize: 16,
+      fontWeight: 'bold',
+      marginBottom: 12,
+      color: '#34495e',
+    },
+    sectionDescription: {
+      fontSize: 13,
+      color: '#2c3e50',
+      marginBottom: 16,
+    },
+    button: {
+      paddingVertical: 14,
+      borderRadius: 8,
+      alignItems: 'center',
+      marginTop: 12,
+    },
+    deleteButton: {
+      backgroundColor: theme.colors.accent,
+    },
+    backupButton: {
+      backgroundColor: theme.colors.secondary,
+    },
+    buttonText: {
+      color: '#ffffff',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    modalContent: {
+      backgroundColor: '#ffffff',
+      padding: 20,
+      borderRadius: 8,
+      width: '80%',
+    },
+    modalTitle: {
+      fontSize: 20,
+      fontWeight: 'bold',
+      marginBottom: 10,
+      textAlign: 'center',
+      color: '#34495e',
+    },
+    modalDescription: {
+      fontSize: 14,
+      color: '#2c3e50',
+      marginBottom: 20,
+      textAlign: 'center',
+    },
+    input: {
+      borderWidth: 1,
+      borderColor: '#7f8c8d',
+      borderRadius: 8,
+      padding: 14,
+      marginBottom: 16,
+      textAlign: 'center',
+      fontSize: 16,
+      color: '#2c3e50',
+    },
+    modalActions: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+    },
+    modalButton: {
+      flex: 1,
+      paddingVertical: 12,
+      borderRadius: 8,
+      marginHorizontal: 8,
+      alignItems: 'center',
+    },
+    saveResetButtons: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: 20,
+    },
+    saveButton: {
+      flex: 1,
+      backgroundColor: theme.colors.primary,
+      padding: 15,
+      borderRadius: 8,
+      alignItems: 'center',
+      marginRight: 10,
+    },
+    resetButton: {
+      flex: 1,
+      backgroundColor: theme.colors.secondary,
+      padding: 15,
+      borderRadius: 8,
+      alignItems: 'center',
+      marginLeft: 10,
+    },
+    cancelButton: {
+      backgroundColor: theme.colors.secondary,
+    },
+    confirmButton: {
+      backgroundColor: theme.colors.accent,
+    },
+    halfOpacity: {
+      opacity: 0.5,
+    },
+  });
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.contentContainer}>
-          <Text style={styles.title}>Network</Text>
+          {/* Theme */}
+          <Text style={styles.title}>Theme</Text>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Select Your Theme</Text>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.networkLabel}>Light Polished</Text>
+              <Switch
+                trackColor={{
+                  true: theme.colors.primary,
+                  false: theme.colors.secondary,
+                }}
+                thumbColor={theme.colors.accent}
+                ios_backgroundColor={theme.colors.disabled}
+                onValueChange={handleToggleTheme}
+                value={isCryptoVibrant}
+              />
+              <Text style={styles.networkLabel}>Crypto Vibrant</Text>
+            </View>
+          </View>
+
           {/* Network */}
+          <Text style={styles.title}>Network</Text>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Network</Text>
             <View style={styles.toggleContainer}>
@@ -389,185 +604,5 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     </SafeAreaView>
   );
 };
-
-const styles = StyleSheet.create({
-  apiItem: {
-    marginBottom: 8,
-  },
-  apiName: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: theme.colors.primary,
-  },
-  apiDescription: {
-    fontSize: 14,
-    color: '#2c3e50',
-  },
-  linkText: {
-    color: theme.colors.primary,
-    fontWeight: 'bold',
-    textDecorationLine: 'underline',
-  },
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.primary,
-  },
-  inputAPI: {
-    borderWidth: 1,
-    borderColor: theme.colors.secondary,
-    borderRadius: 8,
-    padding: 12,
-    maxHeight: 50,
-    fontSize: 14,
-    backgroundColor: '#FFF',
-  },
-  toggleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 12,
-  },
-  networkLabel: {
-    fontSize: 16,
-    color: '#2c3e50',
-  },
-  scrollContent: {
-    padding: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  contentContainer: {
-    padding: 8,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginTop: 10,
-    marginBottom: 24,
-    color: theme.colors.white,
-  },
-  termsLink: {
-    color: theme.colors.accent,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    textDecorationLine: 'underline',
-    marginBottom: 10,
-  },
-  section: {
-    marginBottom: 32,
-    padding: 24,
-    borderRadius: 8,
-    backgroundColor: '#f8f9fa',
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 12,
-    color: '#34495e',
-  },
-  sectionDescription: {
-    fontSize: 13,
-    color: '#2c3e50',
-    marginBottom: 16,
-  },
-  button: {
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  deleteButton: {
-    backgroundColor: theme.colors.accent,
-  },
-  backupButton: {
-    backgroundColor: theme.colors.secondary,
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalContent: {
-    backgroundColor: '#ffffff',
-    padding: 20,
-    borderRadius: 8,
-    width: '80%',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    textAlign: 'center',
-    color: '#34495e',
-  },
-  modalDescription: {
-    fontSize: 14,
-    color: '#2c3e50',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#7f8c8d',
-    borderRadius: 8,
-    padding: 14,
-    marginBottom: 16,
-    textAlign: 'center',
-    fontSize: 16,
-    color: '#2c3e50',
-  },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginHorizontal: 8,
-    alignItems: 'center',
-  },
-  saveResetButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-  },
-  saveButton: {
-    flex: 1,
-    backgroundColor: theme.colors.primary,
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  resetButton: {
-    flex: 1,
-    backgroundColor: theme.colors.secondary,
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginLeft: 10,
-  },
-  cancelButton: {
-    backgroundColor: theme.colors.secondary,
-  },
-  confirmButton: {
-    backgroundColor: theme.colors.accent,
-  },
-  halfOpacity: {
-    opacity: 0.5,
-  },
-});
 
 export default WalletSettings;

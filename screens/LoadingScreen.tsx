@@ -8,12 +8,13 @@ import {
   Image,
   Animated,
   Easing,
-  Dimensions,
   useWindowDimensions,
 } from 'react-native';
-import theme from '../theme';
+import {useTheme} from '../theme';
 
-const LoadingScreen = ({onRetry}) => {
+const LoadingScreen = ({onRetry}: any) => {
+  const {theme} = useTheme();
+
   const [loading, setLoading] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0.7)).current;
   const {width, height} = useWindowDimensions(); // Dynamic screen size detection
@@ -46,6 +47,68 @@ const LoadingScreen = ({onRetry}) => {
       ]),
     ).start();
   }, [fadeAnim]);
+
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme.colors.white,
+      justifyContent: 'space-between', // Ensures button stays at bottom
+      alignItems: 'center',
+      padding: 20, // Adds padding for small screens
+    },
+    contentContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    heroSection: {
+      alignItems: 'center',
+      marginBottom: 20, // Space between text and logo
+    },
+    heroTitle: {
+      fontSize: 28,
+      fontWeight: '700',
+      color: theme.colors.primary,
+      textAlign: 'center',
+    },
+    heroSubtitle: {
+      fontSize: 16,
+      color: theme.colors.secondary,
+      fontWeight: 'bold',
+      textAlign: 'center',
+      marginTop: 10,
+    },
+    storeIcon: {
+      width: 128,
+      height: 128,
+      marginVertical: 20, // Consistent spacing
+    },
+    button: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.colors.primary,
+      borderRadius: 30,
+      paddingVertical: 12,
+      paddingHorizontal: 20,
+      elevation: 2,
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: 0.1,
+      shadowRadius: 2,
+      marginBottom: 20,
+    },
+    buttonText: {
+      color: '#fff',
+      fontSize: 20,
+      fontWeight: 'bold',
+      marginLeft: 16,
+    },
+    icon: {
+      width: 28,
+      height: 28,
+      tintColor: 'white',
+    },
+  });
 
   return (
     <View style={styles.container}>
@@ -92,67 +155,5 @@ const LoadingScreen = ({onRetry}) => {
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.white,
-    justifyContent: 'space-between', // Ensures button stays at bottom
-    alignItems: 'center',
-    padding: 20, // Adds padding for small screens
-  },
-  contentContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  heroSection: {
-    alignItems: 'center',
-    marginBottom: 20, // Space between text and logo
-  },
-  heroTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: theme.colors.primary,
-    textAlign: 'center',
-  },
-  heroSubtitle: {
-    fontSize: 16,
-    color: theme.colors.secondary,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginTop: 10,
-  },
-  storeIcon: {
-    width: 128,
-    height: 128,
-    marginVertical: 20, // Consistent spacing
-  },
-  button: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.primary,
-    borderRadius: 30,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    marginBottom: 20, // Ensures button doesn’t touch bottom edge
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginLeft: 16,
-  },
-  icon: {
-    width: 28,
-    height: 28,
-    tintColor: 'white',
-  },
-});
 
 export default LoadingScreen;

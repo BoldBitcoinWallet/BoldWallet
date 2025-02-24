@@ -195,61 +195,91 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     }
   }
   
-  @objc func getLanIp(_ tag: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
-    var address: String?
-    var classCAddress: String? // Stores Class C IP
-    var iphoneHotspotIp: String? // Stores iPhone Hotspot IP
-    var ifaddr: UnsafeMutablePointer<ifaddrs>? = nil
-    
-    if getifaddrs(&ifaddr) == 0 {
-      var ptr = ifaddr
-      while ptr != nil {
-        defer { ptr = ptr?.pointee.ifa_next }
-        guard let interface = ptr?.pointee else { continue }
-        let addrFamily = interface.ifa_addr.pointee.sa_family
-        if addrFamily == UInt8(AF_INET), let name = interface.ifa_name {
-          let interfaceName = String(cString: name)
-          if interfaceName == "en0" {
-            var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-            if getnameinfo(
-              interface.ifa_addr,
-              socklen_t(interface.ifa_addr.pointee.sa_len),
-              &hostname,
-              socklen_t(hostname.count),
-              nil,
-              0,
-              NI_NUMERICHOST
-            ) == 0 {
-              let ipAddress = String(cString: hostname)
-              if isClassC(ipAddress) {
-                classCAddress = ipAddress
-              } else if ipAddress.hasPrefix("172.20.10.") {
-                iphoneHotspotIp = ipAddress
-              } else if address == nil {
-                address = ipAddress
+  @objc func getLanIp(_ peerIP: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
+      var address: String?
+      var classCAddress: String?
+      var iphoneHotspotIp: String?
+      var sameSubnetIp: String?
+      
+      var ifaddr: UnsafeMutablePointer<ifaddrs>? = nil
+      
+      // Check if peerIP is valid IPv4 for subnet matching
+      let checkSubnet = !peerIP.isEmpty && peerIP.range(of: #"^\d+\.\d+\.\d+\.\d+$"#, options: .regularExpression) != nil
+      
+      if getifaddrs(&ifaddr) == 0 {
+          var ptr = ifaddr
+          while ptr != nil {
+              defer { ptr = ptr?.pointee.ifa_next }
+              guard let interface = ptr?.pointee else { continue }
+              let addrFamily = interface.ifa_addr.pointee.sa_family
+              if addrFamily == UInt8(AF_INET), let name = interface.ifa_name {
+                  let interfaceName = String(cString: name)
+                  if interfaceName == "en0" {
+                      var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                      if getnameinfo(
+                          interface.ifa_addr,
+                          socklen_t(interface.ifa_addr.pointee.sa_len),
+                          &hostname,
+                          socklen_t(hostname.count),
+                          nil,
+                          0,
+                          NI_NUMERICHOST
+                      ) == 0 {
+                          let ipAddress = String(cString: hostname)
+                          // Check subnet match first if peerIP is provided
+                          if checkSubnet && isSameSubnet(ipAddress, peerIP) {
+                              sameSubnetIp = ipAddress
+                              break // Exit early if we find a subnet match
+                          }
+                          else if isClassC(ipAddress) {
+                              classCAddress = ipAddress
+                          }
+                          else if ipAddress.hasPrefix("172.20.10.") {
+                              iphoneHotspotIp = ipAddress
+                          }
+                          else if address == nil {
+                              address = ipAddress
+                          }
+                      }
+                  }
               }
-            }
           }
-        }
+          freeifaddrs(ifaddr)
       }
-      freeifaddrs(ifaddr)
-    }
-    
-    if let hotspotIp = iphoneHotspotIp {
-      sendLogEvent("getLanIp (iPhone Hotspot)", hotspotIp)
-      resolver(hotspotIp)
-    } else if let classC = classCAddress {
-      sendLogEvent("getLanIp (Class C)", classC)
-      resolver(classC)
-    } else {
-      sendLogEvent("getLanIp", address ?? "")
-      resolver(address ?? "")
-    }
+      
+      if let subnetIp = sameSubnetIp {
+          sendLogEvent("getLanIp (Same Subnet)", subnetIp)
+          resolver(subnetIp)
+      }
+      else if let hotspotIp = iphoneHotspotIp {
+          sendLogEvent("getLanIp (iPhone Hotspot)", hotspotIp)
+          resolver(hotspotIp)
+      }
+      else if let classC = classCAddress {
+          sendLogEvent("getLanIp (Class C)", classC)
+          resolver(classC)
+      }
+      else {
+          sendLogEvent("getLanIp", address ?? "")
+          resolver(address ?? "")
+      }
   }
-  
+
   private func isClassC(_ ip: String) -> Bool {
-    let parts = ip.split(separator: ".").compactMap { Int($0) }
-    return parts.count == 4 && parts[0] >= 192 && parts[0] <= 223
+      let parts = ip.split(separator: ".").compactMap { Int($0) }
+      return parts.count == 4 && parts[0] >= 192 && parts[0] <= 223
+  }
+
+  private func isSameSubnet(_ ip1: String, _ ip2: String) -> Bool {
+      let parts1 = ip1.split(separator: ".").compactMap { Int($0) }
+      let parts2 = ip2.split(separator: ".").compactMap { Int($0) }
+      
+      guard parts1.count == 4, parts2.count == 4 else { return false }
+      
+      // Assuming /24 subnet mask - compare first 3 octets
+      return parts1[0] == parts2[0] &&
+             parts1[1] == parts2[1] &&
+             parts1[2] == parts2[2]
   }
   
   @objc func eciesKeypair(_ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {

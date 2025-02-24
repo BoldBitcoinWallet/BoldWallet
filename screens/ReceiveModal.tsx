@@ -9,13 +9,13 @@ import {
   Linking,
   Alert,
 } from 'react-native';
-import theme from '../theme';
 import Toast from 'react-native-toast-message';
 import QRCode from 'react-native-qrcode-svg';
 import Clipboard from '@react-native-clipboard/clipboard';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
 import {dbg} from '../utils';
+import {useTheme} from '../theme';
 
 const ReceiveModal: React.FC<{
   visible: boolean;
@@ -24,7 +24,9 @@ const ReceiveModal: React.FC<{
   network: string;
   onClose: () => void;
 }> = ({visible, address, baseApi, network, onClose}) => {
-  const qrRef = useRef<any>(null); // Ref to hold QRCode instance
+  const qrRef = useRef<any>(null);
+
+  const {theme} = useTheme();
 
   const copyToClipboard = useCallback(() => {
     Toast.show({
@@ -87,6 +89,65 @@ const ReceiveModal: React.FC<{
     }
   }, [address, network]);
 
+  const styles = StyleSheet.create({
+    modalContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    },
+    modalContent: {
+      backgroundColor: theme.colors.white,
+      padding: 20,
+      borderRadius: 10,
+      alignItems: 'center',
+      width: '90%',
+    },
+    textReceive: {
+      position: 'absolute',
+      top: 20,
+      left: 20,
+      padding: 8,
+      fontSize: 16,
+      fontWeight: 'bold',
+    },
+    closeButton: {
+      position: 'absolute',
+      top: 20,
+      right: 20,
+      backgroundColor: theme.colors.cardBackground,
+      padding: 8,
+      color: theme.colors.accent,
+      borderRadius: 50,
+    },
+    closeButtonText: {
+      fontSize: 16,
+    },
+    qrContainer: {
+      marginTop: 60,
+    },
+    addressContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 10,
+      marginBottom: 10,
+    },
+    addressText: {
+      fontSize: 13,
+      textDecorationLine: 'underline',
+      color: theme.colors.primary,
+      textAlign: 'center',
+      fontWeight: 'bold',
+    },
+    iconContainer: {
+      paddingLeft: 10,
+    },
+    iconImage: {
+      width: 24,
+      height: 24,
+    },
+  });
+
   return (
     <Modal
       visible={visible}
@@ -141,64 +202,5 @@ const ReceiveModal: React.FC<{
     </Modal>
   );
 };
-
-const styles = StyleSheet.create({
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-  },
-  modalContent: {
-    backgroundColor: theme.colors.white,
-    padding: 20,
-    borderRadius: 10,
-    alignItems: 'center',
-    width: '90%',
-  },
-  textReceive: {
-    position: 'absolute',
-    top: 20,
-    left: 20,
-    padding: 8,
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  closeButton: {
-    position: 'absolute',
-    top: 20,
-    right: 20,
-    backgroundColor: theme.colors.cardBackground,
-    padding: 8,
-    color: theme.colors.accent,
-    borderRadius: 50,
-  },
-  closeButtonText: {
-    fontSize: 16,
-  },
-  qrContainer: {
-    marginTop: 60,
-  },
-  addressContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 10,
-    marginBottom: 10,
-  },
-  addressText: {
-    fontSize: 13,
-    textDecorationLine: 'underline',
-    color: theme.colors.primary,
-    textAlign: 'center',
-    fontWeight: 'bold',
-  },
-  iconContainer: {
-    paddingLeft: 10,
-  },
-  iconImage: {
-    width: 24,
-    height: 24,
-  },
-});
 
 export default ReceiveModal;
