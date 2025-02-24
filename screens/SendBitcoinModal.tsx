@@ -42,7 +42,7 @@ interface SendBitcoinModalProps {
 
 const E8 = Big(10).pow(8);
 
-const QRScanner = ({device, codeScanner, onClose}: any) => {
+const QRScanner = ({styles, device, codeScanner, onClose}: any) => {
   if (!device) {
     return <Text style={styles.cameraNotFound}>Camera Not Found</Text>;
   }
@@ -83,202 +83,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   const [feeStrategy, setFeeStrategy] = useState('1hr');
 
   const {theme} = useTheme();
-
-  const device = useCameraDevice('back');
-  const codeScanner = useCodeScanner({
-    codeTypes: ['qr'],
-    onCodeScanned: codes => {
-      if (codes.length > 0) {
-        setAddress(codes[0].value!!);
-        setIsScannerVisible(false);
-      }
-    },
-  });
-
-  const feeStrategies = [
-    {label: 'Economy', value: 'eco'},
-    {label: 'Top Priority', value: 'top'},
-    {label: '30 Min', value: '30m'},
-    {label: '1 Hour', value: '1hr'},
-    {label: 'Minimum', value: 'min'},
-  ];
-
-  const formatUSD = (price: number) =>
-    new Intl.NumberFormat('en-US', {
-      style: 'decimal',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(price);
-
-  const debouncedGetFee = useCallback(
-    debounce(async (addr: string, amt: string) => {
-      if (!addr || !amt || btcAmount.eq(0)) {
-        setEstimatedFee(null);
-        return;
-      }
-
-      const amount = Big(amt);
-
-      if (amount.gt(walletBalance) || !walletBalance) {
-        setEstimatedFee(null);
-        return;
-      }
-
-      setIsCalculatingFee(true);
-      BBMTLibNativeModule.estimateFee(
-        walletAddress,
-        addr,
-        amount.times(1e8).toFixed(0),
-      )
-        .then((fee: string) => {
-          if (fee) {
-            dbg('got fees:', fee);
-            const feeAmt = Big(fee);
-            setEstimatedFee(feeAmt);
-            if (Big(inBtcAmount).eq(walletBalance)) {
-              setInBtcAmount(walletBalance.minus(feeAmt.div(1e8)).toString());
-            }
-          }
-        })
-        .catch((e: any) => {
-          console.error('Fee estimation failed:', e);
-          Alert.alert('Error', 'Failed to estimate transaction fee');
-        })
-        .finally(() => {
-          setIsCalculatingFee(false);
-        });
-    }, 1000),
-    [inBtcAmount, walletAddress, feeStrategy],
-  );
-
-  useEffect(() => {
-    const initFee = async () => {
-      const feeOption = await EncryptedStorage.getItem('feeStrategy');
-      setFeeStrategy(feeOption || 'eco');
-      BBMTLibNativeModule.setFeePolicy(feeOption || 'eco');
-      dbg('using fee strategy', feeOption);
-    };
-    initFee();
-  }, []);
-
-  useEffect(() => {
-    if (address && btcAmount) {
-      debouncedGetFee(address, btcAmount.toString());
-    }
-  }, [address, btcAmount, debouncedGetFee]);
-
-  const pasteAddress = useCallback(async () => {
-    const text = await Clipboard.getString();
-    setAddress(text);
-  }, []);
-
-  const handleBtcChange = (text: string) => {
-    setActiveInput('btc');
-    setInBtcAmount(text);
-    try {
-      const btc = Big(text || 0);
-      setBtcAmount(btc);
-      if (activeInput === 'btc') {
-        setInUsdAmount(btc.mul(btcToUsdRate).toFixed(2));
-      }
-    } catch {
-      console.error('Invalid BTC input:', text);
-    }
-  };
-
-  const handleUsdChange = (text: string) => {
-    setActiveInput('usd');
-    setInUsdAmount(text);
-    try {
-      const usd = Big(text || 0);
-      if (activeInput === 'usd') {
-        setBtcAmount(usd.div(btcToUsdRate));
-        setInBtcAmount(usd.div(btcToUsdRate).toFixed(8));
-      }
-    } catch {
-      console.error('Invalid USD input:', text);
-    }
-  };
-
-  const handleMaxClick = () => {
-    setBtcAmount(walletBalance);
-    setInBtcAmount(walletBalance.toFixed(8));
-    setInUsdAmount(walletBalance.times(btcToUsdRate).toFixed(2));
-  };
-
-  const handleFeeStrategyChange = (value: string) => {
-    setFeeStrategy(value);
-    dbg('setting fee strategy to', value);
-    BBMTLibNativeModule.setFeePolicy(value);
-    EncryptedStorage.setItem('feeStrategy', value);
-  };
-
-  const handleSendClick = () => {
-    if (!estimatedFee) {
-      Alert.alert('Error', 'Please wait for fee estimation');
-      return;
-    }
-    const feeBTC = estimatedFee.div(1e8);
-    const totalAmount = Big(inBtcAmount).add(feeBTC);
-    if (totalAmount.gt(walletBalance)) {
-      Alert.alert('Error', 'Total amount including fee exceeds wallet balance');
-      return;
-    }
-    onSend(address, Big(inBtcAmount).times(1e8), estimatedFee);
-  };
-
-  const renderFeeSection = () => {
-    if (!address || !btcAmount) {
-      return null;
-    }
-    return (
-      <View style={styles.feeContainer}>
-        {isCalculatingFee ? (
-          <View style={styles.feeLoadingContainer}>
-            <ActivityIndicator size="small" color={theme.colors.primary} />
-            <Text style={styles.feeCalculating}>Calculating...</Text>
-          </View>
-        ) : estimatedFee ? (
-          <View style={styles.feeInfoContainer}>
-            <View style={styles.feeStrategyContainer}>
-              <Text style={styles.label}>Network Fee:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {feeStrategies.map(strategy => (
-                  <TouchableOpacity
-                    key={strategy.value}
-                    style={[
-                      styles.feeStrategyButton,
-                      feeStrategy === strategy.value &&
-                        styles.feeStrategyButtonSelected,
-                    ]}
-                    onPress={() => handleFeeStrategyChange(strategy.value)}>
-                    <Text
-                      style={[
-                        styles.feeStrategyText,
-                        feeStrategy === strategy.value &&
-                          styles.feeStrategyTextSelected,
-                      ]}>
-                      {strategy.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-            <View style={styles.feeAmountContainer}>
-              <Text style={styles.feeAmount}>
-                {estimatedFee.div(E8).toFixed(8)} BTC
-              </Text>
-              <Text style={styles.feeAmountUsd}>
-                ($
-                {formatUSD(estimatedFee.div(E8).times(btcToUsdRate).toNumber())}
-                )
-              </Text>
-            </View>
-          </View>
-        ) : null}
-      </View>
-    );
-  };
 
   const styles = StyleSheet.create({
     feeStrategyContainer: {
@@ -495,6 +299,202 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     },
   });
 
+  const device = useCameraDevice('back');
+  const codeScanner = useCodeScanner({
+    codeTypes: ['qr'],
+    onCodeScanned: codes => {
+      if (codes.length > 0) {
+        setAddress(codes[0].value!!);
+        setIsScannerVisible(false);
+      }
+    },
+  });
+
+  const feeStrategies = [
+    {label: 'Economy', value: 'eco'},
+    {label: 'Top Priority', value: 'top'},
+    {label: '30 Min', value: '30m'},
+    {label: '1 Hour', value: '1hr'},
+    {label: 'Minimum', value: 'min'},
+  ];
+
+  const formatUSD = (price: number) =>
+    new Intl.NumberFormat('en-US', {
+      style: 'decimal',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(price);
+
+  const debouncedGetFee = useCallback(
+    debounce(async (addr: string, amt: string) => {
+      if (!addr || !amt || btcAmount.eq(0)) {
+        setEstimatedFee(null);
+        return;
+      }
+
+      const amount = Big(amt);
+
+      if (amount.gt(walletBalance) || !walletBalance) {
+        setEstimatedFee(null);
+        return;
+      }
+
+      setIsCalculatingFee(true);
+      BBMTLibNativeModule.estimateFee(
+        walletAddress,
+        addr,
+        amount.times(1e8).toFixed(0),
+      )
+        .then((fee: string) => {
+          if (fee) {
+            dbg('got fees:', fee);
+            const feeAmt = Big(fee);
+            setEstimatedFee(feeAmt);
+            if (Big(inBtcAmount).eq(walletBalance)) {
+              setInBtcAmount(walletBalance.minus(feeAmt.div(1e8)).toString());
+            }
+          }
+        })
+        .catch((e: any) => {
+          console.error('Fee estimation failed:', e);
+          Alert.alert('Error', 'Failed to estimate transaction fee');
+        })
+        .finally(() => {
+          setIsCalculatingFee(false);
+        });
+    }, 1000),
+    [inBtcAmount, walletAddress, feeStrategy],
+  );
+
+  useEffect(() => {
+    const initFee = async () => {
+      const feeOption = await EncryptedStorage.getItem('feeStrategy');
+      setFeeStrategy(feeOption || 'eco');
+      BBMTLibNativeModule.setFeePolicy(feeOption || 'eco');
+      dbg('using fee strategy', feeOption);
+    };
+    initFee();
+  }, []);
+
+  useEffect(() => {
+    if (address && btcAmount) {
+      debouncedGetFee(address, btcAmount.toString());
+    }
+  }, [address, btcAmount, debouncedGetFee]);
+
+  const pasteAddress = useCallback(async () => {
+    const text = await Clipboard.getString();
+    setAddress(text);
+  }, []);
+
+  const handleBtcChange = (text: string) => {
+    setActiveInput('btc');
+    setInBtcAmount(text);
+    try {
+      const btc = Big(text || 0);
+      setBtcAmount(btc);
+      if (activeInput === 'btc') {
+        setInUsdAmount(btc.mul(btcToUsdRate).toFixed(2));
+      }
+    } catch {
+      console.error('Invalid BTC input:', text);
+    }
+  };
+
+  const handleUsdChange = (text: string) => {
+    setActiveInput('usd');
+    setInUsdAmount(text);
+    try {
+      const usd = Big(text || 0);
+      if (activeInput === 'usd') {
+        setBtcAmount(usd.div(btcToUsdRate));
+        setInBtcAmount(usd.div(btcToUsdRate).toFixed(8));
+      }
+    } catch {
+      console.error('Invalid USD input:', text);
+    }
+  };
+
+  const handleMaxClick = () => {
+    setBtcAmount(walletBalance);
+    setInBtcAmount(walletBalance.toFixed(8));
+    setInUsdAmount(walletBalance.times(btcToUsdRate).toFixed(2));
+  };
+
+  const handleFeeStrategyChange = (value: string) => {
+    setFeeStrategy(value);
+    dbg('setting fee strategy to', value);
+    BBMTLibNativeModule.setFeePolicy(value);
+    EncryptedStorage.setItem('feeStrategy', value);
+  };
+
+  const handleSendClick = () => {
+    if (!estimatedFee) {
+      Alert.alert('Error', 'Please wait for fee estimation');
+      return;
+    }
+    const feeBTC = estimatedFee.div(1e8);
+    const totalAmount = Big(inBtcAmount).add(feeBTC);
+    if (totalAmount.gt(walletBalance)) {
+      Alert.alert('Error', 'Total amount including fee exceeds wallet balance');
+      return;
+    }
+    onSend(address, Big(inBtcAmount).times(1e8), estimatedFee);
+  };
+
+  const renderFeeSection = () => {
+    if (!address || !btcAmount) {
+      return null;
+    }
+    return (
+      <View style={styles.feeContainer}>
+        {isCalculatingFee ? (
+          <View style={styles.feeLoadingContainer}>
+            <ActivityIndicator size="small" color={theme.colors.primary} />
+            <Text style={styles.feeCalculating}>Calculating...</Text>
+          </View>
+        ) : estimatedFee ? (
+          <View style={styles.feeInfoContainer}>
+            <View style={styles.feeStrategyContainer}>
+              <Text style={styles.label}>Network Fee:</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {feeStrategies.map(strategy => (
+                  <TouchableOpacity
+                    key={strategy.value}
+                    style={[
+                      styles.feeStrategyButton,
+                      feeStrategy === strategy.value &&
+                        styles.feeStrategyButtonSelected,
+                    ]}
+                    onPress={() => handleFeeStrategyChange(strategy.value)}>
+                    <Text
+                      style={[
+                        styles.feeStrategyText,
+                        feeStrategy === strategy.value &&
+                          styles.feeStrategyTextSelected,
+                      ]}>
+                      {strategy.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+            <View style={styles.feeAmountContainer}>
+              <Text style={styles.feeAmount}>
+                {estimatedFee.div(E8).toFixed(8)} BTC
+              </Text>
+              <Text style={styles.feeAmountUsd}>
+                ($
+                {formatUSD(estimatedFee.div(E8).times(btcToUsdRate).toNumber())}
+                )
+              </Text>
+            </View>
+          </View>
+        ) : null}
+      </View>
+    );
+  };
+
   return (
     <Modal
       animationType="fade"
@@ -601,6 +601,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                   visible={isScannerVisible}
                   onRequestClose={() => setIsScannerVisible(false)}>
                   <QRScanner
+                    styles={styles}
                     device={device}
                     codeScanner={codeScanner}
                     onClose={() => setIsScannerVisible(false)}
