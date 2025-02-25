@@ -43,7 +43,7 @@ RCT_EXTERN_METHOD(mpcTssSetup:(NSString *)server
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 // Call getLanIp
-RCT_EXTERN_METHOD(getLanIp:(NSString *)tag
+RCT_EXTERN_METHOD(getLanIp:(NSString *)peerIP
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 

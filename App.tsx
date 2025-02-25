@@ -10,6 +10,7 @@ import LoadingScreen from './screens/LoadingScreen';
 import Zeroconf, {ImplType} from 'react-native-zeroconf';
 import ReactNativeBiometrics, {BiometryTypes} from 'react-native-biometrics';
 import DeviceInfo from 'react-native-device-info';
+import {ThemeProvider} from './theme';
 
 import {
   Alert,
@@ -216,22 +217,28 @@ const App = () => {
   };
 
   if (initialRoute === null || !isAuthenticated) {
-    return <LoadingScreen onRetry={handleRetryAuthentication} />;
+    return (
+      <ThemeProvider>
+        <LoadingScreen onRetry={handleRetryAuthentication} />
+      </ThemeProvider>
+    );
   }
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator initialRouteName={initialRoute}>
-        <Stack.Screen name="Bold BTC Wallet" component={ShowcaseScreen} />
-        <Stack.Screen name="Bold Home" component={WalletHome} />
-        <Stack.Screen
-          name="📱📱 Pairing"
-          component={MobilesPairing}
-          initialParams={{mode: 'setup'}}
-        />
-        <Stack.Screen name="Wallet Settings" component={WalletSettings} />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <ThemeProvider>
+      <NavigationContainer>
+        <Stack.Navigator initialRouteName={initialRoute}>
+          <Stack.Screen name="Bold BTC Wallet" component={ShowcaseScreen} />
+          <Stack.Screen name="Bold Home" component={WalletHome} />
+          <Stack.Screen
+            name="📱📱 Pairing"
+            component={MobilesPairing}
+            initialParams={{mode: 'setup'}}
+          />
+          <Stack.Screen name="Wallet Settings" component={WalletSettings} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </ThemeProvider>
   );
 };
 

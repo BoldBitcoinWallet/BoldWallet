@@ -18,8 +18,8 @@ import {
 import DocumentPicker from 'react-native-document-picker';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import RNFS from 'react-native-fs';
-import theme from '../theme';
-import { dbg } from '../utils';
+import {useTheme} from '../theme';
+import {dbg} from '../utils';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -28,6 +28,7 @@ const ShowcaseScreen = ({navigation}: any) => {
   const [password, setPassword] = useState('');
   const [fileContent, setFileContent] = useState('');
   const [agreeToTerms, setAgreeToTerms] = useState(false);
+  const {theme} = useTheme();
 
   const fadeAnim = useRef(new Animated.Value(0.7)).current;
 
@@ -123,6 +124,137 @@ const ShowcaseScreen = ({navigation}: any) => {
     }
   };
 
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme.colors.background,
+    },
+    scrollContainer: {
+      flexGrow: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    heroSection: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      textAlign: 'center',
+    },
+    heroTitle: {
+      fontSize: 28,
+      fontWeight: '700',
+      color: theme.colors.primary,
+      marginTop: 0,
+      textAlign: 'center',
+    },
+    heroSubtitle: {
+      fontSize: 16,
+      color: theme.colors.secondary,
+      fontWeight: 'bold',
+      textAlign: 'center',
+    },
+    storeIcon: {
+      width: 128,
+      height: 128,
+    },
+    bottomActions: {
+      alignItems: 'center',
+      width: '100%',
+      marginBottom: 10,
+    },
+    ctaButtons: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: 15,
+      marginBottom: 20,
+    },
+    ctaButton: {
+      backgroundColor: theme.colors.primary,
+      borderRadius: 4,
+      padding: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: 160,
+    },
+    ctaButtonRestore: {
+      backgroundColor: theme.colors.accent,
+      borderRadius: 4,
+      padding: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: 160,
+    },
+    ctaButtonText: {
+      color: theme.colors.background,
+      fontWeight: '800',
+      fontSize: 16,
+    },
+    disabledButton: {
+      opacity: 0.5,
+    },
+    termsContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 20,
+    },
+    termsText: {
+      fontSize: 14,
+      color: theme.colors.text,
+    },
+    termsLink: {
+      color: theme.colors.accent,
+      textDecorationLine: 'underline',
+    },
+    checkboxContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginRight: 10,
+    },
+    checkbox: {
+      width: 24,
+      height: 24,
+      borderWidth: 2,
+      borderColor: theme.colors.text,
+      borderRadius: 4,
+    },
+    checkboxChecked: {
+      backgroundColor: theme.colors.primary,
+    },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    modalContent: {
+      backgroundColor: theme.colors.background,
+      padding: 20,
+      borderRadius: 8,
+      width: '80%',
+    },
+    modalTitle: {
+      fontSize: 20,
+      fontWeight: 'bold',
+      marginBottom: 10,
+      textAlign: 'center',
+      color: theme.colors.text,
+    },
+    passwordInput: {
+      borderWidth: 1,
+      borderColor: '#ccc',
+      borderRadius: 4,
+      padding: 10,
+      marginBottom: 15,
+      textAlign: 'center',
+      fontSize: 17,
+    },
+    modalActions: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: 10,
+    },
+  });
+
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContainer}>
@@ -214,136 +346,5 @@ const ShowcaseScreen = ({navigation}: any) => {
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    textAlign: 'center',
-  },
-  heroTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: theme.colors.primary,
-    marginTop: 0,
-    textAlign: 'center',
-  },
-  heroSubtitle: {
-    fontSize: 16,
-    color: theme.colors.secondary,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  storeIcon: {
-    width: 128,
-    height: 128,
-  },
-  bottomActions: {
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: 10,
-  },
-  ctaButtons: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 15,
-    marginBottom: 20,
-  },
-  ctaButton: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: 4,
-    padding: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 160,
-  },
-  ctaButtonRestore: {
-    backgroundColor: theme.colors.accent,
-    borderRadius: 4,
-    padding: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 160,
-  },
-  ctaButtonText: {
-    color: theme.colors.background,
-    fontWeight: '800',
-    fontSize: 16,
-  },
-  disabledButton: {
-    opacity: 0.5,
-  },
-  termsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  termsText: {
-    fontSize: 14,
-    color: theme.colors.text,
-  },
-  termsLink: {
-    color: theme.colors.accent,
-    textDecorationLine: 'underline',
-  },
-  checkboxContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderWidth: 2,
-    borderColor: theme.colors.text,
-    borderRadius: 4,
-  },
-  checkboxChecked: {
-    backgroundColor: theme.colors.primary,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalContent: {
-    backgroundColor: theme.colors.background,
-    padding: 20,
-    borderRadius: 8,
-    width: '80%',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    textAlign: 'center',
-    color: theme.colors.text,
-  },
-  passwordInput: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 4,
-    padding: 10,
-    marginBottom: 15,
-    textAlign: 'center',
-    fontSize: 17,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 10,
-  },
-});
 
 export default ShowcaseScreen;

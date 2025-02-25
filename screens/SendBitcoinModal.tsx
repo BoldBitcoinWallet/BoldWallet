@@ -24,10 +24,10 @@ import {
 } from 'react-native-vision-camera';
 import Clipboard from '@react-native-clipboard/clipboard';
 import debounce from 'lodash/debounce';
-import theme from '../theme';
 import Big from 'big.js';
 import {dbg} from '../utils';
 import EncryptedStorage from 'react-native-encrypted-storage';
+import {useTheme} from '../theme';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -42,7 +42,7 @@ interface SendBitcoinModalProps {
 
 const E8 = Big(10).pow(8);
 
-const QRScanner = ({device, codeScanner, onClose}: any) => {
+const QRScanner = ({styles, device, codeScanner, onClose}: any) => {
   if (!device) {
     return <Text style={styles.cameraNotFound}>Camera Not Found</Text>;
   }
@@ -81,6 +81,223 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
 
   const [activeInput, setActiveInput] = useState<'btc' | 'usd' | null>(null);
   const [feeStrategy, setFeeStrategy] = useState('1hr');
+
+  const {theme} = useTheme();
+
+  const styles = StyleSheet.create({
+    feeStrategyContainer: {
+      marginBottom: 10,
+    },
+    feeStrategyButton: {
+      backgroundColor: '#e9ecef',
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 16,
+      marginRight: 8,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    feeStrategyButtonSelected: {
+      backgroundColor: theme.colors.primary,
+      borderColor: theme.colors.primary,
+    },
+    feeStrategyText: {
+      fontSize: 14,
+      color: '#495057',
+      fontWeight: '600',
+    },
+    feeStrategyTextSelected: {
+      color: '#fff',
+    },
+    label: {
+      fontSize: 14,
+      fontWeight: '600',
+      marginBottom: 8,
+      color: '#7f8c8d',
+    },
+    modalBackdrop: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    },
+    modalContainer: {
+      width: '90%',
+      backgroundColor: theme.colors.background,
+      borderRadius: 10,
+      padding: 20,
+    },
+    header: {
+      fontSize: 20,
+      fontWeight: 'bold',
+      color: theme.colors.text,
+      marginBottom: 0,
+      textAlign: 'center',
+    },
+    input: {
+      borderWidth: 1,
+      borderColor: theme.colors.secondary,
+      borderRadius: 8,
+      padding: 12,
+      fontSize: 16,
+      maxHeight: 50,
+      backgroundColor: '#FFF',
+      marginBottom: 10,
+    },
+    inputWithIcons: {
+      position: 'relative',
+      marginBottom: 20,
+      marginTop: 20,
+    },
+    inputAddressWithIcons: {
+      borderWidth: 1,
+      borderColor: theme.colors.secondary,
+      borderRadius: 8,
+      padding: 12,
+      paddingRight: 80,
+      maxHeight: 50,
+      fontSize: 14,
+      backgroundColor: '#FFF',
+    },
+    iconImage: {
+      width: 24,
+      height: 24,
+    },
+    pasteIconContainer: {
+      position: 'absolute',
+      top: '50%',
+      right: 40,
+      transform: [{translateY: -12}],
+    },
+    qrIconContainer: {
+      position: 'absolute',
+      top: '50%',
+      right: 10,
+      transform: [{translateY: -12}],
+    },
+    labelContainer: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 5,
+    },
+    maxText: {
+      color: theme.colors.accent,
+      fontSize: 14,
+      fontWeight: 'bold',
+      marginBottom: 10,
+      textDecorationLine: 'underline',
+    },
+    inputContainer: {
+      marginBottom: 0,
+    },
+    inputLabel: {
+      fontSize: 14,
+      fontWeight: '600',
+      marginBottom: 8,
+      color: '#7f8c8d',
+    },
+    feeContainer: {
+      marginTop: 15,
+      padding: 10,
+      backgroundColor: '#f8f9fa',
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: theme.colors.secondary,
+    },
+    feeLabel: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: '#7f8c8d',
+    },
+    feeInfoContainer: {
+      marginTop: 5,
+    },
+    feeAmount: {
+      fontSize: 16,
+      fontWeight: 'bold',
+      color: theme.colors.text,
+    },
+    feeCalculating: {
+      marginLeft: 10,
+      color: '#7f8c8d',
+      fontSize: 14,
+    },
+    feeAmountContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    feeLoadingContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 5,
+    },
+    feeAmountUsd: {
+      fontSize: 14,
+      color: '#7f8c8d',
+    },
+    sendCancelButtons: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: 20,
+    },
+    sendButton: {
+      flex: 1,
+      backgroundColor: theme.colors.primary,
+      padding: 15,
+      borderRadius: 8,
+      alignItems: 'center',
+      marginRight: 10,
+    },
+    cancelButton: {
+      flex: 1,
+      backgroundColor: theme.colors.secondary,
+      padding: 15,
+      borderRadius: 8,
+      alignItems: 'center',
+      marginLeft: 10,
+    },
+    buttonText: {
+      color: '#fff',
+      fontSize: 16,
+      fontWeight: 'bold',
+    },
+    disabledButton: {
+      opacity: 0.5,
+    },
+    scannerContainer: {
+      flex: 1,
+      backgroundColor: 'black',
+    },
+    qrFrame: {
+      position: 'absolute',
+      borderWidth: 2,
+      borderColor: 'white',
+      width: 250,
+      height: 250,
+      alignSelf: 'center',
+      top: '25%',
+    },
+    closeScannerButton: {
+      position: 'absolute',
+      top: 50,
+      right: 20,
+      backgroundColor: theme.colors.accent,
+      padding: 10,
+      borderRadius: 50,
+    },
+    closeScannerButtonText: {
+      color: '#fff',
+      fontWeight: 'bold',
+    },
+    cameraNotFound: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+  });
 
   const device = useCameraDevice('back');
   const codeScanner = useCodeScanner({
@@ -384,6 +601,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                   visible={isScannerVisible}
                   onRequestClose={() => setIsScannerVisible(false)}>
                   <QRScanner
+                    styles={styles}
                     device={device}
                     codeScanner={codeScanner}
                     onClose={() => setIsScannerVisible(false)}
@@ -397,220 +615,5 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     </Modal>
   );
 };
-
-const styles = StyleSheet.create({
-  feeStrategyContainer: {
-    marginBottom: 10,
-  },
-  feeStrategyButton: {
-    backgroundColor: '#e9ecef',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  feeStrategyButtonSelected: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-  },
-  feeStrategyText: {
-    fontSize: 14,
-    color: '#495057',
-    fontWeight: '600',
-  },
-  feeStrategyTextSelected: {
-    color: '#fff',
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-    color: '#7f8c8d',
-  },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  modalContainer: {
-    width: '90%',
-    backgroundColor: theme.colors.background,
-    borderRadius: 10,
-    padding: 20,
-  },
-  header: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    marginBottom: 0,
-    textAlign: 'center',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: theme.colors.secondary,
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    maxHeight: 50,
-    backgroundColor: '#FFF',
-    marginBottom: 10,
-  },
-  inputWithIcons: {
-    position: 'relative',
-    marginBottom: 20,
-    marginTop: 20,
-  },
-  inputAddressWithIcons: {
-    borderWidth: 1,
-    borderColor: theme.colors.secondary,
-    borderRadius: 8,
-    padding: 12,
-    paddingRight: 80,
-    maxHeight: 50,
-    fontSize: 14,
-    backgroundColor: '#FFF',
-  },
-  iconImage: {
-    width: 24,
-    height: 24,
-  },
-  pasteIconContainer: {
-    position: 'absolute',
-    top: '50%',
-    right: 40,
-    transform: [{translateY: -12}],
-  },
-  qrIconContainer: {
-    position: 'absolute',
-    top: '50%',
-    right: 10,
-    transform: [{translateY: -12}],
-  },
-  labelContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 5,
-  },
-  maxText: {
-    color: theme.colors.accent,
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    textDecorationLine: 'underline',
-  },
-  inputContainer: {
-    marginBottom: 0,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-    color: '#7f8c8d',
-  },
-  feeContainer: {
-    marginTop: 15,
-    padding: 10,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: theme.colors.secondary,
-  },
-  feeLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#7f8c8d',
-  },
-  feeInfoContainer: {
-    marginTop: 5,
-  },
-  feeAmount: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-  },
-  feeCalculating: {
-    marginLeft: 10,
-    color: '#7f8c8d',
-    fontSize: 14,
-  },
-  feeAmountContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  feeLoadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 5,
-  },
-  feeAmountUsd: {
-    fontSize: 14,
-    color: '#7f8c8d',
-  },
-  sendCancelButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-  },
-  sendButton: {
-    flex: 1,
-    backgroundColor: theme.colors.primary,
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  cancelButton: {
-    flex: 1,
-    backgroundColor: theme.colors.secondary,
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginLeft: 10,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  disabledButton: {
-    opacity: 0.5,
-  },
-  scannerContainer: {
-    flex: 1,
-    backgroundColor: 'black',
-  },
-  qrFrame: {
-    position: 'absolute',
-    borderWidth: 2,
-    borderColor: 'white',
-    width: 250,
-    height: 250,
-    alignSelf: 'center',
-    top: '25%',
-  },
-  closeScannerButton: {
-    position: 'absolute',
-    top: 50,
-    right: 20,
-    backgroundColor: theme.colors.accent,
-    padding: 10,
-    borderRadius: 50,
-  },
-  closeScannerButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  cameraNotFound: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-});
 
 export default SendBitcoinModal;

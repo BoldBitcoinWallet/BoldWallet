@@ -11,14 +11,14 @@ import {
 } from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import SendBitcoinModal from './SendBitcoinModal';
-import theme from '../theme';
 import Toast from 'react-native-toast-message';
 import TransactionList from './TransactionList';
 import {useCameraPermission} from 'react-native-vision-camera';
 import {CommonActions} from '@react-navigation/native';
 import Big from 'big.js';
 import ReceiveModal from './ReceiveModal';
-import { dbg } from '../utils';
+import {dbg} from '../utils';
+import {useTheme} from '../theme';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -45,6 +45,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [isBlurred, setIsBlurred] = useState<boolean>(true);
   const [isReceiveModalVisible, setIsReceiveModalVisible] = useState(false);
   const [pendingSent, setPendingSent] = useState(0);
+
+  const {theme} = useTheme();
 
   useEffect(() => {
     const requestCameraAccess = async () => {
