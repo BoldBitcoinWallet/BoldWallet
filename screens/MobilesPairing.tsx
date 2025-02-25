@@ -179,34 +179,39 @@ const MobilesPairing = ({navigation}: any) => {
   };
 
   async function initSession() {
-    if (isMaster) {
-      let _data = randomSeed(64);
-      if (isSendBitcoin) {
-        const jks = await EncryptedStorage.getItem('keyshare');
-        const ks = JSON.parse(jks || '{}');
-        _data += ':' + route.params.satoshiAmount;
-        _data += ':' + route.params.satoshiFees;
-        _data += ':' + ks.local_party_key;
-      }
-      dbg('publishing data', _data, 'peer pubkey', peerPubkey);
-      const published = await BBMTLibNativeModule.publishData(
-        String(discoveryPort),
-        String(timeout),
-        peerPubkey,
-        _data,
-      );
-      if (published) {
-        dbg('data published:', published);
-        return _data;
+    try {
+      if (isMaster) {
+        let _data = randomSeed(64);
+        if (isSendBitcoin) {
+          const jks = await EncryptedStorage.getItem('keyshare');
+          const ks = JSON.parse(jks || '{}');
+          _data += ':' + route.params.satoshiAmount;
+          _data += ':' + route.params.satoshiFees;
+          _data += ':' + ks.local_party_key;
+        }
+        dbg('publishing data', _data, 'peer pubkey', peerPubkey);
+        const published = await BBMTLibNativeModule.publishData(
+          String(discoveryPort),
+          String(timeout),
+          peerPubkey,
+          _data,
+        );
+        if (published) {
+          dbg('data published:', published);
+          return _data;
+        } else {
+          throw "Waited too long for other devices to press (Join Tx Co-Signing)";
+        }
       } else {
-        throw "Waited too long for other devices to press (Join Tx Co-Signing)";
+        dbg('fetching data...');
+        const kp = JSON.parse(keypair);
+        const peerURL = `http://${peerIP}:${discoveryPort}`;
+        const rawFetched = await fetchData(peerURL, kp.privateKey);
+        dbg('fetched data', rawFetched);
+        return rawFetched;
       }
-    } else {
-      const kp = JSON.parse(keypair);
-      const peerURL = `http://${peerIP}:${discoveryPort}`;
-      const rawFetched = await fetchData(peerURL, kp.privateKey);
-      dbg('fetched data', rawFetched);
-      return rawFetched;
+    } catch (e: any) {
+      throw 'Error initializing session';
     }
   }
 
@@ -301,20 +306,22 @@ const MobilesPairing = ({navigation}: any) => {
     setPrepCounter(0);
 
     try {
+      dbg('session init...');
       const data = await initSession();
-      dbg('session init done');
 
+      dbg('session init done');
       if (isMaster) {
-        await BBMTLibNativeModule.stopRelay('stop');
+        await waitMS(1000);
         const relay = await BBMTLibNativeModule.runRelay(String(discoveryPort));
         dbg('relay start:', relay, localDevice);
+      } else {
+        await waitMS(1000);
       }
-
-      await waitMS(2000);
 
       const server = `http://${isMaster ? localIP : peerIP}:${discoveryPort}`;
 
       const jks = await EncryptedStorage.getItem('keyshare');
+      const net = (await EncryptedStorage.getItem('network')) || 'mainnet';
       const ks = JSON.parse(jks || '{}');
       const path = "m/44'/0'/0'/0/0";
       const btcPub = await BBMTLibNativeModule.derivePubkey(
@@ -322,10 +329,7 @@ const MobilesPairing = ({navigation}: any) => {
         ks.chain_code_hex,
         path,
       );
-      const btcAddress = await BBMTLibNativeModule.p2khAddress(
-        btcPub,
-        'testnet3',
-      );
+      const btcAddress = await BBMTLibNativeModule.p2khAddress(btcPub, net);
       const partyID = ks.local_party_key;
       const partiesCSV = ks.keygen_committee_keys.join(',');
       const sessionID = await BBMTLibNativeModule.sha256(`${data}/${server}`);
