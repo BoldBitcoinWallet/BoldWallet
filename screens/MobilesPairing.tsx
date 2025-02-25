@@ -180,8 +180,6 @@ const MobilesPairing = ({navigation}: any) => {
 
   async function initSession() {
     try {
-      await BBMTLibNativeModule.stopRelay('tss');
-
       if (isMaster) {
         let _data = randomSeed(64);
         if (isSendBitcoin) {
@@ -202,7 +200,7 @@ const MobilesPairing = ({navigation}: any) => {
           dbg('data published:', published);
           return _data;
         } else {
-          throw "couldn't fetch data, please retry";
+          throw "Waited too long for other devices to press (Join Tx Co-Signing)";
         }
       } else {
         dbg('fetching data...');
@@ -767,7 +765,7 @@ const MobilesPairing = ({navigation}: any) => {
         }
       } catch (e) {}
     }
-    throw "couldn't fetch data, please retry";
+    throw "Waited too long for other devices to press (Start Tx Co-Signing)";
   }
 
   async function listenForPeerPromise(
