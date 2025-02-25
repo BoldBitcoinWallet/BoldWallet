@@ -346,8 +346,13 @@ const MobilesPairing = ({navigation}: any) => {
       });
 
       if (peerParty === partyID) {
-        throw 'Please Use Two Different Shares per Device';
+        throw 'Please Use "Two Different KeyShares" per Device';
       }
+
+      if (satoshiAmount !== route.params.satoshiAmount) {
+        throw 'Make sure you\'re sending the "Same Bitcoin" amount from Both Devices';
+      }
+
       try {
         dbg(
           partyID,
