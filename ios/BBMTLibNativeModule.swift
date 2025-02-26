@@ -67,9 +67,9 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     }
   }
   
-  @objc func fetchData(_ url: String, decKey: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
+  @objc func fetchData(_ url: String, decKey: String, payload: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
     var error: NSError?
-    let output = TssFetchData(url, decKey, &error)
+    let output = TssFetchData(url, decKey, payload, &error)
     if error == nil {
       self.sendLogEvent("fetchData", output)
       resolver(output)

@@ -180,6 +180,7 @@ const MobilesPairing = ({navigation}: any) => {
 
   async function initSession() {
     try {
+      const kp = JSON.parse(keypair);
       if (isMaster) {
         let _data = randomSeed(64);
         if (isSendBitcoin) {
@@ -197,21 +198,32 @@ const MobilesPairing = ({navigation}: any) => {
           _data,
         );
         if (published) {
-          dbg('data published:', published);
+          dbg('data publish response:', published);
+          const peerChecksum = published.replace('data=', '');
+          const localPayload = `${kp.publicKey}/${route.params.satoshiAmount}`;
+          const localChecksum = await BBMTLibNativeModule.sha256(localPayload);
+          dbg('checksum validation', {
+            peerChecksum,
+            localChecksum,
+          });
+          if (peerChecksum !== localChecksum) {
+            throw 'Make sure you\'re sending the "Same Bitcoin" amount from Both Devices';
+          }
           return _data;
         } else {
-          throw "Waited too long for other devices to press (Join Tx Co-Signing)";
+          throw 'Waited too long for other devices to press (Join Tx Co-Signing)';
         }
       } else {
         dbg('fetching data...');
-        const kp = JSON.parse(keypair);
-        const peerURL = `http://${peerIP}:${discoveryPort}`;
-        const rawFetched = await fetchData(peerURL, kp.privateKey);
+        const payload = `${peerPubkey}/${route.params.satoshiAmount}`;
+        const checksum = await BBMTLibNativeModule.sha256(payload);
+        const peerURL = `http://${peerIP}:${discoveryPort}/`;
+        const rawFetched = await fetchData(peerURL, kp.privateKey, checksum);
         dbg('fetched data', rawFetched);
         return rawFetched;
       }
     } catch (e: any) {
-      throw 'Error initializing session';
+      throw 'Error initializing session: \n' + e;
     }
   }
 
@@ -408,6 +420,10 @@ const MobilesPairing = ({navigation}: any) => {
       )
         .then(async (txId: any) => {
           dbg(partyID, 'txID', txId);
+          const validTxID = /^[a-fA-F0-9]{64}$/.test(txId);
+          if (!validTxID) {
+            throw txId;
+          }
           const pendingTxs = JSON.parse(
             (await EncryptedStorage.getItem('pendingTxs')) || '{}',
           );
@@ -708,7 +724,7 @@ const MobilesPairing = ({navigation}: any) => {
         setPeerDevice(_peerDevice);
         setPeerParty(_peerParty);
         if (localShare && _peerParty && localShare === _peerParty) {
-          throw 'Please Use Two Different Shares per Device';
+          throw 'Please Use Two Different KeyShares per Device';
         }
 
         const _peerPubkey = peerInfo[2];
@@ -748,13 +764,18 @@ const MobilesPairing = ({navigation}: any) => {
     }
   }
 
-  async function fetchData(peerURL: string, privateKey: string) {
+  async function fetchData(
+    peerURL: string,
+    privateKey: string,
+    checksum: string,
+  ) {
     const until = Date.now() + timeout * 1000;
     while (Date.now() < until) {
       try {
         const rawFetched = await BBMTLibNativeModule.fetchData(
           peerURL,
           privateKey,
+          checksum,
         );
         if (rawFetched) {
           dbg('rawFetched:', rawFetched);
@@ -765,7 +786,7 @@ const MobilesPairing = ({navigation}: any) => {
         }
       } catch (e) {}
     }
-    throw "Waited too long for other devices to press (Start Tx Co-Signing)";
+    throw 'Waited too long for other devices to press (Start Tx Co-Signing)';
   }
 
   async function listenForPeerPromise(
@@ -1095,7 +1116,7 @@ const MobilesPairing = ({navigation}: any) => {
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
-      backgroundColor: 'rgba(0, 0, 0, 0.5)', // Semi-transparent overlay
+      backgroundColor: 'rgba(0, 0, 0, 0.8)',
     },
     modalContent: {
       backgroundColor: '#fff',

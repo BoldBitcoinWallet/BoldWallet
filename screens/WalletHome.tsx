@@ -8,6 +8,8 @@ import {
   NativeModules,
   ActivityIndicator,
   Image,
+  Platform,
+  PlatformColor,
 } from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import SendBitcoinModal from './SendBitcoinModal';
@@ -304,7 +306,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     },
     modalOverlay: {
       ...StyleSheet.absoluteFillObject,
-      backgroundColor: 'rgba(0,0,0,0.4)',
+      backgroundColor: 'rgba(0,0,0,0.8)',
       justifyContent: 'center',
       alignItems: 'center',
       zIndex: 100,
@@ -328,20 +330,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       fontWeight: '600',
     },
     blurredText: {
-      color: 'transparent',
-      textShadowColor: theme.colors.textOnPrimary,
-      textShadowOffset: {width: 0, height: 0},
-      textShadowRadius: 6,
       opacity: 0.6,
-      backgroundColor: 'rgba(255,255,255,0.2)',
-      textAlignVertical: 'center',
-      height: 24,
-      marginBottom: 8,
-      fontSize: 16,
-      paddingTop: 6,
-      paddingLeft: 8,
-      paddingRight: 8,
-      borderRadius: 8,
     },
   });
 
@@ -358,7 +347,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           </View>
           <TouchableOpacity onPress={handleBlurred}>
             <Text style={[styles.balanceBTC, isBlurred && styles.blurredText]}>
-              {isBlurred ? '* * * * * *' : `${balanceBTC} BTC`}
+              {isBlurred ? '* * * * * * 🔓' : `${balanceBTC} BTC 🔒`}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={handleBlurred}>

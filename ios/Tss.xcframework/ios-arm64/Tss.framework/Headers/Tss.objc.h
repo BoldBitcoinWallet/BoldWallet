@@ -272,7 +272,7 @@ FOUNDATION_EXPORT NSString* _Nonnull TssEciesDecrypt(NSString* _Nullable encrypt
 
 FOUNDATION_EXPORT NSString* _Nonnull TssEciesEncrypt(NSString* _Nullable data, NSString* _Nullable publicKeyHex, NSError* _Nullable* _Nullable error);
 
-FOUNDATION_EXPORT NSString* _Nonnull TssFetchData(NSString* _Nullable url, NSString* _Nullable decKey, NSError* _Nullable* _Nullable error);
+FOUNDATION_EXPORT NSString* _Nonnull TssFetchData(NSString* _Nullable url, NSString* _Nullable decKey, NSString* _Nullable data, NSError* _Nullable* _Nullable error);
 
 // skipped function FetchUTXODetails with unsupported parameter or return types
 

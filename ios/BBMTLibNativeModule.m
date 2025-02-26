@@ -77,8 +77,9 @@ RCT_EXTERN_METHOD(stopRelay:(NSString *)tag
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 // Call fetchData
-RCT_EXTERN_METHOD(fetchData:(NSString *)url	
+RCT_EXTERN_METHOD(fetchData:(NSString *)url
                   decKey:(NSString *)decKey
+                  payload:(NSString *)payload
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
