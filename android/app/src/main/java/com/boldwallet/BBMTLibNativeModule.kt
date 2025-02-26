@@ -230,7 +230,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             try {
                 val output = Tss.publishData(port, timeout, encKey, raw)
                 ld("publishData", output)
-                promise.resolve(raw)
+                promise.resolve(output)
             } catch (e: Throwable) {
                 ld("publishData", "error: ${e.message}")
                 promise.resolve("")
