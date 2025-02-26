@@ -203,8 +203,9 @@ const MobilesPairing = ({navigation}: any) => {
           const localPayload = `${kp.publicKey}/${route.params.satoshiAmount}`;
           const localChecksum = await BBMTLibNativeModule.sha256(localPayload);
           dbg('checksum validation', {
-            peerChecksum,
+            localPayload,
             localChecksum,
+            peerChecksum,
           });
           if (peerChecksum !== localChecksum) {
             throw 'Make sure you\'re sending the "Same Bitcoin" amount from Both Devices';
@@ -214,10 +215,14 @@ const MobilesPairing = ({navigation}: any) => {
           throw 'Waited too long for other devices to press (Join Tx Co-Signing)';
         }
       } else {
-        dbg('fetching data...');
         const payload = `${peerPubkey}/${route.params.satoshiAmount}`;
         const checksum = await BBMTLibNativeModule.sha256(payload);
         const peerURL = `http://${peerIP}:${discoveryPort}/`;
+        dbg('fetching data...', {
+          payload: `${peerPubkey}/${route.params.satoshiAmount}`,
+          checksum,
+          peerURL,
+        });
         const rawFetched = await fetchData(peerURL, kp.privateKey, checksum);
         dbg('fetched data', rawFetched);
         return rawFetched;
