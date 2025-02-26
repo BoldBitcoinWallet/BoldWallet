@@ -1226,6 +1226,15 @@ const MobilesPairing = ({navigation}: any) => {
       alignItems: 'center',
       justifyContent: 'center',
     },
+    clickRestart: {
+      marginTop: 25,
+      backgroundColor: theme.colors.accent,
+      borderRadius: 8,
+      paddingVertical: 12,
+      paddingHorizontal: 30,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     clickPrepareOff: {
       opacity: 0.5,
       marginTop: 20,
@@ -1380,8 +1389,24 @@ const MobilesPairing = ({navigation}: any) => {
                     </Text>
                   </View>
                 )}
+                {peerIP && (
+                  <>
+                    <TouchableOpacity
+                      style={styles.clickRestart}
+                      onPress={() => {
+                        navigation.dispatch(
+                          StackActions.replace('📱📱 Pairing', route.params),
+                        );
+                      }}>
+                      <Text style={styles.clickButtonText}>
+                        Restart Pairing
+                      </Text>
+                    </TouchableOpacity>
+                  </>
+                )}
               </View>
             )}
+
             {!isSendBitcoin && (
               <>
                 {/* Preparation Panel */}
