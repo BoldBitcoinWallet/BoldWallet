@@ -54,7 +54,6 @@ const TransactionList = ({
         }
         return tx;
       });
-
     txs.filter(tx => {
       dbg('checking tx:', tx.txid);
       if (cached[tx.txid]) {
@@ -67,13 +66,18 @@ const TransactionList = ({
     // rany push pending-cached
     for (const txID in cached) {
       dbg('prepending from cache', txID, cached[txID]);
-      txs.unshift({
-        txid: txID,
-        from: cached[txID].from,
-        to: cached[txID].to,
-        amount: cached[txID].satoshiAmount,
-        sentAt: cached[txID].sentAt,
-      });
+      const validTxID = /^[a-fA-F0-9]{64}$/.test(txID);
+      if (!validTxID) {
+        delete cached[txID];
+      } else {
+        txs.unshift({
+          txid: txID,
+          from: cached[txID].from,
+          to: cached[txID].to,
+          amount: cached[txID].satoshiAmount,
+          sentAt: cached[txID].sentAt,
+        });
+      }
     }
 
     onUpdate(pendingTxs, pending);

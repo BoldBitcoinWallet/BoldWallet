@@ -230,7 +230,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             try {
                 val output = Tss.publishData(port, timeout, encKey, raw)
                 ld("publishData", output)
-                promise.resolve(raw)
+                promise.resolve(output)
             } catch (e: Throwable) {
                 ld("publishData", "error: ${e.message}")
                 promise.resolve("")
@@ -239,10 +239,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun fetchData(url: String, decKey: String, promise: Promise) {
+    fun fetchData(url: String, decKey: String, payload: String, promise: Promise) {
         Thread {
             try {
-                val raw = Tss.fetchData(url, decKey)
+                val raw = Tss.fetchData(url, decKey, payload)
                 ld("fetchData", raw)
                 promise.resolve(raw)
             } catch (e: Throwable) {

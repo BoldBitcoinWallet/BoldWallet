@@ -271,7 +271,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     },
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.5)',
+      backgroundColor: 'rgba(0,0,0,0.8)',
       alignItems: 'center',
       justifyContent: 'center',
     },
