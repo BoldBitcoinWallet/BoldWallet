@@ -72,3 +72,12 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# BBMTLib
+#
+BBMTLib/.DS_Store
+BBMTLib/*.aar
+BBMTLib/*.jar
+BBMTLib/Tss.xcframework/
+BBMTLib/scripts/bin/
+BBMTLib/scripts/*.json

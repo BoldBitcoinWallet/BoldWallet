@@ -1,0 +1,13 @@
+# OSX
+#
+.DS_Store
+
+*.aar
+
+*.jar
+
+Tss.xcframework/
+
+scripts/bin/
+
+scripts/*.json

@@ -1,6 +1,22 @@
 # BoldWallet
 
+- This is a React Native Mobile Based App.
+- Built using node v20.18.1
+  - npm install
+  - To rebuild the android/app/libs/tss.aar:
+    - Check the BBMTLib/README.md, Android Section
+  - For Android Build:
+    - cd android
+    - ./release.sh
+        - APK generated under:
+            ./android/app/build/outputs/apk/release/app-release.apk 
+
+----
+
+# ReactNative Default guide below
+
 This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+
 
 # Getting Started
 
