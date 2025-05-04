@@ -31,8 +31,9 @@ RUN go install golang.org/x/mobile/cmd/gomobile@latest \
   && gomobile init
 
 # Clone private repo (DO NOT hardcode PAT in real builds)
-ARG GITHUB_PAT
-RUN git clone https://${GITHUB_PAT}@github.com/BoldBitcoinWallet/BoldWallet.git -b f-droid-submission
+#ARG GITHUB_PAT
+#RUN git clone https://${GITHUB_PAT}@github.com/BoldBitcoinWallet/BoldWallet.git -b f-droid-submission
 
 WORKDIR /BoldWallet
+COPY . .
 RUN chmod +x build.sh && ./build.sh
