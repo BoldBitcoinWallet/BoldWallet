@@ -1,5 +1,10 @@
 # BoldWallet
 
+- You can build the APK thru Docker:
+  - `docker build -t boldwallet .`
+  - `docker run -it boldwallet `
+    - `cd BoldWallet/android/app/build/outputs/apk/release/app-release.apk`
+
 - This is a React Native Mobile Based App.
 - Built using node v20.18.1
   - npm install
