@@ -34,4 +34,5 @@ COPY . .
 
 RUN npm i
 RUN cd BBMTLib && chmod +x build.sh && sh build.sh
-RUN cd android && sh release.sh
+RUN cd android && chmod +x release && sh release.sh
+
