@@ -23,6 +23,7 @@ KEY_PASSWORD="your_key_password"
 
 > sh docker-apk-builder.sh
 ```
+![image](https://github.com/user-attachments/assets/eb8f1a45-b2cb-46ec-a061-fc0cb4f10448)
   
 
 ### ✍️ Manual Build
