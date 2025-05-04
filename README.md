@@ -3,7 +3,7 @@
 ## 📖 Android Guide
 You can build the Android APK yourself, via Auto Builder or Manual Build as below.
 
-### 🔁 Auto Builder
+### 🔁 Via Auto Builder
 
 Relies on docker (Dockerfile) - guaranteed quick way to compile and release the APK.
 
@@ -26,8 +26,9 @@ KEY_PASSWORD="your_key_password"
 ![image](https://github.com/user-attachments/assets/eb8f1a45-b2cb-46ec-a061-fc0cb4f10448)
   
 
-### ✍️ Manual Build
+### ✍️ Via Manual Build
 Manual build, requires manual and extra efforts to compiles the app on your PC.
+
 BoldWallet is a typical React Native Mobile Based App ( android / iOS ).
 - Built using node v20.18.1
   - npm install
