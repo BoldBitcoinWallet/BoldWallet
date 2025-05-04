@@ -1,29 +1,31 @@
-# BoldWallet
+# Bold Bitcoin Wallet
 
-## Auto Build
-Auto builder rely on docker (Dockerfile), is a guranteed way to compile generate the APK.
+## 📖 Android Guide
+You can build the Android APK yourself, via Auto Builder or Manual Build as below.
 
-It manages internally the needed runtimes (node, go, gomobile, jdk, android sdk & ndk)
-- Build the APK seamlessly thru our docker script runner (from a ubuntu/windows machine):
-    - Edit android/release.sh if needed:
-    ```sh
-    KEYSTORE_FILE="my-release-key.jks"
-    KEY_ALIAS="my-key"
-    KEYSTORE_PASSWORD="your_keystore_password"
-    KEY_PASSWORD="your_key_password"
-    ```
-    - Run Docker Script Runner:
-    ```sh
-    # use sudo if needed for docker
-    sh docker-apk-builder.sh
-    ```
+### 🔁 Auto Builder
 
-- This will take time given your PC performance (couple of minutes up to 30 minutes)
+Relies on docker (Dockerfile) - guaranteed quick way to compile and release the APK.
 
-- When done, the **app-release.APK** is generated within the /BoldWallet folder
+Build the APK seamlessly following the steps:
+- Optional: edit android/release.sh when needed:
+```sh
+KEYSTORE_FILE="my-release-key.jks"
+KEY_ALIAS="my-key"
+KEYSTORE_PASSWORD="your_keystore_password"
+KEY_PASSWORD="your_key_password"
+```
+- Run Docker Script Runner:
+```sh
+# use sudo if needed for docker
+# This will take time given your PC performance (couple of minutes up to 30 minutes)
+# When done, the app-release.apk is generated within the BoldWallet folder
 
+> sh docker-apk-builder.sh
+```
+  
 
-## Manual Build
+### ✍️ Manual Build
 Manual build, requires manual and extra efforts to compiles the app on your PC.
 BoldWallet is a typical React Native Mobile Based App ( android / iOS ).
 - Built using node v20.18.1
@@ -39,7 +41,7 @@ BoldWallet is a typical React Native Mobile Based App ( android / iOS ).
 
 ----
 
-# React Native Learn More
+#### React Native Learn More
 
 To learn more about React Native, take a look at the following resources:
 
