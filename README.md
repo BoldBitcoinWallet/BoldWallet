@@ -1,10 +1,27 @@
 # BoldWallet
 
-- You can build the APK thru Docker:
-  - `docker build -t boldwallet .`
-  - `docker run -it boldwallet `
-    - `cd BoldWallet/android/app/build/outputs/apk/release/app-release.apk`
+## Auto Build 
 
+- You can build the APK easily thru our docker script runner:
+    - Edit android/release.sh if needed:
+    ```sh
+    KEYSTORE_FILE="my-release-key.jks"
+    KEY_ALIAS="my-key"
+    KEYSTORE_PASSWORD="your_keystore_password"
+    KEY_PASSWORD="your_key_password"
+    ```
+    - Run Docker Script Runner:
+    ```sh
+    # use sudo if needed for docker
+    sh docker-apk-builder.sh
+    ```
+
+- This will take time given your PC performance (couple of minutes up to 30 minutes)
+
+- When done, the **app-release.APK** is generated within the /BoldWallet folder
+
+
+## Manual Build
 - This is a React Native Mobile Based App.
 - Built using node v20.18.1
   - npm install
@@ -18,7 +35,7 @@
 
 ----
 
-# ReactNative Default guide below
+## ReactNative Default guide below
 
 This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
 
@@ -73,8 +90,8 @@ bundle exec pod install
 
 For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
 
-```sh
-# Using npm
+```sh    
+# Using npm    
 npm run ios
 
 # OR using Yarn

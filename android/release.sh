@@ -51,7 +51,7 @@ APK_PATH="app/build/outputs/apk/release/app-release.apk"
 if [ -f "$APK_PATH" ]; then
     echo -e "Build successful! APK located at: $APK_PATH"
 else
-    echo -e "${RED}Build failed! Check the logs for errors."
+    echo -e "Build failed! Check the logs for errors."
     exit 1
 fi
 

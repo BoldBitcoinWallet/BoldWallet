@@ -81,3 +81,6 @@ BBMTLib/*.jar
 BBMTLib/Tss.xcframework/
 BBMTLib/scripts/bin/
 BBMTLib/scripts/*.json
+
+# Docker Generated APK
+app-release.apk
