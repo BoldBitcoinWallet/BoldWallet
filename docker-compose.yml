@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  gomobile-build:
+    image: openpriv/go-cross-compile:2024.02
+    command: >
+      sh -c "go mod download && gomobile init && make"
+    volumes:
+      - .:/go/src/app
+    working_dir: /go/src/app
