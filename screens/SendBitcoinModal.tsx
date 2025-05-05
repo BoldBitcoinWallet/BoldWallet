@@ -17,11 +17,7 @@ import {
   NativeModules,
   ScrollView,
 } from 'react-native';
-import {
-  Camera,
-  useCameraDevice,
-  useCodeScanner,
-} from 'react-native-vision-camera';
+import {Camera} from 'react-native-camera-kit';
 import Clipboard from '@react-native-clipboard/clipboard';
 import debounce from 'lodash/debounce';
 import Big from 'big.js';
@@ -39,23 +35,24 @@ interface SendBitcoinModalProps {
   walletBalance: Big;
   walletAddress: string;
 }
-
 const E8 = Big(10).pow(8);
-
-const QRScanner = ({styles, device, codeScanner, onClose}: any) => {
-  if (!device) {
-    return <Text style={styles.cameraNotFound}>Camera Not Found</Text>;
-  }
+const QRScanner = ({styles, onClose, onCodeScanned}: any) => {
   return (
     <View style={styles.scannerContainer}>
       <Camera
         style={StyleSheet.absoluteFill}
-        device={device || null}
-        isActive={true}
-        torch="off"
-        codeScanner={codeScanner}
+        scanBarcode={true}
+        barcodeFrameSize={{width: 300, height: 300}}
+        onReadCode={(event: any) => {
+          const code = event.nativeEvent.codeStringValue;
+          if (code) {
+            onCodeScanned(code);
+          }
+        }}
+        showFrame={true}
+        laserColor="red"
+        frameColor="white"
       />
-      <View style={styles.qrFrame} />
       <TouchableOpacity style={styles.closeScannerButton} onPress={onClose}>
         <Text style={styles.closeScannerButtonText}>Close</Text>
       </TouchableOpacity>
@@ -299,17 +296,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     },
   });
 
-  const device = useCameraDevice('back');
-  const codeScanner = useCodeScanner({
-    codeTypes: ['qr'],
-    onCodeScanned: codes => {
-      if (codes.length > 0) {
-        setAddress(codes[0].value!!);
-        setIsScannerVisible(false);
-      }
-    },
-  });
-
   const feeStrategies = [
     {label: 'Economy', value: 'eco'},
     {label: 'Top Priority', value: 'top'},
@@ -440,6 +426,11 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       return;
     }
     onSend(address, Big(inBtcAmount).times(1e8), estimatedFee);
+  };
+
+  const handleCodeScanned = (code: string) => {
+    setAddress(code);
+    setIsScannerVisible(false);
   };
 
   const renderFeeSection = () => {
@@ -602,9 +593,8 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                   onRequestClose={() => setIsScannerVisible(false)}>
                   <QRScanner
                     styles={styles}
-                    device={device}
-                    codeScanner={codeScanner}
                     onClose={() => setIsScannerVisible(false)}
+                    onCodeScanned={handleCodeScanned}
                   />
                 </Modal>
               </SafeAreaView>

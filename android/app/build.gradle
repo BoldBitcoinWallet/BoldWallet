@@ -62,6 +62,5 @@ dependencies {
     implementation project(':react-native-share')
     implementation project(':react-native-svg')
     implementation project(':react-native-document-picker')
-    implementation project(':react-native-camera')
-    implementation project(':react-native-vision-camera')
+    implementation project(':react-native-camera-kit')
 }
