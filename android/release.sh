@@ -3,14 +3,6 @@
 # Script to automate generating a release APK for React Native
 # Place this in the 'android' folder and run it using `./generate-apk.sh`
 
-# Colors for better output
-#GREEN="\e[32m"
-#RED="\e[31m"
-#RESET="\e[0m"
-GREEN=""
-RED=""
-RESET=""
-
 # Keystore details (modify these with your own values)
 KEYSTORE_FILE="my-release-key.jks"
 KEY_ALIAS="my-key"
@@ -21,23 +13,23 @@ KEY_PASSWORD="your_key_password"
 KEYSTORE_PATH="app/$KEYSTORE_FILE"
 GRADLE_PROPERTIES_PATH="gradle.properties"
 
-echo -e "${GREEN}--- Starting React Native APK Release Build Automation ---${RESET}"
+echo -e "--- Starting React Native APK Release Build Automation ---"
 
 # Step 1: Generate Keystore if it doesn't exist
 if [ ! -f "$KEYSTORE_PATH" ]; then
-    echo -e "${GREEN}Generating new Keystore...${RESET}"
+    echo -e "Generating new Keystore..."
     keytool -genkey -v -keystore "$KEYSTORE_PATH" \
         -keyalg RSA -keysize 2048 -validity 10000 -alias "$KEY_ALIAS" \
         -storepass "$KEYSTORE_PASSWORD" -keypass "$KEY_PASSWORD"
 
-    echo -e "${GREEN}Keystore generated at: $KEYSTORE_PATH${RESET}"
+    echo -e "Keystore generated at: $KEYSTORE_PATH"
 else
-    echo -e "${GREEN}Keystore already exists. Skipping generation.${RESET}"
+    echo -e "Keystore already exists. Skipping generation."
 fi
 
 # Step 2: Update gradle.properties with Keystore credentials
 if ! grep -q "MYAPP_UPLOAD_STORE_FILE" "$GRADLE_PROPERTIES_PATH"; then
-    echo -e "${GREEN}Adding Keystore configuration to gradle.properties...${RESET}"
+    echo -e "Adding Keystore configuration to gradle.properties..."
     cat <<EOL >> $GRADLE_PROPERTIES_PATH
 
 MYAPP_UPLOAD_STORE_FILE=$KEYSTORE_FILE
@@ -46,35 +38,21 @@ MYAPP_UPLOAD_STORE_PASSWORD=$KEYSTORE_PASSWORD
 MYAPP_UPLOAD_KEY_PASSWORD=$KEY_PASSWORD
 EOL
 else
-    echo -e "${GREEN}Keystore configuration already exists in gradle.properties. Skipping.${RESET}"
+    echo -e "Keystore configuration already exists in gradle.properties. Skipping."
 fi
 
 # Step 3: Build the Release APK
-echo -e "${GREEN}Building the Release APK...${RESET}"
+echo -e "Building the Release APK..."
 ./gradlew clean
 ./gradlew assembleRelease
 
 # Step 4: Locate and display APK
 APK_PATH="app/build/outputs/apk/release/app-release.apk"
 if [ -f "$APK_PATH" ]; then
-    echo -e "${GREEN}Build successful! APK located at:${RESET} $APK_PATH"
+    echo -e "Build successful! APK located at: $APK_PATH"
 else
-    echo -e "${RED}Build failed! Check the logs for errors.${RESET}"
+    echo -e "Build failed! Check the logs for errors."
     exit 1
 fi
 
-# Step 5: Install APK on connected device (optional)
-read -p "Do you want to install the APK on a connected device? (y/n): " INSTALL_CHOICE
-if [ "$INSTALL_CHOICE" = "y" ]; then
-    for device in $(adb devices | grep -w "device" | awk '{print $1}'); do
-        echo -e "${GREEN}Installing APK on connected device ${device}...${RESET}"
-        adb -s "$device" install "$APK_PATH"
-    done
-    echo -e "${GREEN}Installation complete.${RESET}"
-else
-    echo -e "${GREEN}Skipping installation.${RESET}"
-fi
-
-echo -e "${GREEN}--- Done! ---${RESET}"
-
-
+echo -e "--- Done! ---"

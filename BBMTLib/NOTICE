@@ -1,0 +1,18 @@
+BBMTLib - Bold Bitcoin MPC TSS Library  
+Copyright 2025 Bold Bitcoin Wallet  
+
+This product includes modified code from the following open-source project:  
+
+- Mobile TSS Lib  
+  Source: https://github.com/vultisig/mobile-tss-lib  
+  License: Apache-2.0  
+  Modifications: Adapted networking logic, and rectified TSS for BTC scope.  
+
+This product also uses the following third-party libraries as dependencies:  
+- Binance TSS Lib (MIT License)  
+- btcsuite (btcd) (MIT License)  
+- decred/dcrd (ISC License)  
+- ecies-go (MIT License)  
+- gorilla/mux (BSD-3-Clause License)  
+- go-cache (MIT License)  
+- ipfs/go-log (MIT License)  
