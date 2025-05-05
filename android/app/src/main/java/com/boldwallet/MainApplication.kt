@@ -2,6 +2,7 @@ package com.boldwallet
 
 import android.app.Application
 import cl.json.RNSharePackage
+import com.airbnb.android.react.lottie.LottiePackage
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
@@ -13,6 +14,7 @@ import com.facebook.react.defaults.DefaultReactNativeHost
 import com.facebook.react.soloader.OpenSourceMergedSoMapping
 import com.facebook.soloader.SoLoader
 import com.learnium.RNDeviceInfo.RNDeviceInfo
+import com.rnbarcodezxing.BarcodeZXingPackage
 import com.rnbiometrics.ReactNativeBiometricsPackage
 import com.rnfs.RNFSPackage
 import com.swmansion.gesturehandler.RNGestureHandlerPackage
@@ -29,6 +31,8 @@ class MainApplication : Application(), ReactApplication {
                     add(RNFSPackage())
                     add(RNSharePackage())
                     add(ReactNativeBiometricsPackage())
+                    add(BarcodeZXingPackage())
+                    add(LottiePackage())
                 }
 
             override fun getJSMainModuleName(): String = "index"

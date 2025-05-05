@@ -49,7 +49,12 @@ project(':react-native-reanimated').projectDir = new File(
         rootProject.projectDir, '../node_modules/react-native-reanimated/android'
 )
 
-include ':react-native-camera-kit'
-project(':react-native-camera-kit').projectDir = new File(
-        rootProject.projectDir, '../node_modules/react-native-camera-kit/android'
+include ':rn-barcode-zxing'
+project(':rn-barcode-zxing').projectDir = new File(
+        rootProject.projectDir, '../node_modules/rn-barcode-zxing/android'
+)
+
+include ':lottie-react-native'
+project(':lottie-react-native').projectDir = new File(
+        rootProject.projectDir, '../node_modules/lottie-react-native/android'
 )

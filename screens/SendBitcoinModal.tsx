@@ -17,13 +17,13 @@ import {
   NativeModules,
   ScrollView,
 } from 'react-native';
-import {Camera} from 'react-native-camera-kit';
 import Clipboard from '@react-native-clipboard/clipboard';
 import debounce from 'lodash/debounce';
 import Big from 'big.js';
 import {dbg} from '../utils';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {useTheme} from '../theme';
+import {ScanCode} from 'rn-barcode-zxing';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -39,19 +39,14 @@ const E8 = Big(10).pow(8);
 const QRScanner = ({styles, onClose, onCodeScanned}: any) => {
   return (
     <View style={styles.scannerContainer}>
-      <Camera
-        style={StyleSheet.absoluteFill}
-        scanBarcode={true}
-        barcodeFrameSize={{width: 300, height: 300}}
-        onReadCode={(event: any) => {
-          const code = event.nativeEvent.codeStringValue;
-          if (code) {
-            onCodeScanned(code);
+      <ScanCode
+        shouldScan={true}
+        onScanBarcode={(results: any) => {
+          const scannedCode = results?.code?.[0] ?? '';
+          if (scannedCode) {
+            onCodeScanned(scannedCode);
           }
         }}
-        showFrame={true}
-        laserColor="red"
-        frameColor="white"
       />
       <TouchableOpacity style={styles.closeScannerButton} onPress={onClose}>
         <Text style={styles.closeScannerButtonText}>Close</Text>
@@ -585,7 +580,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     <Text style={styles.buttonText}>Cancel</Text>
                   </TouchableOpacity>
                 </View>
-
                 <Modal
                   animationType="slide"
                   transparent={false}
