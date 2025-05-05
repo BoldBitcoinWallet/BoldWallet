@@ -82,5 +82,12 @@ BBMTLib/Tss.xcframework/
 BBMTLib/scripts/bin/
 BBMTLib/scripts/*.json
 
+#
+android/signed-release.sh
+android/app/BoldBitcoinWallet.jks
+android/app-release.apk.sha256
+android/app-release.apk.sha256.asc
+android/boldwallet-publickey.asc
+
 # Docker Generated APK
 app-release.apk
