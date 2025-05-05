@@ -1,0 +1,12 @@
+BoldWallet is a next-generation open-source Bitcoin wallet that eliminates seed phrases and single points of failure.
+It uses Threshold Signature Scheme (TSS) and a 2-of-2 setup between two mobile devices — no internet needed for setup or signing.
+
+🔐 Features:
+
+• No seed phrase, no paper backups
+• 2-device TSS key generation and signing
+• Offline-first & peer-to-peer protocol
+• Encrypted local storage only
+• Real-time price from CoinGecko
+• Blockstream/Mempool APIs for balances and UTXOs
+• Verifiable builds and PGP-signed releases 

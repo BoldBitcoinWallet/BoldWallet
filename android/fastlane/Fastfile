@@ -1,0 +1,20 @@
+default_platform(:android)
+
+platform :android do
+  desc "Runs all the tests"
+  lane :test do
+    gradle(task: "test")
+  end
+
+  desc "Submit a new version to the F-Droid"
+  lane :fdroid do
+    gradle(
+      task: "clean assembleRelease"
+    )
+  end
+
+  desc "Generate app metadata for F-Droid"
+  lane :metadata do
+    # Additional metadata tasks can be added here
+  end
+end 
