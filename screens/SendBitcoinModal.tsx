@@ -17,13 +17,18 @@ import {
   NativeModules,
   ScrollView,
 } from 'react-native';
+import {
+  Camera,
+  useCameraDevice,
+  useCodeScanner,
+} from 'react-native-vision-camera';
+import BarcodeZxingScan from 'rn-barcode-zxing-scan';
 import Clipboard from '@react-native-clipboard/clipboard';
 import debounce from 'lodash/debounce';
 import Big from 'big.js';
 import {dbg} from '../utils';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {useTheme} from '../theme';
-import BarcodeZxingScan from 'rn-barcode-zxing-scan';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -35,7 +40,29 @@ interface SendBitcoinModalProps {
   walletBalance: Big;
   walletAddress: string;
 }
+
 const E8 = Big(10).pow(8);
+
+const QRScanner = ({styles, device, codeScanner, onClose}: any) => {
+  if (!device) {
+    return <Text style={styles.cameraNotFound}>Camera Not Found</Text>;
+  }
+  return (
+    <View style={styles.scannerContainer}>
+      <Camera
+        style={StyleSheet.absoluteFill}
+        device={device || null}
+        isActive={true}
+        torch="off"
+        codeScanner={codeScanner}
+      />
+      <View style={styles.qrFrame} />
+      <TouchableOpacity style={styles.closeScannerButton} onPress={onClose}>
+        <Text style={styles.closeScannerButtonText}>Close</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
 
 const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   visible,
@@ -49,6 +76,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   const [btcAmount, setBtcAmount] = useState<Big>(Big(0));
   const [inBtcAmount, setInBtcAmount] = useState('');
   const [inUsdAmount, setInUsdAmount] = useState('');
+  const [isScannerVisible, setIsScannerVisible] = useState<boolean>(false);
   const [estimatedFee, setEstimatedFee] = useState<Big | null>(null);
   const [isCalculatingFee, setIsCalculatingFee] = useState(false);
 
@@ -272,6 +300,20 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     },
   });
 
+  let device;
+
+  if (Platform.OS === 'ios') device = useCameraDevice('back');
+
+  const codeScanner = useCodeScanner({
+    codeTypes: ['qr'],
+    onCodeScanned: codes => {
+      if (codes.length > 0) {
+        setAddress(codes[0].value!!);
+        setIsScannerVisible(false);
+      }
+    },
+  });
+
   const feeStrategies = [
     {label: 'Economy', value: 'eco'},
     {label: 'Top Priority', value: 'top'},
@@ -490,13 +532,19 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     />
                   </TouchableOpacity>
                   <TouchableOpacity
-                    onPress={() =>
-                      BarcodeZxingScan.showQrReader((error: any, data: any) => {
-                        if (!error) {
-                          setAddress(data);
-                        }
-                      })
-                    }
+                    onPress={() => {
+                      if (Platform.OS === 'android') {
+                        BarcodeZxingScan.showQrReader(
+                          (error: any, data: any) => {
+                            if (!error) {
+                              setAddress(data);
+                            }
+                          },
+                        );
+                      } else {
+                        setIsScannerVisible(true);
+                      }
+                    }}
                     style={styles.qrIconContainer}>
                     <Image
                       source={require('../assets/qr-icon.png')}
@@ -562,6 +610,19 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     <Text style={styles.buttonText}>Cancel</Text>
                   </TouchableOpacity>
                 </View>
+
+                <Modal
+                  animationType="slide"
+                  transparent={false}
+                  visible={isScannerVisible}
+                  onRequestClose={() => setIsScannerVisible(false)}>
+                  <QRScanner
+                    styles={styles}
+                    device={device}
+                    codeScanner={codeScanner}
+                    onClose={() => setIsScannerVisible(false)}
+                  />
+                </Modal>
               </SafeAreaView>
             </KeyboardAvoidingView>
           </View>
