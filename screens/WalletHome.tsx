@@ -8,8 +8,9 @@ import {
   NativeModules,
   ActivityIndicator,
   Image,
+  Alert,
   Platform,
-  PlatformColor,
+  PermissionsAndroid,
 } from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import SendBitcoinModal from './SendBitcoinModal';
@@ -43,28 +44,47 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [balanceUSD, setBalanceUSD] = useState<string>('0');
   const [apiBase, setApiBase] = useState<string>('');
   const [party, setParty] = useState<string>('');
-  const {hasPermission, requestPermission} = useCameraPermission();
   const [isBlurred, setIsBlurred] = useState<boolean>(true);
   const [isReceiveModalVisible, setIsReceiveModalVisible] = useState(false);
   const [pendingSent, setPendingSent] = useState(0);
 
   const {theme} = useTheme();
 
+  const requestCameraPermission = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.CAMERA,
+          {
+            title: 'Camera Permission',
+            message: 'This app needs access to your camera for QR Scanning',
+            buttonNeutral: 'Ask Me Later',
+            buttonNegative: 'Cancel',
+            buttonPositive: 'OK',
+          },
+        );
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      } catch (err) {
+        console.warn(err);
+        return false;
+      }
+    } else {
+      return true;
+    }
+  };
+
   useEffect(() => {
-    const requestCameraAccess = async () => {
+    const checkPermission = async () => {
+      const hasPermission = await requestCameraPermission();
       if (!hasPermission) {
-        const permissionStatus = await requestPermission();
-        if (!permissionStatus) {
-          Toast.show({
-            type: 'error',
-            text1: 'Camera Permission Denied',
-            text2: 'You need to grant camera permissions to proceed.',
-          });
-        }
+        Alert.alert(
+          'Camera Permission Denied',
+          'You need to grant camera permissions to use this feature.',
+        );
       }
     };
-    requestCameraAccess();
-  }, [hasPermission, requestPermission]);
+    checkPermission();
+  }, []);
 
   useEffect(() => {
     const initializeApp = async () => {
