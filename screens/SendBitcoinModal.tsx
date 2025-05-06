@@ -302,7 +302,11 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
 
   let device;
 
-  if (Platform.OS === 'ios') device = useCameraDevice('back');
+  // For android, F-Droid FOSS use rn-barcode-zxing-scan
+  // For iOS use rn camera vision...
+  if (Platform.OS === 'ios') {
+    device = useCameraDevice('back');
+  }
 
   const codeScanner = useCodeScanner({
     codeTypes: ['qr'],
