@@ -14,8 +14,7 @@ import com.facebook.react.defaults.DefaultReactNativeHost
 import com.facebook.react.soloader.OpenSourceMergedSoMapping
 import com.facebook.soloader.SoLoader
 import com.learnium.RNDeviceInfo.RNDeviceInfo
-import com.mrousavy.camera.react.CameraPackage
-import com.rnbarcodezxing.BarcodeZXingPackage
+import com.reactlibrary.BarcodeZxingScanPackage
 import com.rnbiometrics.ReactNativeBiometricsPackage
 import com.rnfs.RNFSPackage
 import com.swmansion.gesturehandler.RNGestureHandlerPackage
@@ -32,9 +31,7 @@ class MainApplication : Application(), ReactApplication {
                     add(RNFSPackage())
                     add(RNSharePackage())
                     add(ReactNativeBiometricsPackage())
-                    add(BarcodeZXingPackage())
-                    add(LottiePackage())
-                    add(CameraPackage())
+                    add(BarcodeZxingScanPackage())
                 }
 
             override fun getJSMainModuleName(): String = "index"

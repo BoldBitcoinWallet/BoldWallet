@@ -23,7 +23,7 @@ import Big from 'big.js';
 import {dbg} from '../utils';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {useTheme} from '../theme';
-import {ScanCode} from 'rn-barcode-zxing';
+import BarcodeZxingScan from 'rn-barcode-zxing-scan';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -36,24 +36,6 @@ interface SendBitcoinModalProps {
   walletAddress: string;
 }
 const E8 = Big(10).pow(8);
-const QRScanner = ({styles, onClose, onCodeScanned}: any) => {
-  return (
-    <View style={styles.scannerContainer}>
-      <ScanCode
-        shouldScan={true}
-        onScanBarcode={(results: any) => {
-          const scannedCode = results?.code?.[0] ?? '';
-          if (scannedCode) {
-            onCodeScanned(scannedCode);
-          }
-        }}
-      />
-      <TouchableOpacity style={styles.closeScannerButton} onPress={onClose}>
-        <Text style={styles.closeScannerButtonText}>Close</Text>
-      </TouchableOpacity>
-    </View>
-  );
-};
 
 const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   visible,
@@ -67,7 +49,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   const [btcAmount, setBtcAmount] = useState<Big>(Big(0));
   const [inBtcAmount, setInBtcAmount] = useState('');
   const [inUsdAmount, setInUsdAmount] = useState('');
-  const [isScannerVisible, setIsScannerVisible] = useState<boolean>(false);
   const [estimatedFee, setEstimatedFee] = useState<Big | null>(null);
   const [isCalculatingFee, setIsCalculatingFee] = useState(false);
 
@@ -423,11 +404,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     onSend(address, Big(inBtcAmount).times(1e8), estimatedFee);
   };
 
-  const handleCodeScanned = (code: string) => {
-    setAddress(code);
-    setIsScannerVisible(false);
-  };
-
   const renderFeeSection = () => {
     if (!address || !btcAmount) {
       return null;
@@ -514,7 +490,13 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     />
                   </TouchableOpacity>
                   <TouchableOpacity
-                    onPress={() => setIsScannerVisible(true)}
+                    onPress={() =>
+                      BarcodeZxingScan.showQrReader((error: any, data: any) => {
+                        if (!error) {
+                          setAddress(data);
+                        }
+                      })
+                    }
                     style={styles.qrIconContainer}>
                     <Image
                       source={require('../assets/qr-icon.png')}
@@ -580,17 +562,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     <Text style={styles.buttonText}>Cancel</Text>
                   </TouchableOpacity>
                 </View>
-                <Modal
-                  animationType="slide"
-                  transparent={false}
-                  visible={isScannerVisible}
-                  onRequestClose={() => setIsScannerVisible(false)}>
-                  <QRScanner
-                    styles={styles}
-                    onClose={() => setIsScannerVisible(false)}
-                    onCodeScanned={handleCodeScanned}
-                  />
-                </Modal>
               </SafeAreaView>
             </KeyboardAvoidingView>
           </View>
