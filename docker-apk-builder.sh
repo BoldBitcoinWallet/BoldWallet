@@ -1,4 +1,5 @@
 #!/bin/bash
+# Linux - Ubuntu Tested
 set -e
 
 IMAGE_NAME=boldwallet-apk-exporter
@@ -6,9 +7,18 @@ CONTAINER_NAME=temp-boldwallet
 APK_NAME=app-release.apk
 OUTPUT_PATH=./$APK_NAME
 
-# Check if Docker is installed
+# Check if Docker is installed. Linux - Ubuntu Tested
 if ! command -v docker &> /dev/null; then
   echo "[*] Docker not found. Installing Docker..."
+
+  # Remove broken PPAs that might break apt
+  echo "[*] Cleaning up invalid PPAs (if any)..."
+  sudo grep -lr 'ppa.launchpadcontent.net' /etc/apt/sources.list.d/ | while read -r ppa_file; do
+    if ! apt-cache policy | grep -q "$(basename "$ppa_file" .list)"; then
+      echo "  - Removing broken PPA: $ppa_file"
+      sudo rm -f "$ppa_file"
+    fi
+  done
 
   # Update package info and install dependencies
   sudo apt update
