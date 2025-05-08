@@ -35,12 +35,17 @@ COPY . .
 
 # conditional F-Droid build switch
 RUN if [ "$fdroid" = "true" ]; then \
-    mv /BoldWallet/screens/SendBitcoinModal.foss.tsx /BoldWallet/Screens/SendBitcoinModal.tsx; \
-    sed -i -e '/installReferrerVersion/,+12d' node_modules/react-native-device-info/android/build.gradle; \
+    mv /BoldWallet/screens/SendBitcoinModal.foss.tsx /BoldWallet/screens/SendBitcoinModal.tsx; \
   fi
   
 # npm install
 RUN npm i
+
+
+RUN if [ "$fdroid" = "true" ]; then \
+    sed -i -e '/installReferrerVersion/,+12d' node_modules/react-native-device-info/android/build.gradle; \
+  fi
+
 
 # gomobile lib
 WORKDIR /BoldWallet/BBMTLib
