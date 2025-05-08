@@ -17,11 +17,7 @@ import {
   NativeModules,
   ScrollView,
 } from 'react-native';
-import {
-  Camera,
-  useCameraDevice,
-  useCodeScanner,
-} from 'react-native-vision-camera';
+
 import BarcodeZxingScan from 'rn-barcode-zxing-scan';
 import Clipboard from '@react-native-clipboard/clipboard';
 import debounce from 'lodash/debounce';
@@ -42,27 +38,6 @@ interface SendBitcoinModalProps {
 }
 
 const E8 = Big(10).pow(8);
-
-const QRScanner = ({styles, device, codeScanner, onClose}: any) => {
-  if (!device) {
-    return <Text style={styles.cameraNotFound}>Camera Not Found</Text>;
-  }
-  return (
-    <View style={styles.scannerContainer}>
-      <Camera
-        style={StyleSheet.absoluteFill}
-        device={device || null}
-        isActive={true}
-        torch="off"
-        codeScanner={codeScanner}
-      />
-      <View style={styles.qrFrame} />
-      <TouchableOpacity style={styles.closeScannerButton} onPress={onClose}>
-        <Text style={styles.closeScannerButtonText}>Close</Text>
-      </TouchableOpacity>
-    </View>
-  );
-};
 
 const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   visible,
@@ -297,24 +272,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
-    },
-  });
-
-  let device;
-
-  // For android, F-Droid FOSS use rn-barcode-zxing-scan
-  // For iOS use rn camera vision...
-  if (Platform.OS === 'ios') {
-    device = useCameraDevice('back');
-  }
-
-  const codeScanner = useCodeScanner({
-    codeTypes: ['qr'],
-    onCodeScanned: codes => {
-      if (codes.length > 0) {
-        setAddress(codes[0].value!!);
-        setIsScannerVisible(false);
-      }
     },
   });
 
@@ -614,19 +571,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     <Text style={styles.buttonText}>Cancel</Text>
                   </TouchableOpacity>
                 </View>
-
-                <Modal
-                  animationType="slide"
-                  transparent={false}
-                  visible={isScannerVisible}
-                  onRequestClose={() => setIsScannerVisible(false)}>
-                  <QRScanner
-                    styles={styles}
-                    device={device}
-                    codeScanner={codeScanner}
-                    onClose={() => setIsScannerVisible(false)}
-                  />
-                </Modal>
               </SafeAreaView>
             </KeyboardAvoidingView>
           </View>
