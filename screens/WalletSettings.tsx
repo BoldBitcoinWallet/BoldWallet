@@ -16,6 +16,7 @@ import {
 import Share from 'react-native-share';
 import EncryptedStorage from 'react-native-encrypted-storage';
 const {BBMTLibNativeModule} = NativeModules;
+import DeviceInfo from 'react-native-device-info';
 
 import {dbg} from '../utils';
 import {useTheme} from '../theme';
@@ -33,6 +34,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [isCryptoVibrant, setIsCryptoVibrant] = useState(false);
 
   const {theme, toggleTheme} = useTheme();
+  const [appVersion, setAppVersion] = useState('');
+
+  useEffect(() => {
+    setAppVersion(DeviceInfo.getVersion());
+  }, []);
 
   useEffect(() => {
     EncryptedStorage.getItem('keyshare').then(ks => {
@@ -448,8 +454,14 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.title}>Privacy & Terms </Text>
+          <Text style={styles.title}>About</Text>
+          {/* App version Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>App Version</Text>
+            <Text style={styles.sectionDescription}>{appVersion}</Text>
+          </View>
 
+          <Text style={styles.title}>Privacy & Terms </Text>
           {/* APIs and Services Section */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>APIs and Services</Text>
