@@ -1,3 +1,4 @@
+ARG fdroid=false
 FROM debian:bullseye
 
 # install java and node
@@ -32,6 +33,12 @@ RUN go install golang.org/x/mobile/cmd/gomobile@latest \
 WORKDIR /BoldWallet
 COPY . .
 
+# conditional F-Droid build switch
+RUN if [ "$fdroid" = "true" ]; then \
+    mv /BoldWallet/screens/SendBitcoinModal.foss.tsx /BoldWallet/Screens/SendBitcoinModal.tsx; \
+    sed -i -e '/installReferrerVersion/,+12d' node_modules/react-native-device-info/android/build.gradle; \
+  fi
+  
 # npm install
 RUN npm i
 

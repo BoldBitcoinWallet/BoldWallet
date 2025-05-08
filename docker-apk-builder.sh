@@ -2,6 +2,13 @@
 # Linux - Ubuntu Tested
 set -e
 
+FDROID_BUILD=false
+for arg in "$@"; do
+  if [ "$arg" == "--fdroid" ]; then
+    FDROID_BUILD=true
+  fi
+done
+
 IMAGE_NAME=boldwallet-apk-exporter
 CONTAINER_NAME=temp-boldwallet
 APK_NAME=app-release.apk
@@ -49,8 +56,13 @@ if ! command -v docker &> /dev/null; then
   echo "[ok] Docker installed."
 fi
 
-echo "[*] Building Docker image..."
-docker build -t $IMAGE_NAME .
+if [ "$FDROID_BUILD" = true ]; then
+  echo "[*] Building fdroid-patched Docker image..."
+  docker build --build-arg fdroid=true -t $IMAGE_NAME .
+else
+  echo "[*] Building Docker image..."
+  docker build -t $IMAGE_NAME .
+fi
 
 echo "[*] Creating temporary container..."
 docker create --name $CONTAINER_NAME $IMAGE_NAME
