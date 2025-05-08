@@ -33,6 +33,9 @@ RUN go install golang.org/x/mobile/cmd/gomobile@latest \
 WORKDIR /BoldWallet
 COPY . .
 
+# pass flag as env var
+ENV fdroid=${fdroid}
+
 # conditional F-Droid build switch
 RUN if [ "$fdroid" = "true" ]; then \
     mv /BoldWallet/screens/SendBitcoinModal.foss.tsx /BoldWallet/screens/SendBitcoinModal.tsx; \
