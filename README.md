@@ -12,7 +12,6 @@
 You can build the Android APK yourself, via Auto Builder or Manual Build as below.
 
 ### 🔁 Via Auto Builder
-
 Relies on docker (Dockerfile) - guaranteed quick way to compile and release the APK.
 
 Build the APK seamlessly following the steps:
@@ -29,7 +28,7 @@ KEY_PASSWORD="your_key_password"
 # This will take time given your PC performance (couple of minutes up to 30 minutes)
 # When done, the app-release.apk is generated within the BoldWallet folder
 
-> sh docker-apk-builder.sh
+> sh docker-apk-builder.sh --fdroid #optional, for F-Droid foss tailored build
 ```
 ![image](https://github.com/user-attachments/assets/eb8f1a45-b2cb-46ec-a061-fc0cb4f10448)
   

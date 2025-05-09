@@ -91,3 +91,4 @@ android/boldwallet-publickey.asc
 
 # Docker Generated APK
 app-release.apk
+build.log

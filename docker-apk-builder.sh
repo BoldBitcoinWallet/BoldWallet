@@ -58,10 +58,10 @@ fi
 
 if [ "$FDROID_BUILD" = true ]; then
   echo "[*] Building fdroid-patched Docker image..."
-  docker build --build-arg fdroid=true -t $IMAGE_NAME .
+  docker build --build-arg fdroid=true -t $IMAGE_NAME . > build.log 2>&1
 else
   echo "[*] Building Docker image..."
-  docker build -t $IMAGE_NAME .
+  docker build -t $IMAGE_NAME . > build.log 2>&1
 fi
 
 echo "[*] Creating temporary container..."

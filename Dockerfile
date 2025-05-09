@@ -1,6 +1,6 @@
-ARG fdroid=false
 FROM debian:bullseye
-
+ARG fdroid=false
+ENV fdroid=${fdroid}
 # install java and node
 RUN apt update && apt install -y curl git openjdk-17-jdk \
   && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
@@ -32,9 +32,6 @@ RUN go install golang.org/x/mobile/cmd/gomobile@latest \
 # Build Wallet
 WORKDIR /BoldWallet
 COPY . .
-
-# pass flag as env var
-ENV fdroid=${fdroid}
 
 # conditional F-Droid build switch
 RUN if [ "$fdroid" = "true" ]; then \
