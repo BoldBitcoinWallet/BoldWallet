@@ -1,8 +1,16 @@
 # Bold Bitcoin Wallet
 
+
 ## 📲 Download
 
-➡️ [Download Latest APK Release](https://github.com/BoldBitcoinWallet/BoldWallet/releases/latest)
+### ➡️ Find it on F-Droid
+
+[<img src="https://f-droid.org/badge/get-it-on.png"
+    alt="Get it on F-Droid"
+    height="80">](https://f-droid.org/packages/com.boldwallet)
+
+
+### ➡️ [Download Latest APK Release](https://github.com/BoldBitcoinWallet/BoldWallet/releases/latest)
 
 > ⚠️ **Important:** This APK is signed with the official BoldWallet keystore.  
 > It is **not compatible** with the version distributed via [F-Droid](https://f-droid.org).  
