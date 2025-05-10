@@ -2,11 +2,19 @@
 # Linux - Ubuntu Tested
 set -e
 
+GIT_REF=""
 FDROID_BUILD=false
-for arg in "$@"; do
-  if [ "$arg" == "--fdroid" ]; then
-    FDROID_BUILD=true
-  fi
+
+# Parse arguments
+for ((i=1; i<=$#; i++)); do
+  case "${!i}" in
+    --fdroid)
+      FDROID_BUILD=true
+      ;;
+    --git=*)
+      GIT_REF="${!i#--git=}"
+      ;;
+  esac
 done
 
 IMAGE_NAME=boldwallet-apk-exporter
@@ -58,10 +66,10 @@ fi
 
 if [ "$FDROID_BUILD" = true ]; then
   echo "[*] Building fdroid-patched Docker image..."
-  docker build --build-arg fdroid=true -t $IMAGE_NAME . > build.log 2>&1
+  docker build --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > build.log 2>&1
 else
   echo "[*] Building Docker image..."
-  docker build -t $IMAGE_NAME . > build.log 2>&1
+  docker build --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > build.log 2>&1
 fi
 
 echo "[*] Creating temporary container..."

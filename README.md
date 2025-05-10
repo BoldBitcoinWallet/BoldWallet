@@ -1,24 +1,24 @@
 # Bold Bitcoin Wallet
 
 
-## 📲 Download
-
-### ➡️ Find it on F-Droid
+## 📲 Install it on F-Droid
 
 [<img src="https://f-droid.org/badge/get-it-on.png"
     alt="Get it on F-Droid"
     height="80">](https://f-droid.org/packages/com.boldwallet)
 
-
-### ➡️ [Download Latest APK Release](https://github.com/BoldBitcoinWallet/BoldWallet/releases/latest)
+## ➡️ BoldWallet Official Release
+**[Download Latest APK Release](https://github.com/BoldBitcoinWallet/BoldWallet/releases/latest)**
 
 > ⚠️ **Important:** This APK is signed with the official BoldWallet keystore.  
 > It is **not compatible** with the version distributed via [F-Droid](https://f-droid.org).  
 > Always install updates from **one source only** to avoid signature conflicts.
 
-## 📖 Android Guide
-You can build the Android APK yourself, via Auto Builder or Manual Build as below.
+## 📖 Dev Guide
+- You can build the Android APK yourself, via Auto Builder or Manual Build as below.
+- iOS builds follow React-Native iphone–guide 
 
+## 🪄 Android - Build It Yourself 
 ### 🔁 Via Auto Builder
 Relies on docker (Dockerfile) - guaranteed quick way to compile and release the APK.
 
@@ -37,10 +37,10 @@ KEY_PASSWORD="your_key_password"
 # When done, the app-release.apk is generated within the BoldWallet folder
 
 > sh docker-apk-builder.sh --fdroid #optional, for F-Droid foss tailored build
+> sh docker-apk-builder.sh --fdroid --git=main #optional, which git "branch,tag, or commit-hash" to use
 ```
 ![image](https://github.com/user-attachments/assets/eb8f1a45-b2cb-46ec-a061-fc0cb4f10448)
   
-
 ### ✍️ Via Manual Build
 Manual build, requires manual and extra efforts to compiles the app on your PC.
 
