@@ -289,14 +289,14 @@ func (s *ServiceImpl) processKeygen(localParty tss.Party,
 						if item == localState.LocalPartyKey {
 							continue
 						}
-						if _err := s.messenger.Send(r.From.Moniker, item, outboundPayload); _err != nil {
+						if _err := s.messenger.Send(r.From.Moniker, item, outboundPayload, strings.Join(localState.KeygenCommitteeKeys, ",")); _err != nil {
 							errChan <- fmt.Errorf("failed to broadcast message to peer, error: %v", _err)
 							return
 						}
 					}
 				} else {
 					for _, item := range r.To {
-						if _err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload); _err != nil {
+						if _err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload, strings.Join(localState.KeygenCommitteeKeys, ",")); _err != nil {
 							errChan <- fmt.Errorf("failed to send message to peer, error: %v", _err)
 							return
 						}
@@ -496,13 +496,23 @@ func (s *ServiceImpl) processKeySign(localParty tss.Party,
 						if item.Moniker == localParty.PartyID().Moniker {
 							continue
 						}
-						if err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload); err != nil {
+						// Convert sortedPartyIds to []string
+						partyIDStrings := make([]string, len(sortedPartyIds))
+						for i, p := range sortedPartyIds {
+							partyIDStrings[i] = p.Moniker
+						}
+						if err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload, strings.Join(partyIDStrings, ",")); err != nil {
 							errChan <- fmt.Errorf("failed to broadcast message to peer, error: %w", err)
 						}
 					}
 				} else {
 					for _, item := range r.To {
-						if err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload); err != nil {
+						// Convert sortedPartyIds to []string
+						partyIDStrings := make([]string, len(sortedPartyIds))
+						for i, p := range sortedPartyIds {
+							partyIDStrings[i] = p.Moniker
+						}
+						if err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload, strings.Join(partyIDStrings, ",")); err != nil {
 							errChan <- fmt.Errorf("failed to send message to peer, error: %w", err)
 						}
 					}
