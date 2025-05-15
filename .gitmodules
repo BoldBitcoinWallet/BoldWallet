@@ -1,0 +1,3 @@
+[submodule "BBMTLib"]
+	path = BBMTLib
+	url = https://github.com/BoldBitcoinWallet/BBMTLib.git
