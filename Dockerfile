@@ -36,12 +36,15 @@ RUN go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20250408133729-978277e7ea
 # Build Wallet
 COPY . /BoldWallet
 RUN if [ -z "$git_ref" ]; then \
-    echo "Using local code"; \
+    echo "Using local code, make sure local submodules installed (boostrap.sh)"; \
 else \
     echo "Replacing from GitHub"; \
     rm -r /BoldWallet; \
     git clone https://github.com/BoldBitcoinWallet/BoldWallet.git /BoldWallet; \
-    cd /BoldWallet && git checkout "$git_ref"; \
+    cd /BoldWallet && git checkout "$git_ref" && sh bootstrap.sh; \
+    go mod tidy && go get golang.org/x/mobile/bind && gomobile init; \
+    export GOFLAGS="-mod=mod" && gomobile bind -v -target=android -androidapi 21 github.com/BoldBitcoinWallet/BBMTLib/tss; \
+    cp tss.aar ../android/app/libs/tss.aar; \
 fi
 
 # BoldWallet Root
