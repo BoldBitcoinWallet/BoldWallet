@@ -73,14 +73,16 @@ yarn-error.log
 !.yarn/sdks
 !.yarn/versions
 
-# BBMTLib
+# Ruby
+.bundle/
+
+# Editor/IDE configs
+.vscode/
+.idea/
+
+# BBMTLib - submodule
 #
-BBMTLib/.DS_Store
-BBMTLib/*.aar
-BBMTLib/*.jar
-BBMTLib/Tss.xcframework/
-BBMTLib/scripts/bin/
-BBMTLib/scripts/*.json
+BBMTLib/
 
 #
 android/signed-release.sh
