@@ -42,9 +42,6 @@ else \
     rm -r /BoldWallet; \
     git clone https://github.com/BoldBitcoinWallet/BoldWallet.git /BoldWallet; \
     cd /BoldWallet && git checkout "$git_ref" && sh bootstrap.sh; \
-    cd /BoldWallet/BBMTLib && go mod tidy && go get golang.org/x/mobile/bind && gomobile init; \
-    export GOFLAGS="-mod=mod" && gomobile bind -v -target=android -androidapi 21 github.com/BoldBitcoinWallet/BBMTLib/tss; \
-    cp tss.aar ../android/app/libs/tss.aar; \
 fi
 
 # BoldWallet Root
@@ -66,6 +63,7 @@ RUN if [ "$fdroid" = "true" ]; then \
 # gomobile lib
 WORKDIR /BoldWallet/BBMTLib
 RUN sh build.sh
+RUN cp tss.aar ../android/app/libs/tss.aar
 
 # android release APK
 WORKDIR /BoldWallet/android
