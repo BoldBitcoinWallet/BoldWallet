@@ -1,4 +1,4 @@
-import React, {useEffect, useState, useCallback, useRef} from 'react';
+import React, {useEffect, useState, useCallback, useRef, forwardRef, useImperativeHandle} from 'react';
 import {
   SafeAreaView,
   FlatList,
@@ -17,17 +17,21 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 import {dbg} from '../utils';
 import {useTheme} from '../theme';
 
-const TransactionList = ({
-  address,
-  baseApi,
-  onReload,
-  onUpdate,
-}: {
+export interface TransactionListRef {
+  refresh: () => void;
+}
+
+const TransactionList = forwardRef<TransactionListRef, {
   address: string;
   baseApi: string;
   onUpdate: (pendingTxs: any[], pending: number) => Promise<any>;
   onReload: () => Promise<any>;
-}) => {
+}>(({
+  address,
+  baseApi,
+  onReload,
+  onUpdate,
+}, ref) => {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -41,6 +45,13 @@ const TransactionList = ({
   // Add refs to track mounting state and prevent memory leaks
   const isMounted = useRef(true);
   const abortController = useRef<AbortController | null>(null);
+
+  // Expose refresh method through ref
+  useImperativeHandle(ref, () => ({
+    refresh: () => {
+      onRefresh();
+    }
+  }));
 
   function updatePendings(txs: any[], cached: any) {
     dbg('cached', cached);
@@ -459,6 +470,6 @@ const TransactionList = ({
       <Toast config={{}} />
     </SafeAreaView>
   );
-};
+});
 
 export default TransactionList;

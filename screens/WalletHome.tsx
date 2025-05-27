@@ -1,4 +1,4 @@
-import React, {useEffect, useState, useCallback} from 'react';
+import React, {useEffect, useState, useCallback, useRef} from 'react';
 import {
   View,
   Text,
@@ -12,12 +12,18 @@ import {
   Platform,
   PermissionsAndroid,
   Modal,
+  ScrollView,
+  RefreshControl,
+  Linking,
+  Share,
+  TextInput,
+  BackHandler,
 } from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import SendBitcoinModal from './SendBitcoinModal';
 import Toast from 'react-native-toast-message';
-import TransactionList from './TransactionList';
-import {CommonActions} from '@react-navigation/native';
+import TransactionList, {TransactionListRef} from './TransactionList';
+import {CommonActions, useFocusEffect} from '@react-navigation/native';
 import Big from 'big.js';
 import ReceiveModal from './ReceiveModal';
 import {dbg} from '../utils';
@@ -72,13 +78,30 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [addressType, setAddressType] = React.useState('');
   const [isAddressTypeModalVisible, setIsAddressTypeModalVisible] =
     React.useState(false);
+  const [legacyAddress, setLegacyAddress] = React.useState('');
+  const [segwitAddress, setSegwitAddress] = React.useState('');
+  const [segwitCompatibleAddress, setSegwitCompatibleAddress] =
+    React.useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const transactionListRef = useRef<TransactionListRef>(null);
 
   const {theme} = useTheme();
+
+  const showErrorToast = useCallback((message: string) => {
+    Toast.show({
+      type: 'error',
+      text1: 'Error',
+      text2: message,
+      position: 'top',
+    });
+  }, []);
 
   const headerRight = React.useCallback(
     () => <HeaderRightButton navigation={navigation} />,
     [navigation],
   );
+
+  const shorten = (x: string, y = 12) => `${x.slice(0, y)}...${x.slice(-y)}`;
 
   useEffect(() => {
     navigation.setOptions({
@@ -128,9 +151,42 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     });
   });
 
+  const fetchWalletBalance = useCallback(async () => {
+    if (!address) {
+      console.log('Address not yet set, skipping balance fetch');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const totalUTXO = await BBMTLibNativeModule.totalUTXO(address);
+      if (!totalUTXO) {
+        console.log('No UTXOs found for address:', address);
+        setBalanceBTC('0.00000000');
+        setBalanceUSD('$0.00');
+        return;
+      }
+
+      const balance = Big(totalUTXO);
+      setBalanceBTC(balance.sub(pendingSent).div(1e8).toFixed(8));
+      if (btcRate) {
+        setBalanceUSD(
+          `$${formatUSD(Big(balance).mul(btcRate).div(1e8).toNumber())}`,
+        );
+      }
+    } catch (error) {
+      console.error('Error fetching wallet balance:', error);
+      // Don't reset balance on error, keep previous value
+      showErrorToast('Failed to fetch wallet balance. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, [address, btcRate, showErrorToast, pendingSent]);
+
   useEffect(() => {
     const initializeApp = async () => {
       try {
+        setLoading(true);
         const jks = await EncryptedStorage.getItem('keyshare');
         const ks = JSON.parse(jks || '{}');
         const path = "m/44'/0'/0'/0/0";
@@ -146,6 +202,26 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         }
         const netParams = await BBMTLibNativeModule.setBtcNetwork(net);
         net = netParams.split('@')[0];
+
+        // Generate both address types
+        const legacyAddr = await BBMTLibNativeModule.btcAddress(
+          btcPub,
+          net,
+          'legacy',
+        );
+        const segwitAddr = await BBMTLibNativeModule.btcAddress(
+          btcPub,
+          net,
+          'segwit-native',
+        );
+        const segwitCompAddr = await BBMTLibNativeModule.btcAddress(
+          btcPub,
+          net,
+          'segwit-compatible',
+        );
+        setLegacyAddress(legacyAddr);
+        setSegwitAddress(segwitAddr);
+        setSegwitCompatibleAddress(segwitCompAddr);
 
         let base = netParams.split('@')[1];
         dbg('apiBase', base);
@@ -173,14 +249,18 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           await EncryptedStorage.setItem('api', base);
           BBMTLibNativeModule.setAPI(net, base);
         }
+
+        // Only fetch balance after address is set
+        await fetchWalletBalance();
       } catch (error) {
         console.error('Error initializing wallet:', error);
+        showErrorToast('Failed to initialize wallet. Please try again.');
       } finally {
         setLoading(false);
       }
     };
     initializeApp();
-  }, [addressType]);
+  }, [addressType, fetchWalletBalance, showErrorToast]);
 
   useEffect(() => {
     const fetchBtcPrice = async () => {
@@ -201,15 +281,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     fetchBtcPrice();
   }, []);
 
-  const showErrorToast = useCallback((message: string) => {
-    Toast.show({
-      type: 'error',
-      text1: 'Error',
-      text2: message,
-      position: 'top',
-    });
-  }, []);
-
   async function refreshWalletBalance(
     pendingTxs: any[],
     pendingSentTotal: number,
@@ -218,37 +289,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     dbg('pending sent', pendingSentTotal);
     setPendingSent(pendingSentTotal);
   }
-
-  const fetchWalletBalance = useCallback(async () => {
-    try {
-      const totalUTXO = await BBMTLibNativeModule.totalUTXO(address);
-      const balance = Big(totalUTXO);
-      setBalanceBTC(balance.sub(pendingSent).div(1e8).toFixed(8));
-      if (btcRate) {
-        setBalanceUSD(
-          `$${formatUSD(Big(balance).mul(btcRate).div(1e8).toNumber())}`,
-        );
-      }
-    } catch (error) {
-      console.error('Error fetching wallet balance');
-      setBalanceBTC('0.00000000');
-      setBalanceUSD('Unavailable');
-      showErrorToast('Failed to fetch wallet balance.');
-    } finally {
-      setLoading(false);
-    }
-  }, [address, btcRate, showErrorToast, pendingSent]);
-
-  useEffect(() => {
-    if (address) {
-      fetchWalletBalance();
-      EncryptedStorage.getItem('mode').then(mode =>
-        setIsBlurred(mode === 'private'),
-      );
-      const intervalId = setInterval(fetchWalletBalance, 60000);
-      return () => clearInterval(intervalId);
-    }
-  }, [address, fetchWalletBalance]);
 
   const handleBlurred = () => {
     const blurr = !isBlurred;
@@ -400,58 +440,144 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     blurredText: {
       opacity: 0.6,
     },
+    addressTypeButton: {
+      backgroundColor: theme.colors.cardBackground,
+      padding: 16,
+      borderRadius: 8,
+      marginVertical: 8,
+      width: '100%',
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    addressTypeButtonSelected: {
+      borderColor: theme.colors.accent,
+      borderWidth: 2,
+    },
+    addressTypeLabel: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: theme.colors.text,
+      marginBottom: 4,
+    },
+    addressTypeValue: {
+      marginTop: 4,
+      fontSize: 12,
+      color: theme.colors.textSecondary,
+      textAlign: 'left',
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    },
+    modalTitle: {
+      fontSize: 20,
+      fontWeight: 'bold',
+      color: theme.colors.text,
+      marginBottom: 16,
+    },
   });
+
+  const refreshWalletData = useCallback(async () => {
+    try {
+      setRefreshing(true);
+      await fetchWalletBalance();
+      if (transactionListRef.current) {
+        transactionListRef.current.refresh();
+      }
+      setRefreshing(false);
+    } catch (error) {
+      console.error('Error refreshing wallet data:', error);
+      setRefreshing(false);
+    }
+  }, [fetchWalletBalance]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshWalletData();
+    }, [refreshWalletData])
+  );
+
+  useEffect(() => {
+    if (!address) {
+      return;
+    }
+
+    const refreshBalance = async () => {
+      await fetchWalletBalance();
+    };
+
+    refreshBalance();
+    const intervalId = setInterval(refreshBalance, 60000);
+    return () => clearInterval(intervalId);
+  }, [address, fetchWalletBalance]);
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.contentContainer}>
-        <View style={styles.walletHeader}>
-          <View style={styles.headerTop}>
-            <Image
-              source={require('../assets/bitcoin-logo.png')}
-              style={styles.btcLogo}
-            />
-            <Text style={styles.btcPrice}>{btcPrice}</Text>
-          </View>
-          <TouchableOpacity onPress={handleBlurred}>
-            <Text style={[styles.balanceBTC, isBlurred && styles.blurredText]}>
-              {isBlurred ? '* * * * * * 🔓' : `${balanceBTC} BTC 🔒`}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleBlurred}>
-            <Text style={[styles.balanceUSD, isBlurred && styles.blurredText]}>
-              {isBlurred ? '* * *' : balanceUSD}
-            </Text>
-          </TouchableOpacity>
-          {loading ? <ActivityIndicator size="small" color="#4CAF50" /> : <></>}
-          <Text style={styles.party}>
-            {party} - {network}
-          </Text>
-          <View style={styles.actions}>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.sendButton]}
-              onPress={() => setIsSendModalVisible(true)}>
-              <Text style={styles.actionButtonText}>Send</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.settingsButton]}
-              onPress={() => setIsAddressTypeModalVisible(true)}>
-              <Text>
-                {addressType === 'legacy'
-                  ? '🧱'
-                  : addressType === 'segwit-native'
-                  ? '🧬'
-                  : '♻️'}
+      <ScrollView
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={refreshWalletData}
+            colors={['#FFB800']}
+            tintColor="#FFB800"
+          />
+        }
+      >
+        <View style={styles.contentContainer}>
+          <View style={styles.walletHeader}>
+            <View style={styles.headerTop}>
+              <Image
+                source={require('../assets/bitcoin-logo.png')}
+                style={styles.btcLogo}
+              />
+              <Text style={styles.btcPrice}>{btcPrice}</Text>
+            </View>
+            <TouchableOpacity onPress={handleBlurred}>
+              <Text style={[styles.balanceBTC, isBlurred && styles.blurredText]}>
+                {isBlurred ? '* * * * * * 🔓' : `${balanceBTC} BTC 🔒`}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.receiveButton]}
-              onPress={() => setIsReceiveModalVisible(true)}>
-              <Text style={styles.actionButtonText}>Receive</Text>
+            <TouchableOpacity onPress={handleBlurred}>
+              <Text style={[styles.balanceUSD, isBlurred && styles.blurredText]}>
+                {isBlurred ? '* * *' : balanceUSD}
+              </Text>
             </TouchableOpacity>
+            {loading ? <ActivityIndicator size="small" color="#4CAF50" /> : <></>}
+            <Text style={styles.party}>
+              {party} - {network}
+            </Text>
+            <View style={styles.actions}>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.sendButton]}
+                onPress={() => setIsSendModalVisible(true)}>
+                <Text style={styles.actionButtonText}>Send</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.settingsButton]}
+                onPress={() => setIsAddressTypeModalVisible(true)}>
+                <Text>
+                  {addressType === 'legacy'
+                    ? '🧱'
+                    : addressType === 'segwit-native'
+                    ? '🧬'
+                    : '♻️'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.receiveButton]}
+                onPress={() => setIsReceiveModalVisible(true)}>
+                <Text style={styles.actionButtonText}>Receive</Text>
+              </TouchableOpacity>
+            </View>
           </View>
+          {!loading && (
+            <TransactionList
+              ref={transactionListRef}
+              address={address}
+              baseApi={apiBase}
+              onUpdate={refreshWalletBalance}
+              onReload={fetchWalletBalance}
+            />
+          )}
         </View>
-      </View>
+      </ScrollView>
       <Modal
         visible={isAddressTypeModalVisible}
         transparent={true}
@@ -462,44 +588,73 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           onPress={() => setIsAddressTypeModalVisible(false)}
           activeOpacity={1}>
           <View style={styles.modalContent}>
-            <Text style={styles.btcPrice}>Select Address Type:</Text>
-            {['legacy', 'segwit-native', 'segwit-compatible'].map(type => (
-              <TouchableOpacity
-                key={
-                  type === 'legacy'
-                    ? '🧱 Legacy'
-                    : type === 'segwit-native'
-                    ? '🧬 Segwit Native'
-                    : '♻️ Segwit Compatible'
-                }
-                style={styles.actions}
-                onPress={() => {
-                  setIsAddressTypeModalVisible(false);
-                  EncryptedStorage.setItem('addressType', type).finally(() => {
-                    setAddressType(type);
-                  });
-                }}>
-                <Text style={[styles.modalText]}>
-                  {type === 'legacy'
-                    ? '🧱 Legacy (1...)'
-                    : type === 'segwit-native'
-                    ? '🧬 Segwit Native (bc1...)'
-                    : '♻️ Segwit Compatible (3...)'}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            <Text style={styles.modalTitle}>Select Address Type</Text>
+            <TouchableOpacity
+              style={[
+                styles.addressTypeButton,
+                addressType === 'legacy' && styles.addressTypeButtonSelected,
+              ]}
+              onPress={() => {
+                setIsAddressTypeModalVisible(false);
+                EncryptedStorage.setItem('addressType', 'legacy').finally(
+                  () => {
+                    setAddressType('legacy');
+                  },
+                );
+              }}>
+              <Text style={styles.addressTypeLabel}>🧱 Legacy Address</Text>
+              <Text style={styles.addressTypeValue}>
+                {shorten(legacyAddress)}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.addressTypeButton,
+                addressType === 'segwit-native' &&
+                  styles.addressTypeButtonSelected,
+              ]}
+              onPress={() => {
+                setIsAddressTypeModalVisible(false);
+                EncryptedStorage.setItem(
+                  'addressType',
+                  'segwit-native',
+                ).finally(() => {
+                  setAddressType('segwit-native');
+                });
+              }}>
+              <Text style={styles.addressTypeLabel}>
+                🧬 Segwit Native Address
+              </Text>
+              <Text style={styles.addressTypeValue}>
+                {shorten(segwitAddress)}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.addressTypeButton,
+                addressType === 'segwit-compatible' &&
+                  styles.addressTypeButtonSelected,
+              ]}
+              onPress={() => {
+                setIsAddressTypeModalVisible(false);
+                EncryptedStorage.setItem(
+                  'addressType',
+                  'segwit-compatible',
+                ).finally(() => {
+                  setAddressType('segwit-compatible');
+                });
+              }}>
+              <Text style={styles.addressTypeLabel}>
+                🔁 Segwit Compatible Address
+              </Text>
+              <Text style={styles.addressTypeValue}>
+                {shorten(segwitCompatibleAddress)}
+              </Text>
+            </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </Modal>
       <Toast />
-      {!loading && (
-        <TransactionList
-          address={address}
-          baseApi={apiBase}
-          onUpdate={refreshWalletBalance}
-          onReload={fetchWalletBalance}
-        />
-      )}
       {isSendModalVisible && (
         <SendBitcoinModal
           visible={isSendModalVisible}

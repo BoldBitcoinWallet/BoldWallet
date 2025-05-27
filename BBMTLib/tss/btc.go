@@ -591,6 +591,19 @@ func MpcSendBTC(
 		Logf("Added change output: %d satoshis to %s", changeAmount, senderAddress)
 	}
 
+	// Create prevOutFetcher for all inputs (needed for SegWit)
+	prevOuts := make(map[wire.OutPoint]*wire.TxOut)
+	for i, utxo := range selectedUTXOs {
+		txOut, _, err := FetchUTXODetails(utxo.TxID, utxo.Vout)
+		if err != nil {
+			return "", fmt.Errorf("failed to fetch UTXO details for input %d: %w", i, err)
+		}
+		hash, _ := chainhash.NewHashFromStr(utxo.TxID)
+		outPoint := wire.OutPoint{Hash: *hash, Index: utxo.Vout}
+		prevOuts[outPoint] = txOut
+	}
+	prevOutFetcher := txscript.NewMultiPrevOutFetcher(prevOuts)
+
 	// Sign each input with enhanced address type support
 	mpcHook("signing inputs", session, utxoSession, utxoIndex, utxoCount, false)
 	for i, utxo := range selectedUTXOs {
@@ -606,7 +619,6 @@ func MpcSendBTC(
 		}
 
 		var sigHash []byte
-		prevOutFetcher := txscript.NewCannedPrevOutputFetcher(txOut.PkScript, txOut.Value)
 		hashCache := txscript.NewTxSigHashes(tx, prevOutFetcher)
 
 		// Determine the script type and signing method
@@ -626,8 +638,12 @@ func MpcSendBTC(
 				mpcHook("joining keysign - P2WPKH", session, utxoSession, utxoIndex, utxoCount, false)
 				sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
 				if err != nil {
+					return "", fmt.Errorf("failed to sign P2WPKH transaction: %w", err)
+				}
+				if sigJSON == "" {
 					return "", fmt.Errorf("failed to sign P2WPKH transaction: signature is empty")
 				}
+
 				var sig KeysignResponse
 				if err := json.Unmarshal([]byte(sigJSON), &sig); err != nil {
 					return "", fmt.Errorf("failed to parse P2WPKH signature response: %w", err)
@@ -659,8 +675,12 @@ func MpcSendBTC(
 				mpcHook("joining keysign - generic SegWit", session, utxoSession, utxoIndex, utxoCount, false)
 				sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
 				if err != nil {
+					return "", fmt.Errorf("failed to sign generic SegWit transaction: %w", err)
+				}
+				if sigJSON == "" {
 					return "", fmt.Errorf("failed to sign generic SegWit transaction: signature is empty")
 				}
+
 				var sig KeysignResponse
 				if err := json.Unmarshal([]byte(sigJSON), &sig); err != nil {
 					return "", fmt.Errorf("failed to parse generic SegWit signature response: %w", err)
@@ -692,8 +712,12 @@ func MpcSendBTC(
 				mpcHook("joining keysign - P2PKH", session, utxoSession, utxoIndex, utxoCount, false)
 				sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
 				if err != nil {
+					return "", fmt.Errorf("failed to sign P2PKH transaction: %w", err)
+				}
+				if sigJSON == "" {
 					return "", fmt.Errorf("failed to sign P2PKH transaction: signature is empty")
 				}
+
 				var sig KeysignResponse
 				if err := json.Unmarshal([]byte(sigJSON), &sig); err != nil {
 					return "", fmt.Errorf("failed to parse P2PKH signature response: %w", err)
@@ -718,25 +742,44 @@ func MpcSendBTC(
 				Logf("P2PKH SignatureScript set for input %d", i)
 
 			} else if txscript.IsPayToScriptHash(txOut.PkScript) {
-				// P2SH (could be P2SH-P2WPKH)
+				// P2SH - need to determine if it's P2SH-P2WPKH or regular P2SH
 				Logf("Processing P2SH input for index: %d", i)
 
-				// Check if this is P2SH-P2WPKH by examining the sender address type
-				switch fromAddr.(type) {
-				case *btcutil.AddressScriptHash:
-					// This is likely P2SH-P2WPKH, create the redeem script
-					pubKeyHash := btcutil.Hash160(pubKeyBytes)
-					witnessAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubKeyHash, params)
-					if err != nil {
-						return "", fmt.Errorf("failed to create witness address for P2SH-P2WPKH: %w", err)
+				// For P2SH-P2WPKH, we need to construct the correct redeem script
+				// The redeem script for P2SH-P2WPKH is a witness program: OP_0 <20-byte-pubkey-hash>
+				pubKeyHash := btcutil.Hash160(pubKeyBytes)
+
+				// Create the witness program (redeem script for P2SH-P2WPKH)
+				redeemScript := make([]byte, 22)
+				redeemScript[0] = 0x00 // OP_0
+				redeemScript[1] = 0x14 // Push 20 bytes
+				copy(redeemScript[2:], pubKeyHash)
+
+				// Verify this is actually P2SH-P2WPKH by checking if the scriptHash matches
+				scriptHash := btcutil.Hash160(redeemScript)
+				expectedP2SHScript := make([]byte, 23)
+				expectedP2SHScript[0] = 0xa9 // OP_HASH160
+				expectedP2SHScript[1] = 0x14 // Push 20 bytes
+				copy(expectedP2SHScript[2:22], scriptHash)
+				expectedP2SHScript[22] = 0x87 // OP_EQUAL
+
+				if bytes.Equal(txOut.PkScript, expectedP2SHScript) {
+					// This is P2SH-P2WPKH
+					Logf("Confirmed P2SH-P2WPKH for input %d", i)
+					Logf("txOut.PkScript: %x", txOut.PkScript)
+					Logf("redeemScript: %x (length: %d)", redeemScript, len(redeemScript))
+					Logf("expectedP2SHScript: %x", expectedP2SHScript)
+
+					// Verify redeem script hash
+					scriptHash := btcutil.Hash160(redeemScript)
+					if len(txOut.PkScript) != 23 || txOut.PkScript[0] != 0xa9 || txOut.PkScript[22] != 0x87 {
+						return "", fmt.Errorf("txOut.PkScript is not a valid P2SH script: %x", txOut.PkScript)
+					}
+					if !bytes.Equal(scriptHash, txOut.PkScript[2:22]) {
+						return "", fmt.Errorf("redeemScript hash %x does not match P2SH script hash %x", scriptHash, txOut.PkScript[2:22])
 					}
 
-					redeemScript, err := txscript.PayToAddrScript(witnessAddr)
-					if err != nil {
-						return "", fmt.Errorf("failed to create P2SH-P2WPKH redeem script: %w", err)
-					}
-
-					// Calculate witness sighash for P2SH-P2WPKH
+					// Calculate witness sighash using the witness program as the script
 					sigHash, err = txscript.CalcWitnessSigHash(redeemScript, hashCache, txscript.SigHashAll, tx, i, txOut.Value)
 					if err != nil {
 						Logf("Error calculating P2SH-P2WPKH witness sighash: %v", err)
@@ -744,11 +787,16 @@ func MpcSendBTC(
 					}
 
 					sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
+					Logf("P2SH-P2WPKH sighash: %s", sighashBase64)
 					mpcHook("joining keysign - P2SH-P2WPKH", session, utxoSession, utxoIndex, utxoCount, false)
 					sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
 					if err != nil {
+						return "", fmt.Errorf("failed to sign P2SH-P2WPKH transaction: %w", err)
+					}
+					if sigJSON == "" {
 						return "", fmt.Errorf("failed to sign P2SH-P2WPKH transaction: signature is empty")
 					}
+
 					var sig KeysignResponse
 					if err := json.Unmarshal([]byte(sigJSON), &sig); err != nil {
 						return "", fmt.Errorf("failed to parse P2SH-P2WPKH signature response: %w", err)
@@ -761,13 +809,31 @@ func MpcSendBTC(
 
 					signatureWithHashType := append(signature, byte(txscript.SigHashAll))
 
-					// Set witness and signature script for P2SH-P2WPKH
-					tx.TxIn[i].Witness = wire.TxWitness{signatureWithHashType, pubKeyBytes}
-					tx.TxIn[i].SignatureScript = redeemScript
-					Logf("P2SH-P2WPKH witness and signature script set for input %d", i)
+					// Set SignatureScript and Witness
+					// For P2SH-P2WPKH, the SignatureScript must be a canonical push of the redeemScript
+					// Manually construct the canonical push of the redeem script
+					if len(redeemScript) != 22 { // Sanity check for P2SH-P2WPKH redeem script
+						Logf("Error: P2SH-P2WPKH redeemScript has unexpected length: %d", len(redeemScript))
+						return "", fmt.Errorf("internal error: P2SH-P2WPKH redeemScript has unexpected length %d", len(redeemScript))
+					}
 
-				default:
-					// Generic P2SH handling
+					// Create a canonical push of the redeemScript
+					builder := txscript.NewScriptBuilder()
+					builder.AddData(redeemScript)
+					canonicalRedeemScriptPush, err := builder.Script()
+					if err != nil {
+						Logf("Error building canonical P2SH-P2WPKH scriptSig: %v", err)
+						return "", fmt.Errorf("failed to build canonical P2SH-P2WPKH scriptSig: %w", err)
+					}
+
+					tx.TxIn[i].SignatureScript = canonicalRedeemScriptPush
+					tx.TxIn[i].Witness = wire.TxWitness{signatureWithHashType, pubKeyBytes}
+					Logf("P2SH-P2WPKH: SignatureScript: %x (length: %d), Witness: %x (items: %d)",
+						tx.TxIn[i].SignatureScript, len(tx.TxIn[i].SignatureScript),
+						tx.TxIn[i].Witness, len(tx.TxIn[i].Witness))
+				} else {
+					// This is regular P2SH (not P2SH-P2WPKH)
+					Logf("Processing regular P2SH for input %d", i)
 					sigHash, err = txscript.CalcSignatureHash(txOut.PkScript, txscript.SigHashAll, tx, i)
 					if err != nil {
 						return "", fmt.Errorf("failed to calculate P2SH sighash: %w", err)
@@ -777,8 +843,12 @@ func MpcSendBTC(
 					mpcHook("joining keysign - P2SH", session, utxoSession, utxoIndex, utxoCount, false)
 					sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
 					if err != nil {
+						return "", fmt.Errorf("failed to sign P2SH transaction: %w", err)
+					}
+					if sigJSON == "" {
 						return "", fmt.Errorf("failed to sign P2SH transaction: signature is empty")
 					}
+
 					var sig KeysignResponse
 					if err := json.Unmarshal([]byte(sigJSON), &sig); err != nil {
 						return "", fmt.Errorf("failed to parse P2SH signature response: %w", err)
@@ -790,27 +860,28 @@ func MpcSendBTC(
 					}
 
 					signatureWithHashType := append(signature, byte(txscript.SigHashAll))
-					// Note: For generic P2SH, you'd need the actual redeem script
-					// This is a simplified version - actual implementation would need the redeem script
+
+					// For regular P2SH, build the scriptSig with signature + pubkey + redeem script
 					builder := txscript.NewScriptBuilder()
 					builder.AddData(signatureWithHashType)
 					builder.AddData(pubKeyBytes)
+					// Note: For a complete P2SH implementation, you'd need the actual redeem script here
+					// This is simplified for P2PKH-like redeem scripts
 					scriptSig, err := builder.Script()
 					if err != nil {
 						return "", fmt.Errorf("failed to build P2SH scriptSig: %w", err)
 					}
 					tx.TxIn[i].SignatureScript = scriptSig
 					tx.TxIn[i].Witness = nil
-					Logf("P2SH SignatureScript set for input %d", i)
+					Logf("Regular P2SH SignatureScript set for input %d", i)
 				}
-
 			} else {
 				// Unknown script type
 				return "", fmt.Errorf("unsupported script type for input %d", i)
 			}
 		}
 
-		// Script validation
+		// FIXED: Script validation with proper prevOutFetcher
 		mpcHook("validating tx script", session, utxoSession, utxoIndex, utxoCount, false)
 		vm, err := txscript.NewEngine(
 			txOut.PkScript,
@@ -820,7 +891,7 @@ func MpcSendBTC(
 			nil,
 			hashCache,
 			txOut.Value,
-			prevOutFetcher,
+			prevOutFetcher, // Use the proper prevOutFetcher
 		)
 		if err != nil {
 			Logf("Error creating script engine for input %d: %v", i, err)
@@ -921,7 +992,7 @@ func calculateFees(senderAddress string, utxos []UTXO, satoshiAmount int64, rece
 		if isWitness {
 			hasSegWit = true
 			if txscript.IsPayToWitnessPubKeyHash(txOut.PkScript) { // P2WPKH
-				baseWeight += 272 // 68 bytes * 4 (non-witness) + 105 bytes / 4 (witness) ≈ 68 vbytes
+				baseWeight += 272 // 68 bytes * 4 (non-witness) + 105 bytes / 4 (witness) � 68 vbytes
 				Logf("UTXO %d is P2WPKH: Added 68 vbytes", i)
 			} else if txscript.IsPayToTaproot(txOut.PkScript) { // P2TR
 				baseWeight += 230 // 57.5 vbytes: 43 bytes * 4 + 65 bytes / 4
