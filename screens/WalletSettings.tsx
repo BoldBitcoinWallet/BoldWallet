@@ -529,7 +529,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <Modal
             visible={isBackupModalVisible}
             transparent={true}
-            animationType="slide"
+            animationType="fade"
             onRequestClose={() => setIsBackupModalVisible(false)}>
             <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>
@@ -573,7 +573,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <Modal
             visible={isModalVisible}
             transparent={true}
-            animationType="slide"
+            animationType="fade"
             onRequestClose={() => setIsModalVisible(false)}>
             <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>

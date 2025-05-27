@@ -225,7 +225,7 @@ func SelectUTXOs(utxos []UTXO, totalAmount int64, strategy string) ([]UTXO, int6
 	return selected, totalSelected, nil
 }
 
-func ecdsaSign(senderWIF string, data []byte) []byte {
+func wifECDSASign(senderWIF string, data []byte) []byte {
 	wifKey, _ := btcutil.DecodeWIF(senderWIF)
 	signature := mecdsa.Sign(wifKey.PrivKey, data[:])
 	return signature.Serialize()
@@ -244,6 +244,245 @@ func mpcHook(info, session, utxo_session string, utxo_current, utxo_total int, d
 		done,
 	)
 	Hook(hookData)
+}
+
+func EstimateFees(senderAddress, receiverAddress string, amountSatoshi int64) (string, error) {
+	Logln("BBMTLog", "invoking SendBitcoin...")
+
+	utxos, err := FetchUTXOs(senderAddress)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch UTXOs: %w", err)
+	}
+
+	// select the utxos
+	selectedUTXOs, _, err := SelectUTXOs(utxos, amountSatoshi, "smallest")
+	if err != nil {
+		return "", err
+	}
+
+	_fee, _err := calculateFees(senderAddress, selectedUTXOs, amountSatoshi, receiverAddress)
+	if _err != nil {
+		return "", _err
+	}
+	return strconv.FormatInt(_fee, 10), nil
+}
+
+func SendBitcoin(wifKey, publicKey, senderAddress, receiverAddress string, preview, amountSatoshi int64) (string, error) {
+	Logln("BBMTLog", "invoking SendBitcoin...")
+	params := &chaincfg.TestNet3Params
+	if _btc_net == "mainnet" {
+		params = &chaincfg.MainNetParams
+	}
+
+	utxos, err := FetchUTXOs(senderAddress)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch UTXOs: %w", err)
+	}
+
+	// select the utxos
+	selectedUTXOs, totalAmount, err := SelectUTXOs(utxos, amountSatoshi, "smallest")
+	if err != nil {
+		return "", err
+	}
+
+	if preview > 0 {
+		_fee, _err := calculateFees(senderAddress, selectedUTXOs, amountSatoshi, receiverAddress)
+		if _err != nil {
+			return "", _err
+		}
+		return strconv.FormatInt(_fee, 10), nil
+	}
+
+	feeRate, err := RecommendedFees(_fee_set)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch fee rate: %w", err)
+	}
+
+	// Estimate transaction size more accurately
+	var estimatedSize = 10 // Base size for version, locktime, etc.
+
+	// Inputs
+	for _, utxo := range selectedUTXOs {
+		_, isWitness, err := FetchUTXODetails(utxo.TxID, utxo.Vout)
+		if err != nil {
+			return "", fmt.Errorf("failed to fetch UTXO details: %w", err)
+		}
+		if isWitness {
+			// SegWit input size estimation
+			estimatedSize += 68  // SegWit input without witness data
+			estimatedSize += 107 // Witness data size (approx)
+		} else {
+			// Legacy input size
+			estimatedSize += 148
+		}
+	}
+
+	// Outputs
+	estimatedSize += 34 // Standard P2PKH output size, adjust if using P2SH or other types
+
+	// If change output is needed
+	if totalAmount-amountSatoshi-int64(estimatedSize*feeRate/1000) > 546 {
+		estimatedSize += 34 // Assuming change will go back to the same address type
+	}
+
+	estimatedFee := int64(estimatedSize * feeRate / 1000)
+	Logf("Estimated Fee: %d", estimatedFee)
+
+	if preview > 0 {
+		return fmt.Sprintf("%d", estimatedFee), nil
+	}
+
+	// Create new transaction
+	tx := wire.NewMsgTx(wire.TxVersion)
+
+	// Add all inputs
+	for _, utxo := range selectedUTXOs {
+		hash, _ := chainhash.NewHashFromStr(utxo.TxID)
+		outPoint := wire.NewOutPoint(hash, utxo.Vout)
+		tx.AddTxIn(wire.NewTxIn(outPoint, nil, nil))
+		Logf("Selected UTXOs: %+v", utxo)
+	}
+
+	if totalAmount < amountSatoshi+estimatedFee {
+		return "", fmt.Errorf("insufficient funds: available %d, needed %d", totalAmount, amountSatoshi+estimatedFee)
+	}
+
+	// Decode WIF and validate key pair first
+	decodedWIF, err := btcutil.DecodeWIF(wifKey)
+	if err != nil {
+		return "", fmt.Errorf("invalid WIF key: %w", err)
+	}
+
+	pubKeyBytes, err := hex.DecodeString(publicKey)
+	if err != nil {
+		return "", fmt.Errorf("invalid public key format: %w", err)
+	}
+
+	if !bytes.Equal(decodedWIF.PrivKey.PubKey().SerializeCompressed(), pubKeyBytes) {
+		return "", fmt.Errorf("WIF key does not match provided public key")
+	}
+
+	fromAddr, err := btcutil.DecodeAddress(senderAddress, params)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode sender address: %w", err)
+	}
+
+	toAddr, err := btcutil.DecodeAddress(receiverAddress, params)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode receiver address: %w", err)
+	}
+
+	Logf("Sender Address Type: %T", fromAddr)
+	Logf("Receiver Address Type: %T", toAddr)
+
+	// Add recipient output
+	pkScript, err := txscript.PayToAddrScript(toAddr)
+	if err != nil {
+		return "", fmt.Errorf("failed to create output script: %w", err)
+	}
+	tx.AddTxOut(wire.NewTxOut(amountSatoshi, pkScript))
+
+	// Add change output if necessary
+	changeAmount := totalAmount - amountSatoshi - estimatedFee
+	if changeAmount > 546 {
+		changePkScript, err := txscript.PayToAddrScript(fromAddr)
+		if err != nil {
+			return "", fmt.Errorf("failed to create change script: %w", err)
+		}
+		tx.AddTxOut(wire.NewTxOut(changeAmount, changePkScript))
+	}
+
+	// Sign each input
+	// In SendBitcoin function
+	for i, utxo := range selectedUTXOs {
+		txOut, isWitness, err := FetchUTXODetails(utxo.TxID, utxo.Vout)
+		if err != nil {
+			return "", fmt.Errorf("failed to fetch UTXO details: %w", err)
+		}
+
+		var sigHash []byte
+		prevOutFetcher := txscript.NewCannedPrevOutputFetcher(txOut.PkScript, txOut.Value)
+
+		if isWitness {
+			Logf("Processing SegWit input for index: %d", i)
+			// For SegWit outputs
+			hashCache := txscript.NewTxSigHashes(tx, prevOutFetcher)
+			sigHash, err = txscript.CalcWitnessSigHash(txOut.PkScript, hashCache, txscript.SigHashAll, tx, i, txOut.Value)
+			if err != nil {
+				return "", fmt.Errorf("failed to calculate witness sighash: %w", err)
+			}
+
+			// Sign
+			signature := wifECDSASign(wifKey, sigHash)
+			signatureWithHashType := append(signature, byte(txscript.SigHashAll))
+
+			// Use Witness for SegWit
+			tx.TxIn[i].Witness = wire.TxWitness{
+				signatureWithHashType,
+				pubKeyBytes,
+			}
+			tx.TxIn[i].SignatureScript = nil
+			Logf("Witness set for input %d: %v", i, tx.TxIn[i].Witness)
+		} else {
+			Logf("Processing P2PKH input for index: %d", i)
+			// For P2PKH outputs
+			sigHash, err = txscript.CalcSignatureHash(txOut.PkScript, txscript.SigHashAll, tx, i)
+			if err != nil {
+				return "", fmt.Errorf("failed to calculate sighash: %w", err)
+			}
+
+			// Sign
+			// Sign with your ecdsaSign function
+			signature := wifECDSASign(wifKey, sigHash)
+			signatureWithHashType := append(signature, byte(txscript.SigHashAll))
+
+			// Use SignatureScript for P2PKH
+			builder := txscript.NewScriptBuilder()
+			builder.AddData(signatureWithHashType)
+			builder.AddData(pubKeyBytes)
+			scriptSig, err := builder.Script()
+			if err != nil {
+				return "", fmt.Errorf("failed to build scriptSig: %w", err)
+			}
+			tx.TxIn[i].SignatureScript = scriptSig
+			tx.TxIn[i].Witness = nil
+			Logf("SignatureScript set for input %d: %x", i, tx.TxIn[i].SignatureScript)
+		}
+
+		// Script validation
+		vm, err := txscript.NewEngine(
+			txOut.PkScript,
+			tx,
+			i,
+			txscript.StandardVerifyFlags,
+			nil,
+			txscript.NewTxSigHashes(tx, prevOutFetcher),
+			txOut.Value,
+			prevOutFetcher,
+		)
+		if err != nil {
+			return "", fmt.Errorf("failed to create script engine for input %d: %w", i, err)
+		}
+		if err := vm.Execute(); err != nil {
+			return "", fmt.Errorf("script validation failed for input %d: %w", i, err)
+		}
+	}
+
+	// Serialize and broadcast
+	var signedTx bytes.Buffer
+	if err := tx.Serialize(&signedTx); err != nil {
+		return "", fmt.Errorf("failed to serialize transaction: %w", err)
+	}
+
+	rawTx := hex.EncodeToString(signedTx.Bytes())
+	Logln("Raw Transaction:", rawTx) // Print raw transaction for debugging
+
+	txid, err := PostTx(rawTx)
+	if err != nil {
+		return "", fmt.Errorf("failed to broadcast transaction: %w", err)
+	}
+
+	return txid, nil
 }
 
 func MpcSendBTC(
@@ -329,7 +568,7 @@ func MpcSendBTC(
 	Logln("Sufficient funds available")
 
 	// Add recipient output
-	mpcHook("creating  output script", session, utxoSession, utxoIndex, utxoCount, false)
+	mpcHook("creating output script", session, utxoSession, utxoIndex, utxoCount, false)
 	pkScript, err := txscript.PayToAddrScript(toAddr)
 	if err != nil {
 		Logf("Error creating output script: %v", err)
@@ -352,15 +591,14 @@ func MpcSendBTC(
 		Logf("Added change output: %d satoshis to %s", changeAmount, senderAddress)
 	}
 
-	// Sign each input
+	// Sign each input with enhanced address type support
 	mpcHook("signing inputs", session, utxoSession, utxoIndex, utxoCount, false)
 	for i, utxo := range selectedUTXOs {
-
 		// update utxo session - counter
 		utxoIndex = i + 1
 		utxoSession = fmt.Sprintf("%s%d", session, i)
 
-		mpcHook("fetching utxo defails", session, utxoSession, utxoIndex, utxoCount, false)
+		mpcHook("fetching utxo details", session, utxoSession, utxoIndex, utxoCount, false)
 		txOut, isWitness, err := FetchUTXODetails(utxo.TxID, utxo.Vout)
 		if err != nil {
 			Logf("Error fetching UTXO details: %v", err)
@@ -369,88 +607,207 @@ func MpcSendBTC(
 
 		var sigHash []byte
 		prevOutFetcher := txscript.NewCannedPrevOutputFetcher(txOut.PkScript, txOut.Value)
+		hashCache := txscript.NewTxSigHashes(tx, prevOutFetcher)
 
+		// Determine the script type and signing method
 		if isWitness {
-			Logf("Processing SegWit input for index: %d", i)
-			hashCache := txscript.NewTxSigHashes(tx, prevOutFetcher)
-			sigHash, err = txscript.CalcWitnessSigHash(txOut.PkScript, hashCache, txscript.SigHashAll, tx, i, txOut.Value)
-			if err != nil {
-				Logf("Error calculating witness sighash: %v", err)
-				return "", fmt.Errorf("failed to calculate witness sighash: %w", err)
+			// Handle different SegWit types
+			if txscript.IsPayToWitnessPubKeyHash(txOut.PkScript) {
+				// P2WPKH (Native SegWit)
+				Logf("Processing P2WPKH input for index: %d", i)
+				sigHash, err = txscript.CalcWitnessSigHash(txOut.PkScript, hashCache, txscript.SigHashAll, tx, i, txOut.Value)
+				if err != nil {
+					Logf("Error calculating P2WPKH witness sighash: %v", err)
+					return "", fmt.Errorf("failed to calculate P2WPKH witness sighash: %w", err)
+				}
+
+				// Sign the hash
+				sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
+				mpcHook("joining keysign - P2WPKH", session, utxoSession, utxoIndex, utxoCount, false)
+				sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
+				if err != nil {
+					return "", fmt.Errorf("failed to sign P2WPKH transaction: signature is empty")
+				}
+				var sig KeysignResponse
+				if err := json.Unmarshal([]byte(sigJSON), &sig); err != nil {
+					return "", fmt.Errorf("failed to parse P2WPKH signature response: %w", err)
+				}
+
+				signature, err := hex.DecodeString(sig.DerSignature)
+				if err != nil {
+					return "", fmt.Errorf("failed to decode P2WPKH DER signature: %w", err)
+				}
+
+				signatureWithHashType := append(signature, byte(txscript.SigHashAll))
+				tx.TxIn[i].Witness = wire.TxWitness{signatureWithHashType, pubKeyBytes}
+				tx.TxIn[i].SignatureScript = nil
+				Logf("P2WPKH witness set for input %d", i)
+
+			} else if txscript.IsPayToTaproot(txOut.PkScript) {
+				Logf("Taproot detected but not supported due to lack of Schnorr support in BNB-TSS.")
+				return "", fmt.Errorf("taproot (P2TR) inputs are not supported for now")
+			} else {
+				// Generic SegWit handling (P2WSH, etc.)
+				Logf("Processing generic SegWit input for index: %d", i)
+				sigHash, err = txscript.CalcWitnessSigHash(txOut.PkScript, hashCache, txscript.SigHashAll, tx, i, txOut.Value)
+				if err != nil {
+					Logf("Error calculating generic witness sighash: %v", err)
+					return "", fmt.Errorf("failed to calculate generic witness sighash: %w", err)
+				}
+
+				sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
+				mpcHook("joining keysign - generic SegWit", session, utxoSession, utxoIndex, utxoCount, false)
+				sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
+				if err != nil {
+					return "", fmt.Errorf("failed to sign generic SegWit transaction: signature is empty")
+				}
+				var sig KeysignResponse
+				if err := json.Unmarshal([]byte(sigJSON), &sig); err != nil {
+					return "", fmt.Errorf("failed to parse generic SegWit signature response: %w", err)
+				}
+
+				signature, err := hex.DecodeString(sig.DerSignature)
+				if err != nil {
+					return "", fmt.Errorf("failed to decode generic SegWit DER signature: %w", err)
+				}
+
+				signatureWithHashType := append(signature, byte(txscript.SigHashAll))
+				tx.TxIn[i].Witness = wire.TxWitness{signatureWithHashType, pubKeyBytes}
+				tx.TxIn[i].SignatureScript = nil
+				Logf("Generic SegWit witness set for input %d", i)
 			}
 
-			// Sign each utxo
-			sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
-			mpcHook("joining keysign", session, utxoSession, utxoIndex, utxoCount, false)
-			sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
-			if err != nil {
-				return "", fmt.Errorf("failed to sign transaction: signature is empty")
-			}
-			var sig KeysignResponse
-			if err := json.Unmarshal([]byte(sigJSON), &sig); err != nil {
-				return "", fmt.Errorf("failed to parse signature response: %w", err)
-			}
-
-			// Decode the hex encoded DER signature
-			signature, err := hex.DecodeString(sig.DerSignature)
-			if err != nil {
-				return "", fmt.Errorf("failed to decode DER signature: %w", err)
-			}
-
-			// sigWithHashType
-			signatureWithHashType := append(signature, byte(txscript.SigHashAll))
-
-			// Use Witness for SegWit
-			mpcHook("appending signature - segwit", session, utxoSession, utxoIndex, utxoCount, false)
-			tx.TxIn[i].Witness = wire.TxWitness{
-				signatureWithHashType,
-				pubKeyBytes,
-			}
-			tx.TxIn[i].SignatureScript = nil
-			Logf("Witness set for input %d: %v", i, tx.TxIn[i].Witness)
 		} else {
-			Logf("Processing P2PKH input for index: %d", i)
-			// For P2PKH outputs
-			sigHash, err = txscript.CalcSignatureHash(txOut.PkScript, txscript.SigHashAll, tx, i)
-			if err != nil {
-				Logf("Error calculating sighash: %v", err)
-				return "", fmt.Errorf("failed to calculate sighash: %w", err)
-			}
+			// Handle non-SegWit types
+			if txscript.IsPayToPubKeyHash(txOut.PkScript) {
+				// P2PKH (Legacy)
+				Logf("Processing P2PKH input for index: %d", i)
+				sigHash, err = txscript.CalcSignatureHash(txOut.PkScript, txscript.SigHashAll, tx, i)
+				if err != nil {
+					Logf("Error calculating P2PKH sighash: %v", err)
+					return "", fmt.Errorf("failed to calculate P2PKH sighash: %w", err)
+				}
 
-			// Sign
-			sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
-			mpcHook("joining keysign", session, utxoSession, utxoIndex, utxoCount, false)
-			sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
-			if err != nil {
-				return "", fmt.Errorf("failed to sign transaction: signature is empty")
-			}
-			var sig KeysignResponse
-			if err := json.Unmarshal([]byte(sigJSON), &sig); err != nil {
-				return "", fmt.Errorf("failed to parse signature response: %w", err)
-			}
+				sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
+				mpcHook("joining keysign - P2PKH", session, utxoSession, utxoIndex, utxoCount, false)
+				sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
+				if err != nil {
+					return "", fmt.Errorf("failed to sign P2PKH transaction: signature is empty")
+				}
+				var sig KeysignResponse
+				if err := json.Unmarshal([]byte(sigJSON), &sig); err != nil {
+					return "", fmt.Errorf("failed to parse P2PKH signature response: %w", err)
+				}
 
-			// Decode the hex encoded DER signature
-			signature, err := hex.DecodeString(sig.DerSignature)
-			if err != nil {
-				return "", fmt.Errorf("failed to decode DER signature: %w", err)
-			}
+				signature, err := hex.DecodeString(sig.DerSignature)
+				if err != nil {
+					return "", fmt.Errorf("failed to decode P2PKH DER signature: %w", err)
+				}
 
-			// sigWithHashType
-			signatureWithHashType := append(signature, byte(txscript.SigHashAll))
+				signatureWithHashType := append(signature, byte(txscript.SigHashAll))
+				builder := txscript.NewScriptBuilder()
+				builder.AddData(signatureWithHashType)
+				builder.AddData(pubKeyBytes)
+				scriptSig, err := builder.Script()
+				if err != nil {
+					Logf("Error building P2PKH scriptSig: %v", err)
+					return "", fmt.Errorf("failed to build P2PKH scriptSig: %w", err)
+				}
+				tx.TxIn[i].SignatureScript = scriptSig
+				tx.TxIn[i].Witness = nil
+				Logf("P2PKH SignatureScript set for input %d", i)
 
-			// Use SignatureScript for P2PKH
-			mpcHook("appending signature - p2pkh", session, utxoSession, utxoIndex, utxoCount, false)
-			builder := txscript.NewScriptBuilder()
-			builder.AddData(signatureWithHashType)
-			builder.AddData(pubKeyBytes)
-			scriptSig, err := builder.Script()
-			if err != nil {
-				Logf("Error building scriptSig: %v", err)
-				return "", fmt.Errorf("failed to build scriptSig: %w", err)
+			} else if txscript.IsPayToScriptHash(txOut.PkScript) {
+				// P2SH (could be P2SH-P2WPKH)
+				Logf("Processing P2SH input for index: %d", i)
+
+				// Check if this is P2SH-P2WPKH by examining the sender address type
+				switch fromAddr.(type) {
+				case *btcutil.AddressScriptHash:
+					// This is likely P2SH-P2WPKH, create the redeem script
+					pubKeyHash := btcutil.Hash160(pubKeyBytes)
+					witnessAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubKeyHash, params)
+					if err != nil {
+						return "", fmt.Errorf("failed to create witness address for P2SH-P2WPKH: %w", err)
+					}
+
+					redeemScript, err := txscript.PayToAddrScript(witnessAddr)
+					if err != nil {
+						return "", fmt.Errorf("failed to create P2SH-P2WPKH redeem script: %w", err)
+					}
+
+					// Calculate witness sighash for P2SH-P2WPKH
+					sigHash, err = txscript.CalcWitnessSigHash(redeemScript, hashCache, txscript.SigHashAll, tx, i, txOut.Value)
+					if err != nil {
+						Logf("Error calculating P2SH-P2WPKH witness sighash: %v", err)
+						return "", fmt.Errorf("failed to calculate P2SH-P2WPKH witness sighash: %w", err)
+					}
+
+					sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
+					mpcHook("joining keysign - P2SH-P2WPKH", session, utxoSession, utxoIndex, utxoCount, false)
+					sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
+					if err != nil {
+						return "", fmt.Errorf("failed to sign P2SH-P2WPKH transaction: signature is empty")
+					}
+					var sig KeysignResponse
+					if err := json.Unmarshal([]byte(sigJSON), &sig); err != nil {
+						return "", fmt.Errorf("failed to parse P2SH-P2WPKH signature response: %w", err)
+					}
+
+					signature, err := hex.DecodeString(sig.DerSignature)
+					if err != nil {
+						return "", fmt.Errorf("failed to decode P2SH-P2WPKH DER signature: %w", err)
+					}
+
+					signatureWithHashType := append(signature, byte(txscript.SigHashAll))
+
+					// Set witness and signature script for P2SH-P2WPKH
+					tx.TxIn[i].Witness = wire.TxWitness{signatureWithHashType, pubKeyBytes}
+					tx.TxIn[i].SignatureScript = redeemScript
+					Logf("P2SH-P2WPKH witness and signature script set for input %d", i)
+
+				default:
+					// Generic P2SH handling
+					sigHash, err = txscript.CalcSignatureHash(txOut.PkScript, txscript.SigHashAll, tx, i)
+					if err != nil {
+						return "", fmt.Errorf("failed to calculate P2SH sighash: %w", err)
+					}
+
+					sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
+					mpcHook("joining keysign - P2SH", session, utxoSession, utxoIndex, utxoCount, false)
+					sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
+					if err != nil {
+						return "", fmt.Errorf("failed to sign P2SH transaction: signature is empty")
+					}
+					var sig KeysignResponse
+					if err := json.Unmarshal([]byte(sigJSON), &sig); err != nil {
+						return "", fmt.Errorf("failed to parse P2SH signature response: %w", err)
+					}
+
+					signature, err := hex.DecodeString(sig.DerSignature)
+					if err != nil {
+						return "", fmt.Errorf("failed to decode P2SH DER signature: %w", err)
+					}
+
+					signatureWithHashType := append(signature, byte(txscript.SigHashAll))
+					// Note: For generic P2SH, you'd need the actual redeem script
+					// This is a simplified version - actual implementation would need the redeem script
+					builder := txscript.NewScriptBuilder()
+					builder.AddData(signatureWithHashType)
+					builder.AddData(pubKeyBytes)
+					scriptSig, err := builder.Script()
+					if err != nil {
+						return "", fmt.Errorf("failed to build P2SH scriptSig: %w", err)
+					}
+					tx.TxIn[i].SignatureScript = scriptSig
+					tx.TxIn[i].Witness = nil
+					Logf("P2SH SignatureScript set for input %d", i)
+				}
+
+			} else {
+				// Unknown script type
+				return "", fmt.Errorf("unsupported script type for input %d", i)
 			}
-			tx.TxIn[i].SignatureScript = scriptSig
-			tx.TxIn[i].Witness = nil
-			Logf("SignatureScript set for input %d: %x", i, tx.TxIn[i].SignatureScript)
 		}
 
 		// Script validation
@@ -461,7 +818,7 @@ func MpcSendBTC(
 			i,
 			txscript.StandardVerifyFlags,
 			nil,
-			txscript.NewTxSigHashes(tx, prevOutFetcher),
+			hashCache,
 			txOut.Value,
 			prevOutFetcher,
 		)
@@ -509,7 +866,7 @@ func DecodeAddress(address string) (string, error) {
 	return addr.EncodeAddress(), nil
 }
 
-func previewTxFees(senderAddress string, utxos []UTXO, satoshiAmount int64, receiverAddress string) (int64, error) {
+func calculateFees(senderAddress string, utxos []UTXO, satoshiAmount int64, receiverAddress string) (int64, error) {
 	params := &chaincfg.TestNet3Params
 	if _btc_net == "mainnet" {
 		params = &chaincfg.MainNetParams
@@ -672,224 +1029,6 @@ func previewTxFees(senderAddress string, utxos []UTXO, satoshiAmount int64, rece
 	return estimatedFee, nil
 }
 
-func SendBitcoin(wifKey, publicKey, senderAddress, receiverAddress string, preview, amountSatoshi int64) (string, error) {
-	Logln("BBMTLog", "invoking SendBitcoin...")
-	params := &chaincfg.TestNet3Params
-	if _btc_net == "mainnet" {
-		params = &chaincfg.MainNetParams
-	}
-
-	utxos, err := FetchUTXOs(senderAddress)
-	if err != nil {
-		return "", fmt.Errorf("failed to fetch UTXOs: %w", err)
-	}
-
-	// select the utxos
-	selectedUTXOs, totalAmount, err := SelectUTXOs(utxos, amountSatoshi, "smallest")
-	if err != nil {
-		return "", err
-	}
-
-	if preview > 0 {
-		_fee, _err := previewTxFees(senderAddress, selectedUTXOs, amountSatoshi, receiverAddress)
-		if _err != nil {
-			return "", _err
-		}
-		return strconv.FormatInt(_fee, 10), nil
-	}
-
-	feeRate, err := RecommendedFees(_fee_set)
-	if err != nil {
-		return "", fmt.Errorf("failed to fetch fee rate: %w", err)
-	}
-
-	// Estimate transaction size more accurately
-	var estimatedSize = 10 // Base size for version, locktime, etc.
-
-	// Inputs
-	for _, utxo := range selectedUTXOs {
-		_, isWitness, err := FetchUTXODetails(utxo.TxID, utxo.Vout)
-		if err != nil {
-			return "", fmt.Errorf("failed to fetch UTXO details: %w", err)
-		}
-		if isWitness {
-			// SegWit input size estimation
-			estimatedSize += 68  // SegWit input without witness data
-			estimatedSize += 107 // Witness data size (approx)
-		} else {
-			// Legacy input size
-			estimatedSize += 148
-		}
-	}
-
-	// Outputs
-	estimatedSize += 34 // Standard P2PKH output size, adjust if using P2SH or other types
-
-	// If change output is needed
-	if totalAmount-amountSatoshi-int64(estimatedSize*feeRate/1000) > 546 {
-		estimatedSize += 34 // Assuming change will go back to the same address type
-	}
-
-	estimatedFee := int64(estimatedSize * feeRate / 1000)
-	Logf("Estimated Fee: %d", estimatedFee)
-
-	if preview > 0 {
-		return fmt.Sprintf("%d", estimatedFee), nil
-	}
-
-	// Create new transaction
-	tx := wire.NewMsgTx(wire.TxVersion)
-
-	// Add all inputs
-	for _, utxo := range selectedUTXOs {
-		hash, _ := chainhash.NewHashFromStr(utxo.TxID)
-		outPoint := wire.NewOutPoint(hash, utxo.Vout)
-		tx.AddTxIn(wire.NewTxIn(outPoint, nil, nil))
-		Logf("Selected UTXOs: %+v", utxo)
-	}
-
-	if totalAmount < amountSatoshi+estimatedFee {
-		return "", fmt.Errorf("insufficient funds: available %d, needed %d", totalAmount, amountSatoshi+estimatedFee)
-	}
-
-	// Decode WIF and validate key pair first
-	decodedWIF, err := btcutil.DecodeWIF(wifKey)
-	if err != nil {
-		return "", fmt.Errorf("invalid WIF key: %w", err)
-	}
-
-	pubKeyBytes, err := hex.DecodeString(publicKey)
-	if err != nil {
-		return "", fmt.Errorf("invalid public key format: %w", err)
-	}
-
-	if !bytes.Equal(decodedWIF.PrivKey.PubKey().SerializeCompressed(), pubKeyBytes) {
-		return "", fmt.Errorf("WIF key does not match provided public key")
-	}
-
-	fromAddr, err := btcutil.DecodeAddress(senderAddress, params)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode sender address: %w", err)
-	}
-
-	toAddr, err := btcutil.DecodeAddress(receiverAddress, params)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode receiver address: %w", err)
-	}
-
-	Logf("Sender Address Type: %T", fromAddr)
-	Logf("Receiver Address Type: %T", toAddr)
-
-	// Add recipient output
-	pkScript, err := txscript.PayToAddrScript(toAddr)
-	if err != nil {
-		return "", fmt.Errorf("failed to create output script: %w", err)
-	}
-	tx.AddTxOut(wire.NewTxOut(amountSatoshi, pkScript))
-
-	// Add change output if necessary
-	changeAmount := totalAmount - amountSatoshi - estimatedFee
-	if changeAmount > 546 {
-		changePkScript, err := txscript.PayToAddrScript(fromAddr)
-		if err != nil {
-			return "", fmt.Errorf("failed to create change script: %w", err)
-		}
-		tx.AddTxOut(wire.NewTxOut(changeAmount, changePkScript))
-	}
-
-	// Sign each input
-	// In SendBitcoin function
-	for i, utxo := range selectedUTXOs {
-		txOut, isWitness, err := FetchUTXODetails(utxo.TxID, utxo.Vout)
-		if err != nil {
-			return "", fmt.Errorf("failed to fetch UTXO details: %w", err)
-		}
-
-		var sigHash []byte
-		prevOutFetcher := txscript.NewCannedPrevOutputFetcher(txOut.PkScript, txOut.Value)
-
-		if isWitness {
-			Logf("Processing SegWit input for index: %d", i)
-			// For SegWit outputs
-			hashCache := txscript.NewTxSigHashes(tx, prevOutFetcher)
-			sigHash, err = txscript.CalcWitnessSigHash(txOut.PkScript, hashCache, txscript.SigHashAll, tx, i, txOut.Value)
-			if err != nil {
-				return "", fmt.Errorf("failed to calculate witness sighash: %w", err)
-			}
-
-			// Sign
-			signature := ecdsaSign(wifKey, sigHash)
-			signatureWithHashType := append(signature, byte(txscript.SigHashAll))
-
-			// Use Witness for SegWit
-			tx.TxIn[i].Witness = wire.TxWitness{
-				signatureWithHashType,
-				pubKeyBytes,
-			}
-			tx.TxIn[i].SignatureScript = nil
-			Logf("Witness set for input %d: %v", i, tx.TxIn[i].Witness)
-		} else {
-			Logf("Processing P2PKH input for index: %d", i)
-			// For P2PKH outputs
-			sigHash, err = txscript.CalcSignatureHash(txOut.PkScript, txscript.SigHashAll, tx, i)
-			if err != nil {
-				return "", fmt.Errorf("failed to calculate sighash: %w", err)
-			}
-
-			// Sign
-			// Sign with your ecdsaSign function
-			signature := ecdsaSign(wifKey, sigHash)
-			signatureWithHashType := append(signature, byte(txscript.SigHashAll))
-
-			// Use SignatureScript for P2PKH
-			builder := txscript.NewScriptBuilder()
-			builder.AddData(signatureWithHashType)
-			builder.AddData(pubKeyBytes)
-			scriptSig, err := builder.Script()
-			if err != nil {
-				return "", fmt.Errorf("failed to build scriptSig: %w", err)
-			}
-			tx.TxIn[i].SignatureScript = scriptSig
-			tx.TxIn[i].Witness = nil
-			Logf("SignatureScript set for input %d: %x", i, tx.TxIn[i].SignatureScript)
-		}
-
-		// Script validation
-		vm, err := txscript.NewEngine(
-			txOut.PkScript,
-			tx,
-			i,
-			txscript.StandardVerifyFlags,
-			nil,
-			txscript.NewTxSigHashes(tx, prevOutFetcher),
-			txOut.Value,
-			prevOutFetcher,
-		)
-		if err != nil {
-			return "", fmt.Errorf("failed to create script engine for input %d: %w", i, err)
-		}
-		if err := vm.Execute(); err != nil {
-			return "", fmt.Errorf("script validation failed for input %d: %w", i, err)
-		}
-	}
-
-	// Serialize and broadcast
-	var signedTx bytes.Buffer
-	if err := tx.Serialize(&signedTx); err != nil {
-		return "", fmt.Errorf("failed to serialize transaction: %w", err)
-	}
-
-	rawTx := hex.EncodeToString(signedTx.Bytes())
-	Logln("Raw Transaction:", rawTx) // Print raw transaction for debugging
-
-	txid, err := PostTx(rawTx)
-	if err != nil {
-		return "", fmt.Errorf("failed to broadcast transaction: %w", err)
-	}
-
-	return txid, nil
-}
-
 func SecP256k1Recover(r, s, v, h string) (string, error) {
 	// Decode r, s into bytes
 	rBytes := hexToBytes(r)
@@ -918,7 +1057,7 @@ func SecP256k1Recover(r, s, v, h string) (string, error) {
 	return hex.EncodeToString(pubKey.SerializeCompressed()), nil
 }
 
-func ConvertPubKeyToBTCAddress(pubKeyCompressed, mainnetORtestnet3 string) (string, error) {
+func PubToP2KH(pubKeyCompressed, mainnetORtestnet3 string) (string, error) {
 	// Decode the hex string to bytes
 	pubKeyBytes, err := hex.DecodeString(pubKeyCompressed)
 	if err != nil {
@@ -930,7 +1069,7 @@ func ConvertPubKeyToBTCAddress(pubKeyCompressed, mainnetORtestnet3 string) (stri
 		return "", fmt.Errorf("invalid compressed public key length: got %d, want 33", len(pubKeyBytes))
 	}
 
-	// Convert the public key to a P2WPKH address (Bech32)
+	// Convert the public key to a P2PKH address
 	pubKeyHash := btcutil.Hash160(pubKeyBytes)
 	var address *btcutil.AddressPubKeyHash
 	if mainnetORtestnet3 == "mainnet" {
@@ -944,4 +1083,107 @@ func ConvertPubKeyToBTCAddress(pubKeyCompressed, mainnetORtestnet3 string) (stri
 		return "", fmt.Errorf("failed to create Bech32 address: %w", err)
 	}
 	return address.EncodeAddress(), nil
+}
+
+func PubToP2WPKH(pubKeyCompressed, mainnetORtestnet3 string) (string, error) {
+	// Decode hex-encoded compressed public key
+	pubKeyBytes, err := hex.DecodeString(pubKeyCompressed)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode public key: %w", err)
+	}
+	if len(pubKeyBytes) != 33 {
+		return "", fmt.Errorf("invalid compressed public key length: got %d, want 33", len(pubKeyBytes))
+	}
+
+	// Determine network parameters
+	var params *chaincfg.Params
+	switch mainnetORtestnet3 {
+	case "mainnet":
+		params = &chaincfg.MainNetParams
+	case "testnet3":
+		params = &chaincfg.TestNet3Params
+	default:
+		return "", fmt.Errorf("invalid network, options: mainnet, testnet3")
+	}
+
+	// Create native SegWit (P2WPKH) address
+	pubKeyHash := btcutil.Hash160(pubKeyBytes)
+	address, err := btcutil.NewAddressWitnessPubKeyHash(pubKeyHash, params)
+	if err != nil {
+		return "", fmt.Errorf("failed to create P2WPKH address: %w", err)
+	}
+
+	return address.EncodeAddress(), nil
+}
+
+func PubToP2SHP2WKH(pubKeyCompressed, mainnetORtestnet3 string) (string, error) {
+	// Decode hex-encoded compressed public key
+	pubKeyBytes, err := hex.DecodeString(pubKeyCompressed)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode public key: %w", err)
+	}
+	if len(pubKeyBytes) != 33 {
+		return "", fmt.Errorf("invalid compressed public key length: got %d, want 33", len(pubKeyBytes))
+	}
+
+	// Determine network parameters
+	var params *chaincfg.Params
+	switch mainnetORtestnet3 {
+	case "mainnet":
+		params = &chaincfg.MainNetParams
+	case "testnet3":
+		params = &chaincfg.TestNet3Params
+	default:
+		return "", fmt.Errorf("invalid network, options: mainnet, testnet3")
+	}
+
+	// Create nested SegWit (P2SH-P2WPKH) address
+	pubKeyHash := btcutil.Hash160(pubKeyBytes)
+	witnessAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubKeyHash, params)
+	if err != nil {
+		return "", fmt.Errorf("failed to create witness pubkey hash: %w", err)
+	}
+
+	redeemScript, err := txscript.PayToAddrScript(witnessAddr)
+	if err != nil {
+		return "", fmt.Errorf("failed to create redeem script: %w", err)
+	}
+
+	wrappedAddr, err := btcutil.NewAddressScriptHash(redeemScript, params)
+	if err != nil {
+		return "", fmt.Errorf("failed to create P2SH address: %w", err)
+	}
+
+	return wrappedAddr.EncodeAddress(), nil
+}
+
+func PubToP2TR(pubKeyCompressedHex, mainnetORtestnet3 string) (string, error) {
+	// Decode the compressed public key
+	pubKeyBytes, err := hex.DecodeString(pubKeyCompressedHex)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode compressed pubkey: %w", err)
+	}
+	if len(pubKeyBytes) != 33 {
+		return "", fmt.Errorf("invalid compressed pubkey length: got %d, want 33", len(pubKeyBytes))
+	}
+
+	// Extract x-only pubkey (bytes 1 to 33, skipping the first byte)
+	xOnlyPubKey := pubKeyBytes[1:]
+
+	var params *chaincfg.Params
+	switch mainnetORtestnet3 {
+	case "mainnet":
+		params = &chaincfg.MainNetParams
+	case "testnet3":
+		params = &chaincfg.TestNet3Params
+	default:
+		return "", fmt.Errorf("invalid network, options: mainnet, testnet3")
+	}
+
+	taprootAddr, err := btcutil.NewAddressTaproot(xOnlyPubKey, params)
+	if err != nil {
+		return "", fmt.Errorf("failed to create Taproot address: %w", err)
+	}
+
+	return taprootAddr.EncodeAddress(), nil
 }

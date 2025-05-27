@@ -78,6 +78,7 @@ const MobilesPairing = ({navigation}: any) => {
 
   type RouteParams = {
     mode?: string;
+    addressType?: string;
     toAddress?: string;
     satoshiAmount?: string;
     usdAmount?: string;
@@ -87,6 +88,7 @@ const MobilesPairing = ({navigation}: any) => {
 
   const route = useRoute<RouteProp<{params: RouteParams}>>();
   const isSendBitcoin = route.params?.mode === 'send_btc';
+  const addressType = route.params?.addressType;
   const title = isSendBitcoin
     ? '🗝 Co-Signing Your Transaction'
     : 'Self Custody Superior Control \n Threshold Signatures Scheme Grade';
@@ -346,7 +348,11 @@ const MobilesPairing = ({navigation}: any) => {
         ks.chain_code_hex,
         path,
       );
-      const btcAddress = await BBMTLibNativeModule.p2khAddress(btcPub, net);
+      const btcAddress = await BBMTLibNativeModule.btcAddress(
+        btcPub,
+        net,
+        addressType,
+      );
       const partyID = ks.local_party_key;
       const partiesCSV = ks.keygen_committee_keys.join(',');
       const sessionID = await BBMTLibNativeModule.sha256(`${data}/${server}`);

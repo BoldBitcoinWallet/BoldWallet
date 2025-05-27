@@ -348,7 +348,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       }
 
       setIsCalculatingFee(true);
-      BBMTLibNativeModule.estimateFee(
+      BBMTLibNativeModule.estimateFees(
         walletAddress,
         addr,
         amount.times(1e8).toFixed(0),
@@ -616,7 +616,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                 </View>
 
                 <Modal
-                  animationType="slide"
+                  animationType="fade"
                   transparent={false}
                   visible={isScannerVisible}
                   onRequestClose={() => setIsScannerVisible(false)}>

@@ -11,6 +11,7 @@ import {
   Alert,
   Platform,
   PermissionsAndroid,
+  Modal,
 } from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import SendBitcoinModal from './SendBitcoinModal';
@@ -23,6 +24,28 @@ import {dbg} from '../utils';
 import {useTheme} from '../theme';
 
 const {BBMTLibNativeModule} = NativeModules;
+
+const headerStyles = StyleSheet.create({
+  actionButton: {
+    paddingVertical: 12,
+    marginBottom: 4,
+    marginHorizontal: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  settingsButton: {
+    width: 50,
+    backgroundColor: '#fff',
+  },
+});
+
+const HeaderRightButton = ({navigation}: {navigation: any}) => (
+  <TouchableOpacity
+    style={[headerStyles.actionButton, headerStyles.settingsButton]}
+    onPress={() => navigation.navigate('Wallet Settings')}>
+    <Text>⚙️</Text>
+  </TouchableOpacity>
+);
 
 const formatUSD = (price: any): string => {
   return new Intl.NumberFormat('en-US', {
@@ -46,8 +69,22 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [isBlurred, setIsBlurred] = useState<boolean>(true);
   const [isReceiveModalVisible, setIsReceiveModalVisible] = useState(false);
   const [pendingSent, setPendingSent] = useState(0);
+  const [addressType, setAddressType] = React.useState('');
+  const [isAddressTypeModalVisible, setIsAddressTypeModalVisible] =
+    React.useState(false);
 
   const {theme} = useTheme();
+
+  const headerRight = React.useCallback(
+    () => <HeaderRightButton navigation={navigation} />,
+    [navigation],
+  );
+
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight,
+    });
+  }, [navigation, headerRight]);
 
   const requestCameraPermission = async () => {
     if (Platform.OS === 'android') {
@@ -86,6 +123,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   }, []);
 
   useEffect(() => {
+    EncryptedStorage.getItem('addressType').then(addrType => {
+      setAddressType(addrType || 'legacy');
+    });
+  });
+
+  useEffect(() => {
     const initializeApp = async () => {
       try {
         const jks = await EncryptedStorage.getItem('keyshare');
@@ -109,7 +152,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setApiBase(base);
         setParty(ks.local_party_key);
 
-        const btcAddress = await BBMTLibNativeModule.p2khAddress(btcPub, net);
+        dbg('address type:', addressType);
+        const btcAddress = await BBMTLibNativeModule.btcAddress(
+          btcPub,
+          net,
+          addressType,
+        );
+
         setAddress(btcAddress);
         setNetwork(net!!);
 
@@ -130,9 +179,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setLoading(false);
       }
     };
-
     initializeApp();
-  }, []);
+  }, [addressType]);
 
   useEffect(() => {
     const fetchBtcPrice = async () => {
@@ -220,6 +268,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           name: '📱📱 Pairing',
           params: {
             mode: 'send_btc',
+            addressType,
             toAddress,
             satoshiAmount,
             usdAmount,
@@ -386,8 +435,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.actionButton, styles.settingsButton]}
-              onPress={() => navigation.navigate('Wallet Settings')}>
-              <Text>⚙️</Text>
+              onPress={() => setIsAddressTypeModalVisible(true)}>
+              <Text>
+                {addressType === 'legacy'
+                  ? '🧱'
+                  : addressType === 'segwit-native'
+                  ? '🧬'
+                  : '♻️'}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.actionButton, styles.receiveButton]}
@@ -397,6 +452,45 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           </View>
         </View>
       </View>
+      <Modal
+        visible={isAddressTypeModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsAddressTypeModalVisible(false)}>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          onPress={() => setIsAddressTypeModalVisible(false)}
+          activeOpacity={1}>
+          <View style={styles.modalContent}>
+            <Text style={styles.btcPrice}>Select Address Type:</Text>
+            {['legacy', 'segwit-native', 'segwit-compatible'].map(type => (
+              <TouchableOpacity
+                key={
+                  type === 'legacy'
+                    ? '🧱 Legacy'
+                    : type === 'segwit-native'
+                    ? '🧬 Segwit Native'
+                    : '♻️ Segwit Compatible'
+                }
+                style={styles.actions}
+                onPress={() => {
+                  setIsAddressTypeModalVisible(false);
+                  EncryptedStorage.setItem('addressType', type).finally(() => {
+                    setAddressType(type);
+                  });
+                }}>
+                <Text style={[styles.modalText]}>
+                  {type === 'legacy'
+                    ? '🧱 Legacy (1...)'
+                    : type === 'segwit-native'
+                    ? '🧬 Segwit Native (bc1...)'
+                    : '♻️ Segwit Compatible (3...)'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
       <Toast />
       {!loading && (
         <TransactionList

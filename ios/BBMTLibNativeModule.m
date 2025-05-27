@@ -27,7 +27,7 @@ RCT_EXTERN_METHOD(preparams:(NSString *)outFile timeout:(NSString *)timeout reso
 RCT_EXTERN_METHOD(recoverPubkey:(NSString *)r s:(NSString *)s v:(NSString *)v h:(NSString *)h resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
 // Convert Public Key to Bitcoin Address
-RCT_EXTERN_METHOD(p2khAddress:(NSString *)compressedPubkey network:(NSString *)network resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(btcAddress:(NSString *)compressedPubkey network:(NSString *)network addressType:(NSString *)addressType resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
 // Call keygen
 RCT_EXTERN_METHOD(mpcTssSetup:(NSString *)server
@@ -125,7 +125,7 @@ RCT_EXTERN_METHOD(totalUTXO:(NSString *)address
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 // Call estimateFee
-RCT_EXTERN_METHOD(estimateFee:(NSString *)senderAddress
+RCT_EXTERN_METHOD(estimateFees:(NSString *)senderAddress
                   receiverAddress:(NSString *)receiverAddress
                   amountSatoshi:(NSString *)amountSatoshi
                   resolver:(RCTPromiseResolveBlock)resolve
