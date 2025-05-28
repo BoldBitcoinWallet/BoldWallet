@@ -179,11 +179,13 @@ const ReceiveModal: React.FC<{
           <View style={styles.addressContainer}>
             <Text
               style={styles.addressText}
-              onPress={() =>
-                Linking.openURL(
-                  `${baseApi.replace('api', '')}address/${address}`,
-                )
-              }>
+              onPress={() => {
+                dbg('baseAPI', baseApi);
+                const url = `${baseApi
+                  .replace('api/', '')}address/${address}`;
+                dbg('address URL', url);
+                Linking.openURL(url);
+              }}>
               {address}
             </Text>
             <TouchableOpacity

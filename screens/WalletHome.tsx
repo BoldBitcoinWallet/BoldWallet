@@ -21,7 +21,7 @@ import Big from 'big.js';
 import ReceiveModal from './ReceiveModal';
 import {dbg} from '../utils';
 import {useTheme, themes} from '../theme';
-import {debounce} from 'lodash';
+import {add, debounce} from 'lodash';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -202,8 +202,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
   // Create debounced function outside of useCallback
   const debouncedFetch = useRef(
-    debounce(async (force: boolean) => {
-      if (!address || isFetching.current) {
+    debounce(async (addr: string, force: boolean) => {
+      dbg('debouncedFetch', {addr, force});
+      if (!addr || isFetching.current) {
         return;
       }
       const now = Date.now();
@@ -213,7 +214,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
       try {
         isFetching.current = true;
-        const totalUTXO = await BBMTLibNativeModule.totalUTXO(address);
+        const totalUTXO = await BBMTLibNativeModule.totalUTXO(addr);
         lastFetchTime.current = now;
 
         if (!totalUTXO) {
@@ -237,7 +238,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           );
         }
       } catch (error) {
-        console.error('Error fetching wallet balance:', error);
+        dbg('Error fetching wallet balance:', error);
         showErrorToast('Failed to fetch wallet balance. Please try again.');
       } finally {
         isFetching.current = false;
@@ -246,8 +247,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   ).current;
 
   const fetchWalletBalance = useCallback(
-    async (force = false) => {
-      await debouncedFetch(force);
+    async (addr: string, force = false) => {
+      await debouncedFetch(addr, force);
     },
     [debouncedFetch],
   );
@@ -337,9 +338,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
       setIsInitialized(true);
       // Force initial balance fetch
-      await fetchWalletBalance(true);
+      await fetchWalletBalance(btcAddress, true);
     } catch (error) {
-      console.error('Error initializing wallet:', error);
+      dbg('Error initializing wallet:', error);
       showErrorToast('Failed to initialize wallet. Please try again.');
     } finally {
       setLoading(false);
@@ -372,9 +373,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
         setAddress(btcAddress);
         // Force refresh after address change
-        await fetchWalletBalance(true);
+        await fetchWalletBalance(btcAddress, true);
       } catch (error) {
-        console.error('Error updating address:', error);
+        dbg('Error updating address:', error);
         showErrorToast('Failed to update address. Please try again.');
       } finally {
         setLoading(false);
@@ -405,7 +406,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           BBMTLibNativeModule.setAPI(network, formattedApi);
         }
       } catch (error) {
-        console.error('Error updating API:', error);
+        dbg('Error updating API:', error);
         showErrorToast('Failed to update API settings. Please try again.');
       }
     };
@@ -415,14 +416,24 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
   useEffect(() => {
     const fetchBtcPrice = async () => {
+      dbg('fetching prices');
       try {
         setLoading(true);
         const response = await fetch('https://mempool.space/api/v1/prices');
         const data = await response.json();
-        setBtcRate(parseFloat(data.USD));
+        dbg('got prices', data);
+        const rate = parseFloat(data.USD);
+        setBtcRate(rate);
         setBtcPrice(`$${formatUSD(data.USD)}`);
+        if (rate) {
+          dbg('btcBalance:', balanceBTC);
+          dbg('btcRate:', rate);
+          const usdAmount = Big(balanceBTC).mul(rate).toNumber();
+          dbg('balanceUSD:', usdAmount);
+          setBalanceUSD(`$${formatUSD(usdAmount)}`);
+        }
       } catch (error) {
-        console.error('Error fetching BTC price:', error);
+        dbg('Error fetching BTC price:', error);
         setBtcPrice('Unavailable');
       } finally {
         setLoading(false);
@@ -430,7 +441,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     };
 
     fetchBtcPrice();
-  }, []);
+  }, [address, balanceBTC]);
 
   async function refreshWalletBalance(
     pendingTxs: any[],
@@ -510,6 +521,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       fontSize: 24,
       fontWeight: 'bold',
       color: theme.colors.white,
+      marginTop: 16,
+      marginBottom: 4,
     },
     balanceUSD: {
       fontSize: 16,
@@ -639,7 +652,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       setIsRefreshing(true);
       await fetchWalletBalance(true); // Force refresh
     } catch (error) {
-      console.error('Error refreshing wallet data:', error);
+      dbg('Error refreshing wallet data:', error);
     } finally {
       setIsRefreshing(false);
     }
@@ -658,12 +671,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       return;
     }
     // Initial fetch
-    fetchWalletBalance(true);
-
+    fetchWalletBalance(address, true);
     // Set up interval for background updates
     const intervalId = setInterval(() => {
       if (hasNonZeroBalance) {
-        fetchWalletBalance(false);
+        fetchWalletBalance(address, false);
       }
     }, 60000);
 
