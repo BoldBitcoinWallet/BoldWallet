@@ -89,10 +89,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [isReceiveModalVisible, setIsReceiveModalVisible] = useState(false);
   const [pendingSent, setPendingSent] = useState(0);
   const [addressType, setAddressType] = React.useState('');
-  const [isAddressTypeModalVisible, setIsAddressTypeModalVisible] = React.useState(false);
+  const [isAddressTypeModalVisible, setIsAddressTypeModalVisible] =
+    React.useState(false);
   const [legacyAddress, setLegacyAddress] = React.useState('');
   const [segwitAddress, setSegwitAddress] = React.useState('');
-  const [segwitCompatibleAddress, setSegwitCompatibleAddress] = React.useState('');
+  const [segwitCompatibleAddress, setSegwitCompatibleAddress] =
+    React.useState('');
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
   const [_error, setError] = useState<string | null>(null);
 
@@ -188,31 +190,38 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     });
   });
 
-  const fetchData = useCallback(async (force: boolean = false) => {
-    if (!address || !apiBase) return;
+  const fetchData = useCallback(
+    async (force: boolean = false) => {
+      if (!address || !apiBase) return;
 
-    try {
-      setError(null);
-      const [priceData, balanceData] = await Promise.all([
-        walletService.getBitcoinPrice(),
-        walletService.getWalletBalance(address, btcRate, pendingSent, force),
-      ]);
+      try {
+        setError(null);
+        const [priceData, balanceData] = await Promise.all([
+          walletService.getBitcoinPrice(),
+          walletService.getWalletBalance(address, btcRate, pendingSent, force),
+        ]);
 
-      setBtcPrice(priceData.price);
-      setBtcRate(priceData.rate);
-      setBalanceBTC(balanceData.btc);
-      setBalanceUSD(balanceData.usd);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An error occurred';
-      setError(errorMessage);
-      showErrorToast(errorMessage);
-    }
-  }, [address, apiBase, btcRate, pendingSent, showErrorToast, walletService]);
+        setBtcPrice(priceData.price);
+        setBtcRate(priceData.rate);
+        setBalanceBTC(balanceData.btc);
+        setBalanceUSD(balanceData.usd);
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error ? err.message : 'An error occurred';
+        setError(errorMessage);
+        showErrorToast(errorMessage);
+      }
+    },
+    [address, apiBase, btcRate, pendingSent, showErrorToast, walletService],
+  );
 
-  const handlePendingTransactions = useCallback(async (pendingTxs: Transaction[], pendingSentTotal: number) => {
-    setPendingSent(pendingSentTotal);
-    return Promise.resolve();
-  }, []);
+  const handlePendingTransactions = useCallback(
+    async (pendingTxs: Transaction[], pendingSentTotal: number) => {
+      setPendingSent(pendingSentTotal);
+      return Promise.resolve();
+    },
+    [],
+  );
 
   const handleRefresh = useCallback(async () => {
     await fetchData(true);
@@ -263,13 +272,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       setLegacyAddress(legacyAddr);
       setSegwitAddress(segwitAddr);
       setSegwitCompatibleAddress(segwitCompAddr);
-
-      let base = netParams.split('@')[1];
-      // Ensure base URL ends with a slash
-      if (!base.endsWith('/')) {
-        base = `${base}/`;
-      }
-      setApiBase(base);
       setParty(ks.local_party_key);
 
       // Get current address type
@@ -288,17 +290,22 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       setNetwork(net || 'mainnet');
 
       // Override APIs if set
+      let base = netParams.split('@')[1];
+      // Ensure base URL ends with a slash
+      if (!base.endsWith('/')) {
+        base = `${base}/`;
+      }
       let api = await EncryptedStorage.getItem('api');
       if (api) {
         // Ensure API URL ends with a slash
         if (!api.endsWith('/')) {
           api = `${api}/`;
         }
-        setApiBase(api);
         BBMTLibNativeModule.setAPI(net, api);
+        setApiBase(api);
       } else {
         await EncryptedStorage.setItem('api', base);
-        BBMTLibNativeModule.setAPI(net, base);
+        setApiBase(base);
       }
 
       setIsInitialized(true);
