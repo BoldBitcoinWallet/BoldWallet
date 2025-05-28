@@ -1,4 +1,4 @@
-import React, {useEffect, useState, useCallback, useRef} from 'react';
+import React, {useEffect, useState, useCallback} from 'react';
 import {
   View,
   Text,
@@ -15,13 +15,14 @@ import {
 import EncryptedStorage from 'react-native-encrypted-storage';
 import SendBitcoinModal from './SendBitcoinModal';
 import Toast from 'react-native-toast-message';
-import TransactionList from './TransactionList';
+import TransactionList from '../components/TransactionList';
 import {CommonActions, useFocusEffect} from '@react-navigation/native';
 import Big from 'big.js';
 import ReceiveModal from './ReceiveModal';
 import {dbg} from '../utils';
 import {useTheme, themes} from '../theme';
-import {add, debounce} from 'lodash';
+import {WalletService, Transaction} from '../services/WalletService';
+import WalletSkeleton from '../components/WalletSkeleton';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -73,14 +74,6 @@ const HeaderTitle = React.memo(() => (
   </View>
 ));
 
-const formatUSD = (price: any): string => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'decimal',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(Number(price || 0));
-};
-
 const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [address, setAddress] = useState<string>('');
   const [network, setNetwork] = useState<string>('');
@@ -96,20 +89,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [isReceiveModalVisible, setIsReceiveModalVisible] = useState(false);
   const [pendingSent, setPendingSent] = useState(0);
   const [addressType, setAddressType] = React.useState('');
-  const [isAddressTypeModalVisible, setIsAddressTypeModalVisible] =
-    React.useState(false);
+  const [isAddressTypeModalVisible, setIsAddressTypeModalVisible] = React.useState(false);
   const [legacyAddress, setLegacyAddress] = React.useState('');
   const [segwitAddress, setSegwitAddress] = React.useState('');
-  const [segwitCompatibleAddress, setSegwitCompatibleAddress] =
-    React.useState('');
+  const [segwitCompatibleAddress, setSegwitCompatibleAddress] = React.useState('');
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
-  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-  const [hasNonZeroBalance, setHasNonZeroBalance] = useState<boolean>(false);
-  const lastFetchTime = useRef<number>(0);
-  const isFetching = useRef<boolean>(false);
-  const FETCH_COOLDOWN = 10000; // 10 seconds cooldown
+  const [_error, setError] = useState<string | null>(null);
 
   const {theme} = useTheme();
+  const walletService = WalletService.getInstance();
 
   const showErrorToast = useCallback((message: string) => {
     Toast.show({
@@ -200,58 +188,35 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     });
   });
 
-  // Create debounced function outside of useCallback
-  const debouncedFetch = useRef(
-    debounce(async (addr: string, force: boolean) => {
-      dbg('debouncedFetch', {addr, force});
-      if (!addr || isFetching.current) {
-        return;
-      }
-      const now = Date.now();
-      if (!force && now - lastFetchTime.current < FETCH_COOLDOWN) {
-        return;
-      }
+  const fetchData = useCallback(async (force: boolean = false) => {
+    if (!address || !apiBase) return;
 
-      try {
-        isFetching.current = true;
-        const totalUTXO = await BBMTLibNativeModule.totalUTXO(addr);
-        lastFetchTime.current = now;
+    try {
+      setError(null);
+      const [priceData, balanceData] = await Promise.all([
+        walletService.getBitcoinPrice(),
+        walletService.getWalletBalance(address, btcRate, pendingSent, force),
+      ]);
 
-        if (!totalUTXO) {
-          setBalanceBTC('0.00000000');
-          setBalanceUSD('$0.00');
-          setHasNonZeroBalance(false);
-          return;
-        }
+      setBtcPrice(priceData.price);
+      setBtcRate(priceData.rate);
+      setBalanceBTC(balanceData.btc);
+      setBalanceUSD(balanceData.usd);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An error occurred';
+      setError(errorMessage);
+      showErrorToast(errorMessage);
+    }
+  }, [address, apiBase, btcRate, pendingSent, showErrorToast, walletService]);
 
-        const balance = Big(totalUTXO);
-        const newBalance = balance.sub(pendingSent).div(1e8).toFixed(8);
-        setBalanceBTC(newBalance);
+  const handlePendingTransactions = useCallback(async (pendingTxs: Transaction[], pendingSentTotal: number) => {
+    setPendingSent(pendingSentTotal);
+    return Promise.resolve();
+  }, []);
 
-        if (Number(newBalance) > 0) {
-          setHasNonZeroBalance(true);
-        }
-
-        if (btcRate) {
-          setBalanceUSD(
-            `$${formatUSD(Big(balance).mul(btcRate).div(1e8).toNumber())}`,
-          );
-        }
-      } catch (error) {
-        dbg('Error fetching wallet balance:', error);
-        showErrorToast('Failed to fetch wallet balance. Please try again.');
-      } finally {
-        isFetching.current = false;
-      }
-    }, 1000),
-  ).current;
-
-  const fetchWalletBalance = useCallback(
-    async (addr: string, force = false) => {
-      await debouncedFetch(addr, force);
-    },
-    [debouncedFetch],
-  );
+  const handleRefresh = useCallback(async () => {
+    await fetchData(true);
+  }, [fetchData]);
 
   const initializeApp = useCallback(async () => {
     if (isInitialized) {
@@ -338,14 +303,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
       setIsInitialized(true);
       // Force initial balance fetch
-      await fetchWalletBalance(btcAddress, true);
+      await fetchData(true);
     } catch (error) {
       dbg('Error initializing wallet:', error);
       showErrorToast('Failed to initialize wallet. Please try again.');
     } finally {
       setLoading(false);
     }
-  }, [fetchWalletBalance, showErrorToast, isInitialized]);
+  }, [fetchData, showErrorToast, isInitialized]);
 
   // Add effect to handle address type changes
   useEffect(() => {
@@ -373,7 +338,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
         setAddress(btcAddress);
         // Force refresh after address change
-        await fetchWalletBalance(btcAddress, true);
+        await fetchData(true);
       } catch (error) {
         dbg('Error updating address:', error);
         showErrorToast('Failed to update address. Please try again.');
@@ -383,7 +348,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     };
 
     updateAddress();
-  }, [addressType, isInitialized, network, fetchWalletBalance, showErrorToast]);
+  }, [addressType, isInitialized, network, fetchData, showErrorToast]);
 
   // Add effect to initialize app
   useEffect(() => {
@@ -415,44 +380,23 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   }, [isInitialized, network, showErrorToast]);
 
   useEffect(() => {
-    const fetchBtcPrice = async () => {
-      dbg('fetching prices');
-      try {
-        setLoading(true);
-        const response = await fetch('https://mempool.space/api/v1/prices');
-        const data = await response.json();
-        dbg('got prices', data);
-        const rate = parseFloat(data.USD);
-        setBtcRate(rate);
-        setBtcPrice(`$${formatUSD(data.USD)}`);
-        if (rate) {
-          dbg('btcBalance:', balanceBTC);
-          dbg('btcRate:', rate);
-          const usdAmount = Big(balanceBTC).mul(rate).toNumber();
-          dbg('balanceUSD:', usdAmount);
-          setBalanceUSD(`$${formatUSD(usdAmount)}`);
-        }
-      } catch (error) {
-        dbg('Error fetching BTC price:', error);
-        setBtcPrice('Unavailable');
-      } finally {
-        setLoading(false);
+    if (!isInitialized || !address) return;
+
+    fetchData(true);
+    const intervalId = setInterval(() => {
+      fetchData(false);
+    }, 60000);
+
+    return () => clearInterval(intervalId);
+  }, [isInitialized, address, fetchData]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (isInitialized) {
+        fetchData(true);
       }
-    };
-
-    fetchBtcPrice();
-  }, [address, balanceBTC]);
-
-  async function refreshWalletBalance(
-    pendingTxs: any[],
-    pendingSentTotal: number,
-  ) {
-    setLoading(true);
-    dbg('pending txs', pendingTxs);
-    dbg('pending sent', pendingSentTotal);
-    setPendingSent(pendingSentTotal);
-    setLoading(false);
-  }
+    }, [isInitialized, fetchData]),
+  );
 
   const handleBlurred = () => {
     const blurr = !isBlurred;
@@ -642,54 +586,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       color: theme.colors.text,
       marginBottom: 16,
     },
+    scrollView: {
+      flex: 1,
+    },
   });
 
-  const refreshWalletData = useCallback(async () => {
-    if (isRefreshing) {
-      return;
-    }
-    try {
-      setIsRefreshing(true);
-      await fetchWalletBalance(true); // Force refresh
-    } catch (error) {
-      dbg('Error refreshing wallet data:', error);
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [fetchWalletBalance, isRefreshing]);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (isInitialized) {
-        refreshWalletData();
-      }
-    }, [isInitialized, refreshWalletData]),
-  );
-
-  useEffect(() => {
-    if (!isInitialized || !address) {
-      return;
-    }
-    // Initial fetch
-    fetchWalletBalance(address, true);
-    // Set up interval for background updates
-    const intervalId = setInterval(() => {
-      if (hasNonZeroBalance) {
-        fetchWalletBalance(address, false);
-      }
-    }, 60000);
-
-    return () => {
-      clearInterval(intervalId);
-      debouncedFetch.cancel();
-    };
-  }, [
-    isInitialized,
-    address,
-    fetchWalletBalance,
-    hasNonZeroBalance,
-    debouncedFetch,
-  ]);
+  if (loading) {
+    return <WalletSkeleton />;
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -738,11 +642,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       </View>
       {!loading && (
         <TransactionList
-          refreshing={isRefreshing}
-          address={address}
           baseApi={apiBase}
-          onUpdate={refreshWalletBalance}
-          onReload={fetchWalletBalance}
+          address={address}
+          onUpdate={handlePendingTransactions}
+          onReload={handleRefresh}
+          refreshing={false}
         />
       )}
       <Modal
@@ -766,7 +670,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 await EncryptedStorage.setItem('addressType', 'legacy');
                 setAddressType('legacy');
                 // Force refresh after address type change
-                await fetchWalletBalance(true);
+                await fetchData(true);
               }}>
               <Text style={styles.addressTypeLabel}>🧱 Legacy Address</Text>
               <Text style={styles.addressTypeValue}>
@@ -784,7 +688,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 await EncryptedStorage.setItem('addressType', 'segwit-native');
                 setAddressType('segwit-native');
                 // Force refresh after address type change
-                await fetchWalletBalance(true);
+                await fetchData(true);
               }}>
               <Text style={styles.addressTypeLabel}>
                 🧬 Segwit Native Address
@@ -807,7 +711,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 );
                 setAddressType('segwit-compatible');
                 // Force refresh after address type change
-                await fetchWalletBalance(true);
+                await fetchData(true);
               }}>
               <Text style={styles.addressTypeLabel}>
                 🔁 Segwit Compatible Address
