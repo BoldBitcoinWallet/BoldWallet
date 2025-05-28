@@ -70,10 +70,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const toggleNetwork = (value: boolean) => {
     setIsTestnet(value);
     EncryptedStorage.setItem('network', value ? 'testnet3' : 'mainnet');
-    if (
-      baseAPI === 'https://mempool.space/api' ||
-      baseAPI === 'https://mempool.space/testnet/api'
-    ) {
+    if (baseAPI.indexOf('mempool.space') >= 0) {
       resetAPI();
     }
     navigation.reset({
@@ -100,7 +97,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
   const saveAPI = async (api: string) => {
     setBaseAPI(api);
-    dbg('value', api);
+    dbg('set baseAPI', api);
     EncryptedStorage.getItem('network').then(net => {
       EncryptedStorage.setItem('api', api);
       BBMTLibNativeModule.setAPI(net, api);
