@@ -147,7 +147,7 @@ const TransactionList = ({
         isFetching.current = false;
       }
     }
-  }, []);
+  },[]);
 
   // Modify the initial useEffect to handle cleanup properly
   useEffect(() => {

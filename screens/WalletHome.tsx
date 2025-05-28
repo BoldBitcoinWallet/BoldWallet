@@ -6,7 +6,6 @@ import {
   StyleSheet,
   SafeAreaView,
   NativeModules,
-  ActivityIndicator,
   Image,
   Alert,
   Platform,
@@ -21,8 +20,8 @@ import {CommonActions, useFocusEffect} from '@react-navigation/native';
 import Big from 'big.js';
 import ReceiveModal from './ReceiveModal';
 import {dbg} from '../utils';
-import {useTheme} from '../theme';
-import {add, debounce} from 'lodash';
+import {useTheme, themes} from '../theme';
+import {debounce} from 'lodash';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -35,8 +34,24 @@ const headerStyles = StyleSheet.create({
     alignItems: 'center',
   },
   settingsButton: {
-    width: 50,
-    backgroundColor: '#fff',
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: themes.lightPolished.colors.cardBackground,
+  },
+  headerTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerLogo: {
+    width: 40,
+    height: 40,
+    resizeMode: 'contain',
+    marginRight: 8,
+  },
+  headerTitleText: {
+    fontSize: 18,
+    fontWeight: 'bold',
   },
 });
 
@@ -47,6 +62,16 @@ const HeaderRightButton = ({navigation}: {navigation: any}) => (
     <Text>⚙️</Text>
   </TouchableOpacity>
 );
+
+const HeaderTitle = React.memo(() => (
+  <View style={headerStyles.headerTitleContainer}>
+    <Image
+      source={require('../assets/icon.png')}
+      style={headerStyles.headerLogo}
+    />
+    <Text style={headerStyles.headerTitleText}>Bold Home</Text>
+  </View>
+));
 
 const formatUSD = (price: any): string => {
   return new Intl.NumberFormat('en-US', {
@@ -115,6 +140,17 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       : addressType === 'segwit-native'
       ? '🧬'
       : '♻️';
+
+  const networkEmoji = () => (network === 'mainnet' ? '🌐' : '🔨');
+
+  const headerTitle = React.useCallback(() => <HeaderTitle />, []);
+
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight,
+      headerTitle,
+    });
+  }, [navigation, headerRight, headerTitle]);
 
   useEffect(() => {
     navigation.setOptions({
@@ -451,7 +487,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       backgroundColor: theme.colors.primary,
       borderRadius: 8,
       alignItems: 'center',
-      marginBottom: 16,
+      marginBottom: 0,
     },
     headerTop: {
       flexDirection: 'row',
@@ -522,6 +558,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       backgroundColor: theme.colors.accent,
     },
     settingsButton: {
+      width: 50,
+      backgroundColor: theme.colors.accent,
+    },
+    addressTypeModalButton: {
       width: 50,
       backgroundColor: theme.colors.cardBackground,
     },
@@ -662,8 +702,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           </TouchableOpacity>
           <Text style={styles.party}>
             🗝 {capitalizeWords(party)}
-            {'  '}🌐 {capitalizeWords(network)}{'  '}{addressEmoji()} {' '}
-            {capitalizeWords(addressType)}
+            {'  '} {networkEmoji()} {capitalizeWords(network)}
+            {'  '} {addressEmoji()} {capitalizeWords(addressType)}
           </Text>
           <View style={styles.actions}>
             <TouchableOpacity
@@ -672,7 +712,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               <Text style={styles.actionButtonText}>Send</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.actionButton, styles.settingsButton]}
+              style={[styles.actionButton, styles.addressTypeModalButton]}
               onPress={() => setIsAddressTypeModalVisible(true)}>
               <Text>{addressEmoji()}</Text>
             </TouchableOpacity>

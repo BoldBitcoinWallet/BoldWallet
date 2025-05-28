@@ -2,7 +2,7 @@
 import React, {createContext, useContext, useEffect, useState} from 'react';
 import EncryptedStorage from 'react-native-encrypted-storage';
 
-const themes = {
+export const themes = {
   lightPolished: {
     colors: {
       primary: '#34495e',
@@ -126,7 +126,7 @@ const ThemeContext = createContext({
   toggleTheme: (isCrypto: boolean) => {},
 });
 
-export const ThemeProvider = ({children}) => {
+export const ThemeProvider = ({children}: any) => {
   const [theme, setTheme] = useState(themes.lightPolished);
 
   useEffect(() => {
@@ -147,7 +147,7 @@ export const ThemeProvider = ({children}) => {
     loadTheme();
   }, []);
 
-  const toggleTheme = async (isCrypto: boolean) => {
+  const toggleTheme = async isCrypto => {
     const newTheme = isCrypto ? themes.cryptoVibrant : themes.lightPolished;
     console.log('Toggling to:', isCrypto ? 'cryptoVibrant' : 'lightPolished');
     setTheme(newTheme);
