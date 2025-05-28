@@ -63,4 +63,5 @@ dependencies {
     implementation project(':react-native-svg')
     implementation project(':react-native-document-picker')
     implementation project(':rn-barcode-zxing-scan')
+    implementation project(':react-native-linear-gradient')
 }

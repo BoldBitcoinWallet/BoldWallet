@@ -17,6 +17,7 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 import {dbg} from '../utils';
 import {useTheme} from '@react-navigation/native';
 import {themes} from '../theme';
+import TransactionListSkeleton from './TransactionListSkeleton';
 
 interface TransactionListProps {
   refreshing: boolean;
@@ -676,11 +677,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
 
   const renderEmptyComponent = useCallback(() => {
     if (loading) {
-      return (
-        <View style={styles.emptyContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      );
+      return <TransactionListSkeleton />;
     }
     return (
       <View style={styles.emptyContainer}>

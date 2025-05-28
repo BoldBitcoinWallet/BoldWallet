@@ -2,6 +2,7 @@ package com.boldwallet
 
 import android.app.Application
 import cl.json.RNSharePackage
+import com.BV.LinearGradient.LinearGradientPackage
 import com.airbnb.android.react.lottie.LottiePackage
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
@@ -32,6 +33,7 @@ class MainApplication : Application(), ReactApplication {
                     add(RNSharePackage())
                     add(ReactNativeBiometricsPackage())
                     add(BarcodeZxingScanPackage())
+                    add(LinearGradientPackage())
                 }
 
             override fun getJSMainModuleName(): String = "index"

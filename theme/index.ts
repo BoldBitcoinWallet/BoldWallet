@@ -60,4 +60,4 @@ export const themes = {
       shadowColor: '#000000',
     },
   },
-}; 
+};
