@@ -22,7 +22,7 @@ import Big from 'big.js';
 import ReceiveModal from './ReceiveModal';
 import {dbg} from '../utils';
 import {useTheme} from '../theme';
-import {debounce} from 'lodash';
+import {add, debounce} from 'lodash';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -101,6 +101,20 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   );
 
   const shorten = (x: string, y = 12) => `${x.slice(0, y)}...${x.slice(-y)}`;
+
+  const capitalizeWords = (str: string) => {
+    return str
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  };
+
+  const addressEmoji = () =>
+    addressType === 'legacy'
+      ? '🧱'
+      : addressType === 'segwit-native'
+      ? '🧬'
+      : '♻️';
 
   useEffect(() => {
     navigation.setOptions({
@@ -617,7 +631,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       clearInterval(intervalId);
       debouncedFetch.cancel();
     };
-  }, [isInitialized, address, fetchWalletBalance, hasNonZeroBalance, debouncedFetch]);
+  }, [
+    isInitialized,
+    address,
+    fetchWalletBalance,
+    hasNonZeroBalance,
+    debouncedFetch,
+  ]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -641,7 +661,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             </Text>
           </TouchableOpacity>
           <Text style={styles.party}>
-            {party} - {network}
+            🗝 {capitalizeWords(party)}
+            {'  '}🌐 {capitalizeWords(network)}{'  '}{addressEmoji()} {' '}
+            {capitalizeWords(addressType)}
           </Text>
           <View style={styles.actions}>
             <TouchableOpacity
@@ -652,13 +674,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             <TouchableOpacity
               style={[styles.actionButton, styles.settingsButton]}
               onPress={() => setIsAddressTypeModalVisible(true)}>
-              <Text>
-                {addressType === 'legacy'
-                  ? '🧱'
-                  : addressType === 'segwit-native'
-                  ? '🧬'
-                  : '♻️'}
-              </Text>
+              <Text>{addressEmoji()}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.actionButton, styles.receiveButton]}
