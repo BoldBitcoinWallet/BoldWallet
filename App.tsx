@@ -213,7 +213,7 @@ const App = () => {
 
   const handleRetryAuthentication = async () => {
     setIsAuthenticated(false);
-    await authenticateUser(); // Retry authentication
+    await authenticateUser();
   };
 
   if (initialRoute === null || !isAuthenticated) {
