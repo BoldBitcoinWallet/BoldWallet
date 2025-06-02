@@ -62,19 +62,50 @@ interface CachedData {
 export const waitMS = (ms = 2000) =>
   new Promise(resolve => setTimeout(resolve, ms));
 
+// Add validation functions
+const validateBitcoinAddress = (address: string): boolean => {
+  if (!address) return false;
+  // Basic format validation for Bitcoin addresses
+  const validFormats = /^(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,39}$/;
+  return validFormats.test(address);
+};
+
+const validateApiUrl = (url: string): boolean => {
+  if (!url) return false;
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const validateNumber = (value: any): boolean => {
+  if (value === null || value === undefined) return false;
+  try {
+    new Big(value);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 export class WalletService {
   private static instance: WalletService;
   private lastPriceFetch: number = 0;
   private lastBalanceFetch: number = 0;
   private readonly PRICE_CACHE_TIME = 5 * 60 * 1000; // 5 minutes
   private readonly BALANCE_CACHE_TIME = 30 * 1000; // 30 seconds
-  private readonly TX_CACHE_TIME = 24 * 60 * 60 * 1000; // 24 hours cache for transactions
   private cachedTransactions: {[key: string]: Transaction[]} = {};
   private lastTxFetch: {[key: string]: number} = {};
   private cachedTxPages: {[key: string]: {[page: string]: Transaction[]}} = {};
   private lastTxPageFetch: {[key: string]: {[page: string]: number}} = {};
-  private allTransactions: {[key: string]: Transaction[]} = {}; // New cache for all transactions
+  private allTransactions: {[key: string]: Transaction[]} = {};
   private abortController = new AbortController();
+  private isInitialized: boolean = false;
+  private currentAddress: string | null = null;
+  private fetchInProgress: {[key: string]: boolean} = {};
+  private fetchTimeout: {[key: string]: NodeJS.Timeout} = {};
   private cachedPrice: {price: string; rate: number} = {
     price: '$0.00',
     rate: 0,
@@ -212,27 +243,71 @@ export class WalletService {
     return WalletService.instance;
   }
 
+  private async debounceFetch(
+    key: string,
+    fetchFn: () => Promise<any>,
+    delay: number = 1000,
+  ): Promise<any> {
+    if (this.fetchInProgress[key]) {
+      dbg('WalletService: Fetch already in progress for:', key);
+      return null;
+    }
+
+    if (this.fetchTimeout[key]) {
+      clearTimeout(this.fetchTimeout[key]);
+    }
+
+    return new Promise((resolve) => {
+      this.fetchTimeout[key] = setTimeout(async () => {
+        try {
+          this.fetchInProgress[key] = true;
+          const result = await fetchFn();
+          resolve(result);
+        } finally {
+          this.fetchInProgress[key] = false;
+          delete this.fetchTimeout[key];
+        }
+      }, delay);
+    });
+  }
+
   public async getBitcoinPrice(): Promise<{price: string; rate: number}> {
     const now = Date.now();
+    dbg(
+      'WalletService: Checking price cache, last fetch:',
+      now - this.lastPriceFetch,
+      'ms ago',
+    );
+
     if (now - this.lastPriceFetch < this.PRICE_CACHE_TIME) {
+      dbg('WalletService: Using cached price:', this.cachedPrice);
       return this.cachedPrice;
     }
 
     try {
+      dbg('WalletService: Fetching fresh BTC price from mempool.space');
       const response = await fetch('https://mempool.space/api/v1/prices');
       const data = await response.json();
+
+      if (!data || !data.USD || !validateNumber(data.USD)) {
+        dbg('WalletService: Invalid price data received:', data);
+        throw new Error('Invalid price data received');
+      }
+
       const rate = parseFloat(data.USD);
       const price = this.formatUSD(data.USD);
+      dbg('WalletService: New price fetched - Rate:', rate, 'Price:', price);
 
       this.cachedPrice = {price, rate};
       this.lastPriceFetch = now;
       await this.saveCachedData();
+      dbg('WalletService: Price cache updated');
 
       return {price, rate};
     } catch (error) {
-      dbg('Error fetching BTC price:', error);
-      // Return cached price if available, even if expired
+      dbg('WalletService: Error fetching BTC price:', error);
       if (this.cachedPrice.rate > 0) {
+        dbg('WalletService: Using expired cached price due to error');
         return this.cachedPrice;
       }
       throw new Error('Failed to fetch Bitcoin price');
@@ -245,52 +320,94 @@ export class WalletService {
     pendingSent: number = 0,
     force: boolean = false,
   ): Promise<WalletBalance> {
-    const now = Date.now();
-    if (!force && now - this.lastBalanceFetch < this.BALANCE_CACHE_TIME) {
-      return this.cachedBalance;
+    if (address !== this.currentAddress) {
+      dbg('WalletService: Address changed from', this.currentAddress, 'to', address);
+      this.currentAddress = address;
     }
 
-    try {
-      // Clean the address to ensure no double slashes
-      const totalUTXO = await BBMTLibNativeModule.totalUTXO(address);
+    return this.debounceFetch(
+      `balance-${address}`,
+      async () => {
+        dbg('WalletService: Getting wallet balance for address:', address);
+        dbg(
+          'WalletService: Parameters - btcRate:',
+          btcRate,
+          'pendingSent:',
+          pendingSent,
+          'force:',
+          force,
+        );
 
-      if (!totalUTXO) {
-        const balance = {
-          btc: '0.00000000',
-          usd: '$0.00',
-          hasNonZeroBalance: false,
-        };
-        this.cachedBalance = balance;
-        this.lastBalanceFetch = now;
-        await this.saveCachedData();
-        return balance;
-      }
+        if (!validateBitcoinAddress(address)) {
+          dbg('WalletService: Invalid Bitcoin address format:', address);
+          throw new Error('Invalid Bitcoin address');
+        }
 
-      const balance = Big(totalUTXO);
-      const newBalance = balance.sub(pendingSent).div(1e8).toFixed(8);
-      const hasNonZeroBalance = Number(newBalance) > 0;
-      const usdAmount = btcRate
-        ? this.formatUSD(Big(balance).mul(btcRate).div(1e8).toNumber())
-        : '$0.00';
+        if (!validateNumber(btcRate)) {
+          dbg('WalletService: Invalid BTC rate:', btcRate);
+          throw new Error('Invalid BTC rate');
+        }
 
-      const result = {
-        btc: newBalance,
-        usd: usdAmount,
-        hasNonZeroBalance,
-      };
+        if (!validateNumber(pendingSent)) {
+          dbg('WalletService: Invalid pending amount:', pendingSent);
+          throw new Error('Invalid pending amount');
+        }
 
-      this.cachedBalance = result;
-      this.lastBalanceFetch = now;
-      await this.saveCachedData();
-      return result;
-    } catch (error) {
-      dbg('Error fetching wallet balance:', error);
-      // Return cached balance if available, even if expired
-      if (this.cachedBalance.btc !== '0.00000000') {
-        return this.cachedBalance;
-      }
-      throw new Error('Failed to fetch wallet balance');
-    }
+        const now = Date.now();
+        if (!force && now - this.lastBalanceFetch < this.BALANCE_CACHE_TIME) {
+          dbg('WalletService: Using cached balance:', this.cachedBalance);
+          return this.cachedBalance;
+        }
+
+        try {
+          dbg('WalletService: Fetching UTXO total from native module');
+          const totalUTXO = await BBMTLibNativeModule.totalUTXO(address);
+          dbg('WalletService: UTXO total received:', totalUTXO);
+
+          if (!totalUTXO || !validateNumber(totalUTXO)) {
+            dbg('WalletService: Invalid UTXO total received:', totalUTXO);
+            const balance = {
+              btc: '0.00000000',
+              usd: '$0.00',
+              hasNonZeroBalance: false,
+            };
+            this.cachedBalance = balance;
+            this.lastBalanceFetch = now;
+            await this.saveCachedData();
+            return balance;
+          }
+
+          const balance = Big(totalUTXO);
+          const newBalance = balance.sub(pendingSent).div(1e8).toFixed(8);
+          const hasNonZeroBalance = Number(newBalance) > 0;
+          const usdAmount = btcRate
+            ? this.formatUSD(Big(balance).mul(btcRate).div(1e8).toNumber())
+            : '$0.00';
+
+          const result = {
+            btc: newBalance,
+            usd: usdAmount,
+            hasNonZeroBalance,
+          };
+
+          dbg('WalletService: New balance calculated:', result);
+          this.cachedBalance = result;
+          this.lastBalanceFetch = now;
+          await this.saveCachedData();
+          dbg('WalletService: Balance cache updated');
+
+          return result;
+        } catch (error) {
+          dbg('WalletService: Error fetching wallet balance:', error);
+          if (this.cachedBalance.btc !== '0.00000000') {
+            dbg('WalletService: Using expired cached balance due to error');
+            return this.cachedBalance;
+          }
+          throw new Error('Failed to fetch wallet balance');
+        }
+      },
+      500,
+    );
   }
 
   public async getTransactions(
@@ -303,113 +420,169 @@ export class WalletService {
     lastSeenTxId: string | null;
     hasMore: boolean;
   }> {
-    try {
-      // Clean the baseApi to ensure no double slashes
-      const url = lastSeenTxId
-        ? `${baseApi}/address/${address}/txs/chain/${lastSeenTxId}`
-        : `${baseApi}/address/${address}/txs`;
+    return this.debounceFetch(
+      `transactions-${address}-${lastSeenTxId || 'initial'}`,
+      async () => {
+        dbg('WalletService: Getting transactions for address:', address);
+        dbg(
+          'WalletService: Parameters - baseApi:',
+          baseApi,
+          'lastSeenTxId:',
+          lastSeenTxId,
+          'retryCount:',
+          retryCount,
+        );
 
-      dbg('WalletService: Fetching transactions from:', url);
-      const response = await axios.get(url, {
-        signal: this.abortController.signal,
-        timeout: 5000,
-      });
-      const data = response.data;
+        if (!validateBitcoinAddress(address)) {
+          dbg('WalletService: Invalid Bitcoin address format:', address);
+          throw new Error('Invalid Bitcoin address');
+        }
 
-      if (!Array.isArray(data)) {
-        throw new Error('Invalid response format from API');
-      }
+        if (!validateApiUrl(baseApi)) {
+          dbg('WalletService: Invalid API URL:', baseApi);
+          throw new Error('Invalid API URL');
+        }
 
-      // Process transactions
-      const transactions = data
-        .map((tx: any) => {
-          if (!tx || !tx.txid || !tx.vin || !tx.vout) {
-            return null;
+        if (lastSeenTxId && !/^[a-fA-F0-9]{64}$/.test(lastSeenTxId)) {
+          dbg('WalletService: Invalid transaction ID format:', lastSeenTxId);
+          throw new Error('Invalid transaction ID format');
+        }
+
+        try {
+          const url = lastSeenTxId
+            ? `${baseApi}/address/${address}/txs/chain/${lastSeenTxId}`
+            : `${baseApi}/address/${address}/txs`;
+
+          dbg('WalletService: Fetching transactions from:', url);
+          const response = await axios.get(url, {
+            signal: this.abortController.signal,
+            timeout: 5000,
+          });
+          const data = response.data;
+          dbg('WalletService: Received', data.length, 'transactions');
+
+          if (!Array.isArray(data)) {
+            dbg('WalletService: Invalid response format:', data);
+            throw new Error('Invalid response format from API');
           }
-          return {
-            ...tx,
-            status: {
-              confirmed: tx.status?.confirmed || false,
-              block_height: tx.status?.block_height,
-              block_time: tx.status?.block_time,
-            },
+
+          // Process transactions with validation
+          const transactions = data
+            .map((tx: any) => {
+              if (!tx || !tx.txid || !tx.vin || !tx.vout) {
+                dbg('WalletService: Skipping invalid transaction:', tx);
+                return null;
+              }
+              // Validate transaction data
+              if (!/^[a-fA-F0-9]{64}$/.test(tx.txid)) {
+                dbg(
+                  'WalletService: Skipping transaction with invalid txid:',
+                  tx.txid,
+                );
+                return null;
+              }
+              return {
+                ...tx,
+                status: {
+                  confirmed: tx.status?.confirmed || false,
+                  block_height: tx.status?.block_height,
+                  block_time: tx.status?.block_time,
+                },
+              };
+            })
+            .filter(Boolean);
+
+          dbg(
+            'WalletService: Processed',
+            transactions.length,
+            'valid transactions',
+          );
+
+          // Sort transactions by block height (newest first)
+          const sortedTransactions = transactions.sort(
+            (a: any, b: any) =>
+              (b.status.block_height || 0) - (a.status.block_height || 0),
+          );
+
+          const result = {
+            transactions: sortedTransactions,
+            lastSeenTxId:
+              sortedTransactions.length > 0
+                ? sortedTransactions[sortedTransactions.length - 1].txid
+                : null,
+            hasMore: data.length === 25,
           };
-        })
-        .filter(Boolean);
 
-      // Sort transactions by block height (newest first)
-      const sortedTransactions = transactions.sort(
-        (a: any, b: any) =>
-          (b.status.block_height || 0) - (a.status.block_height || 0),
-      );
+          dbg('WalletService: Returning transactions result:', {
+            count: result.transactions.length,
+            lastSeenTxId: result.lastSeenTxId,
+            hasMore: result.hasMore,
+          });
 
-      return {
-        transactions: sortedTransactions,
-        lastSeenTxId:
-          sortedTransactions.length > 0
-            ? sortedTransactions[sortedTransactions.length - 1].txid
-            : null,
-        hasMore: data.length === 25,
-      };
-    } catch (error: any) {
-      dbg('WalletService: Error fetching transactions:', error);
-      dbg('WalletService: Error details:', error.message);
+          return result;
+        } catch (error: any) {
+          dbg('WalletService: Error fetching transactions:', error);
+          dbg('WalletService: Error details:', error.message);
 
-      // If we have any cached transactions, return them
-      if (this.allTransactions[address]?.length > 0) {
-        const allTxs = this.allTransactions[address];
-        const pageSize = allTxs.length;
-        const startIndex = lastSeenTxId
-          ? allTxs.findIndex(tx => tx.txid === lastSeenTxId) + 1
-          : 0;
-        const pageTxs = allTxs.slice(startIndex, startIndex + pageSize);
+          // If we have any cached transactions, return them
+          if (this.allTransactions[address]?.length > 0) {
+            const allTxs = this.allTransactions[address];
+            const pageSize = allTxs.length;
+            const startIndex = lastSeenTxId
+              ? allTxs.findIndex(tx => tx.txid === lastSeenTxId) + 1
+              : 0;
+            const pageTxs = allTxs.slice(startIndex, startIndex + pageSize);
 
-        dbg('WalletService: OFFLINE MODE - Using cached transactions');
-        dbg('WalletService: OFFLINE MODE - Total cached:', allTxs.length);
-        dbg('WalletService: OFFLINE MODE - Page size:', pageTxs.length);
-        dbg('WalletService: OFFLINE MODE - Start index:', startIndex);
-        dbg(
-          'WalletService: OFFLINE MODE - Has more:',
-          startIndex + pageSize < allTxs.length,
-        );
+            dbg('WalletService: OFFLINE MODE - Using cached transactions');
+            dbg('WalletService: OFFLINE MODE - Total cached:', allTxs.length);
+            dbg('WalletService: OFFLINE MODE - Page size:', pageTxs.length);
+            dbg('WalletService: OFFLINE MODE - Start index:', startIndex);
+            dbg(
+              'WalletService: OFFLINE MODE - Has more:',
+              startIndex + pageSize < allTxs.length,
+            );
 
-        return {
-          transactions: pageTxs,
-          lastSeenTxId:
-            pageTxs.length > 0 ? pageTxs[pageTxs.length - 1].txid : null,
-          hasMore: startIndex + pageSize < allTxs.length,
-        };
-      }
+            return {
+              transactions: pageTxs,
+              lastSeenTxId:
+                pageTxs.length > 0 ? pageTxs[pageTxs.length - 1].txid : null,
+              hasMore: startIndex + pageSize < allTxs.length,
+            };
+          }
 
-      dbg('WalletService: No cached transactions available');
+          dbg('WalletService: No cached transactions available');
 
-      // If no cache and retries left, try again
-      if (retryCount < 3) {
-        dbg(
-          'WalletService: Retrying fetch, attempt of',
-          retryCount + 1,
-          ', in',
-          1000 * (retryCount + 1),
-          'ms',
-        );
-        return new Promise(resolve =>
-          setTimeout(
-            () =>
-              resolve(
-                this.getTransactions(
-                  address,
-                  baseApi,
-                  lastSeenTxId,
-                  retryCount + 1,
-                ),
+          // If no cache and retries left, try again
+          if (retryCount < 3) {
+            const retryDelay = 1000 * (retryCount + 1);
+            dbg(
+              'WalletService: Retrying fetch, attempt',
+              retryCount + 1,
+              'of 3, in',
+              retryDelay,
+              'ms',
+            );
+            return new Promise(resolve =>
+              setTimeout(
+                () =>
+                  resolve(
+                    this.getTransactions(
+                      address,
+                      baseApi,
+                      lastSeenTxId,
+                      retryCount + 1,
+                    ),
+                  ),
+                retryDelay,
               ),
-            1000 * (retryCount + 1),
-          ),
-        );
-      }
+            );
+          }
 
-      throw error;
-    }
+          throw error;
+        }
+      },
+      500,
+    );
   }
 
   public getTransactionDetails(
@@ -538,5 +711,44 @@ export class WalletService {
     });
     // Update persistent storage after clearing cache
     await this.saveCachedData();
+  }
+
+  public async clearCache() {
+    dbg('WalletService: Clearing all caches and resetting state');
+    this.isInitialized = false;
+    this.currentAddress = null;
+    this.fetchInProgress = {};
+    Object.values(this.fetchTimeout).forEach(timeout => clearTimeout(timeout));
+    this.fetchTimeout = {};
+    
+    // Clear all cached data
+    this.lastPriceFetch = 0;
+    this.lastBalanceFetch = 0;
+    this.cachedTransactions = {};
+    this.lastTxFetch = {};
+    this.cachedTxPages = {};
+    this.lastTxPageFetch = {};
+    this.allTransactions = {};
+    this.cachedPrice = {
+      price: '$0.00',
+      rate: 0,
+    };
+    this.cachedBalance = {
+      btc: '0.00000000',
+      usd: '$0.00',
+      hasNonZeroBalance: false,
+    };
+
+    // Clear persistent storage
+    try {
+      await EncryptedStorage.removeItem('walletCache');
+      dbg('WalletService: Cleared persistent cache');
+    } catch (error) {
+      dbg('WalletService: Error clearing persistent cache:', error);
+    }
+
+    // Reset the instance
+    WalletService.instance = new WalletService();
+    return WalletService.instance;
   }
 }

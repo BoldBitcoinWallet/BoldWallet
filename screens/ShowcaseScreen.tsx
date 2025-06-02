@@ -20,6 +20,7 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 import RNFS from 'react-native-fs';
 import {useTheme} from '../theme';
 import {dbg} from '../utils';
+import MobilesPairing from './screens/MobilesPairing';
 
 const {BBMTLibNativeModule} = NativeModules;
 

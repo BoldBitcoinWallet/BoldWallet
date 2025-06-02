@@ -1270,7 +1270,7 @@ const MobilesPairing = ({navigation}: any) => {
       width: 200,
       height: 35,
       fontSize: 16,
-      backgroundColor: '#FFF',
+      color: 'black',
       marginBottom: 5,
       marginTop: 10,
       textAlign: 'center',
@@ -1582,7 +1582,7 @@ const MobilesPairing = ({navigation}: any) => {
                         recovery. After generating keyshares on both devices,
                         store each one in separate, secure locations (e.g.,
                         iCloud, Google Drive, or email). This ensures no one can
-                        access both keyshares at once. Remember, you’ll need
+                        access both keyshares at once. Remember, you'll need
                         both to recover your wallet.
                       </Text>
                       {/* Password Input */}

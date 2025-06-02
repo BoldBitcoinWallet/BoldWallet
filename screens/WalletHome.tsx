@@ -21,7 +21,7 @@ import Big from 'big.js';
 import ReceiveModal from './ReceiveModal';
 import {dbg} from '../utils';
 import {useTheme, themes} from '../theme';
-import {WalletService, Transaction} from '../services/WalletService';
+import {WalletService, Transaction, waitMS} from '../services/WalletService';
 import WalletSkeleton from '../components/WalletSkeleton';
 import {formatDistanceToNow} from 'date-fns';
 import {useWallet} from '../context/WalletContext';
@@ -380,7 +380,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
   const shorten = (x: string, y = 12) => `${x.slice(0, y)}...${x.slice(-y)}`;
 
-  const capitalizeWords = (str: string) => {
+  const capitalizeWords = (str: string | undefined | null) => {
+    if (!str) return '';
     return str
       .split(' ')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
@@ -463,6 +464,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setLoading(true);
         setError(null);
 
+        await waitMS();
         // First get cached data to show immediately
         const [cachedPrice, cachedBalance, cachedTransactions] =
           await Promise.all([
@@ -806,18 +808,30 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           </TouchableOpacity>
           <View style={styles.partyContainer}>
             <View style={styles.partyLeft}>
-              <Text style={styles.partyText} numberOfLines={1} adjustsFontSizeToFit>
+              <Text
+                style={styles.partyText}
+                numberOfLines={1}
+                adjustsFontSizeToFit>
                 🗝 {capitalizeWords(party)}
               </Text>
             </View>
             <View style={styles.partyCenter}>
-              <Text style={styles.partyText} numberOfLines={1} adjustsFontSizeToFit>
+              <Text
+                style={styles.partyText}
+                numberOfLines={1}
+                adjustsFontSizeToFit>
                 {networkEmoji()} {capitalizeWords(network)}
               </Text>
             </View>
             <View style={styles.partyRight}>
-              <Text style={styles.partyText} numberOfLines={1} adjustsFontSizeToFit>
-                {addressEmoji()} {addressType === 'segwit-compatible' ? 'Segwit Compatible' : capitalizeWords(addressType)}
+              <Text
+                style={styles.partyText}
+                numberOfLines={1}
+                adjustsFontSizeToFit>
+                {addressEmoji()}{' '}
+                {addressType === 'segwit-compatible'
+                  ? 'Segwit Compatible'
+                  : capitalizeWords(addressType)}
               </Text>
             </View>
           </View>

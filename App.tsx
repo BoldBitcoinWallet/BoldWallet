@@ -21,6 +21,7 @@ import {
 import WalletSettings from './screens/WalletSettings';
 import {NativeModules} from 'react-native';
 import {dbg, pinRemoteIP} from './utils';
+import MobilesPairing from './screens/MobilesPairing';
 const {BBMTLibNativeModule} = NativeModules;
 
 const Stack = createStackNavigator();
@@ -203,7 +204,7 @@ const App = () => {
 
   const initializeApp = async () => {
     EncryptedStorage.getItem('keyshare').then(ks => {
-      setInitialRoute(ks ? 'Bold Home' : 'Bold BTC Wallet');
+      setInitialRoute(ks ? 'Bold Home' : 'Showcase');
     });
   };
 
@@ -236,24 +237,31 @@ const App = () => {
               <Stack.Screen name="Loading" component={LoadingScreen} />
             ) : (
               <>
-                <Stack.Screen 
-                  name="Bold Home" 
+                <Stack.Screen
+                  name="Bold Home"
                   component={WalletHome}
                   options={{
                     headerShown: true,
                     headerLeft: () => null,
                   }}
                 />
-                <Stack.Screen 
-                  name="Settings" 
+                <Stack.Screen
+                  name="Settings"
                   component={WalletSettings}
                   options={{
                     headerShown: true,
                   }}
                 />
-                <Stack.Screen 
-                  name="Showcase" 
+                <Stack.Screen
+                  name="Showcase"
                   component={ShowcaseScreen}
+                  options={{
+                    headerShown: true,
+                  }}
+                />
+                <Stack.Screen
+                  name="📱📱 Pairing"
+                  component={MobilesPairing}
                   options={{
                     headerShown: true,
                   }}

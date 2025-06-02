@@ -20,6 +20,7 @@ import DeviceInfo from 'react-native-device-info';
 
 import {dbg} from '../utils';
 import {useTheme} from '../theme';
+import { WalletService } from '../services/WalletService';
 
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [deleteInput, setDeleteInput] = useState('');
@@ -110,9 +111,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         setIsDeleting(true);
         setIsModalVisible(false);
         await EncryptedStorage.clear();
+        WalletService.getInstance().clearCache();
         navigation.reset({
           index: 0,
-          routes: [{name: 'Bold BTC Wallet'}],
+          routes: [{name: 'Showcase'}],
         });
       } catch (error) {
         Alert.alert('Error', 'Failed to reset wallet. Please try again.');
