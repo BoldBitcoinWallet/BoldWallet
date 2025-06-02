@@ -16,13 +16,15 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 import SendBitcoinModal from './SendBitcoinModal';
 import Toast from 'react-native-toast-message';
 import TransactionList from '../components/TransactionList';
-import {CommonActions, useFocusEffect} from '@react-navigation/native';
+import {CommonActions} from '@react-navigation/native';
 import Big from 'big.js';
 import ReceiveModal from './ReceiveModal';
 import {dbg} from '../utils';
 import {useTheme, themes} from '../theme';
 import {WalletService, Transaction} from '../services/WalletService';
 import WalletSkeleton from '../components/WalletSkeleton';
+import {formatDistanceToNow} from 'date-fns';
+import {useWallet} from '../context/WalletContext';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -59,7 +61,7 @@ const headerStyles = StyleSheet.create({
 const HeaderRightButton = ({navigation}: {navigation: any}) => (
   <TouchableOpacity
     style={[headerStyles.actionButton, headerStyles.settingsButton]}
-    onPress={() => navigation.navigate('Wallet Settings')}>
+    onPress={() => navigation.navigate('Settings')}>
     <Text>⚙️</Text>
   </TouchableOpacity>
 );
@@ -73,6 +75,237 @@ const HeaderTitle = React.memo(() => (
     <Text style={headerStyles.headerTitleText}>Bold Home</Text>
   </View>
 ));
+
+interface CacheTimestamp {
+  price: number;
+  balance: number;
+  transactions: number;
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: themes.lightPolished.colors.background,
+  },
+  contentContainer: {
+    paddingTop: 16,
+    paddingLeft: 16,
+    paddingRight: 16,
+    paddingBottom: 0,
+  },
+  walletHeader: {
+    padding: 16,
+    backgroundColor: themes.lightPolished.colors.primary,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 0,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+  },
+  btcLogo: {
+    width: 40,
+    height: 40,
+    resizeMode: 'contain',
+  },
+  btcPrice: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: themes.lightPolished.colors.accent,
+    textAlign: 'right',
+  },
+  balanceBTC: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: themes.lightPolished.colors.white,
+    marginTop: 16,
+    marginBottom: 4,
+  },
+  balanceUSD: {
+    fontSize: 16,
+    color: themes.lightPolished.colors.background,
+    marginBottom: 16,
+  },
+  qrContainer: {
+    padding: 8,
+    backgroundColor: '#fff',
+    borderRadius: 4,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  address: {
+    fontSize: 14,
+    color: themes.lightPolished.colors.textOnPrimary,
+    marginTop: 8,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  party: {
+    marginBottom: 8,
+    fontSize: 12,
+    color: themes.lightPolished.colors.textOnPrimary,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  actions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+    width: '100%',
+  },
+  actionButton: {
+    paddingVertical: 12,
+    marginBottom: 4,
+    marginHorizontal: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  sendButton: {
+    flex: 1,
+    backgroundColor: themes.lightPolished.colors.accent,
+  },
+  settingsButton: {
+    width: 50,
+    backgroundColor: themes.lightPolished.colors.accent,
+  },
+  addressTypeModalButton: {
+    width: 50,
+    backgroundColor: themes.lightPolished.colors.cardBackground,
+  },
+  receiveButton: {
+    flex: 1,
+    backgroundColor: themes.lightPolished.colors.secondary,
+  },
+  modalOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  modalContent: {
+    backgroundColor: themes.lightPolished.colors.background,
+    borderRadius: 12,
+    padding: 20,
+    width: '80%',
+    alignItems: 'center',
+  },
+  modalText: {
+    fontSize: 18,
+    marginBottom: 10,
+    textAlign: 'center',
+    color: themes.lightPolished.colors.text,
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  blurredText: {
+    opacity: 0.6,
+  },
+  addressTypeButton: {
+    backgroundColor: themes.lightPolished.colors.cardBackground,
+    padding: 16,
+    borderRadius: 8,
+    marginVertical: 8,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: themes.lightPolished.colors.border,
+  },
+  addressTypeButtonSelected: {
+    borderColor: themes.lightPolished.colors.accent,
+    borderWidth: 2,
+  },
+  addressTypeLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: themes.lightPolished.colors.text,
+    marginBottom: 4,
+  },
+  addressTypeValue: {
+    marginTop: 4,
+    fontSize: 12,
+    color: themes.lightPolished.colors.textSecondary,
+    textAlign: 'left',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: themes.lightPolished.colors.text,
+    marginBottom: 16,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  cacheIndicator: {
+    padding: 12,
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+  },
+  cacheText: {
+    fontSize: 14,
+    marginBottom: 4,
+    marginTop: 0,
+  },
+  refreshText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  transactionListContainer: {
+    flex: 1,
+    marginBottom: 16,
+  },
+});
+
+const CacheIndicator: React.FC<{
+  timestamps: CacheTimestamp;
+  onRefresh: () => void;
+  theme: any;
+}> = ({timestamps, onRefresh, theme}) => {
+  const latestTimestamp = Math.max(
+    timestamps.price,
+    timestamps.balance,
+    timestamps.transactions,
+  );
+
+  if (latestTimestamp === 0) {
+    return null;
+  }
+
+  const timeAgo = formatDistanceToNow(latestTimestamp, {addSuffix: true});
+
+  return (
+    <TouchableOpacity
+      style={[
+        styles.cacheIndicator,
+        {backgroundColor: theme.colors.cardBackground},
+      ]}
+      onPress={onRefresh}>
+      <Text style={[styles.cacheText, {color: theme.colors.textSecondary}]}>
+        📱 Last updated {timeAgo}
+      </Text>
+      <Text style={[styles.refreshText, {color: theme.colors.accent}]}>
+        Tap to refresh data
+      </Text>
+    </TouchableOpacity>
+  );
+};
 
 const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [address, setAddress] = useState<string>('');
@@ -97,9 +330,16 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     React.useState('');
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
   const [_error, setError] = useState<string | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [cacheTimestamps, setCacheTimestamps] = useState<CacheTimestamp>({
+    price: 0,
+    balance: 0,
+    transactions: 0,
+  });
 
   const {theme} = useTheme();
   const walletService = WalletService.getInstance();
+  const wallet = useWallet();
 
   const showErrorToast = useCallback((message: string) => {
     Toast.show({
@@ -191,28 +431,103 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   });
 
   const fetchData = useCallback(
-    async (force: boolean = false) => {
-      if (!address || !apiBase) return;
+    async (force = false) => {
+      if (!wallet?.address || !wallet?.baseApi) {
+        return;
+      }
 
       try {
+        setLoading(true);
         setError(null);
-        const [priceData, balanceData] = await Promise.all([
-          walletService.getBitcoinPrice(),
-          walletService.getWalletBalance(address, btcRate, pendingSent, force),
-        ]);
 
-        setBtcPrice(priceData.price);
-        setBtcRate(priceData.rate);
-        setBalanceBTC(balanceData.btc);
-        setBalanceUSD(balanceData.usd);
-      } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : 'An error occurred';
-        setError(errorMessage);
-        showErrorToast(errorMessage);
+        // First get cached data to show immediately
+        const [cachedPrice, cachedBalance, cachedTransactions] =
+          await Promise.all([
+            walletService.getBitcoinPrice(),
+            walletService.getWalletBalance(
+              wallet.address,
+              btcRate,
+              pendingSent,
+            ),
+            walletService.getTransactions(wallet.address, wallet.baseApi),
+          ]);
+
+        // Update UI with cached data
+        setBtcPrice(cachedPrice.price);
+        setBtcRate(cachedPrice.rate);
+        setBalanceBTC(cachedBalance.btc);
+        setBalanceUSD(cachedBalance.usd);
+        setTransactions(cachedTransactions.transactions);
+        setCacheTimestamps({
+          price: walletService.getLastPriceFetch(),
+          balance: walletService.getLastBalanceFetch(),
+          transactions: walletService.getLastTxFetch(wallet.address),
+        });
+
+        // If not forcing refresh, we're done
+        if (!force) {
+          setLoading(false);
+          return;
+        }
+
+        // Force refresh in background
+        try {
+          const [freshPrice, freshBalance, freshTransactions] =
+            await Promise.all([
+              walletService.getBitcoinPrice(),
+              walletService.getWalletBalance(
+                wallet.address,
+                btcRate,
+                pendingSent,
+                true,
+              ),
+              walletService.getTransactions(wallet.address, wallet.baseApi),
+            ]);
+
+          // Only update UI if we got fresh data
+          if (freshTransactions.transactions.length > 0) {
+            setBtcPrice(freshPrice.price);
+            setBtcRate(freshPrice.rate);
+            setBalanceBTC(freshBalance.btc);
+            setBalanceUSD(freshBalance.usd);
+            setTransactions(freshTransactions.transactions);
+          }
+
+          setCacheTimestamps({
+            price: walletService.getLastPriceFetch(),
+            balance: walletService.getLastBalanceFetch(),
+            transactions: walletService.getLastTxFetch(wallet.address),
+          });
+        } catch (refreshError: any) {
+          // Only show error if it's not a "canceled" error
+          if (refreshError.message !== 'canceled') {
+            setError(refreshError.message);
+            dbg('Error refreshing data:', refreshError);
+          }
+          // Keep using cached data
+          setCacheTimestamps({
+            price: walletService.getLastPriceFetch(),
+            balance: walletService.getLastBalanceFetch(),
+            transactions: walletService.getLastTxFetch(wallet.address),
+          });
+        }
+      } catch (error: any) {
+        // Only show error if it's not a "canceled" error
+        if (error.message !== 'canceled') {
+          setError(error.message);
+          dbg('Error fetching data:', error);
+        }
+        // Keep using cached data
+        setCacheTimestamps({
+          price: walletService.getLastPriceFetch(),
+          balance: walletService.getLastBalanceFetch(),
+          transactions: walletService.getLastTxFetch(wallet.address),
+        });
+      } finally {
+        setLoading(false);
       }
     },
-    [address, apiBase, btcRate, pendingSent, showErrorToast, walletService],
+    [wallet?.address, wallet?.baseApi, btcRate, pendingSent, walletService],
   );
 
   const handlePendingTransactions = useCallback(
@@ -298,8 +613,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       let api = await EncryptedStorage.getItem('api');
       if (api) {
         // Ensure API URL ends with a slash
-        if (!api.endsWith('/')) {
-          api = `${api}/`;
+        if (api.endsWith('/')) {
+          api = api.substring(0, api.length - 1);
         }
         BBMTLibNativeModule.setAPI(net, api);
         setApiBase(api);
@@ -373,7 +688,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         const api = await EncryptedStorage.getItem('api');
         if (api) {
           // Ensure API URL ends with a slash
-          const formattedApi = api.endsWith('/') ? api : `${api}/`;
+          const formattedApi = api.endsWith('/')
+            ? api.substring(0, api.length - 1)
+            : api;
           setApiBase(formattedApi);
           BBMTLibNativeModule.setAPI(network, formattedApi);
         }
@@ -387,23 +704,26 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   }, [isInitialized, network, showErrorToast]);
 
   useEffect(() => {
-    if (!isInitialized || !address) return;
+    if (!isInitialized || !address) {
+      return;
+    }
 
+    // Initial data fetch
     fetchData(true);
+
+    // Only update UI timestamp every minute
     const intervalId = setInterval(() => {
-      fetchData(false);
+      const currentTime = Date.now();
+      setCacheTimestamps(prev => ({
+        ...prev,
+        price: currentTime,
+        balance: currentTime,
+        transactions: currentTime,
+      }));
     }, 60000);
 
     return () => clearInterval(intervalId);
   }, [isInitialized, address, fetchData]);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (isInitialized) {
-        fetchData(true);
-      }
-    }, [isInitialized, fetchData]),
-  );
 
   const handleBlurred = () => {
     const blurr = !isBlurred;
@@ -435,168 +755,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       setIsSendModalVisible(false);
     }
   };
-
-  const styles = StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: theme.colors.background,
-    },
-    contentContainer: {
-      padding: 16,
-    },
-    walletHeader: {
-      padding: 16,
-      backgroundColor: theme.colors.primary,
-      borderRadius: 8,
-      alignItems: 'center',
-      marginBottom: 0,
-    },
-    headerTop: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      width: '100%',
-    },
-    btcLogo: {
-      width: 40,
-      height: 40,
-      resizeMode: 'contain',
-    },
-    btcPrice: {
-      fontSize: 18,
-      fontWeight: '600',
-      color: theme.colors.accent,
-      textAlign: 'right',
-    },
-    balanceBTC: {
-      fontSize: 24,
-      fontWeight: 'bold',
-      color: theme.colors.white,
-      marginTop: 16,
-      marginBottom: 4,
-    },
-    balanceUSD: {
-      fontSize: 16,
-      color: theme.colors.background,
-      marginBottom: 16,
-    },
-    qrContainer: {
-      padding: 8,
-      backgroundColor: '#fff',
-      borderRadius: 4,
-      elevation: 4,
-      shadowColor: '#000',
-      shadowOffset: {width: 0, height: 2},
-      shadowOpacity: 0.2,
-      shadowRadius: 4,
-    },
-    address: {
-      fontSize: 14,
-      color: theme.colors.textOnPrimary,
-      marginTop: 8,
-      textAlign: 'center',
-      fontWeight: '600',
-    },
-    party: {
-      marginBottom: 8,
-      fontSize: 12,
-      color: theme.colors.textOnPrimary,
-      textAlign: 'center',
-      fontWeight: '600',
-    },
-    actions: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      marginTop: 16,
-      width: '100%',
-    },
-    actionButton: {
-      paddingVertical: 12,
-      marginBottom: 4,
-      marginHorizontal: 8,
-      borderRadius: 8,
-      alignItems: 'center',
-    },
-    sendButton: {
-      flex: 1,
-      backgroundColor: theme.colors.accent,
-    },
-    settingsButton: {
-      width: 50,
-      backgroundColor: theme.colors.accent,
-    },
-    addressTypeModalButton: {
-      width: 50,
-      backgroundColor: theme.colors.cardBackground,
-    },
-    receiveButton: {
-      flex: 1,
-      backgroundColor: theme.colors.secondary,
-    },
-    modalOverlay: {
-      ...StyleSheet.absoluteFillObject,
-      backgroundColor: 'rgba(0,0,0,0.8)',
-      justifyContent: 'center',
-      alignItems: 'center',
-      zIndex: 100,
-    },
-    modalContent: {
-      backgroundColor: theme.colors.background,
-      borderRadius: 12,
-      padding: 20,
-      width: '80%',
-      alignItems: 'center',
-    },
-    modalText: {
-      fontSize: 18,
-      marginBottom: 10,
-      textAlign: 'center',
-      color: theme.colors.text,
-    },
-    actionButtonText: {
-      color: '#fff',
-      fontSize: 16,
-      fontWeight: '600',
-    },
-    blurredText: {
-      opacity: 0.6,
-    },
-    addressTypeButton: {
-      backgroundColor: theme.colors.cardBackground,
-      padding: 16,
-      borderRadius: 8,
-      marginVertical: 8,
-      width: '100%',
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-    },
-    addressTypeButtonSelected: {
-      borderColor: theme.colors.accent,
-      borderWidth: 2,
-    },
-    addressTypeLabel: {
-      fontSize: 16,
-      fontWeight: '600',
-      color: theme.colors.text,
-      marginBottom: 4,
-    },
-    addressTypeValue: {
-      marginTop: 4,
-      fontSize: 12,
-      color: theme.colors.textSecondary,
-      textAlign: 'left',
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    },
-    modalTitle: {
-      fontSize: 20,
-      fontWeight: 'bold',
-      color: theme.colors.text,
-      marginBottom: 16,
-    },
-    scrollView: {
-      flex: 1,
-    },
-  });
 
   if (loading) {
     return <WalletSkeleton />;
@@ -648,13 +806,23 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         </View>
       </View>
       {!loading && (
-        <TransactionList
-          baseApi={apiBase}
-          address={address}
-          onUpdate={handlePendingTransactions}
-          onReload={handleRefresh}
-          refreshing={false}
-        />
+        <>
+          <CacheIndicator
+            timestamps={cacheTimestamps}
+            onRefresh={() => fetchData(true)}
+            theme={theme}
+          />
+          <View style={styles.transactionListContainer}>
+            <TransactionList
+              baseApi={apiBase}
+              address={address}
+              onUpdate={handlePendingTransactions}
+              onReload={handleRefresh}
+              refreshing={false}
+              initialTransactions={transactions}
+            />
+          </View>
+        </>
       )}
       <Modal
         visible={isAddressTypeModalVisible}

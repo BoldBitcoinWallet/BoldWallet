@@ -1,7 +1,8 @@
-import React from 'react';
-import {View, StyleSheet, Animated, Dimensions} from 'react-native';
+import React, {useMemo} from 'react';
+import {View, StyleSheet, Animated, Dimensions, Image} from 'react-native';
 import {useTheme} from '../theme';
 import LinearGradient from 'react-native-linear-gradient';
+import TransactionListSkeleton from './TransactionListSkeleton';
 
 const {width} = Dimensions.get('window');
 
@@ -15,119 +16,106 @@ const ShimmerEffect: React.FC<ShimmerEffectProps> = ({
   style,
   translateX,
   backgroundColor,
-}) => (
-  <View style={[style, styles.shimmerWrapper, {backgroundColor}]}>
-    <Animated.View
-      style={[styles.shimmerContainer, {transform: [{translateX}]}]}>
-      <LinearGradient
-        colors={[
-          backgroundColor,
-          'rgba(255, 255, 255, 1)',
-          backgroundColor,
-        ]}
-        start={{x: 0, y: 0}}
-        end={{x: 1, y: 0}}
-        style={styles.gradient}
-      />
-    </Animated.View>
-  </View>
-);
-
-const TransactionSkeletonItem = ({translateX, backgroundColor}: {translateX: any; backgroundColor: string}) => (
-  <View style={[styles.transactionSkeleton, {backgroundColor}]}>
-    <View style={styles.transactionRow}>
-      <ShimmerEffect style={styles.statusSkeleton} translateX={translateX} backgroundColor={backgroundColor} />
-      <ShimmerEffect style={styles.amountSkeleton} translateX={translateX} backgroundColor={backgroundColor} />
+}) => {
+  const {theme} = useTheme();
+  const background = {overflow: 'hidden', backgroundColor};
+  return (
+    <View style={[style, styles.shimmerWrapper, background]}>
+      <Animated.View
+        style={[styles.shimmerContainer, {transform: [{translateX}]}]}>
+        <LinearGradient
+          colors={[
+            backgroundColor,
+            theme.colors.disabled,
+            theme.colors.border,
+            theme.colors.disabled,
+            backgroundColor,
+          ]}
+          start={{x: 0, y: 0}}
+          end={{x: 1, y: 0}}
+          style={styles.gradient}
+        />
+      </Animated.View>
     </View>
-    <View style={styles.addressRow}>
-      <ShimmerEffect style={styles.addressSkeleton} translateX={translateX} backgroundColor={backgroundColor} />
-      <ShimmerEffect style={styles.usdAmountSkeleton} translateX={translateX} backgroundColor={backgroundColor} />
-    </View>
-    <View style={styles.transactionRow}>
-      <ShimmerEffect style={styles.txIdSkeleton} translateX={translateX} backgroundColor={backgroundColor} />
-      <ShimmerEffect style={styles.timestampSkeleton} translateX={translateX} backgroundColor={backgroundColor} />
-    </View>
-  </View>
-);
+  );
+};
 
 const WalletSkeleton: React.FC = () => {
   const {theme} = useTheme();
-  const animatedValue = new Animated.Value(0);
+  const animatedValue = useMemo(() => new Animated.Value(0), []);
 
   React.useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(animatedValue, {
-          toValue: 1,
-          duration: 1500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(animatedValue, {
-          toValue: 0,
-          duration: 1500,
-          useNativeDriver: true,
-        }),
-      ]),
-    ).start();
-  }, []);
+    const startAnimation = () => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(animatedValue, {
+            toValue: 1,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(animatedValue, {
+            toValue: 0,
+            duration: 0,
+            useNativeDriver: true,
+          }),
+        ]),
+      ).start();
+    };
+
+    startAnimation();
+    return () => {
+      animatedValue.stopAnimation();
+    };
+  }, [animatedValue]);
 
   const translateX = animatedValue.interpolate({
     inputRange: [0, 1],
-    outputRange: [-width, width],
+    outputRange: [-width * 2, width * 2],
   });
 
   return (
     <View style={styles.container}>
       <View style={[styles.header, {backgroundColor: theme.colors.primary}]}>
         <View style={styles.headerTop}>
-          <ShimmerEffect 
-            style={styles.btcLogo} 
-            translateX={translateX}
-            backgroundColor={theme.colors.cardBackground}
+          <Image
+            source={require('../assets/bitcoin-logo.png')}
+            style={styles.btcLogo}
           />
-          <ShimmerEffect 
-            style={styles.priceSkeleton} 
+          <ShimmerEffect
+            style={styles.priceSkeleton}
             translateX={translateX}
-            backgroundColor={theme.colors.cardBackground}
+            backgroundColor={theme.colors.accent}
           />
         </View>
-        <ShimmerEffect 
-          style={styles.balanceSkeleton} 
+        <ShimmerEffect
+          style={styles.balanceSkeleton}
           translateX={translateX}
           backgroundColor={theme.colors.cardBackground}
         />
-        <ShimmerEffect 
-          style={styles.usdSkeleton} 
+        <ShimmerEffect
+          style={styles.usdSkeleton}
           translateX={translateX}
           backgroundColor={theme.colors.cardBackground}
         />
         <View style={styles.actions}>
-          <ShimmerEffect 
-            style={styles.actionButton} 
+          <ShimmerEffect
+            style={styles.actionButton}
+            translateX={translateX}
+            backgroundColor={theme.colors.accent}
+          />
+          <ShimmerEffect
+            style={styles.actionMiddleButton}
             translateX={translateX}
             backgroundColor={theme.colors.cardBackground}
           />
-          <ShimmerEffect 
-            style={styles.actionButton} 
+          <ShimmerEffect
+            style={styles.actionButton}
             translateX={translateX}
-            backgroundColor={theme.colors.cardBackground}
-          />
-          <ShimmerEffect 
-            style={styles.actionButton} 
-            translateX={translateX}
-            backgroundColor={theme.colors.cardBackground}
+            backgroundColor={theme.colors.secondary}
           />
         </View>
       </View>
-      <View style={styles.transactionsContainer}>
-        {[1, 2, 3].map(i => (
-          <TransactionSkeletonItem 
-            key={i} 
-            translateX={translateX}
-            backgroundColor={theme.colors.cardBackground}
-          />
-        ))}
-      </View>
+      <TransactionListSkeleton />
     </View>
   );
 };
@@ -183,7 +171,14 @@ const styles = StyleSheet.create({
   actionButton: {
     flex: 1,
     height: 48,
-    borderRadius: 12,
+    borderRadius: 8,
+    marginHorizontal: 8,
+  },
+  actionMiddleButton: {
+    flex: 1,
+    height: 48,
+    maxWidth: 48,
+    borderRadius: 8,
     marginHorizontal: 8,
   },
   transactionsContainer: {

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useMemo} from 'react';
 import {View, StyleSheet, Animated, Dimensions} from 'react-native';
 import {useTheme} from '../theme';
 import LinearGradient from 'react-native-linear-gradient';
@@ -11,84 +11,124 @@ interface ShimmerEffectProps {
   backgroundColor: string;
 }
 
-const ShimmerEffect: React.FC<ShimmerEffectProps> = ({style, translateX, backgroundColor}) => (
-  <View
-    style={[
-      style,
-      styles.shimmerWrapper,
-      {overflow: 'hidden', backgroundColor},
-    ]}>
-    <Animated.View
-      style={[
-        styles.shimmerContainer,
-        {transform: [{translateX}]},
-      ]}>
-      <LinearGradient
-        colors={[
-          backgroundColor,
-          'rgba(255, 255, 255, 0.95)',
-          backgroundColor,
-        ]}
-        start={{x: 0, y: 0}}
-        end={{x: 1, y: 0}}
-        style={styles.gradient}
-      />
-    </Animated.View>
-  </View>
-);
+const ShimmerEffect: React.FC<ShimmerEffectProps> = ({
+  style,
+  translateX,
+  backgroundColor,
+}) => {
+  const {theme} = useTheme();
+  const background = {overflow: 'hidden', backgroundColor};
+  return (
+    <View style={[style, styles.shimmerWrapper, background]}>
+      <Animated.View
+        style={[styles.shimmerContainer, {transform: [{translateX}]}]}>
+        <LinearGradient
+          colors={[
+            backgroundColor,
+            theme.colors.disabled,
+            theme.colors.border,
+            theme.colors.disabled,
+            backgroundColor,
+          ]}
+          start={{x: 0, y: 0}}
+          end={{x: 1, y: 0}}
+          style={styles.gradient}
+        />
+      </Animated.View>
+    </View>
+  );
+};
 
 interface TransactionSkeletonItemProps {
   translateX: Animated.AnimatedInterpolation<string | number>;
   backgroundColor: string;
 }
 
-const TransactionSkeletonItem: React.FC<TransactionSkeletonItemProps> = ({translateX, backgroundColor}) => (
+const TransactionSkeletonItem: React.FC<TransactionSkeletonItemProps> = ({
+  translateX,
+  backgroundColor,
+}) => (
   <View style={[styles.transactionItem, {backgroundColor}]}>
     <View style={styles.transactionRow}>
-      <ShimmerEffect style={styles.statusSkeleton} translateX={translateX} backgroundColor={backgroundColor} />
-      <ShimmerEffect style={styles.amountSkeleton} translateX={translateX} backgroundColor={backgroundColor} />
+      <ShimmerEffect
+        style={styles.statusSkeleton}
+        translateX={translateX}
+        backgroundColor={backgroundColor}
+      />
+      <ShimmerEffect
+        style={styles.amountSkeleton}
+        translateX={translateX}
+        backgroundColor={backgroundColor}
+      />
     </View>
     <View style={styles.addressRow}>
-      <ShimmerEffect style={styles.addressSkeleton} translateX={translateX} backgroundColor={backgroundColor} />
-      <ShimmerEffect style={styles.usdAmountSkeleton} translateX={translateX} backgroundColor={backgroundColor} />
+      <ShimmerEffect
+        style={styles.addressSkeleton}
+        translateX={translateX}
+        backgroundColor={backgroundColor}
+      />
+      <ShimmerEffect
+        style={styles.usdAmountSkeleton}
+        translateX={translateX}
+        backgroundColor={backgroundColor}
+      />
     </View>
     <View style={styles.transactionRow}>
-      <ShimmerEffect style={styles.txIdSkeleton} translateX={translateX} backgroundColor={backgroundColor} />
-      <ShimmerEffect style={styles.timestampSkeleton} translateX={translateX} backgroundColor={backgroundColor} />
+      <ShimmerEffect
+        style={styles.txIdSkeleton}
+        translateX={translateX}
+        backgroundColor={backgroundColor}
+      />
+      <ShimmerEffect
+        style={styles.timestampSkeleton}
+        translateX={translateX}
+        backgroundColor={backgroundColor}
+      />
     </View>
   </View>
 );
 
 const TransactionListSkeleton: React.FC = () => {
   const {theme} = useTheme();
-  const animatedValue = new Animated.Value(0);
+  const animatedValue = useMemo(() => new Animated.Value(0), []);
 
   React.useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(animatedValue, {
-          toValue: 1,
-          duration: 1500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(animatedValue, {
-          toValue: 0,
-          duration: 1500,
-          useNativeDriver: true,
-        }),
-      ]),
-    ).start();
-  }, []);
+    const startAnimation = () => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(animatedValue, {
+            toValue: 1,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(animatedValue, {
+            toValue: 0,
+            duration: 0,
+            useNativeDriver: true,
+          }),
+        ]),
+      ).start();
+    };
+
+    startAnimation();
+    return () => {
+      animatedValue.stopAnimation();
+    };
+  }, [animatedValue]);
 
   const translateX = animatedValue.interpolate({
     inputRange: [0, 1],
-    outputRange: [-width, width],
+    outputRange: [-width * 2, width * 2],
   });
 
-  return ( 
+  return (
     <View style={styles.container}>
       {[1, 2, 3].map(i => (
-        <TransactionSkeletonItem key={i} translateX={translateX} backgroundColor={theme.colors.cardBackground} />
+        <TransactionSkeletonItem
+          key={i}
+          translateX={translateX}
+          backgroundColor={theme.colors.cardBackground}
+        />
       ))}
     </View>
   );
@@ -164,4 +204,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default TransactionListSkeleton; 
+export default TransactionListSkeleton;

@@ -37,6 +37,7 @@ import Share from 'react-native-share';
 import Big from 'big.js';
 import {dbg, getPinnedRemoteIP} from '../utils';
 import {useTheme} from '../theme';
+import { waitMS } from '../services/WalletService';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -108,7 +109,6 @@ const MobilesPairing = ({navigation}: any) => {
 
   const connectionAnimation = useRef(new Animated.Value(0)).current;
   const animationRef = useRef<Animated.CompositeAnimation | null>(null);
-  const waitMS = (ms = 1000) => new Promise((res, _) => setTimeout(res, ms));
 
   const toggleBackedup = (key: keyof typeof backupChecks) => {
     setBackupChecks(prev => ({...prev, [key]: !prev[key]}));

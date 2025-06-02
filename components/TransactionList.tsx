@@ -10,7 +10,7 @@ import {
   Linking,
   Platform,
 } from 'react-native';
-import axios from 'axios';
+import axios, {all} from 'axios';
 import Toast from 'react-native-toast-message';
 import moment from 'moment';
 import EncryptedStorage from 'react-native-encrypted-storage';
@@ -18,6 +18,8 @@ import {dbg} from '../utils';
 import {useTheme} from '@react-navigation/native';
 import {themes} from '../theme';
 import TransactionListSkeleton from './TransactionListSkeleton';
+import {WalletService} from '../services/WalletService';
+import {add} from 'lodash';
 
 interface TransactionListProps {
   refreshing: boolean;
@@ -25,6 +27,7 @@ interface TransactionListProps {
   baseApi: string;
   onUpdate: (pendingTxs: any[], pending: number) => Promise<any>;
   onReload: () => Promise<any>;
+  initialTransactions?: any[];
 }
 
 const TransactionList: React.FC<TransactionListProps> = ({
@@ -33,8 +36,9 @@ const TransactionList: React.FC<TransactionListProps> = ({
   baseApi,
   onReload,
   onUpdate,
+  initialTransactions = [],
 }) => {
-  const [transactions, setTransactions] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<any[]>(initialTransactions);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [lastSeenTxId, setLastSeenTxId] = useState<string | null>(null);
@@ -113,7 +117,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
         dbg('Making request to:', url);
         const response = await axios.get(url, {
           signal: abortController.current.signal,
-          timeout: 10000, // 10 second timeout
+          timeout: 5000, // 10 second timeout
         });
         dbg('Received response:', response.data.length, 'transactions');
 
@@ -175,6 +179,11 @@ const TransactionList: React.FC<TransactionListProps> = ({
         );
         dbg('Setting transactions:', newTransactions.length);
 
+        WalletService.getInstance().updateTransactionsCache(
+          address,
+          newTransactions,
+        );
+
         // Batch state updates
         if (isMounted.current) {
           setTransactions(newTransactions);
@@ -191,10 +200,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
         dbg('got error', error);
         if (error.name === 'CanceledError') {
           dbg('Request canceled');
-        } else if (
-          retryCount < 3 &&
-          (error.code === 'ECONNABORTED' || error.message.includes('timeout'))
-        ) {
+        } else if (retryCount < 3) {
           // Retry on timeout
           dbg('Request timed out, retrying...');
           if (isMounted.current) {
@@ -411,7 +417,11 @@ const TransactionList: React.FC<TransactionListProps> = ({
         onUpdate(pendingTxs, pending);
         dbg('Updated pending transactions in fetch more');
 
-        return [...prevTransactions, ...filteredTransactions];
+        const txs = [...prevTransactions, ...filteredTransactions];
+
+        WalletService.getInstance().updateTransactionsCache(address, txs);
+
+        return txs;
       });
 
       setLastSeenTxId(newTransactions[newTransactions.length - 1].txid);
@@ -443,6 +453,13 @@ const TransactionList: React.FC<TransactionListProps> = ({
     getTransactionAmounts,
     onUpdate,
   ]);
+
+  // Add effect to handle initialTransactions changes
+  useEffect(() => {
+    if (initialTransactions && initialTransactions.length > 0) {
+      setTransactions(initialTransactions);
+    }
+  }, [initialTransactions]);
 
   const styles = StyleSheet.create({
     container: {
@@ -657,21 +674,22 @@ const TransactionList: React.FC<TransactionListProps> = ({
       );
     },
     [
-      address,
-      baseApi,
       getTransactionStatus,
       getTransactionAmounts,
-      styles.amount,
-      styles.status,
-      styles.timestamp,
+      address,
+      baseApi,
       styles.transactionItem,
       styles.transactionRow,
-      styles.txId,
-      styles.txLink,
-      styles.usdAmount,
+      styles.status,
+      styles.amount,
+      styles.addressRow,
       styles.address,
       styles.addressLink,
-      styles.addressRow,
+      styles.usdAmount,
+      styles.txId,
+      styles.txLink,
+      styles.timestamp,
+      colors.text,
     ],
   );
 
@@ -684,7 +702,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
         <Text style={styles.emptyText}>No transactions yet</Text>
       </View>
     );
-  }, [loading, colors.primary, styles.emptyContainer, styles.emptyText]);
+  }, [loading, styles.emptyContainer, styles.emptyText]);
 
   return (
     <SafeAreaView style={styles.container}>
