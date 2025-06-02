@@ -23,15 +23,9 @@ const ShimmerEffect: React.FC<ShimmerEffectProps> = ({
       <Animated.View
         style={[styles.shimmerContainer, {transform: [{translateX}]}]}>
         <LinearGradient
-          colors={[
-            backgroundColor,
-            theme.colors.disabled,
-            theme.colors.border,
-            theme.colors.disabled,
-            backgroundColor,
-          ]}
-          start={{x: 0, y: 0}}
-          end={{x: 1, y: 0}}
+          colors={[backgroundColor, theme.colors.border, backgroundColor]}
+          start={{x: 1, y: 0}}
+          end={{x: 0, y: 0}}
           style={styles.gradient}
         />
       </Animated.View>
@@ -137,17 +131,17 @@ const TransactionListSkeleton: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
+    paddingHorizontal: 16,
   },
   transactionItem: {
     padding: 16,
-    marginVertical: 6,
-    borderRadius: 12,
-    elevation: 0.05,
+    marginVertical: 8,
+    borderRadius: 8,
+    elevation: 1,
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 0.05},
-    shadowOpacity: 0.01,
-    shadowRadius: 0.1,
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.08,
+    shadowRadius: 1,
   },
   transactionRow: {
     flexDirection: 'row',

@@ -146,12 +146,35 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '600',
   },
+  partyContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    paddingHorizontal: 8,
+    marginTop: 8,
+  },
+  partyLeft: {
+    flex: 1,
+    alignItems: 'flex-start',
+  },
+  partyCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  partyRight: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
   party: {
-    marginBottom: 8,
     fontSize: 12,
     color: themes.lightPolished.colors.textOnPrimary,
-    textAlign: 'center',
-    fontWeight: '600',
+    fontWeight: '500',
+  },
+  partyText: {
+    fontSize: 12,
+    color: themes.lightPolished.colors.textOnPrimary,
+    fontWeight: '500',
   },
   actions: {
     flexDirection: 'row',
@@ -269,7 +292,7 @@ const styles = StyleSheet.create({
   },
   transactionListContainer: {
     flex: 1,
-    marginBottom: 16,
+    marginBottom: 0,
   },
 });
 
@@ -781,11 +804,23 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               {isBlurred ? '* * *' : balanceUSD}
             </Text>
           </TouchableOpacity>
-          <Text style={styles.party}>
-            🗝 {capitalizeWords(party)}
-            {'  '} {networkEmoji()} {capitalizeWords(network)}
-            {'  '} {addressEmoji()} {capitalizeWords(addressType)}
-          </Text>
+          <View style={styles.partyContainer}>
+            <View style={styles.partyLeft}>
+              <Text style={styles.partyText} numberOfLines={1} adjustsFontSizeToFit>
+                🗝 {capitalizeWords(party)}
+              </Text>
+            </View>
+            <View style={styles.partyCenter}>
+              <Text style={styles.partyText} numberOfLines={1} adjustsFontSizeToFit>
+                {networkEmoji()} {capitalizeWords(network)}
+              </Text>
+            </View>
+            <View style={styles.partyRight}>
+              <Text style={styles.partyText} numberOfLines={1} adjustsFontSizeToFit>
+                {addressEmoji()} {addressType === 'segwit-compatible' ? 'Segwit Compatible' : capitalizeWords(addressType)}
+              </Text>
+            </View>
+          </View>
           <View style={styles.actions}>
             <TouchableOpacity
               style={[styles.actionButton, styles.sendButton]}

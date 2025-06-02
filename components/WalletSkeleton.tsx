@@ -24,15 +24,9 @@ const ShimmerEffect: React.FC<ShimmerEffectProps> = ({
       <Animated.View
         style={[styles.shimmerContainer, {transform: [{translateX}]}]}>
         <LinearGradient
-          colors={[
-            backgroundColor,
-            theme.colors.disabled,
-            theme.colors.border,
-            theme.colors.disabled,
-            backgroundColor,
-          ]}
-          start={{x: 0, y: 0}}
-          end={{x: 1, y: 0}}
+          colors={[backgroundColor, theme.colors.border, backgroundColor]}
+          start={{x: 1, y: 0}}
+          end={{x: 0, y: 0}}
           style={styles.gradient}
         />
       </Animated.View>
@@ -97,6 +91,29 @@ const WalletSkeleton: React.FC = () => {
           translateX={translateX}
           backgroundColor={theme.colors.cardBackground}
         />
+        <View style={styles.partyContainer}>
+          <View style={styles.partyLeft}>
+            <ShimmerEffect
+              style={styles.partySkeleton}
+              translateX={translateX}
+              backgroundColor={theme.colors.cardBackground}
+            />
+          </View>
+          <View style={styles.partyCenter}>
+            <ShimmerEffect
+              style={styles.partySkeleton}
+              translateX={translateX}
+              backgroundColor={theme.colors.cardBackground}
+            />
+          </View>
+          <View style={styles.partyRight}>
+            <ShimmerEffect
+              style={styles.partySkeleton}
+              translateX={translateX}
+              backgroundColor={theme.colors.cardBackground}
+            />
+          </View>
+        </View>
         <View style={styles.actions}>
           <ShimmerEffect
             style={styles.actionButton}
@@ -126,7 +143,7 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: 16,
-    borderRadius: 16,
+    borderRadius: 8,
     margin: 16,
     elevation: 1,
     shadowColor: '#000',
@@ -142,7 +159,7 @@ const styles = StyleSheet.create({
   btcLogo: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    resizeMode: 'contain',
   },
   priceSkeleton: {
     width: 100,
@@ -162,6 +179,31 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginTop: 8,
     alignSelf: 'center',
+  },
+  partyContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    paddingHorizontal: 8,
+    marginTop: 8,
+  },
+  partyLeft: {
+    flex: 1,
+    alignItems: 'flex-start',
+  },
+  partyCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  partyRight: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
+  partySkeleton: {
+    width: 80,
+    height: 16,
+    borderRadius: 4,
   },
   actions: {
     flexDirection: 'row',

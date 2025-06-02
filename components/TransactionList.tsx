@@ -466,7 +466,6 @@ const TransactionList: React.FC<TransactionListProps> = ({
       flex: 1,
       paddingLeft: 16,
       paddingRight: 16,
-      paddingBottom: 16,
     },
     transactionItem: {
       padding: 16,

@@ -270,7 +270,7 @@ export class WalletService {
       const newBalance = balance.sub(pendingSent).div(1e8).toFixed(8);
       const hasNonZeroBalance = Number(newBalance) > 0;
       const usdAmount = btcRate
-        ? `$${this.formatUSD(Big(balance).mul(btcRate).div(1e8).toNumber())}`
+        ? this.formatUSD(Big(balance).mul(btcRate).div(1e8).toNumber())
         : '$0.00';
 
       const result = {
