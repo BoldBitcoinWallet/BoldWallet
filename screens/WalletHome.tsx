@@ -24,7 +24,6 @@ import {dbg} from '../utils';
 import {useTheme, themes} from '../theme';
 import {WalletService, Transaction} from '../services/WalletService';
 import WalletSkeleton from '../components/WalletSkeleton';
-import {formatDistanceToNow} from 'date-fns';
 import {useWallet} from '../context/WalletContext';
 
 const {BBMTLibNativeModule} = NativeModules;
@@ -275,6 +274,8 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 8,
     borderRadius: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     elevation: 1,
     shadowColor: '#000',
@@ -284,12 +285,14 @@ const styles = StyleSheet.create({
   },
   cacheText: {
     fontSize: 14,
-    marginBottom: 4,
+    marginBottom: 0,
     marginTop: 0,
+    textAlign: 'right',
   },
   refreshText: {
     fontSize: 14,
     fontWeight: '600',
+    textAlign: 'left',
   },
   shimmerContainer: {
     position: 'absolute',
@@ -371,28 +374,30 @@ const CacheIndicator: React.FC<{
 
   const getTimeAgo = (timestamp: number) => {
     const diffInSeconds = Math.floor((currentTime - timestamp) / 1000);
-    
+
     // Handle edge cases
     if (diffInSeconds < 0) {
       return 'Just updated';
     }
-    
+
     // Less than 10 seconds
     if (diffInSeconds < 10) {
       return 'Just updated';
     }
-    
+
     // Less than a minute
     if (diffInSeconds < 60) {
       return `${diffInSeconds} seconds ago`;
     }
-    
+
     // Less than an hour
     const diffInMinutes = Math.floor(diffInSeconds / 60);
     if (diffInMinutes < 60) {
-      return `${diffInMinutes} ${diffInMinutes === 1 ? 'minute' : 'minutes'} ago`;
+      return `${diffInMinutes} ${
+        diffInMinutes === 1 ? 'minute' : 'minutes'
+      } ago`;
     }
-    
+
     // Less than a day
     const diffInHours = Math.floor(diffInMinutes / 60);
     if (diffInHours < 24) {
@@ -400,27 +405,31 @@ const CacheIndicator: React.FC<{
       if (remainingMinutes === 0) {
         return `${diffInHours} ${diffInHours === 1 ? 'hour' : 'hours'} ago`;
       }
-      return `${diffInHours} ${diffInHours === 1 ? 'hour' : 'hours'} ${remainingMinutes} ${remainingMinutes === 1 ? 'minute' : 'minutes'} ago`;
+      return `${diffInHours} ${
+        diffInHours === 1 ? 'hour' : 'hours'
+      } ${remainingMinutes} ${
+        remainingMinutes === 1 ? 'minute' : 'minutes'
+      } ago`;
     }
-    
+
     // Less than a week
     const diffInDays = Math.floor(diffInHours / 24);
     if (diffInDays < 7) {
       return `${diffInDays} ${diffInDays === 1 ? 'day' : 'days'} ago`;
     }
-    
+
     // Less than a month
     const diffInWeeks = Math.floor(diffInDays / 7);
     if (diffInWeeks < 4) {
       return `${diffInWeeks} ${diffInWeeks === 1 ? 'week' : 'weeks'} ago`;
     }
-    
+
     // Less than a year
     const diffInMonths = Math.floor(diffInDays / 30);
     if (diffInMonths < 12) {
       return `${diffInMonths} ${diffInMonths === 1 ? 'month' : 'months'} ago`;
     }
-    
+
     // Years
     const diffInYears = Math.floor(diffInDays / 365);
     return `${diffInYears} ${diffInYears === 1 ? 'year' : 'years'} ago`;
@@ -450,23 +459,24 @@ const CacheIndicator: React.FC<{
           />
         </View>
       )}
-      <Text style={[styles.cacheText, {color: theme.colors.textSecondary}]}>
-        {isUsingCache ? (
-          <>
-            📱 Showing cached data as of{' '}
-            {new Date(latestTimestamp).toLocaleString()}
-          </>
-        ) : (
-          <>📱 Last updated {timeAgo}</>
-        )}
-      </Text>
       <Text style={[styles.refreshText, {color: theme.colors.accent}]}>
         {isRefreshing
-          ? 'Refreshing...'
+          ? '🔄 Refreshing...'
           : isUsingCache
-          ? 'Tap to refresh data'
-          : 'Tap to refresh'}
+          ? '🔄 Tap to refresh data'
+          : '🔄 Tap to refresh'}
       </Text>
+      {!isRefreshing && (
+        <Text style={[styles.cacheText, {color: theme.colors.textSecondary}]}>
+          {isUsingCache ? (
+            <>
+              📱 Cached • {new Date(latestTimestamp).toLocaleTimeString()}
+            </>
+          ) : (
+            <>{timeAgo} ⏰</>
+          )}
+        </Text>
+      )}
     </TouchableOpacity>
   );
 };
@@ -714,7 +724,16 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setIsRefreshing(false);
       }
     },
-    [wallet?.baseApi, btcRate, pendingSent, showErrorToast, walletService, isInitialized, btcPrice, balanceBTC],
+    [
+      wallet?.baseApi,
+      btcRate,
+      pendingSent,
+      showErrorToast,
+      walletService,
+      isInitialized,
+      btcPrice,
+      balanceBTC,
+    ],
   );
 
   const handlePendingTransactions = useCallback(
@@ -925,7 +944,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           </View>
           <TouchableOpacity onPress={handleBlurred}>
             <Text style={[styles.balanceBTC, isBlurred && styles.blurredText]}>
-              {isBlurred ? '* * * * * * 🔓' : `${balanceBTC || '0.00000000'} BTC 🔒`}
+              {isBlurred
+                ? '* * * * * * 🔓'
+                : `${balanceBTC || '0.00000000'} BTC 🔒`}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={handleBlurred}>
