@@ -170,18 +170,20 @@ export class WalletService {
 
   private async getStoredState() {
     try {
-      const network = await EncryptedStorage.getItem('network') || 'mainnet';
-      const addressType = await EncryptedStorage.getItem('addressType') || 'legacy';
-      const api = network === 'mainnet' 
-        ? 'https://mempool.space/api'
-        : 'https://mempool.space/testnet/api';
+      const network = (await EncryptedStorage.getItem('network')) || 'mainnet';
+      const addressType =
+        (await EncryptedStorage.getItem('addressType')) || 'legacy';
+      const api =
+        network === 'mainnet'
+          ? 'https://mempool.space/api'
+          : 'https://mempool.space/testnet/api';
       const address = await EncryptedStorage.getItem('currentAddress');
 
       return {
         network,
         addressType,
         api,
-        address
+        address,
       };
     } catch (error) {
       dbg('WalletService: Error getting stored state:', error);
@@ -189,7 +191,12 @@ export class WalletService {
     }
   }
 
-  private async saveStoredState(state: {network?: string; addressType?: string; api?: string; address?: string}) {
+  private async saveStoredState(state: {
+    network?: string;
+    addressType?: string;
+    api?: string;
+    address?: string;
+  }) {
     try {
       if (state.network) {
         await EncryptedStorage.setItem('network', state.network);
@@ -222,7 +229,7 @@ export class WalletService {
         network: this.currentNetwork,
         addressType: this.currentAddressType,
         api: this.currentApiUrl,
-        address: this.currentAddress
+        address: this.currentAddress,
       });
     } catch (error) {
       dbg('WalletService: Error initializing network state:', error);
@@ -479,14 +486,16 @@ export class WalletService {
 
       // Get current state
       const state = await this.getStoredState();
-      
+
       // Clear all state and caches
       this.isInitialized = false;
       this.currentAddress = null;
       this.currentNetwork = network;
       this.currentApiUrl = apiUrl;
       this.fetchInProgress = {};
-      Object.values(this.fetchTimeout).forEach(timeout => clearTimeout(timeout));
+      Object.values(this.fetchTimeout).forEach(timeout =>
+        clearTimeout(timeout),
+      );
       this.fetchTimeout = {};
 
       // Clear all cached data
@@ -525,26 +534,26 @@ export class WalletService {
           ks.chain_code_hex,
           path,
         );
-        
+
         // Generate new address for current network and type
         const newAddress = await BBMTLibNativeModule.btcAddress(
           btcPub,
           network,
           state.addressType,
         );
-        
+
         // Save all state changes at once
         await this.saveStoredState({
           network,
           api: apiUrl,
-          address: newAddress
+          address: newAddress,
         });
 
         this.currentAddress = newAddress;
         dbg('WalletService: Generated new address for network:', {
           network,
           addressType: state.addressType,
-          address: newAddress
+          address: newAddress,
         });
       } catch (error) {
         dbg('WalletService: Error generating new address:', error);
@@ -572,7 +581,7 @@ export class WalletService {
     try {
       // Get current state
       const state = await this.getStoredState();
-      
+
       // Generate new address for current network and type
       const jks = await EncryptedStorage.getItem('keyshare');
       const ks = JSON.parse(jks || '{}');
@@ -582,7 +591,7 @@ export class WalletService {
         ks.chain_code_hex,
         path,
       );
-      
+
       const newAddress = await BBMTLibNativeModule.btcAddress(
         btcPub,
         state.network,
@@ -592,18 +601,18 @@ export class WalletService {
       // Save all state changes at once
       await this.saveStoredState({
         addressType,
-        address: newAddress
+        address: newAddress,
       });
 
       this.currentAddressType = addressType;
       this.currentAddress = newAddress;
-      
+
       // Clear address-specific caches
       await this.clearTransactionCache(newAddress);
 
       dbg('WalletService: Address type updated:', {
         addressType,
-        address: newAddress
+        address: newAddress,
       });
     } catch (error) {
       dbg('WalletService: Error during address type change:', error);
@@ -624,7 +633,7 @@ export class WalletService {
     // Ensure network state is synchronized
     if (!state.network) {
       try {
-        await this.saveStoredState({ network: 'mainnet' });
+        await this.saveStoredState({network: 'mainnet'});
         dbg('WalletService: Restored network state from storage: mainnet');
 
         // Also update native module if needed
@@ -643,7 +652,7 @@ export class WalletService {
         address,
       );
       this.currentAddress = address;
-      await this.saveStoredState({ address });
+      await this.saveStoredState({address});
       // Clear address-specific caches when address changes
       await this.clearTransactionCache(address);
       // Force refresh when address changes
@@ -685,31 +694,11 @@ export class WalletService {
             return this.cachedBalance;
           }
 
-          // Add retry logic for UTXO fetch
-          let retries = 3;
-          let totalUTXO = null;
-          let lastError = null;
-
-          while (retries > 0) {
-            try {
-              dbg(
-                'WalletService: Fetching UTXO total from native module, attempt:',
-                4 - retries,
-              );
-              totalUTXO = await BBMTLibNativeModule.totalUTXO(address);
-              if (totalUTXO && validateNumber(totalUTXO)) {
-                break;
-              }
-            } catch (error) {
-              lastError = error;
-              dbg('WalletService: UTXO fetch attempt failed:', error);
-              await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-            retries--;
-          }
+          dbg('WalletService: Fetching UTXO total from native module');
+          const totalUTXO = await BBMTLibNativeModule.totalUTXO(address);
 
           if (!totalUTXO || !validateNumber(totalUTXO)) {
-            dbg('WalletService: All UTXO fetch attempts failed:', lastError);
+            dbg('WalletService: Invalid UTXO total received:', totalUTXO);
             const balance = {
               btc: '0.00000000',
               usd: '$0.00',
@@ -776,7 +765,6 @@ export class WalletService {
     address: string,
     baseApi: string = this.currentApiUrl,
     lastSeenTxId: string | null = null,
-    retryCount: number = 0,
   ): Promise<{
     transactions: Transaction[];
     lastSeenTxId: string | null;
@@ -821,6 +809,23 @@ export class WalletService {
     baseApi = this.currentApiUrl;
     dbg('WalletService: Using current API URL:', baseApi);
 
+    // Check for cached transactions first
+    const cacheKey = `${address}-${lastSeenTxId || 'initial'}`;
+    const cachedData = this.cachedTransactions[cacheKey];
+    const lastFetch = this.lastTxFetch[cacheKey];
+    const now = Date.now();
+
+    // If we have cached data and it's not too old (5 minutes), use it
+    if (cachedData && lastFetch && now - lastFetch < 5 * 60 * 1000) {
+      dbg('WalletService: Using cached transactions for key:', cacheKey);
+      return {
+        transactions: cachedData,
+        lastSeenTxId:
+          cachedData.length > 0 ? cachedData[cachedData.length - 1].txid : null,
+        hasMore: false, // We don't know if there are more, so assume no
+      };
+    }
+
     return this.debounceFetch(
       `transactions-${address}-${lastSeenTxId || 'initial'}`,
       async () => {
@@ -830,8 +835,6 @@ export class WalletService {
           baseApi,
           'lastSeenTxId:',
           lastSeenTxId,
-          'retryCount:',
-          retryCount,
         );
 
         if (!validateBitcoinAddress(address)) {
@@ -905,6 +908,11 @@ export class WalletService {
               (b.status.block_height || 0) - (a.status.block_height || 0),
           );
 
+          // Cache the transactions
+          this.cachedTransactions[cacheKey] = sortedTransactions;
+          this.lastTxFetch[cacheKey] = now;
+          await this.saveCachedData();
+
           const result = {
             transactions: sortedTransactions,
             lastSeenTxId:
@@ -926,59 +934,39 @@ export class WalletService {
           dbg('WalletService: Error details:', error.message);
 
           // If we have any cached transactions, return them
-          if (this.allTransactions[address]?.length > 0) {
-            const allTxs = this.allTransactions[address];
-            const pageSize = allTxs.length;
-            const startIndex = lastSeenTxId
-              ? allTxs.findIndex(tx => tx.txid === lastSeenTxId) + 1
-              : 0;
-            const pageTxs = allTxs.slice(startIndex, startIndex + pageSize);
-
-            dbg('WalletService: OFFLINE MODE - Using cached transactions');
-            dbg('WalletService: OFFLINE MODE - Total cached:', allTxs.length);
-            dbg('WalletService: OFFLINE MODE - Page size:', pageTxs.length);
-            dbg('WalletService: OFFLINE MODE - Start index:', startIndex);
-            dbg(
-              'WalletService: OFFLINE MODE - Has more:',
-              startIndex + pageSize < allTxs.length,
-            );
+          if (this.cachedTransactions[cacheKey]?.length > 0) {
+            const cachedTxs = this.cachedTransactions[cacheKey];
+            dbg('WalletService: Using cached transactions for key:', cacheKey);
+            dbg('WalletService: Cached transactions count:', cachedTxs.length);
 
             return {
-              transactions: pageTxs,
+              transactions: cachedTxs,
               lastSeenTxId:
-                pageTxs.length > 0 ? pageTxs[pageTxs.length - 1].txid : null,
-              hasMore: startIndex + pageSize < allTxs.length,
+                cachedTxs.length > 0
+                  ? cachedTxs[cachedTxs.length - 1].txid
+                  : null,
+              hasMore: false,
+            };
+          }
+
+          // If no specific cache, try to use all transactions cache
+          if (this.allTransactions[address]?.length > 0) {
+            const allTxs = this.allTransactions[address];
+            dbg(
+              'WalletService: Using all cached transactions for address:',
+              address,
+            );
+            dbg('WalletService: All cached transactions count:', allTxs.length);
+
+            return {
+              transactions: allTxs,
+              lastSeenTxId:
+                allTxs.length > 0 ? allTxs[allTxs.length - 1].txid : null,
+              hasMore: false,
             };
           }
 
           dbg('WalletService: No cached transactions available');
-
-          // If no cache and retries left, try again
-          if (retryCount < 3) {
-            const retryDelay = 1000 * (retryCount + 1);
-            dbg(
-              'WalletService: Retrying fetch, attempt',
-              retryCount + 1,
-              'of 3, in',
-              retryDelay,
-              'ms',
-            );
-            return new Promise(resolve =>
-              setTimeout(
-                () =>
-                  resolve(
-                    this.getTransactions(
-                      address,
-                      baseApi,
-                      lastSeenTxId,
-                      retryCount + 1,
-                    ),
-                  ),
-                retryDelay,
-              ),
-            );
-          }
-
           throw error;
         }
       },
