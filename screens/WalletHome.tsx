@@ -372,24 +372,58 @@ const CacheIndicator: React.FC<{
   const getTimeAgo = (timestamp: number) => {
     const diffInSeconds = Math.floor((currentTime - timestamp) / 1000);
     
-    // Handle edge cases and very recent updates
+    // Handle edge cases
     if (diffInSeconds < 0) {
       return 'Just updated';
     }
     
-    if (diffInSeconds < 5) {
+    // Less than 10 seconds
+    if (diffInSeconds < 10) {
       return 'Just updated';
     }
     
+    // Less than a minute
     if (diffInSeconds < 60) {
       return `${diffInSeconds} seconds ago`;
     }
     
-    if (diffInSeconds < 120) {
-      return '1 minute ago';
+    // Less than an hour
+    const diffInMinutes = Math.floor(diffInSeconds / 60);
+    if (diffInMinutes < 60) {
+      return `${diffInMinutes} ${diffInMinutes === 1 ? 'minute' : 'minutes'} ago`;
     }
     
-    return formatDistanceToNow(timestamp, {addSuffix: true});
+    // Less than a day
+    const diffInHours = Math.floor(diffInMinutes / 60);
+    if (diffInHours < 24) {
+      const remainingMinutes = diffInMinutes % 60;
+      if (remainingMinutes === 0) {
+        return `${diffInHours} ${diffInHours === 1 ? 'hour' : 'hours'} ago`;
+      }
+      return `${diffInHours} ${diffInHours === 1 ? 'hour' : 'hours'} ${remainingMinutes} ${remainingMinutes === 1 ? 'minute' : 'minutes'} ago`;
+    }
+    
+    // Less than a week
+    const diffInDays = Math.floor(diffInHours / 24);
+    if (diffInDays < 7) {
+      return `${diffInDays} ${diffInDays === 1 ? 'day' : 'days'} ago`;
+    }
+    
+    // Less than a month
+    const diffInWeeks = Math.floor(diffInDays / 7);
+    if (diffInWeeks < 4) {
+      return `${diffInWeeks} ${diffInWeeks === 1 ? 'week' : 'weeks'} ago`;
+    }
+    
+    // Less than a year
+    const diffInMonths = Math.floor(diffInDays / 30);
+    if (diffInMonths < 12) {
+      return `${diffInMonths} ${diffInMonths === 1 ? 'month' : 'months'} ago`;
+    }
+    
+    // Years
+    const diffInYears = Math.floor(diffInDays / 365);
+    return `${diffInYears} ${diffInYears === 1 ? 'year' : 'years'} ago`;
   };
 
   const timeAgo = getTimeAgo(latestTimestamp);
