@@ -20,7 +20,7 @@ import DeviceInfo from 'react-native-device-info';
 
 import {dbg} from '../utils';
 import {useTheme} from '../theme';
-import { WalletService } from '../services/WalletService';
+import {WalletService} from '../services/WalletService';
 
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [deleteInput, setDeleteInput] = useState('');
@@ -68,12 +68,24 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     });
   };
 
-  const toggleNetwork = (value: boolean) => {
+  const toggleNetwork = async (value: boolean) => {
     setIsTestnet(value);
-    EncryptedStorage.setItem('network', value ? 'testnet3' : 'mainnet');
+    const network = value ? 'testnet3' : 'mainnet';
+    await EncryptedStorage.setItem('network', network);
+
     if (baseAPI.indexOf('mempool.space') >= 0) {
-      resetAPI();
+      const api = value
+        ? 'https://mempool.space/testnet/api'
+        : 'https://mempool.space/api';
+      await EncryptedStorage.setItem('api', api);
+      await BBMTLibNativeModule.setAPI(network, api);
+      setBaseAPI(api);
+
+      // Update WalletService with new network and API
+      await WalletService.getInstance().clearCache();
+      await WalletService.getInstance().handleNetworkChange(network, api);
     }
+
     navigation.reset({
       index: 0,
       routes: [{name: 'Bold Home'}],

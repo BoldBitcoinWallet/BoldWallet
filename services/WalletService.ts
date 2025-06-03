@@ -64,28 +64,62 @@ export const waitMS = (ms = 2000) =>
 
 // Add validation functions
 const validateBitcoinAddress = (address: string): boolean => {
-  if (!address) return false;
-  // Basic format validation for Bitcoin addresses
-  const validFormats = /^(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,39}$/;
-  return validFormats.test(address);
+  if (!address) {
+    dbg('WalletService: Bitcoin address validation failed - empty address');
+    return false;
+  }
+  dbg('WalletService: Bitcoin address validation passed:', address);
+  return true;
 };
 
 const validateApiUrl = (url: string): boolean => {
-  if (!url) return false;
+  if (!url) {
+    dbg('WalletService: API URL validation failed - empty URL');
+    return false;
+  }
   try {
-    new URL(url);
-    return true;
-  } catch {
+    const urlObj = new URL(url);
+    const isValid = !!urlObj;
+    dbg(
+      'WalletService: API URL validation',
+      isValid ? 'passed' : 'failed',
+      'for URL:',
+      url,
+    );
+    return isValid;
+  } catch (error) {
+    dbg(
+      'WalletService: API URL validation failed - invalid URL format:',
+      url,
+      'Error:',
+      error,
+    );
     return false;
   }
 };
 
 const validateNumber = (value: any): boolean => {
-  if (value === null || value === undefined) return false;
+  if (value === null || value === undefined) {
+    dbg('WalletService: Number validation failed - null/undefined value');
+    return false;
+  }
   try {
-    new Big(value);
-    return true;
-  } catch {
+    const num = new Big(value);
+    const isValid = num.gte(0) || num.lt(0);
+    dbg(
+      'WalletService: Number validation',
+      isValid ? 'passed' : 'failed',
+      'for value:',
+      value,
+    );
+    return isValid;
+  } catch (error) {
+    dbg(
+      'WalletService: Number validation failed - invalid number format:',
+      value,
+      'Error:',
+      error,
+    );
     return false;
   }
 };
@@ -104,6 +138,9 @@ export class WalletService {
   private abortController = new AbortController();
   private isInitialized: boolean = false;
   private currentAddress: string | null = null;
+  private currentNetwork: string = 'mainnet'; // Default to mainnet
+  private currentAddressType: string = 'legacy'; // Default to legacy
+  private currentApiUrl: string = 'https://mempool.space/api';
   private fetchInProgress: {[key: string]: boolean} = {};
   private fetchTimeout: {[key: string]: NodeJS.Timeout} = {};
   private cachedPrice: {price: string; rate: number} = {
@@ -116,17 +153,91 @@ export class WalletService {
     hasNonZeroBalance: false,
   };
 
+  // Add network state tracker
+  private networkState = {
+    isTransitioning: false,
+    lastNetwork: null as string | null,
+    lastAddress: null as string | null,
+    pendingAddress: null as string | null,
+  };
+
   private constructor() {
     // Initialize by loading cached data
     this.loadCachedData();
+    // Initialize network state from storage
+    this.initializeNetworkState();
+  }
+
+  private async getStoredState() {
+    try {
+      const network = await EncryptedStorage.getItem('network') || 'mainnet';
+      const addressType = await EncryptedStorage.getItem('addressType') || 'legacy';
+      const api = network === 'mainnet' 
+        ? 'https://mempool.space/api'
+        : 'https://mempool.space/testnet/api';
+      const address = await EncryptedStorage.getItem('currentAddress');
+
+      return {
+        network,
+        addressType,
+        api,
+        address
+      };
+    } catch (error) {
+      dbg('WalletService: Error getting stored state:', error);
+      throw error;
+    }
+  }
+
+  private async saveStoredState(state: {network?: string; addressType?: string; api?: string; address?: string}) {
+    try {
+      if (state.network) {
+        await EncryptedStorage.setItem('network', state.network);
+      }
+      if (state.addressType) {
+        await EncryptedStorage.setItem('addressType', state.addressType);
+      }
+      if (state.api) {
+        await EncryptedStorage.setItem('api', state.api);
+      }
+      if (state.address) {
+        await EncryptedStorage.setItem('currentAddress', state.address);
+      }
+      dbg('WalletService: Saved state to storage:', state);
+    } catch (error) {
+      dbg('WalletService: Error saving state:', error);
+      throw error;
+    }
+  }
+
+  private async initializeNetworkState() {
+    try {
+      const state = await this.getStoredState();
+      this.currentNetwork = state.network;
+      this.currentAddressType = state.addressType;
+      this.currentApiUrl = state.api;
+      this.currentAddress = state.address;
+
+      dbg('WalletService: Initialized network state:', {
+        network: this.currentNetwork,
+        addressType: this.currentAddressType,
+        api: this.currentApiUrl,
+        address: this.currentAddress
+      });
+    } catch (error) {
+      dbg('WalletService: Error initializing network state:', error);
+      throw error;
+    }
   }
 
   private async loadCachedData() {
     try {
+      dbg('WalletService: Loading cached data from storage...');
       const cachedData = await EncryptedStorage.getItem('walletCache');
       if (cachedData) {
         const parsed = JSON.parse(cachedData) as CachedData;
         const now = Date.now();
+        dbg('WalletService: Found cached data, timestamp:', now);
 
         // Load price if not expired
         if (
@@ -138,6 +249,9 @@ export class WalletService {
             rate: parsed.price.rate,
           };
           this.lastPriceFetch = parsed.price.timestamp;
+          dbg('WalletService: Loaded cached price:', this.cachedPrice);
+        } else {
+          dbg('WalletService: Price cache expired or not found');
         }
 
         // Load balance if not expired
@@ -151,18 +265,27 @@ export class WalletService {
             hasNonZeroBalance: parsed.balance.hasNonZeroBalance,
           };
           this.lastBalanceFetch = parsed.balance.timestamp;
+          dbg('WalletService: Loaded cached balance:', this.cachedBalance);
+        } else {
+          dbg('WalletService: Balance cache expired or not found');
         }
 
         // Load all transactions if not expired
         if (parsed.transactions) {
+          dbg('WalletService: Loading cached transactions...');
           Object.entries(parsed.transactions).forEach(([key, data]) => {
             if (key.endsWith('-all')) {
               const address = key.replace('-all', '');
               this.allTransactions[address] = data.transactions;
               this.lastTxFetch[`${address}-initial`] = data.timestamp;
+              dbg(
+                'WalletService: Loaded all transactions for address:',
+                address,
+              );
             } else {
               this.cachedTransactions[key] = data.transactions;
               this.lastTxFetch[key] = data.timestamp;
+              dbg('WalletService: Loaded cached transactions for key:', key);
 
               // Also load into pages structure if it's a page
               const [address, page] = key.split('-');
@@ -173,12 +296,22 @@ export class WalletService {
                 }
                 this.cachedTxPages[address][page] = data.transactions;
                 this.lastTxPageFetch[address][page] = data.timestamp;
+                dbg(
+                  'WalletService: Loaded transaction page:',
+                  page,
+                  'for address:',
+                  address,
+                );
               }
             }
           });
+        } else {
+          dbg('WalletService: No cached transactions found');
         }
 
-        dbg('WalletService: Loaded cached data from storage');
+        dbg('WalletService: Finished loading cached data');
+      } else {
+        dbg('WalletService: No cached data found in storage');
       }
     } catch (error) {
       dbg('WalletService: Error loading cached data:', error);
@@ -187,6 +320,7 @@ export class WalletService {
 
   private async saveCachedData() {
     try {
+      dbg('WalletService: Saving data to cache...');
       const cacheData: CachedData = {
         price: {
           ...this.cachedPrice,
@@ -205,6 +339,7 @@ export class WalletService {
           transactions,
           timestamp: this.lastTxFetch[key] || Date.now(),
         };
+        dbg('WalletService: Saving transactions for key:', key);
       });
 
       // Save transaction pages
@@ -215,6 +350,12 @@ export class WalletService {
             transactions,
             timestamp: this.lastTxPageFetch[address]?.[page] || Date.now(),
           };
+          dbg(
+            'WalletService: Saving transaction page:',
+            page,
+            'for address:',
+            address,
+          );
         });
       });
 
@@ -226,11 +367,12 @@ export class WalletService {
             transactions,
             timestamp: Date.now(),
           };
+          dbg('WalletService: Saving all transactions for address:', address);
         },
       );
 
       await EncryptedStorage.setItem('walletCache', JSON.stringify(cacheData));
-      dbg('WalletService: Saved data to persistent cache');
+      dbg('WalletService: Successfully saved all data to persistent cache');
     } catch (error) {
       dbg('WalletService: Error saving cached data:', error);
     }
@@ -257,7 +399,7 @@ export class WalletService {
       clearTimeout(this.fetchTimeout[key]);
     }
 
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       this.fetchTimeout[key] = setTimeout(async () => {
         try {
           this.fetchInProgress[key] = true;
@@ -286,8 +428,14 @@ export class WalletService {
 
     try {
       dbg('WalletService: Fetching fresh BTC price from mempool.space');
-      const response = await fetch('https://mempool.space/api/v1/prices');
+
+      // Always use main mempool.space API for price data
+      const priceUrl = 'https://mempool.space/api/v1/prices';
+
+      dbg('WalletService: Using price API URL:', priceUrl);
+      const response = await fetch(priceUrl);
       const data = await response.json();
+      dbg('WalletService: Raw price data received:', data);
 
       if (!data || !data.USD || !validateNumber(data.USD)) {
         dbg('WalletService: Invalid price data received:', data);
@@ -295,6 +443,13 @@ export class WalletService {
       }
 
       const rate = parseFloat(data.USD);
+      dbg('WalletService: Parsed rate:', rate);
+
+      if (isNaN(rate) || rate <= 0) {
+        dbg('WalletService: Invalid rate value:', rate);
+        throw new Error('Invalid rate value');
+      }
+
       const price = this.formatUSD(data.USD);
       dbg('WalletService: New price fetched - Rate:', rate, 'Price:', price);
 
@@ -314,58 +469,247 @@ export class WalletService {
     }
   }
 
+  public async handleNetworkChange(network: string, apiUrl: string) {
+    dbg('WalletService: Network changed to:', network, 'with API:', apiUrl);
+
+    try {
+      // Update native module network state first
+      await BBMTLibNativeModule.setBtcNetwork(network);
+      dbg('WalletService: Updated native module network state');
+
+      // Get current state
+      const state = await this.getStoredState();
+      
+      // Clear all state and caches
+      this.isInitialized = false;
+      this.currentAddress = null;
+      this.currentNetwork = network;
+      this.currentApiUrl = apiUrl;
+      this.fetchInProgress = {};
+      Object.values(this.fetchTimeout).forEach(timeout => clearTimeout(timeout));
+      this.fetchTimeout = {};
+
+      // Clear all cached data
+      this.lastPriceFetch = 0;
+      this.lastBalanceFetch = 0;
+      this.cachedTransactions = {};
+      this.lastTxFetch = {};
+      this.cachedTxPages = {};
+      this.lastTxPageFetch = {};
+      this.allTransactions = {};
+      this.cachedPrice = {
+        price: '$0.00',
+        rate: 0,
+      };
+      this.cachedBalance = {
+        btc: '0.00000000',
+        usd: '$0.00',
+        hasNonZeroBalance: false,
+      };
+
+      // Clear persistent storage
+      try {
+        await EncryptedStorage.removeItem('walletCache');
+        dbg('WalletService: Cleared persistent cache');
+      } catch (error) {
+        dbg('WalletService: Error clearing persistent cache:', error);
+      }
+
+      // Generate new address for the current network
+      try {
+        const jks = await EncryptedStorage.getItem('keyshare');
+        const ks = JSON.parse(jks || '{}');
+        const path = "m/44'/0'/0'/0/0";
+        const btcPub = await BBMTLibNativeModule.derivePubkey(
+          ks.pub_key,
+          ks.chain_code_hex,
+          path,
+        );
+        
+        // Generate new address for current network and type
+        const newAddress = await BBMTLibNativeModule.btcAddress(
+          btcPub,
+          network,
+          state.addressType,
+        );
+        
+        // Save all state changes at once
+        await this.saveStoredState({
+          network,
+          api: apiUrl,
+          address: newAddress
+        });
+
+        this.currentAddress = newAddress;
+        dbg('WalletService: Generated new address for network:', {
+          network,
+          addressType: state.addressType,
+          address: newAddress
+        });
+      } catch (error) {
+        dbg('WalletService: Error generating new address:', error);
+        throw error;
+      }
+
+      // Create new instance with network state
+      const newInstance = new WalletService();
+      newInstance.currentNetwork = network;
+      newInstance.currentApiUrl = apiUrl;
+      newInstance.currentAddress = this.currentAddress;
+      WalletService.instance = newInstance;
+
+      dbg('WalletService: Completely reset service for network change');
+      return newInstance;
+    } catch (error) {
+      dbg('WalletService: Error during network change:', error);
+      throw error;
+    }
+  }
+
+  public async handleAddressTypeChange(addressType: string) {
+    dbg('WalletService: Address type changed to:', addressType);
+
+    try {
+      // Get current state
+      const state = await this.getStoredState();
+      
+      // Generate new address for current network and type
+      const jks = await EncryptedStorage.getItem('keyshare');
+      const ks = JSON.parse(jks || '{}');
+      const path = "m/44'/0'/0'/0/0";
+      const btcPub = await BBMTLibNativeModule.derivePubkey(
+        ks.pub_key,
+        ks.chain_code_hex,
+        path,
+      );
+      
+      const newAddress = await BBMTLibNativeModule.btcAddress(
+        btcPub,
+        state.network,
+        addressType,
+      );
+
+      // Save all state changes at once
+      await this.saveStoredState({
+        addressType,
+        address: newAddress
+      });
+
+      this.currentAddressType = addressType;
+      this.currentAddress = newAddress;
+      
+      // Clear address-specific caches
+      await this.clearTransactionCache(newAddress);
+
+      dbg('WalletService: Address type updated:', {
+        addressType,
+        address: newAddress
+      });
+    } catch (error) {
+      dbg('WalletService: Error during address type change:', error);
+      throw error;
+    }
+  }
+
   public async getWalletBalance(
     address: string,
     btcRate: number,
     pendingSent: number = 0,
     force: boolean = false,
   ): Promise<WalletBalance> {
+    // Get current state
+    const state = await this.getStoredState();
+    dbg('WalletService: Current network:', state.network);
+
+    // Ensure network state is synchronized
+    if (!state.network) {
+      try {
+        await this.saveStoredState({ network: 'mainnet' });
+        dbg('WalletService: Restored network state from storage: mainnet');
+
+        // Also update native module if needed
+        await BBMTLibNativeModule.setBtcNetwork('mainnet');
+        dbg('WalletService: Synchronized native module network state');
+      } catch (error) {
+        dbg('WalletService: Error restoring network state:', error);
+      }
+    }
+
     if (address !== this.currentAddress) {
-      dbg('WalletService: Address changed from', this.currentAddress, 'to', address);
+      dbg(
+        'WalletService: Address changed from',
+        this.currentAddress,
+        'to',
+        address,
+      );
       this.currentAddress = address;
+      await this.saveStoredState({ address });
+      // Clear address-specific caches when address changes
+      await this.clearTransactionCache(address);
+      // Force refresh when address changes
+      force = true;
     }
 
     return this.debounceFetch(
       `balance-${address}`,
       async () => {
-        dbg('WalletService: Getting wallet balance for address:', address);
-        dbg(
-          'WalletService: Parameters - btcRate:',
-          btcRate,
-          'pendingSent:',
-          pendingSent,
-          'force:',
-          force,
-        );
-
-        if (!validateBitcoinAddress(address)) {
-          dbg('WalletService: Invalid Bitcoin address format:', address);
-          throw new Error('Invalid Bitcoin address');
-        }
-
-        if (!validateNumber(btcRate)) {
-          dbg('WalletService: Invalid BTC rate:', btcRate);
-          throw new Error('Invalid BTC rate');
-        }
-
-        if (!validateNumber(pendingSent)) {
-          dbg('WalletService: Invalid pending amount:', pendingSent);
-          throw new Error('Invalid pending amount');
-        }
-
-        const now = Date.now();
-        if (!force && now - this.lastBalanceFetch < this.BALANCE_CACHE_TIME) {
-          dbg('WalletService: Using cached balance:', this.cachedBalance);
-          return this.cachedBalance;
-        }
-
         try {
-          dbg('WalletService: Fetching UTXO total from native module');
-          const totalUTXO = await BBMTLibNativeModule.totalUTXO(address);
-          dbg('WalletService: UTXO total received:', totalUTXO);
+          dbg('WalletService: Getting wallet balance for address:', address);
+          dbg(
+            'WalletService: Parameters - btcRate:',
+            btcRate,
+            'pendingSent:',
+            pendingSent,
+            'force:',
+            force,
+          );
+
+          if (!validateBitcoinAddress(address)) {
+            dbg('WalletService: Invalid Bitcoin address format:', address);
+            throw new Error('Invalid Bitcoin address');
+          }
+
+          if (!validateNumber(btcRate)) {
+            dbg('WalletService: Invalid BTC rate:', btcRate);
+            throw new Error('Invalid BTC rate');
+          }
+
+          if (!validateNumber(pendingSent)) {
+            dbg('WalletService: Invalid pending amount:', pendingSent);
+            throw new Error('Invalid pending amount');
+          }
+
+          const now = Date.now();
+          if (!force && now - this.lastBalanceFetch < this.BALANCE_CACHE_TIME) {
+            dbg('WalletService: Using cached balance:', this.cachedBalance);
+            return this.cachedBalance;
+          }
+
+          // Add retry logic for UTXO fetch
+          let retries = 3;
+          let totalUTXO = null;
+          let lastError = null;
+
+          while (retries > 0) {
+            try {
+              dbg(
+                'WalletService: Fetching UTXO total from native module, attempt:',
+                4 - retries,
+              );
+              totalUTXO = await BBMTLibNativeModule.totalUTXO(address);
+              if (totalUTXO && validateNumber(totalUTXO)) {
+                break;
+              }
+            } catch (error) {
+              lastError = error;
+              dbg('WalletService: UTXO fetch attempt failed:', error);
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            retries--;
+          }
 
           if (!totalUTXO || !validateNumber(totalUTXO)) {
-            dbg('WalletService: Invalid UTXO total received:', totalUTXO);
+            dbg('WalletService: All UTXO fetch attempts failed:', lastError);
             const balance = {
               btc: '0.00000000',
               usd: '$0.00',
@@ -377,12 +721,30 @@ export class WalletService {
             return balance;
           }
 
+          dbg('WalletService: Raw UTXO total received:', totalUTXO);
+
+          // Convert satoshis to BTC
           const balance = Big(totalUTXO);
+          dbg('WalletService: Raw balance in satoshis:', balance.toString());
+
           const newBalance = balance.sub(pendingSent).div(1e8).toFixed(8);
+          dbg('WalletService: Balance after pending subtraction:', newBalance);
+
           const hasNonZeroBalance = Number(newBalance) > 0;
-          const usdAmount = btcRate
-            ? this.formatUSD(Big(balance).mul(btcRate).div(1e8).toNumber())
-            : '$0.00';
+          dbg('WalletService: Has non-zero balance:', hasNonZeroBalance);
+
+          // Calculate USD value using current price rate
+          let usdAmount = '$0.00';
+          if (btcRate > 0) {
+            const usdValue = Big(balance).mul(btcRate).div(1e8).toNumber();
+            dbg('WalletService: USD value calculation:', {
+              balance: balance.toString(),
+              btcRate,
+              usdValue,
+            });
+            usdAmount = this.formatUSD(usdValue);
+          }
+          dbg('WalletService: Final USD amount:', usdAmount);
 
           const result = {
             btc: newBalance,
@@ -412,7 +774,7 @@ export class WalletService {
 
   public async getTransactions(
     address: string,
-    baseApi: string,
+    baseApi: string = this.currentApiUrl,
     lastSeenTxId: string | null = null,
     retryCount: number = 0,
   ): Promise<{
@@ -420,6 +782,45 @@ export class WalletService {
     lastSeenTxId: string | null;
     hasMore: boolean;
   }> {
+    dbg('WalletService: Current network:', this.currentNetwork);
+
+    // Validate address format based on network
+    if (this.currentNetwork === 'testnet3') {
+      if (
+        !address.startsWith('m') &&
+        !address.startsWith('n') &&
+        !address.startsWith('2') &&
+        !address.startsWith('tb1')
+      ) {
+        dbg('WalletService: Invalid testnet address format:', address);
+        throw new Error('Invalid testnet address format');
+      }
+    } else {
+      if (
+        !address.startsWith('1') &&
+        !address.startsWith('3') &&
+        !address.startsWith('bc1')
+      ) {
+        dbg('WalletService: Invalid mainnet address format:', address);
+        throw new Error('Invalid mainnet address format');
+      }
+    }
+
+    if (address !== this.currentAddress) {
+      dbg(
+        'WalletService: Address changed from',
+        this.currentAddress,
+        'to',
+        address,
+      );
+      this.currentAddress = address;
+      await this.clearCache();
+    }
+
+    // Always use the current API URL
+    baseApi = this.currentApiUrl;
+    dbg('WalletService: Using current API URL:', baseApi);
+
     return this.debounceFetch(
       `transactions-${address}-${lastSeenTxId || 'initial'}`,
       async () => {
@@ -702,25 +1103,28 @@ export class WalletService {
   }
 
   public async clearTransactionCache(address: string) {
+    dbg('WalletService: Clearing transaction cache for address:', address);
     const cacheKeys = Object.keys(this.cachedTransactions).filter(key =>
       key.startsWith(`${address}-`),
     );
     cacheKeys.forEach(key => {
       delete this.cachedTransactions[key];
       delete this.lastTxFetch[key];
+      dbg('WalletService: Cleared cache for key:', key);
     });
     // Update persistent storage after clearing cache
     await this.saveCachedData();
+    dbg('WalletService: Transaction cache clear completed');
   }
 
   public async clearCache() {
-    dbg('WalletService: Clearing all caches and resetting state');
+    dbg('WalletService: Starting cache clear...');
     this.isInitialized = false;
     this.currentAddress = null;
     this.fetchInProgress = {};
     Object.values(this.fetchTimeout).forEach(timeout => clearTimeout(timeout));
     this.fetchTimeout = {};
-    
+
     // Clear all cached data
     this.lastPriceFetch = 0;
     this.lastBalanceFetch = 0;
@@ -738,6 +1142,7 @@ export class WalletService {
       usd: '$0.00',
       hasNonZeroBalance: false,
     };
+    dbg('WalletService: Cleared all in-memory caches');
 
     // Clear persistent storage
     try {
@@ -748,6 +1153,7 @@ export class WalletService {
     }
 
     // Reset the instance
+    dbg('WalletService: Creating new instance after cache clear');
     WalletService.instance = new WalletService();
     return WalletService.instance;
   }

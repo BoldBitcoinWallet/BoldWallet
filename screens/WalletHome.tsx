@@ -456,25 +456,55 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
   const fetchData = useCallback(
     async (force = false) => {
-      if (!wallet?.address || !wallet?.baseApi) {
-        return;
-      }
-
       try {
         setLoading(true);
         setError(null);
+
+        // Get current state from storage
+        const network =
+          (await EncryptedStorage.getItem('network')) || 'mainnet';
+        const addressType =
+          (await EncryptedStorage.getItem('addressType')) || 'legacy';
+        const address = await EncryptedStorage.getItem('currentAddress');
+
+        if (!address || !wallet?.baseApi) {
+          dbg('WalletHome: Missing wallet address or baseApi');
+          return;
+        }
+
+        dbg('WalletHome: Fetching data for address:', address);
+        dbg('WalletHome: Current network:', network);
+        dbg('WalletHome: Current address type:', addressType);
+
+        // Validate address format based on network
+        if (network === 'mainnet') {
+          if (
+            !address.startsWith('1') &&
+            !address.startsWith('3') &&
+            !address.startsWith('bc1')
+          ) {
+            dbg('WalletHome: Invalid mainnet address format:', address);
+            throw new Error('Invalid mainnet address format');
+          }
+        } else if (network === 'testnet3') {
+          if (
+            !address.startsWith('m') &&
+            !address.startsWith('n') &&
+            !address.startsWith('2') &&
+            !address.startsWith('tb1')
+          ) {
+            dbg('WalletHome: Invalid testnet address format:', address);
+            throw new Error('Invalid testnet address format');
+          }
+        }
 
         await waitMS();
         // First get cached data to show immediately
         const [cachedPrice, cachedBalance, cachedTransactions] =
           await Promise.all([
             walletService.getBitcoinPrice(),
-            walletService.getWalletBalance(
-              wallet.address,
-              btcRate,
-              pendingSent,
-            ),
-            walletService.getTransactions(wallet.address, wallet.baseApi),
+            walletService.getWalletBalance(address, btcRate, pendingSent),
+            walletService.getTransactions(address, wallet.baseApi),
           ]);
 
         // Update UI with cached data
@@ -486,7 +516,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setCacheTimestamps({
           price: walletService.getLastPriceFetch(),
           balance: walletService.getLastBalanceFetch(),
-          transactions: walletService.getLastTxFetch(wallet.address),
+          transactions: walletService.getLastTxFetch(address),
         });
 
         // If not forcing refresh, we're done
@@ -501,58 +531,38 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             await Promise.all([
               walletService.getBitcoinPrice(),
               walletService.getWalletBalance(
-                wallet.address,
+                address,
                 btcRate,
                 pendingSent,
                 true,
               ),
-              walletService.getTransactions(wallet.address, wallet.baseApi),
+              walletService.getTransactions(address, wallet.baseApi),
             ]);
 
-          // Only update UI if we got fresh data
-          if (freshTransactions.transactions.length > 0) {
-            setBtcPrice(freshPrice.price);
-            setBtcRate(freshPrice.rate);
-            setBalanceBTC(freshBalance.btc);
-            setBalanceUSD(freshBalance.usd);
-            setTransactions(freshTransactions.transactions);
-          }
-
+          // Update UI with fresh data
+          setBtcPrice(freshPrice.price);
+          setBtcRate(freshPrice.rate);
+          setBalanceBTC(freshBalance.btc);
+          setBalanceUSD(freshBalance.usd);
+          setTransactions(freshTransactions.transactions);
           setCacheTimestamps({
             price: walletService.getLastPriceFetch(),
             balance: walletService.getLastBalanceFetch(),
-            transactions: walletService.getLastTxFetch(wallet.address),
+            transactions: walletService.getLastTxFetch(address),
           });
-        } catch (refreshError: any) {
-          // Only show error if it's not a "canceled" error
-          if (refreshError.message !== 'canceled') {
-            setError(refreshError.message);
-            dbg('Error refreshing data:', refreshError);
-          }
-          // Keep using cached data
-          setCacheTimestamps({
-            price: walletService.getLastPriceFetch(),
-            balance: walletService.getLastBalanceFetch(),
-            transactions: walletService.getLastTxFetch(wallet.address),
-          });
+        } catch (error) {
+          dbg('WalletHome: Error fetching fresh data:', error);
+          showErrorToast('Failed to refresh data');
         }
-      } catch (error: any) {
-        // Only show error if it's not a "canceled" error
-        if (error.message !== 'canceled') {
-          setError(error.message);
-          dbg('Error fetching data:', error);
-        }
-        // Keep using cached data
-        setCacheTimestamps({
-          price: walletService.getLastPriceFetch(),
-          balance: walletService.getLastBalanceFetch(),
-          transactions: walletService.getLastTxFetch(wallet.address),
-        });
+      } catch (error) {
+        dbg('WalletHome: Error fetching data:', error);
+        setError(error instanceof Error ? error.message : 'Unknown error');
+        showErrorToast('Failed to fetch data');
       } finally {
         setLoading(false);
       }
     },
-    [wallet?.address, wallet?.baseApi, btcRate, pendingSent, walletService],
+    [wallet?.baseApi, btcRate, pendingSent, showErrorToast, walletService],
   );
 
   const handlePendingTransactions = useCallback(
@@ -659,7 +669,62 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
   }, [fetchData, showErrorToast, isInitialized]);
 
-  // Add effect to handle address type changes
+  const handleAddressTypeChange = async (type: string) => {
+    try {
+      dbg('WalletHome: Starting address type change to:', type);
+
+      // Close modal first
+      setIsAddressTypeModalVisible(false);
+
+      // Update storage and local state
+      await EncryptedStorage.setItem('addressType', type);
+      setAddressType(type);
+      dbg('WalletHome: Saved new address type to storage:', type);
+
+      // Clear wallet service cache before refresh
+      await walletService.clearCache();
+      dbg('WalletHome: Cleared wallet service cache');
+
+      // Update the address first
+      const jks = await EncryptedStorage.getItem('keyshare');
+      const ks = JSON.parse(jks || '{}');
+      const path = "m/44'/0'/0'/0/0";
+      const btcPub = await BBMTLibNativeModule.derivePubkey(
+        ks.pub_key,
+        ks.chain_code_hex,
+        path,
+      );
+
+      const network = (await EncryptedStorage.getItem('network')) || 'mainnet';
+      const newAddress = await BBMTLibNativeModule.btcAddress(
+        btcPub,
+        network,
+        type,
+      );
+
+      // Save new address to storage
+      await EncryptedStorage.setItem('currentAddress', newAddress);
+      setAddress(newAddress);
+      dbg('WalletHome: Updated address to:', newAddress);
+
+      // Refresh wallet context with new address
+      dbg('WalletHome: Refreshing wallet context...');
+      await wallet.refreshWallet();
+      dbg('WalletHome: Wallet context refreshed');
+
+      // Force refresh data with new address
+      dbg('WalletHome: Forcing data refresh...');
+      await fetchData(true);
+      dbg('WalletHome: Data refresh completed');
+
+      dbg('WalletHome: Address type change completed successfully');
+    } catch (error) {
+      dbg('WalletHome: Error changing address type:', error);
+      showErrorToast('Failed to change address type. Please try again.');
+    }
+  };
+
+  // Remove the separate useEffect for address type changes since we handle it in handleAddressTypeChange
   useEffect(() => {
     if (!isInitialized) {
       return;
@@ -667,35 +732,46 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
     const updateAddress = async () => {
       try {
+        dbg('WalletHome: Starting address update due to type change');
+        dbg('WalletHome: Current network:', network);
+        dbg('WalletHome: New address type:', addressType);
+
         setLoading(true);
         const jks = await EncryptedStorage.getItem('keyshare');
         const ks = JSON.parse(jks || '{}');
         const path = "m/44'/0'/0'/0/0";
+
+        dbg('WalletHome: Deriving public key...');
         const btcPub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,
           ks.chain_code_hex,
           path,
         );
+        dbg('WalletHome: Public key derived');
 
+        dbg('WalletHome: Generating new address...');
         const btcAddress = await BBMTLibNativeModule.btcAddress(
           btcPub,
           network,
           addressType,
         );
+        dbg('WalletHome: New address generated:', btcAddress);
 
         setAddress(btcAddress);
-        // Force refresh after address change
-        await fetchData(true);
+        dbg('WalletHome: Address state updated');
       } catch (error) {
-        dbg('Error updating address:', error);
+        dbg('WalletHome: Error updating address:', error);
         showErrorToast('Failed to update address. Please try again.');
       } finally {
         setLoading(false);
       }
     };
 
-    updateAddress();
-  }, [addressType, isInitialized, network, fetchData, showErrorToast]);
+    // Only update address if it's different from current
+    if (addressType && network) {
+      updateAddress();
+    }
+  }, [addressType, network, isInitialized, showErrorToast]);
 
   // Add effect to initialize app
   useEffect(() => {
@@ -889,13 +965,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 styles.addressTypeButton,
                 addressType === 'legacy' && styles.addressTypeButtonSelected,
               ]}
-              onPress={async () => {
-                setIsAddressTypeModalVisible(false);
-                await EncryptedStorage.setItem('addressType', 'legacy');
-                setAddressType('legacy');
-                // Force refresh after address type change
-                await fetchData(true);
-              }}>
+              onPress={() => handleAddressTypeChange('legacy')}>
               <Text style={styles.addressTypeLabel}>🧱 Legacy Address</Text>
               <Text style={styles.addressTypeValue}>
                 {shorten(legacyAddress)}
@@ -907,13 +977,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 addressType === 'segwit-native' &&
                   styles.addressTypeButtonSelected,
               ]}
-              onPress={async () => {
-                setIsAddressTypeModalVisible(false);
-                await EncryptedStorage.setItem('addressType', 'segwit-native');
-                setAddressType('segwit-native');
-                // Force refresh after address type change
-                await fetchData(true);
-              }}>
+              onPress={() => handleAddressTypeChange('segwit-native')}>
               <Text style={styles.addressTypeLabel}>
                 🧬 Segwit Native Address
               </Text>
@@ -927,16 +991,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 addressType === 'segwit-compatible' &&
                   styles.addressTypeButtonSelected,
               ]}
-              onPress={async () => {
-                setIsAddressTypeModalVisible(false);
-                await EncryptedStorage.setItem(
-                  'addressType',
-                  'segwit-compatible',
-                );
-                setAddressType('segwit-compatible');
-                // Force refresh after address type change
-                await fetchData(true);
-              }}>
+              onPress={() => handleAddressTypeChange('segwit-compatible')}>
               <Text style={styles.addressTypeLabel}>
                 🔁 Segwit Compatible Address
               </Text>
