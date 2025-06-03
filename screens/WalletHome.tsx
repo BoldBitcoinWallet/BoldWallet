@@ -1,4 +1,4 @@
-import React, {useEffect, useState, useCallback} from 'react';
+import React, {useEffect, useState, useCallback, useRef} from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Platform,
   PermissionsAndroid,
   Modal,
+  Animated,
 } from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import SendBitcoinModal from './SendBitcoinModal';
@@ -290,6 +291,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  shimmerContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 8,
+  },
+  shimmer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    transform: [{translateX: -100}],
+  },
+  disabled: {
+    opacity: 0.7,
+  },
   transactionListContainer: {
     flex: 1,
     marginBottom: 0,
@@ -300,27 +322,100 @@ const CacheIndicator: React.FC<{
   timestamps: CacheTimestamp;
   onRefresh: () => void;
   theme: any;
-}> = ({timestamps, onRefresh, theme}) => {
+  isRefreshing?: boolean;
+}> = ({timestamps, onRefresh, theme, isRefreshing = false}) => {
   const latestTimestamp = Math.max(
     timestamps.price,
     timestamps.balance,
     timestamps.transactions,
   );
+  const shimmerValue = useRef(new Animated.Value(-100)).current;
+  const [currentTime, setCurrentTime] = useState(Date.now());
+
+  useEffect(() => {
+    if (isRefreshing) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(shimmerValue, {
+            toValue: 100,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(shimmerValue, {
+            toValue: -100,
+            duration: 0,
+            useNativeDriver: true,
+          }),
+        ]),
+      ).start();
+    } else {
+      shimmerValue.setValue(-100);
+    }
+  }, [isRefreshing, shimmerValue]);
+
+  // Update current time based on time difference
+  useEffect(() => {
+    const timeDiff = currentTime - latestTimestamp;
+    const interval = timeDiff < 60000 ? 1000 : 60000; // 1 second if < 1 minute, else 1 minute
+
+    const timer = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, interval);
+
+    return () => clearInterval(timer);
+  }, [latestTimestamp, currentTime]);
 
   if (latestTimestamp === 0) {
     return null;
   }
 
-  const timeAgo = formatDistanceToNow(latestTimestamp, {addSuffix: true});
-  const isUsingCache = Date.now() - latestTimestamp > 60000; // More than 1 minute old
+  const getTimeAgo = (timestamp: number) => {
+    const diffInSeconds = Math.floor((currentTime - timestamp) / 1000);
+    
+    // Handle edge cases and very recent updates
+    if (diffInSeconds < 0) {
+      return 'Just updated';
+    }
+    
+    if (diffInSeconds < 5) {
+      return 'Just updated';
+    }
+    
+    if (diffInSeconds < 60) {
+      return `${diffInSeconds} seconds ago`;
+    }
+    
+    if (diffInSeconds < 120) {
+      return '1 minute ago';
+    }
+    
+    return formatDistanceToNow(timestamp, {addSuffix: true});
+  };
+
+  const timeAgo = getTimeAgo(latestTimestamp);
+  const isUsingCache = currentTime - latestTimestamp > 60000; // More than 1 minute old
 
   return (
     <TouchableOpacity
       style={[
         styles.cacheIndicator,
         {backgroundColor: theme.colors.cardBackground},
+        isRefreshing && styles.disabled,
       ]}
-      onPress={onRefresh}>
+      onPress={onRefresh}
+      disabled={isRefreshing}>
+      {isRefreshing && (
+        <View style={styles.shimmerContainer}>
+          <Animated.View
+            style={[
+              styles.shimmer,
+              {
+                transform: [{translateX: shimmerValue}],
+              },
+            ]}
+          />
+        </View>
+      )}
       <Text style={[styles.cacheText, {color: theme.colors.textSecondary}]}>
         {isUsingCache ? (
           <>
@@ -332,7 +427,11 @@ const CacheIndicator: React.FC<{
         )}
       </Text>
       <Text style={[styles.refreshText, {color: theme.colors.accent}]}>
-        {isUsingCache ? 'Tap to refresh data' : 'Tap to refresh'}
+        {isRefreshing
+          ? 'Refreshing...'
+          : isUsingCache
+          ? 'Tap to refresh data'
+          : 'Tap to refresh'}
       </Text>
     </TouchableOpacity>
   );
@@ -367,6 +466,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     balance: 0,
     transactions: 0,
   });
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const {theme} = useTheme();
   const walletService = WalletService.getInstance();
@@ -472,6 +572,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           setLoading(true);
         }
         setError(null);
+        setIsRefreshing(true);
 
         // Get current state from storage
         const net = (await EncryptedStorage.getItem('network')) || 'mainnet';
@@ -576,9 +677,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         }
       } finally {
         setLoading(false);
+        setIsRefreshing(false);
       }
     },
-    [wallet?.baseApi, btcRate, pendingSent, showErrorToast, walletService, isInitialized],
+    [wallet?.baseApi, btcRate, pendingSent, showErrorToast, walletService, isInitialized, btcPrice, balanceBTC],
   );
 
   const handlePendingTransactions = useCallback(
@@ -731,7 +833,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
   };
 
-  // Update last updated timestamp every minute
+  // Remove the old interval effect since we're handling it in CacheIndicator now
   useEffect(() => {
     if (!isInitialized || !address) {
       return;
@@ -739,18 +841,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
     // Initial data fetch
     fetchData(true);
-
-    // Update UI timestamp every minute
-    const intervalId = setInterval(() => {
-      setCacheTimestamps(prev => ({
-        ...prev,
-        price: Date.now(),
-        balance: Date.now(),
-        transactions: Date.now(),
-      }));
-    }, 60000);
-
-    return () => clearInterval(intervalId);
   }, [isInitialized, address, fetchData]);
 
   const handleBlurred = () => {
@@ -863,6 +953,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             timestamps={cacheTimestamps}
             onRefresh={() => fetchData(true)}
             theme={theme}
+            isRefreshing={isRefreshing}
           />
           <View style={styles.transactionListContainer}>
             <TransactionList
