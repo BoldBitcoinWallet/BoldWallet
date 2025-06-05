@@ -133,30 +133,25 @@ const ReceiveModal: React.FC<{
       resizeMode: 'contain',
     },
     closeButton: {
-      padding: 8,
+      position: 'relative',
       borderRadius: 20,
       backgroundColor: theme.colors.background,
       marginLeft: 8,
-      width: 36,
-      height: 36,
-      justifyContent: 'center',
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      elevation: 2,
-      shadowColor: theme.colors.shadowColor,
-      shadowOffset: {width: 0, height: 1},
-      shadowOpacity: 0.2,
-      shadowRadius: 1.41,
+      width: 30,
+      height: 30,
+      elevation: 1,
+      padding: 0,
     },
     closeButtonText: {
       fontSize: 16,
       color: theme.colors.text,
-      textAlign: 'center',
       fontWeight: '600',
+      textAlign: 'center',
+      verticalAlign: 'middle',
+      lineHeight: 30,
     },
     networkBadge: {
-      backgroundColor: theme.colors.primary,
+      backgroundColor: theme.colors.secondary,
       paddingHorizontal: 12,
       paddingVertical: 6,
       borderRadius: 12,
@@ -273,7 +268,7 @@ const ReceiveModal: React.FC<{
 
           <View style={styles.networkBadge}>
             <Text style={styles.networkText}>
-              {network === 'mainnet' ? 'Mainnet' : 'Testnet'}
+              {network === 'mainnet' ? '🌐 Mainnet' : '🔨 Testnet'}
             </Text>
           </View>
 
