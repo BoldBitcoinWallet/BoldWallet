@@ -94,63 +94,104 @@ const styles = StyleSheet.create({
     backgroundColor: themes.lightPolished.colors.background,
   },
   contentContainer: {
-    paddingTop: 16,
+    paddingTop: 12,
     paddingLeft: 16,
     paddingRight: 16,
     paddingBottom: 0,
   },
   walletHeader: {
-    padding: 16,
+    padding: 12,
     backgroundColor: themes.lightPolished.colors.primary,
-    borderRadius: 8,
+    borderRadius: 12,
     alignItems: 'center',
     marginBottom: 0,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     width: '100%',
+    marginBottom: 8,
   },
   btcLogo: {
-    width: 40,
-    height: 40,
+    width: 32,
+    height: 32,
     resizeMode: 'contain',
   },
   priceContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
   },
   btcPrice: {
-    fontSize: 16,
-    fontWeight: '500',
+    fontSize: 14,
+    fontWeight: '600',
     color: themes.lightPolished.colors.white,
     marginRight: 6,
   },
   currencyBadge: {
-    fontSize: 13,
-    fontWeight: '500',
+    fontSize: 12,
+    fontWeight: '600',
     color: themes.lightPolished.colors.white,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
+  },
+  balanceContainer: {
+    alignItems: 'center',
+    width: '100%',
+    paddingVertical: 4,
+    marginBottom: 4,
+  },
+  balanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 32,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    width: '100%',
+    justifyContent: 'center',
   },
   balanceBTC: {
     fontSize: 24,
     fontWeight: 'bold',
     color: themes.lightPolished.colors.white,
-    marginTop: 16,
-    marginBottom: 4,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   balanceFiat: {
     fontSize: 16,
-    color: themes.lightPolished.colors.background,
-    marginBottom: 16,
+    color: themes.lightPolished.colors.white,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  balanceIcon: {
+    width: 18,
+    height: 18,
+    tintColor: themes.lightPolished.colors.white,
+    opacity: 0.9,
+  },
+  blurredText: {
+    opacity: 0.7,
+    letterSpacing: 2,
+  },
+  balanceHint: {
+    fontSize: 10,
+    color: themes.lightPolished.colors.textOnPrimary,
+    opacity: 0.7,
+    marginTop: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   qrContainer: {
     padding: 8,
@@ -174,8 +215,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     width: '100%',
-    paddingHorizontal: 8,
     marginTop: 8,
+    paddingHorizontal: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    borderRadius: 8,
+    padding: 8,
   },
   partyLeft: {
     flex: 1,
@@ -198,23 +242,42 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: themes.lightPolished.colors.textOnPrimary,
     fontWeight: '500',
+    opacity: 0.9,
+  },
+  partyLabel: {
+    fontSize: 10,
+    color: themes.lightPolished.colors.textOnPrimary,
+    opacity: 0.7,
+    marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  partyValue: {
+    fontSize: 12,
+    color: themes.lightPolished.colors.textOnPrimary,
+    fontWeight: '600',
   },
   actions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 16,
+    marginTop: 8,
     width: '100%',
+    gap: 6,
   },
   actionButton: {
-    paddingVertical: 12,
-    marginBottom: 4,
-    marginHorizontal: 8,
+    paddingVertical: 8,
+    marginBottom: 0,
+    marginHorizontal: 4,
     borderRadius: 8,
     alignItems: 'center',
   },
   sendButton: {
     flex: 1,
     backgroundColor: themes.lightPolished.colors.accent,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
   settingsButton: {
     width: 50,
@@ -222,11 +285,30 @@ const styles = StyleSheet.create({
   },
   addressTypeModalButton: {
     width: 50,
-    backgroundColor: themes.lightPolished.colors.cardBackground,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  addressTypeButtonText: {
+    color: themes.lightPolished.colors.textOnPrimary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  addressTypeButtonIcon: {
+    width: 20,
+    height: 20,
+    tintColor: themes.lightPolished.colors.textOnPrimary,
+    opacity: 0.9,
   },
   receiveButton: {
     flex: 1,
     backgroundColor: themes.lightPolished.colors.secondary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
   modalOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -250,11 +332,8 @@ const styles = StyleSheet.create({
   },
   actionButtonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-  },
-  blurredText: {
-    opacity: 0.6,
   },
   addressTypeButton: {
     backgroundColor: themes.lightPolished.colors.cardBackground,
@@ -264,6 +343,9 @@ const styles = StyleSheet.create({
     width: '100%',
     borderWidth: 1,
     borderColor: themes.lightPolished.colors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   addressTypeButtonSelected: {
     borderColor: themes.lightPolished.colors.accent,
@@ -281,6 +363,21 @@ const styles = StyleSheet.create({
     color: themes.lightPolished.colors.textSecondary,
     textAlign: 'left',
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  addressTypeIcon: {
+    width: 16,
+    height: 16,
+    tintColor: themes.lightPolished.colors.white,
+    opacity: 0.9,
+  },
+  modalAddressTypeIcon: {
+    width: 24,
+    height: 24,
+    tintColor: themes.lightPolished.colors.text,
+    opacity: 0.9,
+  },
+  addressTypeContent: {
+    flex: 1,
   },
   modalTitle: {
     fontSize: 20,
@@ -305,17 +402,29 @@ const styles = StyleSheet.create({
     shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.1,
     shadowRadius: 1,
-  },
-  cacheText: {
-    fontSize: 14,
-    marginBottom: 0,
-    marginTop: 0,
-    textAlign: 'right',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.05)',
   },
   refreshText: {
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'left',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  refreshIcon: {
+    width: 16,
+    height: 16,
+    tintColor: themes.lightPolished.colors.accent,
+    opacity: 0.9,
+  },
+  cacheText: {
+    fontSize: 13,
+    marginBottom: 0,
+    marginTop: 0,
+    textAlign: 'right',
+    opacity: 0.7,
   },
   shimmerContainer: {
     position: 'absolute',
@@ -323,8 +432,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(0, 0, 0, 0.02)',
     borderRadius: 8,
+    overflow: 'hidden',
   },
   shimmer: {
     position: 'absolute',
@@ -332,7 +442,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(0, 0, 0, 0.04)',
     transform: [{translateX: -100}],
   },
   disabled: {
@@ -341,6 +451,51 @@ const styles = StyleSheet.create({
   transactionListContainer: {
     flex: 1,
     marginBottom: 0,
+    padding: 16,
+    paddingTop: 0,
+    backgroundColor: themes.lightPolished.colors.background,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 0,
+    paddingVertical: 12,
+    marginBottom: 4,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: themes.lightPolished.colors.text,
+    opacity: 0.9,
+  },
+  sectionSubtitle: {
+    fontSize: 13,
+    color: themes.lightPolished.colors.textSecondary,
+  },
+  emptyStateContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    marginTop: 20,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: themes.lightPolished.colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  emptyStateIcon: {
+    width: 48,
+    height: 48,
+    opacity: 0.5,
+    marginBottom: 8,
+  },
+  actionButtonIcon: {
+    width: 18,
+    height: 18,
+    tintColor: '#fff',
   },
 });
 
@@ -468,7 +623,11 @@ const CacheIndicator: React.FC<{
     <TouchableOpacity
       style={[
         styles.cacheIndicator,
-        {backgroundColor: theme.colors.cardBackground},
+        {
+          backgroundColor: isRefreshing
+            ? theme.colors.cardBackground
+            : theme.colors.background,
+        },
         isRefreshing && styles.disabled,
       ]}
       onPress={onRefresh}
@@ -485,13 +644,28 @@ const CacheIndicator: React.FC<{
           />
         </View>
       )}
-      <Text style={[styles.refreshText, {color: theme.colors.accent}]}>
-        {isRefreshing
-          ? '🔄 Refreshing...'
-          : isUsingCache
-          ? '🔄 Tap to refresh data'
-          : '🔄 Tap to refresh'}
-      </Text>
+      <View style={styles.refreshText}>
+        <Image
+          source={require('../assets/refresh-icon.png')}
+          style={[
+            styles.refreshIcon,
+            isRefreshing && {transform: [{rotate: '45deg'}]},
+          ]}
+          resizeMode="contain"
+        />
+        <Text
+          style={{
+            color: isRefreshing
+              ? theme.colors.textSecondary
+              : theme.colors.accent,
+          }}>
+          {isRefreshing
+            ? 'Refreshing...'
+            : isUsingCache
+            ? 'Tap to refresh data'
+            : 'Tap to refresh'}
+        </Text>
+      </View>
       {!isRefreshing && (
         <Text style={[styles.cacheText, {color: theme.colors.textSecondary}]}>
           {isUsingCache ? (
@@ -555,13 +729,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     () => <HeaderRightButton navigation={navigation} />,
     [navigation],
   );
-
-  const addressEmoji = () =>
-    addressType === 'legacy'
-      ? '🧱'
-      : addressType === 'segwit-native'
-      ? '🧬'
-      : '♻️';
 
   const networkEmoji = () => (network === 'mainnet' ? '🌐' : '🔨');
 
@@ -959,6 +1126,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
   };
 
+  const getAddressTypeIcon = () => {
+    switch (addressType) {
+      case 'legacy':
+        return require('../assets/bricks-icon.png');
+      case 'segwit-native':
+        return require('../assets/dna-icon.png');
+      case 'segwit-compatible':
+        return require('../assets/recycle-icon.png');
+      default:
+        return require('../assets/bricks-icon.png');
+    }
+  };
+
   if (loading && !isInitialized) {
     return <WalletSkeleton />;
   }
@@ -981,68 +1161,112 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               <Text style={styles.currencyBadge}>{selectedCurrency}</Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={handleBlurred}>
-            <Text style={[styles.balanceBTC, isBlurred && styles.blurredText]}>
-              {isBlurred
-                ? '* * * * * * 🔓'
-                : `${balanceBTC || '0.00000000'} BTC 🔒`}
-            </Text>
-          </TouchableOpacity>
-          {btcRate > 0 && (
-            <TouchableOpacity onPress={handleBlurred}>
+          <View style={styles.balanceContainer}>
+            <TouchableOpacity
+              style={styles.balanceRow}
+              onPress={handleBlurred}
+              activeOpacity={0.7}>
               <Text
-                style={[styles.balanceFiat, isBlurred && styles.blurredText]}>
+                style={[styles.balanceBTC, isBlurred && styles.blurredText]}>
                 {isBlurred
-                  ? '* * *'
-                  : `${getCurrencySymbol(selectedCurrency)}${presentFiat(
-                      balanceFiat,
-                    )}`}
+                  ? '* * * * * *'
+                  : `${balanceBTC || '0.00000000'} BTC`}
               </Text>
+              <Image
+                source={
+                  isBlurred
+                    ? require('../assets/eye-off-icon.png')
+                    : require('../assets/eye-on-icon.png')
+                }
+                style={styles.balanceIcon}
+                resizeMode="contain"
+              />
             </TouchableOpacity>
-          )}
+            {btcRate > 0 && (
+              <TouchableOpacity
+                style={[styles.balanceRow, {marginTop: 4}]}
+                onPress={handleBlurred}
+                activeOpacity={0.7}>
+                <Text
+                  style={[styles.balanceFiat, isBlurred && styles.blurredText]}>
+                  {isBlurred
+                    ? '* * *'
+                    : `${getCurrencySymbol(selectedCurrency)}${presentFiat(
+                        balanceFiat,
+                      )}`}
+                </Text>
+              </TouchableOpacity>
+            )}
+            <Text style={styles.balanceHint}>
+              {isBlurred ? 'Tap to reveal balance' : 'Tap to hide balance'}
+            </Text>
+          </View>
           <View style={styles.partyContainer}>
             <View style={styles.partyLeft}>
+              <Text style={styles.partyLabel}>Keyshare Party</Text>
               <Text
-                style={styles.partyText}
+                style={styles.partyValue}
                 numberOfLines={1}
                 adjustsFontSizeToFit>
                 🗝 {capitalizeWords(party)}
               </Text>
             </View>
             <View style={styles.partyCenter}>
+              <Text style={styles.partyLabel}>Network</Text>
               <Text
-                style={styles.partyText}
+                style={styles.partyValue}
                 numberOfLines={1}
                 adjustsFontSizeToFit>
                 {networkEmoji()} {capitalizeWords(network)}
               </Text>
             </View>
             <View style={styles.partyRight}>
-              <Text
-                style={styles.partyText}
-                numberOfLines={1}
-                adjustsFontSizeToFit>
-                {addressEmoji()}{' '}
-                {addressType === 'segwit-compatible'
-                  ? 'Segwit Compatible'
-                  : capitalizeWords(addressType)}
-              </Text>
+              <Text style={styles.partyLabel}>Address Type</Text>
+              <View style={styles.balanceRow}>
+                <Image
+                  source={getAddressTypeIcon()}
+                  style={styles.addressTypeIcon}
+                  resizeMode="contain"
+                />
+                <Text
+                  style={styles.partyValue}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit>
+                  {addressType === 'segwit-compatible'
+                    ? 'Segwit Compatible'
+                    : capitalizeWords(addressType)}
+                </Text>
+              </View>
             </View>
           </View>
           <View style={styles.actions}>
             <TouchableOpacity
               style={[styles.actionButton, styles.sendButton]}
               onPress={() => setIsSendModalVisible(true)}>
+              <Image
+                source={require('../assets/send-icon.png')}
+                style={styles.actionButtonIcon}
+                resizeMode="contain"
+              />
               <Text style={styles.actionButtonText}>Send</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.actionButton, styles.addressTypeModalButton]}
               onPress={() => setIsAddressTypeModalVisible(true)}>
-              <Text>{addressEmoji()}</Text>
+              <Image
+                source={getAddressTypeIcon()}
+                style={styles.addressTypeButtonIcon}
+                resizeMode="contain"
+              />
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.actionButton, styles.receiveButton]}
               onPress={() => setIsReceiveModalVisible(true)}>
+              <Image
+                source={require('../assets/receive-icon.png')}
+                style={styles.actionButtonIcon}
+                resizeMode="contain"
+              />
               <Text style={styles.actionButtonText}>Receive</Text>
             </TouchableOpacity>
           </View>
@@ -1057,6 +1281,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             isRefreshing={isRefreshing}
           />
           <View style={styles.transactionListContainer}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Recent Transactions</Text>
+            </View>
             <TransactionList
               baseApi={apiBase}
               address={address}
@@ -1086,10 +1313,17 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 addressType === 'legacy' && styles.addressTypeButtonSelected,
               ]}
               onPress={() => handleAddressTypeChange('legacy')}>
-              <Text style={styles.addressTypeLabel}>🧱 Legacy Address</Text>
-              <Text style={styles.addressTypeValue}>
-                {shorten(legacyAddress)}
-              </Text>
+              <Image
+                source={require('../assets/bricks-icon.png')}
+                style={styles.modalAddressTypeIcon}
+                resizeMode="contain"
+              />
+              <View style={styles.addressTypeContent}>
+                <Text style={styles.addressTypeLabel}>Legacy Address</Text>
+                <Text style={styles.addressTypeValue}>
+                  {shorten(legacyAddress)}
+                </Text>
+              </View>
             </TouchableOpacity>
             <TouchableOpacity
               style={[
@@ -1098,12 +1332,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   styles.addressTypeButtonSelected,
               ]}
               onPress={() => handleAddressTypeChange('segwit-native')}>
-              <Text style={styles.addressTypeLabel}>
-                🧬 Segwit Native Address
-              </Text>
-              <Text style={styles.addressTypeValue}>
-                {shorten(segwitAddress)}
-              </Text>
+              <Image
+                source={require('../assets/dna-icon.png')}
+                style={styles.modalAddressTypeIcon}
+                resizeMode="contain"
+              />
+              <View style={styles.addressTypeContent}>
+                <Text style={styles.addressTypeLabel}>
+                  Segwit Native Address
+                </Text>
+                <Text style={styles.addressTypeValue}>
+                  {shorten(segwitAddress)}
+                </Text>
+              </View>
             </TouchableOpacity>
             <TouchableOpacity
               style={[
@@ -1112,12 +1353,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   styles.addressTypeButtonSelected,
               ]}
               onPress={() => handleAddressTypeChange('segwit-compatible')}>
-              <Text style={styles.addressTypeLabel}>
-                🔁 Segwit Compatible Address
-              </Text>
-              <Text style={styles.addressTypeValue}>
-                {shorten(segwitCompatibleAddress)}
-              </Text>
+              <Image
+                source={require('../assets/recycle-icon.png')}
+                style={styles.modalAddressTypeIcon}
+                resizeMode="contain"
+              />
+              <View style={styles.addressTypeContent}>
+                <Text style={styles.addressTypeLabel}>
+                  Segwit Compatible Address
+                </Text>
+                <Text style={styles.addressTypeValue}>
+                  {shorten(segwitCompatibleAddress)}
+                </Text>
+              </View>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -1146,7 +1394,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           addressType={addressType}
           baseApi={apiBase}
           network={network}
-          visible={isReceiveModalVisible}
           onClose={() => setIsReceiveModalVisible(false)}
         />
       )}

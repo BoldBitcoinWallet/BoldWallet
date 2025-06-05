@@ -9,6 +9,7 @@ import {
   RefreshControl,
   Linking,
   Platform,
+  TouchableOpacity,
 } from 'react-native';
 import axios from 'axios';
 import Toast from 'react-native-toast-message';
@@ -19,6 +20,7 @@ import {useTheme} from '@react-navigation/native';
 import {themes} from '../theme';
 import TransactionListSkeleton from './TransactionListSkeleton';
 import {WalletService} from '../services/WalletService';
+import TransactionDetailsModal from './TransactionDetailsModal';
 
 interface TransactionListProps {
   address: string;
@@ -48,6 +50,8 @@ const TransactionList: React.FC<TransactionListProps> = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasMoreTransactions, setHasMoreTransactions] = useState(true);
   const isFetching = useRef(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
+  const [isDetailsModalVisible, setIsDetailsModalVisible] = useState(false);
 
   const {colors} = useTheme();
 
@@ -530,25 +534,27 @@ const TransactionList: React.FC<TransactionListProps> = ({
   const styles = StyleSheet.create({
     container: {
       flex: 1,
-      paddingLeft: 16,
-      paddingRight: 16,
+      paddingLeft: 0,
+      paddingRight: 0,
     },
     transactionItem: {
-      padding: 16,
-      margin: 4,
+      padding: 12,
+      marginVertical: 4,
       backgroundColor: colors.card,
-      borderRadius: 12,
-      elevation: 3,
+      borderRadius: 10,
+      elevation: 1,
       shadowColor: '#000',
-      shadowOffset: {width: 0, height: 2},
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
+      shadowOffset: {width: 0, height: 1},
+      shadowOpacity: 0.05,
+      shadowRadius: 1,
+      borderWidth: 1,
+      borderColor: 'rgba(0, 0, 0, 0.05)',
     },
     transactionRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      marginVertical: 4,
+      marginVertical: 2,
     },
     endOfListText: {
       textAlign: 'center',
@@ -557,50 +563,54 @@ const TransactionList: React.FC<TransactionListProps> = ({
       padding: 10,
     },
     status: {
-      fontSize: 16,
+      fontSize: 15,
       fontWeight: '600',
       color: colors.text,
+      opacity: 0.9,
     },
     amount: {
-      fontSize: 18,
+      fontSize: 17,
       fontWeight: '700',
       color: colors.text,
       fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      opacity: 0.95,
     },
     fiatAmount: {
-      fontSize: 14,
+      fontSize: 13,
       color: colors.text,
-      opacity: 0.7,
+      opacity: 0.6,
       fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     },
     address: {
-      fontSize: 14,
+      fontSize: 13,
       color: colors.text,
-      opacity: 0.7,
+      opacity: 0.6,
       flex: 1,
       marginRight: 8,
       fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     },
     addressLink: {
-      color: colors.text,
-      textDecorationLine: 'underline',
+      color: colors.primary,
+      textDecorationLine: 'none',
       fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      opacity: 0.9,
     },
     txId: {
-      fontSize: 13,
+      fontSize: 12,
       color: colors.text,
-      opacity: 0.6,
+      opacity: 0.5,
       fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     },
     timestamp: {
-      fontSize: 13,
+      fontSize: 12,
       color: colors.text,
-      opacity: 0.6,
+      opacity: 0.5,
     },
     txLink: {
-      color: colors.text,
-      textDecorationLine: 'underline',
+      color: colors.primary,
+      textDecorationLine: 'none',
       fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      opacity: 0.9,
     },
     emptyContainer: {
       flex: 1,
@@ -609,15 +619,20 @@ const TransactionList: React.FC<TransactionListProps> = ({
       padding: 20,
     },
     emptyText: {
-      fontSize: 16,
+      fontSize: 15,
       color: colors.text,
       textAlign: 'center',
+      opacity: 0.7,
     },
     addressRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      marginVertical: 4,
+      marginVertical: 2,
+    },
+    statusContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
     },
   });
 
@@ -643,7 +658,19 @@ const TransactionList: React.FC<TransactionListProps> = ({
 
       const shortTxId = `${item.txid.slice(0, 4)}...${item.txid.slice(-4)}`;
       const baseUrl = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
-      const explorerLink = `${baseUrl}/tx/${item.txid}`;
+
+      // Get the relevant address based on transaction type
+      const relevantAddress = status.includes('Sen')
+        ? item?.vout?.find(
+            (output: any) => output.scriptpubkey_address !== address,
+          )?.scriptpubkey_address
+        : item?.vin?.find(
+            (input: any) => input.prevout.scriptpubkey_address !== address,
+          )?.prevout?.scriptpubkey_address;
+
+      const addressExplorerLink = relevantAddress
+        ? `${baseUrl}/address/${relevantAddress}`
+        : '';
 
       // Format BTC amount with proper precision and grouping
       const formatBtcAmount = (amount: number) => {
@@ -664,23 +691,6 @@ const TransactionList: React.FC<TransactionListProps> = ({
         info = `+${formatBtcAmount(received)} BTC`;
       }
 
-      // Get the relevant address based on transaction type
-      const relevantAddress = status.includes('Sen')
-        ? item?.vout?.find(
-            (output: any) => output.scriptpubkey_address !== address,
-          )?.scriptpubkey_address
-        : item?.vin?.find(
-            (input: any) => input.prevout.scriptpubkey_address !== address,
-          )?.prevout?.scriptpubkey_address;
-
-      const shortAddress = relevantAddress
-        ? `${relevantAddress.slice(0, 6)}...${relevantAddress.slice(-4)}`
-        : '';
-
-      const addressExplorerLink = relevantAddress
-        ? `${baseUrl}/address/${relevantAddress}`
-        : '';
-
       // Calculate amount in selected currency with proper formatting
       const getFiatAmount = (btcAmount: number) => {
         if (!btcRate || btcRate <= 0) {
@@ -695,7 +705,13 @@ const TransactionList: React.FC<TransactionListProps> = ({
         : getFiatAmount(received);
 
       return (
-        <View style={styles.transactionItem}>
+        <TouchableOpacity
+          style={styles.transactionItem}
+          activeOpacity={0.7}
+          onPress={() => {
+            setSelectedTransaction(item);
+            setIsDetailsModalVisible(true);
+          }}>
           <View style={styles.transactionRow}>
             <Text style={styles.status}>{finalStatus}</Text>
             <Text
@@ -713,12 +729,12 @@ const TransactionList: React.FC<TransactionListProps> = ({
               <Text style={styles.address}>
                 {status.includes('Sen') ? 'To: ' : 'From: '}
                 <Text
-                  style={[styles.addressLink, {color: colors.text}]}
+                  style={styles.addressLink}
                   onPress={() => {
                     dbg('Opening address explorer:', addressExplorerLink);
                     Linking.openURL(addressExplorerLink);
                   }}>
-                  {shortAddress}
+                  {relevantAddress.slice(0, 6)}...{relevantAddress.slice(-4)}
                 </Text>
               </Text>
               <Text style={styles.fiatAmount}>
@@ -730,18 +746,11 @@ const TransactionList: React.FC<TransactionListProps> = ({
           <View style={styles.transactionRow}>
             <Text style={styles.txId}>
               🔗
-              <Text
-                style={[styles.txLink, {color: colors.text}]}
-                onPress={() => {
-                  dbg('Opening transaction explorer:', explorerLink);
-                  Linking.openURL(explorerLink);
-                }}>
-                0x{shortTxId}
-              </Text>
+              <Text style={styles.txLink}>0x{shortTxId}</Text>
             </Text>
             <Text style={styles.timestamp}>{timestamp}</Text>
           </View>
-        </View>
+        </TouchableOpacity>
       );
     },
     [
@@ -750,7 +759,6 @@ const TransactionList: React.FC<TransactionListProps> = ({
       address,
       baseApi,
       styles,
-      colors.text,
       selectedCurrency,
       btcRate,
       getCurrencySymbol,
@@ -786,6 +794,24 @@ const TransactionList: React.FC<TransactionListProps> = ({
         }
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
+        }
+      />
+      <TransactionDetailsModal
+        visible={isDetailsModalVisible}
+        onClose={() => setIsDetailsModalVisible(false)}
+        transaction={selectedTransaction}
+        baseApi={baseApi}
+        selectedCurrency={selectedCurrency}
+        btcRate={btcRate}
+        getCurrencySymbol={getCurrencySymbol}
+        address={address}
+        status={
+          selectedTransaction ? getTransactionStatus(selectedTransaction) : null
+        }
+        amounts={
+          selectedTransaction
+            ? getTransactionAmounts(selectedTransaction, address)
+            : null
         }
       />
       <Toast config={{}} />

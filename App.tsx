@@ -226,52 +226,54 @@ const App = () => {
   }
 
   return (
-    <ThemeProvider>
-      <WalletProvider>
-        <NavigationContainer>
-          <Stack.Navigator
-            screenOptions={{
-              headerShown: false,
-            }}>
-            {!isAuthenticated ? (
-              <Stack.Screen name="Loading" component={LoadingScreen} />
-            ) : (
-              <>
-                <Stack.Screen
-                  name="Bold Home"
-                  component={WalletHome}
-                  options={{
-                    headerShown: true,
-                    headerLeft: () => null,
-                  }}
-                />
-                <Stack.Screen
-                  name="Settings"
-                  component={WalletSettings}
-                  options={{
-                    headerShown: true,
-                  }}
-                />
-                <Stack.Screen
-                  name="Showcase"
-                  component={ShowcaseScreen}
-                  options={{
-                    headerShown: true,
-                  }}
-                />
-                <Stack.Screen
-                  name="📱📱 Pairing"
-                  component={MobilesPairing}
-                  options={{
-                    headerShown: true,
-                  }}
-                />
-              </>
-            )}
-          </Stack.Navigator>
-        </NavigationContainer>
-      </WalletProvider>
-    </ThemeProvider>
+    <>
+      <ThemeProvider>
+        <WalletProvider>
+          <NavigationContainer>
+            <Stack.Navigator
+              screenOptions={{
+                headerShown: false,
+              }}>
+              {!isAuthenticated ? (
+                <Stack.Screen name="Loading" component={LoadingScreen} />
+              ) : (
+                <>
+                  <Stack.Screen
+                    name="Bold Home"
+                    component={WalletHome}
+                    options={{
+                      headerShown: true,
+                      headerLeft: () => null,
+                    }}
+                  />
+                  <Stack.Screen
+                    name="Settings"
+                    component={WalletSettings}
+                    options={{
+                      headerShown: true,
+                    }}
+                  />
+                  <Stack.Screen
+                    name="Showcase"
+                    component={ShowcaseScreen}
+                    options={{
+                      headerShown: true,
+                    }}
+                  />
+                  <Stack.Screen
+                    name="📱📱 Pairing"
+                    component={MobilesPairing}
+                    options={{
+                      headerShown: true,
+                    }}
+                  />
+                </>
+              )}
+            </Stack.Navigator>
+          </NavigationContainer>
+        </WalletProvider>
+      </ThemeProvider>
+    </>
   );
 };
 

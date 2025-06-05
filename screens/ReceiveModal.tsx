@@ -1,4 +1,4 @@
-import React, {useCallback, useRef} from 'react';
+import React, {useCallback, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,6 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import Toast from 'react-native-toast-message';
 import QRCode from 'react-native-qrcode-svg';
 import Clipboard from '@react-native-clipboard/clipboard';
 import Share from 'react-native-share';
@@ -20,24 +19,22 @@ import {useTheme} from '../theme';
 import {capitalize} from 'lodash';
 
 const ReceiveModal: React.FC<{
-  visible: boolean;
   address: string;
   addressType: string;
   baseApi: string;
   network: string;
   onClose: () => void;
-}> = ({visible, address, addressType, baseApi, network, onClose}) => {
+}> = ({address, addressType, baseApi, network, onClose}) => {
   const qrRef = useRef<any>(null);
   const {theme} = useTheme();
+  const [isCopied, setIsCopied] = useState(false);
 
   const copyToClipboard = useCallback(() => {
-    Toast.show({
-      type: 'success',
-      text1: 'Address Copied to Clipboard',
-      position: 'top',
-      visibilityTime: 325,
-    });
     Clipboard.setString(address);
+    setIsCopied(true);
+    setTimeout(() => {
+      setIsCopied(false);
+    }, 350);
   }, [address]);
 
   const shareQRCode = useCallback(async () => {
@@ -148,14 +145,14 @@ const ReceiveModal: React.FC<{
       lineHeight: 30,
     },
     networkBadge: {
-      backgroundColor: theme.colors.modalBackdrop,
+      backgroundColor: theme.colors.disabled,
       paddingHorizontal: 12,
       paddingVertical: 6,
-      borderRadius: 12,
+      borderRadius: 8,
       marginBottom: 20,
     },
     networkText: {
-      color: theme.colors.textOnPrimary,
+      color: theme.colors.primary,
       fontSize: 14,
       fontWeight: '600',
     },
@@ -188,6 +185,7 @@ const ReceiveModal: React.FC<{
       borderWidth: 1,
       borderColor: theme.colors.border,
       marginBottom: 16,
+      position: 'relative',
     },
     addressTextContainer: {
       flexDirection: 'row',
@@ -201,6 +199,24 @@ const ReceiveModal: React.FC<{
       fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
       textDecorationLine: 'underline',
       textDecorationColor: theme.colors.primary,
+    },
+    copyFeedback: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: theme.colors.secondary + '99',
+      borderRadius: 8,
+      justifyContent: 'center',
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 8,
+    },
+    copyFeedbackText: {
+      color: theme.colors.primary,
+      fontSize: 15,
+      fontWeight: '600',
     },
     addressHint: {
       fontSize: 12,
@@ -240,11 +256,16 @@ const ReceiveModal: React.FC<{
       height: 20,
       tintColor: theme.colors.textOnPrimary,
     },
+    copyIcon: {
+      width: 16,
+      height: 16,
+      tintColor: theme.colors.primary,
+    },
   });
 
   return (
     <Modal
-      visible={visible}
+      visible={true}
       transparent={true}
       animationType="fade"
       onRequestClose={onClose}>
@@ -269,7 +290,9 @@ const ReceiveModal: React.FC<{
             </Text>
           </View>
 
-          <TouchableOpacity style={styles.qrContainer} onPress={copyToClipboard}>
+          <TouchableOpacity
+            style={styles.qrContainer}
+            onPress={copyToClipboard}>
             <QRCode
               value={address}
               size={200}
@@ -291,6 +314,16 @@ const ReceiveModal: React.FC<{
                 <Text style={styles.addressTextInteractive}>{address}</Text>
               </View>
               <Text style={styles.addressHint}>Tap to view in explorer</Text>
+              {isCopied && (
+                <View style={styles.copyFeedback}>
+                  <Image
+                    source={require('../assets/check-icon.png')}
+                    style={[styles.buttonIcon, styles.copyIcon]}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.copyFeedbackText}>Copied!</Text>
+                </View>
+              )}
             </TouchableOpacity>
 
             <View style={styles.buttonContainer}>
@@ -311,14 +344,15 @@ const ReceiveModal: React.FC<{
                   {backgroundColor: theme.colors.secondary},
                 ]}
                 onPress={shareQRCode}>
-                <Text style={[styles.actionButtonText, {marginLeft: 0}]}>
-                  📤
-                </Text>
+                <Image
+                  source={require('../assets/share-icon.png')}
+                  style={styles.buttonIcon}
+                  resizeMode="contain"
+                />
                 <Text style={styles.actionButtonText}>Share</Text>
               </TouchableOpacity>
             </View>
           </View>
-          <Toast />
         </View>
       </View>
     </Modal>
