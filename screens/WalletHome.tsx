@@ -497,6 +497,11 @@ const styles = StyleSheet.create({
     height: 18,
     tintColor: '#fff',
   },
+  addressTypeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
 });
 
 const CacheIndicator: React.FC<{
@@ -1222,7 +1227,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
             <View style={styles.partyRight}>
               <Text style={styles.partyLabel}>Address Type</Text>
-              <View style={styles.balanceRow}>
+              <View style={styles.addressTypeContainer}>
                 <Image
                   source={getAddressTypeIcon()}
                   style={styles.addressTypeIcon}
@@ -1234,7 +1239,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   adjustsFontSizeToFit>
                   {addressType === 'segwit-compatible'
                     ? 'Segwit Compatible'
-                    : capitalizeWords(addressType)}
+                    : addressType === 'segwit-native'
+                    ? 'Segwit Native'
+                    : 'Legacy'}
                 </Text>
               </View>
             </View>
