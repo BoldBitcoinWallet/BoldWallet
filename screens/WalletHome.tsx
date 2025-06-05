@@ -20,11 +20,18 @@ import TransactionList from '../components/TransactionList';
 import {CommonActions} from '@react-navigation/native';
 import Big from 'big.js';
 import ReceiveModal from './ReceiveModal';
-import {dbg} from '../utils';
+import {
+  capitalizeWords,
+  dbg,
+  shorten,
+  presentFiat,
+  getCurrencySymbol,
+} from '../utils';
 import {useTheme, themes} from '../theme';
-import {WalletService, Transaction} from '../services/WalletService';
+import {WalletService} from '../services/WalletService';
 import WalletSkeleton from '../components/WalletSkeleton';
 import {useWallet} from '../context/WalletContext';
+import CurrencySelector from '../components/CurrencySelector';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -79,7 +86,6 @@ const HeaderTitle = React.memo(() => (
 interface CacheTimestamp {
   price: number;
   balance: number;
-  transactions: number;
 }
 
 const styles = StyleSheet.create({
@@ -111,11 +117,28 @@ const styles = StyleSheet.create({
     height: 40,
     resizeMode: 'contain',
   },
+  priceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
   btcPrice: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: themes.lightPolished.colors.accent,
-    textAlign: 'right',
+    fontSize: 16,
+    fontWeight: '500',
+    color: themes.lightPolished.colors.white,
+    marginRight: 6,
+  },
+  currencyBadge: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: themes.lightPolished.colors.white,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
   balanceBTC: {
     fontSize: 24,
@@ -124,7 +147,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 4,
   },
-  balanceUSD: {
+  balanceFiat: {
     fontSize: 16,
     color: themes.lightPolished.colors.background,
     marginBottom: 16,
@@ -327,11 +350,7 @@ const CacheIndicator: React.FC<{
   theme: any;
   isRefreshing?: boolean;
 }> = ({timestamps, onRefresh, theme, isRefreshing = false}) => {
-  const latestTimestamp = Math.max(
-    timestamps.price,
-    timestamps.balance,
-    timestamps.transactions,
-  );
+  const latestTimestamp = Math.max(timestamps.price, timestamps.balance);
   const shimmerValue = useRef(new Animated.Value(-100)).current;
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [isUsingCache, setIsUsingCache] = useState(false);
@@ -494,12 +513,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [btcPrice, setBtcPrice] = useState<string>('');
   const [btcRate, setBtcRate] = useState(0);
   const [balanceBTC, setBalanceBTC] = useState<string>('0.00000000');
-  const [balanceUSD, setBalanceUSD] = useState<string>('0');
+  const [balanceFiat, setBalanceFiat] = useState<string>('0');
   const [apiBase, setApiBase] = useState<string>('');
   const [party, setParty] = useState<string>('');
   const [isBlurred, setIsBlurred] = useState<boolean>(true);
   const [isReceiveModalVisible, setIsReceiveModalVisible] = useState(false);
-  const [pendingSent, setPendingSent] = useState(0);
+  const [_pendingSent, _setPendingSent] = useState(0);
   const [addressType, setAddressType] = React.useState('');
   const [isAddressTypeModalVisible, setIsAddressTypeModalVisible] =
     React.useState(false);
@@ -509,13 +528,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     React.useState('');
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
   const [_error, setError] = useState<string | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [cacheTimestamps, setCacheTimestamps] = useState<CacheTimestamp>({
     price: 0,
     balance: 0,
-    transactions: 0,
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isCurrencySelectorVisible, setIsCurrencySelectorVisible] =
+    useState(false);
+  const [selectedCurrency, setSelectedCurrency] = useState('USD');
+  const [priceData, setPriceData] = useState<{[key: string]: number}>({});
 
   const {theme} = useTheme();
   const walletService = WalletService.getInstance();
@@ -534,18 +555,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     () => <HeaderRightButton navigation={navigation} />,
     [navigation],
   );
-
-  const shorten = (x: string, y = 12) => `${x.slice(0, y)}...${x.slice(-y)}`;
-
-  const capitalizeWords = (str: string | undefined | null) => {
-    if (!str) {
-      return '';
-    }
-    return str
-      .split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ');
-  };
 
   const addressEmoji = () =>
     addressType === 'legacy'
@@ -628,6 +637,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         const addrType =
           (await EncryptedStorage.getItem('addressType')) || 'legacy';
         const addr = await EncryptedStorage.getItem('currentAddress');
+        const currency = (await EncryptedStorage.getItem('currency')) || 'USD';
+        setSelectedCurrency(currency);
 
         if (!addr || !wallet?.baseApi) {
           dbg('WalletHome: Missing wallet address or baseApi');
@@ -673,8 +684,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           freshData = await Promise.race([
             Promise.all([
               walletService.getBitcoinPrice(),
-              walletService.getWalletBalance(addr, btcRate, pendingSent, true),
-              walletService.getTransactions(addr, wallet.baseApi),
+              walletService.getWalletBalance(addr, btcRate, _pendingSent, true),
             ]),
             timeoutPromise,
           ]);
@@ -685,40 +695,42 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
         // If we got fresh data, use it
         if (freshData) {
-          const [freshPrice, freshBalance, freshTransactions] = freshData;
-          setBtcPrice(freshPrice.price);
-          setBtcRate(freshPrice.rate);
+          const [freshPrice, freshBalance] = freshData;
+          setPriceData(freshPrice.rates || {});
+          setBtcPrice(freshPrice.rates?.[currency]?.toString() || '-');
+          setBtcRate(freshPrice.rates?.[currency] || 0);
           setBalanceBTC(freshBalance.btc);
-          setBalanceUSD(freshBalance.usd);
-          setTransactions(freshTransactions.transactions);
+          // Calculate fiat balance using the new rate
+          const fiatBalance =
+            Number(freshBalance.btc) * (freshPrice.rates?.[currency] || 0);
+          setBalanceFiat(fiatBalance.toFixed(2));
 
           // Update cache timestamps with fresh data
           setCacheTimestamps({
             price: walletService.getLastPriceFetch(),
             balance: walletService.getLastBalanceFetch(),
-            transactions: walletService.getLastTxFetch(addr),
           });
         } else {
           // Fall back to cached data only if fresh data fetch failed
-          const [cachedPrice, cachedBalance, cachedTransactions] =
-            await Promise.all([
-              walletService.getBitcoinPrice(),
-              walletService.getWalletBalance(addr, btcRate, pendingSent),
-              walletService.getTransactions(addr, wallet.baseApi),
-            ]);
+          const [cachedPrice, cachedBalance] = await Promise.all([
+            walletService.getBitcoinPrice(),
+            walletService.getWalletBalance(addr, btcRate, _pendingSent),
+          ]);
 
           // Update UI with cached data
-          setBtcPrice(cachedPrice.price);
-          setBtcRate(cachedPrice.rate);
+          setPriceData(cachedPrice.rates || {});
+          setBtcPrice(cachedPrice.rates?.[currency]?.toString() || '-');
+          setBtcRate(cachedPrice.rates?.[currency] || 0);
           setBalanceBTC(cachedBalance.btc);
-          setBalanceUSD(cachedBalance.usd);
-          setTransactions(cachedTransactions.transactions);
+          // Calculate fiat balance using the cached rate
+          const fiatBalance =
+            Number(cachedBalance.btc) * (cachedPrice.rates?.[currency] || 0);
+          setBalanceFiat(fiatBalance.toFixed(2));
 
           // Keep original cache timestamps when using cached data
           setCacheTimestamps({
             price: walletService.getLastPriceFetch(),
             balance: walletService.getLastBalanceFetch(),
-            transactions: walletService.getLastTxFetch(addr),
           });
         }
       } catch (error) {
@@ -730,8 +742,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           setBtcPrice('');
           setBtcRate(0);
           setBalanceBTC('0.00000000');
-          setBalanceUSD('');
-          setTransactions([]);
+          setBalanceFiat('');
         }
       } finally {
         setLoading(false);
@@ -741,7 +752,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     [
       wallet?.baseApi,
       btcRate,
-      pendingSent,
+      _pendingSent,
       showErrorToast,
       walletService,
       isInitialized,
@@ -750,13 +761,20 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     ],
   );
 
-  const handlePendingTransactions = useCallback(
-    async (pendingTxs: Transaction[], pendingSentTotal: number) => {
-      setPendingSent(pendingSentTotal);
-      return Promise.resolve();
-    },
-    [],
-  );
+  const handleCurrencySelect = async (currency: {code: string}) => {
+    setSelectedCurrency(currency.code);
+    await EncryptedStorage.setItem('currency', currency.code);
+    if (priceData[currency.code]) {
+      const formattedPrice = priceData[currency.code].toFixed(2);
+      setBtcPrice(formattedPrice);
+      setBtcRate(priceData[currency.code]);
+      // Update fiat balance with new currency rate
+      if (balanceBTC) {
+        const newBalance = Number(balanceBTC) * priceData[currency.code];
+        setBalanceFiat(newBalance.toFixed(2));
+      }
+    }
+  };
 
   const handleRefresh = useCallback(async () => {
     await fetchData(true);
@@ -954,7 +972,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               source={require('../assets/bitcoin-logo.png')}
               style={styles.btcLogo}
             />
-            <Text style={styles.btcPrice}>{btcPrice || '-'}</Text>
+            <TouchableOpacity
+              style={styles.priceContainer}
+              onPress={() => setIsCurrencySelectorVisible(true)}>
+              <Text style={styles.btcPrice}>
+                {btcPrice ? presentFiat(btcPrice) : '-'}
+              </Text>
+              <Text style={styles.currencyBadge}>{selectedCurrency}</Text>
+            </TouchableOpacity>
           </View>
           <TouchableOpacity onPress={handleBlurred}>
             <Text style={[styles.balanceBTC, isBlurred && styles.blurredText]}>
@@ -966,8 +991,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           {btcRate > 0 && (
             <TouchableOpacity onPress={handleBlurred}>
               <Text
-                style={[styles.balanceUSD, isBlurred && styles.blurredText]}>
-                {isBlurred ? '* * *' : balanceUSD || '-'}
+                style={[styles.balanceFiat, isBlurred && styles.blurredText]}>
+                {isBlurred
+                  ? '* * *'
+                  : `${getCurrencySymbol(selectedCurrency)}${presentFiat(
+                      balanceFiat,
+                    )}`}
               </Text>
             </TouchableOpacity>
           )}
@@ -1031,10 +1060,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             <TransactionList
               baseApi={apiBase}
               address={address}
-              onUpdate={handlePendingTransactions}
+              onUpdate={() => Promise.resolve()}
               onReload={handleRefresh}
-              refreshing={false}
-              initialTransactions={transactions}
+              selectedCurrency={selectedCurrency}
+              btcRate={btcRate}
+              getCurrencySymbol={getCurrencySymbol}
             />
           </View>
         </>
@@ -1092,6 +1122,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           </View>
         </TouchableOpacity>
       </Modal>
+      <CurrencySelector
+        visible={isCurrencySelectorVisible}
+        onClose={() => setIsCurrencySelectorVisible(false)}
+        onSelect={handleCurrencySelect}
+        currentCurrency={selectedCurrency}
+      />
       <Toast />
       {isSendModalVisible && (
         <SendBitcoinModal
@@ -1107,6 +1143,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       {isReceiveModalVisible && (
         <ReceiveModal
           address={address}
+          addressType={addressType}
           baseApi={apiBase}
           network={network}
           visible={isReceiveModalVisible}

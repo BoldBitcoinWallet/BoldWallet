@@ -46,6 +46,7 @@ interface CachedData {
   price: {
     price: string;
     rate: number;
+    rates: {[key: string]: number};
     timestamp: number;
   };
   balance: {
@@ -70,32 +71,6 @@ const validateBitcoinAddress = (address: string): boolean => {
   }
   dbg('WalletService: Bitcoin address validation passed:', address);
   return true;
-};
-
-const validateApiUrl = (url: string): boolean => {
-  if (!url) {
-    dbg('WalletService: API URL validation failed - empty URL');
-    return false;
-  }
-  try {
-    const urlObj = new URL(url);
-    const isValid = !!urlObj;
-    dbg(
-      'WalletService: API URL validation',
-      isValid ? 'passed' : 'failed',
-      'for URL:',
-      url,
-    );
-    return isValid;
-  } catch (error) {
-    dbg(
-      'WalletService: API URL validation failed - invalid URL format:',
-      url,
-      'Error:',
-      error,
-    );
-    return false;
-  }
 };
 
 const validateNumber = (value: any): boolean => {
@@ -141,9 +116,14 @@ export class WalletService {
   private currentApiUrl: string = 'https://mempool.space/api';
   private fetchInProgress: {[key: string]: boolean} = {};
   private fetchTimeout: {[key: string]: NodeJS.Timeout} = {};
-  private cachedPrice: {price: string; rate: number} = {
+  private cachedPrice: {
+    price: string;
+    rate: number;
+    rates: {[key: string]: number};
+  } = {
     price: '$0.00',
     rate: 0,
+    rates: {},
   };
   private cachedBalance: WalletBalance = {
     btc: '0.00000000',
@@ -249,6 +229,7 @@ export class WalletService {
           this.cachedPrice = {
             price: parsed.price.price,
             rate: parsed.price.rate,
+            rates: parsed.price.rates,
           };
           this.lastPriceFetch = parsed.price.timestamp;
           dbg('WalletService: Loaded cached price:', {
@@ -482,7 +463,11 @@ export class WalletService {
     }
   }
 
-  public async getBitcoinPrice(): Promise<{price: string; rate: number}> {
+  public async getBitcoinPrice(): Promise<{
+    price: string;
+    rate: number;
+    rates: {[key: string]: number};
+  }> {
     try {
       dbg('WalletService: Fetching fresh BTC price from mempool.space');
 
@@ -513,12 +498,25 @@ export class WalletService {
       const price = this.formatUSD(data.USD);
       dbg('WalletService: New price fetched - Rate:', rate, 'Price:', price);
 
-      this.cachedPrice = {price, rate};
+      const rates = {
+        USD: rate,
+        EUR: rate * 0.92, // Example conversion rate
+        GBP: rate * 0.79, // Example conversion rate
+        JPY: rate * 151.62, // Example conversion rate
+        AUD: rate * 1.52, // Example conversion rate
+        CAD: rate * 1.35, // Example conversion rate
+        CHF: rate * 0.9, // Example conversion rate
+        CNY: rate * 7.23, // Example conversion rate
+        INR: rate * 83.31, // Example conversion rate
+        SGD: rate * 1.35, // Example conversion rate
+      };
+
+      this.cachedPrice = {price, rate, rates};
       this.lastPriceFetch = Date.now();
       await this.saveCachedData();
       dbg('WalletService: Price cache updated');
 
-      return {price, rate};
+      return {price, rate, rates};
     } catch (error) {
       dbg('WalletService: Error fetching BTC price:', error);
       // Return cached price if available
@@ -526,7 +524,7 @@ export class WalletService {
         return this.cachedPrice;
       }
       // Return empty values if no cache
-      return {price: '', rate: 0};
+      return {price: '', rate: 0, rates: {}};
     }
   }
 
@@ -562,6 +560,7 @@ export class WalletService {
       this.cachedPrice = {
         price: '$0.00',
         rate: 0,
+        rates: {},
       };
       this.cachedBalance = {
         btc: '0.00000000',
@@ -843,64 +842,28 @@ export class WalletService {
         timeout: this.API_TIMEOUT,
       });
 
-      const data = response.data;
-      dbg('WalletService: Received', data.length, 'transactions');
+      const transactions = response.data;
+      dbg('WalletService: Received', transactions.length, 'transactions');
 
-      if (!Array.isArray(data)) {
-        dbg('WalletService: Invalid response format:', data);
+      if (!Array.isArray(transactions)) {
+        dbg('WalletService: Invalid response format:', transactions);
         throw new Error('Invalid response format from API');
       }
 
-      // Process transactions with validation
-      const transactions = data
-        .map((tx: any) => {
-          if (!tx || !tx.txid || !tx.vin || !tx.vout) {
-            dbg('WalletService: Skipping invalid transaction:', tx);
-            return null;
-          }
-          // Validate transaction data
-          if (!/^[a-fA-F0-9]{64}$/.test(tx.txid)) {
-            dbg(
-              'WalletService: Skipping transaction with invalid txid:',
-              tx.txid,
-            );
-            return null;
-          }
-          return {
-            ...tx,
-            status: {
-              confirmed: tx.status?.confirmed || false,
-              block_height: tx.status?.block_height,
-              block_time: tx.status?.block_time,
-            },
-          };
-        })
-        .filter(Boolean);
-
-      dbg(
-        'WalletService: Processed',
-        transactions.length,
-        'valid transactions',
-      );
-
-      // Sort transactions by block height (newest first)
-      const sortedTransactions = transactions.sort(
-        (a: any, b: any) =>
-          (b.status.block_height || 0) - (a.status.block_height || 0),
-      );
+      dbg('WalletService: Transactions', transactions.length);
 
       // Cache the transactions
-      this.cachedTransactions[cacheKey] = sortedTransactions;
+      this.cachedTransactions[cacheKey] = transactions;
       this.lastTxFetch[cacheKey] = Date.now();
       await this.saveCachedData();
 
       const result = {
-        transactions: sortedTransactions,
+        transactions: transactions,
         lastSeenTxId:
-          sortedTransactions.length > 0
-            ? sortedTransactions[sortedTransactions.length - 1].txid
+          transactions.length > 0
+            ? transactions[transactions.length - 1].txid
             : null,
-        hasMore: data.length === 25,
+        hasMore: transactions.length === 25,
       };
 
       dbg('WalletService: Returning transactions result:', {
@@ -1049,9 +1012,26 @@ export class WalletService {
     this.abortController.abort();
   }
 
-  public async updateTransactionsCache(address: string, txs: Transaction[]) {
+  public async updateTransactionsCache(
+    address: string,
+    txs: Transaction[],
+    isFromCache: boolean = false,
+  ) {
+    const cacheKey = `${address}-initial`;
     this.cachedTransactions[address] = txs;
-    dbg('txs cache updated');
+    // Only update timestamp if not from cache
+    if (!isFromCache) {
+      this.lastTxFetch[cacheKey] = Date.now();
+      await this.saveCachedData();
+    }
+    dbg('txs cache updated', isFromCache ? '(from cache)' : '(fresh data)');
+  }
+
+  public async transactionsFromCache(address: string) {
+    dbg('searching tx cache for :', address);
+    const txs = this.cachedTransactions[address] || [];
+    dbg('found cached txs:', txs.length);
+    return txs;
   }
 
   public async clearTransactionCache(address: string) {
@@ -1087,6 +1067,7 @@ export class WalletService {
     this.cachedPrice = {
       price: '$0.00',
       rate: 0,
+      rates: {},
     };
     this.cachedBalance = {
       btc: '0.00000000',

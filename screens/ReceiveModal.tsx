@@ -17,14 +17,16 @@ import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
 import {dbg} from '../utils';
 import {useTheme} from '../theme';
+import {capitalize} from 'lodash';
 
 const ReceiveModal: React.FC<{
   visible: boolean;
   address: string;
+  addressType: string;
   baseApi: string;
   network: string;
   onClose: () => void;
-}> = ({visible, address, baseApi, network, onClose}) => {
+}> = ({visible, address, addressType, baseApi, network, onClose}) => {
   const qrRef = useRef<any>(null);
   const {theme} = useTheme();
 
@@ -96,8 +98,9 @@ const ReceiveModal: React.FC<{
     },
     modalContent: {
       backgroundColor: theme.colors.cardBackground,
-      padding: 24,
-      borderRadius: 16,
+      padding: 16,
+      paddingBottom: 0,
+      borderRadius: 8,
       alignItems: 'center',
       width: '90%',
       maxWidth: 400,
@@ -133,14 +136,8 @@ const ReceiveModal: React.FC<{
       resizeMode: 'contain',
     },
     closeButton: {
-      position: 'relative',
-      borderRadius: 20,
-      backgroundColor: theme.colors.background,
-      marginLeft: 8,
       width: 30,
       height: 30,
-      elevation: 1,
-      padding: 0,
     },
     closeButtonText: {
       fontSize: 16,
@@ -151,7 +148,7 @@ const ReceiveModal: React.FC<{
       lineHeight: 30,
     },
     networkBadge: {
-      backgroundColor: theme.colors.secondary,
+      backgroundColor: theme.colors.modalBackdrop,
       paddingHorizontal: 12,
       paddingVertical: 6,
       borderRadius: 12,
@@ -268,11 +265,11 @@ const ReceiveModal: React.FC<{
 
           <View style={styles.networkBadge}>
             <Text style={styles.networkText}>
-              {network === 'mainnet' ? '🌐 Mainnet' : '🔨 Testnet'}
+              {capitalize(network)} • {capitalize(addressType)}
             </Text>
           </View>
 
-          <TouchableOpacity style={styles.qrContainer} onPress={shareQRCode}>
+          <TouchableOpacity style={styles.qrContainer} onPress={copyToClipboard}>
             <QRCode
               value={address}
               size={200}
@@ -286,7 +283,7 @@ const ReceiveModal: React.FC<{
               style={styles.addressTouchable}
               onPress={() => {
                 dbg('baseAPI', baseApi);
-                const url = `${baseApi.replace('api/', '')}address/${address}`;
+                const url = `${baseApi.replace('api', '')}address/${address}`;
                 dbg('address URL', url);
                 Linking.openURL(url);
               }}>
