@@ -12,6 +12,9 @@ import {
   PermissionsAndroid,
   Modal,
   Animated,
+  ViewStyle,
+  TextStyle,
+  ImageStyle,
 } from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import SendBitcoinModal from './SendBitcoinModal';
@@ -27,7 +30,7 @@ import {
   presentFiat,
   getCurrencySymbol,
 } from '../utils';
-import {useTheme, themes} from '../theme';
+import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
 import WalletSkeleton from '../components/WalletSkeleton';
 import {useWallet} from '../context/WalletContext';
@@ -35,63 +38,120 @@ import CurrencySelector from '../components/CurrencySelector';
 
 const {BBMTLibNativeModule} = NativeModules;
 
-const headerStyles = StyleSheet.create({
+interface Theme {
+  colors: {
+    background: string;
+    cardBackground: string;
+    primary: string;
+    secondary: string;
+    accent: string;
+    text: string;
+    textSecondary: string;
+    textOnPrimary: string;
+    white: string;
+    border: string;
+  };
+}
+
+interface Styles {
+  actionButton: ViewStyle;
+  settingsButton: ViewStyle;
+  headerTitleContainer: ViewStyle;
+  headerLogo: ImageStyle;
+  headerTitleText: TextStyle;
+  container: ViewStyle;
+  contentContainer: ViewStyle;
+  walletHeader: ViewStyle;
+  headerTop: ViewStyle;
+  btcLogo: ImageStyle;
+  priceContainer: ViewStyle;
+  btcPrice: TextStyle;
+  currencyBadge: TextStyle;
+  balanceContainer: ViewStyle;
+  balanceRow: ViewStyle;
+  balanceBTC: TextStyle;
+  balanceFiat: TextStyle;
+  balanceIcon: ImageStyle;
+  blurredText: TextStyle;
+  balanceHint: TextStyle;
+  qrContainer: ViewStyle;
+  address: TextStyle;
+  partyContainer: ViewStyle;
+  partyLeft: ViewStyle;
+  partyCenter: ViewStyle;
+  partyRight: ViewStyle;
+  party: TextStyle;
+  partyText: TextStyle;
+  partyLabel: TextStyle;
+  partyValue: TextStyle;
+  actions: ViewStyle;
+  sendButton: ViewStyle;
+  addressTypeModalButton: ViewStyle;
+  addressTypeButtonText: TextStyle;
+  addressTypeButtonIcon: ImageStyle;
+  receiveButton: ViewStyle;
+  modalOverlay: ViewStyle;
+  modalContent: ViewStyle;
+  modalText: TextStyle;
+  actionButtonText: TextStyle;
+  addressTypeButton: ViewStyle;
+  addressTypeButtonSelected: ViewStyle;
+  addressTypeLabel: TextStyle;
+  addressTypeValue: TextStyle;
+  addressTypeIcon: ImageStyle;
+  modalAddressTypeIcon: ImageStyle;
+  addressTypeContent: ViewStyle;
+  modalTitle: TextStyle;
+  scrollView: ViewStyle;
+  cacheIndicator: ViewStyle;
+  refreshText: TextStyle;
+  refreshIcon: ImageStyle;
+  cacheText: TextStyle;
+  shimmerContainer: ViewStyle;
+  shimmer: ViewStyle;
+  disabled: ViewStyle;
+  transactionListContainer: ViewStyle;
+  sectionHeader: ViewStyle;
+  sectionTitle: TextStyle;
+  sectionSubtitle: TextStyle;
+  emptyStateContainer: ViewStyle;
+  emptyStateText: TextStyle;
+  emptyStateIcon: ImageStyle;
+  actionButtonIcon: ImageStyle;
+  addressTypeContainer: ViewStyle;
+}
+
+const createStyles = (theme: Theme): Styles => ({
   actionButton: {
     paddingVertical: 12,
     marginBottom: 4,
     marginHorizontal: 8,
     borderRadius: 8,
-    alignItems: 'center',
+    alignItems: 'center' as const,
   },
   settingsButton: {
     width: 40,
     height: 40,
     borderRadius: 10,
-    backgroundColor: themes.lightPolished.colors.cardBackground,
+    backgroundColor: theme.colors.cardBackground,
   },
   headerTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
   },
   headerLogo: {
     width: 40,
     height: 40,
-    resizeMode: 'contain',
+    resizeMode: 'contain' as const,
     marginRight: 8,
   },
   headerTitleText: {
     fontSize: 18,
     fontWeight: 'bold',
   },
-});
-
-const HeaderRightButton = ({navigation}: {navigation: any}) => (
-  <TouchableOpacity
-    style={[headerStyles.actionButton, headerStyles.settingsButton]}
-    onPress={() => navigation.navigate('Settings')}>
-    <Text>⚙️</Text>
-  </TouchableOpacity>
-);
-
-const HeaderTitle = React.memo(() => (
-  <View style={headerStyles.headerTitleContainer}>
-    <Image
-      source={require('../assets/icon.png')}
-      style={headerStyles.headerLogo}
-    />
-    <Text style={headerStyles.headerTitleText}>Bold Home</Text>
-  </View>
-));
-
-interface CacheTimestamp {
-  price: number;
-  balance: number;
-}
-
-const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: themes.lightPolished.colors.background,
+    backgroundColor: theme.colors.background,
   },
   contentContainer: {
     paddingTop: 12,
@@ -101,9 +161,9 @@ const styles = StyleSheet.create({
   },
   walletHeader: {
     padding: 12,
-    backgroundColor: themes.lightPolished.colors.primary,
+    backgroundColor: theme.colors.primary,
     borderRadius: 12,
-    alignItems: 'center',
+    alignItems: 'center' as const,
     marginBottom: 0,
     elevation: 2,
     shadowColor: '#000',
@@ -112,20 +172,20 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
     width: '100%',
     marginBottom: 8,
   },
   btcLogo: {
     width: 32,
     height: 32,
-    resizeMode: 'contain',
+    resizeMode: 'contain' as const,
   },
   priceContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -134,27 +194,27 @@ const styles = StyleSheet.create({
   btcPrice: {
     fontSize: 14,
     fontWeight: '600',
-    color: themes.lightPolished.colors.white,
+    color: theme.colors.white,
     marginRight: 6,
   },
   currencyBadge: {
     fontSize: 12,
     fontWeight: '600',
-    color: themes.lightPolished.colors.white,
+    color: theme.colors.white,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
   balanceContainer: {
-    alignItems: 'center',
+    alignItems: 'center' as const,
     width: '100%',
     paddingVertical: 4,
     marginBottom: 4,
   },
   balanceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
     gap: 6,
     minHeight: 32,
     paddingHorizontal: 12,
@@ -162,23 +222,23 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: 'rgba(255, 255, 255, 0.12)',
     width: '100%',
-    justifyContent: 'center',
+    justifyContent: 'center' as const,
   },
   balanceBTC: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: themes.lightPolished.colors.white,
+    color: theme.colors.white,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   balanceFiat: {
     fontSize: 16,
-    color: themes.lightPolished.colors.white,
+    color: theme.colors.white,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   balanceIcon: {
     width: 18,
     height: 18,
-    tintColor: themes.lightPolished.colors.white,
+    tintColor: theme.colors.white,
     opacity: 0.9,
   },
   blurredText: {
@@ -187,10 +247,10 @@ const styles = StyleSheet.create({
   },
   balanceHint: {
     fontSize: 10,
-    color: themes.lightPolished.colors.textOnPrimary,
+    color: theme.colors.textOnPrimary,
     opacity: 0.7,
     marginTop: 4,
-    textTransform: 'uppercase',
+    textTransform: 'uppercase' as const,
     letterSpacing: 0.5,
   },
   qrContainer: {
@@ -205,15 +265,15 @@ const styles = StyleSheet.create({
   },
   address: {
     fontSize: 14,
-    color: themes.lightPolished.colors.textOnPrimary,
+    color: theme.colors.textOnPrimary,
     marginTop: 8,
-    textAlign: 'center',
+    textAlign: 'center' as const,
     fontWeight: '600',
   },
   partyContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
     width: '100%',
     marginTop: 8,
     paddingHorizontal: 8,
@@ -223,112 +283,101 @@ const styles = StyleSheet.create({
   },
   partyLeft: {
     flex: 1,
-    alignItems: 'flex-start',
+    alignItems: 'flex-start' as const,
   },
   partyCenter: {
     flex: 1,
-    alignItems: 'center',
+    alignItems: 'center' as const,
   },
   partyRight: {
     flex: 1,
-    alignItems: 'flex-end',
+    alignItems: 'flex-end' as const,
   },
   party: {
     fontSize: 12,
-    color: themes.lightPolished.colors.textOnPrimary,
+    color: theme.colors.textOnPrimary,
     fontWeight: '500',
   },
   partyText: {
     fontSize: 12,
-    color: themes.lightPolished.colors.textOnPrimary,
+    color: theme.colors.textOnPrimary,
     fontWeight: '500',
     opacity: 0.9,
   },
   partyLabel: {
     fontSize: 10,
-    color: themes.lightPolished.colors.textOnPrimary,
+    color: theme.colors.textOnPrimary,
     opacity: 0.7,
     marginBottom: 2,
-    textTransform: 'uppercase',
+    textTransform: 'uppercase' as const,
     letterSpacing: 0.5,
   },
   partyValue: {
     fontSize: 12,
-    color: themes.lightPolished.colors.textOnPrimary,
+    color: theme.colors.textOnPrimary,
     fontWeight: '600',
   },
   actions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
     marginTop: 8,
     width: '100%',
     gap: 6,
   },
-  actionButton: {
-    paddingVertical: 8,
-    marginBottom: 0,
-    marginHorizontal: 4,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
   sendButton: {
     flex: 1,
-    backgroundColor: themes.lightPolished.colors.accent,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: theme.colors.accent,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
     gap: 8,
-  },
-  settingsButton: {
-    width: 50,
-    backgroundColor: themes.lightPolished.colors.accent,
   },
   addressTypeModalButton: {
     width: 50,
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
     gap: 4,
   },
   addressTypeButtonText: {
-    color: themes.lightPolished.colors.textOnPrimary,
+    color: theme.colors.textOnPrimary,
     fontSize: 12,
     fontWeight: '600',
   },
   addressTypeButtonIcon: {
     width: 20,
     height: 20,
-    tintColor: themes.lightPolished.colors.textOnPrimary,
+    tintColor: theme.colors.textOnPrimary,
     opacity: 0.9,
   },
   receiveButton: {
     flex: 1,
-    backgroundColor: themes.lightPolished.colors.secondary,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: theme.colors.secondary,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
     gap: 8,
   },
   modalOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
     zIndex: 100,
   },
   modalContent: {
-    backgroundColor: themes.lightPolished.colors.background,
+    backgroundColor: theme.colors.background,
     borderRadius: 12,
     padding: 20,
     width: '80%',
-    alignItems: 'center',
+    alignItems: 'center' as const,
   },
   modalText: {
     fontSize: 18,
     marginBottom: 10,
-    textAlign: 'center',
-    color: themes.lightPolished.colors.text,
+    textAlign: 'center' as const,
+    color: theme.colors.text,
   },
   actionButtonText: {
     color: '#fff',
@@ -336,44 +385,44 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   addressTypeButton: {
-    backgroundColor: themes.lightPolished.colors.cardBackground,
+    backgroundColor: theme.colors.cardBackground,
     padding: 16,
     borderRadius: 8,
     marginVertical: 8,
     width: '100%',
     borderWidth: 1,
-    borderColor: themes.lightPolished.colors.border,
-    flexDirection: 'row',
-    alignItems: 'center',
+    borderColor: theme.colors.border,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
     gap: 12,
   },
   addressTypeButtonSelected: {
-    borderColor: themes.lightPolished.colors.accent,
+    borderColor: theme.colors.accent,
     borderWidth: 2,
   },
   addressTypeLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: themes.lightPolished.colors.text,
+    color: theme.colors.text,
     marginBottom: 4,
   },
   addressTypeValue: {
     marginTop: 4,
     fontSize: 12,
-    color: themes.lightPolished.colors.textSecondary,
-    textAlign: 'left',
+    color: theme.colors.textSecondary,
+    textAlign: 'left' as const,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   addressTypeIcon: {
     width: 16,
     height: 16,
-    tintColor: themes.lightPolished.colors.white,
+    tintColor: theme.colors.white,
     opacity: 0.9,
   },
   modalAddressTypeIcon: {
     width: 24,
     height: 24,
-    tintColor: themes.lightPolished.colors.text,
+    tintColor: theme.colors.text,
     opacity: 0.9,
   },
   addressTypeContent: {
@@ -382,7 +431,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: themes.lightPolished.colors.text,
+    color: theme.colors.text,
     marginBottom: 16,
   },
   scrollView: {
@@ -394,9 +443,9 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 8,
     borderRadius: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
     elevation: 1,
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 1},
@@ -408,26 +457,26 @@ const styles = StyleSheet.create({
   refreshText: {
     fontSize: 14,
     fontWeight: '600',
-    textAlign: 'left',
-    flexDirection: 'row',
-    alignItems: 'center',
+    textAlign: 'left' as const,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
     gap: 6,
   },
   refreshIcon: {
     width: 16,
     height: 16,
-    tintColor: themes.lightPolished.colors.accent,
+    tintColor: theme.colors.accent,
     opacity: 0.9,
   },
   cacheText: {
     fontSize: 13,
     marginBottom: 0,
     marginTop: 0,
-    textAlign: 'right',
+    textAlign: 'right' as const,
     opacity: 0.7,
   },
   shimmerContainer: {
-    position: 'absolute',
+    position: 'absolute' as const,
     top: 0,
     left: 0,
     right: 0,
@@ -437,7 +486,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   shimmer: {
-    position: 'absolute',
+    position: 'absolute' as const,
     top: 0,
     left: 0,
     right: 0,
@@ -453,12 +502,12 @@ const styles = StyleSheet.create({
     marginBottom: 0,
     padding: 16,
     paddingTop: 0,
-    backgroundColor: themes.lightPolished.colors.background,
+    backgroundColor: theme.colors.background,
   },
   sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
     paddingHorizontal: 0,
     paddingVertical: 12,
     marginBottom: 4,
@@ -466,24 +515,24 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: themes.lightPolished.colors.text,
+    color: theme.colors.text,
     opacity: 0.9,
   },
   sectionSubtitle: {
     fontSize: 13,
-    color: themes.lightPolished.colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
   emptyStateContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
     padding: 20,
     marginTop: 20,
   },
   emptyStateText: {
     fontSize: 16,
-    color: themes.lightPolished.colors.textSecondary,
-    textAlign: 'center',
+    color: theme.colors.textSecondary,
+    textAlign: 'center' as const,
     marginTop: 8,
   },
   emptyStateIcon: {
@@ -498,11 +547,44 @@ const styles = StyleSheet.create({
     tintColor: '#fff',
   },
   addressTypeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
     gap: 4,
   },
 });
+
+const HeaderRightButton: React.FC<{navigation: any}> = ({navigation}) => {
+  const {theme} = useTheme();
+  const styles = createStyles(theme);
+  
+  return (
+    <TouchableOpacity
+      style={[styles.actionButton, styles.settingsButton]}
+      onPress={() => navigation.navigate('Settings')}>
+      <Text>⚙️</Text>
+    </TouchableOpacity>
+  );
+};
+
+const HeaderTitle: React.FC = () => {
+  const {theme} = useTheme();
+  const styles = createStyles(theme);
+  
+  return (
+    <View style={styles.headerTitleContainer}>
+      <Image
+        source={require('../assets/icon.png')}
+        style={styles.headerLogo}
+      />
+      <Text style={styles.headerTitleText}>Bold Home</Text>
+    </View>
+  );
+};
+
+interface CacheTimestamp {
+  price: number;
+  balance: number;
+}
 
 const CacheIndicator: React.FC<{
   timestamps: CacheTimestamp;
@@ -627,21 +709,21 @@ const CacheIndicator: React.FC<{
   return (
     <TouchableOpacity
       style={[
-        styles.cacheIndicator,
+        createStyles(theme).cacheIndicator,
         {
           backgroundColor: isRefreshing
             ? theme.colors.cardBackground
             : theme.colors.background,
         },
-        isRefreshing && styles.disabled,
+        isRefreshing && createStyles(theme).disabled,
       ]}
       onPress={onRefresh}
       disabled={isRefreshing}>
       {isRefreshing && (
-        <View style={styles.shimmerContainer}>
+        <View style={createStyles(theme).shimmerContainer}>
           <Animated.View
             style={[
-              styles.shimmer,
+              createStyles(theme).shimmer,
               {
                 transform: [{translateX: shimmerValue}],
               },
@@ -649,11 +731,11 @@ const CacheIndicator: React.FC<{
           />
         </View>
       )}
-      <View style={styles.refreshText}>
+      <View style={createStyles(theme).refreshText}>
         <Image
           source={require('../assets/refresh-icon.png')}
           style={[
-            styles.refreshIcon,
+            createStyles(theme).refreshIcon,
             isRefreshing && {transform: [{rotate: '45deg'}]},
           ]}
           resizeMode="contain"
@@ -672,7 +754,7 @@ const CacheIndicator: React.FC<{
         </Text>
       </View>
       {!isRefreshing && (
-        <Text style={[styles.cacheText, {color: theme.colors.textSecondary}]}>
+        <Text style={[createStyles(theme).cacheText, {color: theme.colors.textSecondary}]}>
           {isUsingCache ? (
             <>📱 Cached • {new Date(latestTimestamp).toLocaleTimeString()}</>
           ) : (
@@ -718,6 +800,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [priceData, setPriceData] = useState<{[key: string]: number}>({});
 
   const {theme} = useTheme();
+  const styles = createStyles(theme);
   const walletService = WalletService.getInstance();
   const wallet = useWallet();
 
@@ -1288,9 +1371,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             isRefreshing={isRefreshing}
           />
           <View style={styles.transactionListContainer}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Recent Transactions</Text>
-            </View>
             <TransactionList
               baseApi={apiBase}
               address={address}
