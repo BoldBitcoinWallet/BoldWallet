@@ -177,8 +177,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
         const newTransactions = response.data.sort(
           (a: any, b: any) => b.status.block_height - a.status.block_height,
         );
-        dbg('Setting transactions:', newTransactions.length);
-
+        dbg('Caching transactions:', newTransactions.length);
         WalletService.getInstance().updateTransactionsCache(
           address,
           newTransactions,
@@ -220,10 +219,15 @@ const TransactionList: React.FC<TransactionListProps> = ({
           }
         }
       } finally {
-        if (isMounted.current && retryCount === 0) {
+        if (isMounted.current) {
           isFetching.current = false;
           setLoading(false);
-          dbg('Fetch completed, loading:', false);
+          dbg(
+            'Fetch completed, loading:',
+            false,
+            'isFetching:',
+            isFetching.current,
+          );
         }
       }
     },
@@ -239,7 +243,12 @@ const TransactionList: React.FC<TransactionListProps> = ({
 
     const fetchData = async () => {
       if (!mounted || refreshing || loading || isFetching.current) {
-        dbg('Skipping fetch - conditions not met');
+        dbg('Skipping fetch - conditions not met:', {
+          mounted,
+          refreshing,
+          loading,
+          isFetching: isFetching.current,
+        });
         return;
       }
 
@@ -271,15 +280,32 @@ const TransactionList: React.FC<TransactionListProps> = ({
       if (abortController.current) {
         abortController.current.abort();
       }
+      // Reset states on cleanup
+      isFetching.current = false;
+      setLoading(false);
     };
-  }, [address, baseApi]); // Remove dependencies that cause re-renders
+  }, [address, baseApi]); // Only depend on address and baseApi to prevent loops
+
+  // Separate effect for handling loading state
+  useEffect(() => {
+    if (!loading && !isFetching.current) {
+      dbg('Loading states reset');
+    }
+  }, [loading]);
 
   // Optimized refresh handler
   const onRefresh = useCallback(async () => {
     if (isRefreshing || loading || isFetching.current || !isMounted.current) {
+      dbg('Skipping refresh - conditions not met:', {
+        isRefreshing,
+        loading,
+        isFetching: isFetching.current,
+        isMounted: isMounted.current,
+      });
       return;
     }
 
+    dbg('Starting pull to refresh');
     setIsRefreshing(true);
     try {
       const cleanBaseApi = baseApi.replace(/\/+$/, '');
@@ -287,9 +313,17 @@ const TransactionList: React.FC<TransactionListProps> = ({
       if (onReload) {
         await onReload();
       }
+    } catch (error) {
+      dbg('Error during refresh:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error refreshing transactions',
+        text2: 'Please try again',
+      });
     } finally {
       if (isMounted.current) {
         setIsRefreshing(false);
+        dbg('Refresh completed');
       }
     }
   }, [address, baseApi, fetchTransactions, isRefreshing, loading, onReload]);
@@ -327,13 +361,11 @@ const TransactionList: React.FC<TransactionListProps> = ({
 
   // Debounced fetch more implementation
   const fetchMore = useCallback(async () => {
-    if (
-      loadingMore ||
-      !lastSeenTxId ||
-      !hasMoreTransactions ||
-      !isMounted.current
-    ) {
-      dbg('Skipping fetch more - conditions not met');
+    if (loadingMore || !isMounted.current) {
+      dbg('Skipping fetch more - conditions not met:', {
+        loadingMore,
+        isMounted: isMounted.current,
+      });
       return;
     }
 
@@ -356,7 +388,8 @@ const TransactionList: React.FC<TransactionListProps> = ({
       }
 
       const newTransactions = response.data;
-      if (newTransactions.length <= 1) {
+      // Only set hasMoreTransactions to false if we get no new transactions
+      if (newTransactions.length === 0) {
         dbg('No more transactions to load');
         setHasMoreTransactions(false);
         return;
@@ -419,16 +452,20 @@ const TransactionList: React.FC<TransactionListProps> = ({
 
         const txs = [...prevTransactions, ...filteredTransactions];
 
+        dbg('Caching transactions:', txs.length);
         WalletService.getInstance().updateTransactionsCache(address, txs);
 
         return txs;
       });
 
-      setLastSeenTxId(newTransactions[newTransactions.length - 1].txid);
-      dbg(
-        'Set new last seen txid:',
-        newTransactions[newTransactions.length - 1].txid,
-      );
+      // Only update lastSeenTxId if we have new transactions
+      if (newTransactions.length > 0) {
+        setLastSeenTxId(newTransactions[newTransactions.length - 1].txid);
+        dbg(
+          'Set new last seen txid:',
+          newTransactions[newTransactions.length - 1].txid,
+        );
+      }
     } catch (error: any) {
       if (error.name !== 'CanceledError') {
         console.error('Error fetching more transactions:', error);
@@ -447,11 +484,11 @@ const TransactionList: React.FC<TransactionListProps> = ({
   }, [
     loadingMore,
     lastSeenTxId,
-    hasMoreTransactions,
     address,
     baseApi,
     getTransactionAmounts,
     onUpdate,
+    hasMoreTransactions,
   ]);
 
   // Add effect to handle initialTransactions changes

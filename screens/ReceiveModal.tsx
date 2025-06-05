@@ -8,6 +8,7 @@ import {
   Image,
   Linking,
   Alert,
+  Platform,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
 import QRCode from 'react-native-qrcode-svg';
@@ -25,7 +26,6 @@ const ReceiveModal: React.FC<{
   onClose: () => void;
 }> = ({visible, address, baseApi, network, onClose}) => {
   const qrRef = useRef<any>(null);
-
   const {theme} = useTheme();
 
   const copyToClipboard = useCallback(() => {
@@ -46,7 +46,6 @@ const ReceiveModal: React.FC<{
     }
 
     try {
-      // Generate base64 image from QR code
       await new Promise((resolve, reject) => {
         qrRef.current.toDataURL((base64Data: string) => {
           if (base64Data) {
@@ -78,7 +77,6 @@ const ReceiveModal: React.FC<{
         });
         dbg('Share completed successfully');
 
-        // Clean up
         await RNFS.unlink(filePath).catch(err => {
           dbg('Cleanup error:', err);
         });
@@ -97,54 +95,158 @@ const ReceiveModal: React.FC<{
       backgroundColor: 'rgba(0, 0, 0, 0.8)',
     },
     modalContent: {
-      backgroundColor: theme.colors.white,
-      padding: 20,
-      borderRadius: 10,
+      backgroundColor: theme.colors.cardBackground,
+      padding: 24,
+      borderRadius: 16,
       alignItems: 'center',
       width: '90%',
+      maxWidth: 400,
+      elevation: 5,
+      shadowColor: theme.colors.shadowColor,
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: 0.25,
+      shadowRadius: 3.84,
     },
-    textReceive: {
-      position: 'absolute',
-      top: 20,
-      left: 20,
-      padding: 8,
-      fontSize: 16,
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      width: '100%',
+      marginBottom: 20,
+      paddingHorizontal: 4,
+    },
+    titleContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      flex: 1,
+    },
+    title: {
+      fontSize: 20,
       fontWeight: 'bold',
+      color: theme.colors.text,
+      flex: 1,
+    },
+    bitcoinLogo: {
+      width: 24,
+      height: 24,
+      resizeMode: 'contain',
     },
     closeButton: {
-      position: 'absolute',
-      top: 20,
-      right: 20,
-      backgroundColor: theme.colors.cardBackground,
       padding: 8,
-      color: theme.colors.accent,
-      borderRadius: 50,
+      borderRadius: 20,
+      backgroundColor: theme.colors.background,
+      marginLeft: 8,
+      width: 36,
+      height: 36,
+      justifyContent: 'center',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      elevation: 2,
+      shadowColor: theme.colors.shadowColor,
+      shadowOffset: {width: 0, height: 1},
+      shadowOpacity: 0.2,
+      shadowRadius: 1.41,
     },
     closeButtonText: {
       fontSize: 16,
+      color: theme.colors.text,
+      textAlign: 'center',
+      fontWeight: '600',
+    },
+    networkBadge: {
+      backgroundColor: theme.colors.primary,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 12,
+      marginBottom: 20,
+    },
+    networkText: {
+      color: theme.colors.textOnPrimary,
+      fontSize: 14,
+      fontWeight: '600',
     },
     qrContainer: {
-      marginTop: 60,
+      backgroundColor: 'white',
+      padding: 16,
+      borderRadius: 12,
+      marginBottom: 20,
+      elevation: 2,
+      shadowColor: theme.colors.shadowColor,
+      shadowOffset: {width: 0, height: 1},
+      shadowOpacity: 0.2,
+      shadowRadius: 1.41,
     },
     addressContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginTop: 10,
-      marginBottom: 10,
+      width: '100%',
+      marginBottom: 20,
     },
     addressText: {
-      fontSize: 13,
-      textDecorationLine: 'underline',
+      fontSize: 14,
+      color: theme.colors.text,
+      textAlign: 'center',
+      marginBottom: 16,
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    },
+    addressTouchable: {
+      padding: 12,
+      borderRadius: 8,
+      backgroundColor: theme.colors.cardBackground,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      marginBottom: 16,
+    },
+    addressTextContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    addressTextInteractive: {
+      fontSize: 14,
       color: theme.colors.primary,
       textAlign: 'center',
-      fontWeight: 'bold',
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      textDecorationLine: 'underline',
+      textDecorationColor: theme.colors.primary,
     },
-    iconContainer: {
-      paddingLeft: 10,
+    addressHint: {
+      fontSize: 12,
+      color: theme.colors.textSecondary,
+      textAlign: 'center',
+      marginTop: 4,
     },
-    iconImage: {
-      width: 24,
-      height: 24,
+    buttonContainer: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      width: '100%',
+      gap: 12,
+    },
+    actionButton: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.primary,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: 12,
+      elevation: 2,
+      shadowColor: theme.colors.shadowColor,
+      shadowOffset: {width: 0, height: 1},
+      shadowOpacity: 0.2,
+      shadowRadius: 1.41,
+    },
+    actionButtonText: {
+      color: theme.colors.textOnPrimary,
+      fontSize: 16,
+      fontWeight: '600',
+      marginLeft: 8,
+    },
+    buttonIcon: {
+      width: 20,
+      height: 20,
+      tintColor: theme.colors.textOnPrimary,
     },
   });
 
@@ -156,47 +258,73 @@ const ReceiveModal: React.FC<{
       onRequestClose={onClose}>
       <View style={styles.modalContainer}>
         <View style={styles.modalContent}>
-          <Text style={styles.textReceive}>
-            🌐 {network === 'mainnet' ? 'Mainnet' : 'Testnet'} / Bitcoin /
-            Address
-          </Text>
+          <View style={styles.header}>
+            <View style={styles.titleContainer}>
+              <Image
+                source={require('../assets/bitcoin-logo.png')}
+                style={styles.bitcoinLogo}
+              />
+              <Text style={styles.title}>Receive Bitcoin</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <Text style={styles.closeButtonText}>✖️</Text>
+            </TouchableOpacity>
+          </View>
 
-          {/* Close Button */}
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <Text style={styles.closeButtonText}>✖️</Text>
-          </TouchableOpacity>
+          <View style={styles.networkBadge}>
+            <Text style={styles.networkText}>
+              {network === 'mainnet' ? 'Mainnet' : 'Testnet'}
+            </Text>
+          </View>
 
-          {/* QR Code */}
           <TouchableOpacity style={styles.qrContainer} onPress={shareQRCode}>
             <QRCode
               value={address}
               size={200}
-              getRef={ref => (qrRef.current = ref)} // Stable ref assignment
+              getRef={ref => (qrRef.current = ref)}
+              backgroundColor="white"
             />
           </TouchableOpacity>
 
-          {/* Address and Copy Button */}
           <View style={styles.addressContainer}>
-            <Text
-              style={styles.addressText}
+            <TouchableOpacity
+              style={styles.addressTouchable}
               onPress={() => {
                 dbg('baseAPI', baseApi);
-                const url = `${baseApi
-                  .replace('api/', '')}address/${address}`;
+                const url = `${baseApi.replace('api/', '')}address/${address}`;
                 dbg('address URL', url);
                 Linking.openURL(url);
               }}>
-              {address}
-            </Text>
-            <TouchableOpacity
-              onPress={copyToClipboard}
-              style={styles.iconContainer}>
-              <Image
-                source={require('../assets/paste-icon.png')}
-                style={styles.iconImage}
-                resizeMode="contain"
-              />
+              <View style={styles.addressTextContainer}>
+                <Text style={styles.addressTextInteractive}>{address}</Text>
+              </View>
+              <Text style={styles.addressHint}>Tap to view in explorer</Text>
             </TouchableOpacity>
+
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={copyToClipboard}>
+                <Image
+                  source={require('../assets/paste-icon.png')}
+                  style={styles.buttonIcon}
+                  resizeMode="contain"
+                />
+                <Text style={styles.actionButtonText}>Copy</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.actionButton,
+                  {backgroundColor: theme.colors.secondary},
+                ]}
+                onPress={shareQRCode}>
+                <Text style={[styles.actionButtonText, {marginLeft: 0}]}>
+                  📤
+                </Text>
+                <Text style={styles.actionButtonText}>Share</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <Toast />
         </View>

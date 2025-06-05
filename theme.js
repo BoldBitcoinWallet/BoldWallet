@@ -123,17 +123,17 @@ export const themes = {
 
 const ThemeContext = createContext({
   theme: themes.lightPolished,
-  toggleTheme: (isCrypto: boolean) => {},
+  toggleTheme: isCrypto => {},
 });
 
-export const ThemeProvider = ({children}: any) => {
+export const ThemeProvider = ({children}) => {
   const [theme, setTheme] = useState(themes.lightPolished);
 
   useEffect(() => {
     const loadTheme = async () => {
       try {
         const storedTheme = await EncryptedStorage.getItem('theme');
-        console.log('Initial theme loaded:', storedTheme);
+        console.log('Initial theme loaded:', storedTheme || 'default');
         setTheme(
           storedTheme === 'cryptoVibrant'
             ? themes.cryptoVibrant

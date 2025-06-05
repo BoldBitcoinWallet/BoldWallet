@@ -334,6 +334,7 @@ const CacheIndicator: React.FC<{
   );
   const shimmerValue = useRef(new Animated.Value(-100)).current;
   const [currentTime, setCurrentTime] = useState(Date.now());
+  const [isUsingCache, setIsUsingCache] = useState(false);
 
   useEffect(() => {
     if (isRefreshing) {
@@ -367,6 +368,13 @@ const CacheIndicator: React.FC<{
 
     return () => clearInterval(timer);
   }, [latestTimestamp, currentTime]);
+
+  // Check if we're using cache
+  useEffect(() => {
+    const timeDiff = Date.now() - latestTimestamp;
+    const isCache = timeDiff > 60000; // More than 1 minute old
+    setIsUsingCache(isCache);
+  }, [latestTimestamp]);
 
   if (latestTimestamp === 0) {
     return null;
@@ -436,7 +444,6 @@ const CacheIndicator: React.FC<{
   };
 
   const timeAgo = getTimeAgo(latestTimestamp);
-  const isUsingCache = currentTime - latestTimestamp > 60000; // More than 1 minute old
 
   return (
     <TouchableOpacity
@@ -469,9 +476,7 @@ const CacheIndicator: React.FC<{
       {!isRefreshing && (
         <Text style={[styles.cacheText, {color: theme.colors.textSecondary}]}>
           {isUsingCache ? (
-            <>
-              📱 Cached • {new Date(latestTimestamp).toLocaleTimeString()}
-            </>
+            <>📱 Cached • {new Date(latestTimestamp).toLocaleTimeString()}</>
           ) : (
             <>{timeAgo} ⏰</>
           )}
@@ -609,7 +614,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   });
 
   const fetchData = useCallback(
-    async (force = false) => {
+    async (_force = false) => {
       try {
         // Only show loading state on initial load
         if (!isInitialized) {
@@ -656,56 +661,65 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           }
         }
 
-        // First try to get cached data
-        const [cachedPrice, cachedBalance, cachedTransactions] =
-          await Promise.all([
-            walletService.getBitcoinPrice(),
-            walletService.getWalletBalance(addr, btcRate, pendingSent),
-            walletService.getTransactions(addr, wallet.baseApi),
-          ]);
-
-        // Update UI with cached data
-        setBtcPrice(cachedPrice.price);
-        setBtcRate(cachedPrice.rate);
-        setBalanceBTC(cachedBalance.btc);
-        setBalanceUSD(cachedBalance.usd);
-        setTransactions(cachedTransactions.transactions);
-        setCacheTimestamps({
-          price: walletService.getLastPriceFetch(),
-          balance: walletService.getLastBalanceFetch(),
-          transactions: walletService.getLastTxFetch(addr),
+        // Try to fetch fresh data first with timeout
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error('API refresh timed out'));
+          }, 5000); // 5 second timeout
         });
 
-        // If not forcing refresh, we're done
-        if (!force) {
-          setLoading(false);
-          return;
-        }
-
-        // Force refresh in background
+        let freshData = null;
         try {
-          const [freshPrice, freshBalance, freshTransactions] =
-            await Promise.all([
+          freshData = await Promise.race([
+            Promise.all([
               walletService.getBitcoinPrice(),
               walletService.getWalletBalance(addr, btcRate, pendingSent, true),
               walletService.getTransactions(addr, wallet.baseApi),
-            ]);
+            ]),
+            timeoutPromise,
+          ]);
+        } catch (error) {
+          dbg('WalletHome: Error fetching fresh data:', error);
+          showErrorToast('Failed to refresh data');
+        }
 
-          // Update UI with fresh data
+        // If we got fresh data, use it
+        if (freshData) {
+          const [freshPrice, freshBalance, freshTransactions] = freshData;
           setBtcPrice(freshPrice.price);
           setBtcRate(freshPrice.rate);
           setBalanceBTC(freshBalance.btc);
           setBalanceUSD(freshBalance.usd);
           setTransactions(freshTransactions.transactions);
+
+          // Update cache timestamps with fresh data
           setCacheTimestamps({
             price: walletService.getLastPriceFetch(),
             balance: walletService.getLastBalanceFetch(),
             transactions: walletService.getLastTxFetch(addr),
           });
-        } catch (error) {
-          dbg('WalletHome: Error fetching fresh data:', error);
-          showErrorToast('Failed to refresh data');
-          // Keep using cached data on error
+        } else {
+          // Fall back to cached data only if fresh data fetch failed
+          const [cachedPrice, cachedBalance, cachedTransactions] =
+            await Promise.all([
+              walletService.getBitcoinPrice(),
+              walletService.getWalletBalance(addr, btcRate, pendingSent),
+              walletService.getTransactions(addr, wallet.baseApi),
+            ]);
+
+          // Update UI with cached data
+          setBtcPrice(cachedPrice.price);
+          setBtcRate(cachedPrice.rate);
+          setBalanceBTC(cachedBalance.btc);
+          setBalanceUSD(cachedBalance.usd);
+          setTransactions(cachedTransactions.transactions);
+
+          // Keep original cache timestamps when using cached data
+          setCacheTimestamps({
+            price: walletService.getLastPriceFetch(),
+            balance: walletService.getLastBalanceFetch(),
+            transactions: walletService.getLastTxFetch(addr),
+          });
         }
       } catch (error) {
         dbg('WalletHome: Error fetching data:', error);
@@ -713,10 +727,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         showErrorToast('Failed to fetch data');
         // Reset to empty state if no cache available
         if (!btcPrice || !balanceBTC) {
-          setBtcPrice('$0.00');
+          setBtcPrice('');
           setBtcRate(0);
           setBalanceBTC('0.00000000');
-          setBalanceUSD('$0.00');
+          setBalanceUSD('');
           setTransactions([]);
         }
       } finally {
@@ -940,7 +954,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               source={require('../assets/bitcoin-logo.png')}
               style={styles.btcLogo}
             />
-            <Text style={styles.btcPrice}>{btcPrice || '$0.00'}</Text>
+            <Text style={styles.btcPrice}>{btcPrice || '-'}</Text>
           </View>
           <TouchableOpacity onPress={handleBlurred}>
             <Text style={[styles.balanceBTC, isBlurred && styles.blurredText]}>
@@ -949,11 +963,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 : `${balanceBTC || '0.00000000'} BTC 🔒`}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleBlurred}>
-            <Text style={[styles.balanceUSD, isBlurred && styles.blurredText]}>
-              {isBlurred ? '* * *' : balanceUSD || '$0.00'}
-            </Text>
-          </TouchableOpacity>
+          {btcRate > 0 && (
+            <TouchableOpacity onPress={handleBlurred}>
+              <Text
+                style={[styles.balanceUSD, isBlurred && styles.blurredText]}>
+                {isBlurred ? '* * *' : balanceUSD || '-'}
+              </Text>
+            </TouchableOpacity>
+          )}
           <View style={styles.partyContainer}>
             <View style={styles.partyLeft}>
               <Text
