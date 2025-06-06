@@ -806,7 +806,22 @@ const TransactionList: React.FC<TransactionListProps> = ({
         getCurrencySymbol={getCurrencySymbol}
         address={address}
         status={
-          selectedTransaction ? getTransactionStatus(selectedTransaction) : null
+          selectedTransaction
+            ? (() => {
+                const {text: status, confirmed} = getTransactionStatus(selectedTransaction);
+                const {sent, changeAmount, received} = getTransactionAmounts(selectedTransaction, address);
+                let finalStatus = status;
+                if (sent === 0 && received === changeAmount) {
+                  finalStatus = confirmed
+                    ? '🔂 Consolidated UTXOs'
+                    : '🔂 Consolidating UTXOs';
+                }
+                return {
+                  confirmed,
+                  text: finalStatus,
+                };
+              })()
+            : null
         }
         amounts={
           selectedTransaction

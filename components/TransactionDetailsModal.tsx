@@ -174,7 +174,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
               )}
               {renderDetailRow(
                 'Fee',
-                `${formatBtcAmount(transaction.fee / 1e8)} BTC`,
+                `${formatBtcAmount(transaction.fee / 1e8)} BTC (${getCurrencySymbol(selectedCurrency)}${getFiatAmount(transaction.fee / 1e8)})`,
               )}
               {renderDetailRow('Size', `${transaction.size} bytes`)}
             </View>
