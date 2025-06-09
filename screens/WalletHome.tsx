@@ -58,7 +58,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [segwitCompatibleAddress, setSegwitCompatibleAddress] =
     React.useState('');
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
-  const [_error, setError] = useState<string | null>(null);
+  const [_error, setError] = useState<string>('');
   const [cacheTimestamps, setCacheTimestamps] = useState<CacheTimestamp>({
     price: 0,
     balance: 0,
@@ -71,7 +71,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
   const {theme} = useTheme();
   const styles = createStyles(theme);
-  const walletService = WalletService.getInstance();
   const wallet = useWallet();
 
   const showErrorToast = useCallback((message: string) => {
@@ -147,111 +146,125 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     });
   });
 
+  const handleTransactionUpdate = useCallback(
+    async (pendingTxs: any[], pending: number) => {
+      _setPendingSent(pending);
+      return Promise.resolve();
+    },
+    [],
+  );
+
   const fetchData = useCallback(
-    async (_force = false) => {
+    async () => {
       try {
-        // Only show loading state on initial load
         if (!isInitialized) {
-          setLoading(true);
+          dbg('WalletHome: Skipping fetch - not initialized');
+          return;
         }
-        setError(null);
-        setIsRefreshing(true);
 
-        // Get current state from storage
-        const net = (await EncryptedStorage.getItem('network')) || 'mainnet';
-        const addrType =
-          (await EncryptedStorage.getItem('addressType')) || 'legacy';
         const addr = await EncryptedStorage.getItem('currentAddress');
-        const currency = (await EncryptedStorage.getItem('currency')) || 'USD';
-        const keyshare = await EncryptedStorage.getItem('keyshare');
-        setSelectedCurrency(currency);
+        const baseApi = await EncryptedStorage.getItem('api');
+        const currency = await EncryptedStorage.getItem('currency') || 'USD';
 
-        if (!keyshare) {
-          dbg('WalletHome: No keyshare found, showing empty state');
-          setBalanceBTC('0.00000000');
-          setBalanceFiat('0');
-          setBtcPrice('');
-          setBtcRate(0);
+        if (!addr || !baseApi) {
+          dbg('WalletHome: Missing wallet address or baseApi');
           setLoading(false);
           setIsRefreshing(false);
           return;
         }
 
-        if (!addr || !wallet?.baseApi) {
-          dbg('WalletHome: Missing wallet address or baseApi');
-          setLoading(false);
-          return;
+        // Set up API URL
+        const cleanBaseApi = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
+        const apiUrl = `${cleanBaseApi}/api`;
+
+        // Ensure native module has correct settings
+        await BBMTLibNativeModule.setAPI(network, apiUrl);
+        if (apiUrl) {
+          setApiBase(apiUrl);
         }
 
-        dbg('WalletHome: Fetching data for address:', addr, net, addrType);
-
-        // Try to fetch fresh data first with timeout
-        const timeoutPromise = new Promise<never>((_, reject) => {
+        // Set up timeout for API calls
+        const timeoutPromise = new Promise((_, reject) => {
           setTimeout(() => {
             reject(new Error('API refresh timed out'));
           }, 5000); // 5 second timeout
         });
 
-        let freshData = null;
+        let freshData;
         try {
           freshData = await Promise.race([
             Promise.all([
-              walletService.getBitcoinPrice(),
-              walletService.getWalletBalance(addr, btcRate, _pendingSent, true),
+              WalletService.getInstance().getBitcoinPrice(),
+              WalletService.getInstance().getWalletBalance(
+                addr,
+                btcRate,
+                _pendingSent,
+                true,
+              ),
             ]),
             timeoutPromise,
           ]);
+
+          if (Array.isArray(freshData) && freshData.length === 2) {
+            const [freshPrice, freshBalance] = freshData;
+            const rates = freshPrice.rates || {};
+            setPriceData(rates);
+            setBtcPrice((rates[currency] !== undefined && rates[currency] !== null) ? rates[currency].toString() : '-');
+            setBtcRate(rates[currency] || 0);
+            setBalanceBTC(freshBalance.btc !== null && freshBalance.btc !== undefined ? freshBalance.btc : '0.00000000');
+            const fiatBalance =
+              Number(freshBalance.btc) * (rates[currency] || 0);
+            setBalanceFiat(fiatBalance.toFixed(2));
+          }
+
+          // Update cache timestamps with fresh data
+          setCacheTimestamps({
+            price: WalletService.getInstance().getLastPriceFetch(),
+            balance: WalletService.getInstance().getLastBalanceFetch(),
+          });
         } catch (error) {
           dbg('WalletHome: Error fetching fresh data:', error);
           showErrorToast('Failed to refresh data');
         }
 
-        // If we got fresh data, use it
-        if (freshData) {
-          const [freshPrice, freshBalance] = freshData;
-          setPriceData(freshPrice.rates || {});
-          setBtcPrice(freshPrice.rates?.[currency]?.toString() || '-');
-          setBtcRate(freshPrice.rates?.[currency] || 0);
-          setBalanceBTC(freshBalance.btc);
-          // Calculate fiat balance using the new rate
-          const fiatBalance =
-            Number(freshBalance.btc) * (freshPrice.rates?.[currency] || 0);
-          setBalanceFiat(fiatBalance.toFixed(2));
-
-          // Update cache timestamps with fresh data
-          setCacheTimestamps({
-            price: walletService.getLastPriceFetch(),
-            balance: walletService.getLastBalanceFetch(),
-          });
-        } else {
-          // Fall back to cached data only if fresh data fetch failed
-          const [cachedPrice, cachedBalance] = await Promise.all([
-            walletService.getBitcoinPrice(),
-            walletService.getWalletBalance(addr, btcRate, _pendingSent),
-          ]);
-
-          // Update UI with cached data
-          setPriceData(cachedPrice.rates || {});
-          setBtcPrice(cachedPrice.rates?.[currency]?.toString() || '-');
-          setBtcRate(cachedPrice.rates?.[currency] || 0);
-          setBalanceBTC(cachedBalance.btc);
-          // Calculate fiat balance using the cached rate
-          const fiatBalance =
-            Number(cachedBalance.btc) * (cachedPrice.rates?.[currency] || 0);
-          setBalanceFiat(fiatBalance.toFixed(2));
+        // Fall back to cached data only if fresh data fetch failed
+        if (!freshData) {
+          const cachedPricePromise = WalletService.getInstance().getBitcoinPrice();
+          const cachedBalancePromise = WalletService.getInstance().getWalletBalance(
+            addr,
+            btcRate,
+            _pendingSent,
+          );
+          const cachedResults = await Promise.all([cachedPricePromise, cachedBalancePromise]);
+          const cachedPrice = cachedResults[0];
+          const cachedBalance = cachedResults[1];
+          if (cachedPrice && cachedBalance) {
+            const rates = cachedPrice.rates || {};
+            setPriceData(rates);
+            setBtcPrice((rates[currency] !== undefined && rates[currency] !== null) ? rates[currency].toString() : '-');
+            setBtcRate(rates[currency] || 0);
+            setBalanceBTC(cachedBalance.btc !== null && cachedBalance.btc !== undefined ? cachedBalance.btc : '0.00000000');
+            const fiatBalance =
+              Number(cachedBalance.btc) * (rates[currency] || 0);
+            setBalanceFiat(fiatBalance.toFixed(2));
+          }
 
           // Keep original cache timestamps when using cached data
           setCacheTimestamps({
-            price: walletService.getLastPriceFetch(),
-            balance: walletService.getLastBalanceFetch(),
+            price: WalletService.getInstance().getLastPriceFetch(),
+            balance: WalletService.getInstance().getLastBalanceFetch(),
           });
         }
       } catch (error) {
         dbg('WalletHome: Error fetching data:', error);
-        setError(error instanceof Error ? error.message : 'Unknown error');
+        let errMsg = 'Unknown error';
+        if (error && typeof error === 'object' && 'message' in error && typeof (error as any).message === 'string') {
+          errMsg = (error as any).message || 'Unknown error';
+        }
+        setError(errMsg);
         showErrorToast('Failed to fetch data');
         // Reset to empty state if no cache available
-        if (!btcPrice || !balanceBTC) {
+        if (!btcPrice || typeof btcPrice !== 'string' || !balanceBTC || typeof balanceBTC !== 'string') {
           setBtcPrice('');
           setBtcRate(0);
           setBalanceBTC('0.00000000');
@@ -263,14 +276,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       }
     },
     [
-      wallet?.baseApi,
       btcRate,
       _pendingSent,
       showErrorToast,
-      walletService,
       isInitialized,
       btcPrice,
       balanceBTC,
+      network,
     ],
   );
 
@@ -289,10 +301,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
   };
 
-  const handleRefresh = useCallback(async () => {
-    await fetchData(true);
-  }, [fetchData]);
-
   // Add effect to initialize app
   useEffect(() => {
     const init = async () => {
@@ -310,6 +318,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           return;
         }
 
+        // Initialize WalletService only after confirming we have a keyshare
+        const walletService = WalletService.getInstance();
+        await walletService.initialize();
+
         const ks = JSON.parse(jks);
         const path = "m/44'/0'/0'/0/0";
         const btcPub = await BBMTLibNativeModule.derivePubkey(
@@ -318,16 +330,34 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           path,
         );
 
+        // Set default network if not set
         let net = await EncryptedStorage.getItem('network');
         if (!net) {
           net = 'mainnet';
           await EncryptedStorage.setItem('network', net);
+          dbg('WalletHome: Setting default network to mainnet');
+        }
+
+        // Set default address type if not set
+        let addrType = await EncryptedStorage.getItem('addressType');
+        if (!addrType) {
+          addrType = 'legacy';
+          await EncryptedStorage.setItem('addressType', addrType);
+          dbg('WalletHome: Setting default address type to legacy');
+        }
+
+        // Set default currency if not set
+        let currency = await EncryptedStorage.getItem('currency');
+        if (!currency) {
+          currency = 'USD';
+          await EncryptedStorage.setItem('currency', currency);
+          dbg('WalletHome: Setting default currency to USD');
         }
 
         const netParams = await BBMTLibNativeModule.setBtcNetwork(net);
         net = netParams.split('@')[0];
 
-        // Generate addresses
+        // Generate all address types
         const legacyAddr = await BBMTLibNativeModule.btcAddress(
           btcPub,
           net,
@@ -344,35 +374,37 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           'segwit-compatible',
         );
 
+        // Store all addresses
+        await EncryptedStorage.setItem('legacyAddress', legacyAddr);
+        await EncryptedStorage.setItem('segwitAddress', segwitAddr);
+        await EncryptedStorage.setItem('segwitCompatibleAddress', segwitCompAddr);
+
         setLegacyAddress(legacyAddr);
         setSegwitAddress(segwitAddr);
         setSegwitCompatibleAddress(segwitCompAddr);
         setParty(ks.local_party_key);
 
-        // Get current address type
-        const currentAddressType =
-          (await EncryptedStorage.getItem('addressType')) || 'legacy';
+        // Get current address type and generate address
+        const currentAddressType = addrType;
         setAddressType(currentAddressType);
 
-        // Generate address based on current type
+        // Generate and store current address
         const btcAddress = await BBMTLibNativeModule.btcAddress(
           btcPub,
           net,
           currentAddressType,
         );
-
+        await EncryptedStorage.setItem('currentAddress', btcAddress);
         setAddress(btcAddress);
-        setNetwork(net || 'mainnet');
+        setNetwork(net);
 
-        // Override APIs if set
+        // Set up API URL
         let base = netParams.split('@')[1];
-        // Ensure base URL ends with a slash
         if (!base.endsWith('/')) {
           base = `${base}/`;
         }
         let api = await EncryptedStorage.getItem('api');
         if (api) {
-          // Ensure API URL ends with a slash
           if (api.endsWith('/')) {
             api = api.substring(0, api.length - 1);
           }
@@ -383,9 +415,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           setApiBase(base);
         }
 
+        // Initialize cache timestamps
+        setCacheTimestamps({
+          price: Date.now(),
+          balance: Date.now(),
+        });
+
         setIsInitialized(true);
         // Force initial balance fetch
-        await fetchData(true);
+        await fetchData();
       } catch (error) {
         dbg('Error initializing wallet:', error);
         showErrorToast('Failed to initialize wallet. Please try again.');
@@ -427,11 +465,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       // Save new address and clear caches
       await EncryptedStorage.setItem('currentAddress', newAddress);
       setAddress(newAddress);
-      await walletService.clearCache();
+      await WalletService.getInstance().clearCache();
 
       // Refresh wallet and data
       await wallet.refreshWallet();
-      await fetchData(true);
+      await fetchData();
     } catch (error) {
       dbg('WalletHome: Error changing address type:', error);
       showErrorToast('Failed to change address type. Please try again.');
@@ -445,7 +483,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
 
     // Initial data fetch
-    fetchData(true);
+    fetchData();
   }, [isInitialized, address, fetchData]);
 
   const handleBlurred = () => {
@@ -630,7 +668,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       </View>
       <CacheIndicator
         timestamps={cacheTimestamps}
-        onRefresh={() => fetchData(true)}
+        onRefresh={() => fetchData()}
         theme={theme}
         isRefreshing={isRefreshing}
       />
@@ -638,8 +676,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         <TransactionList
           baseApi={apiBase}
           address={address}
-          onUpdate={() => Promise.resolve()}
-          onReload={handleRefresh}
+          onUpdate={handleTransactionUpdate}
           selectedCurrency={selectedCurrency}
           btcRate={btcRate}
           getCurrencySymbol={getCurrencySymbol}

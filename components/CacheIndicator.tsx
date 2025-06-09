@@ -58,11 +58,12 @@ export const CacheIndicator: React.FC<{
     setIsUsingCache(isCache);
   }, [latestTimestamp]);
 
-  if (latestTimestamp === 0) {
-    return null;
-  }
-
   const getTimeAgo = (timestamp: number) => {
+    // Handle case when timestamp is 0
+    if (timestamp === 0) {
+      return 'No data';
+    }
+
     const diffInSeconds = Math.floor((currentTime - timestamp) / 1000);
 
     // Handle edge cases
@@ -169,6 +170,8 @@ export const CacheIndicator: React.FC<{
           }}>
           {isRefreshing
             ? 'Refreshing...'
+            : latestTimestamp === 0
+            ? 'Tap to load data'
             : isUsingCache
             ? 'Tap to refresh data'
             : 'Tap to refresh'}
@@ -180,7 +183,9 @@ export const CacheIndicator: React.FC<{
             createStyles(theme).cacheText,
             {color: theme.colors.textSecondary},
           ]}>
-          {isUsingCache ? (
+          {latestTimestamp === 0 ? (
+            'No data available'
+          ) : isUsingCache ? (
             <>📱 Cached • {new Date(latestTimestamp).toLocaleTimeString()}</>
           ) : (
             <>{timeAgo} ⏰</>

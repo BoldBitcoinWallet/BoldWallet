@@ -25,7 +25,6 @@ import TransactionDetailsModal from './TransactionDetailsModal';
 interface TransactionListProps {
   address: string;
   baseApi: string;
-  _onReload: () => Promise<any>;
   onUpdate: (pendingTxs: any[], pending: number) => Promise<any>;
   initialTransactions?: any[];
   selectedCurrency?: string;
@@ -36,7 +35,6 @@ interface TransactionListProps {
 const TransactionList: React.FC<TransactionListProps> = ({
   address,
   baseApi,
-  _onReload,
   onUpdate,
   initialTransactions = [],
   selectedCurrency = 'USD',
@@ -106,7 +104,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
   const memoizedFetchTransactions = useCallback(
     async (url: string | undefined) => {
       dbg('memoizedFetchTransactions...');
-      
+
       // Prevent multiple simultaneous fetches
       if (isFetching.current) {
         dbg('Fetch already in progress, skipping');
@@ -132,17 +130,16 @@ const TransactionList: React.FC<TransactionListProps> = ({
       // Function to load from cache
       const loadFromCache = async () => {
         dbg('Loading from cache...');
-        const cachedTransactions = await WalletService.getInstance().transactionsFromCache(address);
+        const cachedTransactions =
+          await WalletService.getInstance().transactionsFromCache(address);
         if (isMounted.current) {
-          WalletService.getInstance().updateTransactionsCache(
-            address,
-            cachedTransactions,
-            true, // isFromCache
-          );
+          // No need to update cache when loading from cache
           setTransactions(cachedTransactions);
           setHasMoreTransactions(cachedTransactions.length > 0);
           if (cachedTransactions.length > 0) {
-            setLastSeenTxId(cachedTransactions[cachedTransactions.length - 1].txid);
+            setLastSeenTxId(
+              cachedTransactions[cachedTransactions.length - 1].txid,
+            );
           }
           // Clear refresh state when loading from cache
           setIsRefreshing(false);
@@ -155,19 +152,23 @@ const TransactionList: React.FC<TransactionListProps> = ({
           return;
         }
 
+        // Construct proper API URL
+        const cleanBaseApi = url.replace(/\/+$/, '').replace(/\/api\/?$/, '');
+        const apiUrl = `${cleanBaseApi}/api/address/${address}/txs`;
+        dbg('Starting fetch transactions from:', apiUrl);
+
         // Set a timeout to fall back to cache if API takes too long
         const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('API timeout')), 5000);
+          setTimeout(() => reject(new Error('API timeout')), 10000); // Increased timeout to 10s
         });
 
-        dbg('Starting fetch transactions from:', url);
-        const response = await Promise.race([
-          axios.get(url, {
+        const response = (await Promise.race([
+          axios.get(apiUrl, {
             signal: abortController.current.signal,
-            timeout: 5000,
+            timeout: 10000, // Increased timeout to 10s
           }),
           timeoutPromise,
-        ]) as { data: any[] };
+        ])) as {data: any[]};
 
         if (!isMounted.current) {
           dbg('Component unmounted, skipping state updates');
@@ -191,7 +192,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
           });
 
         // Update cache
-        response.data.filter((tx: any) => {
+        response.data.forEach((tx: any) => {
           if (cached[tx.txid]) {
             delete cached[tx.txid];
             EncryptedStorage.setItem('pendingTxs', JSON.stringify(cached));
@@ -214,33 +215,53 @@ const TransactionList: React.FC<TransactionListProps> = ({
               sentAt: cached[txID].sentAt,
               status: {
                 confirmed: false,
-                block_height: null
-              }
+                block_height: null,
+              },
             });
           }
         }
 
         await onUpdate(pendingTxs, pending);
 
-        const newTransactions = response.data.sort(
-          (a: any, b: any) => {
-            // If either transaction is pending (no status or no block_height), prioritize it
-            const aIsPending = !a.status || !a.status.block_height;
-            const bIsPending = !b.status || !b.status.block_height;
-            
-            if (aIsPending && !bIsPending) return -1; // a is pending, show it first
-            if (!aIsPending && bIsPending) return 1;  // b is pending, show it first
-            if (aIsPending && bIsPending) {
-              // If both are pending, sort by sentAt timestamp if available
-              const aTime = a.sentAt || 0;
-              const bTime = b.sentAt || 0;
-              return bTime - aTime; // Most recent pending first
+        // Filter out duplicates, keeping confirmed transactions over pending ones
+        const uniqueTransactions = response.data.reduce(
+          (acc: any[], tx: any) => {
+            const existingTx = acc.find(t => t.txid === tx.txid);
+            if (!existingTx) {
+              acc.push(tx);
+            } else {
+              // If we have a duplicate, keep the confirmed one
+              const existingIsPending =
+                !existingTx.status || !existingTx.status.confirmed;
+              const newIsPending = !tx.status || !tx.status.confirmed;
+              if (existingIsPending && !newIsPending) {
+                // Replace pending with confirmed
+                const index = acc.indexOf(existingTx);
+                acc[index] = tx;
+              }
             }
-            
-            // For confirmed transactions, sort by block height
-            return (b.status.block_height || 0) - (a.status.block_height || 0);
-          }
+            return acc;
+          },
+          [],
         );
+
+        const newTransactions = uniqueTransactions.sort((a: any, b: any) => {
+          // If either transaction is pending (no status or no block_height), prioritize it
+          const aIsPending = !a.status || !a.status.block_height;
+          const bIsPending = !b.status || !b.status.block_height;
+
+          if (aIsPending && !bIsPending) return -1; // a is pending, show it first
+          if (!aIsPending && bIsPending) return 1; // b is pending, show it first
+          if (aIsPending && bIsPending) {
+            // If both are pending, sort by sentAt timestamp if available
+            const aTime = a.sentAt || 0;
+            const bTime = b.sentAt || 0;
+            return bTime - aTime; // Most recent pending first
+          }
+
+          // For confirmed transactions, sort by block height
+          return (b.status.block_height || 0) - (a.status.block_height || 0);
+        });
 
         WalletService.getInstance().updateTransactionsCache(
           address,
@@ -248,18 +269,10 @@ const TransactionList: React.FC<TransactionListProps> = ({
         );
 
         if (isMounted.current) {
-          // Ensure unique transactions by txid
-          const uniqueTransactions = newTransactions.reduce((acc: any[], tx: any) => {
-            if (!acc.find(t => t.txid === tx.txid)) {
-              acc.push(tx);
-            }
-            return acc;
-          }, []);
-
-          setTransactions(uniqueTransactions);
-          setHasMoreTransactions(uniqueTransactions.length > 0);
-          if (uniqueTransactions.length > 0) {
-            setLastSeenTxId(uniqueTransactions[uniqueTransactions.length - 1].txid);
+          setTransactions(newTransactions);
+          setHasMoreTransactions(newTransactions.length > 0);
+          if (newTransactions.length > 0) {
+            setLastSeenTxId(newTransactions[newTransactions.length - 1].txid);
           }
           // Clear refresh state on successful API response
           setIsRefreshing(false);
@@ -301,7 +314,15 @@ const TransactionList: React.FC<TransactionListProps> = ({
       return;
     }
     setIsRefreshing(true);
-    await memoizedFetchTransactions(baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, ''));
+    try {
+      await memoizedFetchTransactions(baseApi);
+    } catch (error) {
+      // Error is already handled in memoizedFetchTransactions
+    } finally {
+      if (isMounted.current) {
+        setIsRefreshing(false);
+      }
+    }
   }, [baseApi, isRefreshing, memoizedFetchTransactions]);
 
   // Cleanup on unmount
@@ -311,8 +332,6 @@ const TransactionList: React.FC<TransactionListProps> = ({
       if (abortController.current) {
         abortController.current.abort();
       }
-      // Clear refresh state on unmount
-      setIsRefreshing(false);
     };
   }, []);
 
@@ -324,20 +343,18 @@ const TransactionList: React.FC<TransactionListProps> = ({
     abortController.current = controller;
 
     const fetchData = async () => {
-      if (!mounted || isFetching.current) {
+      if (!mounted || isFetching.current || isRefreshing) {
         dbg('Skipping fetch - conditions not met:', {
           mounted,
           isFetching: isFetching.current,
+          isRefreshing,
         });
         return;
       }
 
       try {
         dbg('Starting fetch transactions');
-        const cleanBaseApi = baseApi.replace(/\/+$/, '');
-        await memoizedFetchTransactions(
-          `${cleanBaseApi}/address/${address}/txs`,
-        );
+        await memoizedFetchTransactions(baseApi);
       } catch (error: any) {
         if (error.name !== 'CanceledError') {
           dbg('Error in fetch:', error);
@@ -346,13 +363,13 @@ const TransactionList: React.FC<TransactionListProps> = ({
     };
 
     // Initial fetch
-    if (!isFetching.current) {
+    if (!isFetching.current && !isRefreshing) {
       fetchData();
     }
 
     // Set up refresh interval
     refreshInterval = setInterval(() => {
-      if (mounted && !isFetching.current) {
+      if (mounted && !isFetching.current && !isRefreshing) {
         fetchData();
       }
     }, 30000); // Refresh every 30 seconds
@@ -369,15 +386,9 @@ const TransactionList: React.FC<TransactionListProps> = ({
       // Reset states on cleanup
       isFetching.current = false;
       setLoading(false);
+      setIsRefreshing(false);
     };
-  }, [address, baseApi, memoizedFetchTransactions]); // Remove loading and refreshing from dependencies
-
-  // Separate effect for handling loading state
-  useEffect(() => {
-    if (!loading && !isFetching.current) {
-      dbg('Loading states reset');
-    }
-  }, [loading]);
+  }, [address, baseApi, memoizedFetchTransactions, isRefreshing]);
 
   // Memoized transaction status checker
   const getTransactionStatus = useCallback(
@@ -498,8 +509,8 @@ const TransactionList: React.FC<TransactionListProps> = ({
               sentAt: cached[txID].sentAt,
               status: {
                 confirmed: false,
-                block_height: null
-              }
+                block_height: null,
+              },
             });
           }
         }
@@ -561,8 +572,14 @@ const TransactionList: React.FC<TransactionListProps> = ({
   const styles = StyleSheet.create({
     container: {
       flex: 1,
-      paddingLeft: 0,
-      paddingRight: 0,
+    },
+    list: {
+      flex: 1,
+      backgroundColor: colors.card,
+    },
+    listContent: {
+      flexGrow: 1,
+      paddingBottom: 20,
     },
     transactionItem: {
       padding: 12,
@@ -802,11 +819,20 @@ const TransactionList: React.FC<TransactionListProps> = ({
   }, [loading, styles.emptyContainer, styles.emptyText]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView
+      style={[styles.container, {backgroundColor: colors.background}]}>
       <FlatList
+        style={styles.list}
+        contentContainerStyle={styles.listContent}
         data={transactions}
         renderItem={renderItem}
-        keyExtractor={item => item.txid}
+        keyExtractor={item => {
+          const isPending = !item.status || !item.status.confirmed;
+          const timestamp = item.sentAt || item.status?.block_time || 0;
+          return `${item.txid}-${
+            isPending ? 'pending' : 'confirmed'
+          }-${timestamp}`;
+        }}
         onEndReached={hasMoreTransactions ? fetchMore : null}
         onEndReachedThreshold={0.5}
         ListEmptyComponent={renderEmptyComponent}
@@ -818,42 +844,59 @@ const TransactionList: React.FC<TransactionListProps> = ({
           ) : null
         }
         refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+            progressBackgroundColor={colors.card}
+            progressViewOffset={0}
+            enabled={true}
+          />
         }
       />
-      <TransactionDetailsModal
-        visible={isDetailsModalVisible}
-        onClose={() => setIsDetailsModalVisible(false)}
-        transaction={selectedTransaction}
-        baseApi={baseApi}
-        selectedCurrency={selectedCurrency}
-        btcRate={btcRate}
-        getCurrencySymbol={getCurrencySymbol}
-        address={address}
-        status={
-          selectedTransaction
-            ? (() => {
-                const {text: status, confirmed} = getTransactionStatus(selectedTransaction);
-                const {sent, changeAmount, received} = getTransactionAmounts(selectedTransaction, address);
-                let finalStatus = status;
-                if (sent === 0 && received === changeAmount) {
-                  finalStatus = confirmed
-                    ? '🔂 Consolidated UTXOs'
-                    : '🔂 Consolidating UTXOs';
-                }
-                return {
-                  confirmed,
-                  text: finalStatus,
-                };
-              })()
-            : null
-        }
-        amounts={
-          selectedTransaction
-            ? getTransactionAmounts(selectedTransaction, address)
-            : null
-        }
-      />
+      {selectedTransaction && (
+        <TransactionDetailsModal
+          visible={isDetailsModalVisible}
+          transaction={selectedTransaction}
+          onClose={() => {
+            setIsDetailsModalVisible(false);
+            setSelectedTransaction(null);
+          }}
+          baseApi={baseApi}
+          selectedCurrency={selectedCurrency}
+          btcRate={btcRate}
+          getCurrencySymbol={getCurrencySymbol}
+          address={address}
+          status={
+            selectedTransaction
+              ? (() => {
+                  const {text: status, confirmed} =
+                    getTransactionStatus(selectedTransaction);
+                  const {sent, changeAmount, received} = getTransactionAmounts(
+                    selectedTransaction,
+                    address,
+                  );
+                  let finalStatus = status;
+                  if (sent === 0 && received === changeAmount) {
+                    finalStatus = confirmed
+                      ? '🔂 Consolidated UTXOs'
+                      : '🔂 Consolidating UTXOs';
+                  }
+                  return {
+                    confirmed,
+                    text: finalStatus,
+                  };
+                })()
+              : null
+          }
+          amounts={
+            selectedTransaction
+              ? getTransactionAmounts(selectedTransaction, address)
+              : null
+          }
+        />
+      )}
       <Toast config={{}} />
     </SafeAreaView>
   );

@@ -20,7 +20,6 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 import RNFS from 'react-native-fs';
 import {useTheme} from '../theme';
 import {dbg} from '../utils';
-import MobilesPairing from './screens/MobilesPairing';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -110,6 +109,7 @@ const ShowcaseScreen = ({navigation}: any) => {
         await EncryptedStorage.setItem('keyshare', decryptedKeyshare);
         setModalVisible(false);
         setPassword('');
+        dbg('Opening Home');
         setTimeout(() => {
           navigation.dispatch(
             CommonActions.reset({

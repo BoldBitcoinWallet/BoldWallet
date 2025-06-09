@@ -183,54 +183,80 @@ const MobilesPairing = ({navigation}: any) => {
 
   async function initSession() {
     try {
+      dbg('initSession: Starting session initialization');
       const kp = JSON.parse(keypair);
+      dbg('initSession: Parsed keypair', {publicKey: kp.publicKey});
+
       if (isMaster) {
+        dbg('initSession: Running as master device');
         let _data = randomSeed(64);
+        dbg('initSession: Generated random seed');
+
         if (isSendBitcoin) {
+          dbg('initSession: Preparing for Bitcoin send');
           const jks = await EncryptedStorage.getItem('keyshare');
           const ks = JSON.parse(jks || '{}');
           _data += ':' + route.params.satoshiAmount;
           _data += ':' + route.params.satoshiFees;
           _data += ':' + ks.local_party_key;
+          dbg('initSession: Added Bitcoin transaction data to session data');
         }
-        dbg('publishing data', _data, 'peer pubkey', peerPubkey);
+
+        dbg('initSession: Publishing data', {
+          data: _data,
+          peerPubkey,
+          discoveryPort,
+          timeout,
+        });
+
         const published = await BBMTLibNativeModule.publishData(
           String(discoveryPort),
           String(timeout),
           peerPubkey,
           _data,
         );
+
         if (published) {
-          dbg('data publish response:', published);
+          dbg('initSession: Data published successfully', {published});
           const peerChecksum = published.replace('data=', '');
-          const localPayload = `${kp.publicKey}/${route.params.satoshiAmount}`;
+          const localPayload = `${kp.publicKey}/${route.params?.satoshiAmount}`;
           const localChecksum = await BBMTLibNativeModule.sha256(localPayload);
-          dbg('checksum validation', {
+
+          dbg('initSession: Validating checksums', {
             localPayload,
             localChecksum,
             peerChecksum,
           });
+
           if (peerChecksum !== localChecksum) {
+            dbg('initSession: Checksum validation failed');
             throw 'Make sure you\'re sending the "Same Bitcoin" amount from Both Devices';
           }
+
+          dbg('initSession: Session initialization completed successfully');
           return _data;
         } else {
+          dbg('initSession: Timeout waiting for peer device');
           throw 'Waited too long for other devices to press (Join Tx Co-Signing)';
         }
       } else {
-        const payload = `${peerPubkey}/${route.params.satoshiAmount}`;
+        dbg('initSession: Running as peer device');
+        const payload = `${peerPubkey}/${route.params?.satoshiAmount}`;
         const checksum = await BBMTLibNativeModule.sha256(payload);
         const peerURL = `http://${peerIP}:${discoveryPort}/`;
-        dbg('fetching data...', {
-          payload: `${peerPubkey}/${route.params.satoshiAmount}`,
+
+        dbg('initSession: Fetching data from peer', {
+          payload,
           checksum,
           peerURL,
         });
+
         const rawFetched = await fetchData(peerURL, kp.privateKey, checksum);
-        dbg('fetched data', rawFetched);
+        dbg('initSession: Data fetched successfully', {rawFetched});
         return rawFetched;
       }
     } catch (e: any) {
+      dbg('initSession: Error occurred', {error: e});
       throw 'Error initializing session: \n' + e;
     }
   }
@@ -252,6 +278,7 @@ const MobilesPairing = ({navigation}: any) => {
       setMpcDone(false);
       setPrepCounter(0);
 
+      dbg('mpcTssSetup...');
       const data = await initSession();
       dbg('got session data', data);
       if (isMaster) {
@@ -291,12 +318,6 @@ const MobilesPairing = ({navigation}: any) => {
           dbg('keygen result', result.substring(0, 40));
           setKeyshare(result);
           await EncryptedStorage.setItem('keyshare', result);
-          navigation.dispatch(
-            CommonActions.reset({
-              index: 0,
-              routes: [route],
-            }),
-          );
           setMpcDone(true);
         })
         .catch((e: any) => {
@@ -552,6 +573,8 @@ const MobilesPairing = ({navigation}: any) => {
         if (msg.done) {
           dbg('progress - keygen done');
           setProgress(100);
+          setMpcDone(true);
+          // Don't navigate away, let the backup UI handle it
         } else {
           dbg(
             'progress - keygen: ',

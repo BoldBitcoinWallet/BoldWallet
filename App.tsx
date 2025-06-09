@@ -203,9 +203,16 @@ const App = () => {
   };
 
   const initializeApp = async () => {
-    EncryptedStorage.getItem('keyshare').then(ks => {
-      setInitialRoute(ks ? 'Bold Home' : 'Showcase');
-    });
+    try {
+      const ks = await EncryptedStorage.getItem('keyshare');
+      dbg('initializeApp keyshare found', !!ks);
+      const route = ks ? 'Bold Home' : 'Showcase';
+      dbg('Setting initial route to:', route);
+      setInitialRoute(route);
+    } catch (error) {
+      dbg('Error in initializeApp:', error);
+      setInitialRoute('Showcase');
+    }
   };
 
   useEffect(() => {
@@ -217,7 +224,8 @@ const App = () => {
     await authenticateUser();
   };
 
-  if (initialRoute === null || !isAuthenticated) {
+  if (initialRoute === null) {
+    dbg('Rendering LoadingScreen - initialRoute is null');
     return (
       <ThemeProvider>
         <LoadingScreen onRetry={handleRetryAuthentication} />
@@ -225,55 +233,60 @@ const App = () => {
     );
   }
 
-  return (
-    <>
+  if (!isAuthenticated) {
+    dbg('Rendering LoadingScreen - not authenticated');
+    return (
       <ThemeProvider>
-        <WalletProvider>
-          <NavigationContainer>
-            <Stack.Navigator
-              screenOptions={{
-                headerShown: false,
-              }}>
-              {!isAuthenticated ? (
-                <Stack.Screen name="Loading" component={LoadingScreen} />
-              ) : (
-                <>
-                  <Stack.Screen
-                    name="Bold Home"
-                    component={WalletHome}
-                    options={{
-                      headerShown: true,
-                      headerLeft: () => null,
-                    }}
-                  />
-                  <Stack.Screen
-                    name="Settings"
-                    component={WalletSettings}
-                    options={{
-                      headerShown: true,
-                    }}
-                  />
-                  <Stack.Screen
-                    name="Showcase"
-                    component={ShowcaseScreen}
-                    options={{
-                      headerShown: true,
-                    }}
-                  />
-                  <Stack.Screen
-                    name="📱📱 Pairing"
-                    component={MobilesPairing}
-                    options={{
-                      headerShown: true,
-                    }}
-                  />
-                </>
-              )}
-            </Stack.Navigator>
-          </NavigationContainer>
-        </WalletProvider>
+        <LoadingScreen onRetry={handleRetryAuthentication} />
       </ThemeProvider>
-    </>
+    );
+  }
+
+  dbg('Rendering main navigation with initialRoute:', initialRoute);
+
+  return (
+    <ThemeProvider>
+      <WalletProvider>
+        <NavigationContainer>
+          <Stack.Navigator
+            initialRouteName={initialRoute}
+            screenOptions={{
+              headerShown: false,
+              animationEnabled: false,
+            }}>
+            <Stack.Screen
+              name="Bold Home"
+              component={WalletHome}
+              options={{
+                headerShown: true,
+                headerLeft: () => null,
+              }}
+            />
+            <Stack.Screen
+              name="Showcase"
+              component={ShowcaseScreen}
+              options={{
+                headerShown: true,
+              }}
+            />
+            <Stack.Screen
+              name="Settings"
+              component={WalletSettings}
+              options={{
+                headerShown: true,
+              }}
+            />
+            <Stack.Screen
+              name="📱📱 Pairing"
+              component={MobilesPairing}
+              options={{
+                headerShown: true,
+              }}
+            />
+          </Stack.Navigator>
+        </NavigationContainer>
+      </WalletProvider>
+    </ThemeProvider>
   );
 };
 

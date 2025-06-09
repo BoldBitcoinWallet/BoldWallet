@@ -140,10 +140,28 @@ export class WalletService {
   };
 
   private constructor() {
-    // Initialize by loading cached data
-    this.loadCachedData();
-    // Initialize network state from storage
-    this.initializeNetworkState();
+    // Don't auto-initialize, wait for explicit initialize call
+  }
+
+  public async initialize() {
+    try {
+      // Check for keyshare first
+      const keyshare = await EncryptedStorage.getItem('keyshare');
+      if (!keyshare) {
+        dbg('WalletService: No keyshare found, skipping initialization');
+        return;
+      }
+
+      // Initialize by loading cached data
+      await this.loadCachedData();
+      // Initialize network state from storage
+      await this.initializeNetworkState();
+      
+      dbg('WalletService: Initialization completed successfully');
+    } catch (error) {
+      dbg('WalletService: Error during initialization:', error);
+      throw error;
+    }
   }
 
   private async getStoredState() {
