@@ -152,6 +152,69 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun estimateRBFFees(txRbfId: String, promise: Promise) {
+        Thread {
+            try {
+                val result =
+                    Tss.estimateRBFFees(txRbfId)
+                ld("estimateRBFFees", result)
+                promise.resolve(result)
+            } catch (e: Exception) {
+                ld("estimateRBFFees", "error: ${e.stackTraceToString()}")
+                promise.reject(e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun mpcRbfBTC(
+        // tss
+        server: String,
+        partyID: String,
+        partiesCSV: String,
+        sessionID: String,
+        sessionKey: String,
+        encKey: String,
+        decKey: String,
+        keyshare: String,
+        derivation: String,
+        // btc
+        publicKey: String,
+        senderAddress: String,
+        receiverAddress: String,
+        // tx
+        originalTxID: String,
+        // amounts
+        amountSatoshi: String,
+        feeSatoshi: String,
+        promise: Promise) {
+        Thread {
+            try {
+                val result = Tss.mpcRbfBTC(server,
+                    partyID,
+                    partiesCSV,
+                    sessionID,
+                    sessionKey,
+                    encKey,
+                    decKey,
+                    keyshare,
+                    derivation,
+                    publicKey,
+                    senderAddress,
+                    receiverAddress,
+                    originalTxID,
+                    amountSatoshi.toLong(),
+                    feeSatoshi.toLong())
+                ld("mpcRbfBTC", result)
+                promise.resolve(result)
+            } catch (e: Exception) {
+                ld("mpcRbfBTC", "error: ${e.stackTraceToString()}")
+                promise.reject(e)
+            }
+        }.start()
+    }
+    
+    @ReactMethod
     fun mpcSendBTC(
         // tss
         server: String,

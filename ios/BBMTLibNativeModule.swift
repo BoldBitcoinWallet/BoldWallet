@@ -118,6 +118,18 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     }
   }
 
+  @objc func estimateRBFFees(
+    _ txRbfId: String, resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      guard self != nil else { return }
+      var error: NSError?
+      let output = TssEstimateRBFFees(txRbfId, &error)
+      self?.resolve("estimateRBFFees", output, error, resolver)
+    }
+  }
+
   @objc func mpcSendBTC(
     /* tss */
     _ server: String,
@@ -157,6 +169,50 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
         Int64(amountSatoshi) ?? 0,
         Int64(feeSatoshi) ?? 0, &error)
       self?.resolve("mpcSendBTC", output, error, resolver)
+    }
+  }
+
+  @objc func mpcRbfBTC(
+    /* tss */
+    _ server: String,
+    partyID: String,
+    partiesCSV: String,
+    sessionID: String,
+    sessionKey: String,
+    encKey: String,
+    decKey: String,
+    keyshare: String,
+    derivation: String,
+    /* btc */
+    publicKey: String,
+    senderAddress: String,
+    receiverAddress: String,
+    originalTxID: String,
+    amountSatoshi: String,
+    feeSatoshi: String,
+    resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      guard self != nil else { return }
+      var error: NSError?
+      let output = TssMpcRbfBTC(
+        server,
+        partyID,
+        partiesCSV,
+        sessionID,
+        sessionKey,
+        encKey,
+        decKey,
+        keyshare,
+        derivation,
+        publicKey,
+        senderAddress,
+        receiverAddress,
+        originalTxID,
+        Int64(amountSatoshi) ?? 0,
+        Int64(feeSatoshi) ?? 0, &error)
+      self?.resolve("mpcRbfBTC", output, error, resolver)
     }
   }
 

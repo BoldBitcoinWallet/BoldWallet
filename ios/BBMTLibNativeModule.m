@@ -131,6 +131,11 @@ RCT_EXTERN_METHOD(estimateFees:(NSString *)senderAddress
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+// Call estimateRBFFees
+RCT_EXTERN_METHOD(estimateRBFFees:(NSString *)txRbfId
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 // Call mpcSendBTC
 RCT_EXTERN_METHOD(mpcSendBTC:(NSString *)server
                   partyID:(NSString *)partyID
@@ -144,6 +149,25 @@ RCT_EXTERN_METHOD(mpcSendBTC:(NSString *)server
                   publicKey:(NSString *)publicKey
                   senderAddress:(NSString *)senderAddress
                   receiverAddress:(NSString *)receiverAddress
+                  amountSatoshi:(NSString *)amountSatoshi
+                  feeSatoshi:(NSString *)feeSatoshi
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+// Call mpcRbfBTC
+RCT_EXTERN_METHOD(mpcRbfBTC:(NSString *)server
+                  partyID:(NSString *)partyID
+                  partiesCSV:(NSString *)partiesCSV
+                  sessionID:(NSString *)sessionID
+                  sessionKey:(NSString *)sessionKey
+                  encKey:(NSString *)encKey
+                  decKey:(NSString *)decKey
+                  keyshare:(NSString *)keyshare
+                  derivation:(NSString *)derivation
+                  publicKey:(NSString *)publicKey
+                  senderAddress:(NSString *)senderAddress
+                  receiverAddress:(NSString *)receiverAddress
+                  originalTxID:(NSString *)originalTxID
                   amountSatoshi:(NSString *)amountSatoshi
                   feeSatoshi:(NSString *)feeSatoshi
                   resolver:(RCTPromiseResolveBlock)resolve

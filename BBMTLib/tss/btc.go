@@ -129,6 +129,7 @@ func FetchUTXODetails(txID string, vout uint32) (*wire.TxOut, bool, error) {
 
 func RecommendedFees(feeType string) (int, error) {
 	url := fmt.Sprintf("%s/v1/fees/recommended", _api_url)
+	Logf("Fetching fee rate from: %s", url)
 	resp, err := http.Get(url)
 	if err != nil {
 		return 0, err
@@ -140,19 +141,26 @@ func RecommendedFees(feeType string) (int, error) {
 		Logf("Error getting the feerate - using 2 sat/vB defaulted. %v", err)
 		return 2, nil
 	}
+	Logf("Fee response: %+v", fees)
 
 	switch feeType {
 	case "top":
+		Logf("Using fastest fee rate: %d sat/vB", fees.FastestFee)
 		return fees.FastestFee, nil
 	case "30m":
+		Logf("Using 30 minute fee rate: %d sat/vB", fees.HalfHourFee)
 		return fees.HalfHourFee, nil
 	case "1hr":
+		Logf("Using 1 hour fee rate: %d sat/vB", fees.HourFee)
 		return fees.HourFee, nil
 	case "eco":
+		Logf("Using economy fee rate: %d sat/vB", fees.EconomyFee)
 		return fees.EconomyFee, nil
 	case "min":
+		Logf("Using minimum fee rate: %d sat/vB", fees.MinimumFee)
 		return fees.MinimumFee, nil
 	default:
+		Logf("Invalid fee type requested: %s", feeType)
 		return 0, errors.New("invalid fee type: top, eco, min, 1hr, 30m")
 	}
 }
@@ -1263,8 +1271,48 @@ func PubToP2TR(pubKeyCompressedHex, mainnetORtestnet3 string) (string, error) {
 	return taprootAddr.EncodeAddress(), nil
 }
 
+// EstimateRBFFees calculates the new fees for an RBF transaction
+// based on the old transaction ID and the new fee rate
+func EstimateRBFFees(txRbfId string) (string, error) {
+	// Get the transaction details from the network
+	url := fmt.Sprintf("%s/tx/%s", _api_url, txRbfId)
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch transaction: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var txData struct {
+		Size int64 `json:"size"` // Size in vbytes
+		Fee  int64 `json:"fee"`  // Fee in satoshis
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&txData); err != nil {
+		return "", fmt.Errorf("failed to parse transaction response: %w", err)
+	}
+
+	// Fetch fee rate (sat/vB)
+	feeRate, err := RecommendedFees(_fee_set)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch fee rate: %w", err)
+	}
+	Logf("Fee Rate for %s: %d sat/vB", _fee_set, feeRate)
+
+	// Calculate the new fee based on the transaction size and new fee rate
+	newFee := txData.Size * int64(feeRate)
+
+	// Ensure the new fee is higher than the old fee (RBF rule)
+	if newFee < txData.Fee {
+		return "", fmt.Errorf("new fee must be higher than old fee for RBF (old fee: %d, new fee: %d)", txData.Fee, newFee)
+	}
+
+	Logf("RBF Fee Estimation - Old Fee: %d, New Fee: %d, Size: %d vbytes, Rate: %d sat/vB",
+		txData.Fee, newFee, txData.Size, feeRate)
+
+	return fmt.Sprintf("%d", newFee), nil
+}
+
 // ReplaceTransaction creates a replacement transaction with a higher fee
-func ReplaceTransaction(
+func MpcRbfBTC(
 	/* tss */
 	server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath,
 	/* btc */
@@ -1274,7 +1322,7 @@ func ReplaceTransaction(
 	/* amounts */
 	amountSatoshi, newFee int64) (string, error) {
 
-	Logln("BBMTLog", "invoking ReplaceTransaction...")
+	Logln("BBMTLog", "invoking MpcRbfBTC...")
 
 	// Fetch the original transaction details
 	url := fmt.Sprintf("%s/tx/%s", _api_url, originalTxID)
@@ -1341,8 +1389,20 @@ func ReplaceTransaction(
 		scriptBytes, _ := hex.DecodeString(vout.Scriptpubkey)
 		addr, err := btcutil.DecodeAddress(senderAddress, &chaincfg.MainNetParams)
 		if err == nil {
-			script, _ := txscript.PayToAddrScript(addr)
-			if bytes.Equal(script, scriptBytes) {
+			// Try different script types for the sender's address
+			var script []byte
+			switch addr.(type) {
+			case *btcutil.AddressPubKeyHash:
+				script, _ = txscript.PayToAddrScript(addr)
+			case *btcutil.AddressWitnessPubKeyHash:
+				script, _ = txscript.PayToAddrScript(addr)
+			case *btcutil.AddressWitnessScriptHash:
+				script, _ = txscript.PayToAddrScript(addr)
+			case *btcutil.AddressScriptHash:
+				script, _ = txscript.PayToAddrScript(addr)
+			}
+
+			if script != nil && bytes.Equal(script, scriptBytes) {
 				changeOutputIndex = i
 				break
 			}

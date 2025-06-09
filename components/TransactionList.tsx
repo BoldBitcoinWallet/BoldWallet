@@ -477,7 +477,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
 
         // Update cache
         filteredTransactions.filter((tx: any) => {
-          dbg('checking tx in fetch more:', tx.txid);
+          // dbg('checking tx in fetch more:', tx.txid);
           if (cached[tx.txid]) {
             delete cached[tx.txid];
             dbg('delete from cache in fetch more', tx.txid);
@@ -664,7 +664,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
   // Memoized render item with currency support
   const renderItem = useCallback(
     ({item}: any) => {
-      dbg('rendering tx-item', item);
+      // dbg('rendering tx-item', item);
 
       const {text: status, confirmed} = getTransactionStatus(item);
       const {sent, changeAmount, received} = getTransactionAmounts(

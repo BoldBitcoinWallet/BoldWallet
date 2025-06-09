@@ -15,7 +15,6 @@ import {
   Image,
   ActivityIndicator,
   NativeModules,
-  ScrollView,
 } from 'react-native';
 
 import BarcodeZxingScan from 'rn-barcode-zxing-scan';
@@ -35,6 +34,8 @@ interface SendBitcoinModalProps {
   btcToUsdRate: Big;
   walletBalance: Big;
   walletAddress: string;
+  selectedCurrency: string;
+  getCurrencySymbol: (currency: string) => string;
 }
 
 const E8 = Big(10).pow(8);
@@ -46,12 +47,13 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   btcToUsdRate,
   walletBalance,
   walletAddress,
+  selectedCurrency,
+  getCurrencySymbol,
 }) => {
   const [address, setAddress] = useState<string>('');
   const [btcAmount, setBtcAmount] = useState<Big>(Big(0));
   const [inBtcAmount, setInBtcAmount] = useState('');
   const [inUsdAmount, setInUsdAmount] = useState('');
-  const [isScannerVisible, setIsScannerVisible] = useState<boolean>(false);
   const [estimatedFee, setEstimatedFee] = useState<Big | null>(null);
   const [isCalculatingFee, setIsCalculatingFee] = useState(false);
 
@@ -62,6 +64,8 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
 
   const styles = StyleSheet.create({
     feeStrategyContainer: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
       marginBottom: 10,
     },
     feeStrategyButton: {
@@ -70,6 +74,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       paddingHorizontal: 12,
       borderRadius: 16,
       marginRight: 8,
+      marginBottom: 8,
       borderWidth: 1,
       borderColor: theme.colors.border,
     },
@@ -84,6 +89,31 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     },
     feeStrategyTextSelected: {
       color: '#fff',
+    },
+    section: {
+      marginBottom: 20,
+    },
+    sectionTitle: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: theme.colors.text,
+      marginBottom: 10,
+    },
+    feeInfoContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 8,
+    },
+    feeAmount: {
+      fontSize: 14,
+      color: theme.colors.text,
+      fontWeight: '500',
+    },
+    feeAmountUsd: {
+      fontSize: 14,
+      color: theme.colors.text,
+      opacity: 0.7,
+      marginLeft: 8,
     },
     label: {
       fontSize: 14,
@@ -186,14 +216,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       fontWeight: '600',
       color: '#7f8c8d',
     },
-    feeInfoContainer: {
-      marginTop: 5,
-    },
-    feeAmount: {
-      fontSize: 16,
-      fontWeight: 'bold',
-      color: theme.colors.text,
-    },
     feeCalculating: {
       marginLeft: 10,
       color: '#7f8c8d',
@@ -209,10 +231,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       alignItems: 'center',
       justifyContent: 'center',
       marginTop: 5,
-    },
-    feeAmountUsd: {
-      fontSize: 14,
-      color: '#7f8c8d',
     },
     sendCancelButtons: {
       flexDirection: 'row',
@@ -276,19 +294,23 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   });
 
   const feeStrategies = [
-    {label: 'Economy', value: 'eco'},
-    {label: 'Top Priority', value: 'top'},
-    {label: '30 Min', value: '30m'},
-    {label: '1 Hour', value: '1hr'},
-    {label: 'Minimum', value: 'min'},
+    {value: 'eco', label: 'Eco'},
+    {value: 'top', label: 'Top'},
+    {value: '30m', label: '30m'},
+    {value: '1hr', label: '1h'},
+    {value: 'min', label: 'Min'},
   ];
 
-  const formatUSD = (price: number) =>
-    new Intl.NumberFormat('en-US', {
-      style: 'decimal',
+  const formatFiatAmount = (btcAmt: number) => {
+    const fiatAmount = btcAmt * btcToUsdRate.toNumber();
+    const currency = selectedCurrency || 'USD';
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency,
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(price);
+    }).format(fiatAmount);
+  };
 
   const debouncedGetFee = useCallback(
     debounce(async (addr: string, amt: string) => {
@@ -407,58 +429,44 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     onSend(address, Big(inBtcAmount).times(1e8), estimatedFee);
   };
 
-  const renderFeeSection = () => {
-    if (!address || !btcAmount) {
-      return null;
-    }
-    return (
-      <View style={styles.feeContainer}>
-        {isCalculatingFee ? (
-          <View style={styles.feeLoadingContainer}>
-            <ActivityIndicator size="small" color={theme.colors.primary} />
-            <Text style={styles.feeCalculating}>Calculating...</Text>
-          </View>
-        ) : estimatedFee ? (
-          <View style={styles.feeInfoContainer}>
-            <View style={styles.feeStrategyContainer}>
-              <Text style={styles.label}>Network Fee:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {feeStrategies.map(strategy => (
-                  <TouchableOpacity
-                    key={strategy.value}
-                    style={[
-                      styles.feeStrategyButton,
-                      feeStrategy === strategy.value &&
-                        styles.feeStrategyButtonSelected,
-                    ]}
-                    onPress={() => handleFeeStrategyChange(strategy.value)}>
-                    <Text
-                      style={[
-                        styles.feeStrategyText,
-                        feeStrategy === strategy.value &&
-                          styles.feeStrategyTextSelected,
-                      ]}>
-                      {strategy.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-            <View style={styles.feeAmountContainer}>
-              <Text style={styles.feeAmount}>
-                {estimatedFee.div(E8).toFixed(8)} BTC
-              </Text>
-              <Text style={styles.feeAmountUsd}>
-                ($
-                {formatUSD(estimatedFee.div(E8).times(btcToUsdRate).toNumber())}
-                )
-              </Text>
-            </View>
-          </View>
-        ) : null}
+  const renderFeeSection = () => (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Network Fee</Text>
+      <View style={styles.feeStrategyContainer}>
+        {feeStrategies.map(strategy => (
+          <TouchableOpacity
+            key={strategy.value}
+            style={[
+              styles.feeStrategyButton,
+              feeStrategy === strategy.value &&
+                styles.feeStrategyButtonSelected,
+            ]}
+            onPress={() => handleFeeStrategyChange(strategy.value)}>
+            <Text
+              style={[
+                styles.feeStrategyText,
+                feeStrategy === strategy.value &&
+                  styles.feeStrategyTextSelected,
+              ]}>
+              {strategy.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
-    );
-  };
+      {isCalculatingFee ? (
+        <ActivityIndicator size="small" color={theme.colors.primary} />
+      ) : estimatedFee ? (
+        <View style={styles.feeInfoContainer}>
+          <Text style={styles.feeAmount}>
+            {estimatedFee.div(E8).toFixed(8)} BTC
+          </Text>
+          <Text style={styles.feeAmountUsd}>
+            ({formatFiatAmount(estimatedFee.div(E8).toNumber())})
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
 
   return (
     <Modal
@@ -502,8 +510,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                             }
                           },
                         );
-                      } else {
-                        setIsScannerVisible(true);
                       }
                     }}
                     style={styles.qrIconContainer}>
@@ -533,10 +539,15 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                 </View>
 
                 <View style={styles.inputContainer}>
-                  <Text style={styles.inputLabel}>Amount in USD ($)</Text>
+                  <Text style={styles.inputLabel}>
+                    Amount in {(selectedCurrency || 'USD').toUpperCase()} (
+                    {getCurrencySymbol(selectedCurrency || 'USD')})
+                  </Text>
                   <TextInput
                     style={styles.input}
-                    placeholder="Or USD amount"
+                    placeholder={`Or ${(
+                      selectedCurrency || 'USD'
+                    ).toUpperCase()} amount`}
                     value={inUsdAmount}
                     onFocus={() => setActiveInput('usd')}
                     onChangeText={handleUsdChange}

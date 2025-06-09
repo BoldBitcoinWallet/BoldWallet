@@ -22,7 +22,9 @@ export GOFLAGS="-mod=mod"
 ```bash
 # Build for iOS, macOS, and iOS Simulator
 gomobile bind -v -target=ios,macos,iossimulator -tags=ios,macos,iossimulator github.com/BoldBitcoinWallet/BBMTLib/tss
+mv Tss.xcframework ../ios
 ```
+
 
 ## Android
 

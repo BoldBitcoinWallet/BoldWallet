@@ -37,7 +37,7 @@ import Share from 'react-native-share';
 import Big from 'big.js';
 import {dbg, getPinnedRemoteIP} from '../utils';
 import {useTheme} from '../theme';
-import { waitMS } from '../services/WalletService';
+import {waitMS} from '../services/WalletService';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -85,13 +85,22 @@ const MobilesPairing = ({navigation}: any) => {
     usdAmount?: string;
     satoshiFees?: string;
     usdFees?: string;
+    rbfTxId?: string;
+    oldFee?: string;
+    newFee?: string;
+    currencySymbol?: string;
+    baseApi?: string;
+    explorerLink?: string;
   };
 
   const route = useRoute<RouteProp<{params: RouteParams}>>();
   const isSendBitcoin = route.params?.mode === 'send_btc';
   const addressType = route.params?.addressType;
+  const isRBF = route.params?.rbfTxId !== undefined;
   const title = isSendBitcoin
-    ? '🗝 Co-Signing Your Transaction'
+    ? isRBF
+      ? '🗝 Co-Signing Your RBF Transaction'
+      : '🗝 Co-Signing Your Transaction'
     : 'Self Custody Superior Control \n Threshold Signatures Scheme Grade';
 
   const [checks, setChecks] = useState({
@@ -188,8 +197,13 @@ const MobilesPairing = ({navigation}: any) => {
         if (isSendBitcoin) {
           const jks = await EncryptedStorage.getItem('keyshare');
           const ks = JSON.parse(jks || '{}');
-          _data += ':' + route.params.satoshiAmount;
-          _data += ':' + route.params.satoshiFees;
+          if (isRBF) {
+            _data += ':' + route.params.satoshiAmount; // Already in satoshis for RBF
+            _data += ':' + route.params.newFee; // Already in satoshis for RBF
+          } else {
+            _data += ':' + route.params.satoshiAmount;
+            _data += ':' + route.params.satoshiFees;
+          }
           _data += ':' + ks.local_party_key;
         }
         dbg('publishing data', _data, 'peer pubkey', peerPubkey);
@@ -351,7 +365,7 @@ const MobilesPairing = ({navigation}: any) => {
       const btcAddress = await BBMTLibNativeModule.btcAddress(
         btcPub,
         net,
-        addressType,
+        route.params.addressType || 'p2wpkh',
       );
       const partyID = ks.local_party_key;
       const partiesCSV = ks.keygen_committee_keys.join(',');
@@ -402,6 +416,11 @@ const MobilesPairing = ({navigation}: any) => {
               toAddress: route.params.toAddress,
               satoshiAmount,
               satoshiFees,
+              addressType: route.params.addressType || 'p2wpkh',
+              isRBF: route.params.rbfTxId !== undefined,
+              rbfTxId: route.params.rbfTxId,
+              oldFee: route.params.oldFee,
+              newFee: route.params.newFee,
             },
             null,
             4,
@@ -411,66 +430,48 @@ const MobilesPairing = ({navigation}: any) => {
         console.error('got exception', e);
       }
       setProgress(0);
-      await BBMTLibNativeModule.mpcSendBTC(
-        // TSS
-        server,
-        partyID,
-        partiesCSV,
-        sessionID,
-        sessionKey,
-        encKey,
-        decKey,
-        jks,
-        path,
-        // BTC
-        btcPub,
-        btcAddress,
-        route.params.toAddress,
-        satoshiAmount,
-        satoshiFees,
-      )
-        .then(async (txId: any) => {
-          dbg(partyID, 'txID', txId);
-          const validTxID = /^[a-fA-F0-9]{64}$/.test(txId);
-          if (!validTxID) {
-            throw txId;
-          }
-          const pendingTxs = JSON.parse(
-            (await EncryptedStorage.getItem('pendingTxs')) || '{}',
-          );
-          pendingTxs[txId] = {
-            from: btcAddress,
-            to: route.params.toAddress,
-            satoshiAmount: route.params.satoshiAmount,
-            satoshiFees: route.params.satoshiFees,
-            sentAt: Date.now(),
-          };
-          await EncryptedStorage.setItem(
-            'pendingTxs',
-            JSON.stringify(pendingTxs),
-          );
-          navigation.dispatch(
-            CommonActions.reset({
-              index: 0,
-              routes: [{name: 'Bold Home'}],
-            }),
-          );
-          setMpcDone(true);
-        })
-        .catch((e: any) => {
-          Alert.alert(
-            'Operation Error',
-            `Could not sign and send transaction.\n${e?.message}`,
-          );
-          dbg(partyID, 'keysign error', e);
-        })
-        .finally(async () => {
-          if (isMaster) {
-            await waitMS(2000);
-            stopRelay();
-          }
-          setDoingMPC(false);
-        });
+      if (route.params.rbfTxId) {
+        await BBMTLibNativeModule.mpcRbfBTC(
+          // TSS
+          server,
+          partyID,
+          partiesCSV,
+          sessionID,
+          sessionKey,
+          encKey,
+          decKey,
+          jks,
+          path,
+          // BTC
+          btcPub,
+          btcAddress,
+          route.params.toAddress,
+          // TX
+          route.params.rbfTxId,
+          // amounts
+          route.params.satoshiAmount, // Use the amount from route params for RBF
+          route.params.newFee, // Use the new fee from route params for RBF
+        );
+      } else {
+        await BBMTLibNativeModule.mpcSendBTC(
+          // TSS
+          server,
+          partyID,
+          partiesCSV,
+          sessionID,
+          sessionKey,
+          encKey,
+          decKey,
+          jks,
+          path,
+          // BTC
+          btcPub,
+          btcAddress,
+          route.params.toAddress,
+          satoshiAmount,
+          satoshiFees,
+        );
+      }
     } catch (e: any) {
       Alert.alert('Operation Error', e?.message || e);
       dbg(localDevice, 'keysign error', e);
@@ -980,24 +981,24 @@ const MobilesPairing = ({navigation}: any) => {
     checkboxContainer: {
       flexDirection: 'row',
       alignItems: 'center',
-      paddingVertical: 8,
+      paddingVertical: 4,
     },
     checkbox: {
-      width: 24,
-      height: 24,
-      borderRadius: 6,
+      width: 20,
+      height: 20,
+      borderRadius: 4,
       borderWidth: 2,
       borderColor: theme.colors.primary,
       justifyContent: 'center',
       alignItems: 'center',
-      marginRight: 10,
+      marginRight: 8,
     },
     checked: {
       backgroundColor: theme.colors.primary,
       borderColor: theme.colors.primary,
     },
     checkboxLabel: {
-      fontSize: 16,
+      fontSize: 14,
       color: theme.colors.text,
       flex: 1,
     },
@@ -1207,23 +1208,19 @@ const MobilesPairing = ({navigation}: any) => {
       display: 'none',
     },
     clickButton: {
-      marginTop: 20,
-      marginBottom: 20,
       backgroundColor: theme.colors.primary,
       borderRadius: 8,
       paddingVertical: 12,
-      paddingHorizontal: 30,
+      paddingHorizontal: 24,
       alignItems: 'center',
       justifyContent: 'center',
     },
     clickButtonOff: {
       opacity: 0.5,
-      marginTop: 20,
-      marginBottom: 20,
       backgroundColor: theme.colors.accent,
       borderRadius: 8,
       paddingVertical: 12,
-      paddingHorizontal: 30,
+      paddingHorizontal: 24,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -1274,6 +1271,96 @@ const MobilesPairing = ({navigation}: any) => {
       marginBottom: 5,
       marginTop: 10,
       textAlign: 'center',
+    },
+    rbfSubtitle: {
+      fontSize: 12,
+      color: theme.colors.secondary,
+      textAlign: 'center',
+    },
+    rbfContent: {
+      gap: 8,
+    },
+    txIdContainer: {
+      backgroundColor: theme.colors.background,
+      padding: 8,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: theme.colors.secondary,
+    },
+    txIdLabel: {
+      fontSize: 12,
+      color: theme.colors.secondary,
+      marginBottom: 2,
+    },
+    txIdValue: {
+      fontSize: 12,
+      color: theme.colors.primary,
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    },
+    feeComparisonContainer: {
+      gap: 4,
+    },
+    feeRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      padding: 8,
+      backgroundColor: theme.colors.background,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: theme.colors.secondary,
+    },
+    feeLabel: {
+      fontSize: 14,
+      color: theme.colors.text,
+      fontWeight: '500',
+    },
+    feeValueContainer: {
+      alignItems: 'flex-end',
+    },
+    feeValue: {
+      fontSize: 14,
+      fontWeight: 'bold',
+    },
+    feeFiat: {
+      fontSize: 12,
+      marginTop: 2,
+    },
+    feeIncrease: {
+      color: theme.colors.primary,
+    },
+    feeDecrease: {
+      color: theme.colors.accent,
+    },
+    arrowContainer: {
+      alignItems: 'center',
+      marginVertical: 2,
+    },
+    arrow: {
+      fontSize: 16,
+      color: theme.colors.secondary,
+    },
+    headerContainer: {
+      alignItems: 'center',
+      marginBottom: 12,
+    },
+    subtitle: {
+      fontSize: 14,
+      color: theme.colors.secondary,
+      textAlign: 'center',
+    },
+    checkboxWrapper: {
+      marginVertical: 8,
+    },
+    actionContainer: {
+      marginTop: 12,
+      gap: 12,
+    },
+    rbfContainer: {
+      backgroundColor: theme.colors.background,
+      borderRadius: 10,
+      padding: 12,
+      marginVertical: 8,
     },
   });
 
@@ -1690,52 +1777,153 @@ const MobilesPairing = ({navigation}: any) => {
             {peerIP && isSendBitcoin && (
               <>
                 <View style={styles.informationCard}>
-                  <Text style={styles.title}>📱 Dual Signing 📱</Text>
-                  <Text style={styles.header}>
-                    Make sure both devices are ready.
-                  </Text>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.label}>To Address:</Text>
-                  </View>
-                  <View style={styles.summaryRow}>
-                    <Text
-                      style={styles.value}
-                      numberOfLines={1}
-                      ellipsizeMode="middle">
-                      {route.params.toAddress}
+                  <View style={styles.headerContainer}>
+                    <Text style={styles.title}>
+                      {isRBF ? '📱 RBF Co-Signing' : '📱 Dual Signing'}
+                    </Text>
+                    <Text style={styles.subtitle}>
+                      Ensure both devices are ready to proceed
                     </Text>
                   </View>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.label}>BTC Amount:</Text>
+
+                  {isRBF ? (
+                    <View style={styles.rbfContainer}>
+                      <View style={styles.rbfContent}>
+                        <TouchableOpacity
+                          style={styles.txIdContainer}
+                          onPress={() =>
+                            Linking.openURL(route.params.explorerLink || '')
+                          }>
+                          <Text style={styles.txIdLabel}>
+                            Original Transaction ID:
+                          </Text>
+                          <Text
+                            style={styles.txIdValue}
+                            numberOfLines={1}
+                            ellipsizeMode="middle">
+                            {route.params.rbfTxId}
+                          </Text>
+                        </TouchableOpacity>
+
+                        <View style={styles.feeComparisonContainer}>
+                          <View style={styles.feeRow}>
+                            <Text style={styles.feeLabel}>Current Fee:</Text>
+                            <View style={styles.feeValueContainer}>
+                              <Text
+                                style={[styles.feeValue, styles.feeDecrease]}>
+                                {sat2btcStr(route.params.oldFee)} BTC
+                              </Text>
+                              <Text
+                                style={[styles.feeFiat, styles.feeDecrease]}>
+                                {route.params.currencySymbol}
+                                {formatUSD(
+                                  Big(route.params.oldFee || 0)
+                                    .div(1e8)
+                                    .mul(
+                                      Number(route.params.usdAmount) /
+                                        Number(route.params.satoshiAmount),
+                                    )
+                                    .toString(),
+                                )}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <View style={styles.arrowContainer}>
+                            <Text style={styles.arrow}>↓</Text>
+                          </View>
+
+                          <View style={styles.feeRow}>
+                            <Text style={styles.feeLabel}>New Fee:</Text>
+                            <View style={styles.feeValueContainer}>
+                              <Text
+                                style={[styles.feeValue, styles.feeIncrease]}>
+                                {sat2btcStr(route.params.newFee)} BTC
+                              </Text>
+                              <Text
+                                style={[styles.feeFiat, styles.feeIncrease]}>
+                                {route.params.currencySymbol}
+                                {formatUSD(
+                                  Big(route.params.newFee || 0)
+                                    .div(1e8)
+                                    .mul(
+                                      Number(route.params.usdAmount) /
+                                        Number(route.params.satoshiAmount),
+                                    )
+                                    .toString(),
+                                )}
+                              </Text>
+                            </View>
+                          </View>
+                        </View>
+                      </View>
+                    </View>
+                  ) : (
+                    <>
+                      <View style={styles.summaryRow}>
+                        <Text style={styles.label}>To Address:</Text>
+                      </View>
+                      <View style={styles.summaryRow}>
+                        <Text
+                          style={styles.value}
+                          numberOfLines={1}
+                          ellipsizeMode="middle">
+                          {route.params.toAddress}
+                        </Text>
+                      </View>
+                      <View style={styles.summaryRow}>
+                        <Text style={styles.label}>BTC Amount:</Text>
+                      </View>
+                      <View style={styles.summaryRow}>
+                        <Text style={styles.value}>
+                          {sat2btcStr(route.params.satoshiAmount)} BTC (
+                          {route.params.currencySymbol}
+                          {formatUSD(route.params.usdAmount)})
+                        </Text>
+                      </View>
+                      <View style={styles.summaryRow}>
+                        <Text style={styles.label}>Network Fees:</Text>
+                      </View>
+                      <View style={styles.summaryRow}>
+                        <Text style={styles.value}>
+                          {sat2btcStr(route.params.satoshiFees)} BTC (
+                          {route.params.currencySymbol}
+                          {formatUSD(route.params.usdFees)})
+                        </Text>
+                      </View>
+                    </>
+                  )}
+
+                  <View style={styles.actionContainer}>
+                    <TouchableOpacity
+                      style={styles.checkboxContainer}
+                      onPress={() => toggleKeysignReady()}>
+                      <View
+                        style={[
+                          styles.checkbox,
+                          isKeysignReady && styles.checked,
+                        ]}
+                      />
+                      <Text style={styles.checkboxLabel}>
+                        Stay in the app during this process ⚠️
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={
+                        isKeysignReady
+                          ? styles.clickButton
+                          : styles.clickButtonOff
+                      }
+                      disabled={!isKeysignReady}
+                      onPress={runKeysign}>
+                      <Text style={styles.clickButtonText}>
+                        🗝 {isMaster ? 'Start' : 'Join'} {isRBF ? 'RBF' : 'Tx'}{' '}
+                        Co-Signing
+                      </Text>
+                    </TouchableOpacity>
                   </View>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.value}>
-                      {sat2btcStr(route.params.satoshiAmount)} BTC ($
-                      {formatUSD(route.params.usdAmount)})
-                    </Text>
-                  </View>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.label}>Network Fees:</Text>
-                  </View>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.value}>
-                      {sat2btcStr(route.params.satoshiFees)} BTC ($
-                      {formatUSD(route.params.usdFees)})
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.checkboxContainer}
-                    onPress={() => toggleKeysignReady()}>
-                    <View
-                      style={[
-                        styles.checkbox,
-                        isKeysignReady && styles.checked,
-                      ]}
-                    />
-                    <Text style={styles.checkboxLabel}>
-                      Stay in the app during this process ⚠️
-                    </Text>
-                  </TouchableOpacity>
+
                   {doingMPC && (
                     <Modal
                       transparent={true}
@@ -1743,29 +1931,27 @@ const MobilesPairing = ({navigation}: any) => {
                       animationType="fade">
                       <View style={styles.modalOverlay}>
                         <View style={styles.modalContent}>
-                          {/* Header Text */}
                           <Text style={styles.modalTitle}>
-                            🗝 Co-Signing Transaction
+                            🗝{' '}
+                            {isRBF
+                              ? 'Co-Signing RBF Transaction'
+                              : 'Co-Signing Transaction'}
                           </Text>
-
-                          {/* Subtext */}
                           <Text style={styles.modalSubtitle}>
-                            Please wait a moment...
+                            {isRBF
+                              ? 'Replacing transaction with higher fee...'
+                              : 'Please wait a moment...'}
                           </Text>
-
-                          {/* Circular Progress */}
                           <Progress.Circle
                             size={60}
-                            progress={progress / 100} // Assuming progress is 0-100
+                            progress={progress / 100}
                             thickness={6}
                             color={theme.colors.primary}
                             unfilledColor="#e0e0e0"
                             borderWidth={0}
-                            showsText={true} // We'll show custom text below
+                            showsText={true}
                             style={styles.progressCircle}
                           />
-
-                          {/* Progress and Countdown */}
                           <Text style={styles.progressText}>
                             ⏲ {prepCounter} sec
                           </Text>
@@ -1773,18 +1959,6 @@ const MobilesPairing = ({navigation}: any) => {
                       </View>
                     </Modal>
                   )}
-                  <TouchableOpacity
-                    style={
-                      isKeysignReady
-                        ? styles.clickButton
-                        : styles.clickButtonOff
-                    }
-                    disabled={!isKeysignReady}
-                    onPress={runKeysign}>
-                    <Text style={styles.clickButtonText}>
-                      🗝 {isMaster ? 'Start' : 'Join'} Tx Co-Signing
-                    </Text>
-                  </TouchableOpacity>
                 </View>
               </>
             )}

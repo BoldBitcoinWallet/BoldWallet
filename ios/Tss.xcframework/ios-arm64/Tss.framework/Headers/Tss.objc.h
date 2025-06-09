@@ -272,6 +272,12 @@ FOUNDATION_EXPORT NSString* _Nonnull TssEciesEncrypt(NSString* _Nullable data, N
 
 FOUNDATION_EXPORT NSString* _Nonnull TssEstimateFees(NSString* _Nullable senderAddress, NSString* _Nullable receiverAddress, int64_t amountSatoshi, NSError* _Nullable* _Nullable error);
 
+/**
+ * EstimateRBFFees calculates the new fees for an RBF transaction
+based on the old transaction ID and the new fee rate
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssEstimateRBFFees(NSString* _Nullable txRbfId, NSError* _Nullable* _Nullable error);
+
 FOUNDATION_EXPORT NSString* _Nonnull TssFetchData(NSString* _Nullable url, NSString* _Nullable decKey, NSString* _Nullable data, NSError* _Nullable* _Nullable error);
 
 // skipped function FetchUTXODetails with unsupported parameter or return types
@@ -322,6 +328,11 @@ FOUNDATION_EXPORT BOOL TssLocalPreParams(NSString* _Nullable ppmFile, long timeo
 
 // skipped function Logln with unsupported parameter or return types
 
+
+/**
+ * ReplaceTransaction creates a replacement transaction with a higher fee
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssMpcRbfBTC(NSString* _Nullable server, NSString* _Nullable key, NSString* _Nullable partiesCSV, NSString* _Nullable session, NSString* _Nullable sessionKey, NSString* _Nullable encKey, NSString* _Nullable decKey, NSString* _Nullable keyshare, NSString* _Nullable derivePath, NSString* _Nullable publicKey, NSString* _Nullable senderAddress, NSString* _Nullable receiverAddress, NSString* _Nullable originalTxID, int64_t amountSatoshi, int64_t newFee, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssMpcSendBTC(NSString* _Nullable server, NSString* _Nullable key, NSString* _Nullable partiesCSV, NSString* _Nullable session, NSString* _Nullable sessionKey, NSString* _Nullable encKey, NSString* _Nullable decKey, NSString* _Nullable keyshare, NSString* _Nullable derivePath, NSString* _Nullable publicKey, NSString* _Nullable senderAddress, NSString* _Nullable receiverAddress, int64_t amountSatoshi, int64_t estimatedFee, NSError* _Nullable* _Nullable error);
 

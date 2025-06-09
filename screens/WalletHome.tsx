@@ -714,6 +714,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           walletAddress={address}
           onClose={() => setIsSendModalVisible(false)}
           onSend={handleSend}
+          selectedCurrency={selectedCurrency}
+          getCurrencySymbol={getCurrencySymbol}
         />
       )}
 
