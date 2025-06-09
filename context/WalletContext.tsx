@@ -41,7 +41,12 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
     try {
       dbg('WalletContext: Starting wallet refresh');
       const jks = await EncryptedStorage.getItem('keyshare');
-      const ks = JSON.parse(jks || '{}');
+      if (!jks) {
+        dbg('WalletContext: No keyshare found, skipping wallet refresh');
+        return;
+      }
+
+      const ks = JSON.parse(jks);
       const path = "m/44'/0'/0'/0/0";
 
       // Get current network
@@ -113,7 +118,15 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
   };
 
   useEffect(() => {
-    refreshWallet();
+    const initWallet = async () => {
+      const jks = await EncryptedStorage.getItem('keyshare');
+      if (!jks) {
+        dbg('WalletContext: No keyshare found, skipping initialization');
+        return;
+      }
+      await refreshWallet();
+    };
+    initWallet();
   }, []);
 
   return (

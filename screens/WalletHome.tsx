@@ -163,7 +163,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           (await EncryptedStorage.getItem('addressType')) || 'legacy';
         const addr = await EncryptedStorage.getItem('currentAddress');
         const currency = (await EncryptedStorage.getItem('currency')) || 'USD';
+        const keyshare = await EncryptedStorage.getItem('keyshare');
         setSelectedCurrency(currency);
+
+        if (!keyshare) {
+          dbg('WalletHome: No keyshare found, showing empty state');
+          setBalanceBTC('0.00000000');
+          setBalanceFiat('0');
+          setBtcPrice('');
+          setBtcRate(0);
+          setLoading(false);
+          setIsRefreshing(false);
+          return;
+        }
 
         if (!addr || !wallet?.baseApi) {
           dbg('WalletHome: Missing wallet address or baseApi');
@@ -291,7 +303,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       try {
         setLoading(true);
         const jks = await EncryptedStorage.getItem('keyshare');
-        const ks = JSON.parse(jks || '{}');
+        if (!jks) {
+          dbg('WalletHome: No keyshare found during initialization');
+          setLoading(false);
+          setIsInitialized(true);
+          return;
+        }
+
+        const ks = JSON.parse(jks);
         const path = "m/44'/0'/0'/0/0";
         const btcPub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,
@@ -439,9 +458,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     if (amountSats.gt(0) && feeSats.gt(0) && to) {
       const toAddress = to;
       const satoshiAmount = amountSats.toString().split('.')[0];
-      const usdAmount = amountSats.times(btcRate).div(1e8).toFixed(2);
+      const fiatAmount = amountSats.times(btcRate).div(1e8).toFixed(2);
       const satoshiFees = feeSats.toString().split('.')[0];
-      const usdFees = feeSats.times(btcRate).div(1e8).toFixed(2);
+      const fiatFees = feeSats.times(btcRate).div(1e8).toFixed(2);
       navigation.dispatch(
         CommonActions.navigate({
           name: '📱📱 Pairing',
@@ -450,9 +469,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             addressType,
             toAddress,
             satoshiAmount,
-            usdAmount,
+            fiatAmount,
             satoshiFees,
-            usdFees,
+            fiatFees,
+            selectedCurrency,
           },
         }),
       );
@@ -709,11 +729,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       {isSendModalVisible && (
         <SendBitcoinModal
           visible={isSendModalVisible}
-          btcToUsdRate={Big(btcRate)}
+          btcToFiatRate={Big(btcRate)}
           walletBalance={Big(balanceBTC)}
           walletAddress={address}
           onClose={() => setIsSendModalVisible(false)}
           onSend={handleSend}
+          selectedCurrency={selectedCurrency}
         />
       )}
 

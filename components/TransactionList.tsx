@@ -25,8 +25,8 @@ import TransactionDetailsModal from './TransactionDetailsModal';
 interface TransactionListProps {
   address: string;
   baseApi: string;
+  _onReload: () => Promise<any>;
   onUpdate: (pendingTxs: any[], pending: number) => Promise<any>;
-  onReload: () => Promise<any>;
   initialTransactions?: any[];
   selectedCurrency?: string;
   btcRate?: number;
@@ -36,7 +36,7 @@ interface TransactionListProps {
 const TransactionList: React.FC<TransactionListProps> = ({
   address,
   baseApi,
-  onReload,
+  _onReload,
   onUpdate,
   initialTransactions = [],
   selectedCurrency = 'USD',
@@ -167,7 +167,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
             timeout: 5000,
           }),
           timeoutPromise,
-        ]);
+        ]) as { data: any[] };
 
         if (!isMounted.current) {
           dbg('Component unmounted, skipping state updates');
@@ -209,7 +209,13 @@ const TransactionList: React.FC<TransactionListProps> = ({
               from: cached[txID].from,
               to: cached[txID].to,
               amount: cached[txID].satoshiAmount,
+              satoshiAmount: cached[txID].satoshiAmount,
+              satoshiFees: cached[txID].satoshiFees,
               sentAt: cached[txID].sentAt,
+              status: {
+                confirmed: false,
+                block_height: null
+              }
             });
           }
         }
@@ -217,7 +223,23 @@ const TransactionList: React.FC<TransactionListProps> = ({
         await onUpdate(pendingTxs, pending);
 
         const newTransactions = response.data.sort(
-          (a: any, b: any) => b.status.block_height - a.status.block_height,
+          (a: any, b: any) => {
+            // If either transaction is pending (no status or no block_height), prioritize it
+            const aIsPending = !a.status || !a.status.block_height;
+            const bIsPending = !b.status || !b.status.block_height;
+            
+            if (aIsPending && !bIsPending) return -1; // a is pending, show it first
+            if (!aIsPending && bIsPending) return 1;  // b is pending, show it first
+            if (aIsPending && bIsPending) {
+              // If both are pending, sort by sentAt timestamp if available
+              const aTime = a.sentAt || 0;
+              const bTime = b.sentAt || 0;
+              return bTime - aTime; // Most recent pending first
+            }
+            
+            // For confirmed transactions, sort by block height
+            return (b.status.block_height || 0) - (a.status.block_height || 0);
+          }
         );
 
         WalletService.getInstance().updateTransactionsCache(
@@ -226,10 +248,18 @@ const TransactionList: React.FC<TransactionListProps> = ({
         );
 
         if (isMounted.current) {
-          setTransactions(newTransactions);
-          setHasMoreTransactions(newTransactions.length > 0);
-          if (newTransactions.length > 0) {
-            setLastSeenTxId(newTransactions[newTransactions.length - 1].txid);
+          // Ensure unique transactions by txid
+          const uniqueTransactions = newTransactions.reduce((acc: any[], tx: any) => {
+            if (!acc.find(t => t.txid === tx.txid)) {
+              acc.push(tx);
+            }
+            return acc;
+          }, []);
+
+          setTransactions(uniqueTransactions);
+          setHasMoreTransactions(uniqueTransactions.length > 0);
+          if (uniqueTransactions.length > 0) {
+            setLastSeenTxId(uniqueTransactions[uniqueTransactions.length - 1].txid);
           }
           // Clear refresh state on successful API response
           setIsRefreshing(false);
@@ -341,40 +371,6 @@ const TransactionList: React.FC<TransactionListProps> = ({
       setLoading(false);
     };
   }, [address, baseApi, memoizedFetchTransactions]); // Remove loading and refreshing from dependencies
-
-  // Optimized refresh handler
-  const onRefresh = useCallback(async () => {
-    if (isRefreshing || isFetching.current || !isMounted.current) {
-      dbg('Skipping refresh - conditions not met:', {
-        isRefreshing,
-        isFetching: isFetching.current,
-        isMounted: isMounted.current,
-      });
-      return;
-    }
-
-    dbg('Starting pull to refresh');
-    setIsRefreshing(true);
-    try {
-      const cleanBaseApi = baseApi.replace(/\/+$/, '');
-      await memoizedFetchTransactions(`${cleanBaseApi}/address/${address}/txs`);
-      if (onReload) {
-        await onReload();
-      }
-    } catch (error) {
-      dbg('Error during refresh:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Error refreshing transactions',
-        text2: 'Using offline cache, Please try again',
-      });
-    } finally {
-      if (isMounted.current) {
-        setIsRefreshing(false);
-        dbg('Refresh completed');
-      }
-    }
-  }, [address, baseApi, memoizedFetchTransactions, isRefreshing, onReload]);
 
   // Separate effect for handling loading state
   useEffect(() => {
@@ -497,7 +493,13 @@ const TransactionList: React.FC<TransactionListProps> = ({
               from: cached[txID].from,
               to: cached[txID].to,
               amount: cached[txID].satoshiAmount,
+              satoshiAmount: cached[txID].satoshiAmount,
+              satoshiFees: cached[txID].satoshiFees,
               sentAt: cached[txID].sentAt,
+              status: {
+                confirmed: false,
+                block_height: null
+              }
             });
           }
         }
@@ -664,8 +666,6 @@ const TransactionList: React.FC<TransactionListProps> = ({
   // Memoized render item with currency support
   const renderItem = useCallback(
     ({item}: any) => {
-      dbg('rendering tx-item', item);
-
       const {text: status, confirmed} = getTransactionStatus(item);
       const {sent, changeAmount, received} = getTransactionAmounts(
         item,

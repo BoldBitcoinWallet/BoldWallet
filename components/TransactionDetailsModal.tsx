@@ -70,10 +70,14 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   // Get the relevant address based on transaction type
   const relevantAddress = isSent
     ? transaction.vout?.find(
-        (output: any) => output.scriptpubkey_address !== transaction.vin[0]?.prevout?.scriptpubkey_address,
+        (output: any) =>
+          output.scriptpubkey_address !==
+          transaction.vin[0]?.prevout?.scriptpubkey_address,
       )?.scriptpubkey_address
     : transaction.vin?.find(
-        (input: any) => input.prevout.scriptpubkey_address !== transaction.vout[0]?.scriptpubkey_address,
+        (input: any) =>
+          input.prevout.scriptpubkey_address !==
+          transaction.vout[0]?.scriptpubkey_address,
       )?.prevout?.scriptpubkey_address;
 
   const addressLabel = isSent ? 'To Address' : 'From Address';
@@ -122,9 +126,13 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
               )}
               {renderDetailRow(
                 'Date',
-                moment(transaction.status?.block_time * 1000).format(
-                  'MMM D, YYYY h:mm A',
-                ),
+                transaction.sentAt
+                  ? moment(transaction.sentAt).format('MMM D, YYYY h:mm A')
+                  : transaction.status?.block_time
+                  ? moment(transaction.status.block_time * 1000).format(
+                      'MMM D, YYYY h:mm A',
+                    )
+                  : 'Pending',
               )}
               {isSent &&
                 renderDetailRow('Sent', `${formatBtcAmount(amounts.sent)} BTC`)}
@@ -174,7 +182,11 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
               )}
               {renderDetailRow(
                 'Fee',
-                `${formatBtcAmount(transaction.fee / 1e8)} BTC (${getCurrencySymbol(selectedCurrency)}${getFiatAmount(transaction.fee / 1e8)})`,
+                `${formatBtcAmount(
+                  transaction.fee / 1e8,
+                )} BTC (${getCurrencySymbol(selectedCurrency)}${getFiatAmount(
+                  transaction.fee / 1e8,
+                )})`,
               )}
               {renderDetailRow('Size', `${transaction.size} bytes`)}
             </View>

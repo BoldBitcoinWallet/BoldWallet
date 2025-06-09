@@ -138,7 +138,7 @@ func RecommendedFees(feeType string) (int, error) {
 	var fees FeeResponse
 	if err := json.NewDecoder(resp.Body).Decode(&fees); err != nil {
 		Logf("Error getting the feerate - using 2 sat/vB defaulted. %v", err)
-		return 2, nil
+		return 0, errors.New("error getting the feerate")
 	}
 
 	switch feeType {

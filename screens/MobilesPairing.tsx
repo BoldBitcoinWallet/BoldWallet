@@ -37,7 +37,7 @@ import Share from 'react-native-share';
 import Big from 'big.js';
 import {dbg, getPinnedRemoteIP} from '../utils';
 import {useTheme} from '../theme';
-import { waitMS } from '../services/WalletService';
+import {waitMS} from '../services/WalletService';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -82,9 +82,10 @@ const MobilesPairing = ({navigation}: any) => {
     addressType?: string;
     toAddress?: string;
     satoshiAmount?: string;
-    usdAmount?: string;
+    fiatAmount?: string;
     satoshiFees?: string;
-    usdFees?: string;
+    fiatFees?: string;
+    selectedCurrency?: string;
   };
 
   const route = useRoute<RouteProp<{params: RouteParams}>>();
@@ -146,7 +147,7 @@ const MobilesPairing = ({navigation}: any) => {
     return input.replace(/[^a-zA-Z0-9]/g, '_');
   };
 
-  const formatUSD = (price?: string) =>
+  const formatFiat = (price?: string) =>
     new Intl.NumberFormat('en-US', {
       style: 'decimal',
       minimumFractionDigits: 2,
@@ -330,11 +331,12 @@ const MobilesPairing = ({navigation}: any) => {
 
       dbg('session init done');
       if (isMaster) {
-        await waitMS(1000);
+        await BBMTLibNativeModule.stopRelay('stop');
+        await waitMS(2000);
         const relay = await BBMTLibNativeModule.runRelay(String(discoveryPort));
         dbg('relay start:', relay, localDevice);
       } else {
-        await waitMS(1000);
+        await waitMS(3000); // Give master device time to start relay
       }
 
       const server = `http://${isMaster ? localIP : peerIP}:${discoveryPort}`;
@@ -439,11 +441,17 @@ const MobilesPairing = ({navigation}: any) => {
             (await EncryptedStorage.getItem('pendingTxs')) || '{}',
           );
           pendingTxs[txId] = {
+            txid: txId,
             from: btcAddress,
             to: route.params.toAddress,
+            amount: route.params.satoshiAmount,
             satoshiAmount: route.params.satoshiAmount,
             satoshiFees: route.params.satoshiFees,
             sentAt: Date.now(),
+            status: {
+              confirmed: false,
+              block_height: null,
+            },
           };
           await EncryptedStorage.setItem(
             'pendingTxs',
@@ -915,7 +923,7 @@ const MobilesPairing = ({navigation}: any) => {
     summaryRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
-      width: '100%',
+      alignItems: 'center',
       marginBottom: 10,
     },
     label: {
@@ -930,10 +938,9 @@ const MobilesPairing = ({navigation}: any) => {
       flex: 1,
     },
     value: {
-      fontSize: 14,
+      fontSize: 16,
       color: theme.colors.text,
-      textAlign: 'left',
-      flex: 1,
+      textAlign: 'center',
     },
     title: {
       fontSize: 24,
@@ -1275,6 +1282,62 @@ const MobilesPairing = ({navigation}: any) => {
       marginTop: 10,
       textAlign: 'center',
     },
+    transactionDetails: {
+      padding: 15,
+      paddingTop: 0,
+      width: '100%',
+    },
+    transactionItem: {
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.secondary + '15',
+    },
+    transactionLabel: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: theme.colors.secondary,
+      marginTop: 5,
+    },
+    addressContainer: {
+      backgroundColor: theme.colors.background,
+      padding: 8,
+      borderRadius: 6,
+    },
+    addressValue: {
+      fontSize: 14,
+      color: theme.colors.text,
+      textAlign: 'center',
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    },
+    amountContainer: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      backgroundColor: theme.colors.background,
+      padding: 8,
+      borderRadius: 6,
+    },
+    amountValue: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: theme.colors.text,
+    },
+    fiatValue: {
+      fontSize: 13,
+      color: theme.colors.secondary,
+    },
+    summaryContainer: {
+      marginTop: 20,
+      padding: 20,
+      backgroundColor: theme.colors.background,
+      borderRadius: 10,
+      alignItems: 'center',
+    },
+    summaryTitle: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: theme.colors.text,
+      marginBottom: 10,
+    },
   });
 
   return (
@@ -1403,13 +1466,17 @@ const MobilesPairing = ({navigation}: any) => {
                 {peerIP && (
                   <>
                     <TouchableOpacity
-                      style={styles.clickRestart}
+                      style={null}
                       onPress={() => {
                         navigation.dispatch(
                           StackActions.replace('📱📱 Pairing', route.params),
                         );
                       }}>
-                      <Text style={styles.clickButtonText}>
+                      <Text
+                        style={[
+                          styles.termsLink,
+                          {marginTop: 16, fontSize: 16},
+                        ]}>
                         Restart Pairing
                       </Text>
                     </TouchableOpacity>
@@ -1694,34 +1761,44 @@ const MobilesPairing = ({navigation}: any) => {
                   <Text style={styles.header}>
                     Make sure both devices are ready.
                   </Text>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.label}>To Address:</Text>
-                  </View>
-                  <View style={styles.summaryRow}>
-                    <Text
-                      style={styles.value}
-                      numberOfLines={1}
-                      ellipsizeMode="middle">
-                      {route.params.toAddress}
-                    </Text>
-                  </View>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.label}>BTC Amount:</Text>
-                  </View>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.value}>
-                      {sat2btcStr(route.params.satoshiAmount)} BTC ($
-                      {formatUSD(route.params.usdAmount)})
-                    </Text>
-                  </View>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.label}>Network Fees:</Text>
-                  </View>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.value}>
-                      {sat2btcStr(route.params.satoshiFees)} BTC ($
-                      {formatUSD(route.params.usdFees)})
-                    </Text>
+                  <View style={styles.transactionDetails}>
+                    <View style={styles.transactionItem}>
+                      <Text style={styles.transactionLabel}>To Address</Text>
+                      <View style={styles.addressContainer}>
+                        <Text
+                          style={styles.addressValue}
+                          numberOfLines={1}
+                          ellipsizeMode="middle">
+                          {route.params.toAddress}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.transactionItem}>
+                      <Text style={styles.transactionLabel}>BTC Amount</Text>
+                      <View style={styles.amountContainer}>
+                        <Text style={styles.amountValue}>
+                          {sat2btcStr(route.params.satoshiAmount)} BTC
+                        </Text>
+                        <Text style={styles.fiatValue}>
+                          {route.params.selectedCurrency}{' '}
+                          {formatFiat(route.params.fiatAmount)}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.transactionItem}>
+                      <Text style={styles.transactionLabel}>Network Fees</Text>
+                      <View style={styles.amountContainer}>
+                        <Text style={styles.amountValue}>
+                          {sat2btcStr(route.params.satoshiFees)} BTC
+                        </Text>
+                        <Text style={styles.fiatValue}>
+                          {route.params.selectedCurrency}{' '}
+                          {formatFiat(route.params.fiatFees)}
+                        </Text>
+                      </View>
+                    </View>
                   </View>
                   <TouchableOpacity
                     style={styles.checkboxContainer}

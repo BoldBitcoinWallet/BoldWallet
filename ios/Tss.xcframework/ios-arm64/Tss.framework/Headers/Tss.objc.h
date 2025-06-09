@@ -344,6 +344,11 @@ FOUNDATION_EXPORT NSString* _Nonnull TssPublishData(NSString* _Nullable port, NS
 
 FOUNDATION_EXPORT BOOL TssRecommendedFees(NSString* _Nullable feeType, long* _Nullable ret0_, NSError* _Nullable* _Nullable error);
 
+/**
+ * ReplaceTransaction creates a replacement transaction with a higher fee
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssReplaceTransaction(NSString* _Nullable server, NSString* _Nullable key, NSString* _Nullable partiesCSV, NSString* _Nullable session, NSString* _Nullable sessionKey, NSString* _Nullable encKey, NSString* _Nullable decKey, NSString* _Nullable keyshare, NSString* _Nullable derivePath, NSString* _Nullable publicKey, NSString* _Nullable senderAddress, NSString* _Nullable receiverAddress, NSString* _Nullable originalTxID, int64_t amountSatoshi, int64_t newFee, NSError* _Nullable* _Nullable error);
+
 FOUNDATION_EXPORT NSString* _Nonnull TssRunRelay(NSString* _Nullable port, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssSecP256k1Recover(NSString* _Nullable r, NSString* _Nullable s, NSString* _Nullable v, NSString* _Nullable h, NSError* _Nullable* _Nullable error);
