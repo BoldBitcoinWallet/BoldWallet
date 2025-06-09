@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -49,7 +50,7 @@ func SetNetwork(network string) (string, error) {
 func UseAPI(network, base string) (string, error) {
 	if network == "mainnet" || network == "testnet3" {
 		_btc_net = network
-		_api_url = base
+		_api_url = strings.TrimSuffix(base, "/")
 		return _api_url, nil
 	}
 	return "", fmt.Errorf("non supported network %s", network)
@@ -547,7 +548,7 @@ func MpcSendBTC(
 	tx := wire.NewMsgTx(wire.TxVersion)
 	Logln("New transaction created")
 
-	// Add all inputs
+	// Add all inputs with RBF enabled (nSequence = 0xfffffffd)
 	utxoCount := len(selectedUTXOs)
 	utxoIndex := 0
 	utxoSession := ""
@@ -556,8 +557,11 @@ func MpcSendBTC(
 	for _, utxo := range selectedUTXOs {
 		hash, _ := chainhash.NewHashFromStr(utxo.TxID)
 		outPoint := wire.NewOutPoint(hash, utxo.Vout)
-		tx.AddTxIn(wire.NewTxIn(outPoint, nil, nil))
-		Logf("Added UTXO to transaction: %+v", utxo)
+		// Create input with RBF enabled (nSequence = 0xfffffffd)
+		txIn := wire.NewTxIn(outPoint, nil, nil)
+		txIn.Sequence = 0xfffffffd // Enable RBF
+		tx.AddTxIn(txIn)
+		Logf("Added UTXO to transaction with RBF enabled: %+v", utxo)
 	}
 
 	Logf("Estimated Fee: %d", estimatedFee)
@@ -992,7 +996,7 @@ func calculateFees(senderAddress string, utxos []UTXO, satoshiAmount int64, rece
 		if isWitness {
 			hasSegWit = true
 			if txscript.IsPayToWitnessPubKeyHash(txOut.PkScript) { // P2WPKH
-				baseWeight += 272 // 68 bytes * 4 (non-witness) + 105 bytes / 4 (witness) � 68 vbytes
+				baseWeight += 272 // 68 bytes * 4 (non-witness) + 105 bytes / 4 (witness) ≈ 68 vbytes
 				Logf("UTXO %d is P2WPKH: Added 68 vbytes", i)
 			} else if txscript.IsPayToTaproot(txOut.PkScript) { // P2TR
 				baseWeight += 230 // 57.5 vbytes: 43 bytes * 4 + 65 bytes / 4
@@ -1257,4 +1261,227 @@ func PubToP2TR(pubKeyCompressedHex, mainnetORtestnet3 string) (string, error) {
 	}
 
 	return taprootAddr.EncodeAddress(), nil
+}
+
+// ReplaceTransaction creates a replacement transaction with a higher fee
+func ReplaceTransaction(
+	/* tss */
+	server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath,
+	/* btc */
+	publicKey, senderAddress, receiverAddress string,
+	/* tx */
+	originalTxID string,
+	/* amounts */
+	amountSatoshi, newFee int64) (string, error) {
+
+	Logln("BBMTLog", "invoking ReplaceTransaction...")
+
+	// Fetch the original transaction details
+	url := fmt.Sprintf("%s/tx/%s", _api_url, originalTxID)
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch original transaction: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var txData struct {
+		Vin []struct {
+			TxID    string `json:"txid"`
+			Vout    uint32 `json:"vout"`
+			PrevOut struct {
+				Value int64 `json:"value"`
+			} `json:"prevout"`
+		} `json:"vin"`
+		Vout []struct {
+			Scriptpubkey string `json:"scriptpubkey"`
+			Value        int64  `json:"value"`
+		} `json:"vout"`
+		Fee int64 `json:"fee"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&txData); err != nil {
+		return "", fmt.Errorf("failed to parse original transaction: %w", err)
+	}
+
+	// Verify the new fee is higher
+	if newFee <= txData.Fee {
+		return "", fmt.Errorf("new fee must be higher than original fee: %d <= %d", newFee, txData.Fee)
+	}
+
+	// Create new transaction
+	tx := wire.NewMsgTx(wire.TxVersion)
+
+	// Add all inputs from the original transaction
+	var totalInputValue int64
+	for _, vin := range txData.Vin {
+		hash, _ := chainhash.NewHashFromStr(vin.TxID)
+		outPoint := wire.NewOutPoint(hash, vin.Vout)
+		txIn := wire.NewTxIn(outPoint, nil, nil)
+		txIn.Sequence = 0xfffffffd // Enable RBF
+		tx.AddTxIn(txIn)
+		totalInputValue += vin.PrevOut.Value
+	}
+
+	// Add all outputs from the original transaction
+	for _, vout := range txData.Vout {
+		scriptBytes, err := hex.DecodeString(vout.Scriptpubkey)
+		if err != nil {
+			return "", fmt.Errorf("failed to decode output script: %w", err)
+		}
+		tx.AddTxOut(wire.NewTxOut(vout.Value, scriptBytes))
+	}
+
+	// Calculate the fee difference
+	feeDiff := newFee - txData.Fee
+
+	// Adjust the change output to account for the higher fee
+	// Find the change output (usually the last output that goes back to the sender)
+	changeOutputIndex := -1
+	for i, vout := range txData.Vout {
+		scriptBytes, _ := hex.DecodeString(vout.Scriptpubkey)
+		addr, err := btcutil.DecodeAddress(senderAddress, &chaincfg.MainNetParams)
+		if err == nil {
+			script, _ := txscript.PayToAddrScript(addr)
+			if bytes.Equal(script, scriptBytes) {
+				changeOutputIndex = i
+				break
+			}
+		}
+	}
+
+	if changeOutputIndex == -1 {
+		return "", fmt.Errorf("could not find change output")
+	}
+
+	// Reduce the change output by the fee difference
+	newChangeValue := txData.Vout[changeOutputIndex].Value - feeDiff
+	if newChangeValue < 546 { // Dust threshold
+		return "", fmt.Errorf("new change amount would be below dust threshold")
+	}
+
+	// Update the change output value
+	_, _ = hex.DecodeString(txData.Vout[changeOutputIndex].Scriptpubkey)
+	tx.TxOut[changeOutputIndex].Value = newChangeValue
+
+	// Sign the transaction using the same process as MpcSendBTC
+
+	pubKeyBytes, err := hex.DecodeString(publicKey)
+	if err != nil {
+		return "", fmt.Errorf("invalid public key format: %w", err)
+	}
+
+	// Create prevOutFetcher for all inputs
+	prevOuts := make(map[wire.OutPoint]*wire.TxOut)
+	for i, vin := range txData.Vin {
+		txOut, _, err := FetchUTXODetails(vin.TxID, vin.Vout)
+		if err != nil {
+			return "", fmt.Errorf("failed to fetch UTXO details for input %d: %w", i, err)
+		}
+		hash, _ := chainhash.NewHashFromStr(vin.TxID)
+		outPoint := wire.OutPoint{Hash: *hash, Index: vin.Vout}
+		prevOuts[outPoint] = txOut
+	}
+	prevOutFetcher := txscript.NewMultiPrevOutFetcher(prevOuts)
+
+	// Sign each input
+	for i, vin := range txData.Vin {
+		txOut, isWitness, err := FetchUTXODetails(vin.TxID, vin.Vout)
+		if err != nil {
+			return "", fmt.Errorf("failed to fetch UTXO details: %w", err)
+		}
+
+		var sigHash []byte
+		hashCache := txscript.NewTxSigHashes(tx, prevOutFetcher)
+
+		if isWitness {
+			sigHash, err = txscript.CalcWitnessSigHash(txOut.PkScript, hashCache, txscript.SigHashAll, tx, i, txOut.Value)
+			if err != nil {
+				return "", fmt.Errorf("failed to calculate witness sighash: %w", err)
+			}
+
+			sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
+			sigJSON, err := JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
+			if err != nil {
+				return "", fmt.Errorf("failed to sign transaction: %w", err)
+			}
+
+			var sig KeysignResponse
+			if err := json.Unmarshal([]byte(sigJSON), &sig); err != nil {
+				return "", fmt.Errorf("failed to parse signature response: %w", err)
+			}
+
+			signature, err := hex.DecodeString(sig.DerSignature)
+			if err != nil {
+				return "", fmt.Errorf("failed to decode DER signature: %w", err)
+			}
+
+			signatureWithHashType := append(signature, byte(txscript.SigHashAll))
+			tx.TxIn[i].Witness = wire.TxWitness{signatureWithHashType, pubKeyBytes}
+			tx.TxIn[i].SignatureScript = nil
+		} else {
+			sigHash, err = txscript.CalcSignatureHash(txOut.PkScript, txscript.SigHashAll, tx, i)
+			if err != nil {
+				return "", fmt.Errorf("failed to calculate sighash: %w", err)
+			}
+
+			sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
+			sigJSON, err := JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
+			if err != nil {
+				return "", fmt.Errorf("failed to sign transaction: %w", err)
+			}
+
+			var sig KeysignResponse
+			if err := json.Unmarshal([]byte(sigJSON), &sig); err != nil {
+				return "", fmt.Errorf("failed to parse signature response: %w", err)
+			}
+
+			signature, err := hex.DecodeString(sig.DerSignature)
+			if err != nil {
+				return "", fmt.Errorf("failed to decode DER signature: %w", err)
+			}
+
+			signatureWithHashType := append(signature, byte(txscript.SigHashAll))
+			builder := txscript.NewScriptBuilder()
+			builder.AddData(signatureWithHashType)
+			builder.AddData(pubKeyBytes)
+			scriptSig, err := builder.Script()
+			if err != nil {
+				return "", fmt.Errorf("failed to build scriptSig: %w", err)
+			}
+			tx.TxIn[i].SignatureScript = scriptSig
+			tx.TxIn[i].Witness = nil
+		}
+
+		// Validate the script
+		vm, err := txscript.NewEngine(
+			txOut.PkScript,
+			tx,
+			i,
+			txscript.StandardVerifyFlags,
+			nil,
+			hashCache,
+			txOut.Value,
+			prevOutFetcher,
+		)
+		if err != nil {
+			return "", fmt.Errorf("failed to create script engine: %w", err)
+		}
+		if err := vm.Execute(); err != nil {
+			return "", fmt.Errorf("script validation failed: %w", err)
+		}
+	}
+
+	// Serialize and broadcast
+	var signedTx bytes.Buffer
+	if err := tx.Serialize(&signedTx); err != nil {
+		return "", fmt.Errorf("failed to serialize transaction: %w", err)
+	}
+
+	rawTx := hex.EncodeToString(signedTx.Bytes())
+	txid, err := PostTx(rawTx)
+	if err != nil {
+		return "", fmt.Errorf("failed to broadcast transaction: %w", err)
+	}
+
+	return txid, nil
 }

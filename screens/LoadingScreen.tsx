@@ -11,9 +11,11 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import {useTheme} from '../theme';
+import DeviceInfo from 'react-native-device-info';
 
 const LoadingScreen = ({onRetry}: any) => {
   const {theme} = useTheme();
+  const [appVersion, setAppVersion] = useState('');
 
   const [loading, setLoading] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0.7)).current;
@@ -47,6 +49,15 @@ const LoadingScreen = ({onRetry}: any) => {
       ]),
     ).start();
   }, [fadeAnim]);
+
+  useEffect(() => {
+    const getVersion = async () => {
+      const version = await DeviceInfo.getVersion();
+      const buildNumber = await DeviceInfo.getBuildNumber();
+      setAppVersion(`v${version} (${buildNumber})`);
+    };
+    getVersion();
+  }, []);
 
   const styles = StyleSheet.create({
     container: {
@@ -108,6 +119,15 @@ const LoadingScreen = ({onRetry}: any) => {
       height: 28,
       tintColor: 'white',
     },
+    versionText: {
+      color: theme.colors.secondary,
+      fontSize: 12,
+      opacity: 0.7,
+      marginBottom: 10,
+    },
+    bottomContainer: {
+      alignItems: 'center',
+    },
   });
 
   return (
@@ -134,24 +154,27 @@ const LoadingScreen = ({onRetry}: any) => {
           </View>
         )}
       </View>
-      <TouchableOpacity
-        style={styles.button}
-        onPress={handlePress}
-        disabled={loading}
-        activeOpacity={0.8} // Improves touch feedback
-      >
-        {loading ? (
-          <ActivityIndicator size="small" color="#fff" />
-        ) : (
-          <>
-            <Image
-              source={require('../assets/fingerprint.png')}
-              style={styles.icon}
-            />
-            <Text style={styles.buttonText}>Unlock</Text>
-          </>
-        )}
-      </TouchableOpacity>
+      <View style={styles.bottomContainer}>
+        <TouchableOpacity
+          style={styles.button}
+          onPress={handlePress}
+          disabled={loading}
+          activeOpacity={0.8}
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <>
+              <Image
+                source={require('../assets/fingerprint.png')}
+                style={styles.icon}
+              />
+              <Text style={styles.buttonText}>Unlock</Text>
+            </>
+          )}
+        </TouchableOpacity>
+        <Text style={styles.versionText}>{appVersion}</Text>
+      </View>
     </View>
   );
 };

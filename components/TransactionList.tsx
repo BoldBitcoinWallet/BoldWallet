@@ -106,13 +106,34 @@ const TransactionList: React.FC<TransactionListProps> = ({
   const memoizedFetchTransactions = useCallback(
     async (url: string | undefined) => {
       dbg('memoizedFetchTransactions...');
-      if (!url) {
-        dbg('fallback to cache...');
+      
+      // Prevent multiple simultaneous fetches
+      if (isFetching.current) {
+        dbg('Fetch already in progress, skipping');
+        // Clear refresh state if this was a refresh attempt
+        if (isRefreshing) {
+          setIsRefreshing(false);
+        }
+        return;
+      }
+
+      // Set loading state
+      if (isMounted.current) {
+        setLoading(true);
+        isFetching.current = true;
+      }
+
+      // Cancel any ongoing requests
+      if (abortController.current) {
+        abortController.current.abort();
+      }
+      abortController.current = new AbortController();
+
+      // Function to load from cache
+      const loadFromCache = async () => {
+        dbg('Loading from cache...');
+        const cachedTransactions = await WalletService.getInstance().transactionsFromCache(address);
         if (isMounted.current) {
-          dbg('loading txs from cache...');
-          const cachedTransactions =
-            await WalletService.getInstance().transactionsFromCache(address);
-          // Update cache timestamp when using cached data
           WalletService.getInstance().updateTransactionsCache(
             address,
             cachedTransactions,
@@ -121,145 +142,149 @@ const TransactionList: React.FC<TransactionListProps> = ({
           setTransactions(cachedTransactions);
           setHasMoreTransactions(cachedTransactions.length > 0);
           if (cachedTransactions.length > 0) {
-            setLastSeenTxId(
-              cachedTransactions[cachedTransactions.length - 1].txid,
-            );
-            dbg(
-              'Set last seen txid:',
-              cachedTransactions[cachedTransactions.length - 1].txid,
-            );
+            setLastSeenTxId(cachedTransactions[cachedTransactions.length - 1].txid);
           }
+          // Clear refresh state when loading from cache
+          setIsRefreshing(false);
         }
-        return;
-      } else {
-        if (!isMounted.current || isFetching.current) {
-          dbg('Skipping fetch - already in progress or unmounted');
+      };
+
+      try {
+        if (!url) {
+          await loadFromCache();
           return;
         }
-        // Set our fetching ref
-        isFetching.current = true;
+
+        // Set a timeout to fall back to cache if API takes too long
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('API timeout')), 5000);
+        });
+
         dbg('Starting fetch transactions from:', url);
-
-        // Cancel any ongoing requests
-        if (abortController.current) {
-          abortController.current.abort();
-        }
-        abortController.current = new AbortController();
-
-        try {
-          dbg('Making request to:', url);
-          const response = await axios.get(url, {
+        const response = await Promise.race([
+          axios.get(url, {
             signal: abortController.current.signal,
-            timeout: 5000, // 5 second timeout
-          });
-          dbg('Received response:', response.data.length, 'transactions');
+            timeout: 5000,
+          }),
+          timeoutPromise,
+        ]);
 
-          if (!isMounted.current) {
-            dbg('Component unmounted, skipping state updates');
-            return;
-          }
+        if (!isMounted.current) {
+          dbg('Component unmounted, skipping state updates');
+          return;
+        }
 
-          const cached = JSON.parse(
-            (await EncryptedStorage.getItem('pendingTxs')) || '{}',
-          );
-          dbg('Cached transactions:', Object.keys(cached).length);
+        const cached = JSON.parse(
+          (await EncryptedStorage.getItem('pendingTxs')) || '{}',
+        );
 
-          // Process pending transactions
-          let pending = 0;
-          let pendingTxs = response.data
-            .filter((tx: any) => !tx.status || !tx.status.confirmed)
-            .map((tx: any) => {
-              const {sent} = getTransactionAmounts(tx, address);
-              if (!isNaN(sent) && sent > 0) {
-                pending += Number(sent);
-              }
-              return tx;
-            });
-          dbg('Pending transactions:', pendingTxs.length);
-
-          // Update cache
-          response.data.filter((tx: any) => {
-            dbg('checking tx:', tx.txid);
-            if (cached[tx.txid]) {
-              delete cached[tx.txid];
-              dbg('delete from cache', tx.txid);
-              EncryptedStorage.setItem('pendingTxs', JSON.stringify(cached));
+        // Process pending transactions
+        let pending = 0;
+        let pendingTxs = response.data
+          .filter((tx: any) => !tx.status || !tx.status.confirmed)
+          .map((tx: any) => {
+            const {sent} = getTransactionAmounts(tx, address);
+            if (!isNaN(sent) && sent > 0) {
+              pending += Number(sent);
             }
+            return tx;
           });
 
-          // Add cached transactions
-          for (const txID in cached) {
-            dbg('prepending from cache', txID, cached[txID]);
-            const validTxID = /^[a-fA-F0-9]{64}$/.test(txID);
-            if (!validTxID) {
-              delete cached[txID];
-            } else {
-              response.data.unshift({
-                txid: txID,
-                from: cached[txID].from,
-                to: cached[txID].to,
-                amount: cached[txID].satoshiAmount,
-                sentAt: cached[txID].sentAt,
-              });
-            }
+        // Update cache
+        response.data.filter((tx: any) => {
+          if (cached[tx.txid]) {
+            delete cached[tx.txid];
+            EncryptedStorage.setItem('pendingTxs', JSON.stringify(cached));
           }
+        });
 
-          await onUpdate(pendingTxs, pending);
-          dbg('Updated pending transactions');
-
-          const newTransactions = response.data.sort(
-            (a: any, b: any) => b.status.block_height - a.status.block_height,
-          );
-          dbg('Caching transactions:', newTransactions.length);
-          WalletService.getInstance().updateTransactionsCache(
-            address,
-            newTransactions,
-          );
-
-          // Batch state updates
-          if (isMounted.current) {
-            setTransactions(newTransactions);
-            setHasMoreTransactions(newTransactions.length > 0);
-            if (newTransactions.length > 0) {
-              setLastSeenTxId(newTransactions[newTransactions.length - 1].txid);
-              dbg(
-                'Set last seen txid:',
-                newTransactions[newTransactions.length - 1].txid,
-              );
-            }
-          }
-        } catch (error: any) {
-          dbg('got error', error);
-          if (error.name === 'CanceledError') {
-            dbg('Request canceled');
+        // Add cached transactions
+        for (const txID in cached) {
+          const validTxID = /^[a-fA-F0-9]{64}$/.test(txID);
+          if (!validTxID) {
+            delete cached[txID];
           } else {
-            console.error('Error fetching transactions:', error);
-            dbg('Error details:', error.message);
-            if (isMounted.current) {
-              Toast.show({
-                type: 'error',
-                text1: 'Error loading transactions',
-                text2: 'Using offline cache, Please try again',
-              });
-            }
-            memoizedFetchTransactions(undefined);
+            response.data.unshift({
+              txid: txID,
+              from: cached[txID].from,
+              to: cached[txID].to,
+              amount: cached[txID].satoshiAmount,
+              sentAt: cached[txID].sentAt,
+            });
           }
-        } finally {
+        }
+
+        await onUpdate(pendingTxs, pending);
+
+        const newTransactions = response.data.sort(
+          (a: any, b: any) => b.status.block_height - a.status.block_height,
+        );
+
+        WalletService.getInstance().updateTransactionsCache(
+          address,
+          newTransactions,
+        );
+
+        if (isMounted.current) {
+          setTransactions(newTransactions);
+          setHasMoreTransactions(newTransactions.length > 0);
+          if (newTransactions.length > 0) {
+            setLastSeenTxId(newTransactions[newTransactions.length - 1].txid);
+          }
+          // Clear refresh state on successful API response
+          setIsRefreshing(false);
+        }
+      } catch (error: any) {
+        dbg('got error', error);
+        if (error.name === 'CanceledError') {
+          dbg('Request canceled');
+          // Clear refresh state on cancel
           if (isMounted.current) {
-            isFetching.current = false;
-            setLoading(false);
-            dbg(
-              'Fetch completed, loading:',
-              false,
-              'isFetching:',
-              isFetching.current,
-            );
+            setIsRefreshing(false);
           }
+        } else {
+          console.error('Error fetching transactions:', error);
+          if (isMounted.current) {
+            Toast.show({
+              type: 'error',
+              text1: 'Error loading transactions',
+              text2: 'Using offline cache',
+            });
+            // Always fallback to cache on any error
+            await loadFromCache();
+          }
+        }
+      } finally {
+        if (isMounted.current) {
+          isFetching.current = false;
+          setLoading(false);
+          setLoadingMore(false);
         }
       }
     },
-    [address, getTransactionAmounts, onUpdate],
+    [address, getTransactionAmounts, onUpdate, isRefreshing],
   );
+
+  // Fix transaction refresh handling
+  const handleRefresh = useCallback(async () => {
+    if (isRefreshing || isFetching.current) {
+      return;
+    }
+    setIsRefreshing(true);
+    await memoizedFetchTransactions(baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, ''));
+  }, [baseApi, isRefreshing, memoizedFetchTransactions]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+      if (abortController.current) {
+        abortController.current.abort();
+      }
+      // Clear refresh state on unmount
+      setIsRefreshing(false);
+    };
+  }, []);
 
   // Fix transaction refresh handling
   useEffect(() => {
@@ -793,7 +818,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
           ) : null
         }
         refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
         }
       />
       <TransactionDetailsModal
