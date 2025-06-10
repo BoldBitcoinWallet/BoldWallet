@@ -106,7 +106,7 @@ export const createStyles = (theme: Theme): Styles => ({
     padding: 0,
   },
   settingsLogo: {
-    margin: 0,
+    marginTop: 3,
     height: 24,
     width: 24,
     resizeMode: 'contain',
