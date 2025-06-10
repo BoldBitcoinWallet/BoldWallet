@@ -107,9 +107,9 @@ export const createStyles = (theme: Theme): Styles => ({
   },
   settingsLogo: {
     margin: 0,
-    height: 30,
-    width: 30,
-    resizeMode: 'center',
+    height: 24,
+    width: 24,
+    resizeMode: 'contain',
   },
   headerTitleContainer: {
     flexDirection: 'row' as const,
