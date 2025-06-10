@@ -151,7 +151,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     });
   });
 
-
   const handleTransactionUpdate = useCallback(
     async (pendingTxs: any[], pending: number) => {
       _setPendingSent(pending);
@@ -198,12 +197,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       // Set up timeout for API calls
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => {
+          setIsRefreshing(false);
           reject(new Error('API refresh timed out'));
         }, 5000); // 5 second timeout
       });
 
       let freshData;
       try {
+        dbg('fetching bitcoin price and wallet balance...');
         freshData = await Promise.race([
           Promise.all([
             WalletService.getInstance().getBitcoinPrice(),
@@ -644,10 +645,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             <View style={styles.partyCenter}>
               <Text style={styles.partyLabel}>Network</Text>
               <View style={[styles.partyValue, styles.networkRow]}>
-                <Image
-                  source={networkIcon()}
-                  style={styles.networkIcon}
-                />
+                <Image source={networkIcon()} style={styles.networkIcon} />
                 <Text
                   style={styles.partyValue}
                   numberOfLines={1}

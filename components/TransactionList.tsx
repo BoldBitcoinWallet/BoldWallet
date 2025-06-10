@@ -485,7 +485,6 @@ const TransactionList: React.FC<TransactionListProps> = ({
 
         // Update cache
         filteredTransactions.filter((tx: any) => {
-          dbg('checking tx in fetch more:', tx.txid);
           if (cached[tx.txid]) {
             delete cached[tx.txid];
             dbg('delete from cache in fetch more', tx.txid);
