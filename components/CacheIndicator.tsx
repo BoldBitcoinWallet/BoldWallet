@@ -1,11 +1,14 @@
 import React, {useEffect, useState, useRef} from 'react';
-import {View, Text, TouchableOpacity, Image, Animated} from 'react-native';
+import {View, Text, TouchableOpacity, Image, Animated, StyleSheet} from 'react-native';
 import {createStyles} from './Styles';
 
 export interface CacheTimestamp {
   price: number;
   balance: number;
 }
+
+// Add clock icon import
+const clockIcon = require('../assets/clock-icon.png');
 
 export const CacheIndicator: React.FC<{
   timestamps: CacheTimestamp;
@@ -178,20 +181,35 @@ export const CacheIndicator: React.FC<{
         </Text>
       </View>
       {!isRefreshing && (
-        <Text
-          style={[
-            createStyles(theme).cacheText,
-            {color: theme.colors.textSecondary},
-          ]}>
-          {latestTimestamp === 0 ? (
-            'No data available'
-          ) : isUsingCache ? (
-            <>📱 Cached • {new Date(latestTimestamp).toLocaleTimeString()}</>
-          ) : (
-            <>{timeAgo} ⏰</>
-          )}
-        </Text>
+        <View style={styles.timeContainer}>
+          <Text
+            style={[
+              createStyles(theme).cacheText,
+              {color: theme.colors.textSecondary},
+            ]}>
+            {latestTimestamp === 0 ? (
+              'No data available'
+            ) : isUsingCache ? (
+              <>📱 Cached • {new Date(latestTimestamp).toLocaleTimeString()}</>
+            ) : (
+              timeAgo
+            )}
+          </Text>
+          <Image source={clockIcon} style={styles.clockIcon} />
+        </View>
       )}
     </TouchableOpacity>
   );
 };
+
+const styles = StyleSheet.create({
+  timeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  clockIcon: {
+    width: 16,
+    height: 16,
+    marginLeft: 4,
+  },
+});

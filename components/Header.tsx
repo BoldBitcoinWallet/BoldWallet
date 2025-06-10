@@ -13,9 +13,12 @@ export const HeaderRightButton: React.FC<{navigation: any}> = ({
 
   return (
     <TouchableOpacity
-      style={[styles.actionButton, styles.settingsButton]}
+      style={[styles.settingsButton]}
       onPress={() => navigation.navigate('Settings')}>
-      <Text>⚙️</Text>
+      <Image
+        source={require('../assets/settings-icon.png')}
+        style={styles.settingsLogo}
+      />
     </TouchableOpacity>
   );
 };

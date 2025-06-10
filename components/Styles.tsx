@@ -26,6 +26,7 @@ export interface Styles {
   walletHeader: ViewStyle;
   headerTop: ViewStyle;
   btcLogo: ImageStyle;
+  settingsLogo: ImageStyle;
   priceContainer: ViewStyle;
   btcPrice: TextStyle;
   currencyBadge: TextStyle;
@@ -82,6 +83,8 @@ export interface Styles {
   emptyStateIcon: ImageStyle;
   actionButtonIcon: ImageStyle;
   addressTypeContainer: ViewStyle;
+  networkRow: ViewStyle;
+  networkIcon: ImageStyle;
 }
 
 export const createStyles = (theme: Theme): Styles => ({
@@ -93,10 +96,20 @@ export const createStyles = (theme: Theme): Styles => ({
     alignItems: 'center' as const,
   },
   settingsButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
+    marginBottom: 4,
+    marginHorizontal: 8,
+    borderRadius: 8,
+    alignItems: 'center' as const,
+    width: 30,
+    height: 30,
     backgroundColor: theme.colors.cardBackground,
+    padding: 0,
+  },
+  settingsLogo: {
+    margin: 0,
+    height: 30,
+    width: 30,
+    resizeMode: 'center',
   },
   headerTitleContainer: {
     flexDirection: 'row' as const,
@@ -527,5 +540,15 @@ export const createStyles = (theme: Theme): Styles => ({
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 4,
+  },
+  networkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  networkIcon: {
+    width: 16,
+    height: 16,
+    marginRight: 4,
+    tintColor: '#FFFFFF',
   },
 });

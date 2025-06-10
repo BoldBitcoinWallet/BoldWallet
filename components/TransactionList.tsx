@@ -10,6 +10,7 @@ import {
   Linking,
   Platform,
   TouchableOpacity,
+  Image,
 } from 'react-native';
 import axios from 'axios';
 import Toast from 'react-native-toast-message';
@@ -21,6 +22,13 @@ import {themes} from '../theme';
 import TransactionListSkeleton from './TransactionListSkeleton';
 import {WalletService} from '../services/WalletService';
 import TransactionDetailsModal from './TransactionDetailsModal';
+
+// Add icon imports
+const inIcon = require('../assets/in-icon.png');
+const outIcon = require('../assets/out-icon.png');
+const consolidateIcon = require('../assets/consolidate-icon.png');
+const linkIcon = require('../assets/link-icon.png');
+const pendingIcon = require('../assets/pending-icon.png');
 
 interface TransactionListProps {
   address: string;
@@ -393,29 +401,22 @@ const TransactionList: React.FC<TransactionListProps> = ({
   // Memoized transaction status checker
   const getTransactionStatus = useCallback(
     (tx: any) => {
-      if (tx.sentAt) {
+      const isSending = tx.vin.some(
+        (input: any) => input.prevout.scriptpubkey_address === address,
+      );
+
+      if (tx.sentAt || !tx.status.confirmed) {
         return {
           confirmed: false,
-          text: '⏳ Sending',
+          text: isSending ? 'Sending' : 'Receiving',
+          icon: pendingIcon,
         };
       }
-      if (!tx.status.confirmed) {
-        return {
-          confirmed: false,
-          text: tx.vin.some(
-            (input: any) => input.prevout.scriptpubkey_address === address,
-          )
-            ? '⏳ Sending'
-            : '⏳ Receiving',
-        };
-      }
+
       return {
         confirmed: true,
-        text: tx.vin.some(
-          (input: any) => input.prevout.scriptpubkey_address === address,
-        )
-          ? '↗️ Sent'
-          : '↘️ Received',
+        text: isSending ? 'Sent' : 'Received',
+        icon: isSending ? outIcon : inIcon,
       };
     },
     [address],
@@ -678,12 +679,30 @@ const TransactionList: React.FC<TransactionListProps> = ({
       flexDirection: 'row',
       alignItems: 'center',
     },
+    statusIcon: {
+      width: 20,
+      height: 20,
+      marginRight: 8,
+    },
+    txIdContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    linkIcon: {
+      width: 16,
+      height: 16,
+      marginRight: 4,
+    },
   });
 
   // Memoized render item with currency support
   const renderItem = useCallback(
     ({item}: any) => {
-      const {text: status, confirmed} = getTransactionStatus(item);
+      const {
+        text: status,
+        confirmed,
+        icon: statusIcon,
+      } = getTransactionStatus(item);
       const {sent, changeAmount, received} = getTransactionAmounts(
         item,
         address,
@@ -725,12 +744,12 @@ const TransactionList: React.FC<TransactionListProps> = ({
         ? `-${formatBtcAmount(sent)} BTC`
         : `+${formatBtcAmount(received)} BTC`;
       let finalStatus = status;
+      let finalIcon = statusIcon;
 
       if (sent === 0 && received === changeAmount) {
-        finalStatus = confirmed
-          ? '🔂 Consolidated UTXOs'
-          : '🔂 Consolidating UTXOs';
+        finalStatus = confirmed ? 'Consolidated UTXOs' : 'Consolidating UTXOs';
         info = `+${formatBtcAmount(received)} BTC`;
+        finalIcon = confirmed ? consolidateIcon : pendingIcon;
       }
 
       // Calculate amount in selected currency with proper formatting
@@ -755,7 +774,10 @@ const TransactionList: React.FC<TransactionListProps> = ({
             setIsDetailsModalVisible(true);
           }}>
           <View style={styles.transactionRow}>
-            <Text style={styles.status}>{finalStatus}</Text>
+            <View style={styles.statusContainer}>
+              <Image source={finalIcon} style={styles.statusIcon} />
+              <Text style={styles.status}>{finalStatus}</Text>
+            </View>
             <Text
               style={[
                 styles.amount,
@@ -786,10 +808,12 @@ const TransactionList: React.FC<TransactionListProps> = ({
             </View>
           )}
           <View style={styles.transactionRow}>
-            <Text style={styles.txId}>
-              🔗
-              <Text style={styles.txLink}>0x{shortTxId}</Text>
-            </Text>
+            <View style={styles.txIdContainer}>
+              <Image source={linkIcon} style={styles.linkIcon} />
+              <Text style={styles.txId}>
+                <Text style={styles.txLink}>0x{shortTxId}</Text>
+              </Text>
+            </View>
             <Text style={styles.timestamp}>{timestamp}</Text>
           </View>
         </TouchableOpacity>
@@ -880,8 +904,8 @@ const TransactionList: React.FC<TransactionListProps> = ({
                   let finalStatus = status;
                   if (sent === 0 && received === changeAmount) {
                     finalStatus = confirmed
-                      ? '🔂 Consolidated UTXOs'
-                      : '🔂 Consolidating UTXOs';
+                      ? 'Consolidated UTXOs'
+                      : 'Consolidating UTXOs';
                   }
                   return {
                     confirmed,
