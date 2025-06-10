@@ -401,9 +401,11 @@ const TransactionList: React.FC<TransactionListProps> = ({
   // Memoized transaction status checker
   const getTransactionStatus = useCallback(
     (tx: any) => {
-      const isSending = !!tx.vin.some(
-        (input: any) => input.prevout.scriptpubkey_address === address,
-      );
+      const isSending =
+        !!tx?.sentAt ||
+        !!tx.vin.some(
+          (input: any) => input.prevout.scriptpubkey_address === address,
+        );
 
       if (tx.sentAt || !tx.status.confirmed) {
         return {
