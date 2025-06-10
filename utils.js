@@ -9,9 +9,9 @@ export const getPinnedRemoteIP = () => ip;
 export const dbg = (message, ...optionalParams) => {
   let args = optionalParams.length === 0 ? '' : optionalParams;
   if (Platform.OS === 'android') {
-    console.log(`[android] [${new Date().toLocaleTimeString()}] ${message}`, args);
+    console.log(`[android] [${new Date().toLocaleString()}] ${message}`, args);
   } else if (Platform.OS === 'ios') {
-    console.log(`[iphone] [${new Date().toLocaleTimeString()}] ${message}`, args);
+    console.log(`[iphone] [${new Date().toLocaleString()}] ${message}`, args);
   } else {
     console.log(message, args);
   }

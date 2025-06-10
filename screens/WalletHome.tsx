@@ -317,7 +317,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       setLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
+  }, [isInitialized]);
 
   const handleCurrencySelect = async (currency: {code: string}) => {
     setSelectedCurrency(currency.code);
