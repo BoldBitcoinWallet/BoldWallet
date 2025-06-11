@@ -1,21 +1,22 @@
 import RNFS from 'react-native-fs';
 
 class LocalCache {
-  static baseDir = RNFS.DocumentDirectoryPath;
+  static baseDir = `${RNFS.DocumentDirectoryPath}/.cache`;
 
-  static hex(key: string) {
-    return Array.from(new TextEncoder().encode(key))
+  static hex(str: string) {
+    return Array.from(new TextEncoder().encode(str))
       .map(byte => byte.toString(16).padStart(2, '0'))
       .join('');
   }
 
   static getFilePath(key: string) {
-    return `${this.baseDir}/${LocalCache.hex(key)}.txt`;
+    return `${this.baseDir}/${this.hex(key)}.txt`;
   }
 
   static async setItem(key: string, value: string) {
-    const path = this.getFilePath(LocalCache.hex(key));
     try {
+      await RNFS.mkdir(this.baseDir);
+      const path = this.getFilePath(key);
       await RNFS.writeFile(path, value, 'utf8');
     } catch (err) {
       console.error(`LocalCache setItem error [${key}]:`, err);
@@ -23,13 +24,10 @@ class LocalCache {
   }
 
   static async getItem(key: string) {
-    const path = this.getFilePath(LocalCache.hex(key));
     try {
+      const path = this.getFilePath(key);
       const exists = await RNFS.exists(path);
-      if (!exists) {
-        return null;
-      }
-      return await RNFS.readFile(path, 'utf8');
+      return exists ? await RNFS.readFile(path, 'utf8') : null;
     } catch (err) {
       console.error(`LocalCache getItem error [${key}]:`, err);
       return null;
@@ -37,14 +35,26 @@ class LocalCache {
   }
 
   static async removeItem(key: string) {
-    const path = this.getFilePath(LocalCache.hex(key));
     try {
+      const path = this.getFilePath(key);
       const exists = await RNFS.exists(path);
       if (exists) {
         await RNFS.unlink(path);
       }
     } catch (err) {
       console.error(`LocalCache removeItem error [${key}]:`, err);
+    }
+  }
+
+  static async clear() {
+    try {
+      const exists = await RNFS.exists(this.baseDir);
+      if (exists) {
+        await RNFS.unlink(this.baseDir);
+      }
+      await RNFS.mkdir(this.baseDir);
+    } catch (err) {
+      console.error('LocalCache clear error:', err);
     }
   }
 }
