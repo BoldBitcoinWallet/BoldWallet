@@ -37,4 +37,4 @@ export interface Transaction {
   fee: number;
   version: number;
   locktime: number;
-} 
+}

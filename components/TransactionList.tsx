@@ -15,7 +15,6 @@ import {
 import axios from 'axios';
 import Toast from 'react-native-toast-message';
 import moment from 'moment';
-import EncryptedStorage from 'react-native-encrypted-storage';
 import {dbg, presentFiat} from '../utils';
 import {useTheme} from '@react-navigation/native';
 import {themes} from '../theme';

@@ -27,7 +27,6 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import debounce from 'lodash/debounce';
 import Big from 'big.js';
 import {dbg} from '../utils';
-import EncryptedStorage from 'react-native-encrypted-storage';
 import {useTheme} from '../theme';
 import LocalCache from '../services/LocalCache';
 
@@ -497,7 +496,9 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
               </Text>
               <Text style={styles.feeAmountUsd}>
                 ({selectedCurrency}{' '}
-                {formatUSD(estimatedFee.div(E8).times(btcToFiatRate).toNumber())}
+                {formatUSD(
+                  estimatedFee.div(E8).times(btcToFiatRate).toNumber(),
+                )}
                 )
               </Text>
             </View>
@@ -580,7 +581,9 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                 </View>
 
                 <View style={styles.inputContainer}>
-                  <Text style={styles.inputLabel}>Amount in {selectedCurrency} ($)</Text>
+                  <Text style={styles.inputLabel}>
+                    Amount in {selectedCurrency} ($)
+                  </Text>
                   <TextInput
                     style={styles.input}
                     placeholder={`Or ${selectedCurrency} amount`}

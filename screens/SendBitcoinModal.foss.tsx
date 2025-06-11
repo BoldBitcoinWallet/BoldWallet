@@ -452,7 +452,9 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
               </Text>
               <Text style={styles.feeAmountUsd}>
                 ({selectedCurrency}{' '}
-                {formatUSD(estimatedFee.div(E8).times(btcToFiatRate).toNumber())}
+                {formatUSD(
+                  estimatedFee.div(E8).times(btcToFiatRate).toNumber(),
+                )}
                 )
               </Text>
             </View>

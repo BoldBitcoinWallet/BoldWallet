@@ -475,10 +475,7 @@ const MobilesPairing = ({navigation}: any) => {
               block_height: null,
             },
           };
-          await LocalCache.setItem(
-            'pendingTxs',
-            JSON.stringify(pendingTxs),
-          );
+          await LocalCache.setItem('pendingTxs', JSON.stringify(pendingTxs));
           navigation.dispatch(
             CommonActions.reset({
               index: 0,

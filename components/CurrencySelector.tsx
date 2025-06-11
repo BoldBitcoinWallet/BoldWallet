@@ -151,4 +151,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default CurrencySelector; 
+export default CurrencySelector;

@@ -132,14 +132,6 @@ export class WalletService {
     hasNonZeroBalance: false,
   };
 
-  // Add network state tracker
-  private networkState = {
-    isTransitioning: false,
-    lastNetwork: null as string | null,
-    lastAddress: null as string | null,
-    pendingAddress: null as string | null,
-  };
-
   private constructor() {
     // Don't auto-initialize, wait for explicit initialize call
   }
@@ -410,34 +402,6 @@ export class WalletService {
       WalletService.instance = new WalletService();
     }
     return WalletService.instance;
-  }
-
-  private async debounceFetch(
-    key: string,
-    fetchFn: () => Promise<any>,
-    delay: number = 1000,
-  ): Promise<any> {
-    if (this.fetchInProgress[key]) {
-      dbg('WalletService: Fetch already in progress for:', key);
-      return null;
-    }
-
-    if (this.fetchTimeout[key]) {
-      clearTimeout(this.fetchTimeout[key]);
-    }
-
-    return new Promise(resolve => {
-      this.fetchTimeout[key] = setTimeout(async () => {
-        try {
-          this.fetchInProgress[key] = true;
-          const result = await fetchFn();
-          resolve(result);
-        } finally {
-          this.fetchInProgress[key] = false;
-          delete this.fetchTimeout[key];
-        }
-      }, delay);
-    });
   }
 
   // Add method to cancel ongoing fetches
