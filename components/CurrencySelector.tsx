@@ -21,28 +21,50 @@ interface CurrencySelectorProps {
   onClose: () => void;
   onSelect: (currency: Currency) => void;
   currentCurrency: string;
+  availableCurrencies: {[key: string]: number};
 }
 
-const currencies: Currency[] = [
-  {code: 'USD', name: 'US Dollar', symbol: '$'},
-  {code: 'EUR', name: 'Euro', symbol: '€'},
-  {code: 'GBP', name: 'British Pound', symbol: '£'},
-  {code: 'JPY', name: 'Japanese Yen', symbol: '¥'},
-  {code: 'AUD', name: 'Australian Dollar', symbol: 'A$'},
-  {code: 'CAD', name: 'Canadian Dollar', symbol: 'C$'},
-  {code: 'CHF', name: 'Swiss Franc', symbol: 'Fr'},
-  {code: 'CNY', name: 'Chinese Yuan', symbol: '¥'},
-  {code: 'INR', name: 'Indian Rupee', symbol: '₹'},
-  {code: 'SGD', name: 'Singapore Dollar', symbol: 'S$'},
-];
+const currencyNames: {[key: string]: string} = {
+  USD: 'US Dollar',
+  EUR: 'Euro',
+  GBP: 'British Pound',
+  JPY: 'Japanese Yen',
+  AUD: 'Australian Dollar',
+  CAD: 'Canadian Dollar',
+  CHF: 'Swiss Franc',
+  CNY: 'Chinese Yuan',
+  INR: 'Indian Rupee',
+  SGD: 'Singapore Dollar',
+};
+
+const currencySymbols: {[key: string]: string} = {
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  JPY: '¥',
+  AUD: 'A$',
+  CAD: 'C$',
+  CHF: 'Fr',
+  CNY: '¥',
+  INR: '₹',
+  SGD: 'S$',
+};
 
 const CurrencySelector: React.FC<CurrencySelectorProps> = ({
   visible,
   onClose,
   onSelect,
   currentCurrency,
+  availableCurrencies,
 }) => {
   const {height} = useWindowDimensions();
+
+  // Convert available currencies object to array of Currency objects
+  const currencies: Currency[] = Object.keys(availableCurrencies).map(code => ({
+    code,
+    name: currencyNames[code] || code,
+    symbol: currencySymbols[code] || code,
+  }));
 
   const renderCurrencyItem = ({item}: {item: Currency}) => (
     <TouchableOpacity

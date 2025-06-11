@@ -807,6 +807,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         onClose={() => setIsCurrencySelectorVisible(false)}
         onSelect={handleCurrencySelect}
         currentCurrency={selectedCurrency}
+        availableCurrencies={priceData}
       />
       <Toast />
       {isSendModalVisible && (
