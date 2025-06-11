@@ -786,7 +786,7 @@ const MobilesPairing = ({navigation}: any) => {
         setIsMaster(master);
         setStatus('Devices Discovery Completed');
         await Promise.allSettled(promises).then(() =>
-          EncryptedStorage.removeItem('peerFound'),
+          LocalCache.removeItem('peerFound'),
         );
       } else {
         setStatus('Pairing timed out. Please try again.');
