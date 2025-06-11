@@ -50,9 +50,13 @@ class LocalCache {
     try {
       const exists = await RNFS.exists(this.baseDir);
       if (exists) {
-        await RNFS.unlink(this.baseDir);
+        const files = await RNFS.readDir(this.baseDir);
+        for (const file of files) {
+          await RNFS.unlink(file.path);
+        }
+      } else {
+        await RNFS.mkdir(this.baseDir);
       }
-      await RNFS.mkdir(this.baseDir);
     } catch (err) {
       console.error('LocalCache clear error:', err);
     }
