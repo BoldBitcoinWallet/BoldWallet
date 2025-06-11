@@ -480,18 +480,15 @@ export class WalletService {
       const price = this.formatUSD(data.USD);
       dbg('WalletService: New price fetched - Rate:', rate, 'Price:', price);
 
-      const rates = {
-        USD: rate,
-        EUR: rate * 0.92, // Example conversion rate
-        GBP: rate * 0.79, // Example conversion rate
-        JPY: rate * 151.62, // Example conversion rate
-        AUD: rate * 1.52, // Example conversion rate
-        CAD: rate * 1.35, // Example conversion rate
-        CHF: rate * 0.9, // Example conversion rate
-        CNY: rate * 7.23, // Example conversion rate
-        INR: rate * 83.31, // Example conversion rate
-        SGD: rate * 1.35, // Example conversion rate
-      };
+      // Use all available rates from the API response
+      const rates: {[key: string]: number} = {};
+      Object.entries(data).forEach(([currency, value]) => {
+        if (typeof value === 'number' && !isNaN(value) && value > 0) {
+          rates[currency] = value;
+        }
+      });
+
+      dbg('WalletService: Available currencies:', Object.keys(rates));
 
       this.cachedPrice = {price, rate, rates};
       this.lastPriceFetch = Date.now();

@@ -10,7 +10,6 @@ import {
   Platform,
   PermissionsAndroid,
   Modal,
-  StyleSheet,
 } from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import SendBitcoinModal from './SendBitcoinModal';
@@ -386,9 +385,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         // Set default currency if not set
         let currency = await LocalCache.getItem('currency');
         if (!currency) {
-          currency = 'USD';
+          // Get available currencies from price data
+          const priceResponse = await walletService.getBitcoinPrice();
+          const availableCurrencies = Object.keys(priceResponse.rates);
+          currency = availableCurrencies.includes('USD')
+            ? 'USD'
+            : availableCurrencies[0];
           await LocalCache.setItem('currency', currency);
-          dbg('WalletHome: Setting default currency to USD');
+          dbg('WalletHome: Setting default currency to', currency);
         }
 
         const netParams = await BBMTLibNativeModule.setBtcNetwork(net);
