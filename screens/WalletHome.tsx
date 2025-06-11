@@ -72,7 +72,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isCurrencySelectorVisible, setIsCurrencySelectorVisible] =
     useState(false);
-  const [selectedCurrency, setSelectedCurrency] = useState('USD');
+  const [selectedCurrency, setSelectedCurrency] = useState('');
   const [priceData, setPriceData] = useState<{[key: string]: number}>({});
 
   const {theme} = useTheme();
@@ -149,6 +149,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   useEffect(() => {
     LocalCache.getItem('addressType').then(addrType => {
       setAddressType(addrType || 'legacy');
+    });
+    LocalCache.getItem('currency').then(currency => {
+      setSelectedCurrency(currency || 'USD');
     });
   });
 
