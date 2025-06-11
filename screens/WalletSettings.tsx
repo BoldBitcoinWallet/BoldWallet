@@ -28,7 +28,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isModalResetVisible, setIsModalResetVisible] = useState(false);
   const [isBackupModalVisible, setIsBackupModalVisible] = useState(false);
   const [isTestnet, setIsTestnet] = useState(true);
   const [party, setParty] = useState('');
@@ -122,9 +122,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     if (deleteInput.trim().toLowerCase() === 'delete my wallet') {
       try {
         setIsDeleting(true);
-        setIsModalVisible(false);
+        setIsModalResetVisible(false);
         await EncryptedStorage.clear();
-        WalletService.getInstance().clearCache();
+        await LocalCache.clear();
         navigation.reset({
           index: 0,
           routes: [{name: 'Showcase'}],
@@ -436,7 +436,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </Text>
             <TouchableOpacity
               style={[styles.button, styles.deleteButton]}
-              onPress={() => setIsModalVisible(true)}>
+              onPress={() => setIsModalResetVisible(true)}>
               <Text style={styles.buttonText}>Delete {party}</Text>
             </TouchableOpacity>
           </View>
@@ -583,10 +583,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
           {/* Custom Prompt Modal */}
           <Modal
-            visible={isModalVisible}
+            visible={isModalResetVisible}
             transparent={true}
             animationType="fade"
-            onRequestClose={() => setIsModalVisible(false)}>
+            onRequestClose={() => setIsModalResetVisible(false)}>
             <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>
                 <Text style={styles.modalTitle}>Confirm Wallet Deletion</Text>
@@ -604,7 +604,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 <View style={styles.modalActions}>
                   <TouchableOpacity
                     style={[styles.modalButton, styles.cancelButton]}
-                    onPress={() => setIsModalVisible(false)}>
+                    onPress={() => setIsModalResetVisible(false)}>
                     <Text style={styles.buttonText}>Cancel</Text>
                   </TouchableOpacity>
                   <TouchableOpacity

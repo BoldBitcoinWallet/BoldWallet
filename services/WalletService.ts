@@ -1066,7 +1066,7 @@ export class WalletService {
 
     // Clear persistent storage
     try {
-      await LocalCache.clear();
+      await LocalCache.removeItem('walletCache');
       dbg('WalletService: Cleared persistent cache');
     } catch (error) {
       dbg('WalletService: Error clearing persistent cache:', error);
