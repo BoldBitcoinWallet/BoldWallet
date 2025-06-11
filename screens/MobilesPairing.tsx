@@ -38,6 +38,7 @@ import Big from 'big.js';
 import {dbg, getPinnedRemoteIP} from '../utils';
 import {useTheme} from '../theme';
 import {waitMS} from '../services/WalletService';
+import LocalCache from '../services/LocalCache';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -363,7 +364,7 @@ const MobilesPairing = ({navigation}: any) => {
       const server = `http://${isMaster ? localIP : peerIP}:${discoveryPort}`;
 
       const jks = await EncryptedStorage.getItem('keyshare');
-      const net = (await EncryptedStorage.getItem('network')) || 'mainnet';
+      const net = (await LocalCache.getItem('network')) || 'mainnet';
       const ks = JSON.parse(jks || '{}');
       const path = "m/44'/0'/0'/0/0";
       const btcPub = await BBMTLibNativeModule.derivePubkey(
@@ -459,7 +460,7 @@ const MobilesPairing = ({navigation}: any) => {
             throw txId;
           }
           const pendingTxs = JSON.parse(
-            (await EncryptedStorage.getItem('pendingTxs')) || '{}',
+            (await LocalCache.getItem('pendingTxs')) || '{}',
           );
           pendingTxs[txId] = {
             txid: txId,
@@ -474,7 +475,7 @@ const MobilesPairing = ({navigation}: any) => {
               block_height: null,
             },
           };
-          await EncryptedStorage.setItem(
+          await LocalCache.setItem(
             'pendingTxs',
             JSON.stringify(pendingTxs),
           );
@@ -710,7 +711,7 @@ const MobilesPairing = ({navigation}: any) => {
       const deviceName = await DeviceInfo.getDeviceName();
       setLocalDevice(deviceName);
       setStatus('Starting peer discovery...');
-      await EncryptedStorage.setItem('peerFound', '');
+      await LocalCache.setItem('peerFound', '');
       const promises = [
         listenForPeerPromise(
           kp,
@@ -737,7 +738,7 @@ const MobilesPairing = ({navigation}: any) => {
       let result = await Promise.race(promises);
       while (!result && Date.now() < until) {
         dbg('checking peer...');
-        result = await EncryptedStorage.getItem('peerFound');
+        result = await LocalCache.getItem('peerFound');
         if (result) {
           dbg('checking peer ok...');
           break;
@@ -842,7 +843,7 @@ const MobilesPairing = ({navigation}: any) => {
         String(discoveryPort),
         String(timeout),
       );
-      await EncryptedStorage.setItem('peerFound', result);
+      await LocalCache.setItem('peerFound', result);
       return result;
     } catch (error) {
       console.warn('ListenForPeer Error:', error);
@@ -879,7 +880,7 @@ const MobilesPairing = ({navigation}: any) => {
     });
     while (Date.now() < until) {
       try {
-        let peerFound = await EncryptedStorage.getItem('peerFound');
+        let peerFound = await LocalCache.getItem('peerFound');
         if (peerFound) {
           dbg('discoverPeer already found');
           return peerFound;
@@ -895,7 +896,7 @@ const MobilesPairing = ({navigation}: any) => {
         );
         if (result) {
           dbg('discoverPeer result', result);
-          await EncryptedStorage.setItem('peerFound', result);
+          await LocalCache.setItem('peerFound', result);
           return result;
         }
       } catch (error) {

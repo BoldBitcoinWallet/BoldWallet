@@ -1,6 +1,7 @@
 // theme.js
 import React, {createContext, useContext, useEffect, useState} from 'react';
 import EncryptedStorage from 'react-native-encrypted-storage';
+import LocalCache from './services/LocalCache';
 
 export const themes = {
   lightPolished: {
@@ -132,7 +133,7 @@ export const ThemeProvider = ({children}) => {
   useEffect(() => {
     const loadTheme = async () => {
       try {
-        const storedTheme = await EncryptedStorage.getItem('theme');
+        const storedTheme = await LocalCache.getItem('theme');
         console.log('Initial theme loaded:', storedTheme || 'default');
         setTheme(
           storedTheme === 'cryptoVibrant'
@@ -152,7 +153,7 @@ export const ThemeProvider = ({children}) => {
     console.log('Toggling to:', isCrypto ? 'cryptoVibrant' : 'lightPolished');
     setTheme(newTheme);
     try {
-      await EncryptedStorage.setItem(
+      await LocalCache.setItem(
         'theme',
         isCrypto ? 'cryptoVibrant' : 'lightPolished',
       );

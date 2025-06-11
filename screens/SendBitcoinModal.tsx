@@ -29,6 +29,7 @@ import Big from 'big.js';
 import {dbg} from '../utils';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {useTheme} from '../theme';
+import LocalCache from '../services/LocalCache';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -377,7 +378,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
 
   useEffect(() => {
     const initFee = async () => {
-      const feeOption = await EncryptedStorage.getItem('feeStrategy');
+      const feeOption = await LocalCache.getItem('feeStrategy');
       // Always default to 'eco' if no fee strategy is set or if it was 'min'
       const defaultFee = feeOption && feeOption !== 'min' ? feeOption : 'eco';
       setFeeStrategy(defaultFee);
@@ -436,7 +437,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     setFeeStrategy(value);
     dbg('setting fee strategy to', value);
     BBMTLibNativeModule.setFeePolicy(value);
-    EncryptedStorage.setItem('feeStrategy', value);
+    LocalCache.setItem('feeStrategy', value);
   };
 
   const handleSendClick = () => {

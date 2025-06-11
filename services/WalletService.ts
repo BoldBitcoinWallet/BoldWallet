@@ -2,6 +2,7 @@ import Big from 'big.js';
 import {BBMTLibNativeModule} from '../native_modules';
 import {dbg} from '../utils';
 import axios from 'axios';
+import LocalCache from './LocalCache';
 import EncryptedStorage from 'react-native-encrypted-storage';
 
 export interface WalletBalance {
@@ -156,7 +157,7 @@ export class WalletService {
       await this.loadCachedData();
       // Initialize network state from storage
       await this.initializeNetworkState();
-      
+
       dbg('WalletService: Initialization completed successfully');
     } catch (error) {
       dbg('WalletService: Error during initialization:', error);
@@ -166,14 +167,13 @@ export class WalletService {
 
   private async getStoredState() {
     try {
-      const network = (await EncryptedStorage.getItem('network')) || 'mainnet';
-      const addressType =
-        (await EncryptedStorage.getItem('addressType')) || 'legacy';
+      const network = (await LocalCache.getItem('network')) || 'mainnet';
+      const addressType = (await LocalCache.getItem('addressType')) || 'legacy';
       const api =
         network === 'mainnet'
           ? 'https://mempool.space/api'
           : 'https://mempool.space/testnet/api';
-      const address = await EncryptedStorage.getItem('currentAddress');
+      const address = await LocalCache.getItem('currentAddress');
 
       return {
         network,
@@ -195,16 +195,16 @@ export class WalletService {
   }) {
     try {
       if (state.network) {
-        await EncryptedStorage.setItem('network', state.network);
+        await LocalCache.setItem('network', state.network);
       }
       if (state.addressType) {
-        await EncryptedStorage.setItem('addressType', state.addressType);
+        await LocalCache.setItem('addressType', state.addressType);
       }
       if (state.api) {
-        await EncryptedStorage.setItem('api', state.api);
+        await LocalCache.setItem('api', state.api);
       }
       if (state.address) {
-        await EncryptedStorage.setItem('currentAddress', state.address);
+        await LocalCache.setItem('currentAddress', state.address);
       }
       dbg('WalletService: Saved state to storage:', state);
     } catch (error) {
@@ -236,7 +236,7 @@ export class WalletService {
   private async loadCachedData() {
     try {
       dbg('WalletService: Loading cached data from storage...');
-      const cachedData = await EncryptedStorage.getItem('walletCache');
+      const cachedData = await LocalCache.getItem('walletCache');
       if (cachedData) {
         const parsed = JSON.parse(cachedData) as CachedData;
         const now = Date.now();
@@ -398,7 +398,7 @@ export class WalletService {
         },
       );
 
-      await EncryptedStorage.setItem('walletCache', JSON.stringify(cacheData));
+      await LocalCache.setItem('walletCache', JSON.stringify(cacheData));
       dbg('WalletService: Successfully saved all data to persistent cache');
     } catch (error) {
       dbg('WalletService: Error saving cached data:', error);
@@ -588,7 +588,7 @@ export class WalletService {
 
       // Clear persistent storage
       try {
-        await EncryptedStorage.removeItem('walletCache');
+        await LocalCache.removeItem('walletCache');
         dbg('WalletService: Cleared persistent cache');
       } catch (error) {
         dbg('WalletService: Error clearing persistent cache:', error);
@@ -730,6 +730,12 @@ export class WalletService {
 
       if (!totalUTXO || !validateNumber(totalUTXO)) {
         dbg('WalletService: Invalid UTXO total received:', totalUTXO);
+
+        if (this.cachedBalance.btc !== '0.00000000') {
+          dbg('WalletService: fallback to cached balance');
+          return this.cachedBalance;
+        }
+
         const balance = {
           btc: '0.00000000',
           usd: '',
@@ -1096,7 +1102,7 @@ export class WalletService {
 
     // Clear persistent storage
     try {
-      await EncryptedStorage.removeItem('walletCache');
+      await LocalCache.removeItem('walletCache');
       dbg('WalletService: Cleared persistent cache');
     } catch (error) {
       dbg('WalletService: Error clearing persistent cache:', error);

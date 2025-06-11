@@ -2,6 +2,7 @@ import React, {createContext, useContext, useState, useEffect} from 'react';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {NativeModules} from 'react-native';
 import {dbg} from '../utils';
+import LocalCache from '../services/LocalCache';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -27,7 +28,7 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
   const handleAddressTypeChange = async (type: string) => {
     try {
       dbg('WalletContext: Changing address type to:', type);
-      await EncryptedStorage.setItem('addressType', type);
+      await LocalCache.setItem('addressType', type);
       setAddressType(type);
       // Refresh wallet to generate new address
       await refreshWallet();
@@ -50,10 +51,10 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
       const path = "m/44'/0'/0'/0/0";
 
       // Get current network
-      let net = await EncryptedStorage.getItem('network');
+      let net = await LocalCache.getItem('network');
       if (!net) {
         net = 'mainnet';
-        await EncryptedStorage.setItem('network', net);
+        await LocalCache.setItem('network', net);
       }
       dbg('WalletContext: Current network:', net);
 
@@ -63,7 +64,7 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
       dbg('WalletContext: Network set in native module:', net);
 
       // Get current address type
-      const storedAddressType = await EncryptedStorage.getItem('addressType');
+      const storedAddressType = await LocalCache.getItem('addressType');
       const currentAddressType = (storedAddressType as string) || 'legacy';
       setAddressType(currentAddressType);
       dbg('WalletContext: Current address type:', currentAddressType);
@@ -95,7 +96,7 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
         base = base.substring(0, base.length - 1);
       }
 
-      let api = await EncryptedStorage.getItem('api');
+      let api = await LocalCache.getItem('api');
       if (api) {
         // Ensure API URL doesn't end with a slash
         if (api.endsWith('/')) {
@@ -106,7 +107,7 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
         setBaseApi(api);
       } else {
         dbg('WalletContext: Using default API URL:', base);
-        await EncryptedStorage.setItem('api', base);
+        await LocalCache.setItem('api', base);
         setBaseApi(base);
       }
 

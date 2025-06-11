@@ -22,6 +22,7 @@ import {themes} from '../theme';
 import TransactionListSkeleton from './TransactionListSkeleton';
 import {WalletService} from '../services/WalletService';
 import TransactionDetailsModal from './TransactionDetailsModal';
+import LocalCache from '../services/LocalCache';
 
 // Add icon imports
 const inIcon = require('../assets/in-icon.png');
@@ -184,7 +185,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
         }
 
         const cached = JSON.parse(
-          (await EncryptedStorage.getItem('pendingTxs')) || '{}',
+          (await LocalCache.getItem('pendingTxs')) || '{}',
         );
 
         // Process pending transactions
@@ -203,7 +204,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
         response.data.forEach((tx: any) => {
           if (cached[tx.txid]) {
             delete cached[tx.txid];
-            EncryptedStorage.setItem('pendingTxs', JSON.stringify(cached));
+            LocalCache.setItem('pendingTxs', JSON.stringify(cached));
           }
         });
 
@@ -258,8 +259,12 @@ const TransactionList: React.FC<TransactionListProps> = ({
           const aIsPending = !a.status || !a.status.block_height;
           const bIsPending = !b.status || !b.status.block_height;
 
-          if (aIsPending && !bIsPending) return -1; // a is pending, show it first
-          if (!aIsPending && bIsPending) return 1; // b is pending, show it first
+          if (aIsPending && !bIsPending) {
+            return -1;
+          } // a is pending, show it first
+          if (!aIsPending && bIsPending) {
+            return 1;
+          } // b is pending, show it first
           if (aIsPending && bIsPending) {
             // If both are pending, sort by sentAt timestamp if available
             const aTime = a.sentAt || 0;
@@ -461,7 +466,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
       }
 
       const cached = JSON.parse(
-        (await EncryptedStorage.getItem('pendingTxs')) || '{}',
+        (await LocalCache.getItem('pendingTxs')) || '{}',
       );
       dbg('Cached transactions for fetch more:', Object.keys(cached).length);
 
@@ -490,7 +495,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
           if (cached[tx.txid]) {
             delete cached[tx.txid];
             dbg('delete from cache in fetch more', tx.txid);
-            EncryptedStorage.setItem('pendingTxs', JSON.stringify(cached));
+            LocalCache.setItem('pendingTxs', JSON.stringify(cached));
           }
         });
 

@@ -34,6 +34,7 @@ import CurrencySelector from '../components/CurrencySelector';
 import {createStyles} from '../components/Styles';
 import {CacheIndicator, CacheTimestamp} from '../components/CacheIndicator';
 import {HeaderRightButton, HeaderTitle} from '../components/Header';
+import LocalCache from '../services/LocalCache';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -146,7 +147,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   }, []);
 
   useEffect(() => {
-    EncryptedStorage.getItem('addressType').then(addrType => {
+    LocalCache.getItem('addressType').then(addrType => {
       setAddressType(addrType || 'legacy');
     });
   });
@@ -173,9 +174,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
       setIsRefreshing(true);
 
-      const addr = await EncryptedStorage.getItem('currentAddress');
-      const baseApi = await EncryptedStorage.getItem('api');
-      const currency = (await EncryptedStorage.getItem('currency')) || 'USD';
+      const addr = await LocalCache.getItem('currentAddress');
+      const baseApi = await LocalCache.getItem('api');
+      const currency = (await LocalCache.getItem('currency')) || 'USD';
 
       if (!addr || !baseApi) {
         dbg('WalletHome: Missing wallet address or baseApi');
@@ -321,7 +322,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
   const handleCurrencySelect = async (currency: {code: string}) => {
     setSelectedCurrency(currency.code);
-    await EncryptedStorage.setItem('currency', currency.code);
+    await LocalCache.setItem('currency', currency.code);
     if (priceData[currency.code]) {
       const formattedPrice = priceData[currency.code].toFixed(2);
       setBtcPrice(formattedPrice);
@@ -364,26 +365,26 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         );
 
         // Set default network if not set
-        let net = await EncryptedStorage.getItem('network');
+        let net = await LocalCache.getItem('network');
         if (!net) {
           net = 'mainnet';
-          await EncryptedStorage.setItem('network', net);
+          await LocalCache.setItem('network', net);
           dbg('WalletHome: Setting default network to mainnet');
         }
 
         // Set default address type if not set
-        let addrType = await EncryptedStorage.getItem('addressType');
+        let addrType = await LocalCache.getItem('addressType');
         if (!addrType) {
           addrType = 'legacy';
-          await EncryptedStorage.setItem('addressType', addrType);
+          await LocalCache.setItem('addressType', addrType);
           dbg('WalletHome: Setting default address type to legacy');
         }
 
         // Set default currency if not set
-        let currency = await EncryptedStorage.getItem('currency');
+        let currency = await LocalCache.getItem('currency');
         if (!currency) {
           currency = 'USD';
-          await EncryptedStorage.setItem('currency', currency);
+          await LocalCache.setItem('currency', currency);
           dbg('WalletHome: Setting default currency to USD');
         }
 
@@ -408,12 +409,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         );
 
         // Store all addresses
-        await EncryptedStorage.setItem('legacyAddress', legacyAddr);
-        await EncryptedStorage.setItem('segwitAddress', segwitAddr);
-        await EncryptedStorage.setItem(
-          'segwitCompatibleAddress',
-          segwitCompAddr,
-        );
+        await LocalCache.setItem('legacyAddress', legacyAddr);
+        await LocalCache.setItem('segwitAddress', segwitAddr);
+        await LocalCache.setItem('segwitCompatibleAddress', segwitCompAddr);
 
         setLegacyAddress(legacyAddr);
         setSegwitAddress(segwitAddr);
@@ -430,16 +428,16 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           net,
           currentAddressType,
         );
-        await EncryptedStorage.setItem('currentAddress', btcAddress);
+        await LocalCache.setItem('currentAddress', btcAddress);
         setAddress(btcAddress);
-        setNetwork(net);
+        setNetwork(net || 'mainnet');
 
         // Set up API URL
         let base = netParams.split('@')[1];
         if (!base.endsWith('/')) {
           base = `${base}/`;
         }
-        let api = await EncryptedStorage.getItem('api');
+        let api = await LocalCache.getItem('api');
         if (api) {
           if (api.endsWith('/')) {
             api = api.substring(0, api.length - 1);
@@ -447,7 +445,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           BBMTLibNativeModule.setAPI(net, api);
           setApiBase(api);
         } else {
-          await EncryptedStorage.setItem('api', base);
+          await LocalCache.setItem('api', base);
           setApiBase(base);
         }
 
@@ -477,7 +475,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       setIsAddressTypeModalVisible(false);
 
       // Update storage and local state
-      await EncryptedStorage.setItem('addressType', type);
+      await LocalCache.setItem('addressType', type);
       setAddressType(type);
 
       // Generate new address
@@ -490,8 +488,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         path,
       );
 
-      const currentNetwork =
-        (await EncryptedStorage.getItem('network')) || 'mainnet';
+      const currentNetwork = (await LocalCache.getItem('network')) || 'mainnet';
       const newAddress = await BBMTLibNativeModule.btcAddress(
         btcPub,
         currentNetwork,
@@ -499,7 +496,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       );
 
       // Save new address and clear caches
-      await EncryptedStorage.setItem('currentAddress', newAddress);
+      await LocalCache.setItem('currentAddress', newAddress);
       setAddress(newAddress);
       await WalletService.getInstance().clearCache();
 
@@ -525,7 +522,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const handleBlurred = () => {
     const blurr = !isBlurred;
     setIsBlurred(blurr);
-    EncryptedStorage.setItem('mode', blurr ? 'private' : '');
+    LocalCache.setItem('mode', blurr ? 'private' : '');
   };
 
   const handleSend = async (to: string, amountSats: Big, feeSats: Big) => {

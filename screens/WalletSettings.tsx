@@ -21,6 +21,7 @@ import DeviceInfo from 'react-native-device-info';
 import {dbg} from '../utils';
 import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
+import LocalCache from '../services/LocalCache';
 
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [deleteInput, setDeleteInput] = useState('');
@@ -46,13 +47,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       const json = JSON.parse(ks as string);
       setParty(json.local_party_key);
     });
-    EncryptedStorage.getItem('network').then(net => {
+    LocalCache.getItem('network').then(net => {
       setIsTestnet(net !== 'mainnet');
     });
-    EncryptedStorage.getItem('theme').then(appTheme => {
+    LocalCache.getItem('theme').then(appTheme => {
       setIsCryptoVibrant(appTheme === 'cryptoVibrant');
     });
-    EncryptedStorage.getItem('api').then(api => {
+    LocalCache.getItem('api').then(api => {
       if (api) {
         setBaseAPI(api);
       }
@@ -71,13 +72,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const toggleNetwork = async (value: boolean) => {
     setIsTestnet(value);
     const network = value ? 'testnet3' : 'mainnet';
-    await EncryptedStorage.setItem('network', network);
+    await LocalCache.setItem('network', network);
 
     if (baseAPI.indexOf('mempool.space') >= 0) {
       const api = value
         ? 'https://mempool.space/testnet/api'
         : 'https://mempool.space/api';
-      await EncryptedStorage.setItem('api', api);
+      await LocalCache.setItem('api', api);
       await BBMTLibNativeModule.setAPI(network, api);
       setBaseAPI(api);
 
@@ -93,15 +94,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   };
 
   const resetAPI = async () => {
-    EncryptedStorage.getItem('network').then(net => {
+    LocalCache.getItem('network').then(net => {
       if (net === 'mainnet') {
         const api = 'https://mempool.space/api';
-        EncryptedStorage.setItem('api', api);
+        LocalCache.setItem('api', api);
         BBMTLibNativeModule.setAPI(net, api);
         setBaseAPI(api);
       } else {
         const api = 'https://mempool.space/testnet/api';
-        EncryptedStorage.setItem('api', api);
+        LocalCache.setItem('api', api);
         BBMTLibNativeModule.setAPI(net, api);
         setBaseAPI(api);
       }
@@ -111,8 +112,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const saveAPI = async (api: string) => {
     setBaseAPI(api);
     dbg('set baseAPI', api);
-    EncryptedStorage.getItem('network').then(net => {
-      EncryptedStorage.setItem('api', api);
+    LocalCache.getItem('network').then(net => {
+      LocalCache.setItem('api', api);
       BBMTLibNativeModule.setAPI(net, api);
     });
   };
