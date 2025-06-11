@@ -60,11 +60,13 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
   const {height} = useWindowDimensions();
 
   // Convert available currencies object to array of Currency objects
-  const currencies: Currency[] = Object.keys(availableCurrencies).map(code => ({
-    code,
-    name: currencyNames[code] || code,
-    symbol: currencySymbols[code] || code,
-  }));
+  const currencies: Currency[] = Object.keys(availableCurrencies)
+    .filter(code => currencyNames[code]) // Only include currencies in our whitelist
+    .map(code => ({
+      code,
+      name: currencyNames[code],
+      symbol: currencySymbols[code] || code,
+    }));
 
   const renderCurrencyItem = ({item}: {item: Currency}) => (
     <TouchableOpacity
