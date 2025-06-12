@@ -505,7 +505,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       // Save new address and clear caches
       await LocalCache.setItem('currentAddress', newAddress);
       setAddress(newAddress);
-      await WalletService.getInstance().clearCache();
+      await WalletService.getInstance().clearWalletCache();
 
       // Refresh wallet and data
       await wallet.refreshWallet();

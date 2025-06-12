@@ -83,7 +83,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       setBaseAPI(api);
 
       // Update WalletService with new network and API
-      await WalletService.getInstance().clearCache();
+      await WalletService.getInstance().clearWalletCache();
       await WalletService.getInstance().handleNetworkChange(network, api);
     }
 

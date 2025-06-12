@@ -466,7 +466,11 @@ export class WalletService {
 
       if (!data || !data.USD || !validateNumber(data.USD)) {
         dbg('WalletService: Invalid price data received:', data);
-        throw new Error('Invalid price data received');
+        if (this.cachedPrice.rate > 0) {
+          return this.cachedPrice;
+        }
+        // Return empty values if no cache
+        return {price: '', rate: 0, rates: {}};
       }
 
       const rate = parseFloat(data.USD);
@@ -474,7 +478,11 @@ export class WalletService {
 
       if (isNaN(rate) || rate <= 0) {
         dbg('WalletService: Invalid rate value:', rate);
-        throw new Error('Invalid rate value');
+        if (this.cachedPrice.rate > 0) {
+          return this.cachedPrice;
+        }
+        // Return empty values if no cache
+        return {price: '', rate: 0, rates: {}};
       }
 
       const price = this.formatUSD(data.USD);
@@ -810,7 +818,7 @@ export class WalletService {
           address,
         );
         this.currentAddress = address;
-        await this.clearCache();
+        await this.clearWalletCache();
       }
 
       // Always use the current API URL
@@ -1034,7 +1042,7 @@ export class WalletService {
     dbg('WalletService: Transaction cache clear completed');
   }
 
-  public async clearCache() {
+  public async clearWalletCache() {
     dbg('WalletService: Starting cache clear...');
     this.currentAddress = null;
     this.fetchInProgress = {};
@@ -1042,18 +1050,12 @@ export class WalletService {
     this.fetchTimeout = {};
 
     // Clear all cached data
-    this.lastPriceFetch = 0;
     this.lastBalanceFetch = 0;
     this.cachedTransactions = {};
     this.lastTxFetch = {};
     this.cachedTxPages = {};
     this.lastTxPageFetch = {};
     this.allTransactions = {};
-    this.cachedPrice = {
-      price: '$0.00',
-      rate: 0,
-      rates: {},
-    };
     this.cachedBalance = {
       btc: '0.00000000',
       usd: '$0.00',
