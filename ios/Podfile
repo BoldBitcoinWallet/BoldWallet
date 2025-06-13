@@ -31,6 +31,7 @@ target 'BoldWallet' do
   pod 'RNShare',  :path => '../node_modules/react-native-share'
   pod 'react-native-document-picker', :path => '../node_modules/react-native-document-picker'
   pod 'VisionCamera', :path => '../node_modules/react-native-vision-camera'
+  pod 'BVLinearGradient', :path => '../node_modules/react-native-linear-gradient'
   pod 'RNCClipboard', :path => '../node_modules/@react-native-clipboard/clipboard'
   
   target 'BoldWalletTests' do

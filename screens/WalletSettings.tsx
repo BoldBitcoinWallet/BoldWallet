@@ -20,13 +20,15 @@ import DeviceInfo from 'react-native-device-info';
 
 import {dbg} from '../utils';
 import {useTheme} from '../theme';
+import {WalletService} from '../services/WalletService';
+import LocalCache from '../services/LocalCache';
 
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [deleteInput, setDeleteInput] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isModalResetVisible, setIsModalResetVisible] = useState(false);
   const [isBackupModalVisible, setIsBackupModalVisible] = useState(false);
   const [isTestnet, setIsTestnet] = useState(true);
   const [party, setParty] = useState('');
@@ -45,13 +47,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       const json = JSON.parse(ks as string);
       setParty(json.local_party_key);
     });
-    EncryptedStorage.getItem('network').then(net => {
+    LocalCache.getItem('network').then(net => {
       setIsTestnet(net !== 'mainnet');
     });
-    EncryptedStorage.getItem('theme').then(appTheme => {
+    LocalCache.getItem('theme').then(appTheme => {
       setIsCryptoVibrant(appTheme === 'cryptoVibrant');
     });
-    EncryptedStorage.getItem('api').then(api => {
+    LocalCache.getItem('api').then(api => {
       if (api) {
         setBaseAPI(api);
       }
@@ -67,15 +69,24 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     });
   };
 
-  const toggleNetwork = (value: boolean) => {
+  const toggleNetwork = async (value: boolean) => {
     setIsTestnet(value);
-    EncryptedStorage.setItem('network', value ? 'testnet3' : 'mainnet');
-    if (
-      baseAPI === 'https://mempool.space/api' ||
-      baseAPI === 'https://mempool.space/testnet/api'
-    ) {
-      resetAPI();
+    const network = value ? 'testnet3' : 'mainnet';
+    await LocalCache.setItem('network', network);
+
+    if (baseAPI.indexOf('mempool.space') >= 0) {
+      const api = value
+        ? 'https://mempool.space/testnet/api'
+        : 'https://mempool.space/api';
+      await LocalCache.setItem('api', api);
+      await BBMTLibNativeModule.setAPI(network, api);
+      setBaseAPI(api);
+
+      // Update WalletService with new network and API
+      await WalletService.getInstance().clearWalletCache();
+      await WalletService.getInstance().handleNetworkChange(network, api);
     }
+
     navigation.reset({
       index: 0,
       routes: [{name: 'Bold Home'}],
@@ -83,15 +94,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   };
 
   const resetAPI = async () => {
-    EncryptedStorage.getItem('network').then(net => {
+    LocalCache.getItem('network').then(net => {
       if (net === 'mainnet') {
         const api = 'https://mempool.space/api';
-        EncryptedStorage.setItem('api', api);
+        LocalCache.setItem('api', api);
         BBMTLibNativeModule.setAPI(net, api);
         setBaseAPI(api);
       } else {
         const api = 'https://mempool.space/testnet/api';
-        EncryptedStorage.setItem('api', api);
+        LocalCache.setItem('api', api);
         BBMTLibNativeModule.setAPI(net, api);
         setBaseAPI(api);
       }
@@ -100,9 +111,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
   const saveAPI = async (api: string) => {
     setBaseAPI(api);
-    dbg('value', api);
-    EncryptedStorage.getItem('network').then(net => {
-      EncryptedStorage.setItem('api', api);
+    dbg('set baseAPI', api);
+    LocalCache.getItem('network').then(net => {
+      LocalCache.setItem('api', api);
       BBMTLibNativeModule.setAPI(net, api);
     });
   };
@@ -111,11 +122,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     if (deleteInput.trim().toLowerCase() === 'delete my wallet') {
       try {
         setIsDeleting(true);
-        setIsModalVisible(false);
+        setIsModalResetVisible(false);
         await EncryptedStorage.clear();
+        await LocalCache.clear();
         navigation.reset({
           index: 0,
-          routes: [{name: 'Bold BTC Wallet'}],
+          routes: [{name: 'Showcase'}],
         });
       } catch (error) {
         Alert.alert('Error', 'Failed to reset wallet. Please try again.');
@@ -424,7 +436,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </Text>
             <TouchableOpacity
               style={[styles.button, styles.deleteButton]}
-              onPress={() => setIsModalVisible(true)}>
+              onPress={() => setIsModalResetVisible(true)}>
               <Text style={styles.buttonText}>Delete {party}</Text>
             </TouchableOpacity>
           </View>
@@ -529,7 +541,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <Modal
             visible={isBackupModalVisible}
             transparent={true}
-            animationType="slide"
+            animationType="fade"
             onRequestClose={() => setIsBackupModalVisible(false)}>
             <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>
@@ -571,10 +583,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
           {/* Custom Prompt Modal */}
           <Modal
-            visible={isModalVisible}
+            visible={isModalResetVisible}
             transparent={true}
-            animationType="slide"
-            onRequestClose={() => setIsModalVisible(false)}>
+            animationType="fade"
+            onRequestClose={() => setIsModalResetVisible(false)}>
             <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>
                 <Text style={styles.modalTitle}>Confirm Wallet Deletion</Text>
@@ -592,7 +604,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 <View style={styles.modalActions}>
                   <TouchableOpacity
                     style={[styles.modalButton, styles.cancelButton]}
-                    onPress={() => setIsModalVisible(false)}>
+                    onPress={() => setIsModalResetVisible(false)}>
                     <Text style={styles.buttonText}>Cancel</Text>
                   </TouchableOpacity>
                   <TouchableOpacity

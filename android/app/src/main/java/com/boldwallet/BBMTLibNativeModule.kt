@@ -136,16 +136,12 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun estimateFee(senderAddress: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
+    fun estimateFees(senderAddress: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
         Thread {
             try {
-                val wif = ""
-                val preview = 1L
                 val amt = amountSatoshi.toLong()
-                val publicKey = "123456789012345678901234567890123"
-                // when preview is 1 - no need to wif and publicKey, use dummy ones
                 val result =
-                    Tss.sendBitcoin(wif, publicKey, senderAddress, receiverAddress, preview, amt)
+                    Tss.estimateFees(senderAddress, receiverAddress, amt)
                 ld("estimateFee", result)
                 promise.resolve(result)
             } catch (e: Exception) {
@@ -445,13 +441,30 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun p2khAddress(compressedPubkey: String, network: String, promise: Promise) {
+    fun btcAddress(compressedPubkey: String, network: String, addressType: String,  promise: Promise) {
         try {
-            val result = Tss.convertPubKeyToBTCAddress(compressedPubkey, network)
-            ld("p2khAddress", result)
-            promise.resolve(result)
+            if(addressType == "segwit-native") {
+                val segwitNative = Tss.pubToP2WPKH(compressedPubkey, network)
+                ld("btcAddress", segwitNative)
+                promise.resolve(segwitNative)
+            } else if(addressType == "segwit-compatible") {
+                val segwitCompatible = Tss.pubToP2SHP2WKH(compressedPubkey, network)
+                ld("btcAddress", segwitCompatible)
+                promise.resolve(segwitCompatible)
+            } else if(addressType == "taproot") {
+                val taproot = Tss.pubToP2TR(compressedPubkey, network)
+                ld("btcAddress", taproot)
+                promise.resolve(taproot)
+            } else if(addressType == "legacy") {
+                val legacy = Tss.pubToP2KH(compressedPubkey, network)
+                ld("btcAddress", legacy)
+                promise.resolve(legacy)    
+            } else {
+                ld("btcAddress", "invalid-address type")
+                promise.resolve("")
+            }
         } catch (e: Exception) {
-            ld("p2khAddress", "error: ${e.stackTraceToString()}")
+            ld("btcAddress", "error: ${e.stackTraceToString()}")
             promise.reject(e)
         }
     }

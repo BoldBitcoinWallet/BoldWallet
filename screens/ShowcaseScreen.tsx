@@ -109,6 +109,7 @@ const ShowcaseScreen = ({navigation}: any) => {
         await EncryptedStorage.setItem('keyshare', decryptedKeyshare);
         setModalVisible(false);
         setPassword('');
+        dbg('Opening Home');
         setTimeout(() => {
           navigation.dispatch(
             CommonActions.reset({
@@ -316,7 +317,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       <Modal
         transparent={true}
         visible={modalVisible}
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>

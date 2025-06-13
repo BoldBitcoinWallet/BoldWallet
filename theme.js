@@ -1,8 +1,9 @@
 // theme.js
 import React, {createContext, useContext, useEffect, useState} from 'react';
 import EncryptedStorage from 'react-native-encrypted-storage';
+import LocalCache from './services/LocalCache';
 
-const themes = {
+export const themes = {
   lightPolished: {
     colors: {
       primary: '#34495e',
@@ -123,7 +124,7 @@ const themes = {
 
 const ThemeContext = createContext({
   theme: themes.lightPolished,
-  toggleTheme: (isCrypto: boolean) => {},
+  toggleTheme: isCrypto => {},
 });
 
 export const ThemeProvider = ({children}) => {
@@ -132,8 +133,8 @@ export const ThemeProvider = ({children}) => {
   useEffect(() => {
     const loadTheme = async () => {
       try {
-        const storedTheme = await EncryptedStorage.getItem('theme');
-        console.log('Initial theme loaded:', storedTheme);
+        const storedTheme = await LocalCache.getItem('theme');
+        console.log('Initial theme loaded:', storedTheme || 'default');
         setTheme(
           storedTheme === 'cryptoVibrant'
             ? themes.cryptoVibrant
@@ -147,12 +148,12 @@ export const ThemeProvider = ({children}) => {
     loadTheme();
   }, []);
 
-  const toggleTheme = async (isCrypto: boolean) => {
+  const toggleTheme = async isCrypto => {
     const newTheme = isCrypto ? themes.cryptoVibrant : themes.lightPolished;
     console.log('Toggling to:', isCrypto ? 'cryptoVibrant' : 'lightPolished');
     setTheme(newTheme);
     try {
-      await EncryptedStorage.setItem(
+      await LocalCache.setItem(
         'theme',
         isCrypto ? 'cryptoVibrant' : 'lightPolished',
       );

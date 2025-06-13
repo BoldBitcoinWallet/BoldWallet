@@ -4,13 +4,13 @@ import {NavigationContainer} from '@react-navigation/native';
 import {createStackNavigator} from '@react-navigation/stack';
 import ShowcaseScreen from './screens/ShowcaseScreen';
 import WalletHome from './screens/WalletHome';
-import MobilesPairing from './screens/MobilesPairing';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import LoadingScreen from './screens/LoadingScreen';
 import Zeroconf, {ImplType} from 'react-native-zeroconf';
 import ReactNativeBiometrics, {BiometryTypes} from 'react-native-biometrics';
 import DeviceInfo from 'react-native-device-info';
 import {ThemeProvider} from './theme';
+import {WalletProvider} from './context/WalletContext';
 
 import {
   Alert,
@@ -21,6 +21,7 @@ import {
 import WalletSettings from './screens/WalletSettings';
 import {NativeModules} from 'react-native';
 import {dbg, pinRemoteIP} from './utils';
+import MobilesPairing from './screens/MobilesPairing';
 const {BBMTLibNativeModule} = NativeModules;
 
 const Stack = createStackNavigator();
@@ -202,9 +203,16 @@ const App = () => {
   };
 
   const initializeApp = async () => {
-    EncryptedStorage.getItem('keyshare').then(ks => {
-      setInitialRoute(ks ? 'Bold Home' : 'Bold BTC Wallet');
-    });
+    try {
+      const ks = await EncryptedStorage.getItem('keyshare');
+      dbg('initializeApp keyshare found', !!ks);
+      const route = ks ? 'Bold Home' : 'Showcase';
+      dbg('Setting initial route to:', route);
+      setInitialRoute(route);
+    } catch (error) {
+      dbg('Error in initializeApp:', error);
+      setInitialRoute('Showcase');
+    }
   };
 
   useEffect(() => {
@@ -213,10 +221,11 @@ const App = () => {
 
   const handleRetryAuthentication = async () => {
     setIsAuthenticated(false);
-    await authenticateUser(); // Retry authentication
+    await authenticateUser();
   };
 
-  if (initialRoute === null || !isAuthenticated) {
+  if (initialRoute === null) {
+    dbg('Rendering LoadingScreen - initialRoute is null');
     return (
       <ThemeProvider>
         <LoadingScreen onRetry={handleRetryAuthentication} />
@@ -224,20 +233,59 @@ const App = () => {
     );
   }
 
+  if (!isAuthenticated) {
+    dbg('Rendering LoadingScreen - not authenticated');
+    return (
+      <ThemeProvider>
+        <LoadingScreen onRetry={handleRetryAuthentication} />
+      </ThemeProvider>
+    );
+  }
+
+  dbg('Rendering main navigation with initialRoute:', initialRoute);
+
   return (
     <ThemeProvider>
-      <NavigationContainer>
-        <Stack.Navigator initialRouteName={initialRoute}>
-          <Stack.Screen name="Bold BTC Wallet" component={ShowcaseScreen} />
-          <Stack.Screen name="Bold Home" component={WalletHome} />
-          <Stack.Screen
-            name="📱📱 Pairing"
-            component={MobilesPairing}
-            initialParams={{mode: 'setup'}}
-          />
-          <Stack.Screen name="Wallet Settings" component={WalletSettings} />
-        </Stack.Navigator>
-      </NavigationContainer>
+      <WalletProvider>
+        <NavigationContainer>
+          <Stack.Navigator
+            initialRouteName={initialRoute}
+            screenOptions={{
+              headerShown: false,
+              animationEnabled: false,
+            }}>
+            <Stack.Screen
+              name="Bold Home"
+              component={WalletHome}
+              options={{
+                headerShown: true,
+                headerLeft: () => null,
+              }}
+            />
+            <Stack.Screen
+              name="Showcase"
+              component={ShowcaseScreen}
+              options={{
+                headerShown: true,
+              }}
+            />
+            <Stack.Screen
+              name="Settings"
+              component={WalletSettings}
+              options={{
+                headerShown: true,
+              }}
+            />
+            <Stack.Screen
+              name="📱📱 Pairing"
+              component={MobilesPairing}
+              options={{
+                headerShown: true,
+              }}
+            />
+          </Stack.Navigator>
+        </NavigationContainer>
+      </WalletProvider>
     </ThemeProvider>
   );
 };

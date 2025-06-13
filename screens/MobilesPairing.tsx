@@ -37,6 +37,8 @@ import Share from 'react-native-share';
 import Big from 'big.js';
 import {dbg, getPinnedRemoteIP} from '../utils';
 import {useTheme} from '../theme';
+import {waitMS} from '../services/WalletService';
+import LocalCache from '../services/LocalCache';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -78,15 +80,18 @@ const MobilesPairing = ({navigation}: any) => {
 
   type RouteParams = {
     mode?: string;
+    addressType?: string;
     toAddress?: string;
     satoshiAmount?: string;
-    usdAmount?: string;
+    fiatAmount?: string;
     satoshiFees?: string;
-    usdFees?: string;
+    fiatFees?: string;
+    selectedCurrency?: string;
   };
 
   const route = useRoute<RouteProp<{params: RouteParams}>>();
   const isSendBitcoin = route.params?.mode === 'send_btc';
+  const addressType = route.params?.addressType;
   const title = isSendBitcoin
     ? '🗝 Co-Signing Your Transaction'
     : 'Self Custody Superior Control \n Threshold Signatures Scheme Grade';
@@ -106,7 +111,6 @@ const MobilesPairing = ({navigation}: any) => {
 
   const connectionAnimation = useRef(new Animated.Value(0)).current;
   const animationRef = useRef<Animated.CompositeAnimation | null>(null);
-  const waitMS = (ms = 1000) => new Promise((res, _) => setTimeout(res, ms));
 
   const toggleBackedup = (key: keyof typeof backupChecks) => {
     setBackupChecks(prev => ({...prev, [key]: !prev[key]}));
@@ -144,7 +148,7 @@ const MobilesPairing = ({navigation}: any) => {
     return input.replace(/[^a-zA-Z0-9]/g, '_');
   };
 
-  const formatUSD = (price?: string) =>
+  const formatFiat = (price?: string) =>
     new Intl.NumberFormat('en-US', {
       style: 'decimal',
       minimumFractionDigits: 2,
@@ -180,54 +184,80 @@ const MobilesPairing = ({navigation}: any) => {
 
   async function initSession() {
     try {
+      dbg('initSession: Starting session initialization');
       const kp = JSON.parse(keypair);
+      dbg('initSession: Parsed keypair', {publicKey: kp.publicKey});
+
       if (isMaster) {
+        dbg('initSession: Running as master device');
         let _data = randomSeed(64);
+        dbg('initSession: Generated random seed');
+
         if (isSendBitcoin) {
+          dbg('initSession: Preparing for Bitcoin send');
           const jks = await EncryptedStorage.getItem('keyshare');
           const ks = JSON.parse(jks || '{}');
           _data += ':' + route.params.satoshiAmount;
           _data += ':' + route.params.satoshiFees;
           _data += ':' + ks.local_party_key;
+          dbg('initSession: Added Bitcoin transaction data to session data');
         }
-        dbg('publishing data', _data, 'peer pubkey', peerPubkey);
+
+        dbg('initSession: Publishing data', {
+          data: _data,
+          peerPubkey,
+          discoveryPort,
+          timeout,
+        });
+
         const published = await BBMTLibNativeModule.publishData(
           String(discoveryPort),
           String(timeout),
           peerPubkey,
           _data,
         );
+
         if (published) {
-          dbg('data publish response:', published);
+          dbg('initSession: Data published successfully', {published});
           const peerChecksum = published.replace('data=', '');
-          const localPayload = `${kp.publicKey}/${route.params.satoshiAmount}`;
+          const localPayload = `${kp.publicKey}/${route.params?.satoshiAmount}`;
           const localChecksum = await BBMTLibNativeModule.sha256(localPayload);
-          dbg('checksum validation', {
+
+          dbg('initSession: Validating checksums', {
             localPayload,
             localChecksum,
             peerChecksum,
           });
+
           if (peerChecksum !== localChecksum) {
+            dbg('initSession: Checksum validation failed');
             throw 'Make sure you\'re sending the "Same Bitcoin" amount from Both Devices';
           }
+
+          dbg('initSession: Session initialization completed successfully');
           return _data;
         } else {
+          dbg('initSession: Timeout waiting for peer device');
           throw 'Waited too long for other devices to press (Join Tx Co-Signing)';
         }
       } else {
-        const payload = `${peerPubkey}/${route.params.satoshiAmount}`;
+        dbg('initSession: Running as peer device');
+        const payload = `${peerPubkey}/${route.params?.satoshiAmount}`;
         const checksum = await BBMTLibNativeModule.sha256(payload);
         const peerURL = `http://${peerIP}:${discoveryPort}/`;
-        dbg('fetching data...', {
-          payload: `${peerPubkey}/${route.params.satoshiAmount}`,
+
+        dbg('initSession: Fetching data from peer', {
+          payload,
           checksum,
           peerURL,
         });
+
         const rawFetched = await fetchData(peerURL, kp.privateKey, checksum);
-        dbg('fetched data', rawFetched);
+        dbg('initSession: Data fetched successfully', {rawFetched});
         return rawFetched;
       }
     } catch (e: any) {
+      dbg('initSession: Error occurred', {error: e});
       throw 'Error initializing session: \n' + e;
     }
   }
@@ -249,6 +279,7 @@ const MobilesPairing = ({navigation}: any) => {
       setMpcDone(false);
       setPrepCounter(0);
 
+      dbg('mpcTssSetup...');
       const data = await initSession();
       dbg('got session data', data);
       if (isMaster) {
@@ -288,12 +319,6 @@ const MobilesPairing = ({navigation}: any) => {
           dbg('keygen result', result.substring(0, 40));
           setKeyshare(result);
           await EncryptedStorage.setItem('keyshare', result);
-          navigation.dispatch(
-            CommonActions.reset({
-              index: 0,
-              routes: [route],
-            }),
-          );
           setMpcDone(true);
         })
         .catch((e: any) => {
@@ -328,17 +353,18 @@ const MobilesPairing = ({navigation}: any) => {
 
       dbg('session init done');
       if (isMaster) {
-        await waitMS(1000);
+        await BBMTLibNativeModule.stopRelay('stop');
+        await waitMS(2000);
         const relay = await BBMTLibNativeModule.runRelay(String(discoveryPort));
         dbg('relay start:', relay, localDevice);
       } else {
-        await waitMS(1000);
+        await waitMS(3000); // Give master device time to start relay
       }
 
       const server = `http://${isMaster ? localIP : peerIP}:${discoveryPort}`;
 
       const jks = await EncryptedStorage.getItem('keyshare');
-      const net = (await EncryptedStorage.getItem('network')) || 'mainnet';
+      const net = (await LocalCache.getItem('network')) || 'mainnet';
       const ks = JSON.parse(jks || '{}');
       const path = "m/44'/0'/0'/0/0";
       const btcPub = await BBMTLibNativeModule.derivePubkey(
@@ -346,7 +372,11 @@ const MobilesPairing = ({navigation}: any) => {
         ks.chain_code_hex,
         path,
       );
-      const btcAddress = await BBMTLibNativeModule.p2khAddress(btcPub, net);
+      const btcAddress = await BBMTLibNativeModule.btcAddress(
+        btcPub,
+        net,
+        addressType,
+      );
       const partyID = ks.local_party_key;
       const partiesCSV = ks.keygen_committee_keys.join(',');
       const sessionID = await BBMTLibNativeModule.sha256(`${data}/${server}`);
@@ -430,19 +460,22 @@ const MobilesPairing = ({navigation}: any) => {
             throw txId;
           }
           const pendingTxs = JSON.parse(
-            (await EncryptedStorage.getItem('pendingTxs')) || '{}',
+            (await LocalCache.getItem('pendingTxs')) || '{}',
           );
           pendingTxs[txId] = {
+            txid: txId,
             from: btcAddress,
             to: route.params.toAddress,
+            amount: route.params.satoshiAmount,
             satoshiAmount: route.params.satoshiAmount,
             satoshiFees: route.params.satoshiFees,
             sentAt: Date.now(),
+            status: {
+              confirmed: false,
+              block_height: null,
+            },
           };
-          await EncryptedStorage.setItem(
-            'pendingTxs',
-            JSON.stringify(pendingTxs),
-          );
+          await LocalCache.setItem('pendingTxs', JSON.stringify(pendingTxs));
           navigation.dispatch(
             CommonActions.reset({
               index: 0,
@@ -538,6 +571,8 @@ const MobilesPairing = ({navigation}: any) => {
         if (msg.done) {
           dbg('progress - keygen done');
           setProgress(100);
+          setMpcDone(true);
+          // Don't navigate away, let the backup UI handle it
         } else {
           dbg(
             'progress - keygen: ',
@@ -673,7 +708,7 @@ const MobilesPairing = ({navigation}: any) => {
       const deviceName = await DeviceInfo.getDeviceName();
       setLocalDevice(deviceName);
       setStatus('Starting peer discovery...');
-      await EncryptedStorage.setItem('peerFound', '');
+      await LocalCache.setItem('peerFound', '');
       const promises = [
         listenForPeerPromise(
           kp,
@@ -700,7 +735,7 @@ const MobilesPairing = ({navigation}: any) => {
       let result = await Promise.race(promises);
       while (!result && Date.now() < until) {
         dbg('checking peer...');
-        result = await EncryptedStorage.getItem('peerFound');
+        result = await LocalCache.getItem('peerFound');
         if (result) {
           dbg('checking peer ok...');
           break;
@@ -751,7 +786,7 @@ const MobilesPairing = ({navigation}: any) => {
         setIsMaster(master);
         setStatus('Devices Discovery Completed');
         await Promise.allSettled(promises).then(() =>
-          EncryptedStorage.removeItem('peerFound'),
+          LocalCache.removeItem('peerFound'),
         );
       } else {
         setStatus('Pairing timed out. Please try again.');
@@ -805,7 +840,7 @@ const MobilesPairing = ({navigation}: any) => {
         String(discoveryPort),
         String(timeout),
       );
-      await EncryptedStorage.setItem('peerFound', result);
+      await LocalCache.setItem('peerFound', result);
       return result;
     } catch (error) {
       console.warn('ListenForPeer Error:', error);
@@ -842,7 +877,7 @@ const MobilesPairing = ({navigation}: any) => {
     });
     while (Date.now() < until) {
       try {
-        let peerFound = await EncryptedStorage.getItem('peerFound');
+        let peerFound = await LocalCache.getItem('peerFound');
         if (peerFound) {
           dbg('discoverPeer already found');
           return peerFound;
@@ -858,7 +893,7 @@ const MobilesPairing = ({navigation}: any) => {
         );
         if (result) {
           dbg('discoverPeer result', result);
-          await EncryptedStorage.setItem('peerFound', result);
+          await LocalCache.setItem('peerFound', result);
           return result;
         }
       } catch (error) {
@@ -909,7 +944,7 @@ const MobilesPairing = ({navigation}: any) => {
     summaryRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
-      width: '100%',
+      alignItems: 'center',
       marginBottom: 10,
     },
     label: {
@@ -924,10 +959,9 @@ const MobilesPairing = ({navigation}: any) => {
       flex: 1,
     },
     value: {
-      fontSize: 14,
+      fontSize: 16,
       color: theme.colors.text,
-      textAlign: 'left',
-      flex: 1,
+      textAlign: 'center',
     },
     title: {
       fontSize: 24,
@@ -1264,10 +1298,66 @@ const MobilesPairing = ({navigation}: any) => {
       width: 200,
       height: 35,
       fontSize: 16,
-      backgroundColor: '#FFF',
+      color: 'black',
       marginBottom: 5,
       marginTop: 10,
       textAlign: 'center',
+    },
+    transactionDetails: {
+      padding: 15,
+      paddingTop: 0,
+      width: '100%',
+    },
+    transactionItem: {
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.secondary + '15',
+    },
+    transactionLabel: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: theme.colors.secondary,
+      marginTop: 5,
+    },
+    addressContainer: {
+      backgroundColor: theme.colors.background,
+      padding: 8,
+      borderRadius: 6,
+    },
+    addressValue: {
+      fontSize: 14,
+      color: theme.colors.text,
+      textAlign: 'center',
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    },
+    amountContainer: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      backgroundColor: theme.colors.background,
+      padding: 8,
+      borderRadius: 6,
+    },
+    amountValue: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: theme.colors.text,
+    },
+    fiatValue: {
+      fontSize: 13,
+      color: theme.colors.secondary,
+    },
+    summaryContainer: {
+      marginTop: 20,
+      padding: 20,
+      backgroundColor: theme.colors.background,
+      borderRadius: 10,
+      alignItems: 'center',
+    },
+    summaryTitle: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: theme.colors.text,
+      marginBottom: 10,
     },
   });
 
@@ -1397,13 +1487,17 @@ const MobilesPairing = ({navigation}: any) => {
                 {peerIP && (
                   <>
                     <TouchableOpacity
-                      style={styles.clickRestart}
+                      style={null}
                       onPress={() => {
                         navigation.dispatch(
                           StackActions.replace('📱📱 Pairing', route.params),
                         );
                       }}>
-                      <Text style={styles.clickButtonText}>
+                      <Text
+                        style={[
+                          styles.termsLink,
+                          {marginTop: 16, fontSize: 16},
+                        ]}>
                         Restart Pairing
                       </Text>
                     </TouchableOpacity>
@@ -1576,7 +1670,7 @@ const MobilesPairing = ({navigation}: any) => {
                         recovery. After generating keyshares on both devices,
                         store each one in separate, secure locations (e.g.,
                         iCloud, Google Drive, or email). This ensures no one can
-                        access both keyshares at once. Remember, you’ll need
+                        access both keyshares at once. Remember, you'll need
                         both to recover your wallet.
                       </Text>
                       {/* Password Input */}
@@ -1688,34 +1782,44 @@ const MobilesPairing = ({navigation}: any) => {
                   <Text style={styles.header}>
                     Make sure both devices are ready.
                   </Text>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.label}>To Address:</Text>
-                  </View>
-                  <View style={styles.summaryRow}>
-                    <Text
-                      style={styles.value}
-                      numberOfLines={1}
-                      ellipsizeMode="middle">
-                      {route.params.toAddress}
-                    </Text>
-                  </View>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.label}>BTC Amount:</Text>
-                  </View>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.value}>
-                      {sat2btcStr(route.params.satoshiAmount)} BTC ($
-                      {formatUSD(route.params.usdAmount)})
-                    </Text>
-                  </View>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.label}>Network Fees:</Text>
-                  </View>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.value}>
-                      {sat2btcStr(route.params.satoshiFees)} BTC ($
-                      {formatUSD(route.params.usdFees)})
-                    </Text>
+                  <View style={styles.transactionDetails}>
+                    <View style={styles.transactionItem}>
+                      <Text style={styles.transactionLabel}>To Address</Text>
+                      <View style={styles.addressContainer}>
+                        <Text
+                          style={styles.addressValue}
+                          numberOfLines={1}
+                          ellipsizeMode="middle">
+                          {route.params.toAddress}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.transactionItem}>
+                      <Text style={styles.transactionLabel}>BTC Amount</Text>
+                      <View style={styles.amountContainer}>
+                        <Text style={styles.amountValue}>
+                          {sat2btcStr(route.params.satoshiAmount)} BTC
+                        </Text>
+                        <Text style={styles.fiatValue}>
+                          {route.params.selectedCurrency}{' '}
+                          {formatFiat(route.params.fiatAmount)}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.transactionItem}>
+                      <Text style={styles.transactionLabel}>Network Fees</Text>
+                      <View style={styles.amountContainer}>
+                        <Text style={styles.amountValue}>
+                          {sat2btcStr(route.params.satoshiFees)} BTC
+                        </Text>
+                        <Text style={styles.fiatValue}>
+                          {route.params.selectedCurrency}{' '}
+                          {formatFiat(route.params.fiatFees)}
+                        </Text>
+                      </View>
+                    </View>
                   </View>
                   <TouchableOpacity
                     style={styles.checkboxContainer}

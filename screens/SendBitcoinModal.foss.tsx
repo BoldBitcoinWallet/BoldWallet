@@ -23,8 +23,8 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import debounce from 'lodash/debounce';
 import Big from 'big.js';
 import {dbg} from '../utils';
-import EncryptedStorage from 'react-native-encrypted-storage';
 import {useTheme} from '../theme';
+import LocalCache from '../services/LocalCache';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -32,9 +32,10 @@ interface SendBitcoinModalProps {
   visible: boolean;
   onClose: () => void;
   onSend: (address: string, amount: Big, estimatedFee: Big) => void;
-  btcToUsdRate: Big;
+  btcToFiatRate: Big;
   walletBalance: Big;
   walletAddress: string;
+  selectedCurrency: string;
 }
 
 const E8 = Big(10).pow(8);
@@ -43,9 +44,10 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   visible,
   onClose,
   onSend,
-  btcToUsdRate,
+  btcToFiatRate,
   walletBalance,
   walletAddress,
+  selectedCurrency,
 }) => {
   const [address, setAddress] = useState<string>('');
   const [btcAmount, setBtcAmount] = useState<Big>(Big(0));
@@ -56,7 +58,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   const [isCalculatingFee, setIsCalculatingFee] = useState(false);
 
   const [activeInput, setActiveInput] = useState<'btc' | 'usd' | null>(null);
-  const [feeStrategy, setFeeStrategy] = useState('1hr');
+  const [feeStrategy, setFeeStrategy] = useState('eco');
 
   const {theme} = useTheme();
 
@@ -280,7 +282,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     {label: 'Top Priority', value: 'top'},
     {label: '30 Min', value: '30m'},
     {label: '1 Hour', value: '1hr'},
-    {label: 'Minimum', value: 'min'},
   ];
 
   const formatUSD = (price: number) =>
@@ -305,7 +306,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       }
 
       setIsCalculatingFee(true);
-      BBMTLibNativeModule.estimateFee(
+      BBMTLibNativeModule.estimateFees(
         walletAddress,
         addr,
         amount.times(1e8).toFixed(0),
@@ -333,10 +334,11 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
 
   useEffect(() => {
     const initFee = async () => {
-      const feeOption = await EncryptedStorage.getItem('feeStrategy');
-      setFeeStrategy(feeOption || 'eco');
-      BBMTLibNativeModule.setFeePolicy(feeOption || 'eco');
-      dbg('using fee strategy', feeOption);
+      const feeOption = await LocalCache.getItem('feeStrategy');
+      const defaultFee = feeOption && feeOption !== 'min' ? feeOption : 'eco';
+      setFeeStrategy(defaultFee);
+      BBMTLibNativeModule.setFeePolicy(defaultFee);
+      dbg('using fee strategy', defaultFee);
     };
     initFee();
   }, []);
@@ -359,7 +361,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       const btc = Big(text || 0);
       setBtcAmount(btc);
       if (activeInput === 'btc') {
-        setInUsdAmount(btc.mul(btcToUsdRate).toFixed(2));
+        setInUsdAmount(btc.mul(btcToFiatRate).toFixed(2));
       }
     } catch {
       console.error('Invalid BTC input:', text);
@@ -372,8 +374,8 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     try {
       const usd = Big(text || 0);
       if (activeInput === 'usd') {
-        setBtcAmount(usd.div(btcToUsdRate));
-        setInBtcAmount(usd.div(btcToUsdRate).toFixed(8));
+        setBtcAmount(usd.div(btcToFiatRate));
+        setInBtcAmount(usd.div(btcToFiatRate).toFixed(8));
       }
     } catch {
       console.error('Invalid USD input:', text);
@@ -383,14 +385,14 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   const handleMaxClick = () => {
     setBtcAmount(walletBalance);
     setInBtcAmount(walletBalance.toFixed(8));
-    setInUsdAmount(walletBalance.times(btcToUsdRate).toFixed(2));
+    setInUsdAmount(walletBalance.times(btcToFiatRate).toFixed(2));
   };
 
   const handleFeeStrategyChange = (value: string) => {
     setFeeStrategy(value);
     dbg('setting fee strategy to', value);
     BBMTLibNativeModule.setFeePolicy(value);
-    EncryptedStorage.setItem('feeStrategy', value);
+    LocalCache.setItem('feeStrategy', value);
   };
 
   const handleSendClick = () => {
@@ -449,8 +451,10 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                 {estimatedFee.div(E8).toFixed(8)} BTC
               </Text>
               <Text style={styles.feeAmountUsd}>
-                ($
-                {formatUSD(estimatedFee.div(E8).times(btcToUsdRate).toNumber())}
+                ({selectedCurrency}{' '}
+                {formatUSD(
+                  estimatedFee.div(E8).times(btcToFiatRate).toNumber(),
+                )}
                 )
               </Text>
             </View>
@@ -533,10 +537,12 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                 </View>
 
                 <View style={styles.inputContainer}>
-                  <Text style={styles.inputLabel}>Amount in USD ($)</Text>
+                  <Text style={styles.inputLabel}>
+                    Amount in {selectedCurrency} ($)
+                  </Text>
                   <TextInput
                     style={styles.input}
-                    placeholder="Or USD amount"
+                    placeholder={`Or ${selectedCurrency} amount`}
                     value={inUsdAmount}
                     onFocus={() => setActiveInput('usd')}
                     onChangeText={handleUsdChange}

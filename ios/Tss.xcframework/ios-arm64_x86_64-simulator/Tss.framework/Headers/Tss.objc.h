@@ -260,8 +260,6 @@ FOUNDATION_EXPORT void TssClearSessionLog(NSString* _Nullable session);
 // skipped function Contains with unsupported parameter or return types
 
 
-FOUNDATION_EXPORT NSString* _Nonnull TssConvertPubKeyToBTCAddress(NSString* _Nullable pubKeyCompressed, NSString* _Nullable mainnetORtestnet3, NSError* _Nullable* _Nullable error);
-
 FOUNDATION_EXPORT NSString* _Nonnull TssDecodeAddress(NSString* _Nullable address, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT void TssDisableLogs(void);
@@ -271,6 +269,8 @@ FOUNDATION_EXPORT NSString* _Nonnull TssDiscoverPeer(NSString* _Nullable id_, NS
 FOUNDATION_EXPORT NSString* _Nonnull TssEciesDecrypt(NSString* _Nullable encryptedData, NSString* _Nullable privateKeyHex, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssEciesEncrypt(NSString* _Nullable data, NSString* _Nullable publicKeyHex, NSError* _Nullable* _Nullable error);
+
+FOUNDATION_EXPORT NSString* _Nonnull TssEstimateFees(NSString* _Nullable senderAddress, NSString* _Nullable receiverAddress, int64_t amountSatoshi, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssFetchData(NSString* _Nullable url, NSString* _Nullable decKey, NSString* _Nullable data, NSError* _Nullable* _Nullable error);
 
@@ -332,9 +332,22 @@ FOUNDATION_EXPORT NSString* _Nonnull TssPostTx(NSString* _Nullable rawTxHex, NSE
 // skipped function PreParams with unsupported parameter or return types
 
 
+FOUNDATION_EXPORT NSString* _Nonnull TssPubToP2KH(NSString* _Nullable pubKeyCompressed, NSString* _Nullable mainnetORtestnet3, NSError* _Nullable* _Nullable error);
+
+FOUNDATION_EXPORT NSString* _Nonnull TssPubToP2SHP2WKH(NSString* _Nullable pubKeyCompressed, NSString* _Nullable mainnetORtestnet3, NSError* _Nullable* _Nullable error);
+
+FOUNDATION_EXPORT NSString* _Nonnull TssPubToP2TR(NSString* _Nullable pubKeyCompressedHex, NSString* _Nullable mainnetORtestnet3, NSError* _Nullable* _Nullable error);
+
+FOUNDATION_EXPORT NSString* _Nonnull TssPubToP2WPKH(NSString* _Nullable pubKeyCompressed, NSString* _Nullable mainnetORtestnet3, NSError* _Nullable* _Nullable error);
+
 FOUNDATION_EXPORT NSString* _Nonnull TssPublishData(NSString* _Nullable port, NSString* _Nullable timeout, NSString* _Nullable enckey, NSString* _Nullable data, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT BOOL TssRecommendedFees(NSString* _Nullable feeType, long* _Nullable ret0_, NSError* _Nullable* _Nullable error);
+
+/**
+ * ReplaceTransaction creates a replacement transaction with a higher fee
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssReplaceTransaction(NSString* _Nullable server, NSString* _Nullable key, NSString* _Nullable partiesCSV, NSString* _Nullable session, NSString* _Nullable sessionKey, NSString* _Nullable encKey, NSString* _Nullable decKey, NSString* _Nullable keyshare, NSString* _Nullable derivePath, NSString* _Nullable publicKey, NSString* _Nullable senderAddress, NSString* _Nullable receiverAddress, NSString* _Nullable originalTxID, int64_t amountSatoshi, int64_t newFee, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssRunRelay(NSString* _Nullable port, NSError* _Nullable* _Nullable error);
 
