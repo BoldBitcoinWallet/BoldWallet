@@ -16,11 +16,10 @@ import {
 } from 'react-native';
 import Share from 'react-native-share';
 import EncryptedStorage from 'react-native-encrypted-storage';
-import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 const {BBMTLibNativeModule} = NativeModules;
 import DeviceInfo from 'react-native-device-info';
 
-import {dbg} from '../utils';
+import {dbg, HapticFeedback} from '../utils';
 import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
@@ -85,10 +84,7 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
 
   const handlePress = () => {
     // Haptic feedback
-    ReactNativeHapticFeedback.trigger('impactLight', {
-      enableVibrateFallback: true,
-      ignoreAndroidSystemSettings: false,
-    });
+    HapticFeedback.light();
     onToggle();
   };
 
@@ -192,22 +188,19 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
   const toggleSection = (section: string) => {
     // Haptic feedback for section toggle
-    ReactNativeHapticFeedback.trigger('impactMedium', {
-      enableVibrateFallback: true,
-      ignoreAndroidSystemSettings: false,
-    });
+    HapticFeedback.medium();
 
     setExpandedSections(prev => {
       const newState = Object.keys(prev).reduce((acc, key) => {
         acc[key] = false; // Close all sections
         return acc;
       }, {} as {[key: string]: boolean});
-
+      
       // Open only the clicked section if it wasn't already open
       if (!prev[section]) {
         newState[section] = true;
       }
-
+      
       return newState;
     });
   };
@@ -236,10 +229,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
   const handleToggleTheme = (value: boolean) => {
     // Haptic feedback for theme toggle
-    ReactNativeHapticFeedback.trigger('impactLight', {
-      enableVibrateFallback: true,
-      ignoreAndroidSystemSettings: false,
-    });
+    HapticFeedback.light();
 
     setIsCryptoVibrant(value);
     toggleTheme(value);
@@ -251,10 +241,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
   const toggleNetwork = async (value: boolean) => {
     // Haptic feedback for network toggle
-    ReactNativeHapticFeedback.trigger('impactLight', {
-      enableVibrateFallback: true,
-      ignoreAndroidSystemSettings: false,
-    });
+    HapticFeedback.light();
 
     setIsTestnet(value);
     const network = value ? 'testnet3' : 'mainnet';

@@ -15,7 +15,7 @@ import {
 import axios from 'axios';
 import Toast from 'react-native-toast-message';
 import moment from 'moment';
-import {dbg, presentFiat} from '../utils';
+import {dbg, presentFiat, HapticFeedback} from '../utils';
 import {useTheme} from '@react-navigation/native';
 import {themes} from '../theme';
 import TransactionListSkeleton from './TransactionListSkeleton';
@@ -325,6 +325,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
     if (isRefreshing || isFetching.current) {
       return;
     }
+    HapticFeedback.medium();
     setIsRefreshing(true);
     try {
       await memoizedFetchTransactions(baseApi);
@@ -775,6 +776,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
           style={styles.transactionItem}
           activeOpacity={0.7}
           onPress={() => {
+            HapticFeedback.light();
             setSelectedTransaction(item);
             setIsDetailsModalVisible(true);
           }}>
@@ -800,6 +802,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
                 <Text
                   style={styles.addressLink}
                   onPress={() => {
+                    HapticFeedback.light();
                     dbg('Opening address explorer:', addressExplorerLink);
                     Linking.openURL(addressExplorerLink);
                   }}>

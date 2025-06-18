@@ -1,6 +1,7 @@
 import React, {useEffect, useState, useRef} from 'react';
 import {View, Text, TouchableOpacity, Image, Animated, StyleSheet} from 'react-native';
 import {createStyles} from './Styles';
+import {HapticFeedback} from '../utils';
 
 export interface CacheTimestamp {
   price: number;
@@ -142,7 +143,10 @@ export const CacheIndicator: React.FC<{
         },
         isRefreshing && createStyles(theme).disabled,
       ]}
-      onPress={onRefresh}
+      onPress={() => {
+        HapticFeedback.medium();
+        onRefresh();
+      }}
       disabled={isRefreshing}>
       {isRefreshing && (
         <View style={createStyles(theme).shimmerContainer}>

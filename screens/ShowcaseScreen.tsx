@@ -18,7 +18,7 @@ import DocumentPicker from 'react-native-document-picker';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import RNFS from 'react-native-fs';
 import {useTheme} from '../theme';
-import {dbg} from '../utils';
+import {dbg, HapticFeedback} from '../utils';
 import LegalModal from '../components/LegalModal';
 
 const {BBMTLibNativeModule} = NativeModules;
@@ -313,7 +313,10 @@ const ShowcaseScreen = ({navigation}: any) => {
         <View style={styles.ctaButtons}>
           <TouchableOpacity
             style={[styles.ctaButton, !agreeToTerms && styles.disabledButton]}
-            onPress={() => navigation.navigate('📱📱 Pairing')}
+            onPress={() => {
+              HapticFeedback.medium();
+              navigation.navigate('📱📱 Pairing');
+            }}
             disabled={!agreeToTerms}>
             <Text style={styles.ctaButtonText}>Setup Wallet</Text>
           </TouchableOpacity>
@@ -322,7 +325,10 @@ const ShowcaseScreen = ({navigation}: any) => {
               styles.ctaButtonRestore,
               !agreeToTerms && styles.disabledButton,
             ]}
-            onPress={handleRestoreWallet}
+            onPress={() => {
+              HapticFeedback.medium();
+              handleRestoreWallet();
+            }}
             disabled={!agreeToTerms}>
             <Text style={styles.ctaButtonText}>Restore Wallet</Text>
           </TouchableOpacity>
