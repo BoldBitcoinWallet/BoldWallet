@@ -13,6 +13,7 @@ import {
   Linking,
   ScrollView,
   Animated,
+  Image,
 } from 'react-native';
 import Share from 'react-native-share';
 import EncryptedStorage from 'react-native-encrypted-storage';
@@ -107,7 +108,11 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
           isExpanded ? 'collapse' : 'expand'
         } ${title} section`}>
         <View style={styles.sectionHeaderContent}>
-          <Text style={styles.sectionIcon}>{getSectionIcon(title)}</Text>
+          <Image
+            source={getSectionIcon(title)}
+            style={styles.sectionIcon}
+            resizeMode="contain"
+          />
           <Text style={styles.sectionHeaderTitle}>{title}</Text>
         </View>
         <Animated.Text
@@ -136,22 +141,22 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
 };
 
 // Helper function to get section icons
-const getSectionIcon = (title: string): string => {
+const getSectionIcon = (title: string): any => {
   switch (title.toLowerCase()) {
     case 'theme':
-      return '🎨';
+      return require('../assets/theme-icon.png');
     case 'network':
-      return '🌐';
+      return require('../assets/network-icon.png');
     case 'backup & reset':
-      return '💾';
+      return require('../assets/backup-icon.png');
     case 'advanced':
-      return '⚙️';
+      return require('../assets/advanced-icon.png');
     case 'about':
-      return 'ℹ️';
+      return require('../assets/about-icon.png');
     case 'legal':
-      return '📋';
+      return require('../assets/legal-icon.png');
     default:
-      return '📁';
+      return require('../assets/advanced-icon.png');
   }
 };
 
@@ -195,12 +200,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         acc[key] = false; // Close all sections
         return acc;
       }, {} as {[key: string]: boolean});
-      
+
       // Open only the clicked section if it wasn't already open
       if (!prev[section]) {
         newState[section] = true;
       }
-      
+
       return newState;
     });
   };
@@ -401,8 +406,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       flex: 1,
     },
     sectionIcon: {
-      fontSize: 18,
+      width: 20,
+      height: 20,
       marginRight: 8,
+      tintColor: theme.colors.text,
     },
     sectionHeaderTitle: {
       fontSize: 16,
@@ -462,7 +469,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       fontWeight: '600',
     },
     apiItem: {
-      marginBottom: 12,
+      marginTop: 12,
     },
     apiName: {
       fontSize: 14,
@@ -542,6 +549,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     halfOpacity: {
       opacity: 0.5,
     },
+    networkOption: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    networkIcon: {
+      width: 20,
+      height: 20,
+      marginRight: 8,
+    },
   });
 
   return (
@@ -583,10 +599,17 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           styles={styles}
           theme={theme}>
           <Text style={styles.toggleDescription}>
-            Switch between Bitcoin mainnet and testnet
+            Switch between Bitcoin mainnet and testnet. Testnet allows you to test the wallet with test coins that have no real value.
           </Text>
           <View style={styles.toggleContainer}>
-            <Text style={styles.toggleLabel}>Mainnet</Text>
+            <View style={styles.networkOption}>
+              <Image
+                source={require('../assets/mainnet-icon.png')}
+                style={styles.networkIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.toggleLabel}>Mainnet</Text>
+            </View>
             <Switch
               trackColor={{
                 true: theme.colors.primary,
@@ -597,7 +620,14 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               onValueChange={toggleNetwork}
               value={isTestnet}
             />
-            <Text style={styles.toggleLabel}>Testnet3</Text>
+            <View style={styles.networkOption}>
+              <Image
+                source={require('../assets/testnet-icon.png')}
+                style={styles.networkIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.toggleLabel}>Testnet3</Text>
+            </View>
           </View>
         </CollapsibleSection>
 
@@ -609,14 +639,35 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           styles={styles}
           theme={theme}>
           <Text style={styles.toggleDescription}>
-            Manage your wallet backup and reset options
+            Secure your wallet with encrypted backups and manage wallet data
           </Text>
+
+          <View style={styles.apiItem}>
+            <Text style={styles.apiName}>Backup Importance</Text>
+            <Text style={styles.apiDescription}>
+              Your keyshare is essential for wallet recovery. Without it, you cannot access your funds. Always create encrypted backups and store them securely.
+            </Text>
+          </View>
+
+          <View style={styles.apiItem}>
+            <Text style={styles.apiName}>Security Best Practices</Text>
+            <Text style={styles.apiDescription}>
+              Store each keyshare in different locations (cloud storage, external drive) to eliminate single points of failure. Never store all keyshares in the same place.
+            </Text>
+          </View>
 
           <TouchableOpacity
             style={[styles.button, styles.backupButton]}
             onPress={() => setIsBackupModalVisible(true)}>
             <Text style={styles.buttonText}>Backup {party}</Text>
           </TouchableOpacity>
+
+          <View style={styles.apiItem}>
+            <Text style={styles.apiName}>Reset Wallet</Text>
+            <Text style={styles.apiDescription}>
+              Permanently erase all wallet data from this device. This action cannot be undone. Make sure you have secure backups before proceeding.
+            </Text>
+          </View>
 
           <TouchableOpacity
             style={[styles.button, styles.deleteButton]}
@@ -651,6 +702,17 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             onPress={() => resetAPI()}>
             <Text style={styles.buttonText}>Reset Default</Text>
           </TouchableOpacity>
+
+          <View style={styles.apiItem}>
+            <Text style={styles.apiName}>Privacy & Self-Hosted APIs</Text>
+            <Text style={styles.apiDescription}>
+              Using your own mempool.space instance enhances privacy by keeping
+              your wallet queries off public servers. This prevents third
+              parties from tracking your addresses, balances, and transaction
+              patterns. Self-hosted APIs give you full control over your
+              blockchain data access.
+            </Text>
+          </View>
         </CollapsibleSection>
 
         {/* About Section */}
