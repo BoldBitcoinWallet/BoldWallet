@@ -10,7 +10,6 @@ import {
   Modal,
   TextInput,
   Button,
-  Linking,
   ScrollView,
   Animated,
   Easing,
@@ -20,6 +19,7 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 import RNFS from 'react-native-fs';
 import {useTheme} from '../theme';
 import {dbg} from '../utils';
+import LegalModal from '../components/LegalModal';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -28,6 +28,8 @@ const ShowcaseScreen = ({navigation}: any) => {
   const [password, setPassword] = useState('');
   const [fileContent, setFileContent] = useState('');
   const [agreeToTerms, setAgreeToTerms] = useState(false);
+  const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
+  const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>('terms');
   const {theme} = useTheme();
 
   const fadeAnim = useRef(new Animated.Value(0.7)).current;
@@ -197,19 +199,23 @@ const ShowcaseScreen = ({navigation}: any) => {
       alignItems: 'center',
       justifyContent: 'center',
       marginBottom: 20,
+      paddingHorizontal: 20,
+      flexWrap: 'wrap',
     },
     termsText: {
-      fontSize: 14,
+      fontSize: 13,
+      textAlign: 'center',
       color: theme.colors.text,
+      marginLeft: 8,
     },
     termsLink: {
       color: theme.colors.accent,
       textDecorationLine: 'underline',
+      fontWeight: '500',
     },
     checkboxContainer: {
-      flexDirection: 'row',
       alignItems: 'center',
-      marginRight: 10,
+      justifyContent: 'center',
     },
     checkbox: {
       width: 24,
@@ -284,13 +290,23 @@ const ShowcaseScreen = ({navigation}: any) => {
             />
           </TouchableOpacity>
           <Text style={styles.termsText}>
-            You agree to our{' '}
+            I agree to the{' '}
             <Text
               style={styles.termsLink}
-              onPress={() =>
-                Linking.openURL('https://boldbitcoinwallet.com/#terms')
-              }>
-              Terms and Conditions
+              onPress={() => {
+                setLegalModalType('terms');
+                setIsLegalModalVisible(true);
+              }}>
+              Terms of Service
+            </Text>{' '}
+            &{' '}
+            <Text
+              style={styles.termsLink}
+              onPress={() => {
+                setLegalModalType('privacy');
+                setIsLegalModalVisible(true);
+              }}>
+              Privacy Policy
             </Text>
           </Text>
         </View>
@@ -344,6 +360,13 @@ const ShowcaseScreen = ({navigation}: any) => {
           </View>
         </View>
       </Modal>
+
+      {/* Legal Modal */}
+      <LegalModal
+        visible={isLegalModalVisible}
+        onClose={() => setIsLegalModalVisible(false)}
+        type={legalModalType}
+      />
     </View>
   );
 };

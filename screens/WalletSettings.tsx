@@ -22,6 +22,7 @@ import {dbg} from '../utils';
 import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
+import LegalModal from '../components/LegalModal';
 
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [deleteInput, setDeleteInput] = useState('');
@@ -34,6 +35,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [party, setParty] = useState('');
   const [baseAPI, setBaseAPI] = useState('');
   const [isCryptoVibrant, setIsCryptoVibrant] = useState(false);
+  const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
+  const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>('terms');
 
   const {theme, toggleTheme} = useTheme();
   const [appVersion, setAppVersion] = useState('');
@@ -516,23 +519,26 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </Text>
             <Text
               style={styles.termsLink}
-              onPress={() =>
-                Linking.openURL('https://boldbitcoinwallet.com/#terms')
-              }>
+              onPress={() => {
+                setLegalModalType('terms');
+                setIsLegalModalVisible(true);
+              }}>
               Read Terms of Use
             </Text>
+          </View>
 
-            {/* Privacy Policy */}
-
+          {/* Privacy Policy */}
+          <View style={styles.section}>
             <Text style={styles.sectionTitle}>Privacy Policy</Text>
             <Text style={styles.sectionDescription}>
               Learn more about how we handle your privacy and security.
             </Text>
             <Text
               style={styles.termsLink}
-              onPress={() =>
-                Linking.openURL('https://boldbitcoinwallet.com/#terms')
-              }>
+              onPress={() => {
+                setLegalModalType('privacy');
+                setIsLegalModalVisible(true);
+              }}>
               Read Privacy Policy
             </Text>
           </View>
@@ -623,6 +629,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               </View>
             </View>
           </Modal>
+
+          {/* Legal Modal */}
+          <LegalModal
+            visible={isLegalModalVisible}
+            onClose={() => setIsLegalModalVisible(false)}
+            type={legalModalType}
+          />
         </View>
       </ScrollView>
     </SafeAreaView>
