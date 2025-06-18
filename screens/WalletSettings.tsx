@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import Share from 'react-native-share';
 import EncryptedStorage from 'react-native-encrypted-storage';
+import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 const {BBMTLibNativeModule} = NativeModules;
 import DeviceInfo from 'react-native-device-info';
 
@@ -42,7 +43,6 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   styles,
   theme,
 }) => {
-  const animatedHeight = useRef(new Animated.Value(0)).current;
   const animatedOpacity = useRef(new Animated.Value(0)).current;
   const animatedRotation = useRef(new Animated.Value(0)).current;
 
@@ -50,85 +50,113 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
     if (isExpanded) {
       // Expand animation
       Animated.parallel([
-        Animated.timing(animatedHeight, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: false,
-        }),
         Animated.timing(animatedOpacity, {
           toValue: 1,
-          duration: 250,
-          useNativeDriver: false,
+          duration: 200,
+          useNativeDriver: true,
         }),
         Animated.timing(animatedRotation, {
           toValue: 1,
           duration: 200,
-          useNativeDriver: false,
+          useNativeDriver: true,
         }),
       ]).start();
     } else {
       // Collapse animation
       Animated.parallel([
-        Animated.timing(animatedHeight, {
-          toValue: 0,
-          duration: 250,
-          useNativeDriver: false,
-        }),
         Animated.timing(animatedOpacity, {
           toValue: 0,
-          duration: 200,
-          useNativeDriver: false,
+          duration: 150,
+          useNativeDriver: true,
         }),
         Animated.timing(animatedRotation, {
           toValue: 0,
           duration: 150,
-          useNativeDriver: false,
+          useNativeDriver: true,
         }),
       ]).start();
     }
-  }, [isExpanded, animatedHeight, animatedOpacity, animatedRotation]);
+  }, [isExpanded, animatedOpacity, animatedRotation]);
 
   const rotateInterpolate = animatedRotation.interpolate({
     inputRange: [0, 1],
     outputRange: ['0deg', '180deg'],
   });
 
+  const handlePress = () => {
+    // Haptic feedback
+    ReactNativeHapticFeedback.trigger('impactLight', {
+      enableVibrateFallback: true,
+      ignoreAndroidSystemSettings: false,
+    });
+    onToggle();
+  };
+
   return (
-    <View style={[
-      styles.collapsibleSection,
-      isExpanded && {borderWidth: 2, borderColor: theme.colors.primary}
-    ]}>
-      <TouchableOpacity 
-        style={styles.sectionHeader} 
-        onPress={onToggle}
-        activeOpacity={0.7}>
-        <Text style={styles.sectionHeaderTitle}>{title}</Text>
-        <Animated.Text 
+    <View
+      style={[
+        styles.collapsibleSection,
+        isExpanded && {borderWidth: 2, borderColor: theme.colors.primary},
+      ]}>
+      <TouchableOpacity
+        style={styles.sectionHeader}
+        onPress={handlePress}
+        activeOpacity={0.7}
+        accessible={true}
+        accessibilityRole="button"
+        accessibilityLabel={`${title} section, ${
+          isExpanded ? 'expanded' : 'collapsed'
+        }`}
+        accessibilityHint={`Double tap to ${
+          isExpanded ? 'collapse' : 'expand'
+        } ${title} section`}>
+        <View style={styles.sectionHeaderContent}>
+          <Text style={styles.sectionIcon}>{getSectionIcon(title)}</Text>
+          <Text style={styles.sectionHeaderTitle}>{title}</Text>
+        </View>
+        <Animated.Text
           style={[
-            styles.expandIcon, 
+            styles.expandIcon,
             {color: theme.colors.text},
-            {transform: [{rotate: rotateInterpolate}]}
+            {transform: [{rotate: rotateInterpolate}]},
           ]}>
           ▶
         </Animated.Text>
       </TouchableOpacity>
-      
-      <Animated.View 
-        style={[
-          styles.sectionContent,
-          {
-            maxHeight: animatedHeight.interpolate({
-              inputRange: [0, 1],
-              outputRange: [0, 500], // Adjust based on content
-            }),
-            opacity: animatedOpacity,
-            overflow: 'hidden',
-          }
-        ]}>
-        {children}
-      </Animated.View>
+
+      {isExpanded && (
+        <Animated.View
+          style={[
+            styles.sectionContent,
+            {
+              opacity: animatedOpacity,
+            },
+          ]}>
+          {children}
+        </Animated.View>
+      )}
     </View>
   );
+};
+
+// Helper function to get section icons
+const getSectionIcon = (title: string): string => {
+  switch (title.toLowerCase()) {
+    case 'theme':
+      return '🎨';
+    case 'network':
+      return '🌐';
+    case 'backup & reset':
+      return '💾';
+    case 'advanced':
+      return '⚙️';
+    case 'about':
+      return 'ℹ️';
+    case 'legal':
+      return '📋';
+    default:
+      return '📁';
+  }
 };
 
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
@@ -163,17 +191,23 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [appVersion, setAppVersion] = useState('');
 
   const toggleSection = (section: string) => {
+    // Haptic feedback for section toggle
+    ReactNativeHapticFeedback.trigger('impactMedium', {
+      enableVibrateFallback: true,
+      ignoreAndroidSystemSettings: false,
+    });
+
     setExpandedSections(prev => {
       const newState = Object.keys(prev).reduce((acc, key) => {
         acc[key] = false; // Close all sections
         return acc;
       }, {} as {[key: string]: boolean});
-      
+
       // Open only the clicked section if it wasn't already open
       if (!prev[section]) {
         newState[section] = true;
       }
-      
+
       return newState;
     });
   };
@@ -201,6 +235,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   }, []);
 
   const handleToggleTheme = (value: boolean) => {
+    // Haptic feedback for theme toggle
+    ReactNativeHapticFeedback.trigger('impactLight', {
+      enableVibrateFallback: true,
+      ignoreAndroidSystemSettings: false,
+    });
+
     setIsCryptoVibrant(value);
     toggleTheme(value);
     navigation.reset({
@@ -210,6 +250,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   };
 
   const toggleNetwork = async (value: boolean) => {
+    // Haptic feedback for network toggle
+    ReactNativeHapticFeedback.trigger('impactLight', {
+      enableVibrateFallback: true,
+      ignoreAndroidSystemSettings: false,
+    });
+
     setIsTestnet(value);
     const network = value ? 'testnet3' : 'mainnet';
     await LocalCache.setItem('network', network);
@@ -361,6 +407,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       alignItems: 'center',
       padding: 12,
       backgroundColor: theme.colors.cardBackground,
+    },
+    sectionHeaderContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+    },
+    sectionIcon: {
+      fontSize: 18,
+      marginRight: 8,
     },
     sectionHeaderTitle: {
       fontSize: 16,
