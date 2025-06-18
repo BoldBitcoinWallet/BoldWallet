@@ -19,6 +19,7 @@ import {
   Linking,
   NativeEventEmitter,
   EmitterSubscription,
+  Keyboard,
 } from 'react-native';
 import {NativeModules} from 'react-native';
 import DeviceInfo from 'react-native-device-info';
@@ -74,7 +75,12 @@ const MobilesPairing = ({navigation}: any) => {
   const [keyshare, setKeyshare] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const confirmPasswordRef = useRef<TextInput>(null);
+
+  // Password validation states
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
+  const [passwordStrength, setPasswordStrength] = useState(0);
+  const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
 
   const {theme} = useTheme();
 
@@ -105,6 +111,8 @@ const MobilesPairing = ({navigation}: any) => {
     deviceOne: false,
     deviceTwo: false,
   });
+
+  const [isBackupModalVisible, setIsBackupModalVisible] = useState(false);
 
   const allChecked = Object.values(checks).every(Boolean);
   const allBackupChecked = Object.values(backupChecks).every(Boolean);
@@ -146,6 +154,87 @@ const MobilesPairing = ({navigation}: any) => {
 
   const normalizeAlphaNumUnderscore = (input: string): string => {
     return input.replace(/[^a-zA-Z0-9]/g, '_');
+  };
+
+  // Password validation functions
+  const validatePassword = (pass: string) => {
+    const errors: string[] = [];
+    const checks = {
+      length: pass.length >= 8,
+      uppercase: /[A-Z]/.test(pass),
+      lowercase: /[a-z]/.test(pass),
+      number: /\d/.test(pass),
+      symbol: /[!@#$%^&*(),.?":{}|<>]/.test(pass),
+    };
+
+    if (!checks.length) {
+      errors.push('At least 8 characters');
+    }
+    if (!checks.uppercase) {
+      errors.push('One uppercase letter');
+    }
+    if (!checks.lowercase) {
+      errors.push('One lowercase letter');
+    }
+    if (!checks.number) {
+      errors.push('One number');
+    }
+    if (!checks.symbol) {
+      errors.push('One special character');
+    }
+    setPasswordErrors(errors);
+
+    // Calculate strength (0-4)
+    const strength = Object.values(checks).filter(Boolean).length;
+    setPasswordStrength(strength);
+
+    return errors.length === 0;
+  };
+
+  const getPasswordStrengthColor = () => {
+    if (passwordStrength <= 1) {
+      return theme.colors.danger;
+    }
+    if (passwordStrength <= 2) {
+      return '#FFA500';
+    }
+    if (passwordStrength <= 3) {
+      return '#FFD700';
+    }
+    return '#4CAF50';
+  };
+
+  const getPasswordStrengthText = () => {
+    if (passwordStrength <= 1) {
+      return 'Very Weak';
+    }
+    if (passwordStrength <= 2) {
+      return 'Weak';
+    }
+    if (passwordStrength <= 3) {
+      return 'Medium';
+    }
+    return 'Strong';
+  };
+
+  const handlePasswordChange = (text: string) => {
+    setPassword(text);
+    if (text.length > 0) {
+      validatePassword(text);
+    } else {
+      setPasswordStrength(0);
+      setPasswordErrors([]);
+    }
+  };
+
+  const clearBackupModal = () => {
+    setPassword('');
+    setConfirmPassword('');
+    setPasswordVisible(false);
+    setConfirmPasswordVisible(false);
+    setPasswordStrength(0);
+    setPasswordErrors([]);
+    setIsBackupModalVisible(false);
   };
 
   const formatFiat = (price?: string) =>
@@ -519,26 +608,34 @@ const MobilesPairing = ({navigation}: any) => {
   }
 
   async function backupShare() {
-    if (!password || !confirmPassword) {
+    if (!validatePassword(password)) {
       Alert.alert(
-        'Password Required',
-        'Please enter and verify your password.',
+        'Weak Password',
+        'Please use a stronger password that meets all requirements.',
       );
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert(
-        'Password Mismatch',
-        'Passwords do not match. Please try again.',
-      );
+      Alert.alert('Password Mismatch', 'Passwords do not match.');
       return;
     }
+
     try {
       const encryptedKeyshare = await BBMTLibNativeModule.aesEncrypt(
         keyshare,
         await BBMTLibNativeModule.sha256(password),
       );
+
+      // Create friendly filename with date and time
+      const now = new Date();
+      const month = now.toLocaleDateString('en-US', {month: 'short'});
+      const day = now.getDate().toString().padStart(2, '0');
+      const year = now.getFullYear();
+      const hours = now.getHours().toString().padStart(2, '0');
+      const minutes = now.getMinutes().toString().padStart(2, '0');
+      const friendlyFilename = `${shareName}.${month}${day}.${year}.${hours}${minutes}.share`;
+
       await Share.open({
         title: 'Backup Your Keyshare',
         isNewTask: true,
@@ -546,11 +643,10 @@ const MobilesPairing = ({navigation}: any) => {
           'Save this encrypted file securely. It is required for wallet recovery.',
         url: `data:text/plain;base64,${encryptedKeyshare}`,
         type: 'text/plain',
-        filename: `${shareName.toLocaleLowerCase()}_${normalizeAlphaNumUnderscore(
-          new Date().toLocaleString(),
-        )}.share`,
+        filename: friendlyFilename,
         failOnCancel: false,
       });
+      clearBackupModal();
     } catch (error) {
       console.error('Error encrypting or sharing keyshare:', error);
       Alert.alert('Error', 'Failed to encrypt or share the keyshare.');
@@ -1169,30 +1265,138 @@ const MobilesPairing = ({navigation}: any) => {
       shadowRadius: 4,
       elevation: 5, // For Android shadow
     },
+    modalHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 12,
+    },
+    modalIcon: {
+      width: 20,
+      height: 20,
+      marginRight: 8,
+      tintColor: theme.colors.primary,
+    },
     modalTitle: {
-      fontSize: 20,
-      fontWeight: 'bold',
-      color: '#333',
-      marginBottom: 8,
-    },
-    modalSubtitle: {
-      fontSize: 14,
-      color: '#666',
-      marginBottom: 20,
-    },
-    progressCircle: {
-      marginBottom: 16,
-    },
-    progressText: {
-      fontSize: 16,
-      color: '#333',
-      fontWeight: '500',
-    },
-    modalText: {
       fontSize: 18,
-      marginBottom: 10,
-      textAlign: 'center',
+      fontWeight: 'bold',
       color: theme.colors.text,
+    },
+    modalDescription: {
+      fontSize: 13,
+      color: theme.colors.textSecondary,
+      marginBottom: 16,
+      textAlign: 'center',
+      lineHeight: 18,
+    },
+    passwordContainer: {
+      width: '100%',
+      marginBottom: 12,
+    },
+    passwordLabel: {
+      fontSize: 13,
+      fontWeight: 'bold',
+      color: theme.colors.text,
+      marginBottom: 4,
+    },
+    passwordInputContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 6,
+      backgroundColor: theme.colors.cardBackground,
+      minHeight: 44,
+    },
+    passwordInput: {
+      flex: 1,
+      padding: 10,
+      fontSize: 15,
+      color: theme.colors.text,
+      minHeight: 44,
+    },
+    eyeButton: {
+      padding: 10,
+    },
+    eyeIcon: {
+      width: 18,
+      height: 18,
+      tintColor: theme.colors.textSecondary,
+    },
+    strengthContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 6,
+      marginBottom: 6,
+    },
+    strengthBar: {
+      flex: 1,
+      height: 6,
+      backgroundColor: theme.colors.border,
+      borderRadius: 3,
+      marginRight: 10,
+      overflow: 'hidden',
+    },
+    strengthFill: {
+      height: '100%',
+      borderRadius: 3,
+    },
+    strengthText: {
+      fontSize: 11,
+      fontWeight: 'bold',
+      minWidth: 50,
+      textAlign: 'right',
+    },
+    requirementsContainer: {
+      marginTop: 3,
+    },
+    requirementText: {
+      fontSize: 11,
+      color: theme.colors.textSecondary,
+      marginBottom: 1,
+    },
+    errorInput: {
+      borderColor: theme.colors.danger,
+    },
+    errorText: {
+      color: theme.colors.danger,
+      fontSize: 11,
+      marginTop: 3,
+    },
+    modalActions: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: 20,
+      gap: 10,
+    },
+    modalButton: {
+      flex: 1,
+      paddingVertical: 12,
+      borderRadius: 6,
+      alignItems: 'center',
+    },
+    cancelButton: {
+      backgroundColor: theme.colors.secondary,
+    },
+    confirmButton: {
+      backgroundColor: theme.colors.primary,
+    },
+    buttonText: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: '#ffffff',
+    },
+    buttonContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    buttonIcon: {
+      width: 18,
+      height: 18,
+      marginRight: 6,
+    },
+    disabledButton: {
+      backgroundColor: theme.colors.disabled,
     },
     informationCard: {
       backgroundColor: theme.colors.background,
@@ -1210,64 +1414,13 @@ const MobilesPairing = ({navigation}: any) => {
       color: theme.colors.text,
       textAlign: 'center',
     },
-    informationLeftText: {
-      fontSize: 16,
-      color: theme.colors.text,
-      textAlign: 'left',
-    },
-    backupButton: {
-      marginTop: 10,
-      marginBottom: 10,
-      backgroundColor: theme.colors.subPrimary,
-      width: 200,
-      borderRadius: 8,
-      paddingVertical: 12,
-      paddingHorizontal: 12,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    backupButtonText: {
-      color: theme.colors.background,
-      fontSize: 15,
-      fontWeight: 'bold',
-    },
     hidden: {
       display: 'none',
-    },
-    clickButton: {
-      marginTop: 20,
-      marginBottom: 20,
-      backgroundColor: theme.colors.primary,
-      borderRadius: 8,
-      paddingVertical: 12,
-      paddingHorizontal: 30,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    clickButtonOff: {
-      opacity: 0.5,
-      marginTop: 20,
-      marginBottom: 20,
-      backgroundColor: theme.colors.accent,
-      borderRadius: 8,
-      paddingVertical: 12,
-      paddingHorizontal: 30,
-      alignItems: 'center',
-      justifyContent: 'center',
     },
     clickPrepare: {
       marginTop: 20,
       marginBottom: 20,
       backgroundColor: theme.colors.primary,
-      borderRadius: 8,
-      paddingVertical: 12,
-      paddingHorizontal: 30,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    clickRestart: {
-      marginTop: 25,
-      backgroundColor: theme.colors.accent,
       borderRadius: 8,
       paddingVertical: 12,
       paddingHorizontal: 30,
@@ -1290,18 +1443,61 @@ const MobilesPairing = ({navigation}: any) => {
       fontWeight: 'bold',
       fontSize: 15,
     },
-    input: {
-      borderWidth: 1,
-      borderColor: theme.colors.secondary,
-      borderRadius: 8,
-      padding: 6,
-      width: 200,
-      height: 35,
-      fontSize: 16,
-      color: 'black',
-      marginBottom: 5,
-      marginTop: 10,
+    modalText: {
+      fontSize: 18,
+      marginBottom: 10,
       textAlign: 'center',
+      color: theme.colors.text,
+    },
+    backupButton: {
+      marginTop: 10,
+      marginBottom: 10,
+      backgroundColor: theme.colors.subPrimary,
+      width: 200,
+      borderRadius: 8,
+      paddingVertical: 12,
+      paddingHorizontal: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    backupButtonText: {
+      color: theme.colors.background,
+      fontSize: 15,
+      fontWeight: 'bold',
+    },
+    clickButton: {
+      marginTop: 20,
+      marginBottom: 20,
+      backgroundColor: theme.colors.primary,
+      borderRadius: 8,
+      paddingVertical: 12,
+      paddingHorizontal: 30,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    clickButtonOff: {
+      opacity: 0.5,
+      marginTop: 20,
+      marginBottom: 20,
+      backgroundColor: theme.colors.accent,
+      borderRadius: 8,
+      paddingVertical: 12,
+      paddingHorizontal: 30,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    modalSubtitle: {
+      fontSize: 14,
+      color: '#666',
+      marginBottom: 20,
+    },
+    progressCircle: {
+      marginBottom: 16,
+    },
+    progressText: {
+      fontSize: 16,
+      color: '#333',
+      fontWeight: '500',
     },
     transactionDetails: {
       padding: 15,
@@ -1346,18 +1542,18 @@ const MobilesPairing = ({navigation}: any) => {
       fontSize: 13,
       color: theme.colors.secondary,
     },
-    summaryContainer: {
-      marginTop: 20,
-      padding: 20,
-      backgroundColor: theme.colors.background,
-      borderRadius: 10,
-      alignItems: 'center',
-    },
-    summaryTitle: {
-      fontSize: 18,
-      fontWeight: 'bold',
-      color: theme.colors.text,
-      marginBottom: 10,
+    input: {
+      borderWidth: 1,
+      borderColor: theme.colors.secondary,
+      borderRadius: 8,
+      padding: 6,
+      width: 200,
+      height: 35,
+      fontSize: 16,
+      color: 'black',
+      marginBottom: 5,
+      marginTop: 10,
+      textAlign: 'center',
     },
   });
 
@@ -1673,44 +1869,21 @@ const MobilesPairing = ({navigation}: any) => {
                         access both keyshares at once. Remember, you'll need
                         both to recover your wallet.
                       </Text>
-                      {/* Password Input */}
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Enter Password"
-                        placeholderTextColor="#888"
-                        secureTextEntry
-                        returnKeyType="next"
-                        onSubmitEditing={() =>
-                          confirmPasswordRef.current?.focus()
-                        }
-                        submitBehavior="submit"
-                        value={password}
-                        onChangeText={setPassword}
-                      />
-                      <TextInput
-                        ref={confirmPasswordRef}
-                        style={styles.input}
-                        placeholder="Confirm Password"
-                        placeholderTextColor="#888"
-                        secureTextEntry
-                        returnKeyType="done"
-                        value={confirmPassword}
-                        onChangeText={setConfirmPassword}
-                        onSubmitEditing={backupShare}
-                      />
+
                       <TouchableOpacity
-                        disabled={!isPrepared || isPreparing}
                         style={styles.backupButton}
-                        onPress={backupShare}>
-                        <Text style={styles.backupButtonText}>
-                          Backup {shareName} 📤
-                        </Text>
+                        onPress={() => setIsBackupModalVisible(true)}>
+                        <View style={styles.buttonContent}>
+                          <Image
+                            source={require('../assets/upload-icon.png')}
+                            style={[styles.buttonIcon, {tintColor: '#ffffff'}]}
+                            resizeMode="contain"
+                          />
+                          <Text style={styles.backupButtonText}>
+                            Backup {shareName}
+                          </Text>
+                        </View>
                       </TouchableOpacity>
-                      <Text style={styles.statusText}>
-                        🗝 Your keyshare backups are encrypted with a password
-                        you create. Never forget it—recovery without it is
-                        impossible.
-                      </Text>
                     </View>
                   </>
                 )}
@@ -1889,6 +2062,182 @@ const MobilesPairing = ({navigation}: any) => {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      {/* Backup Modal */}
+      <Modal
+        visible={isBackupModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={clearBackupModal}>
+        <KeyboardAvoidingView
+          style={{flex: 1}}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => {
+              // Dismiss keyboard when tapping outside
+              Keyboard.dismiss();
+            }}>
+            <TouchableOpacity
+              style={styles.modalContent}
+              activeOpacity={1}
+              onPress={() => {
+                // Prevent modal from closing when tapping inside
+              }}>
+              <View style={styles.modalHeader}>
+                <Image
+                  source={require('../assets/backup-icon.png')}
+                  style={styles.modalIcon}
+                  resizeMode="contain"
+                />
+                <Text style={styles.modalTitle}>Backup Keyshare</Text>
+              </View>
+              <Text style={styles.modalDescription}>
+                Create an encrypted backup of your keyshare, protected by a
+                strong password.
+              </Text>
+
+              <View style={styles.passwordContainer}>
+                <Text style={styles.passwordLabel}>Choose Password</Text>
+                <View style={styles.passwordInputContainer}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    placeholder="Enter a strong password"
+                    placeholderTextColor="#888"
+                    secureTextEntry={!passwordVisible}
+                    value={password}
+                    onChangeText={handlePasswordChange}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeButton}
+                    onPress={() => setPasswordVisible(!passwordVisible)}>
+                    <Image
+                      source={
+                        passwordVisible
+                          ? require('../assets/eye-off-icon.png')
+                          : require('../assets/eye-on-icon.png')
+                      }
+                      style={styles.eyeIcon}
+                      resizeMode="contain"
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Password Strength Indicator */}
+                {password.length > 0 && (
+                  <View style={styles.strengthContainer}>
+                    <View style={styles.strengthBar}>
+                      <View
+                        style={[
+                          styles.strengthFill,
+                          {
+                            width: `${(passwordStrength / 4) * 100}%`,
+                            backgroundColor: getPasswordStrengthColor(),
+                          },
+                        ]}
+                      />
+                    </View>
+                    <Text
+                      style={[
+                        styles.strengthText,
+                        {color: getPasswordStrengthColor()},
+                      ]}>
+                      {getPasswordStrengthText()}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Password Requirements */}
+                {passwordErrors.length > 0 && (
+                  <View style={styles.requirementsContainer}>
+                    {passwordErrors.map((error, index) => (
+                      <Text key={index} style={styles.requirementText}>
+                        • {error}
+                      </Text>
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.passwordContainer}>
+                <Text style={styles.passwordLabel}>Confirm Password</Text>
+                <View style={styles.passwordInputContainer}>
+                  <TextInput
+                    style={[
+                      styles.passwordInput,
+                      confirmPassword.length > 0 &&
+                        password !== confirmPassword &&
+                        styles.errorInput,
+                    ]}
+                    placeholder="Confirm your password"
+                    placeholderTextColor="#888"
+                    secureTextEntry={!confirmPasswordVisible}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeButton}
+                    onPress={() =>
+                      setConfirmPasswordVisible(!confirmPasswordVisible)
+                    }>
+                    <Image
+                      source={
+                        confirmPasswordVisible
+                          ? require('../assets/eye-off-icon.png')
+                          : require('../assets/eye-on-icon.png')
+                      }
+                      style={styles.eyeIcon}
+                      resizeMode="contain"
+                    />
+                  </TouchableOpacity>
+                </View>
+                {confirmPassword.length > 0 && password !== confirmPassword && (
+                  <Text style={styles.errorText}>Passwords do not match</Text>
+                )}
+              </View>
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.cancelButton]}
+                  onPress={clearBackupModal}>
+                  <Text style={styles.buttonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.modalButton,
+                    styles.confirmButton,
+                    (!password ||
+                      !confirmPassword ||
+                      password !== confirmPassword ||
+                      passwordStrength < 3) &&
+                      styles.disabledButton,
+                  ]}
+                  onPress={backupShare}
+                  disabled={
+                    !password ||
+                    !confirmPassword ||
+                    password !== confirmPassword ||
+                    passwordStrength < 3
+                  }>
+                  <View style={styles.buttonContent}>
+                    <Image
+                      source={require('../assets/upload-icon.png')}
+                      style={[styles.buttonIcon, {tintColor: '#ffffff'}]}
+                      resizeMode="contain"
+                    />
+                    <Text style={styles.buttonText}>Backup</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 };
