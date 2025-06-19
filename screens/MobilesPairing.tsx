@@ -409,6 +409,12 @@ const MobilesPairing = ({navigation}: any) => {
           setKeyshare(result);
           await EncryptedStorage.setItem('keyshare', result);
           setMpcDone(true);
+          // delete ppm-file
+          const ppmFile = `${RNFS.DocumentDirectoryPath}/${normalizeAlphaNumUnderscore(localDevice!!)}.json`;
+          RNFS
+            .unlink(ppmFile)
+            .then(()=> dbg('ppmFile deleted', ppmFile))
+            .catch((err: any)=> dbg('error deleting ppmFile', err));
         })
         .catch((e: any) => {
           console.error('keygen error', e);
