@@ -377,13 +377,17 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       try {
         setIsDeleting(true);
         setIsModalResetVisible(false);
-        await EncryptedStorage.clear();
+        dbg('clearing cache storage...');
         await LocalCache.clear();
+        dbg('clearing encrypted storage...');
+        await EncryptedStorage.removeItem('keyshare');
+        dbg('naviation reset...');
         navigation.reset({
           index: 0,
           routes: [{name: 'Showcase'}],
         });
       } catch (error) {
+        dbg('handleResetWallet', error);
         Alert.alert('Error', 'Failed to reset wallet. Please try again.');
       } finally {
         setIsDeleting(false);
