@@ -24,15 +24,23 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
 
-  const urls = useMemo(() => ({
-    terms: 'https://raw.githubusercontent.com/BoldBitcoinWallet/Terms/refs/heads/main/Terms%20Of%20Service.md',
-    privacy: 'https://raw.githubusercontent.com/BoldBitcoinWallet/Terms/refs/heads/main/Privacy%20Policy.md',
-  }), []);
+  const urls = useMemo(
+    () => ({
+      terms:
+        'https://raw.githubusercontent.com/BoldBitcoinWallet/Terms/refs/heads/main/Terms%20Of%20Service.md',
+      privacy:
+        'https://raw.githubusercontent.com/BoldBitcoinWallet/Terms/refs/heads/main/Privacy%20Policy.md',
+    }),
+    [],
+  );
 
-  const titles = useMemo(() => ({
-    terms: 'Terms of Service',
-    privacy: 'Privacy Policy',
-  }), []);
+  const titles = useMemo(
+    () => ({
+      terms: 'Terms of Service',
+      privacy: 'Privacy Policy',
+    }),
+    [],
+  );
 
   const formatMarkdown = useCallback((markdown: string): string => {
     return (
@@ -139,9 +147,13 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
                 <Text style={styles.content}>{content}</Text>
 
                 <TouchableOpacity
-                  onPress={() => Linking.openURL('https://boldbitcoinwallet.com#terms')}
+                  onPress={() =>
+                    Linking.openURL('https://boldbitcoinwallet.com#terms')
+                  }
                   style={styles.linkContainer}>
-                  <Text style={styles.linkText}>🌐 Terms and Conditions & Privacy Policy</Text>
+                  <Text style={styles.linkText}>
+                    🌐 Terms and Conditions & Privacy Policy
+                  </Text>
                 </TouchableOpacity>
               </>
             )}
@@ -241,6 +253,7 @@ const styles = StyleSheet.create({
     borderColor: themes.lightPolished.colors.border,
     borderRadius: 8,
     alignItems: 'center',
+    marginBottom: 16,
   },
   linkText: {
     fontSize: 14,

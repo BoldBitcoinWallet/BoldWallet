@@ -36,7 +36,7 @@ import {
 } from '@react-navigation/native';
 import Share from 'react-native-share';
 import Big from 'big.js';
-import {dbg, getPinnedRemoteIP} from '../utils';
+import {dbg, getPinnedRemoteIP, HapticFeedback} from '../utils';
 import {useTheme} from '../theme';
 import {waitMS} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
@@ -100,7 +100,7 @@ const MobilesPairing = ({navigation}: any) => {
   const addressType = route.params?.addressType;
   const title = isSendBitcoin
     ? '🗝 Co-Signing Your Transaction'
-    : 'Self Custody Superior Control \n Threshold Signatures Scheme Grade';
+    : 'Self-Custody Wallet \nSuperior Security & Control \n Threshold Signatures Scheme Grade';
 
   const [checks, setChecks] = useState({
     sameNetwork: false,
@@ -159,7 +159,7 @@ const MobilesPairing = ({navigation}: any) => {
   // Password validation functions
   const validatePassword = (pass: string) => {
     const errors: string[] = [];
-    const checks = {
+    const rules = {
       length: pass.length >= 8,
       uppercase: /[A-Z]/.test(pass),
       lowercase: /[a-z]/.test(pass),
@@ -167,25 +167,25 @@ const MobilesPairing = ({navigation}: any) => {
       symbol: /[!@#$%^&*(),.?":{}|<>]/.test(pass),
     };
 
-    if (!checks.length) {
+    if (!rules.length) {
       errors.push('At least 8 characters');
     }
-    if (!checks.uppercase) {
+    if (!rules.uppercase) {
       errors.push('One uppercase letter');
     }
-    if (!checks.lowercase) {
+    if (!rules.lowercase) {
       errors.push('One lowercase letter');
     }
-    if (!checks.number) {
+    if (!rules.number) {
       errors.push('One number');
     }
-    if (!checks.symbol) {
+    if (!rules.symbol) {
       errors.push('One special character');
     }
     setPasswordErrors(errors);
 
     // Calculate strength (0-4)
-    const strength = Object.values(checks).filter(Boolean).length;
+    const strength = Object.values(rules).filter(Boolean).length;
     setPasswordStrength(strength);
 
     return errors.length === 0;
@@ -939,7 +939,7 @@ const MobilesPairing = ({navigation}: any) => {
       await LocalCache.setItem('peerFound', result);
       return result;
     } catch (error) {
-      console.warn('ListenForPeer Error:', error);
+      dbg('ListenForPeer Error:', error);
       return null;
     }
   }
@@ -993,7 +993,7 @@ const MobilesPairing = ({navigation}: any) => {
           return result;
         }
       } catch (error) {
-        console.warn('DiscoverPeer Error:', error);
+        dbg('DiscoverPeer Error:', error);
       }
     }
     dbg('discoverPeer ended');
@@ -1125,7 +1125,7 @@ const MobilesPairing = ({navigation}: any) => {
       borderColor: theme.colors.border,
     },
     checklistPairing: {
-      fontSize: 20,
+      fontSize: 16,
       fontWeight: '700',
       marginBottom: 10,
       color: theme.colors.text,
@@ -1222,7 +1222,6 @@ const MobilesPairing = ({navigation}: any) => {
       textAlign: 'center',
       fontWeight: '600',
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
-      marginBottom: 8,
     },
     ipText: {
       fontSize: 12,
@@ -1680,7 +1679,7 @@ const MobilesPairing = ({navigation}: any) => {
                 <Text
                   style={[
                     styles.securityText,
-                    {fontSize: 22, fontWeight: 'bold'},
+                    {fontSize: 18, fontWeight: 'bold'},
                   ]}>
                   {title}
                 </Text>
@@ -1698,9 +1697,10 @@ const MobilesPairing = ({navigation}: any) => {
                   <TouchableOpacity
                     key={item.key}
                     style={styles.checkboxContainer}
-                    onPress={() =>
-                      toggleCheck(item.key as keyof typeof checks)
-                    }>
+                    onPress={() => {
+                      HapticFeedback.medium();
+                      toggleCheck(item.key as keyof typeof checks);
+                    }}>
                     <View
                       style={[
                         styles.checkbox,
@@ -1721,7 +1721,10 @@ const MobilesPairing = ({navigation}: any) => {
                     style={
                       allChecked ? styles.pairButtonOn : styles.pairButtonOff
                     }
-                    onPress={initiatePairing}
+                    onPress={() => {
+                      HapticFeedback.medium();
+                      initiatePairing();
+                    }}
                     disabled={!allChecked}>
                     <View style={styles.buttonContent}>
                       <Image
@@ -1805,6 +1808,7 @@ const MobilesPairing = ({navigation}: any) => {
                     <TouchableOpacity
                       style={styles.retryButton}
                       onPress={() => {
+                        HapticFeedback.light();
                         navigation.dispatch(
                           StackActions.replace('📱📱 Pairing', route.params),
                         );
@@ -1831,9 +1835,26 @@ const MobilesPairing = ({navigation}: any) => {
                 {peerIP &&
                   ((isPreParamsReady && !mpcDone && (
                     <View style={styles.informationCard}>
-                      <Text style={styles.statusText}>
-                        ☑️ Device Preparation Done
-                      </Text>
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}>
+                        <Image
+                          source={require('../assets/success-icon.png')}
+                          style={{
+                            width: 22,
+                            height: 22,
+                            marginRight: 8,
+                            tintColor: theme.colors.primary,
+                          }}
+                          resizeMode="contain"
+                        />
+                        <Text style={styles.statusText}>
+                          Device Preparation Done
+                        </Text>
+                      </View>
                     </View>
                   )) ||
                     (!isPreParamsReady && (
@@ -1891,11 +1912,12 @@ const MobilesPairing = ({navigation}: any) => {
                                   color: theme.colors.accent,
                                   textDecorationLine: 'underline',
                                 }}
-                                onPress={() =>
+                                onPress={() => {
+                                  HapticFeedback.light();
                                   Linking.openURL(
                                     'https://www.binance.com/en/square/post/17681517589057',
-                                  )
-                                }>
+                                  );
+                                }}>
                                 Learn more
                               </Text>
                             </Text>
@@ -1908,7 +1930,10 @@ const MobilesPairing = ({navigation}: any) => {
                         <TouchableOpacity
                           style={styles.checkboxContainer}
                           disabled={isPreparing}
-                          onPress={() => togglePrepared()}>
+                          onPress={() => {
+                            HapticFeedback.medium();
+                            togglePrepared();
+                          }}>
                           <View
                             style={[
                               styles.checkbox,
@@ -1916,7 +1941,7 @@ const MobilesPairing = ({navigation}: any) => {
                             ]}
                           />
                           <Text style={styles.checkboxLabel}>
-                            Keep this app open during setup ⚠️
+                            Keep app open during setup
                           </Text>
                         </TouchableOpacity>
                         <TouchableOpacity
@@ -1928,7 +1953,10 @@ const MobilesPairing = ({navigation}: any) => {
                               ? styles.clickPrepare
                               : styles.clickPrepareOff
                           }
-                          onPress={preparams}>
+                          onPress={() => {
+                            HapticFeedback.medium();
+                            preparams();
+                          }}>
                           <View style={styles.buttonContent}>
                             <Image
                               source={require('../assets/prepare-icon.png')}
@@ -1973,7 +2001,10 @@ const MobilesPairing = ({navigation}: any) => {
                       </Text>
                       <TouchableOpacity
                         style={styles.checkboxContainer}
-                        onPress={() => toggleKeygenReady()}>
+                        onPress={() => {
+                          HapticFeedback.medium();
+                          toggleKeygenReady();
+                        }}>
                         <View
                           style={[
                             styles.checkbox,
@@ -2030,7 +2061,10 @@ const MobilesPairing = ({navigation}: any) => {
                             : styles.clickButtonOff
                         }
                         disabled={!isKeygenReady}
-                        onPress={mpcTssSetup}>
+                        onPress={() => {
+                          HapticFeedback.medium();
+                          mpcTssSetup();
+                        }}>
                         <View style={styles.buttonContent}>
                           <Image
                             source={
@@ -2066,16 +2100,45 @@ const MobilesPairing = ({navigation}: any) => {
                         }}>
                         <Image
                           source={require('../assets/success-icon.png')}
-                          style={{width: 28, height: 28, marginRight: 10, tintColor: '#4CAF50'}}
+                          style={{
+                            width: 28,
+                            height: 28,
+                            marginRight: 10,
+                            tintColor: theme.colors.secondary,
+                          }}
                           resizeMode="contain"
                         />
-                        <Text style={[styles.statusText, {fontWeight: 'bold', fontSize: 20}]}>Keyshare Created!</Text>
+                        <Text
+                          style={[
+                            styles.statusText,
+                            {fontWeight: 'bold', fontSize: 20},
+                          ]}>
+                          Keyshare Created!
+                        </Text>
                       </View>
-                      <Text style={[styles.statusText, {fontWeight: '400', fontSize: 15, color: theme.colors.textSecondary}]}>Back it up now. Store each phone's keyshare in a different, safe place (cloud, drive, or email). Both are needed to recover your wallet.</Text>
+                      <Text
+                        style={[
+                          styles.statusText,
+                          {
+                            fontWeight: '400',
+                            fontSize: 15,
+                            color: theme.colors.textSecondary,
+                          },
+                        ]}>
+                        Back up your keyshare now. Store each phone's keyshare
+                        in a different, secure place (such as separate clouds,
+                        drives, or emails). Do not store both keyshares in the
+                        same location—if someone gains access to both, your
+                        wallet can be compromised. Keeping them separate
+                        prevents a single point of failure.
+                      </Text>
 
                       <TouchableOpacity
                         style={styles.backupButton}
-                        onPress={() => setIsBackupModalVisible(true)}>
+                        onPress={() => {
+                          HapticFeedback.medium();
+                          setIsBackupModalVisible(true);
+                        }}>
                         <View style={styles.buttonContent}>
                           <Image
                             source={require('../assets/upload-icon.png')}
@@ -2110,11 +2173,12 @@ const MobilesPairing = ({navigation}: any) => {
                         <TouchableOpacity
                           key={item.key}
                           style={styles.checkboxContainer}
-                          onPress={() =>
+                          onPress={() => {
+                            HapticFeedback.medium();
                             toggleBackedup(
                               item.key as keyof typeof backupChecks,
-                            )
-                          }>
+                            );
+                          }}>
                           <View
                             style={[
                               styles.checkbox,
@@ -2128,8 +2192,13 @@ const MobilesPairing = ({navigation}: any) => {
                       ))}
 
                       <TouchableOpacity
-                        style={allBackupChecked ? styles.proceedButtonOn : styles.proceedButtonOff}
+                        style={
+                          allBackupChecked
+                            ? styles.proceedButtonOn
+                            : styles.proceedButtonOff
+                        }
                         onPress={() => {
+                          HapticFeedback.medium();
                           navigation.dispatch(
                             CommonActions.reset({
                               index: 0,
@@ -2141,7 +2210,12 @@ const MobilesPairing = ({navigation}: any) => {
                         <View style={styles.buttonContent}>
                           <Image
                             source={require('../assets/prepare-icon.png')}
-                            style={{width: 20, height: 20, marginRight: 8, tintColor: '#fff'}}
+                            style={{
+                              width: 20,
+                              height: 20,
+                              marginRight: 8,
+                              tintColor: '#fff',
+                            }}
                             resizeMode="contain"
                           />
                           <Text style={styles.pairButtonText}>Continue</Text>
@@ -2198,7 +2272,10 @@ const MobilesPairing = ({navigation}: any) => {
                   </View>
                   <TouchableOpacity
                     style={styles.checkboxContainer}
-                    onPress={() => toggleKeysignReady()}>
+                    onPress={() => {
+                      HapticFeedback.medium();
+                      toggleKeysignReady();
+                    }}>
                     <View
                       style={[
                         styles.checkbox,
@@ -2253,7 +2330,10 @@ const MobilesPairing = ({navigation}: any) => {
                         : styles.clickButtonOff
                     }
                     disabled={!isKeysignReady}
-                    onPress={runKeysign}>
+                    onPress={() => {
+                      HapticFeedback.medium();
+                      runKeysign();
+                    }}>
                     <View style={styles.buttonContent}>
                       <Image
                         source={
@@ -2294,14 +2374,14 @@ const MobilesPairing = ({navigation}: any) => {
             style={styles.modalOverlay}
             activeOpacity={1}
             onPress={() => {
-              // Dismiss keyboard when tapping outside
+              HapticFeedback.light();
               Keyboard.dismiss();
             }}>
             <TouchableOpacity
               style={styles.modalContent}
               activeOpacity={1}
               onPress={() => {
-                // Prevent modal from closing when tapping inside
+                HapticFeedback.light();
               }}>
               <View style={styles.modalHeader}>
                 <Image
@@ -2331,7 +2411,10 @@ const MobilesPairing = ({navigation}: any) => {
                   />
                   <TouchableOpacity
                     style={styles.eyeButton}
-                    onPress={() => setPasswordVisible(!passwordVisible)}>
+                    onPress={() => {
+                      HapticFeedback.medium();
+                      setPasswordVisible(!passwordVisible);
+                    }}>
                     <Image
                       source={
                         passwordVisible
@@ -2400,9 +2483,10 @@ const MobilesPairing = ({navigation}: any) => {
                   />
                   <TouchableOpacity
                     style={styles.eyeButton}
-                    onPress={() =>
-                      setConfirmPasswordVisible(!confirmPasswordVisible)
-                    }>
+                    onPress={() => {
+                      HapticFeedback.medium();
+                      setConfirmPasswordVisible(!confirmPasswordVisible);
+                    }}>
                     <Image
                       source={
                         confirmPasswordVisible
@@ -2422,7 +2506,10 @@ const MobilesPairing = ({navigation}: any) => {
               <View style={styles.modalActions}>
                 <TouchableOpacity
                   style={[styles.modalButton, styles.cancelButton]}
-                  onPress={clearBackupModal}>
+                  onPress={() => {
+                    HapticFeedback.medium();
+                    clearBackupModal();
+                  }}>
                   <Text style={styles.buttonText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -2435,7 +2522,10 @@ const MobilesPairing = ({navigation}: any) => {
                       passwordStrength < 3) &&
                       styles.disabledButton,
                   ]}
-                  onPress={backupShare}
+                  onPress={() => {
+                    HapticFeedback.medium();
+                    backupShare();
+                  }}
                   disabled={
                     !password ||
                     !confirmPassword ||

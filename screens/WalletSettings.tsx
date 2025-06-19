@@ -96,7 +96,9 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
     <View
       style={[
         styles.collapsibleSection,
-        isExpanded && {borderWidth: 2, borderColor: theme.colors.primary},
+        ...(isExpanded
+          ? [{borderWidth: 2, borderColor: theme.colors.primary}]
+          : []),
       ]}>
       <TouchableOpacity
         style={styles.sectionHeader}
@@ -384,7 +386,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('naviation reset...');
         navigation.reset({
           index: 0,
-          routes: [{name: 'Showcase'}],
+          routes: [{name: 'Welcome'}],
         });
       } catch (error) {
         dbg('handleResetWallet', error);
@@ -868,7 +870,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
           <TouchableOpacity
             style={[styles.button, styles.backupButton]}
-            onPress={() => setIsBackupModalVisible(true)}>
+            onPress={() => {
+              HapticFeedback.medium();
+              setIsBackupModalVisible(true);
+            }}>
             <Text style={styles.buttonText}>Backup {party}</Text>
           </TouchableOpacity>
 
@@ -883,7 +888,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
           <TouchableOpacity
             style={[styles.button, styles.deleteButton]}
-            onPress={() => setIsModalResetVisible(true)}>
+            onPress={() => {
+              HapticFeedback.medium();
+              setIsModalResetVisible(true);
+            }}>
             <Text style={styles.buttonText}>Delete {party}</Text>
           </TouchableOpacity>
         </CollapsibleSection>
@@ -911,7 +919,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
           <TouchableOpacity
             style={[styles.button, styles.backupButton]}
-            onPress={() => resetAPI()}>
+            onPress={() => {
+              HapticFeedback.medium();
+              resetAPI();
+            }}>
             <Text style={styles.buttonText}>Reset Default</Text>
           </TouchableOpacity>
 
@@ -946,9 +957,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               transaction history, and network fees estimations. For more info:{' '}
               <Text
                 style={styles.linkText}
-                onPress={() =>
-                  Linking.openURL('https://mempool.space/docs/api/rest')
-                }>
+                onPress={() => {
+                  HapticFeedback.medium();
+                  Linking.openURL('https://mempool.space/docs/api/rest');
+                }}>
                 API Docs
               </Text>
             </Text>
@@ -979,6 +991,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <Text
             style={styles.termsLink}
             onPress={() => {
+              HapticFeedback.medium();
               setLegalModalType('terms');
               setIsLegalModalVisible(true);
             }}>
@@ -988,6 +1001,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <Text
             style={styles.termsLink}
             onPress={() => {
+              HapticFeedback.medium();
               setLegalModalType('privacy');
               setIsLegalModalVisible(true);
             }}>
@@ -1047,7 +1061,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   />
                   <TouchableOpacity
                     style={styles.eyeButton}
-                    onPress={() => setPasswordVisible(!passwordVisible)}>
+                    onPress={() => {
+                      HapticFeedback.medium();
+                      setPasswordVisible(!passwordVisible);
+                    }}>
                     <Image
                       source={
                         passwordVisible
@@ -1116,9 +1133,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   />
                   <TouchableOpacity
                     style={styles.eyeButton}
-                    onPress={() =>
-                      setConfirmPasswordVisible(!confirmPasswordVisible)
-                    }>
+                    onPress={() => {
+                      HapticFeedback.medium();
+                      setConfirmPasswordVisible(!confirmPasswordVisible);
+                    }}>
                     <Image
                       source={
                         confirmPasswordVisible
@@ -1138,7 +1156,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               <View style={styles.modalActions}>
                 <TouchableOpacity
                   style={[styles.modalButton, styles.cancelButton]}
-                  onPress={clearBackupModal}>
+                  onPress={() => {
+                    HapticFeedback.medium();
+                    clearBackupModal();
+                  }}>
                   <Text style={styles.buttonText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -1151,7 +1172,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                       passwordStrength < 3) &&
                       styles.disabledButton,
                   ]}
-                  onPress={handleBackupWallet}
+                  onPress={() => {
+                    HapticFeedback.medium();
+                    handleBackupWallet();
+                  }}
                   disabled={
                     !password ||
                     !confirmPassword ||
@@ -1195,7 +1219,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setIsModalResetVisible(false)}>
+                onPress={() => {
+                  HapticFeedback.medium();
+                  setIsModalResetVisible(false);
+                }}>
                 <Text style={styles.buttonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -1204,7 +1231,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   styles.confirmButton,
                   isDeleting && styles.halfOpacity,
                 ]}
-                onPress={handleResetWallet}
+                onPress={() => {
+                  HapticFeedback.medium();
+                  handleResetWallet();
+                }}
                 disabled={isDeleting}>
                 <Text style={styles.buttonText}>
                   {isDeleting ? 'Deleting...' : 'Confirm'}
@@ -1217,7 +1247,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
       <LegalModal
         visible={isLegalModalVisible}
-        onClose={() => setIsLegalModalVisible(false)}
+        onClose={() => {
+          HapticFeedback.medium();
+          setIsLegalModalVisible(false);
+        }}
         type={legalModalType}
       />
     </SafeAreaView>

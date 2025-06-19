@@ -29,7 +29,9 @@ const ShowcaseScreen = ({navigation}: any) => {
   const [fileContent, setFileContent] = useState('');
   const [agreeToTerms, setAgreeToTerms] = useState(false);
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
-  const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>('terms');
+  const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
+    'terms',
+  );
   const {theme} = useTheme();
 
   const fadeAnim = useRef(new Animated.Value(0.7)).current;
@@ -284,7 +286,10 @@ const ShowcaseScreen = ({navigation}: any) => {
         <View style={styles.termsContainer}>
           <TouchableOpacity
             style={styles.checkboxContainer}
-            onPress={() => setAgreeToTerms(prev => !prev)}>
+            onPress={() => {
+              HapticFeedback.medium();
+              setAgreeToTerms(prev => !prev);
+            }}>
             <View
               style={[styles.checkbox, agreeToTerms && styles.checkboxChecked]}
             />
@@ -294,6 +299,7 @@ const ShowcaseScreen = ({navigation}: any) => {
             <Text
               style={styles.termsLink}
               onPress={() => {
+                HapticFeedback.medium();
                 setLegalModalType('terms');
                 setIsLegalModalVisible(true);
               }}>
@@ -303,6 +309,7 @@ const ShowcaseScreen = ({navigation}: any) => {
             <Text
               style={styles.termsLink}
               onPress={() => {
+                HapticFeedback.medium();
                 setLegalModalType('privacy');
                 setIsLegalModalVisible(true);
               }}>
@@ -355,12 +362,18 @@ const ShowcaseScreen = ({navigation}: any) => {
               <Button
                 color={theme.colors.secondary}
                 title="Cancel"
-                onPress={() => setModalVisible(false)}
+                onPress={() => {
+                  HapticFeedback.medium();
+                  setModalVisible(false);
+                }}
               />
               <Button
                 color={theme.colors.primary}
                 title="Submit"
-                onPress={handlePasswordSubmit}
+                onPress={() => {
+                  HapticFeedback.medium();
+                  handlePasswordSubmit();
+                }}
               />
             </View>
           </View>
@@ -370,7 +383,10 @@ const ShowcaseScreen = ({navigation}: any) => {
       {/* Legal Modal */}
       <LegalModal
         visible={isLegalModalVisible}
-        onClose={() => setIsLegalModalVisible(false)}
+        onClose={() => {
+          HapticFeedback.medium();
+          setIsLegalModalVisible(false);
+        }}
         type={legalModalType}
       />
     </View>

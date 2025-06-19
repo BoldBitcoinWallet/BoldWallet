@@ -206,12 +206,12 @@ const App = () => {
     try {
       const ks = await EncryptedStorage.getItem('keyshare');
       dbg('initializeApp keyshare found', !!ks);
-      const route = ks ? 'Bold Home' : 'Showcase';
+      const route = ks ? 'Bold Home' : 'Welcome';
       dbg('Setting initial route to:', route);
       setInitialRoute(route);
     } catch (error) {
       dbg('Error in initializeApp:', error);
-      setInitialRoute('Showcase');
+      setInitialRoute('Welcome');
     }
   };
 
@@ -262,7 +262,7 @@ const App = () => {
               }}
             />
             <Stack.Screen
-              name="Showcase"
+              name="Welcome"
               component={ShowcaseScreen}
               options={{
                 headerShown: true,
