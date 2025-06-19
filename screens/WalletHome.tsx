@@ -1,4 +1,4 @@
-import React, {useEffect, useState, useCallback} from 'react';
+import React, {useEffect, useState, useCallback, useRef} from 'react';
 import {
   View,
   Text,
@@ -32,7 +32,7 @@ import WalletSkeleton from '../components/WalletSkeleton';
 import {useWallet} from '../context/WalletContext';
 import CurrencySelector from '../components/CurrencySelector';
 import {createStyles} from '../components/Styles';
-import {CacheIndicator, CacheTimestamp} from '../components/CacheIndicator';
+import {CacheIndicator, CacheTimestamp, CacheIndicatorHandle} from '../components/CacheIndicator';
 import {HeaderRightButton, HeaderTitle} from '../components/Header';
 import LocalCache from '../services/LocalCache';
 
@@ -74,6 +74,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState('');
   const [priceData, setPriceData] = useState<{[key: string]: number}>({});
+  const cacheIndicatorRef = useRef<CacheIndicatorHandle>(null);
 
   const {theme} = useTheme();
   const styles = createStyles(theme);
@@ -165,6 +166,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
   const fetchData = useCallback(async () => {
     try {
+      dbg('fetchData...');
+
       if (!isInitialized) {
         dbg('WalletHome: Skipping fetch - not initialized');
         return;
@@ -174,8 +177,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('WalletHome: Skipping fetch - already refreshing');
         return;
       }
-
-      setIsRefreshing(true);
 
       const addr = await LocalCache.getItem('currentAddress');
       const baseApi = await LocalCache.getItem('api');
@@ -207,6 +208,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       });
 
       let freshData;
+      setIsRefreshing(true);
+
       try {
         dbg('fetching bitcoin price and wallet balance...');
         freshData = await Promise.race([
@@ -572,6 +575,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
   };
 
+  // This function will be used for RefreshControl's onRefresh
+  const handleRefresh = () => {
+    cacheIndicatorRef.current?.press();
+  };
+
   if (loading && !isInitialized) {
     return <WalletSkeleton />;
   }
@@ -732,6 +740,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         </View>
       </View>
       <CacheIndicator
+        ref={cacheIndicatorRef}
         timestamps={cacheTimestamps}
         onRefresh={() => fetchData()}
         theme={theme}
@@ -745,6 +754,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           selectedCurrency={selectedCurrency}
           btcRate={btcRate}
           getCurrencySymbol={getCurrencySymbol}
+          onPullRefresh={() => cacheIndicatorRef.current?.press()}
         />
       </View>
       <Modal

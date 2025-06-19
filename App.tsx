@@ -252,7 +252,6 @@ const App = () => {
             initialRouteName={initialRoute}
             screenOptions={{
               headerShown: false,
-              animationEnabled: false,
             }}>
             <Stack.Screen
               name="Bold Home"
