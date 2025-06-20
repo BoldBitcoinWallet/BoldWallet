@@ -22,7 +22,7 @@ import BarcodeZxingScan from 'rn-barcode-zxing-scan';
 import Clipboard from '@react-native-clipboard/clipboard';
 import debounce from 'lodash/debounce';
 import Big from 'big.js';
-import {dbg} from '../utils';
+import {dbg, HapticFeedback} from '../utils';
 import {useTheme} from '../theme';
 import LocalCache from '../services/LocalCache';
 
@@ -312,18 +312,52 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
         amount.times(1e8).toFixed(0),
       )
         .then((fee: string) => {
-          if (fee) {
-            dbg('got fees:', fee);
-            const feeAmt = Big(fee);
-            setEstimatedFee(feeAmt);
-            if (Big(inBtcAmount).eq(walletBalance)) {
-              setInBtcAmount(walletBalance.minus(feeAmt.div(1e8)).toString());
+          if (fee && typeof fee === 'string') {
+            // Check if the response contains an error message
+            if (
+              fee.includes('failed') ||
+              fee.includes('error') ||
+              fee.includes('[')
+            ) {
+              console.warn('Fee estimation API returned error:', fee);
+              setEstimatedFee(null);
+              return;
             }
+
+            // Try to parse the fee as a valid number
+            try {
+              const feeNumber = parseFloat(fee);
+              if (isNaN(feeNumber) || feeNumber <= 0) {
+                console.warn('Invalid fee amount received:', fee);
+                setEstimatedFee(null);
+                return;
+              }
+
+              dbg('got fees:', fee);
+              const feeAmt = Big(feeNumber.toString());
+              setEstimatedFee(feeAmt);
+              if (Big(inBtcAmount).eq(walletBalance)) {
+                setInBtcAmount(walletBalance.minus(feeAmt.div(1e8)).toString());
+              }
+            } catch (parseError) {
+              console.error('Failed to parse fee amount:', fee, parseError);
+              setEstimatedFee(null);
+            }
+          } else {
+            console.warn('No fee data received from API');
+            setEstimatedFee(null);
           }
         })
         .catch((e: any) => {
           console.error('Fee estimation failed:', e);
-          Alert.alert('Error', 'Failed to estimate transaction fee');
+          setEstimatedFee(null);
+          // Only show alert for network/API errors, not parsing errors
+          if (e.message && !e.message.includes('Invalid number')) {
+            Alert.alert(
+              'Fee Estimation Error',
+              'Unable to estimate transaction fee. Please try again later.',
+            );
+          }
         })
         .finally(() => {
           setIsCalculatingFee(false);
@@ -350,6 +384,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   }, [address, btcAmount, debouncedGetFee]);
 
   const pasteAddress = useCallback(async () => {
+    HapticFeedback.light();
     const text = await Clipboard.getString();
     setAddress(text);
   }, []);
@@ -383,12 +418,14 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   };
 
   const handleMaxClick = () => {
+    HapticFeedback.medium();
     setBtcAmount(walletBalance);
     setInBtcAmount(walletBalance.toFixed(8));
     setInUsdAmount(walletBalance.times(btcToFiatRate).toFixed(2));
   };
 
   const handleFeeStrategyChange = (value: string) => {
+    HapticFeedback.selection();
     setFeeStrategy(value);
     dbg('setting fee strategy to', value);
     BBMTLibNativeModule.setFeePolicy(value);
@@ -406,6 +443,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       Alert.alert('Error', 'Total amount including fee exceeds wallet balance');
       return;
     }
+    HapticFeedback.heavy();
     onSend(address, Big(inBtcAmount).times(1e8), estimatedFee);
   };
 
@@ -498,6 +536,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => {
+                      HapticFeedback.light();
                       if (Platform.OS === 'android') {
                         BarcodeZxingScan.showQrReader(
                           (error: any, data: any) => {
@@ -573,7 +612,10 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.cancelButton}
-                    onPress={onClose}>
+                    onPress={() => {
+                      HapticFeedback.light();
+                      onClose();
+                    }}>
                     <Text style={styles.buttonText}>Cancel</Text>
                   </TouchableOpacity>
                 </View>

@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import {themes} from '../theme';
+import {HapticFeedback} from '../utils';
 
 interface Currency {
   code: string;
@@ -75,6 +76,7 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
         item.code === currentCurrency && styles.selectedCurrency,
       ]}
       onPress={() => {
+        HapticFeedback.selection();
         onSelect(item);
         onClose();
       }}>
@@ -94,7 +96,12 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
         <View style={[styles.modalContent, {maxHeight: height * 0.8}]}>
           <View style={styles.header}>
             <Text style={styles.title}>Select Currency</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+            <TouchableOpacity 
+              onPress={() => {
+                HapticFeedback.light();
+                onClose();
+              }} 
+              style={styles.closeButton}>
               <Text style={styles.closeButtonText}>✕</Text>
             </TouchableOpacity>
           </View>

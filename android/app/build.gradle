@@ -19,8 +19,8 @@ android {
         applicationId "com.boldwallet"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        versionName "1.1.0"
+        versionCode 3
+        versionName "1.2.0"
         missingDimensionStrategy 'react-native-camera', 'general'
         missingDimensionStrategy 'react-native-arch', 'oldarch'
     }
@@ -64,4 +64,5 @@ dependencies {
     implementation project(':react-native-document-picker')
     implementation project(':rn-barcode-zxing-scan')
     implementation project(':react-native-linear-gradient')
+    implementation project(':react-native-haptic-feedback')
 }

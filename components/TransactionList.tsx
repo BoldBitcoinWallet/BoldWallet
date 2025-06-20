@@ -15,7 +15,7 @@ import {
 import axios from 'axios';
 import Toast from 'react-native-toast-message';
 import moment from 'moment';
-import {dbg, presentFiat} from '../utils';
+import {dbg, presentFiat, HapticFeedback} from '../utils';
 import {useTheme} from '@react-navigation/native';
 import {themes} from '../theme';
 import TransactionListSkeleton from './TransactionListSkeleton';
@@ -38,6 +38,7 @@ interface TransactionListProps {
   selectedCurrency?: string;
   btcRate?: number;
   getCurrencySymbol?: (currency: string) => string;
+  onPullRefresh?: () => void;
 }
 
 const TransactionList: React.FC<TransactionListProps> = ({
@@ -48,6 +49,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
   selectedCurrency = 'USD',
   btcRate = 0,
   getCurrencySymbol = currency => currency,
+  onPullRefresh,
 }) => {
   const [transactions, setTransactions] = useState<any[]>(initialTransactions);
   const [loading, setLoading] = useState(false);
@@ -320,12 +322,14 @@ const TransactionList: React.FC<TransactionListProps> = ({
     [address, getTransactionAmounts, onUpdate, isRefreshing],
   );
 
-  // Fix transaction refresh handling
-  const handleRefresh = useCallback(async () => {
+  // For user pull-to-refresh
+  const handlePullRefresh = useCallback(async () => {
     if (isRefreshing || isFetching.current) {
       return;
     }
+    HapticFeedback.medium();
     setIsRefreshing(true);
+    onPullRefresh?.();
     try {
       await memoizedFetchTransactions(baseApi);
     } catch (error) {
@@ -335,7 +339,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
         setIsRefreshing(false);
       }
     }
-  }, [baseApi, isRefreshing, memoizedFetchTransactions]);
+  }, [baseApi, isRefreshing, memoizedFetchTransactions, onPullRefresh]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -775,6 +779,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
           style={styles.transactionItem}
           activeOpacity={0.7}
           onPress={() => {
+            HapticFeedback.light();
             setSelectedTransaction(item);
             setIsDetailsModalVisible(true);
           }}>
@@ -800,6 +805,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
                 <Text
                   style={styles.addressLink}
                   onPress={() => {
+                    HapticFeedback.light();
                     dbg('Opening address explorer:', addressExplorerLink);
                     Linking.openURL(addressExplorerLink);
                   }}>
@@ -875,7 +881,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
-            onRefresh={handleRefresh}
+            onRefresh={handlePullRefresh}
             colors={[colors.primary]}
             tintColor={colors.primary}
             progressBackgroundColor={colors.card}

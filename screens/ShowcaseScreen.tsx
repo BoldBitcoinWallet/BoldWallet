@@ -10,7 +10,6 @@ import {
   Modal,
   TextInput,
   Button,
-  Linking,
   ScrollView,
   Animated,
   Easing,
@@ -19,7 +18,8 @@ import DocumentPicker from 'react-native-document-picker';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import RNFS from 'react-native-fs';
 import {useTheme} from '../theme';
-import {dbg} from '../utils';
+import {dbg, HapticFeedback} from '../utils';
+import LegalModal from '../components/LegalModal';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -28,6 +28,10 @@ const ShowcaseScreen = ({navigation}: any) => {
   const [password, setPassword] = useState('');
   const [fileContent, setFileContent] = useState('');
   const [agreeToTerms, setAgreeToTerms] = useState(false);
+  const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
+  const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
+    'terms',
+  );
   const {theme} = useTheme();
 
   const fadeAnim = useRef(new Animated.Value(0.7)).current;
@@ -197,19 +201,23 @@ const ShowcaseScreen = ({navigation}: any) => {
       alignItems: 'center',
       justifyContent: 'center',
       marginBottom: 20,
+      paddingHorizontal: 20,
+      flexWrap: 'wrap',
     },
     termsText: {
-      fontSize: 14,
+      fontSize: 13,
+      textAlign: 'center',
       color: theme.colors.text,
+      marginLeft: 8,
     },
     termsLink: {
       color: theme.colors.accent,
       textDecorationLine: 'underline',
+      fontWeight: '500',
     },
     checkboxContainer: {
-      flexDirection: 'row',
       alignItems: 'center',
-      marginRight: 10,
+      justifyContent: 'center',
     },
     checkbox: {
       width: 24,
@@ -278,26 +286,44 @@ const ShowcaseScreen = ({navigation}: any) => {
         <View style={styles.termsContainer}>
           <TouchableOpacity
             style={styles.checkboxContainer}
-            onPress={() => setAgreeToTerms(prev => !prev)}>
+            onPress={() => {
+              HapticFeedback.medium();
+              setAgreeToTerms(prev => !prev);
+            }}>
             <View
               style={[styles.checkbox, agreeToTerms && styles.checkboxChecked]}
             />
           </TouchableOpacity>
           <Text style={styles.termsText}>
-            You agree to our{' '}
+            I agree to the{' '}
             <Text
               style={styles.termsLink}
-              onPress={() =>
-                Linking.openURL('https://boldbitcoinwallet.com/#terms')
-              }>
-              Terms and Conditions
+              onPress={() => {
+                HapticFeedback.medium();
+                setLegalModalType('terms');
+                setIsLegalModalVisible(true);
+              }}>
+              Terms of Service
+            </Text>{' '}
+            &{' '}
+            <Text
+              style={styles.termsLink}
+              onPress={() => {
+                HapticFeedback.medium();
+                setLegalModalType('privacy');
+                setIsLegalModalVisible(true);
+              }}>
+              Privacy Policy
             </Text>
           </Text>
         </View>
         <View style={styles.ctaButtons}>
           <TouchableOpacity
             style={[styles.ctaButton, !agreeToTerms && styles.disabledButton]}
-            onPress={() => navigation.navigate('📱📱 Pairing')}
+            onPress={() => {
+              HapticFeedback.medium();
+              navigation.navigate('📱📱 Pairing');
+            }}
             disabled={!agreeToTerms}>
             <Text style={styles.ctaButtonText}>Setup Wallet</Text>
           </TouchableOpacity>
@@ -306,7 +332,10 @@ const ShowcaseScreen = ({navigation}: any) => {
               styles.ctaButtonRestore,
               !agreeToTerms && styles.disabledButton,
             ]}
-            onPress={handleRestoreWallet}
+            onPress={() => {
+              HapticFeedback.medium();
+              handleRestoreWallet();
+            }}
             disabled={!agreeToTerms}>
             <Text style={styles.ctaButtonText}>Restore Wallet</Text>
           </TouchableOpacity>
@@ -333,17 +362,33 @@ const ShowcaseScreen = ({navigation}: any) => {
               <Button
                 color={theme.colors.secondary}
                 title="Cancel"
-                onPress={() => setModalVisible(false)}
+                onPress={() => {
+                  HapticFeedback.medium();
+                  setModalVisible(false);
+                }}
               />
               <Button
                 color={theme.colors.primary}
                 title="Submit"
-                onPress={handlePasswordSubmit}
+                onPress={() => {
+                  HapticFeedback.medium();
+                  handlePasswordSubmit();
+                }}
               />
             </View>
           </View>
         </View>
       </Modal>
+
+      {/* Legal Modal */}
+      <LegalModal
+        visible={isLegalModalVisible}
+        onClose={() => {
+          HapticFeedback.medium();
+          setIsLegalModalVisible(false);
+        }}
+        type={legalModalType}
+      />
     </View>
   );
 };
