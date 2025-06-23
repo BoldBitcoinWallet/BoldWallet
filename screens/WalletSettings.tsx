@@ -206,7 +206,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const validatePassword = (pass: string) => {
     const errors: string[] = [];
     const checks = {
-      length: pass.length >= 8,
+      length: pass.length >= 12,
       uppercase: /[A-Z]/.test(pass),
       lowercase: /[a-z]/.test(pass),
       number: /\d/.test(pass),
@@ -214,7 +214,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     };
 
     if (!checks.length) {
-      errors.push('At least 8 characters');
+      errors.push('At least 12 characters');
     }
     if (!checks.uppercase) {
       errors.push('One uppercase letter');
@@ -276,7 +276,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
   const toggleSection = (section: string) => {
     // Haptic feedback for section toggle
-    HapticFeedback.medium();
+    HapticFeedback.light();
 
     setExpandedSections(prev => {
       const newState = Object.keys(prev).reduce((acc, key) => {
@@ -419,7 +419,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
     try {
       // Haptic feedback
-      HapticFeedback.medium();
+      HapticFeedback.light();
 
       const keyshare = await EncryptedStorage.getItem('keyshare');
       if (keyshare) {
@@ -871,7 +871,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <TouchableOpacity
             style={[styles.button, styles.backupButton]}
             onPress={() => {
-              HapticFeedback.medium();
+              HapticFeedback.light();
               setIsBackupModalVisible(true);
             }}>
             <Text style={styles.buttonText}>Backup {party}</Text>
@@ -889,7 +889,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <TouchableOpacity
             style={[styles.button, styles.deleteButton]}
             onPress={() => {
-              HapticFeedback.medium();
+              HapticFeedback.light();
               setIsModalResetVisible(true);
             }}>
             <Text style={styles.buttonText}>Delete {party}</Text>
@@ -920,7 +920,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <TouchableOpacity
             style={[styles.button, styles.backupButton]}
             onPress={() => {
-              HapticFeedback.medium();
+              HapticFeedback.light();
               resetAPI();
             }}>
             <Text style={styles.buttonText}>Reset Default</Text>
@@ -958,7 +958,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               <Text
                 style={styles.linkText}
                 onPress={() => {
-                  HapticFeedback.medium();
+                  HapticFeedback.light();
                   Linking.openURL('https://mempool.space/docs/api/rest');
                 }}>
                 API Docs
@@ -991,7 +991,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <Text
             style={styles.termsLink}
             onPress={() => {
-              HapticFeedback.medium();
+              HapticFeedback.light();
               setLegalModalType('terms');
               setIsLegalModalVisible(true);
             }}>
@@ -1001,7 +1001,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <Text
             style={styles.termsLink}
             onPress={() => {
-              HapticFeedback.medium();
+              HapticFeedback.light();
               setLegalModalType('privacy');
               setIsLegalModalVisible(true);
             }}>
@@ -1062,7 +1062,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   <TouchableOpacity
                     style={styles.eyeButton}
                     onPress={() => {
-                      HapticFeedback.medium();
+                      HapticFeedback.light();
                       setPasswordVisible(!passwordVisible);
                     }}>
                     <Image
@@ -1134,7 +1134,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   <TouchableOpacity
                     style={styles.eyeButton}
                     onPress={() => {
-                      HapticFeedback.medium();
+                      HapticFeedback.light();
                       setConfirmPasswordVisible(!confirmPasswordVisible);
                     }}>
                     <Image
@@ -1157,7 +1157,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 <TouchableOpacity
                   style={[styles.modalButton, styles.cancelButton]}
                   onPress={() => {
-                    HapticFeedback.medium();
+                    HapticFeedback.light();
                     clearBackupModal();
                   }}>
                   <Text style={styles.buttonText}>Cancel</Text>
@@ -1173,7 +1173,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                       styles.disabledButton,
                   ]}
                   onPress={() => {
-                    HapticFeedback.medium();
+                    HapticFeedback.light();
                     handleBackupWallet();
                   }}
                   disabled={
@@ -1220,7 +1220,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => {
-                  HapticFeedback.medium();
+                  HapticFeedback.light();
                   setIsModalResetVisible(false);
                 }}>
                 <Text style={styles.buttonText}>Cancel</Text>
@@ -1232,7 +1232,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   isDeleting && styles.halfOpacity,
                 ]}
                 onPress={() => {
-                  HapticFeedback.medium();
+                  HapticFeedback.light();
                   handleResetWallet();
                 }}
                 disabled={isDeleting}>
@@ -1248,7 +1248,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       <LegalModal
         visible={isLegalModalVisible}
         onClose={() => {
-          HapticFeedback.medium();
+          HapticFeedback.light();
           setIsLegalModalVisible(false);
         }}
         type={legalModalType}
