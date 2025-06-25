@@ -19,6 +19,7 @@ import {
   Linking,
   NativeEventEmitter,
   EmitterSubscription,
+  Keyboard,
 } from 'react-native';
 import {NativeModules} from 'react-native';
 import DeviceInfo from 'react-native-device-info';
@@ -35,7 +36,7 @@ import {
 } from '@react-navigation/native';
 import Share from 'react-native-share';
 import Big from 'big.js';
-import {dbg, getPinnedRemoteIP} from '../utils';
+import {dbg, getPinnedRemoteIP, HapticFeedback} from '../utils';
 import {useTheme} from '../theme';
 import {waitMS} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
@@ -74,7 +75,12 @@ const MobilesPairing = ({navigation}: any) => {
   const [keyshare, setKeyshare] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const confirmPasswordRef = useRef<TextInput>(null);
+
+  // Password validation states
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
+  const [passwordStrength, setPasswordStrength] = useState(0);
+  const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
 
   const {theme} = useTheme();
 
@@ -94,7 +100,7 @@ const MobilesPairing = ({navigation}: any) => {
   const addressType = route.params?.addressType;
   const title = isSendBitcoin
     ? '🗝 Co-Signing Your Transaction'
-    : 'Self Custody Superior Control \n Threshold Signatures Scheme Grade';
+    : 'Self-Custody Wallet \nSuperior Security & Control \n Threshold Signatures Scheme Grade';
 
   const [checks, setChecks] = useState({
     sameNetwork: false,
@@ -105,6 +111,8 @@ const MobilesPairing = ({navigation}: any) => {
     deviceOne: false,
     deviceTwo: false,
   });
+
+  const [isBackupModalVisible, setIsBackupModalVisible] = useState(false);
 
   const allChecked = Object.values(checks).every(Boolean);
   const allBackupChecked = Object.values(backupChecks).every(Boolean);
@@ -146,6 +154,87 @@ const MobilesPairing = ({navigation}: any) => {
 
   const normalizeAlphaNumUnderscore = (input: string): string => {
     return input.replace(/[^a-zA-Z0-9]/g, '_');
+  };
+
+  // Password validation functions
+  const validatePassword = (pass: string) => {
+    const errors: string[] = [];
+    const rules = {
+      length: pass.length >= 8,
+      uppercase: /[A-Z]/.test(pass),
+      lowercase: /[a-z]/.test(pass),
+      number: /\d/.test(pass),
+      symbol: /[!@#$%^&*(),.?":{}|<>]/.test(pass),
+    };
+
+    if (!rules.length) {
+      errors.push('At least 8 characters');
+    }
+    if (!rules.uppercase) {
+      errors.push('One uppercase letter');
+    }
+    if (!rules.lowercase) {
+      errors.push('One lowercase letter');
+    }
+    if (!rules.number) {
+      errors.push('One number');
+    }
+    if (!rules.symbol) {
+      errors.push('One special character');
+    }
+    setPasswordErrors(errors);
+
+    // Calculate strength (0-4)
+    const strength = Object.values(rules).filter(Boolean).length;
+    setPasswordStrength(strength);
+
+    return errors.length === 0;
+  };
+
+  const getPasswordStrengthColor = () => {
+    if (passwordStrength <= 1) {
+      return theme.colors.danger;
+    }
+    if (passwordStrength <= 2) {
+      return '#FFA500';
+    }
+    if (passwordStrength <= 3) {
+      return '#FFD700';
+    }
+    return '#4CAF50';
+  };
+
+  const getPasswordStrengthText = () => {
+    if (passwordStrength <= 1) {
+      return 'Very Weak';
+    }
+    if (passwordStrength <= 2) {
+      return 'Weak';
+    }
+    if (passwordStrength <= 3) {
+      return 'Medium';
+    }
+    return 'Strong';
+  };
+
+  const handlePasswordChange = (text: string) => {
+    setPassword(text);
+    if (text.length > 0) {
+      validatePassword(text);
+    } else {
+      setPasswordStrength(0);
+      setPasswordErrors([]);
+    }
+  };
+
+  const clearBackupModal = () => {
+    setPassword('');
+    setConfirmPassword('');
+    setPasswordVisible(false);
+    setConfirmPasswordVisible(false);
+    setPasswordStrength(0);
+    setPasswordErrors([]);
+    setIsBackupModalVisible(false);
   };
 
   const formatFiat = (price?: string) =>
@@ -320,6 +409,12 @@ const MobilesPairing = ({navigation}: any) => {
           setKeyshare(result);
           await EncryptedStorage.setItem('keyshare', result);
           setMpcDone(true);
+          // delete ppm-file
+          const ppmFile = `${RNFS.DocumentDirectoryPath}/${normalizeAlphaNumUnderscore(localDevice!!)}.json`;
+          RNFS
+            .unlink(ppmFile)
+            .then(()=> dbg('ppmFile deleted', ppmFile))
+            .catch((err: any)=> dbg('error deleting ppmFile', err));
         })
         .catch((e: any) => {
           console.error('keygen error', e);
@@ -519,26 +614,34 @@ const MobilesPairing = ({navigation}: any) => {
   }
 
   async function backupShare() {
-    if (!password || !confirmPassword) {
+    if (!validatePassword(password)) {
       Alert.alert(
-        'Password Required',
-        'Please enter and verify your password.',
+        'Weak Password',
+        'Please use a stronger password that meets all requirements.',
       );
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert(
-        'Password Mismatch',
-        'Passwords do not match. Please try again.',
-      );
+      Alert.alert('Password Mismatch', 'Passwords do not match.');
       return;
     }
+
     try {
       const encryptedKeyshare = await BBMTLibNativeModule.aesEncrypt(
         keyshare,
         await BBMTLibNativeModule.sha256(password),
       );
+
+      // Create friendly filename with date and time
+      const now = new Date();
+      const month = now.toLocaleDateString('en-US', {month: 'short'});
+      const day = now.getDate().toString().padStart(2, '0');
+      const year = now.getFullYear();
+      const hours = now.getHours().toString().padStart(2, '0');
+      const minutes = now.getMinutes().toString().padStart(2, '0');
+      const friendlyFilename = `${shareName}.${month}${day}.${year}.${hours}${minutes}.share`;
+
       await Share.open({
         title: 'Backup Your Keyshare',
         isNewTask: true,
@@ -546,11 +649,10 @@ const MobilesPairing = ({navigation}: any) => {
           'Save this encrypted file securely. It is required for wallet recovery.',
         url: `data:text/plain;base64,${encryptedKeyshare}`,
         type: 'text/plain',
-        filename: `${shareName.toLocaleLowerCase()}_${normalizeAlphaNumUnderscore(
-          new Date().toLocaleString(),
-        )}.share`,
+        filename: friendlyFilename,
         failOnCancel: false,
       });
+      clearBackupModal();
     } catch (error) {
       console.error('Error encrypting or sharing keyshare:', error);
       Alert.alert('Error', 'Failed to encrypt or share the keyshare.');
@@ -843,7 +945,7 @@ const MobilesPairing = ({navigation}: any) => {
       await LocalCache.setItem('peerFound', result);
       return result;
     } catch (error) {
-      console.warn('ListenForPeer Error:', error);
+      dbg('ListenForPeer Error:', error);
       return null;
     }
   }
@@ -897,7 +999,7 @@ const MobilesPairing = ({navigation}: any) => {
           return result;
         }
       } catch (error) {
-        console.warn('DiscoverPeer Error:', error);
+        dbg('DiscoverPeer Error:', error);
       }
     }
     dbg('discoverPeer ended');
@@ -922,129 +1024,172 @@ const MobilesPairing = ({navigation}: any) => {
       flex: 1,
     },
     scrollContent: {
-      paddingBottom: 20,
+      paddingBottom: 8,
     },
     innerContainer: {
+      alignItems: 'stretch',
+      padding: 10,
+    },
+    retryButton: {
+      marginTop: 28,
+      alignSelf: 'center',
+      backgroundColor: theme.colors.primary,
+      borderRadius: 18,
+      flexDirection: 'row',
       alignItems: 'center',
-      padding: 20,
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      shadowColor: theme.colors.text,
+      shadowOpacity: 0.08,
+      shadowRadius: 2,
+      elevation: 2,
+    },
+    retryLink: {
+      color: theme.colors.background,
+      fontWeight: '700',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'center',
+      fontSize: 17,
+      marginLeft: 8,
     },
     termsLink: {
       color: theme.colors.accent,
-      fontWeight: 'bold',
+      fontWeight: '600',
       textDecorationLine: 'underline',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'left',
     },
     header: {
-      fontSize: 18,
-      fontWeight: 'bold',
+      fontSize: 24,
+      fontWeight: '700',
       color: theme.colors.text,
-      marginTop: 20,
-      marginBottom: 20,
+      marginTop: 16,
+      marginBottom: 16,
       textAlign: 'center',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     summaryRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      marginBottom: 10,
+      marginBottom: 6,
     },
     label: {
-      fontSize: 16,
-      fontWeight: 'bold',
+      fontSize: 17,
+      fontWeight: '600',
       color: theme.colors.text,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'left',
     },
     address: {
-      fontSize: 14,
+      fontSize: 13,
       color: theme.colors.text,
-      textAlign: 'center',
+      textAlign: 'left',
       flex: 1,
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     },
     value: {
-      fontSize: 16,
+      fontSize: 17,
       color: theme.colors.text,
-      textAlign: 'center',
+      textAlign: 'left',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     title: {
-      fontSize: 24,
-      fontWeight: 'bold',
+      fontSize: 28,
+      fontWeight: '700',
       color: theme.colors.text,
-      marginBottom: 10,
+      marginBottom: 14,
       textAlign: 'center',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     pairingHint: {
-      fontSize: 15,
-      fontWeight: 'bold',
+      fontSize: 16,
+      fontWeight: '500',
       color: theme.colors.secondary,
       textAlign: 'center',
-      marginBottom: 20,
-      marginTop: 20,
+      marginBottom: 12,
+      marginTop: 12,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     securityText: {
-      fontSize: 15,
-      fontWeight: 'bold',
-      color: theme.colors.secondary,
+      fontSize: 24,
+      fontWeight: '700',
+      color: theme.colors.text,
       textAlign: 'center',
-      marginBottom: 30,
+      marginBottom: 16,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     checklistContainer: {
       alignSelf: 'stretch',
-      marginBottom: 20,
-      paddingHorizontal: 10,
-      backgroundColor: theme.colors.background,
-      borderRadius: 10,
-      elevation: 2,
-      padding: 15,
+      marginBottom: 10,
+      paddingHorizontal: 8,
+      backgroundColor: theme.colors.white,
+      borderRadius: 8,
+      elevation: 1,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
     },
     checklistPairing: {
-      fontSize: 18,
-      fontWeight: 'bold',
+      fontSize: 16,
+      fontWeight: '700',
       marginBottom: 10,
       color: theme.colors.text,
+      textAlign: 'left',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     checklistTitle: {
       fontSize: 18,
-      fontWeight: 'bold',
+      fontWeight: '700',
       color: theme.colors.text,
+      textAlign: 'left',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      marginBottom: 10,
     },
     checkboxContainer: {
       flexDirection: 'row',
       alignItems: 'center',
-      paddingVertical: 8,
+      paddingVertical: 6,
     },
     checkbox: {
-      width: 24,
-      height: 24,
-      borderRadius: 6,
-      borderWidth: 2,
+      width: 20,
+      height: 20,
+      borderRadius: 5,
+      borderWidth: 1.5,
       borderColor: theme.colors.primary,
       justifyContent: 'center',
       alignItems: 'center',
-      marginRight: 10,
+      marginRight: 8,
+      backgroundColor: theme.colors.background,
     },
     checked: {
       backgroundColor: theme.colors.primary,
       borderColor: theme.colors.primary,
     },
     checkboxLabel: {
-      fontSize: 16,
+      fontSize: 17,
       color: theme.colors.text,
       flex: 1,
+      fontWeight: '500',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'left',
     },
     deviceContainer: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       position: 'relative',
-      marginBottom: 30,
+      marginBottom: 16,
     },
     deviceWrapper: {
       alignItems: 'center',
       justifyContent: 'center',
-      marginHorizontal: 10,
+      marginHorizontal: 6,
       position: 'relative',
     },
     deviceIcon: {
-      width: 40,
-      height: 40,
+      width: 32,
+      height: 32,
       tintColor: theme.colors.secondary,
     },
     deviceActive: {
@@ -1055,18 +1200,19 @@ const MobilesPairing = ({navigation}: any) => {
     },
     deviceName: {
       position: 'absolute',
-      bottom: -40,
-      fontSize: 14,
+      bottom: -32,
+      fontSize: 12,
       fontWeight: '500',
       color: theme.colors.text,
       textAlign: 'center',
-      width: 200,
+      width: 120,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     statusLine: {
-      width: 100,
-      height: 4,
+      width: 60,
+      height: 3,
       backgroundColor: theme.colors.accent,
-      marginHorizontal: 10,
+      marginHorizontal: 6,
       borderRadius: 2,
       overflow: 'hidden',
     },
@@ -1077,79 +1223,92 @@ const MobilesPairing = ({navigation}: any) => {
       backgroundColor: theme.colors.primary,
     },
     statusText: {
-      fontSize: 15,
+      fontSize: 18,
       color: theme.colors.text,
-      textAlign: 'justify',
-      fontWeight: 'bold',
+      textAlign: 'center',
+      fontWeight: '600',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     ipText: {
-      fontSize: 14,
+      fontSize: 12,
       color: theme.colors.secondary,
-      marginBottom: 5,
-      textAlign: 'center',
+      marginBottom: 3,
+      textAlign: 'left',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     countdownText: {
       fontSize: 16,
       fontWeight: '600',
       color: theme.colors.text,
-      marginVertical: 8,
+      marginVertical: 6,
       textAlign: 'center',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     loader: {
-      marginTop: 15,
+      marginTop: 10,
     },
     pairButtonOn: {
-      marginTop: 20,
-      marginBottom: 10,
+      marginTop: 12,
+      marginBottom: 8,
       backgroundColor: theme.colors.primary,
       borderRadius: 8,
-      paddingVertical: 12,
-      paddingHorizontal: 30,
+      paddingVertical: 14,
+      paddingHorizontal: 22,
       alignItems: 'center',
       justifyContent: 'center',
       shadowColor: theme.colors.text,
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
-      elevation: 3,
+      shadowOpacity: 0.08,
+      shadowRadius: 2,
+      elevation: 2,
+      width: '100%',
+      alignSelf: 'center',
     },
     pairButtonOff: {
       opacity: 0.5,
-      marginTop: 20,
-      marginBottom: 10,
+      marginTop: 12,
+      marginBottom: 8,
       backgroundColor: theme.colors.accent,
       borderRadius: 8,
-      paddingVertical: 12,
-      paddingHorizontal: 30,
+      paddingVertical: 14,
+      paddingHorizontal: 22,
       alignItems: 'center',
       justifyContent: 'center',
+      width: '100%',
+      alignSelf: 'center',
     },
     proceedButtonOn: {
-      marginTop: 20,
+      marginTop: 12,
       backgroundColor: theme.colors.primary,
       borderRadius: 8,
-      paddingVertical: 12,
-      paddingHorizontal: 30,
+      paddingVertical: 14,
+      paddingHorizontal: 22,
       alignItems: 'center',
       justifyContent: 'center',
       shadowColor: theme.colors.text,
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
-      elevation: 3,
+      shadowOpacity: 0.08,
+      shadowRadius: 2,
+      elevation: 2,
+      width: '100%',
+      alignSelf: 'center',
     },
     proceedButtonOff: {
       opacity: 0.5,
-      marginTop: 20,
+      marginTop: 12,
       backgroundColor: theme.colors.accent,
       borderRadius: 8,
-      paddingVertical: 12,
-      paddingHorizontal: 30,
+      paddingVertical: 14,
+      paddingHorizontal: 22,
       alignItems: 'center',
       justifyContent: 'center',
+      width: '100%',
+      alignSelf: 'center',
     },
     pairButtonText: {
       color: theme.colors.background,
       fontSize: 18,
-      fontWeight: 'bold',
+      fontWeight: '700',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'center',
     },
     modalOverlay: {
       flex: 1,
@@ -1158,175 +1317,309 @@ const MobilesPairing = ({navigation}: any) => {
       backgroundColor: 'rgba(0, 0, 0, 0.8)',
     },
     modalContent: {
-      backgroundColor: '#fff',
-      borderRadius: 16,
-      padding: 20,
-      width: '80%',
+      backgroundColor: theme.colors.white,
+      borderRadius: 12,
+      padding: 18,
+      width: '92%',
       alignItems: 'center',
       shadowColor: '#000',
-      shadowOffset: {width: 0, height: 2},
-      shadowOpacity: 0.25,
-      shadowRadius: 4,
-      elevation: 5, // For Android shadow
+      shadowOffset: {width: 0, height: 1},
+      shadowOpacity: 0.12,
+      shadowRadius: 2,
+      elevation: 3,
     },
-    modalTitle: {
-      fontSize: 20,
-      fontWeight: 'bold',
-      color: '#333',
-      marginBottom: 8,
-    },
-    modalSubtitle: {
-      fontSize: 14,
-      color: '#666',
-      marginBottom: 20,
-    },
-    progressCircle: {
-      marginBottom: 16,
-    },
-    progressText: {
-      fontSize: 16,
-      color: '#333',
-      fontWeight: '500',
-    },
-    modalText: {
-      fontSize: 18,
-      marginBottom: 10,
-      textAlign: 'center',
-      color: theme.colors.text,
-    },
-    informationCard: {
-      backgroundColor: theme.colors.background,
-      borderRadius: 10,
-      padding: 20,
-      marginVertical: 10,
-      elevation: 2,
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
-      width: '100%',
-      alignItems: 'center',
-    },
-    informationText: {
-      fontSize: 16,
-      color: theme.colors.text,
-      textAlign: 'center',
-    },
-    informationLeftText: {
-      fontSize: 16,
-      color: theme.colors.text,
-      textAlign: 'left',
-    },
-    backupButton: {
-      marginTop: 10,
-      marginBottom: 10,
-      backgroundColor: theme.colors.subPrimary,
-      width: 200,
-      borderRadius: 8,
-      paddingVertical: 12,
-      paddingHorizontal: 12,
+    modalHeader: {
+      flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
+      marginBottom: 8,
     },
-    backupButtonText: {
-      color: theme.colors.background,
-      fontSize: 15,
-      fontWeight: 'bold',
+    modalIcon: {
+      width: 18,
+      height: 18,
+      marginRight: 6,
+      tintColor: theme.colors.primary,
+    },
+    modalTitle: {
+      fontSize: 22,
+      fontWeight: '700',
+      color: theme.colors.text,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'center',
+    },
+    modalDescription: {
+      fontSize: 17,
+      color: theme.colors.textSecondary,
+      marginBottom: 12,
+      textAlign: 'center',
+      lineHeight: 22,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+    },
+    passwordContainer: {
+      width: '100%',
+      marginBottom: 10,
+    },
+    passwordLabel: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.colors.text,
+      marginBottom: 2,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'left',
+    },
+    passwordInputContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 5,
+      backgroundColor: theme.colors.cardBackground,
+      minHeight: 36,
+    },
+    passwordInput: {
+      flex: 1,
+      padding: 7,
+      fontSize: 14,
+      color: theme.colors.text,
+      minHeight: 36,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'left',
+    },
+    eyeButton: {
+      padding: 7,
+    },
+    eyeIcon: {
+      width: 15,
+      height: 15,
+      tintColor: theme.colors.textSecondary,
+    },
+    strengthContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 3,
+      marginBottom: 3,
+    },
+    strengthBar: {
+      flex: 1,
+      height: 4,
+      backgroundColor: theme.colors.border,
+      borderRadius: 2,
+      marginRight: 6,
+      overflow: 'hidden',
+    },
+    strengthFill: {
+      height: '100%',
+      borderRadius: 2,
+    },
+    strengthText: {
+      fontSize: 11,
+      fontWeight: '600',
+      minWidth: 36,
+      textAlign: 'right',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+    },
+    requirementsContainer: {
+      marginTop: 2,
+    },
+    requirementText: {
+      fontSize: 11,
+      color: theme.colors.textSecondary,
+      marginBottom: 1,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'left',
+    },
+    errorInput: {
+      borderColor: theme.colors.danger,
+    },
+    errorText: {
+      color: theme.colors.danger,
+      fontSize: 11,
+      marginTop: 2,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'left',
+    },
+    modalActions: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: 12,
+      gap: 6,
+    },
+    modalButton: {
+      flex: 1,
+      paddingVertical: 10,
+      borderRadius: 5,
+      alignItems: 'center',
+    },
+    cancelButton: {
+      backgroundColor: theme.colors.secondary,
+    },
+    confirmButton: {
+      backgroundColor: theme.colors.primary,
+    },
+    buttonText: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: '#ffffff',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'center',
+    },
+    buttonContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    buttonIcon: {
+      width: 15,
+      height: 15,
+      marginRight: 4,
+    },
+    disabledButton: {
+      backgroundColor: theme.colors.disabled,
+    },
+    informationCard: {
+      backgroundColor: theme.colors.white,
+      borderRadius: 8,
+      padding: 16,
+      marginVertical: 6,
+      elevation: 1,
+      shadowOpacity: 0.06,
+      shadowRadius: 2,
+      width: '100%',
+      alignItems: 'stretch',
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    informationText: {
+      fontSize: 17,
+      color: theme.colors.text,
+      textAlign: 'center',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      marginBottom: 10,
     },
     hidden: {
       display: 'none',
     },
-    clickButton: {
-      marginTop: 20,
-      marginBottom: 20,
-      backgroundColor: theme.colors.primary,
-      borderRadius: 8,
-      paddingVertical: 12,
-      paddingHorizontal: 30,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    clickButtonOff: {
-      opacity: 0.5,
-      marginTop: 20,
-      marginBottom: 20,
-      backgroundColor: theme.colors.accent,
-      borderRadius: 8,
-      paddingVertical: 12,
-      paddingHorizontal: 30,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
     clickPrepare: {
-      marginTop: 20,
-      marginBottom: 20,
+      marginTop: 10,
+      marginBottom: 10,
       backgroundColor: theme.colors.primary,
-      borderRadius: 8,
-      paddingVertical: 12,
-      paddingHorizontal: 30,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    clickRestart: {
-      marginTop: 25,
-      backgroundColor: theme.colors.accent,
-      borderRadius: 8,
-      paddingVertical: 12,
-      paddingHorizontal: 30,
+      borderRadius: 6,
+      paddingVertical: 10,
+      paddingHorizontal: 22,
       alignItems: 'center',
       justifyContent: 'center',
     },
     clickPrepareOff: {
       opacity: 0.5,
-      marginTop: 20,
-      marginBottom: 20,
+      marginTop: 10,
+      marginBottom: 10,
       backgroundColor: theme.colors.accent,
-      borderRadius: 8,
-      paddingVertical: 12,
-      paddingHorizontal: 30,
+      borderRadius: 6,
+      paddingVertical: 10,
+      paddingHorizontal: 22,
       alignItems: 'center',
       justifyContent: 'center',
     },
     clickButtonText: {
       color: theme.colors.background,
-      fontWeight: 'bold',
-      fontSize: 15,
-    },
-    input: {
-      borderWidth: 1,
-      borderColor: theme.colors.secondary,
-      borderRadius: 8,
-      padding: 6,
-      width: 200,
-      height: 35,
+      fontWeight: '700',
       fontSize: 16,
-      color: 'black',
-      marginBottom: 5,
-      marginTop: 10,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'center',
+    },
+    modalText: {
+      fontSize: 18,
+      marginBottom: 8,
+      textAlign: 'center',
+      color: theme.colors.text,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+    },
+    backupButton: {
+      marginTop: 8,
+      marginBottom: 8,
+      backgroundColor: theme.colors.subPrimary,
+      width: '100%',
+      borderRadius: 8,
+      paddingVertical: 14,
+      paddingHorizontal: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+      alignSelf: 'center',
+    },
+    backupButtonText: {
+      color: theme.colors.background,
+      fontSize: 18,
+      fontWeight: '700',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'center',
+    },
+    clickButton: {
+      marginTop: 12,
+      marginBottom: 12,
+      backgroundColor: theme.colors.primary,
+      borderRadius: 8,
+      paddingVertical: 14,
+      paddingHorizontal: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '100%',
+      alignSelf: 'center',
+    },
+    clickButtonOff: {
+      opacity: 0.5,
+      marginTop: 12,
+      marginBottom: 12,
+      backgroundColor: theme.colors.accent,
+      borderRadius: 8,
+      paddingVertical: 14,
+      paddingHorizontal: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '100%',
+      alignSelf: 'center',
+    },
+    modalSubtitle: {
+      fontSize: 13,
+      color: '#666',
+      marginBottom: 10,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'center',
+    },
+    progressCircle: {
+      marginBottom: 10,
+    },
+    progressText: {
+      fontSize: 18,
+      color: '#333',
+      fontWeight: '600',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'center',
     },
     transactionDetails: {
-      padding: 15,
+      padding: 8,
       paddingTop: 0,
       width: '100%',
     },
     transactionItem: {
       borderBottomWidth: 1,
-      borderBottomColor: theme.colors.secondary + '15',
+      borderBottomColor: theme.colors.secondary + '10',
     },
     transactionLabel: {
-      fontSize: 15,
+      fontSize: 14,
       fontWeight: '600',
       color: theme.colors.secondary,
-      marginTop: 5,
+      marginTop: 3,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'left',
     },
     addressContainer: {
       backgroundColor: theme.colors.background,
-      padding: 8,
-      borderRadius: 6,
+      padding: 5,
+      borderRadius: 4,
     },
     addressValue: {
-      fontSize: 14,
+      fontSize: 13,
       color: theme.colors.text,
-      textAlign: 'center',
+      textAlign: 'left',
       fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     },
     amountContainer: {
@@ -1334,30 +1627,35 @@ const MobilesPairing = ({navigation}: any) => {
       justifyContent: 'space-between',
       alignItems: 'center',
       backgroundColor: theme.colors.background,
-      padding: 8,
-      borderRadius: 6,
+      padding: 5,
+      borderRadius: 4,
     },
     amountValue: {
-      fontSize: 15,
+      fontSize: 13,
       fontWeight: '600',
       color: theme.colors.text,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'left',
     },
     fiatValue: {
-      fontSize: 13,
+      fontSize: 11,
       color: theme.colors.secondary,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'left',
     },
-    summaryContainer: {
-      marginTop: 20,
-      padding: 20,
-      backgroundColor: theme.colors.background,
-      borderRadius: 10,
-      alignItems: 'center',
-    },
-    summaryTitle: {
-      fontSize: 18,
-      fontWeight: 'bold',
-      color: theme.colors.text,
-      marginBottom: 10,
+    input: {
+      borderWidth: 1,
+      borderColor: theme.colors.secondary,
+      borderRadius: 6,
+      padding: 4,
+      width: 140,
+      height: 28,
+      fontSize: 13,
+      color: 'black',
+      marginBottom: 3,
+      marginTop: 6,
+      textAlign: 'left',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
   });
 
@@ -1372,30 +1670,43 @@ const MobilesPairing = ({navigation}: any) => {
             {/* Checklist Section */}
             {!isPairing && !peerIP && (
               <View style={styles.informationCard}>
-                <Image
-                  style={{width: 128, height: 128}}
-                  source={require('../assets/playstore-icon.png')}
-                />
-                <Text style={styles.securityText}>{title}</Text>
-                <Text style={styles.checklistPairing}>
-                  Please Check Before Proceeding:
+                <View
+                  style={{
+                    backgroundColor: '#fff',
+                    padding: 12,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                  <Image
+                    style={{width: 100, height: 100}}
+                    source={require('../assets/playstore-icon.png')}
+                  />
+                </View>
+                <Text
+                  style={[
+                    styles.securityText,
+                    {fontSize: 18, fontWeight: 'bold'},
+                  ]}>
+                  {title}
                 </Text>
+                <Text style={styles.checklistPairing}>Check to Start:</Text>
                 {[
                   {
                     key: 'twoDevices',
-                    label: 'Your Two Mobiles are Nearby 📱📱',
+                    label: 'Both phones are nearby 📱📱',
                   },
                   {
                     key: 'sameNetwork',
-                    label: "They're on the same WiFi/Hotspot 📶",
+                    label: 'Both using same WiFi / hotspot 📶',
                   },
                 ].map(item => (
                   <TouchableOpacity
                     key={item.key}
                     style={styles.checkboxContainer}
-                    onPress={() =>
-                      toggleCheck(item.key as keyof typeof checks)
-                    }>
+                    onPress={() => {
+                      HapticFeedback.medium();
+                      toggleCheck(item.key as keyof typeof checks);
+                    }}>
                     <View
                       style={[
                         styles.checkbox,
@@ -1407,9 +1718,8 @@ const MobilesPairing = ({navigation}: any) => {
                   </TouchableOpacity>
                 ))}
                 <Text style={styles.pairingHint}>
-                  → For better security, privay and reliability - it's
-                  recommended to keep one device in Hotspot mode and connect the
-                  other to it.
+                  Tip: For best security and reliability, use one phone as a
+                  hotspot and connect the other to it.
                 </Text>
                 {/* Pairing Button */}
                 {!isPairing && !peerIP && (
@@ -1417,9 +1727,24 @@ const MobilesPairing = ({navigation}: any) => {
                     style={
                       allChecked ? styles.pairButtonOn : styles.pairButtonOff
                     }
-                    onPress={initiatePairing}
+                    onPress={() => {
+                      HapticFeedback.medium();
+                      initiatePairing();
+                    }}
                     disabled={!allChecked}>
-                    <Text style={styles.pairButtonText}>Start Pairing</Text>
+                    <View style={styles.buttonContent}>
+                      <Image
+                        source={require('../assets/pair-icon.png')}
+                        style={{
+                          width: 22,
+                          height: 22,
+                          marginRight: 8,
+                          tintColor: '#fff',
+                        }}
+                        resizeMode="contain"
+                      />
+                      <Text style={styles.pairButtonText}>Pair Devices</Text>
+                    </View>
                   </TouchableOpacity>
                 )}
               </View>
@@ -1480,26 +1805,30 @@ const MobilesPairing = ({navigation}: any) => {
                   <View style={{marginTop: 20}}>
                     <Text style={styles.statusText}>{status}</Text>
                     <Text style={styles.countdownText}>
-                      Time remaining: {countdown} seconds
+                      {countdown}s left to connect
                     </Text>
                   </View>
                 )}
                 {peerIP && (
                   <>
                     <TouchableOpacity
-                      style={null}
+                      style={styles.retryButton}
                       onPress={() => {
+                        HapticFeedback.light();
                         navigation.dispatch(
                           StackActions.replace('📱📱 Pairing', route.params),
                         );
                       }}>
-                      <Text
-                        style={[
-                          styles.termsLink,
-                          {marginTop: 16, fontSize: 16},
-                        ]}>
-                        Restart Pairing
-                      </Text>
+                      <Image
+                        source={require('../assets/refresh-icon.png')}
+                        style={{
+                          width: 22,
+                          height: 22,
+                          tintColor: theme.colors.background,
+                        }}
+                        resizeMode="contain"
+                      />
+                      <Text style={styles.retryLink}>Start Over</Text>
                     </TouchableOpacity>
                   </>
                 )}
@@ -1512,34 +1841,105 @@ const MobilesPairing = ({navigation}: any) => {
                 {peerIP &&
                   ((isPreParamsReady && !mpcDone && (
                     <View style={styles.informationCard}>
-                      <Text style={styles.statusText}>
-                        ☑️ Device Preparation Done
-                      </Text>
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}>
+                        <Image
+                          source={require('../assets/success-icon.png')}
+                          style={{
+                            width: 22,
+                            height: 22,
+                            marginRight: 8,
+                            tintColor: theme.colors.primary,
+                          }}
+                          resizeMode="contain"
+                        />
+                        <Text style={styles.statusText}>
+                          Device Preparation Done
+                        </Text>
+                      </View>
                     </View>
                   )) ||
                     (!isPreParamsReady && (
                       <View style={styles.informationCard}>
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            backgroundColor: theme.colors.cardBackground,
+                            borderRadius: 16,
+                            padding: 16,
+                            marginBottom: 18,
+                            borderWidth: 1,
+                            borderColor: theme.colors.border,
+                            shadowColor: theme.colors.text,
+                            shadowOpacity: 0.04,
+                            shadowRadius: 2,
+                            elevation: 1,
+                          }}>
+                          <View
+                            style={{
+                              width: 54,
+                              height: 54,
+                              borderRadius: 27,
+                              backgroundColor: theme.colors.primary,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              marginRight: 16,
+                            }}>
+                            <Image
+                              source={require('../assets/security-icon.png')}
+                              style={{width: 32, height: 32, tintColor: '#fff'}}
+                              resizeMode="contain"
+                            />
+                          </View>
+                          <View style={{flex: 1}}>
+                            <Text
+                              style={{
+                                fontSize: 18,
+                                fontWeight: '700',
+                                color: theme.colors.text,
+                                marginBottom: 2,
+                              }}>
+                              Bold uses Threshold Signatures
+                            </Text>
+                            <Text
+                              style={{
+                                fontSize: 14,
+                                color: theme.colors.textSecondary,
+                                lineHeight: 20,
+                              }}>
+                              Both phones must generate security parameters.{' '}
+                              <Text
+                                style={{
+                                  color: theme.colors.accent,
+                                  textDecorationLine: 'underline',
+                                }}
+                                onPress={() => {
+                                  HapticFeedback.light();
+                                  Linking.openURL(
+                                    'https://www.binance.com/en/square/post/17681517589057',
+                                  );
+                                }}>
+                                Learn more
+                              </Text>
+                            </Text>
+                          </View>
+                        </View>
                         <Text style={styles.informationText}>
-                          Bold Wallet implements{' '}
-                          <Text
-                            style={styles.termsLink}
-                            onPress={() =>
-                              Linking.openURL(
-                                'https://www.binance.com/en/square/post/17681517589057',
-                              )
-                            }>
-                            Multi Party Computation with Threshold Signatures
-                            Scheme
-                          </Text>{' '}
-                          to secure your wallet 🛡. Security Parameters
-                          generation on both devices is needed 📱📱 . This may
-                          take seconds up to a minute given your device
-                          performance.
+                          Bold Wallet may need up to a minute, and that's up to
+                          your device cpu performance.
                         </Text>
                         <TouchableOpacity
                           style={styles.checkboxContainer}
                           disabled={isPreparing}
-                          onPress={() => togglePrepared()}>
+                          onPress={() => {
+                            HapticFeedback.medium();
+                            togglePrepared();
+                          }}>
                           <View
                             style={[
                               styles.checkbox,
@@ -1547,7 +1947,7 @@ const MobilesPairing = ({navigation}: any) => {
                             ]}
                           />
                           <Text style={styles.checkboxLabel}>
-                            Stay in the app during this process ⚠️
+                            Keep app open during setup
                           </Text>
                         </TouchableOpacity>
                         <TouchableOpacity
@@ -1559,10 +1959,23 @@ const MobilesPairing = ({navigation}: any) => {
                               ? styles.clickPrepare
                               : styles.clickPrepareOff
                           }
-                          onPress={preparams}>
-                          <Text style={styles.clickButtonText}>
-                            Prepare Device
-                          </Text>
+                          onPress={() => {
+                            HapticFeedback.medium();
+                            preparams();
+                          }}>
+                          <View style={styles.buttonContent}>
+                            <Image
+                              source={require('../assets/prepare-icon.png')}
+                              style={{
+                                width: 20,
+                                height: 20,
+                                marginRight: 8,
+                                tintColor: '#fff',
+                              }}
+                              resizeMode="contain"
+                            />
+                            <Text style={styles.clickButtonText}>Prepare</Text>
+                          </View>
                         </TouchableOpacity>
                         {/* Show Countdown Timer During Pairing */}
                         {isPreparing && (
@@ -1570,7 +1983,7 @@ const MobilesPairing = ({navigation}: any) => {
                             <View style={styles.modalOverlay}>
                               <View style={styles.modalContent}>
                                 <Text style={styles.modalText}>
-                                  Preparing Please Wait...
+                                  Preparing, please stay in the app...
                                 </Text>
                                 <ActivityIndicator
                                   size="small"
@@ -1590,12 +2003,14 @@ const MobilesPairing = ({navigation}: any) => {
                   <>
                     <View style={styles.informationCard}>
                       <Text style={styles.informationText}>
-                        📱 Final Step 📱{'\n\n'}Make sure both devices are
-                        ready.
+                        📱 Final Step: Both phones must be ready.
                       </Text>
                       <TouchableOpacity
                         style={styles.checkboxContainer}
-                        onPress={() => toggleKeygenReady()}>
+                        onPress={() => {
+                          HapticFeedback.medium();
+                          toggleKeygenReady();
+                        }}>
                         <View
                           style={[
                             styles.checkbox,
@@ -1603,7 +2018,7 @@ const MobilesPairing = ({navigation}: any) => {
                           ]}
                         />
                         <Text style={styles.checkboxLabel}>
-                          Stay in the app during this process ⚠️
+                          Keep this app open during setup ⚠️
                         </Text>
                       </TouchableOpacity>
 
@@ -1621,18 +2036,18 @@ const MobilesPairing = ({navigation}: any) => {
 
                               {/* Subtext */}
                               <Text style={styles.modalSubtitle}>
-                                Please wait a moment...
+                                Please stay in the app...
                               </Text>
 
                               {/* Circular Progress */}
                               <Progress.Circle
                                 size={60}
-                                progress={progress / 100} // Assuming progress is 0-100
+                                progress={progress / 100}
                                 thickness={6}
                                 color={theme.colors.primary}
                                 unfilledColor="#e0e0e0"
                                 borderWidth={0}
-                                showsText={true} // We'll show custom text below
+                                showsText={true}
                                 style={styles.progressCircle}
                               />
 
@@ -1652,10 +2067,29 @@ const MobilesPairing = ({navigation}: any) => {
                             : styles.clickButtonOff
                         }
                         disabled={!isKeygenReady}
-                        onPress={mpcTssSetup}>
-                        <Text style={styles.clickButtonText}>
-                          {isMaster ? 'Start' : 'Join'} Wallet Setup
-                        </Text>
+                        onPress={() => {
+                          HapticFeedback.medium();
+                          mpcTssSetup();
+                        }}>
+                        <View style={styles.buttonContent}>
+                          <Image
+                            source={
+                              isMaster
+                                ? require('../assets/start-icon.png')
+                                : require('../assets/join-icon.png')
+                            }
+                            style={{
+                              width: 20,
+                              height: 20,
+                              marginRight: 8,
+                              tintColor: '#fff',
+                            }}
+                            resizeMode="contain"
+                          />
+                          <Text style={styles.clickButtonText}>
+                            {isMaster ? 'Start' : 'Join'} Setup
+                          </Text>
+                        </View>
                       </TouchableOpacity>
                     </View>
                   </>
@@ -1664,53 +2098,64 @@ const MobilesPairing = ({navigation}: any) => {
                 {mpcDone && (
                   <>
                     <View style={styles.informationCard}>
-                      <Text style={styles.statusText}>
-                        ☑️ Device Keyshare Generated.{'\n\n'}
-                        Backing up your keyshares is essential for wallet
-                        recovery. After generating keyshares on both devices,
-                        store each one in separate, secure locations (e.g.,
-                        iCloud, Google Drive, or email). This ensures no one can
-                        access both keyshares at once. Remember, you'll need
-                        both to recover your wallet.
-                      </Text>
-                      {/* Password Input */}
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Enter Password"
-                        placeholderTextColor="#888"
-                        secureTextEntry
-                        returnKeyType="next"
-                        onSubmitEditing={() =>
-                          confirmPasswordRef.current?.focus()
-                        }
-                        submitBehavior="submit"
-                        value={password}
-                        onChangeText={setPassword}
-                      />
-                      <TextInput
-                        ref={confirmPasswordRef}
-                        style={styles.input}
-                        placeholder="Confirm Password"
-                        placeholderTextColor="#888"
-                        secureTextEntry
-                        returnKeyType="done"
-                        value={confirmPassword}
-                        onChangeText={setConfirmPassword}
-                        onSubmitEditing={backupShare}
-                      />
-                      <TouchableOpacity
-                        disabled={!isPrepared || isPreparing}
-                        style={styles.backupButton}
-                        onPress={backupShare}>
-                        <Text style={styles.backupButtonText}>
-                          Backup {shareName} 📤
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          marginBottom: 8,
+                        }}>
+                        <Image
+                          source={require('../assets/success-icon.png')}
+                          style={{
+                            width: 28,
+                            height: 28,
+                            marginRight: 10,
+                            tintColor: theme.colors.secondary,
+                          }}
+                          resizeMode="contain"
+                        />
+                        <Text
+                          style={[
+                            styles.statusText,
+                            {fontWeight: 'bold', fontSize: 20},
+                          ]}>
+                          Keyshare Created!
                         </Text>
-                      </TouchableOpacity>
-                      <Text style={styles.statusText}>
-                        🗝 Your keyshare backups are encrypted with a password
-                        you create. Never forget it—recovery without it is
-                        impossible.
+                      </View>
+                      <Text
+                        style={[
+                          styles.statusText,
+                          {
+                            fontWeight: '400',
+                            fontSize: 15,
+                            color: theme.colors.textSecondary,
+                          },
+                        ]}>
+                        Back up your keyshare now. Store each phone's keyshare
+                        in a different, secure place (such as separate clouds,
+                        drives, or emails). Do not store both keyshares in the
+                        same location—if someone gains access to both, your
+                        wallet can be compromised. Keeping them separate
+                        prevents a single point of failure.
                       </Text>
+
+                      <TouchableOpacity
+                        style={styles.backupButton}
+                        onPress={() => {
+                          HapticFeedback.medium();
+                          setIsBackupModalVisible(true);
+                        }}>
+                        <View style={styles.buttonContent}>
+                          <Image
+                            source={require('../assets/upload-icon.png')}
+                            style={[styles.buttonIcon, {tintColor: '#ffffff'}]}
+                            resizeMode="contain"
+                          />
+                          <Text style={styles.backupButtonText}>
+                            Backup {shareName}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
                     </View>
                   </>
                 )}
@@ -1719,7 +2164,7 @@ const MobilesPairing = ({navigation}: any) => {
                   <>
                     <View style={styles.informationCard}>
                       <Text style={styles.checklistTitle}>
-                        Please Check Before Proceeding:
+                        Confirm Backups:
                       </Text>
                       {[
                         {
@@ -1734,11 +2179,12 @@ const MobilesPairing = ({navigation}: any) => {
                         <TouchableOpacity
                           key={item.key}
                           style={styles.checkboxContainer}
-                          onPress={() =>
+                          onPress={() => {
+                            HapticFeedback.medium();
                             toggleBackedup(
                               item.key as keyof typeof backupChecks,
-                            )
-                          }>
+                            );
+                          }}>
                           <View
                             style={[
                               styles.checkbox,
@@ -1758,6 +2204,7 @@ const MobilesPairing = ({navigation}: any) => {
                             : styles.proceedButtonOff
                         }
                         onPress={() => {
+                          HapticFeedback.medium();
                           navigation.dispatch(
                             CommonActions.reset({
                               index: 0,
@@ -1766,9 +2213,19 @@ const MobilesPairing = ({navigation}: any) => {
                           );
                         }}
                         disabled={!allBackupChecked}>
-                        <Text style={styles.pairButtonText}>
-                          Proceed To Wallet
-                        </Text>
+                        <View style={styles.buttonContent}>
+                          <Image
+                            source={require('../assets/prepare-icon.png')}
+                            style={{
+                              width: 20,
+                              height: 20,
+                              marginRight: 8,
+                              tintColor: '#fff',
+                            }}
+                            resizeMode="contain"
+                          />
+                          <Text style={styles.pairButtonText}>Continue</Text>
+                        </View>
                       </TouchableOpacity>
                     </View>
                   </>
@@ -1778,13 +2235,11 @@ const MobilesPairing = ({navigation}: any) => {
             {peerIP && isSendBitcoin && (
               <>
                 <View style={styles.informationCard}>
-                  <Text style={styles.title}>📱 Dual Signing 📱</Text>
-                  <Text style={styles.header}>
-                    Make sure both devices are ready.
-                  </Text>
+                  <Text style={styles.title}>📱 Dual Signing</Text>
+                  <Text style={styles.header}>Both phones must be ready.</Text>
                   <View style={styles.transactionDetails}>
                     <View style={styles.transactionItem}>
-                      <Text style={styles.transactionLabel}>To Address</Text>
+                      <Text style={styles.transactionLabel}>Recipient</Text>
                       <View style={styles.addressContainer}>
                         <Text
                           style={styles.addressValue}
@@ -1796,7 +2251,7 @@ const MobilesPairing = ({navigation}: any) => {
                     </View>
 
                     <View style={styles.transactionItem}>
-                      <Text style={styles.transactionLabel}>BTC Amount</Text>
+                      <Text style={styles.transactionLabel}>Amount</Text>
                       <View style={styles.amountContainer}>
                         <Text style={styles.amountValue}>
                           {sat2btcStr(route.params.satoshiAmount)} BTC
@@ -1809,7 +2264,7 @@ const MobilesPairing = ({navigation}: any) => {
                     </View>
 
                     <View style={styles.transactionItem}>
-                      <Text style={styles.transactionLabel}>Network Fees</Text>
+                      <Text style={styles.transactionLabel}>Fee</Text>
                       <View style={styles.amountContainer}>
                         <Text style={styles.amountValue}>
                           {sat2btcStr(route.params.satoshiFees)} BTC
@@ -1823,7 +2278,10 @@ const MobilesPairing = ({navigation}: any) => {
                   </View>
                   <TouchableOpacity
                     style={styles.checkboxContainer}
-                    onPress={() => toggleKeysignReady()}>
+                    onPress={() => {
+                      HapticFeedback.medium();
+                      toggleKeysignReady();
+                    }}>
                     <View
                       style={[
                         styles.checkbox,
@@ -1831,7 +2289,7 @@ const MobilesPairing = ({navigation}: any) => {
                       ]}
                     />
                     <Text style={styles.checkboxLabel}>
-                      Stay in the app during this process ⚠️
+                      Keep this app open during signing ⚠️
                     </Text>
                   </TouchableOpacity>
                   {doingMPC && (
@@ -1848,7 +2306,7 @@ const MobilesPairing = ({navigation}: any) => {
 
                           {/* Subtext */}
                           <Text style={styles.modalSubtitle}>
-                            Please wait a moment...
+                            Please stay in the app...
                           </Text>
 
                           {/* Circular Progress */}
@@ -1878,10 +2336,29 @@ const MobilesPairing = ({navigation}: any) => {
                         : styles.clickButtonOff
                     }
                     disabled={!isKeysignReady}
-                    onPress={runKeysign}>
-                    <Text style={styles.clickButtonText}>
-                      🗝 {isMaster ? 'Start' : 'Join'} Tx Co-Signing
-                    </Text>
+                    onPress={() => {
+                      HapticFeedback.medium();
+                      runKeysign();
+                    }}>
+                    <View style={styles.buttonContent}>
+                      <Image
+                        source={
+                          isMaster
+                            ? require('../assets/start-icon.png')
+                            : require('../assets/join-icon.png')
+                        }
+                        style={{
+                          width: 20,
+                          height: 20,
+                          marginRight: 8,
+                          tintColor: '#fff',
+                        }}
+                        resizeMode="contain"
+                      />
+                      <Text style={styles.clickButtonText}>
+                        🗝 {isMaster ? 'Start' : 'Join'} Co-Signing
+                      </Text>
+                    </View>
                   </TouchableOpacity>
                 </View>
               </>
@@ -1889,6 +2366,192 @@ const MobilesPairing = ({navigation}: any) => {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      {/* Backup Modal */}
+      <Modal
+        visible={isBackupModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={clearBackupModal}>
+        <KeyboardAvoidingView
+          style={{flex: 1}}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => {
+              HapticFeedback.light();
+              Keyboard.dismiss();
+            }}>
+            <TouchableOpacity
+              style={styles.modalContent}
+              activeOpacity={1}
+              onPress={() => {
+                HapticFeedback.light();
+              }}>
+              <View style={styles.modalHeader}>
+                <Image
+                  source={require('../assets/backup-icon.png')}
+                  style={styles.modalIcon}
+                  resizeMode="contain"
+                />
+                <Text style={styles.modalTitle}>Backup Keyshare</Text>
+              </View>
+              <Text style={styles.modalDescription}>
+                Save an encrypted backup of your keyshare. Use a strong
+                password.
+              </Text>
+
+              <View style={styles.passwordContainer}>
+                <Text style={styles.passwordLabel}>Password</Text>
+                <View style={styles.passwordInputContainer}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    placeholder="Enter password"
+                    placeholderTextColor="#888"
+                    secureTextEntry={!passwordVisible}
+                    value={password}
+                    onChangeText={handlePasswordChange}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeButton}
+                    onPress={() => {
+                      HapticFeedback.medium();
+                      setPasswordVisible(!passwordVisible);
+                    }}>
+                    <Image
+                      source={
+                        passwordVisible
+                          ? require('../assets/eye-off-icon.png')
+                          : require('../assets/eye-on-icon.png')
+                      }
+                      style={styles.eyeIcon}
+                      resizeMode="contain"
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Password Strength Indicator */}
+                {password.length > 0 && (
+                  <View style={styles.strengthContainer}>
+                    <View style={styles.strengthBar}>
+                      <View
+                        style={[
+                          styles.strengthFill,
+                          {
+                            width: `${(passwordStrength / 4) * 100}%`,
+                            backgroundColor: getPasswordStrengthColor(),
+                          },
+                        ]}
+                      />
+                    </View>
+                    <Text
+                      style={[
+                        styles.strengthText,
+                        {color: getPasswordStrengthColor()},
+                      ]}>
+                      {getPasswordStrengthText()}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Password Requirements */}
+                {passwordErrors.length > 0 && (
+                  <View style={styles.requirementsContainer}>
+                    {passwordErrors.map((error, index) => (
+                      <Text key={index} style={styles.requirementText}>
+                        • {error}
+                      </Text>
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.passwordContainer}>
+                <Text style={styles.passwordLabel}>Confirm Password</Text>
+                <View style={styles.passwordInputContainer}>
+                  <TextInput
+                    style={[
+                      styles.passwordInput,
+                      confirmPassword.length > 0 &&
+                        password !== confirmPassword &&
+                        styles.errorInput,
+                    ]}
+                    placeholder="Re-enter password"
+                    placeholderTextColor="#888"
+                    secureTextEntry={!confirmPasswordVisible}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeButton}
+                    onPress={() => {
+                      HapticFeedback.medium();
+                      setConfirmPasswordVisible(!confirmPasswordVisible);
+                    }}>
+                    <Image
+                      source={
+                        confirmPasswordVisible
+                          ? require('../assets/eye-off-icon.png')
+                          : require('../assets/eye-on-icon.png')
+                      }
+                      style={styles.eyeIcon}
+                      resizeMode="contain"
+                    />
+                  </TouchableOpacity>
+                </View>
+                {confirmPassword.length > 0 && password !== confirmPassword && (
+                  <Text style={styles.errorText}>Passwords do not match</Text>
+                )}
+              </View>
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.cancelButton]}
+                  onPress={() => {
+                    HapticFeedback.medium();
+                    clearBackupModal();
+                  }}>
+                  <Text style={styles.buttonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.modalButton,
+                    styles.confirmButton,
+                    (!password ||
+                      !confirmPassword ||
+                      password !== confirmPassword ||
+                      passwordStrength < 3) &&
+                      styles.disabledButton,
+                  ]}
+                  onPress={() => {
+                    HapticFeedback.medium();
+                    backupShare();
+                  }}
+                  disabled={
+                    !password ||
+                    !confirmPassword ||
+                    password !== confirmPassword ||
+                    passwordStrength < 3
+                  }>
+                  <View style={styles.buttonContent}>
+                    <Image
+                      source={require('../assets/upload-icon.png')}
+                      style={[styles.buttonIcon, {tintColor: '#ffffff'}]}
+                      resizeMode="contain"
+                    />
+                    <Text style={styles.buttonText}>Backup</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 };

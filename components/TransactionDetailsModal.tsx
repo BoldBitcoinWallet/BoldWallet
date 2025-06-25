@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import {themes} from '../theme';
 import moment from 'moment';
+import {HapticFeedback} from '../utils';
 
 interface TransactionDetailsModalProps {
   visible: boolean;
@@ -102,7 +103,12 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Transaction Details</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+            <TouchableOpacity 
+              onPress={() => {
+                HapticFeedback.light();
+                onClose();
+              }} 
+              style={styles.closeButton}>
               <Text style={styles.closeButtonText}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -154,7 +160,10 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                 <Text style={styles.sectionTitle}>{addressLabel}</Text>
                 <View style={styles.txIdContainer}>
                   <TouchableOpacity
-                    onPress={() => Linking.openURL(addressExplorerLink)}>
+                    onPress={() => {
+                      HapticFeedback.light();
+                      Linking.openURL(addressExplorerLink);
+                    }}>
                     <Text style={[styles.txId, styles.clickableText]}>
                       {relevantAddress}
                     </Text>
@@ -166,7 +175,11 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Transaction ID</Text>
               <View style={styles.txIdContainer}>
-                <TouchableOpacity onPress={() => Linking.openURL(explorerLink)}>
+                <TouchableOpacity 
+                  onPress={() => {
+                    HapticFeedback.light();
+                    Linking.openURL(explorerLink);
+                  }}>
                   <Text style={[styles.txId, styles.clickableText]}>
                     {transaction.txid}
                   </Text>

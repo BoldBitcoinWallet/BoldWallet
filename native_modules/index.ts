@@ -1,3 +1,3 @@
-import { NativeModules } from 'react-native';
+import {NativeModules} from 'react-native';
 
-export const { BBMTLibNativeModule } = NativeModules; 
+export const {BBMTLibNativeModule} = NativeModules;

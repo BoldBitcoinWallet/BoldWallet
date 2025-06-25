@@ -14,7 +14,7 @@ import QRCode from 'react-native-qrcode-svg';
 import Clipboard from '@react-native-clipboard/clipboard';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
-import {dbg} from '../utils';
+import {dbg, HapticFeedback} from '../utils';
 import {useTheme} from '../theme';
 import {capitalize} from 'lodash';
 
@@ -280,7 +280,14 @@ const ReceiveModal: React.FC<{
               <Text style={styles.title}>Receive Bitcoin</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Text style={styles.closeButtonText}>✖️</Text>
+              <Text
+                style={styles.closeButtonText}
+                onPress={() => {
+                  HapticFeedback.medium();
+                  onClose();
+                }}>
+                ✖️
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -292,7 +299,10 @@ const ReceiveModal: React.FC<{
 
           <TouchableOpacity
             style={styles.qrContainer}
-            onPress={copyToClipboard}>
+            onPress={() => {
+              HapticFeedback.medium();
+              copyToClipboard();
+            }}>
             <QRCode
               value={address}
               size={200}
@@ -305,6 +315,7 @@ const ReceiveModal: React.FC<{
             <TouchableOpacity
               style={styles.addressTouchable}
               onPress={() => {
+                HapticFeedback.medium();
                 dbg('baseAPI', baseApi);
                 const url = `${baseApi.replace('api', '')}address/${address}`;
                 dbg('address URL', url);
@@ -329,7 +340,10 @@ const ReceiveModal: React.FC<{
             <View style={styles.buttonContainer}>
               <TouchableOpacity
                 style={styles.actionButton}
-                onPress={copyToClipboard}>
+                onPress={() => {
+                  HapticFeedback.medium();
+                  copyToClipboard();
+                }}>
                 <Image
                   source={require('../assets/paste-icon.png')}
                   style={styles.buttonIcon}
@@ -343,7 +357,10 @@ const ReceiveModal: React.FC<{
                   styles.actionButton,
                   {backgroundColor: theme.colors.secondary},
                 ]}
-                onPress={shareQRCode}>
+                onPress={() => {
+                  HapticFeedback.medium();
+                  shareQRCode();
+                }}>
                 <Image
                   source={require('../assets/share-icon.png')}
                   style={styles.buttonIcon}

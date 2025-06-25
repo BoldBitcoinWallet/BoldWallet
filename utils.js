@@ -1,4 +1,6 @@
 import {Platform} from 'react-native';
+import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
+import LocalCache from './services/LocalCache';
 
 let ip = '';
 
@@ -74,4 +76,117 @@ export const getCurrencySymbol = currency => {
     NZD: 'NZ$',
   };
   return symbols[currency] || currency;
+};
+
+let hapticsEnabled = true;
+
+export const initializeHaptics = async () => {
+  try {
+    const storedSetting = await LocalCache.getItem('hapticsEnabled');
+    if (storedSetting !== null) {
+      hapticsEnabled = storedSetting === 'true';
+    }
+  } catch (error) {
+    dbg('Failed to initialize haptics setting', error);
+  }
+};
+
+export const setHapticsEnabled = async enabled => {
+  hapticsEnabled = enabled;
+  await LocalCache.setItem('hapticsEnabled', String(enabled));
+};
+
+export const areHapticsEnabled = () => hapticsEnabled;
+
+// Haptic Feedback Configuration
+const hapticOptions = {
+  enableVibrateFallback: true,
+  ignoreAndroidSystemSettings: false,
+};
+
+// Global Haptic Feedback Service
+export const HapticFeedback = {
+  // Light feedback for subtle interactions
+  light: () => {
+    if (!hapticsEnabled) {
+      return;
+    }
+    if (Platform.OS === 'ios') {
+      ReactNativeHapticFeedback.trigger('impactLight', hapticOptions);
+    } else {
+      ReactNativeHapticFeedback.trigger('soft', hapticOptions);
+    }
+  },
+
+  // Medium feedback for standard interactions
+  medium: () => {
+    if (!hapticsEnabled) {
+      return;
+    }
+    if (Platform.OS === 'ios') {
+      ReactNativeHapticFeedback.trigger('impactMedium', hapticOptions);
+    } else {
+      ReactNativeHapticFeedback.trigger('rigid', hapticOptions);
+    }
+  },
+
+  // Heavy feedback for important actions
+  heavy: () => {
+    if (!hapticsEnabled) {
+      return;
+    }
+    if (Platform.OS === 'ios') {
+      ReactNativeHapticFeedback.trigger('impactHeavy', hapticOptions);
+    } else {
+      ReactNativeHapticFeedback.trigger('heavy', hapticOptions);
+    }
+  },
+
+  // Success feedback
+  success: () => {
+    if (!hapticsEnabled) {
+      return;
+    }
+    if (Platform.OS === 'ios') {
+      ReactNativeHapticFeedback.trigger('notificationSuccess', hapticOptions);
+    } else {
+      ReactNativeHapticFeedback.trigger('soft', hapticOptions);
+    }
+  },
+
+  // Warning feedback
+  warning: () => {
+    if (!hapticsEnabled) {
+      return;
+    }
+    if (Platform.OS === 'ios') {
+      ReactNativeHapticFeedback.trigger('notificationWarning', hapticOptions);
+    } else {
+      ReactNativeHapticFeedback.trigger('rigid', hapticOptions);
+    }
+  },
+
+  // Error feedback
+  error: () => {
+    if (!hapticsEnabled) {
+      return;
+    }
+    if (Platform.OS === 'ios') {
+      ReactNativeHapticFeedback.trigger('notificationError', hapticOptions);
+    } else {
+      ReactNativeHapticFeedback.trigger('heavy', hapticOptions);
+    }
+  },
+
+  // Selection feedback
+  selection: () => {
+    if (!hapticsEnabled) {
+      return;
+    }
+    if (Platform.OS === 'ios') {
+      ReactNativeHapticFeedback.trigger('selection', hapticOptions);
+    } else {
+      ReactNativeHapticFeedback.trigger('soft', hapticOptions);
+    }
+  },
 };

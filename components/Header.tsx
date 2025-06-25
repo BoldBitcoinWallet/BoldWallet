@@ -4,6 +4,7 @@ import {Image} from 'react-native';
 import {View} from 'react-native';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
+import {HapticFeedback} from '../utils';
 
 export const HeaderRightButton: React.FC<{navigation: any}> = ({
   navigation,
@@ -14,7 +15,10 @@ export const HeaderRightButton: React.FC<{navigation: any}> = ({
   return (
     <TouchableOpacity
       style={[styles.settingsButton]}
-      onPress={() => navigation.navigate('Settings')}>
+      onPress={() => {
+        HapticFeedback.light();
+        navigation.navigate('Settings');
+      }}>
       <Image
         source={require('../assets/settings-icon.png')}
         style={styles.settingsLogo}

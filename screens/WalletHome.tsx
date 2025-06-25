@@ -1,4 +1,4 @@
-import React, {useEffect, useState, useCallback} from 'react';
+import React, {useEffect, useState, useCallback, useRef} from 'react';
 import {
   View,
   Text,
@@ -24,6 +24,7 @@ import {
   shorten,
   presentFiat,
   getCurrencySymbol,
+  HapticFeedback,
 } from '../utils';
 import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
@@ -31,7 +32,7 @@ import WalletSkeleton from '../components/WalletSkeleton';
 import {useWallet} from '../context/WalletContext';
 import CurrencySelector from '../components/CurrencySelector';
 import {createStyles} from '../components/Styles';
-import {CacheIndicator, CacheTimestamp} from '../components/CacheIndicator';
+import {CacheIndicator, CacheTimestamp, CacheIndicatorHandle} from '../components/CacheIndicator';
 import {HeaderRightButton, HeaderTitle} from '../components/Header';
 import LocalCache from '../services/LocalCache';
 
@@ -73,6 +74,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState('');
   const [priceData, setPriceData] = useState<{[key: string]: number}>({});
+  const cacheIndicatorRef = useRef<CacheIndicatorHandle>(null);
 
   const {theme} = useTheme();
   const styles = createStyles(theme);
@@ -164,6 +166,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
   const fetchData = useCallback(async () => {
     try {
+      dbg('fetchData...');
+
       if (!isInitialized) {
         dbg('WalletHome: Skipping fetch - not initialized');
         return;
@@ -173,8 +177,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('WalletHome: Skipping fetch - already refreshing');
         return;
       }
-
-      setIsRefreshing(true);
 
       const addr = await LocalCache.getItem('currentAddress');
       const baseApi = await LocalCache.getItem('api');
@@ -206,6 +208,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       });
 
       let freshData;
+      setIsRefreshing(true);
+
       try {
         dbg('fetching bitcoin price and wallet balance...');
         freshData = await Promise.race([
@@ -571,6 +575,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
   };
 
+  // This function will be used for RefreshControl's onRefresh
+  const handleRefresh = () => {
+    cacheIndicatorRef.current?.press();
+  };
+
   if (loading && !isInitialized) {
     return <WalletSkeleton />;
   }
@@ -586,7 +595,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             />
             <TouchableOpacity
               style={styles.priceContainer}
-              onPress={() => setIsCurrencySelectorVisible(true)}>
+              onPress={() => {
+                HapticFeedback.light();
+                setIsCurrencySelectorVisible(true);
+              }}>
               <Text style={styles.btcPrice}>
                 {btcPrice ? presentFiat(btcPrice) : '-'}
               </Text>
@@ -596,7 +608,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           <View style={styles.balanceContainer}>
             <TouchableOpacity
               style={[styles.balanceRowWithMargin]}
-              onPress={handleBlurred}
+              onPress={() => {
+                HapticFeedback.light();
+                handleBlurred();
+              }}
               activeOpacity={0.7}>
               <Text
                 style={[styles.balanceBTC, isBlurred && styles.blurredText]}>
@@ -617,7 +632,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             {btcRate > 0 && (
               <TouchableOpacity
                 style={[styles.balanceRowWithMargin]}
-                onPress={handleBlurred}
+                onPress={() => {
+                  HapticFeedback.light();
+                  handleBlurred();
+                }}
                 activeOpacity={0.7}>
                 <Text
                   style={[styles.balanceFiat, isBlurred && styles.blurredText]}>
@@ -682,7 +700,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           <View style={styles.actions}>
             <TouchableOpacity
               style={[styles.actionButton, styles.sendButton]}
-              onPress={() => setIsSendModalVisible(true)}>
+              onPress={() => {
+                HapticFeedback.medium();
+                setIsSendModalVisible(true);
+              }}>
               <Image
                 source={require('../assets/send-icon.png')}
                 style={styles.actionButtonIcon}
@@ -692,7 +713,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.actionButton, styles.addressTypeModalButton]}
-              onPress={() => setIsAddressTypeModalVisible(true)}>
+              onPress={() => {
+                HapticFeedback.light();
+                setIsAddressTypeModalVisible(true);
+              }}>
               <Image
                 source={getAddressTypeIcon()}
                 style={styles.addressTypeButtonIcon}
@@ -701,7 +725,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.actionButton, styles.receiveButton]}
-              onPress={() => setIsReceiveModalVisible(true)}>
+              onPress={() => {
+                HapticFeedback.medium();
+                setIsReceiveModalVisible(true);
+              }}>
               <Image
                 source={require('../assets/receive-icon.png')}
                 style={styles.actionButtonIcon}
@@ -713,6 +740,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         </View>
       </View>
       <CacheIndicator
+        ref={cacheIndicatorRef}
         timestamps={cacheTimestamps}
         onRefresh={() => fetchData()}
         theme={theme}
@@ -726,6 +754,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           selectedCurrency={selectedCurrency}
           btcRate={btcRate}
           getCurrencySymbol={getCurrencySymbol}
+          onPullRefresh={() => cacheIndicatorRef.current?.press()}
         />
       </View>
       <Modal
@@ -735,7 +764,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         onRequestClose={() => setIsAddressTypeModalVisible(false)}>
         <TouchableOpacity
           style={styles.modalOverlay}
-          onPress={() => setIsAddressTypeModalVisible(false)}
+          onPress={() => {
+            HapticFeedback.light();
+            setIsAddressTypeModalVisible(false);
+          }}
           activeOpacity={1}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Select Address Type</Text>
@@ -744,7 +776,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 styles.addressTypeButton,
                 addressType === 'legacy' && styles.addressTypeButtonSelected,
               ]}
-              onPress={() => handleAddressTypeChange('legacy')}>
+              onPress={() => {
+                HapticFeedback.selection();
+                handleAddressTypeChange('legacy');
+              }}>
               <Image
                 source={require('../assets/bricks-icon.png')}
                 style={styles.modalAddressTypeIcon}
@@ -763,7 +798,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 addressType === 'segwit-native' &&
                   styles.addressTypeButtonSelected,
               ]}
-              onPress={() => handleAddressTypeChange('segwit-native')}>
+              onPress={() => {
+                HapticFeedback.selection();
+                handleAddressTypeChange('segwit-native');
+              }}>
               <Image
                 source={require('../assets/dna-icon.png')}
                 style={styles.modalAddressTypeIcon}
@@ -784,7 +822,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 addressType === 'segwit-compatible' &&
                   styles.addressTypeButtonSelected,
               ]}
-              onPress={() => handleAddressTypeChange('segwit-compatible')}>
+              onPress={() => {
+                HapticFeedback.selection();
+                handleAddressTypeChange('segwit-compatible');
+              }}>
               <Image
                 source={require('../assets/recycle-icon.png')}
                 style={styles.modalAddressTypeIcon}
