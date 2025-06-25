@@ -11,6 +11,7 @@ import ReactNativeBiometrics, {BiometryTypes} from 'react-native-biometrics';
 import DeviceInfo from 'react-native-device-info';
 import {ThemeProvider} from './theme';
 import {WalletProvider} from './context/WalletContext';
+import {initializeHaptics} from './utils';
 
 import {
   Alert,
@@ -30,6 +31,25 @@ const zeroconf = new Zeroconf();
 const zeroOut = new Zeroconf();
 
 const App = () => {
+  const [initialRoute, setInitialRoute] = useState<string | null>(null);
+
+  useEffect(() => {
+    initializeHaptics();
+    const checkWallet = async () => {
+      try {
+        const keyshare = await EncryptedStorage.getItem('keyshare');
+        dbg('initializeApp keyshare found', !!keyshare);
+        const route = keyshare ? 'Bold Home' : 'Welcome';
+        dbg('Setting initial route to:', route);
+        setInitialRoute(route);
+      } catch (error) {
+        dbg('Error in initializeApp:', error);
+        setInitialRoute('Welcome');
+      }
+    };
+    checkWallet();
+  }, []);
+
   useEffect(() => {
     try {
       const deviceID = DeviceInfo.getUniqueIdSync();
@@ -133,7 +153,6 @@ const App = () => {
     };
   }, []);
 
-  const [initialRoute, setInitialRoute] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const authenticateUser = async () => {
@@ -201,23 +220,6 @@ const App = () => {
       Alert.alert('Error', 'Authentication failed. Please try again.');
     }
   };
-
-  const initializeApp = async () => {
-    try {
-      const ks = await EncryptedStorage.getItem('keyshare');
-      dbg('initializeApp keyshare found', !!ks);
-      const route = ks ? 'Bold Home' : 'Welcome';
-      dbg('Setting initial route to:', route);
-      setInitialRoute(route);
-    } catch (error) {
-      dbg('Error in initializeApp:', error);
-      setInitialRoute('Welcome');
-    }
-  };
-
-  useEffect(() => {
-    initializeApp();
-  }, []);
 
   const handleRetryAuthentication = async () => {
     setIsAuthenticated(false);

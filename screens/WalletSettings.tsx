@@ -23,7 +23,12 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 const {BBMTLibNativeModule} = NativeModules;
 import DeviceInfo from 'react-native-device-info';
 
-import {dbg, HapticFeedback} from '../utils';
+import {
+  dbg,
+  HapticFeedback,
+  setHapticsEnabled,
+  areHapticsEnabled,
+} from '../utils';
 import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
@@ -160,6 +165,8 @@ const getSectionIcon = (title: string): any => {
       return require('../assets/about-icon.png');
     case 'legal':
       return require('../assets/legal-icon.png');
+    case 'haptics':
+      return require('../assets/phone-icon.png');
     default:
       return require('../assets/advanced-icon.png');
   }
@@ -182,6 +189,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   );
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
+  const [hapticsEnabled, setHapticsEnabledState] = useState(true);
 
   // Password validation states
   const [passwordStrength, setPasswordStrength] = useState(0);
@@ -192,6 +200,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     [key: string]: boolean;
   }>({
     theme: false,
+    haptics: false,
     network: false,
     backup: false,
     advanced: false,
@@ -290,6 +299,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
   useEffect(() => {
     setAppVersion(DeviceInfo.getVersion());
+    setHapticsEnabledState(areHapticsEnabled());
   }, []);
 
   useEffect(() => {
@@ -467,6 +477,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       setPasswordStrength(0);
       setPasswordErrors([]);
     }
+  };
+
+  const handleToggleHaptics = (value: boolean) => {
+    HapticFeedback.light();
+    setHapticsEnabledState(value);
+    setHapticsEnabled(value);
   };
 
   const styles = StyleSheet.create({
@@ -795,6 +811,32 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               value={isCryptoVibrant}
             />
             <Text style={styles.toggleLabel}>Crypto Vibrant</Text>
+          </View>
+        </CollapsibleSection>
+
+        {/* Haptics Section */}
+        <CollapsibleSection
+          title="Haptics"
+          isExpanded={expandedSections.haptics}
+          onToggle={() => toggleSection('haptics')}
+          styles={styles}
+          theme={theme}>
+          <Text style={styles.toggleDescription}>
+            Enable or disable vibration feedback
+          </Text>
+          <View style={styles.toggleContainer}>
+            <Text style={styles.toggleLabel}>Haptics Off</Text>
+            <Switch
+              trackColor={{
+                true: theme.colors.primary,
+                false: theme.colors.secondary,
+              }}
+              thumbColor={theme.colors.accent}
+              ios_backgroundColor={theme.colors.disabled}
+              onValueChange={handleToggleHaptics}
+              value={hapticsEnabled}
+            />
+            <Text style={styles.toggleLabel}>Haptics On</Text>
           </View>
         </CollapsibleSection>
 
