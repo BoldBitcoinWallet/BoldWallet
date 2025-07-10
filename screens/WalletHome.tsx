@@ -990,11 +990,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           }}
           activeOpacity={1}>
           <View style={styles.modalContent}>
-            <TouchableOpacity
-              style={{position: 'absolute', top: 12, right: 12, zIndex: 10}}
-              onPress={() => setIsPartyModalVisible(false)}>
-              <Text style={styles.modalCloseButtonText}>✕</Text>
-            </TouchableOpacity>
             <View style={styles.modalHeaderRow}>
               <Image source={require('../assets/key-icon.png')} style={styles.modalHeaderIcon} />
               <Text style={styles.modalHeaderTitle}>Your Device Keyshare</Text>
