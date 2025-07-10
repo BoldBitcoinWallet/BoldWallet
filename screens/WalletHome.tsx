@@ -234,21 +234,18 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
         if (Array.isArray(freshData) && freshData.length === 2) {
           const [freshPrice, freshBalance] = freshData;
-          const rates = freshPrice.rates || {};
-          setPriceData(rates);
-          setBtcPrice(
-            rates[currency] !== undefined && rates[currency] !== null
-              ? rates[currency].toString()
-              : '-',
-          );
-          setBtcRate(rates[currency] || 0);
-          setBalanceBTC(
-            freshBalance.btc !== null && freshBalance.btc !== undefined
-              ? freshBalance.btc
-              : '0.00000000',
-          );
-          const fiatBalance = Number(freshBalance.btc) * (rates[currency] || 0);
-          setBalanceFiat(fiatBalance.toFixed(2));
+          const rates = freshPrice.rates;
+          if (rates && rates[currency]) {
+            setPriceData(rates);
+            setBtcPrice(rates[currency].toString());
+            setBtcRate(rates[currency] || 0);
+            setBalanceBTC(freshBalance.btc || '0.00000000');
+            const fiatBalance = Number(freshBalance.btc * rates[currency]);
+            setBalanceFiat(fiatBalance.toFixed(2));
+          } else {
+            setBtcPrice('-');
+            setBalanceFiat('-');
+          }
         }
 
         // Update cache timestamps with fresh data
@@ -279,21 +276,18 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         const cachedBalance = cachedResults[1];
         if (cachedPrice && cachedBalance) {
           const rates = cachedPrice.rates || {};
-          setPriceData(rates);
-          setBtcPrice(
-            rates[currency] !== undefined && rates[currency] !== null
-              ? rates[currency].toString()
-              : '-',
-          );
-          setBtcRate(rates[currency] || 0);
-          setBalanceBTC(
-            cachedBalance.btc !== null && cachedBalance.btc !== undefined
-              ? cachedBalance.btc
-              : '0.00000000',
-          );
-          const fiatBalance =
-            Number(cachedBalance.btc) * (rates[currency] || 0);
-          setBalanceFiat(fiatBalance.toFixed(2));
+          if (rates && rates[currency]) {
+            setPriceData(rates);
+            setBtcPrice(rates[currency].toString());
+            setBtcRate(rates[currency] || 0);
+            setBalanceBTC(cachedBalance.btc || '0.00000000');
+            const fiatBalance =
+              Number(cachedBalance.btc) * Number(rates[currency]);
+            setBalanceFiat(fiatBalance.toFixed(2));
+          } else {
+            setBtcPrice('-');
+            setBalanceFiat('-');
+          }
         }
 
         // Keep original cache timestamps when using cached data
@@ -315,18 +309,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       }
       setError(errMsg);
       showErrorToast('Failed to fetch data');
-      // Reset to empty state if no cache available
-      if (
-        !btcPrice ||
-        typeof btcPrice !== 'string' ||
-        !balanceBTC ||
-        typeof balanceBTC !== 'string'
-      ) {
-        setBtcPrice('');
-        setBtcRate(0);
-        setBalanceBTC('0.00000000');
-        setBalanceFiat('');
-      }
     } finally {
       setLoading(false);
       setIsRefreshing(false);
@@ -1018,10 +1000,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             <View style={styles.modalParagraph}>
               <Text style={styles.modalTextLeft}>
                 This device holds a unique part of your Bitcoin wallet key (a
-                "keyshare").
-                Keeping a secure backup of your keyshare is essential for wallet
-                recovery and security. Without it, you lose access to your
-                funds.
+                "keyshare"). Keeping a secure backup of your keyshare is
+                essential for wallet recovery and security. Without it, you lose
+                access to your funds.
               </Text>
               <Text style={styles.modalTextLeft}>
                 Go to:{' '}
