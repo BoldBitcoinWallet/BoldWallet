@@ -46,6 +46,7 @@ const {BBMTLibNativeModule} = NativeModules;
 const MobilesPairing = ({navigation}: any) => {
   const timeout = 20;
   const discoveryPort = 55055;
+  const ppmFile = `${RNFS.DocumentDirectoryPath}/ppm.json`;
 
   const [status, setStatus] = useState('');
   const [localIP, setLocalIP] = useState<string | null>(null);
@@ -152,8 +153,14 @@ const MobilesPairing = ({navigation}: any) => {
       .join('');
   };
 
-  const normalizeAlphaNumUnderscore = (input: string): string => {
-    return input.replace(/[^a-zA-Z0-9]/g, '_');
+  const deletePreparams = async () => {
+    try {
+      dbg(`deleting ppmFile: ${ppmFile}`);
+      await RNFS.unlink(ppmFile);
+      dbg('ppmFile deleted');
+    } catch (err: any) {
+      dbg('error deleting ppmFile', err);
+    }
   };
 
   // Password validation functions
@@ -254,10 +261,8 @@ const MobilesPairing = ({navigation}: any) => {
     setIsPreParamsReady(false);
     setPrepCounter(0);
     const timeoutMinutes = 2;
-    const path = `${RNFS.DocumentDirectoryPath}/${normalizeAlphaNumUnderscore(
-      localDevice!!,
-    )}.json`;
-    BBMTLibNativeModule.preparams(path, String(timeoutMinutes))
+    await deletePreparams();
+    BBMTLibNativeModule.preparams(ppmFile, String(timeoutMinutes))
       .then(() => {
         setIsPreParamsReady(true);
       })
@@ -389,14 +394,13 @@ const MobilesPairing = ({navigation}: any) => {
       const encKey = peerPubkey;
       const decKey = kp.privateKey;
       const sessionKey = '';
-      const ppm = `${RNFS.DocumentDirectoryPath}/ppm.json`;
 
       setShareName(partyID);
       setProgress(0);
       BBMTLibNativeModule.mpcTssSetup(
         server,
         partyID,
-        ppm,
+        ppmFile,
         partiesCSV,
         sessionID,
         sessionKey,
@@ -405,16 +409,11 @@ const MobilesPairing = ({navigation}: any) => {
         data,
       )
         .then(async (result: any) => {
-          dbg('keygen result', result.substring(0, 40));
+          dbg('keygen result', result.substring(0, 40).concat('...'));
           setKeyshare(result);
           await EncryptedStorage.setItem('keyshare', result);
           setMpcDone(true);
-          // delete ppm-file
-          const ppmFile = `${RNFS.DocumentDirectoryPath}/${normalizeAlphaNumUnderscore(localDevice!!)}.json`;
-          RNFS
-            .unlink(ppmFile)
-            .then(()=> dbg('ppmFile deleted', ppmFile))
-            .catch((err: any)=> dbg('error deleting ppmFile', err));
+          deletePreparams();
         })
         .catch((e: any) => {
           console.error('keygen error', e);

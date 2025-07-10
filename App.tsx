@@ -18,6 +18,7 @@ import {
   EmitterSubscription,
   NativeEventEmitter,
   Platform,
+  DeviceEventEmitter,
 } from 'react-native';
 import WalletSettings from './screens/WalletSettings';
 import {NativeModules} from 'react-native';
@@ -32,6 +33,14 @@ const zeroOut = new Zeroconf();
 
 const App = () => {
   const [initialRoute, setInitialRoute] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('app:reload', () => {
+      setIsAuthenticated(false);
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     initializeHaptics();
@@ -153,8 +162,6 @@ const App = () => {
     };
   }, []);
 
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-
   const authenticateUser = async () => {
     try {
       const {available, biometryType} = await rnBiometrics.isSensorAvailable();
@@ -176,6 +183,7 @@ const App = () => {
         });
 
         if (success) {
+          dbg('user authenticated');
           setIsAuthenticated(true);
         } else {
           Alert.alert(

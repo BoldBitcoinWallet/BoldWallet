@@ -37,9 +37,10 @@ var _fee_set = "30m"
 func SetNetwork(network string) (string, error) {
 	if network == "mainnet" || network == "testnet3" {
 		_btc_net = network
-		if network == "mainnet" {
+		switch network {
+		case "mainnet":
 			_api_url = "https://mempool.space/api"
-		} else if network == "testnet3" {
+		case "testnet3":
 			_api_url = "https://mempool.space/testnet/api"
 		}
 		return _api_url, nil
@@ -1147,11 +1148,12 @@ func PubToP2KH(pubKeyCompressed, mainnetORtestnet3 string) (string, error) {
 	// Convert the public key to a P2PKH address
 	pubKeyHash := btcutil.Hash160(pubKeyBytes)
 	var address *btcutil.AddressPubKeyHash
-	if mainnetORtestnet3 == "mainnet" {
+	switch mainnetORtestnet3 {
+	case "mainnet":
 		address, err = btcutil.NewAddressPubKeyHash(pubKeyHash, &chaincfg.MainNetParams)
-	} else if mainnetORtestnet3 == "testnet3" {
+	case "testnet3":
 		address, err = btcutil.NewAddressPubKeyHash(pubKeyHash, &chaincfg.TestNet3Params)
-	} else {
+	default:
 		return "", fmt.Errorf("invalid network, options: mainnet, testnet3")
 	}
 	if err != nil {
