@@ -3,6 +3,7 @@ package tss
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/asn1"
 	"encoding/hex"
@@ -205,4 +206,13 @@ func Sha256(msg string) (string, error) {
 	hash.Write([]byte(msg))
 	hashBytes := hash.Sum(nil)
 	return hex.EncodeToString(hashBytes), nil
+}
+
+func SecureRandom(length int) (string, error) {
+	bytes := make([]byte, (length+1)/2)
+	_, err := rand.Read(bytes)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", bytes)[:length], nil
 }

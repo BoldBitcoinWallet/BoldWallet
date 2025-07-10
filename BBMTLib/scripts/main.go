@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"os"
 	"time"
 
@@ -12,13 +11,8 @@ import (
 )
 
 func randomSeed(length int) string {
-	const characters = "0123456789abcdef"
-	result := make([]byte, length)
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	for i := 0; i < length; i++ {
-		result[i] = characters[r.Intn(len(characters))]
-	}
-	return string(result)
+	out, _ := tss.SecureRandom(length)
+	return out
 }
 
 func main() {
@@ -82,7 +76,7 @@ func main() {
 				fmt.Printf("Failed to generate btc pubkey for %s: %v\n", party, err)
 			} else {
 				fmt.Printf(party+" BTC Public Key: %s\n", btcPub)
-				btcP2Pkh, err := tss.ConvertPubKeyToBTCAddress(btcPub, "testnet3")
+				btcP2Pkh, err := tss.PubToP2KH(btcPub, "testnet3")
 				if err != nil {
 					fmt.Printf("Failed to generate btc address for %s: %v\n", party, err)
 				} else {

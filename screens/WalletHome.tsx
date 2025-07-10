@@ -10,6 +10,7 @@ import {
   Platform,
   PermissionsAndroid,
   Modal,
+  DeviceEventEmitter,
 } from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import SendBitcoinModal from './SendBitcoinModal';
@@ -32,7 +33,11 @@ import WalletSkeleton from '../components/WalletSkeleton';
 import {useWallet} from '../context/WalletContext';
 import CurrencySelector from '../components/CurrencySelector';
 import {createStyles} from '../components/Styles';
-import {CacheIndicator, CacheTimestamp, CacheIndicatorHandle} from '../components/CacheIndicator';
+import {
+  CacheIndicator,
+  CacheTimestamp,
+  CacheIndicatorHandle,
+} from '../components/CacheIndicator';
 import {HeaderRightButton, HeaderTitle} from '../components/Header';
 import LocalCache from '../services/LocalCache';
 
@@ -75,6 +80,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [selectedCurrency, setSelectedCurrency] = useState('');
   const [priceData, setPriceData] = useState<{[key: string]: number}>({});
   const cacheIndicatorRef = useRef<CacheIndicatorHandle>(null);
+  const [isNetworkModalVisible, setIsNetworkModalVisible] = useState(false);
+  const [isPartyModalVisible, setIsPartyModalVisible] = useState(false);
 
   const {theme} = useTheme();
   const styles = createStyles(theme);
@@ -227,21 +234,18 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
         if (Array.isArray(freshData) && freshData.length === 2) {
           const [freshPrice, freshBalance] = freshData;
-          const rates = freshPrice.rates || {};
-          setPriceData(rates);
-          setBtcPrice(
-            rates[currency] !== undefined && rates[currency] !== null
-              ? rates[currency].toString()
-              : '-',
-          );
-          setBtcRate(rates[currency] || 0);
-          setBalanceBTC(
-            freshBalance.btc !== null && freshBalance.btc !== undefined
-              ? freshBalance.btc
-              : '0.00000000',
-          );
-          const fiatBalance = Number(freshBalance.btc) * (rates[currency] || 0);
-          setBalanceFiat(fiatBalance.toFixed(2));
+          const rates = freshPrice.rates;
+          if (rates && rates[currency]) {
+            setPriceData(rates);
+            setBtcPrice(rates[currency].toString());
+            setBtcRate(rates[currency] || 0);
+            setBalanceBTC(freshBalance.btc || '0.00000000');
+            const fiatBalance = Number(freshBalance.btc * rates[currency]);
+            setBalanceFiat(fiatBalance.toFixed(2));
+          } else {
+            setBtcPrice('-');
+            setBalanceFiat('-');
+          }
         }
 
         // Update cache timestamps with fresh data
@@ -272,21 +276,18 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         const cachedBalance = cachedResults[1];
         if (cachedPrice && cachedBalance) {
           const rates = cachedPrice.rates || {};
-          setPriceData(rates);
-          setBtcPrice(
-            rates[currency] !== undefined && rates[currency] !== null
-              ? rates[currency].toString()
-              : '-',
-          );
-          setBtcRate(rates[currency] || 0);
-          setBalanceBTC(
-            cachedBalance.btc !== null && cachedBalance.btc !== undefined
-              ? cachedBalance.btc
-              : '0.00000000',
-          );
-          const fiatBalance =
-            Number(cachedBalance.btc) * (rates[currency] || 0);
-          setBalanceFiat(fiatBalance.toFixed(2));
+          if (rates && rates[currency]) {
+            setPriceData(rates);
+            setBtcPrice(rates[currency].toString());
+            setBtcRate(rates[currency] || 0);
+            setBalanceBTC(cachedBalance.btc || '0.00000000');
+            const fiatBalance =
+              Number(cachedBalance.btc) * Number(rates[currency]);
+            setBalanceFiat(fiatBalance.toFixed(2));
+          } else {
+            setBtcPrice('-');
+            setBalanceFiat('-');
+          }
         }
 
         // Keep original cache timestamps when using cached data
@@ -308,18 +309,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       }
       setError(errMsg);
       showErrorToast('Failed to fetch data');
-      // Reset to empty state if no cache available
-      if (
-        !btcPrice ||
-        typeof btcPrice !== 'string' ||
-        !balanceBTC ||
-        typeof balanceBTC !== 'string'
-      ) {
-        setBtcPrice('');
-        setBtcRate(0);
-        setBalanceBTC('0.00000000');
-        setBalanceFiat('');
-      }
     } finally {
       setLoading(false);
       setIsRefreshing(false);
@@ -575,9 +564,25 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
   };
 
-  // This function will be used for RefreshControl's onRefresh
-  const handleRefresh = () => {
-    cacheIndicatorRef.current?.press();
+  // Helper to switch network (same as WalletSettings)
+  const handleNetworkSwitch = async (toTestnet: boolean) => {
+    HapticFeedback.light();
+    const net = toTestnet ? 'testnet3' : 'mainnet';
+    await LocalCache.setItem('network', net);
+    const api = await LocalCache.getItem('api');
+    if (api && api.indexOf('mempool.space') >= 0) {
+      const endpoint = toTestnet
+        ? 'https://mempool.space/testnet/api'
+        : 'https://mempool.space/api';
+      await LocalCache.setItem('api', endpoint);
+      await BBMTLibNativeModule.setAPI(network, endpoint);
+      // Clear and update WalletService
+      await WalletService.getInstance().clearWalletCache();
+      if (WalletService.getInstance().handleNetworkChange) {
+        await WalletService.getInstance().handleNetworkChange(net, endpoint);
+      }
+    }
+    navigation.reset({index: 0, routes: [{name: 'Bold Home'}]});
   };
 
   if (loading && !isInitialized) {
@@ -651,51 +656,90 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               {isBlurred ? 'Tap to reveal balance' : 'Tap to hide balance'}
             </Text>
           </View>
-          <View style={styles.partyContainer}>
-            <View style={styles.partyLeft}>
-              <Text style={styles.partyLabel}>Keyshare Party</Text>
-              <View style={[styles.partyValue, styles.networkRow]}>
-                <Image source={keyIcon} style={styles.networkIcon} />
-                <Text
-                  style={styles.partyValue}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit>
-                  {capitalizeWords(party)}
-                </Text>
+          <View style={[styles.partyContainer, styles.rowFullWidth]}>
+            <TouchableOpacity
+              style={[
+                styles.addressTypeContainer,
+                styles.addressTypeClickable,
+                styles.flexOneMinWidthZero,
+                styles.partyGap,
+              ]}
+              onPress={() => {
+                HapticFeedback.light();
+                setIsPartyModalVisible(true);
+              }}
+              activeOpacity={0.85}>
+              <View style={styles.columnCenter}>
+                <Text style={styles.partyLabel}>Device</Text>
+                <View style={styles.rowCenterMarginTop2}>
+                  <Image source={keyIcon} style={styles.networkIcon} />
+                  <Text
+                    style={styles.partyValue}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit>
+                    {capitalizeWords(party)}
+                  </Text>
+                </View>
               </View>
-            </View>
-            <View style={styles.partyCenter}>
-              <Text style={styles.partyLabel}>Network</Text>
-              <View style={[styles.partyValue, styles.networkRow]}>
-                <Image source={networkIcon()} style={styles.networkIcon} />
-                <Text
-                  style={styles.partyValue}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit>
-                  {capitalizeWords(network)}
-                </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.addressTypeContainer,
+                styles.addressTypeClickable,
+                styles.flexOneMinWidthZero,
+                styles.partyGap,
+              ]}
+              onPress={() => {
+                HapticFeedback.light();
+                setIsNetworkModalVisible(true);
+              }}
+              activeOpacity={0.85}>
+              <View style={styles.columnCenter}>
+                <Text style={styles.partyLabel}>Network</Text>
+                <View style={styles.rowCenterMarginTop2}>
+                  <Image source={networkIcon()} style={styles.networkIcon} />
+                  <Text
+                    style={styles.partyValue}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit>
+                    {capitalizeWords(network)}
+                  </Text>
+                </View>
               </View>
-            </View>
-            <View style={styles.partyRight}>
-              <Text style={styles.partyLabel}>Address Type</Text>
-              <View style={styles.addressTypeContainer}>
-                <Image
-                  source={getAddressTypeIcon()}
-                  style={styles.addressTypeIcon}
-                  resizeMode="contain"
-                />
-                <Text
-                  style={styles.partyValue}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit>
-                  {addressType === 'segwit-compatible'
-                    ? 'Segwit Compatible'
-                    : addressType === 'segwit-native'
-                    ? 'Segwit Native'
-                    : 'Legacy'}
-                </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.addressTypeContainer,
+                styles.addressTypeClickable,
+                styles.flexOneMinWidthZero,
+                styles.partyGap,
+              ]}
+              onPress={() => {
+                HapticFeedback.light();
+                setIsAddressTypeModalVisible(true);
+              }}
+              activeOpacity={0.85}>
+              <View style={styles.columnCenter}>
+                <Text style={styles.partyLabel}>Address Type</Text>
+                <View style={styles.rowCenterMarginTop2}>
+                  <Image
+                    source={getAddressTypeIcon()}
+                    style={styles.addressTypeIcon}
+                    resizeMode="contain"
+                  />
+                  <Text
+                    style={styles.partyValue}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit>
+                    {addressType === 'segwit-compatible'
+                      ? 'Segwit Compatible'
+                      : addressType === 'segwit-native'
+                      ? 'Segwit Native'
+                      : 'Legacy'}
+                  </Text>
+                </View>
               </View>
-            </View>
+            </TouchableOpacity>
           </View>
           <View style={styles.actions}>
             <TouchableOpacity
@@ -711,14 +755,16 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               />
               <Text style={styles.actionButtonText}>Send</Text>
             </TouchableOpacity>
+            {/* Lock icon button replaces address type change button */}
             <TouchableOpacity
               style={[styles.actionButton, styles.addressTypeModalButton]}
               onPress={() => {
                 HapticFeedback.light();
-                setIsAddressTypeModalVisible(true);
+                // Emit a reload event to App.tsx to trigger a full app restart
+                DeviceEventEmitter.emit('app:reload');
               }}>
               <Image
-                source={getAddressTypeIcon()}
+                source={require('../assets/locker-icon.png')}
                 style={styles.addressTypeButtonIcon}
                 resizeMode="contain"
               />
@@ -872,6 +918,107 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           onClose={() => setIsReceiveModalVisible(false)}
         />
       )}
+      {/* Network Switch Modal */}
+      <Modal
+        visible={isNetworkModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsNetworkModalVisible(false)}>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          onPress={() => {
+            HapticFeedback.light();
+            setIsNetworkModalVisible(false);
+          }}
+          activeOpacity={1}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select Network</Text>
+            <TouchableOpacity
+              style={[
+                styles.addressTypeButton,
+                network === 'mainnet' && styles.addressTypeButtonSelected,
+              ]}
+              onPress={async () => {
+                await handleNetworkSwitch(false);
+              }}>
+              <Image
+                source={require('../assets/mainnet-icon.png')}
+                style={styles.modalAddressTypeIcon}
+                resizeMode="contain"
+              />
+              <View style={styles.addressTypeContent}>
+                <Text style={styles.addressTypeLabel}>Mainnet</Text>
+                <Text style={styles.addressTypeValue}>
+                  Bitcoin Main Network
+                </Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.addressTypeButton,
+                network !== 'mainnet' && styles.addressTypeButtonSelected,
+              ]}
+              onPress={async () => {
+                await handleNetworkSwitch(true);
+              }}>
+              <Image
+                source={require('../assets/testnet-icon.png')}
+                style={styles.modalAddressTypeIcon}
+                resizeMode="contain"
+              />
+              <View style={styles.addressTypeContent}>
+                <Text style={styles.addressTypeLabel}>Testnet</Text>
+                <Text style={styles.addressTypeValue}>
+                  Bitcoin Test Network
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+      {/* Keyshare Party Info Modal */}
+      <Modal
+        visible={isPartyModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsPartyModalVisible(false)}>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          onPress={() => {
+            HapticFeedback.light();
+            setIsPartyModalVisible(false);
+          }}
+          activeOpacity={1}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeaderRow}>
+              <Image source={require('../assets/key-icon.png')} style={styles.modalHeaderIcon} />
+              <Text style={styles.modalHeaderTitle}>Your Device Keyshare</Text>
+            </View>
+            <View style={styles.modalParagraph}>
+              <Text style={styles.modalTextLeft}>
+                <Text style={styles.modalBoldText}>Keyshare:</Text> Each device holds a unique part of your wallet key. You need both to access your Bitcoin. Losing either device or its backup means losing your funds.
+              </Text>
+            </View>
+            <View style={styles.modalParagraph}>
+              <Text style={styles.modalTextLeft}>
+                Go to:{' '}
+                <Text
+                  style={[styles.modalBoldText, styles.linkText]}
+                  onPress={() => {
+                    setIsPartyModalVisible(false);
+                    if (typeof navigation.navigate === 'function') {
+                      navigation.navigate('Settings');
+                    }
+                  }}
+                >
+                  Settings {'>'} Backup & Restore
+                </Text>{' '}
+                to backup or manage your keyshare.
+              </Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 };

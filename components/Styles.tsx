@@ -89,8 +89,30 @@ export interface Styles {
   emptyStateIcon: ImageStyle;
   actionButtonIcon: ImageStyle;
   addressTypeContainer: ViewStyle;
+  addressTypeClickable: ViewStyle;
   networkRow: ViewStyle;
   networkIcon: ImageStyle;
+  rowCenter: ViewStyle;
+  rowFullWidth: ViewStyle;
+  columnCenter: ViewStyle;
+  rowCenterMarginTop2: ViewStyle;
+  flexOneMinWidthZero: ViewStyle;
+  partyGap: ViewStyle;
+  modalGoSettingsButton: ViewStyle;
+  modalCloseButton: ViewStyle;
+  modalCloseButtonText: TextStyle;
+  modalBoldText: TextStyle;
+  modalTextLeft: TextStyle;
+  modalInfoIcon: ImageStyle;
+  modalActionButtonText: TextStyle;
+  modalParagraph: ViewStyle;
+  modalHeaderRow: ViewStyle;
+  modalHeaderIcon: ImageStyle;
+  modalHeaderTitle: TextStyle;
+  modalActionsRow: ViewStyle;
+  modalActionLeft: ViewStyle;
+  modalActionRight: ViewStyle;
+  linkText: TextStyle;
 }
 
 export const createStyles = (theme: Theme): Styles => ({
@@ -267,15 +289,10 @@ export const createStyles = (theme: Theme): Styles => ({
   },
   partyContainer: {
     flexDirection: 'row' as const,
-    justifyContent: 'space-between' as const,
-    alignItems: 'center' as const,
     width: '100%',
-    marginTop: 2,
-    marginBottom: 8,
-    paddingHorizontal: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    marginTop: 4,
+    marginBottom: 6,
     borderRadius: 8,
-    padding: 8,
   },
   partyLeft: {
     flex: 1,
@@ -312,6 +329,7 @@ export const createStyles = (theme: Theme): Styles => ({
     fontSize: 12,
     color: theme.colors.textOnPrimary,
     fontWeight: '600',
+    marginLeft: 4,
   },
   actions: {
     flexDirection: 'row' as const,
@@ -546,6 +564,22 @@ export const createStyles = (theme: Theme): Styles => ({
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.18)', // glassy
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    // Add elevation for Android
+    elevation: 2,
+  },
+  addressTypeClickable: {
+    // For extra visual feedback if needed
+    opacity: 0.96,
   },
   networkRow: {
     flexDirection: 'row',
@@ -556,5 +590,109 @@ export const createStyles = (theme: Theme): Styles => ({
     height: 16,
     marginRight: 4,
     tintColor: '#FFFFFF',
+  },
+  rowCenter: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+  },
+  rowFullWidth: {
+    flexDirection: 'row' as const,
+    width: '100%',
+  },
+  columnCenter: {
+    flex: 1,
+    flexDirection: 'column' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  rowCenterMarginTop2: {
+    flexDirection: 'row' as const,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+    marginTop: 2,
+  },
+  flexOneMinWidthZero: {
+    flex: 1,
+    minWidth: 0,
+  },
+  partyGap: {
+    marginHorizontal: 4,
+  },
+  modalGoSettingsButton: {
+    marginTop: 16,
+  },
+  modalCloseButton: {
+    marginTop: 8,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+  },
+  modalCloseButtonText: {
+    color: theme.colors.accent,
+    fontWeight: 'bold' as const,
+    fontSize: 16,
+  },
+  modalBoldText: {
+    fontSize: 15,
+    fontWeight: 'bold' as const,
+  },
+  modalTextLeft: {
+    textAlign: 'left' as const,
+    color: theme.colors.text,
+    fontSize: 15,
+    marginBottom: 12,
+  },
+  modalInfoIcon: {
+    width: 36,
+    height: 36,
+    marginBottom: 12,
+    tintColor: theme.colors.accent,
+    alignSelf: 'center' as const,
+  },
+  modalActionButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold' as const,
+    color: theme.colors.primary,
+    letterSpacing: 0.2,
+  },
+  modalParagraph: {
+    marginBottom: 10,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    marginBottom: 12,
+  },
+  modalHeaderIcon: {
+    width: 36,
+    height: 36,
+    tintColor: theme.colors.accent,
+    marginRight: 10,
+  },
+  modalHeaderTitle: {
+    fontSize: 20,
+    fontWeight: 'bold' as const,
+    color: theme.colors.text,
+    flex: 1,
+    textAlign: 'left' as const,
+  },
+  modalActionsRow: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
+    marginTop: 16,
+    width: '100%',
+    gap: 8,
+  },
+  modalActionLeft: {
+    flex: 1,
+    alignItems: 'flex-start' as const,
+  },
+  modalActionRight: {
+    flex: 1,
+    alignItems: 'flex-end' as const,
+  },
+  linkText: {
+    color: theme.colors.accent,
+    fontWeight: 'bold' as const,
   },
 });

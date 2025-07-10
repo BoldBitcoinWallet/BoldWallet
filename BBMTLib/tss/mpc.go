@@ -767,7 +767,7 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 			Logln("BBMTLog", "Received signal to end downloadMessage. Stopping...")
 			return
 
-		case <-time.After(time.Second):
+		case <-time.After(time.Second / 2):
 			if time.Since(until) > 0 {
 				Logln("BBMTLog", "Received timeout to end downloadMessage. Stopping...")
 				return
