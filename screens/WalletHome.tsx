@@ -990,20 +990,21 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           }}
           activeOpacity={1}>
           <View style={styles.modalContent}>
+            <TouchableOpacity
+              style={{position: 'absolute', top: 12, right: 12, zIndex: 10}}
+              onPress={() => setIsPartyModalVisible(false)}>
+              <Text style={styles.modalCloseButtonText}>✕</Text>
+            </TouchableOpacity>
             <View style={styles.modalHeaderRow}>
-              <Image
-                source={require('../assets/key-icon.png')}
-                style={styles.modalHeaderIcon}
-              />
+              <Image source={require('../assets/key-icon.png')} style={styles.modalHeaderIcon} />
               <Text style={styles.modalHeaderTitle}>Your Device Keyshare</Text>
             </View>
             <View style={styles.modalParagraph}>
               <Text style={styles.modalTextLeft}>
-                This device holds a unique part of your Bitcoin wallet key (a
-                "keyshare"). Keeping a secure backup of your keyshare is
-                essential for wallet recovery and security. Without it, you lose
-                access to your funds.
+                <Text style={styles.modalBoldText}>Keyshare:</Text> Each device holds a unique part of your wallet key. You need both to access your Bitcoin. Losing either device or its backup means losing your funds.
               </Text>
+            </View>
+            <View style={styles.modalParagraph}>
               <Text style={styles.modalTextLeft}>
                 Go to:{' '}
                 <Text
@@ -1013,10 +1014,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                     if (typeof navigation.navigate === 'function') {
                       navigation.navigate('Settings');
                     }
-                  }}>
+                  }}
+                >
                   Settings {'>'} Backup & Restore
                 </Text>{' '}
-                to backup, and manage your keyshare.
+                to backup or manage your keyshare.
               </Text>
             </View>
           </View>
