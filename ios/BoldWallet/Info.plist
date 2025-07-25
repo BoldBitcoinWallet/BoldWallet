@@ -40,9 +40,7 @@
 	<key>NSFaceIDUsageDescription</key>
 	<string>We need Face ID to unlock your wallet securely.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>BoldWallet uses the local network to connect two devices for secure wallet setup.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>BoldWallet requires local network and location access to securely connect two nearby devices via Wi-Fi during wallet setup.</string>
+	<string>BoldWallet uses your local network to connect your own two devices for wallet setup. All data stays private and only on your devices, never reaching the internet.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Access Photos to scan a QR Address.</string>
 	<key>UILaunchStoryboardName</key>
@@ -56,6 +54,8 @@
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<false/>
+	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 </dict>
 </plist>
