@@ -38,7 +38,9 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Scan an Address</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>We need Face ID to unlock your wallet securely.</string>
+	<string>BoldWallet need Face ID to unlock your wallet securely.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>BoldWallet uses location and local network access to securely link your nearby devices during wallet setup. All data stays private and only on your devices, never reaching the internet.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>BoldWallet uses your local network to connect your own two devices for wallet setup. All data stays private and only on your devices, never reaching the internet.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
