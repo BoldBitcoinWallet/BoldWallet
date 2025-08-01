@@ -1,6 +1,6 @@
 # Bold Bitcoin Wallet
 <p align="center"> 
-  <img src="https://github.com/user-attachments/assets/b5a40a51-7d7f-4771-83a8-a828f2a997b0" width=200 height=410>
+  <img src="https://github.com/user-attachments/assets/39fcd825-7046-4269-84ed-dee9cebdeed1" width=200 height=410>
 </p>
 
 ## 📲 Install it on F-Droid
