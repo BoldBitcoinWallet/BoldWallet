@@ -43,8 +43,7 @@ fi
 
 # Step 3: Build the Release APK
 echo -e "Building the Release APK..."
-./gradlew clean
-./gradlew assembleRelease
+./gradlew --no-build-cache assembleRelease
 
 # Step 4: Locate and display APK
 APK_PATH="app/build/outputs/apk/release/app-release.apk"

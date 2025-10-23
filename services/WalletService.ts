@@ -697,7 +697,8 @@ export class WalletService {
         BBMTLibNativeModule.totalUTXO(address),
       )) as number;
 
-      if (!totalUTXO || !validateNumber(totalUTXO)) {
+      // Accept 0 as a valid balance; only reject if not a valid number
+      if (!validateNumber(totalUTXO)) {
         dbg('WalletService: Invalid UTXO total received:', totalUTXO);
 
         if (this.cachedBalance.btc !== '0.00000000') {
@@ -1040,6 +1041,42 @@ export class WalletService {
     // Update persistent storage after clearing cache
     await this.saveCachedData();
     dbg('WalletService: Transaction cache clear completed');
+  }
+
+  /**
+   * Clear only address-related caches (balance and transactions), preserving price cache.
+   * If an address is provided, clears transactions for that address only; otherwise clears all transactions.
+   */
+  public async clearAddressCaches(address?: string) {
+    dbg('WalletService: Clearing address caches', address ? `for ${address}` : '(all)');
+
+    try {
+      // Reset balance cache only (preserve price cache)
+      this.cachedBalance = {
+        btc: '0.00000000',
+        usd: '$0.00',
+        hasNonZeroBalance: false,
+      };
+      this.lastBalanceFetch = 0;
+
+      // Clear transaction caches
+      if (address) {
+        await this.clearTransactionCache(address);
+        // Also clear the "allTransactions" aggregation for this address
+        delete this.allTransactions[address];
+      } else {
+        this.cachedTransactions = {};
+        this.lastTxFetch = {};
+        this.cachedTxPages = {};
+        this.lastTxPageFetch = {};
+        this.allTransactions = {};
+      }
+
+      await this.saveCachedData();
+      dbg('WalletService: Address caches cleared (balance + transactions), price preserved');
+    } catch (error) {
+      dbg('WalletService: Error clearing address caches:', error);
+    }
   }
 
   public async clearWalletCache() {

@@ -9,10 +9,10 @@ import {
   NativeModules,
   Modal,
   TextInput,
-  Button,
   ScrollView,
   Animated,
   Easing,
+  Image,
 } from 'react-native';
 import DocumentPicker from 'react-native-document-picker';
 import EncryptedStorage from 'react-native-encrypted-storage';
@@ -20,6 +20,8 @@ import RNFS from 'react-native-fs';
 import {useTheme} from '../theme';
 import {dbg, HapticFeedback} from '../utils';
 import LegalModal from '../components/LegalModal';
+import LocalCache from '../services/LocalCache';
+import {WalletService} from '../services/WalletService';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -28,13 +30,31 @@ const ShowcaseScreen = ({navigation}: any) => {
   const [password, setPassword] = useState('');
   const [fileContent, setFileContent] = useState('');
   const [agreeToTerms, setAgreeToTerms] = useState(false);
+  const [agreeToPrivacy, setAgreeToPrivacy] = useState(false);
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
   const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
     'terms',
   );
+  const [isPasswordFocused, setIsPasswordFocused] = useState(false);
   const {theme} = useTheme();
 
   const fadeAnim = useRef(new Animated.Value(0.7)).current;
+
+  // Clear all app cache on component mount
+  useEffect(() => {
+    const clearAppCache = async () => {
+      try {
+        dbg('Clearing all app cache on ShowcaseScreen mount');
+        await LocalCache.clear();
+        await WalletService.getInstance().clearWalletCache();
+        dbg('App cache cleared successfully');
+      } catch (_error) {
+        console.error('Error clearing app cache:', _error);
+      }
+    };
+
+    clearAppCache();
+  }, []);
 
   useEffect(() => {
     Animated.loop(
@@ -74,8 +94,8 @@ const ShowcaseScreen = ({navigation}: any) => {
       await RNFS.unlink(localFilePath);
 
       return content;
-    } catch (error) {
-      dbg('Error handling content URI:', error);
+    } catch (_error) {
+      dbg('Error handling content URI:', _error);
       return '';
     }
   };
@@ -123,10 +143,17 @@ const ShowcaseScreen = ({navigation}: any) => {
           );
         }, 1000);
       }
-    } catch (decodeError) {
+    } catch {
       console.warn('Failed to decode as UTF-8. File might be binary.');
       Alert.alert('Error', 'Failed to decrypt the file');
     }
+  };
+
+  const handleCloseModal = () => {
+    HapticFeedback.medium();
+    setModalVisible(false);
+    setPassword('');
+    setIsPasswordFocused(false);
   };
 
   const styles = StyleSheet.create({
@@ -138,129 +165,275 @@ const ShowcaseScreen = ({navigation}: any) => {
       flexGrow: 1,
       justifyContent: 'center',
       alignItems: 'center',
+      paddingHorizontal: 24,
     },
     heroSection: {
       alignItems: 'center',
       justifyContent: 'center',
       textAlign: 'center',
+      paddingVertical: 40,
     },
     heroTitle: {
-      fontSize: 28,
+      fontSize: 32,
       fontWeight: '700',
       color: theme.colors.primary,
       marginTop: 0,
       textAlign: 'center',
+      lineHeight: 40,
+      marginBottom: 24,
     },
     heroSubtitle: {
-      fontSize: 16,
+      fontSize: 20,
       color: theme.colors.secondary,
       fontWeight: 'bold',
       textAlign: 'center',
+      marginTop: 12,
+    },
+    logoContainer: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginVertical: 32,
+      padding: 20,
+      backgroundColor: 'transparent',
     },
     storeIcon: {
-      width: 128,
-      height: 128,
+      width: 120,
+      height: 120,
     },
     bottomActions: {
       alignItems: 'center',
       width: '100%',
-      marginBottom: 10,
+      marginBottom: 24,
+      paddingHorizontal: 24,
     },
     ctaButtons: {
       flexDirection: 'row',
       justifyContent: 'center',
-      gap: 15,
-      marginBottom: 20,
+      gap: 16,
+      marginBottom: 24,
+      width: '100%',
     },
     ctaButton: {
       backgroundColor: theme.colors.primary,
-      borderRadius: 4,
-      padding: 18,
+      borderRadius: 8,
+      paddingVertical: 14,
+      paddingHorizontal: 20,
       alignItems: 'center',
       justifyContent: 'center',
       width: 160,
+      shadowColor: theme.colors.primary,
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+      elevation: 3,
     },
     ctaButtonRestore: {
       backgroundColor: theme.colors.accent,
-      borderRadius: 4,
-      padding: 18,
+      borderRadius: 8,
+      paddingVertical: 14,
+      paddingHorizontal: 20,
       alignItems: 'center',
       justifyContent: 'center',
       width: 160,
+      shadowColor: theme.colors.accent,
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+      elevation: 3,
     },
     ctaButtonText: {
       color: theme.colors.background,
-      fontWeight: '800',
+      fontWeight: '600',
       fontSize: 16,
     },
     disabledButton: {
       opacity: 0.5,
     },
     termsContainer: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 24,
+      paddingHorizontal: 20,
+    },
+    termsRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      marginBottom: 20,
-      paddingHorizontal: 20,
-      flexWrap: 'wrap',
+      marginBottom: 16,
+      paddingHorizontal: 10,
     },
     termsText: {
-      fontSize: 13,
-      textAlign: 'center',
-      color: theme.colors.text,
-      marginLeft: 8,
+      fontSize: 14,
+      textAlign: 'left',
+      color: theme.colors.textSecondary,
+      marginLeft: 12,
+      lineHeight: 20,
+      flex: 1,
     },
     termsLink: {
       color: theme.colors.accent,
       textDecorationLine: 'underline',
-      fontWeight: '500',
+      fontWeight: '600',
     },
     checkboxContainer: {
       alignItems: 'center',
       justifyContent: 'center',
+      marginTop: 0,
     },
     checkbox: {
-      width: 24,
-      height: 24,
+      width: 20,
+      height: 20,
       borderWidth: 2,
-      borderColor: theme.colors.text,
-      borderRadius: 4,
+      borderColor: theme.colors.border,
+      borderRadius: 6,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     checkboxChecked: {
       backgroundColor: theme.colors.primary,
+      borderColor: theme.colors.primary,
     },
+    checkmark: {
+      color: theme.colors.background,
+      fontSize: 12,
+      fontWeight: 'bold',
+    },
+    // Enhanced Modal Styles
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.8)',
+      backgroundColor: 'rgba(0,0,0,0.75)',
       alignItems: 'center',
       justifyContent: 'center',
     },
     modalContent: {
-      backgroundColor: theme.colors.background,
-      padding: 20,
-      borderRadius: 8,
-      width: '80%',
+      backgroundColor: theme.colors.cardBackground,
+      borderRadius: 16,
+      width: '85%',
+      maxWidth: 420,
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 10},
+      shadowOpacity: 0.3,
+      shadowRadius: 20,
+      elevation: 10,
+      overflow: 'hidden',
+    },
+    modalHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 24,
+      paddingTop: 24,
+      paddingBottom: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: 'rgba(0,0,0,0.05)',
     },
     modalTitle: {
-      fontSize: 20,
-      fontWeight: 'bold',
-      marginBottom: 10,
-      textAlign: 'center',
+      fontSize: 22,
+      fontWeight: '700',
+      marginLeft: 12,
       color: theme.colors.text,
+      flex: 1,
+    },
+    closeButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: 'rgba(0,0,0,0.05)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginLeft: 12,
+    },
+    closeButtonText: {
+      fontSize: 24,
+      color: theme.colors.text,
+      fontWeight: '600',
+    },
+    modalBody: {
+      paddingHorizontal: 24,
+      paddingVertical: 20,
+    },
+    modalSubtitle: {
+      fontSize: 14,
+      color: theme.colors.secondary,
+      marginBottom: 20,
+      textAlign: 'center',
+      fontWeight: '500',
+    },
+    passwordInputContainer: {
+      marginBottom: 24,
+    },
+    passwordInputLabel: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: theme.colors.text,
+      marginBottom: 10,
+      paddingHorizontal: 4,
     },
     passwordInput: {
-      borderWidth: 1,
-      borderColor: '#ccc',
-      borderRadius: 4,
-      padding: 10,
-      marginBottom: 15,
-      textAlign: 'center',
-      fontSize: 17,
+      borderWidth: 1.5,
+      borderColor: theme.colors.accent,
+      borderRadius: 12,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      fontSize: 16,
+      color: theme.colors.text,
+      backgroundColor: 'rgba(0,0,0,0.02)',
+      fontWeight: '500',
+    },
+    passwordInputFocused: {
+      borderColor: theme.colors.primary,
+      backgroundColor: 'rgba(0,0,0,0.03)',
     },
     modalActions: {
       flexDirection: 'row',
+      gap: 12,
+      paddingHorizontal: 24,
+      paddingBottom: 24,
       justifyContent: 'space-between',
-      marginTop: 10,
+      alignItems: 'center',
+    },
+    modalActionButton: {
+      flex: 1,
+      paddingVertical: 14,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontWeight: '600',
+      flexDirection: 'row',
+      gap: 2,
+    },
+    modalCancelButton: {
+      backgroundColor: 'rgba(0,0,0,0.05)',
+      borderWidth: 1,
+      borderColor: 'rgba(0,0,0,0.1)',
+    },
+    modalSubmitButton: {
+      backgroundColor: theme.colors.primary,
+    },
+    modalActionButtonText: {
+      fontSize: 14,
+      fontWeight: '600',
+      letterSpacing: 0.3,
+    },
+    modalCancelButtonText: {
+      color: theme.colors.text,
+      fontSize: 14,
+      fontWeight: '500',
+    },
+    modalSubmitButtonText: {
+      color: theme.colors.background,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    modalHeaderIconImage: {
+      width: 20,
+      height: 20,
+      tintColor: theme.colors.primary,
+    },
+    buttonIcon: {
+      width: 16,
+      height: 16,
+      tintColor: theme.colors.background,
     },
   });
 
@@ -271,110 +444,184 @@ const ShowcaseScreen = ({navigation}: any) => {
           <Text style={styles.heroTitle}>
             Seedless.{'\n'}Hardware-Free.{'\n'}Limitless.
           </Text>
-          <Animated.Image
-            style={[styles.storeIcon, {opacity: fadeAnim}]}
-            source={require('../assets/playstore-icon.png')}
-          />
+          <Animated.View style={[styles.logoContainer, {opacity: fadeAnim}]}>
+            <Image
+              style={styles.storeIcon}
+              source={require('../assets/playstore-icon.png')}
+            />
+          </Animated.View>
           <Text style={styles.heroSubtitle}>
-            Roam the world with Peace of Mind {'\n'}
-            Self-Custody Superior ₿itcoin Wallet
+          Bold ₿ Wallet
           </Text>
         </View>
       </ScrollView>
 
       <View style={styles.bottomActions}>
         <View style={styles.termsContainer}>
-          <TouchableOpacity
-            style={styles.checkboxContainer}
-            onPress={() => {
-              HapticFeedback.medium();
-              setAgreeToTerms(prev => !prev);
-            }}>
-            <View
-              style={[styles.checkbox, agreeToTerms && styles.checkboxChecked]}
-            />
-          </TouchableOpacity>
-          <Text style={styles.termsText}>
-            I agree to the{' '}
-            <Text
-              style={styles.termsLink}
+          <View style={styles.termsRow}>
+            <TouchableOpacity
+              style={styles.checkboxContainer}
               onPress={() => {
                 HapticFeedback.medium();
-                setLegalModalType('terms');
-                setIsLegalModalVisible(true);
+                setAgreeToTerms(prev => !prev);
               }}>
-              Terms of Service
-            </Text>{' '}
-            &{' '}
-            <Text
-              style={styles.termsLink}
-              onPress={() => {
-                HapticFeedback.medium();
-                setLegalModalType('privacy');
-                setIsLegalModalVisible(true);
-              }}>
-              Privacy Policy
+              <View
+                style={[styles.checkbox, agreeToTerms && styles.checkboxChecked]}>
+                {agreeToTerms && (
+                  <Text style={styles.checkmark}>✓</Text>
+                )}
+              </View>
+            </TouchableOpacity>
+            <Text style={styles.termsText}>
+              I agree to the{' '}
+              <Text
+                style={styles.termsLink}
+                onPress={() => {
+                  HapticFeedback.medium();
+                  setLegalModalType('terms');
+                  setIsLegalModalVisible(true);
+                }}>
+                Terms of Service
+              </Text>
             </Text>
-          </Text>
+          </View>
+          
+          <View style={styles.termsRow}>
+            <TouchableOpacity
+              style={styles.checkboxContainer}
+              onPress={() => {
+                HapticFeedback.medium();
+                setAgreeToPrivacy(prev => !prev);
+              }}>
+              <View
+                style={[styles.checkbox, agreeToPrivacy && styles.checkboxChecked]}>
+                {agreeToPrivacy && (
+                  <Text style={styles.checkmark}>✓</Text>
+                )}
+              </View>
+            </TouchableOpacity>
+            <Text style={styles.termsText}>
+              I agree to the{' '}
+              <Text
+                style={styles.termsLink}
+                onPress={() => {
+                  HapticFeedback.medium();
+                  setLegalModalType('privacy');
+                  setIsLegalModalVisible(true);
+                }}>
+                Privacy Policy
+              </Text>
+            </Text>
+          </View>
         </View>
         <View style={styles.ctaButtons}>
           <TouchableOpacity
-            style={[styles.ctaButton, !agreeToTerms && styles.disabledButton]}
+            style={[styles.ctaButton, (!agreeToTerms || !agreeToPrivacy) && styles.disabledButton]}
             onPress={() => {
               HapticFeedback.medium();
               navigation.navigate('📱📱 Pairing');
             }}
-            disabled={!agreeToTerms}>
+            disabled={!agreeToTerms || !agreeToPrivacy}>
             <Text style={styles.ctaButtonText}>Setup Wallet</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[
               styles.ctaButtonRestore,
-              !agreeToTerms && styles.disabledButton,
+              (!agreeToTerms || !agreeToPrivacy) && styles.disabledButton,
             ]}
             onPress={() => {
               HapticFeedback.medium();
               handleRestoreWallet();
             }}
-            disabled={!agreeToTerms}>
+            disabled={!agreeToTerms || !agreeToPrivacy}>
             <Text style={styles.ctaButtonText}>Restore Wallet</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Password Prompt Modal */}
+      {/* Enhanced Password Prompt Modal */}
       <Modal
         transparent={true}
         visible={modalVisible}
         animationType="fade"
-        onRequestClose={() => setModalVisible(false)}>
+        onRequestClose={handleCloseModal}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Enter Password</Text>
-            <TextInput
-              style={styles.passwordInput}
-              secureTextEntry
-              placeholder="Keyshare file password"
-              value={password}
-              onChangeText={setPassword}
-            />
-            <View style={styles.modalActions}>
-              <Button
-                color={theme.colors.secondary}
-                title="Cancel"
-                onPress={() => {
-                  HapticFeedback.medium();
-                  setModalVisible(false);
-                }}
+            {/* Modal Header with Close Button */}
+            <View style={styles.modalHeader}>
+              <Image
+                source={require('../assets/locker-icon.png')}
+                style={styles.modalHeaderIconImage}
               />
-              <Button
-                color={theme.colors.primary}
-                title="Submit"
-                onPress={() => {
-                  HapticFeedback.medium();
-                  handlePasswordSubmit();
-                }}
-              />
+              <Text style={styles.modalTitle}>Load Keyshare</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={handleCloseModal}
+                activeOpacity={0.7}>
+                <Text style={styles.closeButtonText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Modal Body */}
+            <View style={styles.modalBody}>
+              <Text style={styles.modalSubtitle}>
+                Import your keyshare file to unlock your wallet
+              </Text>
+
+              {/* Password Input */}
+              <View style={styles.passwordInputContainer}>
+                <Text style={styles.passwordInputLabel}>Password</Text>
+                <TextInput
+                  style={[
+                    styles.passwordInput,
+                    isPasswordFocused && styles.passwordInputFocused,
+                  ]}
+                  secureTextEntry
+                  placeholder="Enter password"
+                  placeholderTextColor={`${theme.colors.text}40`}
+                  value={password}
+                  onChangeText={setPassword}
+                  onFocus={() => setIsPasswordFocused(true)}
+                  onBlur={() => setIsPasswordFocused(false)}
+                />
+              </View>
+
+              {/* Action Buttons */}
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalActionButton, styles.modalCancelButton]}
+                  onPress={handleCloseModal}
+                  activeOpacity={0.7}>
+                  <Text
+                    style={[
+                      styles.modalActionButtonText,
+                      styles.modalCancelButtonText,
+                    ]}>
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalActionButton, styles.modalSubmitButton]}
+                  onPress={() => {
+                    HapticFeedback.medium();
+                    handlePasswordSubmit();
+                  }}
+                  activeOpacity={0.8}>
+                  <Image
+                    source={require('../assets/key-icon.png')}
+                    style={styles.buttonIcon}
+                    resizeMode="contain"
+                  />
+                  <Text
+                    style={[
+                      styles.modalActionButtonText,
+                      styles.modalSubmitButtonText,
+                    ]}>
+                    Import
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </View>

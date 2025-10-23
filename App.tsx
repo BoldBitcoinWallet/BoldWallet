@@ -1,18 +1,20 @@
 // App.tsx
-import React, {useEffect, useState} from 'react';
-import {NavigationContainer} from '@react-navigation/native';
-import {createStackNavigator} from '@react-navigation/stack';
+import React, { useEffect, useState } from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { enableScreens } from 'react-native-screens';
 import ShowcaseScreen from './screens/ShowcaseScreen';
 import WalletHome from './screens/WalletHome';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import LoadingScreen from './screens/LoadingScreen';
-import Zeroconf, {ImplType} from 'react-native-zeroconf';
-import ReactNativeBiometrics, {BiometryTypes} from 'react-native-biometrics';
+import Zeroconf, { ImplType } from 'react-native-zeroconf';
+import ReactNativeBiometrics, { BiometryTypes } from 'react-native-biometrics';
 import DeviceInfo from 'react-native-device-info';
-import {ThemeProvider} from './theme';
-import {WalletProvider} from './context/WalletContext';
-import {initializeHaptics} from './utils';
-
+import { ThemeProvider } from './theme';
+import { WalletProvider } from './context/WalletContext';
+import { NetworkProvider } from './context/NetworkContext';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { initializeHaptics } from './utils';
 import {
   Alert,
   EmitterSubscription,
@@ -21,13 +23,16 @@ import {
   DeviceEventEmitter,
 } from 'react-native';
 import WalletSettings from './screens/WalletSettings';
-import {NativeModules} from 'react-native';
-import {dbg, pinRemoteIP} from './utils';
+import { NativeModules } from 'react-native';
+import { dbg, pinRemoteIP } from './utils';
 import MobilesPairing from './screens/MobilesPairing';
-const {BBMTLibNativeModule} = NativeModules;
 
-const Stack = createStackNavigator();
-const rnBiometrics = new ReactNativeBiometrics({allowDeviceCredentials: true});
+// Initialize react-native-screens for Fabric compatibility
+enableScreens(true);
+
+const { BBMTLibNativeModule } = NativeModules;
+const Stack = createNativeStackNavigator();
+const rnBiometrics = new ReactNativeBiometrics({ allowDeviceCredentials: true });
 const zeroconf = new Zeroconf();
 const zeroOut = new Zeroconf();
 
@@ -37,6 +42,7 @@ const App = () => {
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener('app:reload', () => {
+      console.log('App: Received app:reload event');
       setIsAuthenticated(false);
     });
     return () => sub.remove();
@@ -51,9 +57,18 @@ const App = () => {
         const route = keyshare ? 'Bold Home' : 'Welcome';
         dbg('Setting initial route to:', route);
         setInitialRoute(route);
+
+        // Auto-trigger authentication after setting initial route
+        setTimeout(() => {
+          authenticateUser();
+        }, 100);
       } catch (error) {
-        dbg('Error in initializeApp:', error);
+        console.error('Error in initializeApp:', error);
         setInitialRoute('Welcome');
+        // Auto-trigger authentication even on error
+        setTimeout(() => {
+          authenticateUser();
+        }, 100);
       }
     };
     checkWallet();
@@ -68,7 +83,7 @@ const App = () => {
         'local.',
         'bold_bitcoin_wallet',
         55056,
-        {txt: 'bold_bitcoin_wallet', id: deviceID},
+        { txt: 'bold_bitcoin_wallet', id: deviceID },
         ImplType.NSD,
       );
       return () => {
@@ -77,11 +92,11 @@ const App = () => {
           zeroOut.stop();
           dbg('service publish stopped');
         } catch (e: any) {
-          dbg('error stopping service', e);
+          console.error('error stopping service', e);
         }
       };
     } catch (e: any) {
-      dbg('error publishing service', e);
+      console.error('error publishing service', e);
     }
   }, []);
 
@@ -108,7 +123,7 @@ const App = () => {
         }
       });
       zeroconf.on('error', err => {
-        dbg('Zeroconf error:', err);
+        console.error('Zeroconf error:', err);
       });
       return () => {
         try {
@@ -116,11 +131,11 @@ const App = () => {
           zeroconf.removeAllListeners();
           zeroconf.stop();
         } catch (e: any) {
-          dbg('error stopping mDNS scan', e);
+          console.error('error stopping mDNS scan', e);
         }
       };
     } catch (e: any) {
-      dbg('error scanning mDNS', e);
+      console.error('error scanning mDNS', e);
     }
   }, []);
 
@@ -164,9 +179,12 @@ const App = () => {
 
   const authenticateUser = async () => {
     try {
-      const {available, biometryType} = await rnBiometrics.isSensorAvailable();
+      dbg('Starting authentication...');
+      const { available, biometryType } = await rnBiometrics.isSensorAvailable();
+      dbg('Biometric available:', available, 'Type:', biometryType);
 
       if (!available) {
+        dbg('No biometric available, skipping authentication');
         setIsAuthenticated(true);
         return;
       }
@@ -177,15 +195,17 @@ const App = () => {
           biometryType === BiometryTypes.FaceID ||
           biometryType === BiometryTypes.Biometrics)
       ) {
-        const {success} = await rnBiometrics.simplePrompt({
+        dbg('Using biometric authentication');
+        const { success } = await rnBiometrics.simplePrompt({
           promptMessage: 'Authenticate to access your wallet',
           fallbackPromptMessage: 'Use your device passcode to unlock',
         });
 
         if (success) {
-          dbg('user authenticated');
+          dbg('Biometric authentication successful');
           setIsAuthenticated(true);
         } else {
+          dbg('Biometric authentication failed');
           Alert.alert(
             'Authentication Failed',
             'Unable to authenticate. Please try again.',
@@ -197,17 +217,20 @@ const App = () => {
                 },
               },
             ],
-            {cancelable: false},
+            { cancelable: false },
           );
         }
       } else {
-        const {success} = await rnBiometrics.simplePrompt({
+        dbg('Using device passcode authentication');
+        const { success } = await rnBiometrics.simplePrompt({
           promptMessage: 'Enter your device passcode to unlock',
         });
 
         if (success) {
+          dbg('Device passcode authentication successful');
           setIsAuthenticated(true);
         } else {
+          dbg('Device passcode authentication failed');
           Alert.alert(
             'Authentication Failed',
             'Unable to authenticate. Please try again.',
@@ -219,13 +242,18 @@ const App = () => {
                 },
               },
             ],
-            {cancelable: false},
+            { cancelable: false },
           );
         }
       }
     } catch (error) {
       console.error('Authentication Error:', error);
-      Alert.alert('Error', 'Authentication failed. Please try again.');
+      if (__DEV__) {
+        dbg('Development mode: skipping authentication due to error');
+        setIsAuthenticated(true);
+      } else {
+        Alert.alert('Error', 'Authentication failed. Please try again.');
+      }
     }
   };
 
@@ -234,17 +262,8 @@ const App = () => {
     await authenticateUser();
   };
 
-  if (initialRoute === null) {
-    dbg('Rendering LoadingScreen - initialRoute is null');
-    return (
-      <ThemeProvider>
-        <LoadingScreen onRetry={handleRetryAuthentication} />
-      </ThemeProvider>
-    );
-  }
-
-  if (!isAuthenticated) {
-    dbg('Rendering LoadingScreen - not authenticated');
+  if (initialRoute === null || !isAuthenticated) {
+    dbg('Rendering LoadingScreen - initialRoute:', initialRoute, 'isAuthenticated:', isAuthenticated);
     return (
       <ThemeProvider>
         <LoadingScreen onRetry={handleRetryAuthentication} />
@@ -255,47 +274,52 @@ const App = () => {
   dbg('Rendering main navigation with initialRoute:', initialRoute);
 
   return (
-    <ThemeProvider>
-      <WalletProvider>
-        <NavigationContainer>
-          <Stack.Navigator
-            initialRouteName={initialRoute}
-            screenOptions={{
-              headerShown: false,
-            }}>
-            <Stack.Screen
-              name="Bold Home"
-              component={WalletHome}
-              options={{
-                headerShown: true,
-                headerLeft: () => null,
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <NetworkProvider>
+          <WalletProvider>
+            <NavigationContainer>
+            <Stack.Navigator
+              initialRouteName={initialRoute}
+              screenOptions={{
+                headerShown: false,
               }}
-            />
-            <Stack.Screen
-              name="Welcome"
-              component={ShowcaseScreen}
-              options={{
-                headerShown: true,
-              }}
-            />
-            <Stack.Screen
-              name="Settings"
-              component={WalletSettings}
-              options={{
-                headerShown: true,
-              }}
-            />
-            <Stack.Screen
-              name="📱📱 Pairing"
-              component={MobilesPairing}
-              options={{
-                headerShown: true,
-              }}
-            />
-          </Stack.Navigator>
-        </NavigationContainer>
-      </WalletProvider>
-    </ThemeProvider>
+            >
+              <Stack.Screen
+                name="Bold Home"
+                component={WalletHome}
+                options={{
+                  headerShown: true,
+                  headerLeft: () => null,
+                }}
+              />
+              <Stack.Screen
+                name="Welcome"
+                component={ShowcaseScreen}
+                options={{
+                  headerShown: true,
+                }}
+              />
+              <Stack.Screen
+                name="Settings"
+                component={WalletSettings}
+                options={{
+                  headerShown: true,
+                }}
+              />
+              <Stack.Screen
+                name="📱📱 Pairing"
+                component={MobilesPairing}
+                options={{
+                  headerShown: true,
+                }}
+              />
+            </Stack.Navigator>
+            </NavigationContainer>
+          </WalletProvider>
+        </NetworkProvider>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 };
 

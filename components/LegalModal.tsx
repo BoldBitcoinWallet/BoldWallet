@@ -125,7 +125,6 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
               <View style={styles.loadingContainer}>
                 <ActivityIndicator
                   size="large"
-                  color={themes.lightPolished.colors.primary}
                 />
                 <Text style={styles.loadingText}>Loading...</Text>
               </View>

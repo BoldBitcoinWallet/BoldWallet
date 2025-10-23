@@ -11,7 +11,6 @@ import {
   TouchableWithoutFeedback,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   Image,
   ActivityIndicator,
   NativeModules,
@@ -25,6 +24,7 @@ import Big from 'big.js';
 import {dbg, HapticFeedback} from '../utils';
 import {useTheme} from '../theme';
 import LocalCache from '../services/LocalCache';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -106,11 +106,41 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       padding: 20,
     },
     header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      width: '100%',
+      marginBottom: 20,
+      paddingHorizontal: 4,
+    },
+    titleContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      flex: 1,
+    },
+    bitcoinLogo: {
+      width: 24,
+      height: 24,
+      resizeMode: 'contain',
+    },
+    title: {
       fontSize: 20,
       fontWeight: 'bold',
       color: theme.colors.text,
-      marginBottom: 0,
+      flex: 1,
+    },
+    closeButton: {
+      width: 30,
+      height: 30,
+    },
+    closeButtonText: {
+      fontSize: 16,
+      color: theme.colors.text,
+      fontWeight: '600',
       textAlign: 'center',
+      verticalAlign: 'middle',
+      lineHeight: 30,
     },
     input: {
       borderWidth: 1,
@@ -455,7 +485,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       <View style={styles.feeContainer}>
         {isCalculatingFee ? (
           <View style={styles.feeLoadingContainer}>
-            <ActivityIndicator size="small" color={theme.colors.primary} />
+            <ActivityIndicator size="small" />
             <Text style={styles.feeCalculating}>Calculating...</Text>
           </View>
         ) : estimatedFee ? (
@@ -514,8 +544,19 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
             <KeyboardAvoidingView
               behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
               keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : -500}>
-              <SafeAreaView>
-                <Text style={styles.header}>Send Bitcoin</Text>
+              <SafeAreaView edges={['top', 'left', 'right']}>
+                <View style={styles.header}>
+                  <View style={styles.titleContainer}>
+                    <Image
+                      source={require('../assets/bitcoin-logo.png')}
+                      style={styles.bitcoinLogo}
+                    />
+                    <Text style={styles.title}>Send Bitcoin</Text>
+                  </View>
+                  <TouchableOpacity onPress={onClose} style={styles.closeButton} activeOpacity={0.7}>
+                    <Text style={styles.closeButtonText}>✖️</Text>
+                  </TouchableOpacity>
+                </View>
                 <View style={styles.inputWithIcons}>
                   <TextInput
                     style={styles.inputAddressWithIcons}
@@ -561,7 +602,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                 <View style={styles.inputContainer}>
                   <View style={styles.labelContainer}>
                     <Text style={styles.inputLabel}>Amount in BTC (₿)</Text>
-                    <TouchableOpacity onPress={handleMaxClick}>
+                    <TouchableOpacity onPress={handleMaxClick} activeOpacity={0.7}>
                       <Text style={styles.maxText}>Max</Text>
                     </TouchableOpacity>
                   </View>
@@ -607,7 +648,8 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                       !btcAmount ||
                       isCalculatingFee ||
                       !estimatedFee
-                    }>
+                    }
+                    activeOpacity={0.7}>
                     <Text style={styles.buttonText}>Send</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -615,7 +657,8 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     onPress={() => {
                       HapticFeedback.light();
                       onClose();
-                    }}>
+                    }}
+                    activeOpacity={0.7}>
                     <Text style={styles.buttonText}>Cancel</Text>
                   </TouchableOpacity>
                 </View>

@@ -1,7 +1,6 @@
 import React, {useMemo} from 'react';
 import {View, StyleSheet, Animated, Dimensions, Image} from 'react-native';
 import {useTheme} from '../theme';
-import LinearGradient from 'react-native-linear-gradient';
 import TransactionListSkeleton from './TransactionListSkeleton';
 
 const {width} = Dimensions.get('window');
@@ -9,24 +8,18 @@ const {width} = Dimensions.get('window');
 interface ShimmerEffectProps {
   style: any;
   translateX: Animated.AnimatedInterpolation<string | number>;
-  backgroundColor: string;
 }
 
 const ShimmerEffect: React.FC<ShimmerEffectProps> = ({
   style,
   translateX,
-  backgroundColor,
 }) => {
   const {theme} = useTheme();
-  const background = {overflow: 'hidden', backgroundColor};
   return (
-    <View style={[style, styles.shimmerWrapper, background]}>
+    <View style={[style, styles.shimmerWrapper]}>
       <Animated.View
         style={[styles.shimmerContainer, {transform: [{translateX}]}]}>
-        <LinearGradient
-          colors={[backgroundColor, theme.colors.border, backgroundColor]}
-          start={{x: 1, y: 0}}
-          end={{x: 0, y: 0}}
+        <View
           style={styles.gradient}
         />
       </Animated.View>
@@ -69,7 +62,7 @@ const WalletSkeleton: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.header, {backgroundColor: theme.colors.primary}]}>
+      <View style={styles.header}>
         <View style={styles.headerTop}>
           <Image
             source={require('../assets/bitcoin-logo.png')}
@@ -78,39 +71,33 @@ const WalletSkeleton: React.FC = () => {
           <ShimmerEffect
             style={styles.priceSkeleton}
             translateX={translateX}
-            backgroundColor={theme.colors.accent}
           />
         </View>
         <ShimmerEffect
           style={styles.balanceSkeleton}
           translateX={translateX}
-          backgroundColor={theme.colors.cardBackground}
         />
         <ShimmerEffect
           style={styles.usdSkeleton}
           translateX={translateX}
-          backgroundColor={theme.colors.cardBackground}
         />
         <View style={styles.partyContainer}>
           <View style={styles.partyLeft}>
             <ShimmerEffect
               style={styles.partySkeleton}
               translateX={translateX}
-              backgroundColor={theme.colors.cardBackground}
             />
           </View>
           <View style={styles.partyCenter}>
             <ShimmerEffect
               style={styles.partySkeleton}
               translateX={translateX}
-              backgroundColor={theme.colors.cardBackground}
             />
           </View>
           <View style={styles.partyRight}>
             <ShimmerEffect
               style={styles.partySkeleton}
               translateX={translateX}
-              backgroundColor={theme.colors.cardBackground}
             />
           </View>
         </View>
@@ -118,17 +105,14 @@ const WalletSkeleton: React.FC = () => {
           <ShimmerEffect
             style={styles.actionButton}
             translateX={translateX}
-            backgroundColor={theme.colors.accent}
           />
           <ShimmerEffect
             style={styles.actionMiddleButton}
             translateX={translateX}
-            backgroundColor={theme.colors.cardBackground}
           />
           <ShimmerEffect
             style={styles.actionButton}
             translateX={translateX}
-            backgroundColor={theme.colors.secondary}
           />
         </View>
       </View>

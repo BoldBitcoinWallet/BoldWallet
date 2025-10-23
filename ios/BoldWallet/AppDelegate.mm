@@ -1,6 +1,7 @@
 #import "AppDelegate.h"
 
 #import <React/RCTBundleURLProvider.h>
+#import <ReactAppDependencyProvider/RCTAppDependencyProvider.h>
 
 // Deletes all Keychain items accessible by this app if this is the first time the user launches the app
 static void ClearKeychainIfNecessary() {
@@ -35,6 +36,7 @@ static void ClearKeychainIfNecessary() {
   // You can add your custom initial props in the dictionary below.
   // They will be passed down to the ViewController used by React Native.
   self.initialProps = @{};
+  self.dependencyProvider = [RCTAppDependencyProvider new];
 
   return [super application:application didFinishLaunchingWithOptions:launchOptions];
 }

@@ -113,6 +113,26 @@ export interface Styles {
   modalActionLeft: ViewStyle;
   modalActionRight: ViewStyle;
   linkText: TextStyle;
+  apiDisplayContainer: ViewStyle;
+  apiDisplayButton: ViewStyle;
+  apiDisplayContent: ViewStyle;
+  apiDisplayIcon: ImageStyle;
+  apiDisplayLabel: TextStyle;
+  apiDisplayValue: TextStyle;
+  providerRow: ViewStyle;
+  providerItem: ViewStyle;
+  providerLeft: ViewStyle;
+  providerIcon: ImageStyle;
+  providerLabel: TextStyle;
+  providerValue: TextStyle;
+  warningBox: ViewStyle;
+  warningText: TextStyle;
+  backupButton: ViewStyle;
+  backupButtonText: TextStyle;
+  modalOptionCheckIcon: ImageStyle;
+  addressTypeLabelRow: ViewStyle;
+  recommendBadge: ViewStyle;
+  recommendBadgeText: TextStyle;
 }
 
 export const createStyles = (theme: Theme): Styles => ({
@@ -321,15 +341,15 @@ export const createStyles = (theme: Theme): Styles => ({
     fontSize: 10,
     color: theme.colors.textOnPrimary,
     opacity: 0.7,
-    marginBottom: 2,
+    marginBottom: 1,
     textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
+    letterSpacing: 0.2,
   },
   partyValue: {
     fontSize: 12,
     color: theme.colors.textOnPrimary,
     fontWeight: '600',
-    marginLeft: 4,
+    paddingHorizontal: 6,
   },
   actions: {
     flexDirection: 'row' as const,
@@ -427,6 +447,22 @@ export const createStyles = (theme: Theme): Styles => ({
     textAlign: 'left' as const,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
+  recommendBadge: {
+    backgroundColor: 'rgba(76, 175, 80, 0.12)',
+    borderColor: 'rgba(76, 175, 80, 0.35)',
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  recommendBadgeText: {
+    color: '#4CAF50',
+    fontSize: 10,
+    fontWeight: '600' as const,
+    letterSpacing: 0.2,
+  },
   addressTypeIcon: {
     width: 16,
     height: 16,
@@ -439,8 +475,23 @@ export const createStyles = (theme: Theme): Styles => ({
     tintColor: theme.colors.text,
     opacity: 0.9,
   },
+  modalOptionCheckIcon: {
+    width: 20,
+    height: 20,
+    tintColor: theme.colors.accent,
+    opacity: 0.9,
+    marginLeft: 8,
+  },
   addressTypeContent: {
     flex: 1,
+    paddingRight: 28,
+  },
+  addressTypeLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    flexWrap: 'wrap',
   },
   modalTitle: {
     fontSize: 20,
@@ -604,6 +655,7 @@ export const createStyles = (theme: Theme): Styles => ({
     flexDirection: 'column' as const,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
+    paddingHorizontal: 4,
   },
   rowCenterMarginTop2: {
     flexDirection: 'row' as const,
@@ -694,5 +746,108 @@ export const createStyles = (theme: Theme): Styles => ({
   linkText: {
     color: theme.colors.accent,
     fontWeight: 'bold' as const,
+  },
+  apiDisplayContainer: {
+    paddingHorizontal: 16,
+    alignItems: 'center' as const,
+  },
+  apiDisplayButton: {
+    backgroundColor: 'transparent',
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    width: '100%',
+    opacity: 0.8,
+  },
+  apiDisplayContent: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    height: 16,
+    gap: 2,
+  },
+  apiDisplayIcon: {
+    width: 14,
+    height: 14,
+    marginRight: 6,
+    tintColor: theme.colors.textSecondary,
+    opacity: 0.7,
+  },
+  apiDisplayLabel: {
+    fontSize: 11,
+    fontWeight: '500' as const,
+    color: theme.colors.textSecondary,
+    marginRight: 4,
+  },
+  apiDisplayValue: {
+    fontSize: 11,
+    fontWeight: '400' as const,
+    color: theme.colors.textSecondary,
+    flex: 1,
+    textAlign: 'right' as const,
+  },
+  providerRow: {
+    marginHorizontal: 16,
+    marginVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  providerItem: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+  },
+  providerLeft: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    flex: 1,
+  },
+  providerIcon: {
+    width: 14,
+    height: 14,
+    marginRight: 6,
+    tintColor: theme.colors.textSecondary,
+    opacity: 0.8,
+  },
+  providerLabel: {
+    fontSize: 11,
+    fontWeight: '400' as const,
+    color: theme.colors.textSecondary,
+    letterSpacing: 0.2,
+  },
+  providerValue: {
+    fontSize: 11,
+    fontWeight: '400' as const,
+    color: theme.colors.textSecondary,
+    letterSpacing: 0.1,
+    flex: 1,
+    textAlign: 'right' as const,
+    opacity: 0.8,
+  },
+  warningBox: {
+    backgroundColor: 'rgba(255, 193, 7, 0.1)',
+    borderRadius: 8,
+    padding: 12,
+    marginVertical: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FFC107',
+  },
+  warningText: {
+    fontSize: 14,
+    fontWeight: '500' as const,
+    color: '#FF6B35',
+    lineHeight: 20,
+  },
+  backupButton: {
+    backgroundColor: theme.colors.primary,
+    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    marginTop: 12,
+    alignItems: 'center' as const,
+  },
+  backupButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600' as const,
   },
 });

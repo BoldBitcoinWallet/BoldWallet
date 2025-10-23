@@ -135,6 +135,8 @@ const ReceiveModal: React.FC<{
     closeButton: {
       width: 30,
       height: 30,
+      backgroundColor: 'transparent',
+      borderRadius: 0,
     },
     closeButtonText: {
       fontSize: 16,
@@ -279,15 +281,14 @@ const ReceiveModal: React.FC<{
               />
               <Text style={styles.title}>Receive Bitcoin</Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Text
-                style={styles.closeButtonText}
-                onPress={() => {
-                  HapticFeedback.medium();
-                  onClose();
-                }}>
-                ✖️
-              </Text>
+            <TouchableOpacity 
+              onPress={() => {
+                HapticFeedback.medium();
+                onClose();
+              }} 
+              style={styles.closeButton} 
+              activeOpacity={0.7}>
+              <Text style={styles.closeButtonText}>✖️</Text>
             </TouchableOpacity>
           </View>
 
@@ -302,12 +303,12 @@ const ReceiveModal: React.FC<{
             onPress={() => {
               HapticFeedback.medium();
               copyToClipboard();
-            }}>
+            }}
+            activeOpacity={0.7}>
             <QRCode
               value={address}
               size={200}
               getRef={ref => (qrRef.current = ref)}
-              backgroundColor="white"
             />
           </TouchableOpacity>
 
@@ -320,7 +321,8 @@ const ReceiveModal: React.FC<{
                 const url = `${baseApi.replace('api', '')}address/${address}`;
                 dbg('address URL', url);
                 Linking.openURL(url);
-              }}>
+              }}
+              activeOpacity={0.7}>
               <View style={styles.addressTextContainer}>
                 <Text style={styles.addressTextInteractive}>{address}</Text>
               </View>
@@ -343,7 +345,8 @@ const ReceiveModal: React.FC<{
                 onPress={() => {
                   HapticFeedback.medium();
                   copyToClipboard();
-                }}>
+                }}
+                activeOpacity={0.7}>
                 <Image
                   source={require('../assets/paste-icon.png')}
                   style={styles.buttonIcon}
@@ -360,7 +363,8 @@ const ReceiveModal: React.FC<{
                 onPress={() => {
                   HapticFeedback.medium();
                   shareQRCode();
-                }}>
+                }}
+                activeOpacity={0.7}>
                 <Image
                   source={require('../assets/share-icon.png')}
                   style={styles.buttonIcon}

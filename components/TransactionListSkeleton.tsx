@@ -1,32 +1,50 @@
 import React, {useMemo} from 'react';
 import {View, StyleSheet, Animated, Dimensions} from 'react-native';
-import {useTheme} from '../theme';
-import LinearGradient from 'react-native-linear-gradient';
 
 const {width} = Dimensions.get('window');
 
 interface ShimmerEffectProps {
   style: any;
   translateX: Animated.AnimatedInterpolation<string | number>;
-  backgroundColor: string;
 }
 
 const ShimmerEffect: React.FC<ShimmerEffectProps> = ({
   style,
   translateX,
-  backgroundColor,
 }) => {
-  const {theme} = useTheme();
-  const background = {overflow: 'hidden', backgroundColor};
+  
+  // Create opacity animation for shimmer effect
+  const opacityValue = useMemo(() => new Animated.Value(0.3), []);
+  
+  React.useEffect(() => {
+    const opacityAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacityValue, {
+          toValue: 0.8,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacityValue, {
+          toValue: 0.3,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    opacityAnimation.start();
+    return () => opacityAnimation.stop();
+  }, [opacityValue]);
+  
   return (
-    <View style={[style, styles.shimmerWrapper, background]}>
+    <View style={[style, styles.shimmerWrapper]}>
       <Animated.View
         style={[styles.shimmerContainer, {transform: [{translateX}]}]}>
-        <LinearGradient
-          colors={[backgroundColor, theme.colors.border, backgroundColor]}
-          start={{x: 1, y: 0}}
-          end={{x: 0, y: 0}}
-          style={styles.gradient}
+        <Animated.View
+          style={[
+            styles.gradient,
+            styles.gradientBackground,
+            {opacity: opacityValue}
+          ]}
         />
       </Animated.View>
     </View>
@@ -35,55 +53,66 @@ const ShimmerEffect: React.FC<ShimmerEffectProps> = ({
 
 interface TransactionSkeletonItemProps {
   translateX: Animated.AnimatedInterpolation<string | number>;
-  backgroundColor: string;
 }
 
 const TransactionSkeletonItem: React.FC<TransactionSkeletonItemProps> = ({
   translateX,
-  backgroundColor,
-}) => (
-  <View style={[styles.transactionItem, {backgroundColor}]}>
-    <View style={styles.transactionRow}>
-      <ShimmerEffect
-        style={styles.statusSkeleton}
-        translateX={translateX}
-        backgroundColor={backgroundColor}
-      />
-      <ShimmerEffect
-        style={styles.amountSkeleton}
-        translateX={translateX}
-        backgroundColor={backgroundColor}
-      />
+}) => {
+  
+  return (
+    <View style={[styles.transactionItem, styles.transactionItemBackground]}>
+      {/* Top row with status and amount */}
+      <View style={styles.transactionRow}>
+        <View style={styles.statusContainer}>
+          <ShimmerEffect
+            style={styles.statusIconSkeleton}
+            translateX={translateX}
+          />
+          <ShimmerEffect
+            style={styles.statusTextSkeleton}
+            translateX={translateX}
+          />
+        </View>
+        <ShimmerEffect
+          style={styles.amountSkeleton}
+          translateX={translateX}
+        />
+      </View>
+      
+      {/* Address row */}
+      <View style={styles.addressRow}>
+        <ShimmerEffect
+          style={styles.addressSkeleton}
+          translateX={translateX}
+        />
+        <ShimmerEffect
+          style={styles.usdAmountSkeleton}
+          translateX={translateX}
+        />
+      </View>
+      
+      {/* Bottom row with transaction ID and timestamp */}
+      <View style={styles.transactionRow}>
+        <View style={styles.txIdContainer}>
+          <ShimmerEffect
+            style={styles.linkIconSkeleton}
+            translateX={translateX}
+          />
+          <ShimmerEffect
+            style={styles.txIdSkeleton}
+            translateX={translateX}
+          />
+        </View>
+        <ShimmerEffect
+          style={styles.timestampSkeleton}
+          translateX={translateX}
+        />
+      </View>
     </View>
-    <View style={styles.addressRow}>
-      <ShimmerEffect
-        style={styles.addressSkeleton}
-        translateX={translateX}
-        backgroundColor={backgroundColor}
-      />
-      <ShimmerEffect
-        style={styles.usdAmountSkeleton}
-        translateX={translateX}
-        backgroundColor={backgroundColor}
-      />
-    </View>
-    <View style={styles.transactionRow}>
-      <ShimmerEffect
-        style={styles.txIdSkeleton}
-        translateX={translateX}
-        backgroundColor={backgroundColor}
-      />
-      <ShimmerEffect
-        style={styles.timestampSkeleton}
-        translateX={translateX}
-        backgroundColor={backgroundColor}
-      />
-    </View>
-  </View>
-);
+  );
+};
 
 const TransactionListSkeleton: React.FC = () => {
-  const {theme} = useTheme();
   const animatedValue = useMemo(() => new Animated.Value(0), []);
 
   React.useEffect(() => {
@@ -92,7 +121,7 @@ const TransactionListSkeleton: React.FC = () => {
         Animated.sequence([
           Animated.timing(animatedValue, {
             toValue: 1,
-            duration: 2000,
+            duration: 1500,
             useNativeDriver: true,
           }),
           Animated.timing(animatedValue, {
@@ -112,7 +141,7 @@ const TransactionListSkeleton: React.FC = () => {
 
   const translateX = animatedValue.interpolate({
     inputRange: [0, 1],
-    outputRange: [-width * 2, width * 2],
+    outputRange: [-width * 1.5, width * 1.5],
   });
 
   return (
@@ -121,7 +150,6 @@ const TransactionListSkeleton: React.FC = () => {
         <TransactionSkeletonItem
           key={i}
           translateX={translateX}
-          backgroundColor={theme.colors.cardBackground}
         />
       ))}
     </View>
@@ -134,60 +162,83 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   transactionItem: {
-    padding: 16,
-    marginVertical: 8,
-    borderRadius: 8,
-    elevation: 1,
+    padding: 20,
+    marginVertical: 6,
+    borderRadius: 16,
+    elevation: 2,
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.08,
-    shadowRadius: 1,
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
   },
   transactionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: 4,
+    marginVertical: 6,
   },
   addressRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: 4,
+    marginVertical: 8,
   },
-  statusSkeleton: {
-    width: 100,
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusIconSkeleton: {
+    width: 20,
     height: 20,
-    borderRadius: 4,
+    borderRadius: 10,
+    marginRight: 8,
+  },
+  statusTextSkeleton: {
+    width: 80,
+    height: 18,
+    borderRadius: 9,
   },
   amountSkeleton: {
-    width: 120,
-    height: 24,
-    borderRadius: 4,
+    width: 140,
+    height: 28,
+    borderRadius: 14,
   },
   addressSkeleton: {
     flex: 1,
-    height: 18,
-    borderRadius: 4,
-    marginRight: 8,
+    height: 20,
+    borderRadius: 10,
+    marginRight: 12,
   },
   usdAmountSkeleton: {
-    width: 80,
-    height: 18,
-    borderRadius: 4,
+    width: 90,
+    height: 20,
+    borderRadius: 10,
+  },
+  txIdContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  linkIconSkeleton: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    marginRight: 8,
   },
   txIdSkeleton: {
-    width: 140,
+    width: 120,
     height: 16,
-    borderRadius: 4,
+    borderRadius: 8,
   },
   timestampSkeleton: {
-    width: 100,
+    width: 110,
     height: 16,
-    borderRadius: 4,
+    borderRadius: 8,
   },
   shimmerWrapper: {
     overflow: 'hidden',
+    borderRadius: 8,
   },
   shimmerContainer: {
     width: '100%',
@@ -195,6 +246,13 @@ const styles = StyleSheet.create({
   },
   gradient: {
     flex: 1,
+    borderRadius: 8,
+  },
+  transactionItemBackground: {
+    backgroundColor: '#ffffff',
+  },
+  gradientBackground: {
+    backgroundColor: '#f0f0f0',
   },
 });
 

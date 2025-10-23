@@ -84,6 +84,7 @@ BBMTLib/scripts/*.json
 
 #
 android/signed-release.sh
+android/generate-signed-bundle.sh
 android/app/BoldBitcoinWallet.jks
 android/app/release/
 android/app-release.apk.sha256
@@ -93,3 +94,6 @@ android/boldwallet-publickey.asc
 # Docker Generated APK
 app-release.apk
 build.log
+
+# Local gradle properties with secrets (never commit)
+android/gradle.properties.local
