@@ -7,7 +7,6 @@ import {
   Alert,
   Image,
   TouchableOpacity,
-  ActivityIndicator,
   Animated,
   Easing,
   Modal,
@@ -84,6 +83,9 @@ const MobilesPairing = ({navigation}: any) => {
   const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
 
   const {theme} = useTheme();
+
+  // Animation ref for horizontal progress bar
+  const progressAnimation = useRef(new Animated.Value(0)).current;
 
   type RouteParams = {
     mode?: string;
@@ -761,6 +763,33 @@ const MobilesPairing = ({navigation}: any) => {
     }
   }, [isPreparing]);
 
+  // Animation for horizontal progress bar
+  useEffect(() => {
+    if (isPreparing) {
+      const startAnimation = () => {
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(progressAnimation, {
+              toValue: 1,
+              duration: 2000,
+              easing: Easing.inOut(Easing.ease),
+              useNativeDriver: false,
+            }),
+            Animated.timing(progressAnimation, {
+              toValue: 0,
+              duration: 2000,
+              easing: Easing.inOut(Easing.ease),
+              useNativeDriver: false,
+            }),
+          ])
+        ).start();
+      };
+      startAnimation();
+    } else {
+      progressAnimation.setValue(0);
+    }
+  }, [isPreparing, progressAnimation]);
+
   useEffect(() => {
     if (doingMPC) {
       const interval = setInterval(() => {
@@ -1175,6 +1204,9 @@ const MobilesPairing = ({navigation}: any) => {
       flexDirection: 'row',
       alignItems: 'center',
       paddingHorizontal: 12,
+      marginVertical: 4,
+      marginHorizontal: 8,
+      paddingVertical: 4,
       borderRadius: 8,
       backgroundColor: 'transparent',
     },
@@ -1930,8 +1962,8 @@ const MobilesPairing = ({navigation}: any) => {
       justifyContent: 'center',
     },
     finalizingModalIcon: {
-      width: 32,
-      height: 32,
+      width: 24,
+      height: 24,
       tintColor: theme.colors.primary,
     },
     progressContainer: {
@@ -1939,26 +1971,45 @@ const MobilesPairing = ({navigation}: any) => {
       alignItems: 'center',
       justifyContent: 'center',
     },
-    progressPercentage: {
+    horizontalProgressContainer: {
+      width: '100%',
+      alignItems: 'center',
+    },
+    horizontalProgressTrack: {
+      width: 200,
+      height: 6,
+      backgroundColor: theme.colors.cardBackground,
+      borderRadius: 3,
+      overflow: 'hidden',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    horizontalProgressBar: {
+      height: '100%',
+      borderRadius: 3,
+      width: 0,
+      alignSelf: 'center',
+    },
+    progressTextWrapper: {
       position: 'absolute',
       top: 0,
       left: 0,
       right: 0,
       bottom: 0,
-      fontSize: 20,
-      fontWeight: '700',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    progressPercentage: {
+      fontSize: 14,
+      fontWeight: '500',
       color: theme.colors.text,
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'center',
-      textAlignVertical: 'center',
-      lineHeight: 20,
+      lineHeight: 14,
     },
     statusContainer: {
       width: '100%',
       marginTop: 8,
-      paddingTop: 16,
-      borderTopWidth: 1,
-      borderTopColor: theme.colors.border,
     },
     statusRow: {
       flexDirection: 'row',
@@ -2447,10 +2498,23 @@ const MobilesPairing = ({navigation}: any) => {
 
                                 {/* Loading Indicator */}
                                 <View style={styles.progressContainer}>
-                                  <ActivityIndicator
-                                    size="large"
-                                    color={theme.colors.primary}
-                                  />
+                                  <View style={styles.horizontalProgressContainer}>
+                                    <View style={styles.horizontalProgressTrack}>
+                                      <Animated.View 
+                                        style={[
+                                          styles.horizontalProgressBar,
+                                          {
+                                            backgroundColor: theme.colors.primary,
+                                            width: progressAnimation.interpolate({
+                                              inputRange: [0, 1],
+                                              outputRange: [0, 200],
+                                            }),
+                                            alignSelf: 'center',
+                                          }
+                                        ]} 
+                                      />
+                                    </View>
+                                  </View>
                                 </View>
 
                                 {/* Status and Countdown */}
@@ -2561,7 +2625,7 @@ const MobilesPairing = ({navigation}: any) => {
                                 <Progress.Circle
                                   size={80}
                                   progress={progress / 100}
-                                  thickness={8}
+                                  thickness={6}
                                   borderWidth={0}
                                   showsText={false}
                                   color={theme.colors.primary}
@@ -2569,9 +2633,11 @@ const MobilesPairing = ({navigation}: any) => {
                                 />
                                 
                                 {/* Progress Percentage */}
-                                <Text style={styles.progressPercentage}>
-                                  {Math.round(progress)}%
-                                </Text>
+                                <View style={styles.progressTextWrapper}>
+                                  <Text style={styles.progressPercentage}>
+                                    {Math.round(progress)}%
+                                  </Text>
+                                </View>
                               </View>
 
                               {/* Status and Countdown */}
@@ -2882,7 +2948,7 @@ const MobilesPairing = ({navigation}: any) => {
                             <Progress.Circle
                               size={80}
                               progress={progress / 100}
-                              thickness={8}
+                              thickness={6}
                               borderWidth={0}
                               showsText={false}
                               color={theme.colors.primary}
@@ -2890,9 +2956,11 @@ const MobilesPairing = ({navigation}: any) => {
                             />
                             
                             {/* Progress Percentage */}
-                            <Text style={styles.progressPercentage}>
-                              {Math.round(progress)}%
-                            </Text>
+                            <View style={styles.progressTextWrapper}>
+                              <Text style={styles.progressPercentage}>
+                                {Math.round(progress)}%
+                              </Text>
+                            </View>
                           </View>
 
                           {/* Status and Countdown */}

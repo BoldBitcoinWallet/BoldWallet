@@ -11,7 +11,7 @@ GREEN=""
 RED=""
 RESET=""
 
-APK_PATH="app/build/outputs/apk/release/app-release.apk"
+APK_PATH="app/release/app-release.apk"
 echo -e "${GREEN}APK path: $APK_PATH${RESET}"
 # Step 5: Install APK on connected device (optional)
   for device in $(adb devices | grep -w "device" | awk '{print $1}'); do
