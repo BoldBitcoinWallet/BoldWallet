@@ -23,6 +23,7 @@ import RNFS from 'react-native-fs';
 import EncryptedStorage from 'react-native-encrypted-storage';
 const {BBMTLibNativeModule} = NativeModules;
 import DeviceInfo from 'react-native-device-info';
+import {useUser} from '../context/UserContext';
 
 // Predefined API endpoints
 const MAINNET_APIS = ['https://mempool.space/api'];
@@ -70,7 +71,6 @@ import {
   areHapticsEnabled,
 } from '../utils';
 import {useTheme} from '../theme';
-import {useNetwork} from '../context/NetworkContext';
 import {WalletService} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
 import LegalModal from '../components/LegalModal';
@@ -520,8 +520,8 @@ const getSectionIcon = (title: string): any => {
 };
 
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
-  // Use NetworkContext for reactive network and API state
-  const {apiBase, updateNetwork, updateAPI} = useNetwork();
+  // Use UserContext for reactive network and API state
+  const {activeApiProvider: apiBase, setActiveNetwork, setActiveApiProvider} = useUser();
 
   const [deleteInput, setDeleteInput] = useState('');
   const [password, setPassword] = useState('');
@@ -532,7 +532,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [isTestnet, setIsTestnet] = useState(true);
   const [party, setParty] = useState('');
   const [baseAPI, setBaseAPI] = useState('');
-  const [isCryptoVibrant, setIsCryptoVibrant] = useState(false);
+  const [_isCryptoVibrant, setIsCryptoVibrant] = useState(false);
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
   const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
     'terms',
@@ -557,7 +557,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     legal: false,
   });
 
-  const {theme, toggleTheme} = useTheme();
+  const {theme} = useTheme();
   const [appVersion, setAppVersion] = useState('');
 
   // Password validation functions
@@ -711,17 +711,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     });
   }, []);
 
-  const handleToggleTheme = (value: boolean) => {
-    // Haptic feedback for theme toggle
-    HapticFeedback.light();
-
-    setIsCryptoVibrant(value);
-    toggleTheme(value);
-    navigation.reset({
-      index: 0,
-      routes: [{name: 'Bold Home'}],
-    });
-  };
+  
 
   const toggleNetwork = async (value: boolean) => {
     // Haptic feedback for network toggle
@@ -731,8 +721,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
     const newNetwork = value ? 'testnet3' : 'mainnet';
 
-    // Use NetworkContext to update network
-    await updateNetwork(newNetwork);
+    // Update network via UserContext
+    await setActiveNetwork(newNetwork);
 
     // Wait a bit for NetworkContext state to update
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -808,8 +798,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     console.log('=== saveAPI called with:', api);
 
     try {
-      // Use NetworkContext to update API
-      await updateAPI(api);
+      // Update API via UserContext
+      await setActiveApiProvider(api);
 
       // Update local state
       setBaseAPI(api);

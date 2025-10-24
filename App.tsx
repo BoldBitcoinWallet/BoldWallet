@@ -12,7 +12,7 @@ import ReactNativeBiometrics, { BiometryTypes } from 'react-native-biometrics';
 import DeviceInfo from 'react-native-device-info';
 import { ThemeProvider } from './theme';
 import { WalletProvider } from './context/WalletContext';
-import { NetworkProvider } from './context/NetworkContext';
+import { UserProvider } from './context/UserContext';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { initializeHaptics } from './utils';
 import {
@@ -276,7 +276,7 @@ const App = () => {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <NetworkProvider>
+        <UserProvider>
           <WalletProvider>
             <NavigationContainer>
             <Stack.Navigator
@@ -317,7 +317,7 @@ const App = () => {
             </Stack.Navigator>
             </NavigationContainer>
           </WalletProvider>
-        </NetworkProvider>
+        </UserProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );

@@ -32,8 +32,7 @@ import {
 import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
 import WalletSkeleton from '../components/WalletSkeleton';
-import {useWallet} from '../context/WalletContext';
-import {useNetwork} from '../context/NetworkContext';
+import {useUser} from '../context/UserContext';
 import CurrencySelector from '../components/CurrencySelector';
 import {createStyles} from '../components/Styles';
 import {
@@ -103,8 +102,43 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   // Navigation hook for detecting screen changes
   const nav = useNavigation();
 
-  // Use NetworkContext for reactive network and API state
-  const {network, apiBase, updateNetwork} = useNetwork();
+  // Use UserContext for unified user/network/address state
+  const {
+    activeNetwork,
+    activeAddressType: userAddressType,
+    activeAddress: userActiveAddress,
+    setActiveNetwork,
+    setActiveAddressType,
+    activeApiProvider: apiBase,
+    activeNetwork: network,
+    legacyMainnetAddress: uxLegacyMainnet,
+    segwitNativeMainnetAddress: uxSegwitMainnet,
+    segwitCompatibleMainnetAddress: uxSegwitCompMainnet,
+    legacyTestnetAddress: uxLegacyTestnet,
+    segwitNativeTestnetAddress: uxSegwitTestnet,
+    segwitCompatibleTestnetAddress: uxSegwitCompTestnet,
+  } = useUser();
+
+  // Keep local state in sync with UserContext
+  useEffect(() => {
+    if (userAddressType) setAddressType(userAddressType);
+  }, [userAddressType]);
+
+  useEffect(() => {
+    if (userActiveAddress) setAddress(userActiveAddress);
+  }, [userActiveAddress]);
+
+  useEffect(() => {
+    if (activeNetwork === 'mainnet') {
+      if (uxLegacyMainnet) setLegacyAddress(uxLegacyMainnet);
+      if (uxSegwitMainnet) setSegwitAddress(uxSegwitMainnet);
+      if (uxSegwitCompMainnet) setSegwitCompatibleAddress(uxSegwitCompMainnet);
+    } else {
+      if (uxLegacyTestnet) setLegacyAddress(uxLegacyTestnet);
+      if (uxSegwitTestnet) setSegwitAddress(uxSegwitTestnet);
+      if (uxSegwitCompTestnet) setSegwitCompatibleAddress(uxSegwitCompTestnet);
+    }
+  }, [activeNetwork, uxLegacyMainnet, uxSegwitMainnet, uxSegwitCompMainnet, uxLegacyTestnet, uxSegwitTestnet, uxSegwitCompTestnet]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -632,7 +666,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
   const {theme} = useTheme();
   const styles = createStyles(theme);
-  const wallet = useWallet();
 
   const headerRight = React.useCallback(
     () => <HeaderRightButton navigation={navigation} />,
@@ -900,35 +933,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     try {
       dbg('WalletHome: Starting address type change to:', type);
       setIsAddressTypeModalVisible(false);
-
-      // Update storage and local state
-      await LocalCache.setItem('addressType', type);
-      setAddressType(type);
-
-      // Generate new address
-      const jks = await EncryptedStorage.getItem('keyshare');
-      const ks = JSON.parse(jks || '{}');
-      const path = "m/44'/0'/0'/0/0";
-      const btcPub = await BBMTLibNativeModule.derivePubkey(
-        ks.pub_key,
-        ks.chain_code_hex,
-        path,
-      );
-
-      const currentNetwork = (await LocalCache.getItem('network')) || 'mainnet';
-      const newAddress = await BBMTLibNativeModule.btcAddress(
-        btcPub,
-        currentNetwork,
-        type,
-      );
-
-      // Save new address and clear caches
-      await LocalCache.setItem('currentAddress', newAddress);
-      setAddress(newAddress);
+      await setActiveAddressType(type as any);
       await WalletService.getInstance().clearWalletCache();
-
-      // Refresh wallet and data
-      await wallet.refreshWallet();
       await fetchDataRef.current?.();
     } catch (error) {
       dbg('WalletHome: Error changing address type:', error);
@@ -1004,7 +1010,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
   };
 
-  // Helper to switch network using NetworkContext
+  // Helper to switch network using UserContext
   const handleNetworkSwitch = async (toTestnet: boolean) => {
     HapticFeedback.light();
     console.log(
@@ -1013,9 +1019,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     );
 
     const net = toTestnet ? 'testnet3' : 'mainnet';
-
-    // Use NetworkContext to update network
-    await updateNetwork(net);
+    await setActiveNetwork(net);
     setIsNetworkModalVisible(false);
     console.log('=== Home screen network switch completed');
   };
