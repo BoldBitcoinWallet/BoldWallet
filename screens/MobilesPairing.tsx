@@ -418,7 +418,7 @@ const MobilesPairing = ({navigation}: any) => {
           deletePreparams();
         })
         .catch((error: any) => {
-          console.error('keygen error', error);
+          dbg('keygen error', error);
         })
         .finally(async () => {
           if (isMaster) {
@@ -528,7 +528,7 @@ const MobilesPairing = ({navigation}: any) => {
           ),
         );
       } catch (e) {
-        console.error('got exception', e);
+        dbg('got exception', e);
       }
       setProgress(0);
       await BBMTLibNativeModule.mpcSendBTC(
@@ -556,7 +556,7 @@ const MobilesPairing = ({navigation}: any) => {
             throw txId;
           }
           const pendingTxs = JSON.parse(
-            (await LocalCache.getItem('pendingTxs')) || '{}',
+            (await LocalCache.getItem(`${btcAddress}-pendingTxs`)) || '{}',
           );
           pendingTxs[txId] = {
             txid: txId,
@@ -571,7 +571,7 @@ const MobilesPairing = ({navigation}: any) => {
               block_height: null,
             },
           };
-          await LocalCache.setItem('pendingTxs', JSON.stringify(pendingTxs));
+          await LocalCache.setItem(`${btcAddress}-pendingTxs`, JSON.stringify(pendingTxs));
           navigation.dispatch(
             CommonActions.reset({
               index: 0,
@@ -615,12 +615,9 @@ const MobilesPairing = ({navigation}: any) => {
   }
 
   async function backupShare() {
-    console.log('🔐 [BACKUP] Starting backup process...');
-    console.log('🔐 [BACKUP] Platform:', Platform.OS);
-    console.log('🔐 [BACKUP] Share name:', shareName);
     
     if (!validatePassword(password)) {
-      console.log('❌ [BACKUP] Password validation failed');
+      dbg('❌ [BACKUP] Password validation failed');
       Alert.alert(
         'Weak Password',
         'Please use a stronger password that meets all requirements.',
@@ -629,7 +626,7 @@ const MobilesPairing = ({navigation}: any) => {
     }
 
     if (password !== confirmPassword) {
-      console.log('❌ [BACKUP] Password mismatch');
+      dbg('❌ [BACKUP] Password mismatch');
       Alert.alert('Password Mismatch', 'Passwords do not match.');
       return;
     }
@@ -670,7 +667,7 @@ const MobilesPairing = ({navigation}: any) => {
       } catch {}
       clearBackupModal();
     } catch (error) {
-      console.error('Error encrypting or sharing keyshare:', error);
+      dbg('Error encrypting or sharing keyshare:', error);
       Alert.alert('Error', 'Failed to encrypt or share the keyshare.');
     }
   }
@@ -939,7 +936,7 @@ const MobilesPairing = ({navigation}: any) => {
         navigation.dispatch(StackActions.replace('📱📱 Pairing', route.params));
       }
     } catch (error) {
-      console.error('Pairing Error:', error);
+      dbg('Pairing Error:', error);
       setStatus('An error occurred during pairing.');
       setPeerIP(null);
       setLocalIP(null);
@@ -1063,7 +1060,7 @@ const MobilesPairing = ({navigation}: any) => {
   const styles = StyleSheet.create({
     root: {
       flex: 1,
-      backgroundColor: theme.colors.background,
+      backgroundColor: theme.colors.primary,
     },
     flexContainer: {
       flex: 1,
@@ -2219,7 +2216,7 @@ const MobilesPairing = ({navigation}: any) => {
                   ))}
                 </View>
                 <Text style={styles.pairingHint}>
-                ⚠️ Tip: For best privacy and reliability, use one phone as a
+                ⚠️ For best privacy and reliability, use one phone as a
                   hotpsot and connect the other phone to it.
                 </Text>
                 {/* Pairing Button */}

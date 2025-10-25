@@ -21,7 +21,6 @@ import {useTheme} from '../theme';
 import {dbg, HapticFeedback} from '../utils';
 import LegalModal from '../components/LegalModal';
 import LocalCache from '../services/LocalCache';
-import {WalletService} from '../services/WalletService';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -38,7 +37,7 @@ const ShowcaseScreen = ({navigation}: any) => {
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
   const {theme} = useTheme();
 
-  const fadeAnim = useRef(new Animated.Value(0.7)).current;
+  const fadeAnim = useRef(new Animated.Value(0.6)).current;
 
   // Clear all app cache on component mount
   useEffect(() => {
@@ -46,10 +45,10 @@ const ShowcaseScreen = ({navigation}: any) => {
       try {
         dbg('Clearing all app cache on ShowcaseScreen mount');
         await LocalCache.clear();
-        await WalletService.getInstance().clearWalletCache();
+        // Avoid clearing persistent wallet cache; keep offline data
         dbg('App cache cleared successfully');
       } catch (_error) {
-        console.error('Error clearing app cache:', _error);
+        dbg('Error clearing app cache:', _error);
       }
     };
 
@@ -66,7 +65,7 @@ const ShowcaseScreen = ({navigation}: any) => {
           useNativeDriver: true,
         }),
         Animated.timing(fadeAnim, {
-          toValue: 0.7,
+          toValue: 0.6,
           duration: 1000,
           easing: Easing.cubic,
           useNativeDriver: true,
@@ -115,7 +114,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       if (DocumentPicker.isCancel(err)) {
         dbg('User cancelled the picker');
       } else {
-        console.error('Error reading file:', err.message || err);
+        dbg('Error reading file:', err.message || err);
         Alert.alert('Error', 'Failed to read the file');
       }
     }
@@ -144,7 +143,7 @@ const ShowcaseScreen = ({navigation}: any) => {
         }, 1000);
       }
     } catch {
-      console.warn('Failed to decode as UTF-8. File might be binary.');
+      dbg('Failed to decode as UTF-8. File might be binary.');
       Alert.alert('Error', 'Failed to decrypt the file');
     }
   };
@@ -174,20 +173,31 @@ const ShowcaseScreen = ({navigation}: any) => {
       paddingVertical: 40,
     },
     heroTitle: {
-      fontSize: 32,
+      fontSize: 28,
       fontWeight: '700',
-      color: theme.colors.primary,
-      marginTop: 0,
+      color: theme.colors.text,
+      marginTop: 16,
       textAlign: 'center',
-      lineHeight: 40,
-      marginBottom: 24,
+      lineHeight: 36,
+      marginBottom: 16,
     },
     heroSubtitle: {
       fontSize: 20,
-      color: theme.colors.secondary,
-      fontWeight: 'bold',
+      color: theme.colors.primary,
+      fontWeight: '700',
       textAlign: 'center',
-      marginTop: 12,
+      lineHeight: 28,
+      paddingHorizontal: 20,
+      marginBottom: 8,
+    },
+    heroTagline: {
+      fontSize: 16,
+      color: theme.colors.textSecondary,
+      fontWeight: '500',
+      textAlign: 'center',
+      lineHeight: 22,
+      paddingHorizontal: 20,
+      fontStyle: 'italic',
     },
     logoContainer: {
       alignItems: 'center',
@@ -207,42 +217,45 @@ const ShowcaseScreen = ({navigation}: any) => {
       paddingHorizontal: 24,
     },
     ctaButtons: {
-      flexDirection: 'row',
+      flexDirection: 'column',
       justifyContent: 'center',
-      gap: 16,
+      gap: 12,
       marginBottom: 24,
       width: '100%',
+      paddingHorizontal: 8,
     },
-    ctaButton: {
+    ctaButtonPrimary: {
       backgroundColor: theme.colors.primary,
-      borderRadius: 8,
-      paddingVertical: 14,
-      paddingHorizontal: 20,
+      borderRadius: 12,
+      paddingVertical: 16,
+      paddingHorizontal: 24,
       alignItems: 'center',
       justifyContent: 'center',
-      width: 160,
+      width: '100%',
       shadowColor: theme.colors.primary,
-      shadowOffset: {width: 0, height: 2},
-      shadowOpacity: 0.2,
-      shadowRadius: 4,
-      elevation: 3,
+      shadowOffset: {width: 0, height: 4},
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 6,
     },
-    ctaButtonRestore: {
-      backgroundColor: theme.colors.accent,
-      borderRadius: 8,
+    ctaButtonSecondary: {
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      borderColor: theme.colors.border,
+      borderRadius: 12,
       paddingVertical: 14,
-      paddingHorizontal: 20,
+      paddingHorizontal: 24,
       alignItems: 'center',
       justifyContent: 'center',
-      width: 160,
-      shadowColor: theme.colors.accent,
-      shadowOffset: {width: 0, height: 2},
-      shadowOpacity: 0.2,
-      shadowRadius: 4,
-      elevation: 3,
+      width: '100%',
     },
     ctaButtonText: {
       color: theme.colors.background,
+      fontWeight: '600',
+      fontSize: 16,
+    },
+    ctaButtonSecondaryText: {
+      color: theme.colors.text,
       fontWeight: '600',
       fontSize: 16,
     },
@@ -445,9 +458,6 @@ const ShowcaseScreen = ({navigation}: any) => {
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.heroSection}>
-          <Text style={styles.heroTitle}>
-            Seedless.{'\n'}Hardware-Free.{'\n'}Limitless.
-          </Text>
           <Animated.View style={[styles.logoContainer, {opacity: fadeAnim}]}>
             <Image
               style={styles.storeIcon}
@@ -455,7 +465,10 @@ const ShowcaseScreen = ({navigation}: any) => {
             />
           </Animated.View>
           <Text style={styles.heroSubtitle}>
-          Bold ₿ Wallet
+            Seedless.{'\n'}Hardware-Free.{'\n'}Limitless.
+          </Text>
+          <Text style={styles.heroTagline}>
+            The future of Bitcoin self-custody
           </Text>
         </View>
       </ScrollView>
@@ -520,17 +533,17 @@ const ShowcaseScreen = ({navigation}: any) => {
         </View>
         <View style={styles.ctaButtons}>
           <TouchableOpacity
-            style={[styles.ctaButton, (!agreeToTerms || !agreeToPrivacy) && styles.disabledButton]}
+            style={[styles.ctaButtonPrimary, (!agreeToTerms || !agreeToPrivacy) && styles.disabledButton]}
             onPress={() => {
               HapticFeedback.medium();
               navigation.navigate('📱📱 Pairing');
             }}
             disabled={!agreeToTerms || !agreeToPrivacy}>
-            <Text style={styles.ctaButtonText}>Setup Wallet</Text>
+            <Text style={styles.ctaButtonText}>Setup New Wallet</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[
-              styles.ctaButtonRestore,
+              styles.ctaButtonSecondary,
               (!agreeToTerms || !agreeToPrivacy) && styles.disabledButton,
             ]}
             onPress={() => {
@@ -538,7 +551,7 @@ const ShowcaseScreen = ({navigation}: any) => {
               handleRestoreWallet();
             }}
             disabled={!agreeToTerms || !agreeToPrivacy}>
-            <Text style={styles.ctaButtonText}>Restore Wallet</Text>
+            <Text style={styles.ctaButtonSecondaryText}>Restore Existing Wallet</Text>
           </TouchableOpacity>
         </View>
       </View>

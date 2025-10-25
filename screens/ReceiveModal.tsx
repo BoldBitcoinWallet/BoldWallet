@@ -81,7 +81,7 @@ const ReceiveModal: React.FC<{
         });
       });
     } catch (error) {
-      console.error('Error sharing QR code:', error);
+      dbg('Error sharing QR code:', error);
       Alert.alert('Error', 'Failed to share QR code');
     }
   }, [address, network]);

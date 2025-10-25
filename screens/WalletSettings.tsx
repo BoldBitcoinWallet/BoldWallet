@@ -59,7 +59,7 @@ const fetchDynamicAPIEndpoints = async (): Promise<string[]> => {
 
     return apiEndpoints;
   } catch (error) {
-    console.warn('Failed to fetch dynamic API endpoints:', error);
+    dbg('Failed to fetch dynamic API endpoints:', error);
     return MAINNET_APIS;
   }
 };
@@ -228,10 +228,10 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
           const fetchedAPIs = await fetchDynamicAPIEndpoints();
           if (fetchedAPIs.length > 0) {
             setDynamicAPIs(fetchedAPIs);
-            console.log('Dynamic APIs loaded:', fetchedAPIs);
+            dbg('Dynamic APIs loaded:', fetchedAPIs);
           }
         } catch (error) {
-          console.warn('Failed to load dynamic APIs:', error);
+          dbg('Failed to load dynamic APIs:', error);
         } finally {
           setIsLoadingAPIs(false);
         }
@@ -243,7 +243,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
 
   // Refresh API options when network changes
   useEffect(() => {
-    console.log(
+    dbg(
       'Network changed, refreshing API options for:',
       isTestnet ? 'testnet' : 'mainnet',
     );
@@ -292,15 +292,15 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
   };
 
   const selectOption = async (option: string) => {
-    console.log('selectOption called with:', option);
-    console.log('isSelecting:', isSelecting);
+    dbg('selectOption called with:', option);
+    dbg('isSelecting:', isSelecting);
 
     if (isSelecting) {
-      console.log('Already selecting, ignoring');
+      dbg('Already selecting, ignoring');
       return; // Prevent multiple rapid selections
     }
 
-    console.log('Starting selection process');
+    dbg('Starting selection process');
     setIsSelecting(true);
 
     // First, hide dropdown and update UI state
@@ -315,14 +315,14 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
 
     // Update the value through the parent's onChangeText
     // This calls saveAPI which updates LocalCache and native module
-    console.log('Calling onChangeText with:', option);
+    dbg('Calling onChangeText with:', option);
     await onChangeText(option);
 
     // Blur input and reset selecting state
     setTimeout(() => {
       inputRef.current?.blur();
       setIsSelecting(false);
-      console.log('Selection process completed');
+      dbg('Selection process completed');
     }, 200);
   };
 
@@ -387,15 +387,15 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
         <View
           style={styles.dropdownWrapper}
           onTouchStart={e => {
-            console.log('Dropdown wrapper touch start');
+            dbg('Dropdown wrapper touch start');
             e.stopPropagation();
           }}
           onTouchMove={e => {
-            console.log('Dropdown wrapper touch move');
+            dbg('Dropdown wrapper touch move');
             e.stopPropagation();
           }}
           onTouchEnd={e => {
-            console.log('Dropdown wrapper touch end');
+            dbg('Dropdown wrapper touch end');
             e.stopPropagation();
           }}>
           <Animated.View
@@ -424,15 +424,15 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
               removeClippedSubviews={false}
               pointerEvents="auto"
               onTouchStart={e => {
-                console.log('Dropdown ScrollView touch start');
+                dbg('Dropdown ScrollView touch start');
                 e.stopPropagation();
               }}
               onTouchMove={e => {
-                console.log('Dropdown ScrollView touch move');
+                dbg('Dropdown ScrollView touch move');
                 e.stopPropagation();
               }}
               onTouchEnd={e => {
-                console.log('Dropdown ScrollView touch end');
+                dbg('Dropdown ScrollView touch end');
                 e.stopPropagation();
               }}>
               {isLoadingAPIs && !isTestnet ? (
@@ -461,15 +461,15 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                         styles.apiDropdownItemLast,
                     ]}
                     onPress={() => {
-                      console.log('Dropdown item pressed:', item);
+                      dbg('Dropdown item pressed:', item);
                       selectOption(item);
                     }}
                     onPressIn={e => {
-                      console.log('Dropdown item press in:', item);
+                      dbg('Dropdown item press in:', item);
                       e.stopPropagation();
                     }}
                     onPressOut={e => {
-                      console.log('Dropdown item press out:', item);
+                      dbg('Dropdown item press out:', item);
                       e.stopPropagation();
                     }}
                     activeOpacity={0.7}
@@ -514,6 +514,8 @@ const getSectionIcon = (title: string): any => {
       return require('../assets/legal-icon.png');
     case 'haptics':
       return require('../assets/phone-icon.png');
+    case 'storage':
+      return require('../assets/storage-icon.png');
     default:
       return require('../assets/advanced-icon.png');
   }
@@ -521,7 +523,11 @@ const getSectionIcon = (title: string): any => {
 
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   // Use UserContext for reactive network and API state
-  const {activeApiProvider: apiBase, setActiveNetwork, setActiveApiProvider} = useUser();
+  const {
+    activeApiProvider: apiBase,
+    setActiveNetwork,
+    setActiveApiProvider,
+  } = useUser();
 
   const [deleteInput, setDeleteInput] = useState('');
   const [password, setPassword] = useState('');
@@ -555,11 +561,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     advanced: false,
     about: false,
     legal: false,
+    storage: false,
   });
 
   const {theme} = useTheme();
   const [appVersion, setAppVersion] = useState('');
-
+  const [usageSize, setUsageSize] = useState<{fileCount: number; mb: string}>({
+    fileCount: 0,
+    mb: '0.00 MB',
+  });
   // Password validation functions
   const validatePassword = (pass: string) => {
     const errors: string[] = [];
@@ -649,6 +659,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   useEffect(() => {
     setAppVersion(DeviceInfo.getVersion());
     setHapticsEnabledState(areHapticsEnabled());
+    LocalCache.usageSize().then(size => {
+      setUsageSize(size);
+    });
   }, []);
 
   useEffect(() => {
@@ -659,12 +672,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
     // Load network and corresponding cached API
     LocalCache.getItem('network').then(async net => {
-      console.log('=== Loading settings for network:', net);
+      dbg('=== Loading settings for network:', net);
       setIsTestnet(net !== 'mainnet');
 
       // Try to get the cached API for this network
       const cachedApi = await LocalCache.getItem(`api_${net}`);
-      console.log(`Cached API for ${net}:`, cachedApi);
+      dbg(`Cached API for ${net}:`, cachedApi);
 
       if (cachedApi) {
         setBaseAPI(cachedApi);
@@ -674,11 +687,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         if (net) {
           await BBMTLibNativeModule.setAPI(net, cachedApi);
         }
-        console.log(`=== Loaded cached API for ${net}:`, cachedApi);
+        dbg(`=== Loaded cached API for ${net}:`, cachedApi);
       } else {
         // Fallback to current API or default
         const currentApi = await LocalCache.getItem('api');
-        console.log('Current API (fallback):', currentApi);
+        dbg('Current API (fallback):', currentApi);
 
         if (currentApi) {
           setBaseAPI(currentApi);
@@ -688,7 +701,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           if (net) {
             await BBMTLibNativeModule.setAPI(net, currentApi);
           }
-          console.log(`=== Cached current API for ${net}:`, currentApi);
+          dbg(`=== Cached current API for ${net}:`, currentApi);
         } else {
           // Use default API for the network
           const defaultApi =
@@ -701,7 +714,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           if (net) {
             await BBMTLibNativeModule.setAPI(net, defaultApi);
           }
-          console.log(`=== Using default API for ${net}:`, defaultApi);
+          dbg(`=== Using default API for ${net}:`, defaultApi);
         }
       }
     });
@@ -711,13 +724,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     });
   }, []);
 
-  
-
   const toggleNetwork = async (value: boolean) => {
     // Haptic feedback for network toggle
     HapticFeedback.light();
 
-    console.log('=== Network toggle started:', value ? 'testnet' : 'mainnet');
+    dbg('=== Network toggle started:', value ? 'testnet' : 'mainnet');
 
     const newNetwork = value ? 'testnet3' : 'mainnet';
 
@@ -729,36 +740,34 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
     // Get the updated API from cache to ensure we have the latest
     const updatedApi = await LocalCache.getItem('api');
-    console.log('Retrieved updated API from cache:', updatedApi);
+    dbg('Retrieved updated API from cache:', updatedApi);
 
     // Update local state
     setIsTestnet(value);
     setBaseAPI(updatedApi || apiBase);
-    console.log(
+    dbg(
       'Local state updated with network:',
       newNetwork,
       'API:',
       updatedApi || apiBase,
     );
 
-    // Clear and update WalletService with new network and API
-    await WalletService.getInstance().clearWalletCache();
-    console.log('WalletService cache cleared');
+    // Avoid clearing persistent wallet cache; keep offline data
 
     if (WalletService.getInstance().handleNetworkChange) {
       await WalletService.getInstance().handleNetworkChange(
         newNetwork,
         updatedApi || apiBase,
       );
-      console.log('WalletService network change handled');
+      dbg('WalletService network change handled');
     }
 
     // Stay in settings screen - no navigation reset
-    console.log('=== Network toggle completed, staying in settings');
+    dbg('=== Network toggle completed, staying in settings');
   };
 
   const resetAPI = async () => {
-    console.log('resetAPI called');
+    dbg('resetAPI called');
 
     const net = await LocalCache.getItem('network');
     const api =
@@ -766,36 +775,36 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         ? 'https://mempool.space/api' // MAINNET_APIS[0]
         : 'https://mempool.space/testnet/api'; // TESTNET_APIS[0]
 
-    console.log('Resetting to default API for network:', net, 'API:', api);
+    dbg('Resetting to default API for network:', net, 'API:', api);
 
     // Update local state
     setBaseAPI(api);
-    console.log('Local state updated with API:', api);
+    dbg('Local state updated with API:', api);
 
     // Cache the API setting for the current network
     if (net) {
       await LocalCache.setItem(`api_${net}`, api);
       await LocalCache.setItem('api', api);
-      console.log(`API cached for network ${net}:`, api);
+      dbg(`API cached for network ${net}:`, api);
     }
 
     // Update native module
     if (net) {
       await BBMTLibNativeModule.setAPI(net, api);
     }
-    console.log('Native module updated with network:', net, 'API:', api);
+    dbg('Native module updated with network:', net, 'API:', api);
 
     // Update WalletService if it has the method
     if (WalletService.getInstance().handleNetworkChange && net) {
       await WalletService.getInstance().handleNetworkChange(net, api);
-      console.log('WalletService updated with reset API');
+      dbg('WalletService updated with reset API');
     }
 
-    console.log('API reset and propagated successfully:', api);
+    dbg('API reset and propagated successfully:', api);
   };
 
   const saveAPI = async (api: string) => {
-    console.log('=== saveAPI called with:', api);
+    dbg('=== saveAPI called with:', api);
 
     try {
       // Update API via UserContext
@@ -803,11 +812,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
       // Update local state
       setBaseAPI(api);
-      console.log('Local state updated with API:', api);
+      dbg('Local state updated with API:', api);
 
-      console.log('=== API saved and propagated successfully:', api);
+      dbg('=== API saved and propagated successfully:', api);
     } catch (error) {
-      console.error('Error in saveAPI:', error);
+      dbg('Error in saveAPI:', error);
     }
   };
 
@@ -1128,7 +1137,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       fontWeight: '600',
     },
     apiItem: {
-      marginTop: 6,
+      marginTop: 12,
     },
     apiName: {
       fontSize: 14,
@@ -1312,7 +1321,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     buttonIcon: {
       width: 20,
       height: 20,
-      marginRight: 8,
+      marginRight: 12,
+      tintColor: theme.colors.white,
     },
     flexContainer: {
       flex: 1,
@@ -1358,7 +1368,21 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               store them securely.
             </Text>
           </View>
-
+          <TouchableOpacity
+            style={[styles.button, styles.backupButton]}
+            onPress={() => {
+              HapticFeedback.light();
+              setIsBackupModalVisible(true);
+            }}>
+            <View style={styles.buttonContent}>
+              <Image
+                source={require('../assets/upload-icon.png')}
+                style={styles.buttonIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.buttonText}>Backup {party}</Text>
+            </View>
+          </TouchableOpacity>
           <View style={styles.apiItem}>
             <Text style={styles.apiName}>Security Best Practices</Text>
             <Text style={styles.apiDescription}>
@@ -1367,15 +1391,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               all keyshares in the same place.
             </Text>
           </View>
-
-          <TouchableOpacity
-            style={[styles.button, styles.backupButton]}
-            onPress={() => {
-              HapticFeedback.light();
-              setIsBackupModalVisible(true);
-            }}>
-            <Text style={styles.buttonText}>Backup {party}</Text>
-          </TouchableOpacity>
 
           <View style={styles.apiItem}>
             <Text style={styles.apiName}>Reset Wallet</Text>
@@ -1392,7 +1407,14 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               HapticFeedback.light();
               setIsModalResetVisible(true);
             }}>
-            <Text style={styles.buttonText}>Delete {party}</Text>
+            <View style={styles.buttonContent}>
+              <Image
+                source={require('../assets/delete-icon.png')}
+                style={[styles.buttonIcon, styles.whiteTint]}
+                resizeMode="contain"
+              />
+              <Text style={styles.buttonText}>Delete {party}</Text>
+            </View>
           </TouchableOpacity>
         </CollapsibleSection>
         {/* Advanced Section */}
@@ -1464,52 +1486,55 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               HapticFeedback.light();
               resetAPI();
             }}>
-            <Text style={styles.buttonText}>Reset Default API</Text>
-          </TouchableOpacity>
-
-          {/* Clear Address Cache (balances + transactions only) */}
-          <View style={styles.apiItem}>
-            <Text style={styles.apiName}>Cache Maintenance</Text>
-            <Text style={styles.apiDescription}>
-              Clears locally cached balances and transaction history for your
-              addresses. Price cache is preserved.
-            </Text>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.button, styles.deleteButton]}
-            onPress={async () => {
-              HapticFeedback.light();
-              try {
-                const currentAddress = await LocalCache.getItem(
-                  'currentAddress',
-                );
-                if (currentAddress) {
-                  await WalletService.getInstance().clearAddressCaches(
-                    currentAddress,
-                  );
-                } else {
-                  await WalletService.getInstance().clearAddressCaches();
-                }
-                Alert.alert(
-                  'Cache Cleared',
-                  'Balances and transactions cache cleared.',
-                );
-              } catch (e) {
-                console.error('Error clearing address caches', e);
-                Alert.alert(
-                  'Error',
-                  'Failed to clear caches. Please try again.',
-                );
-              }
-            }}>
             <View style={styles.buttonContent}>
               <Image
                 source={require('../assets/refresh-icon.png')}
                 style={[styles.buttonIcon, styles.whiteTint]}
                 resizeMode="contain"
               />
-              <Text style={styles.buttonText}>Clear Cache (Addresses)</Text>
+              <Text style={styles.buttonText}>Reset Default API</Text>
+            </View>
+          </TouchableOpacity>
+        </CollapsibleSection>
+        {/* Storage Section */}
+        <CollapsibleSection
+          title="Storage"
+          isExpanded={expandedSections.storage}
+          onToggle={() => toggleSection('storage')}
+          styles={styles}
+          theme={theme}>
+          {/* Clear Address Cache (balances + transactions only) */}
+          <View style={styles.apiItem}>
+            <Text style={styles.apiName}>Cache Maintenance</Text>
+            <Text style={styles.apiDescription}>
+              Clears locally cached data for balances and txs history.
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.button, styles.deleteButton]}
+            onPress={async () => {
+              HapticFeedback.light();
+              try {
+                await LocalCache.clear();
+                setUsageSize(await LocalCache.usageSize());
+                Alert.alert('Cache Cleared', 'Cache cleared successfully.');
+              } catch (e) {
+                dbg('Error clearing cache', e);
+                Alert.alert(
+                  'Error',
+                  'Failed to clear cache. Please try again.',
+                );
+              }
+            }}>
+            <View style={styles.buttonContent}>
+              <Image
+                source={require('../assets/delete-icon.png')}
+                style={[styles.buttonIcon, styles.whiteTint]}
+                resizeMode="contain"
+              />
+              <Text style={styles.buttonText}>
+                Clear Cache ({usageSize.mb})
+              </Text>
             </View>
           </TouchableOpacity>
         </CollapsibleSection>
@@ -1521,7 +1546,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           styles={styles}
           theme={theme}>
           <Text style={styles.toggleDescription}>
-            Enable or disable vibration feedback.{'\n'}OS level priority settings apply.
+            Enable or disable vibration feedback.{'\n'}OS level priority
+            settings apply.
           </Text>
           <View style={styles.toggleContainer}>
             <Text style={styles.toggleLabel}>Haptics Off</Text>
@@ -1530,41 +1556,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               value={hapticsEnabled}
             />
             <Text style={styles.toggleLabel}>Haptics On</Text>
-          </View>
-        </CollapsibleSection>
-        {/* About Section */}
-        <CollapsibleSection
-          title="About"
-          isExpanded={expandedSections.about}
-          onToggle={() => toggleSection('about')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.apiDescription}>App Version: {appVersion}</Text>
-
-          <View style={styles.apiItem}>
-            <Text style={styles.apiName}>Mempool.Space APIs</Text>
-            <Text style={styles.apiDescription}>
-              We use Mempool.Space APIs for fetching balances, UTXOs,
-              transaction history, and network fees estimations. For more info:{' '}
-              <Text
-                style={styles.linkText}
-                onPress={() => {
-                  HapticFeedback.light();
-                  Linking.openURL('https://mempool.space/docs/api/rest');
-                }}>
-                API Docs
-              </Text>
-            </Text>
-          </View>
-
-          <View style={styles.apiItem}>
-            <Text style={styles.apiName}>Data and Security</Text>
-            <Text style={styles.apiDescription}>
-              We do not collect any personal data. BoldBitcoinWallet posses no
-              backend. Wallet generation and transactions signing happen locally
-              between your devices. Opensource mempool.space Self-Hosted APIs
-              are supported to enhance your security and privacy.
-            </Text>
           </View>
         </CollapsibleSection>
         {/* Legal Section */}
@@ -1597,6 +1588,42 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             }}>
             Read Privacy Policy
           </Text>
+        </CollapsibleSection>
+        {/* About Section */}
+        <CollapsibleSection
+          title="About"
+          isExpanded={expandedSections.about}
+          onToggle={() => toggleSection('about')}
+          styles={styles}
+          theme={theme}>
+          <Text style={styles.apiName}>App Version</Text>
+          <Text style={styles.apiDescription}>v{appVersion}</Text>
+
+          <View style={styles.apiItem}>
+            <Text style={styles.apiName}>Mempool.Space APIs</Text>
+            <Text style={styles.apiDescription}>
+              We use Mempool.Space APIs for fetching balances, UTXOs,
+              transaction history, and network fees estimations. For more info:{' '}
+              <Text
+                style={styles.linkText}
+                onPress={() => {
+                  HapticFeedback.light();
+                  Linking.openURL('https://mempool.space/docs/api/rest');
+                }}>
+                API Docs
+              </Text>
+            </Text>
+          </View>
+
+          <View style={styles.apiItem}>
+            <Text style={styles.apiName}>Data and Security</Text>
+            <Text style={styles.apiDescription}>
+              We do not collect any personal data. BoldBitcoinWallet posses no
+              backend. Wallet generation and transactions signing happen locally
+              between your devices. Opensource mempool.space Self-Hosted APIs
+              are supported to enhance your security and privacy.
+            </Text>
+          </View>
         </CollapsibleSection>
       </ScrollView>
 
@@ -1792,14 +1819,21 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         onRequestClose={() => setIsModalResetVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Image
+                source={require('../assets/warning-icon.png')}
+                style={styles.modalIcon}
+                resizeMode="contain"
+              />
             <Text style={styles.modalTitle}>Confirm Wallet Deletion</Text>
+            </View>
             <Text style={styles.modalDescription}>
-              Type "delete my wallet" to confirm.{'\n'}This action is
+              Type <Text style={styles.apiName}>"delete my wallet"</Text> to confirm.{'\n'}This action is
               irreversible.
             </Text>
             <TextInput
               style={styles.input}
-              placeholder='Type "delete my wallet"'
+              placeholder='"delete my wallet"'
               value={deleteInput}
               onChangeText={setDeleteInput}
             />

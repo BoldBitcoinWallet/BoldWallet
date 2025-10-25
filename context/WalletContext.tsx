@@ -34,7 +34,7 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
       await refreshWallet();
     } catch (error) {
       dbg('WalletContext: Error changing address type:', error);
-      console.error('Error changing address type:', error);
+      dbg('Error changing address type:', error);
     }
   };
 
@@ -114,7 +114,7 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
       dbg('WalletContext: Wallet refresh completed');
     } catch (error) {
       dbg('WalletContext: Error refreshing wallet:', error);
-      console.error('Error refreshing wallet:', error);
+      dbg('Error refreshing wallet:', error);
     }
   };
 

@@ -392,7 +392,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
               fee.includes('error') ||
               fee.includes('[')
             ) {
-              console.warn('Fee estimation API returned error:', fee);
+              dbg('Fee estimation API returned error:', fee);
               setEstimatedFee(null);
               return;
             }
@@ -401,7 +401,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
             try {
               const feeNumber = parseFloat(fee);
               if (isNaN(feeNumber) || feeNumber <= 0) {
-                console.warn('Invalid fee amount received:', fee);
+                dbg('Invalid fee amount received:', fee);
                 setEstimatedFee(null);
                 return;
               }
@@ -413,16 +413,16 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                 setInBtcAmount(walletBalance.minus(feeAmt.div(1e8)).toString());
               }
             } catch (parseError) {
-              console.error('Failed to parse fee amount:', fee, parseError);
+              dbg('Failed to parse fee amount:', fee, parseError);
               setEstimatedFee(null);
             }
           } else {
-            console.warn('No fee data received from API');
+            dbg('No fee data received from API');
             setEstimatedFee(null);
           }
         })
         .catch((e: any) => {
-          console.error('Fee estimation failed:', e);
+          dbg('Fee estimation failed:', e);
           setEstimatedFee(null);
           // Only show alert for network/API errors, not parsing errors
           if (e.message && !e.message.includes('Invalid number')) {
@@ -473,7 +473,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
         setInUsdAmount(btc.mul(btcToFiatRate).toFixed(2));
       }
     } catch {
-      console.error('Invalid BTC input:', text);
+      dbg('Invalid BTC input:', text);
     }
   };
 
@@ -487,7 +487,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
         setInBtcAmount(usd.div(btcToFiatRate).toFixed(8));
       }
     } catch {
-      console.error('Invalid USD input:', text);
+      dbg('Invalid USD input:', text);
     }
   };
 

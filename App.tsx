@@ -1,20 +1,20 @@
 // App.tsx
-import React, { useEffect, useState } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { enableScreens } from 'react-native-screens';
+import React, {useEffect, useState} from 'react';
+import {NavigationContainer} from '@react-navigation/native';
+import {createNativeStackNavigator} from '@react-navigation/native-stack';
+import {enableScreens} from 'react-native-screens';
 import ShowcaseScreen from './screens/ShowcaseScreen';
 import WalletHome from './screens/WalletHome';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import LoadingScreen from './screens/LoadingScreen';
-import Zeroconf, { ImplType } from 'react-native-zeroconf';
-import ReactNativeBiometrics, { BiometryTypes } from 'react-native-biometrics';
+import Zeroconf, {ImplType} from 'react-native-zeroconf';
+import ReactNativeBiometrics, {BiometryTypes} from 'react-native-biometrics';
 import DeviceInfo from 'react-native-device-info';
-import { ThemeProvider } from './theme';
-import { WalletProvider } from './context/WalletContext';
-import { UserProvider } from './context/UserContext';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { initializeHaptics } from './utils';
+import {ThemeProvider} from './theme';
+import {WalletProvider} from './context/WalletContext';
+import {UserProvider} from './context/UserContext';
+import {SafeAreaProvider} from 'react-native-safe-area-context';
+import {initializeHaptics} from './utils';
 import {
   Alert,
   EmitterSubscription,
@@ -23,16 +23,16 @@ import {
   DeviceEventEmitter,
 } from 'react-native';
 import WalletSettings from './screens/WalletSettings';
-import { NativeModules } from 'react-native';
-import { dbg, pinRemoteIP } from './utils';
+import {NativeModules} from 'react-native';
+import {dbg, pinRemoteIP} from './utils';
 import MobilesPairing from './screens/MobilesPairing';
 
 // Initialize react-native-screens for Fabric compatibility
 enableScreens(true);
 
-const { BBMTLibNativeModule } = NativeModules;
+const {BBMTLibNativeModule} = NativeModules;
 const Stack = createNativeStackNavigator();
-const rnBiometrics = new ReactNativeBiometrics({ allowDeviceCredentials: true });
+const rnBiometrics = new ReactNativeBiometrics({allowDeviceCredentials: true});
 const zeroconf = new Zeroconf();
 const zeroOut = new Zeroconf();
 
@@ -42,7 +42,7 @@ const App = () => {
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener('app:reload', () => {
-      console.log('App: Received app:reload event');
+      //dbg('App: Received app:reload event');
       setIsAuthenticated(false);
     });
     return () => sub.remove();
@@ -57,18 +57,9 @@ const App = () => {
         const route = keyshare ? 'Bold Home' : 'Welcome';
         dbg('Setting initial route to:', route);
         setInitialRoute(route);
-
-        // Auto-trigger authentication after setting initial route
-        setTimeout(() => {
-          authenticateUser();
-        }, 100);
       } catch (error) {
-        console.error('Error in initializeApp:', error);
+        dbg('Error in initializeApp:', error);
         setInitialRoute('Welcome');
-        // Auto-trigger authentication even on error
-        setTimeout(() => {
-          authenticateUser();
-        }, 100);
       }
     };
     checkWallet();
@@ -83,7 +74,7 @@ const App = () => {
         'local.',
         'bold_bitcoin_wallet',
         55056,
-        { txt: 'bold_bitcoin_wallet', id: deviceID },
+        {txt: 'bold_bitcoin_wallet', id: deviceID},
         ImplType.NSD,
       );
       return () => {
@@ -92,11 +83,11 @@ const App = () => {
           zeroOut.stop();
           dbg('service publish stopped');
         } catch (e: any) {
-          console.error('error stopping service', e);
+          dbg('error stopping service', e);
         }
       };
     } catch (e: any) {
-      console.error('error publishing service', e);
+      dbg('error publishing service', e);
     }
   }, []);
 
@@ -123,7 +114,7 @@ const App = () => {
         }
       });
       zeroconf.on('error', err => {
-        console.error('Zeroconf error:', err);
+        dbg('Zeroconf error:', err);
       });
       return () => {
         try {
@@ -131,11 +122,11 @@ const App = () => {
           zeroconf.removeAllListeners();
           zeroconf.stop();
         } catch (e: any) {
-          console.error('error stopping mDNS scan', e);
+          dbg('error stopping mDNS scan', e);
         }
       };
     } catch (e: any) {
-      console.error('error scanning mDNS', e);
+      dbg('error scanning mDNS', e);
     }
   }, []);
 
@@ -150,12 +141,13 @@ const App = () => {
             console.error = () => {};
             console.debug = () => {};
             console.info = () => {};
+            console.trace = () => {};
           } else {
             console.warn('could not disable logging');
           }
         })
         .catch((e: Error) => {
-          console.error('error while disabling logging', e);
+          dbg('error while disabling logging', e);
         });
     } else {
       const logEmitter = new NativeEventEmitter(BBMTLibNativeModule);
@@ -180,7 +172,7 @@ const App = () => {
   const authenticateUser = async () => {
     try {
       dbg('Starting authentication...');
-      const { available, biometryType } = await rnBiometrics.isSensorAvailable();
+      const {available, biometryType} = await rnBiometrics.isSensorAvailable();
       dbg('Biometric available:', available, 'Type:', biometryType);
 
       if (!available) {
@@ -196,7 +188,7 @@ const App = () => {
           biometryType === BiometryTypes.Biometrics)
       ) {
         dbg('Using biometric authentication');
-        const { success } = await rnBiometrics.simplePrompt({
+        const {success} = await rnBiometrics.simplePrompt({
           promptMessage: 'Authenticate to access your wallet',
           fallbackPromptMessage: 'Use your device passcode to unlock',
         });
@@ -217,12 +209,12 @@ const App = () => {
                 },
               },
             ],
-            { cancelable: false },
+            {cancelable: false},
           );
         }
       } else {
         dbg('Using device passcode authentication');
-        const { success } = await rnBiometrics.simplePrompt({
+        const {success} = await rnBiometrics.simplePrompt({
           promptMessage: 'Enter your device passcode to unlock',
         });
 
@@ -242,12 +234,12 @@ const App = () => {
                 },
               },
             ],
-            { cancelable: false },
+            {cancelable: false},
           );
         }
       }
     } catch (error) {
-      console.error('Authentication Error:', error);
+      dbg('Authentication Error:', error);
       if (__DEV__) {
         dbg('Development mode: skipping authentication due to error');
         setIsAuthenticated(true);
@@ -263,7 +255,12 @@ const App = () => {
   };
 
   if (initialRoute === null || !isAuthenticated) {
-    dbg('Rendering LoadingScreen - initialRoute:', initialRoute, 'isAuthenticated:', isAuthenticated);
+    dbg(
+      'Rendering LoadingScreen - initialRoute:',
+      initialRoute,
+      'isAuthenticated:',
+      isAuthenticated,
+    );
     return (
       <ThemeProvider>
         <LoadingScreen onRetry={handleRetryAuthentication} />
@@ -279,42 +276,41 @@ const App = () => {
         <UserProvider>
           <WalletProvider>
             <NavigationContainer>
-            <Stack.Navigator
-              initialRouteName={initialRoute}
-              screenOptions={{
-                headerShown: false,
-              }}
-            >
-              <Stack.Screen
-                name="Bold Home"
-                component={WalletHome}
-                options={{
-                  headerShown: true,
-                  headerLeft: () => null,
-                }}
-              />
-              <Stack.Screen
-                name="Welcome"
-                component={ShowcaseScreen}
-                options={{
-                  headerShown: true,
-                }}
-              />
-              <Stack.Screen
-                name="Settings"
-                component={WalletSettings}
-                options={{
-                  headerShown: true,
-                }}
-              />
-              <Stack.Screen
-                name="📱📱 Pairing"
-                component={MobilesPairing}
-                options={{
-                  headerShown: true,
-                }}
-              />
-            </Stack.Navigator>
+              <Stack.Navigator
+                initialRouteName={initialRoute}
+                screenOptions={{
+                  headerShown: false,
+                }}>
+                <Stack.Screen
+                  name="Bold Home"
+                  component={WalletHome}
+                  options={{
+                    headerShown: true,
+                    headerLeft: () => null,
+                  }}
+                />
+                <Stack.Screen
+                  name="Welcome"
+                  component={ShowcaseScreen}
+                  options={{
+                    headerShown: true,
+                  }}
+                />
+                <Stack.Screen
+                  name="Settings"
+                  component={WalletSettings}
+                  options={{
+                    headerShown: true,
+                  }}
+                />
+                <Stack.Screen
+                  name="📱📱 Pairing"
+                  component={MobilesPairing}
+                  options={{
+                    headerShown: true,
+                  }}
+                />
+              </Stack.Navigator>
             </NavigationContainer>
           </WalletProvider>
         </UserProvider>

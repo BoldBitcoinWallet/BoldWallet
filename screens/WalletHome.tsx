@@ -81,6 +81,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [priceData, setPriceData] = useState<{[key: string]: number}>({});
   const [segwitCompatibleAddress, setSegwitCompatibleAddress] =
     React.useState('');
+  const [initialTransactions, setInitialTransactions] = useState<any[]>([]);
 
   // Helper function for showing error toasts
   const showErrorToast = useCallback((message: string) => {
@@ -138,7 +139,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       if (uxSegwitTestnet) setSegwitAddress(uxSegwitTestnet);
       if (uxSegwitCompTestnet) setSegwitCompatibleAddress(uxSegwitCompTestnet);
     }
-  }, [activeNetwork, uxLegacyMainnet, uxSegwitMainnet, uxSegwitCompMainnet, uxLegacyTestnet, uxSegwitTestnet, uxSegwitCompTestnet]);
+  }, [
+    activeNetwork,
+    uxLegacyMainnet,
+    uxSegwitMainnet,
+    uxSegwitCompMainnet,
+    uxLegacyTestnet,
+    uxSegwitTestnet,
+    uxSegwitCompTestnet,
+  ]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -156,7 +165,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
       // Mark fetch as in progress
       isFetchInProgressRef.current = true;
-      console.log('=== Starting data fetch...');
+      dbg('=== Starting data fetch...');
 
       // Prefer in-memory state (fresh), fallback to cache
       const addr = address || (await LocalCache.getItem('currentAddress'));
@@ -216,20 +225,40 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             setBalanceBTC(freshBalance.btc || '0.00000000');
             const fiatBalance = Number(freshBalance.btc * rates[currency]);
             setBalanceFiat(fiatBalance.toFixed(2));
+
+            // Update cache timestamps with fresh data
+            setCacheTimestamps({
+              price: freshPrice.timestamp,
+              balance: freshBalance.timestamp,
+            });
           } else {
             setBtcPrice('-');
             setBalanceFiat('-');
           }
         }
-
-        // Update cache timestamps with fresh data
-        setCacheTimestamps({
-          price: WalletService.getInstance().getLastPriceFetch(),
-          balance: WalletService.getInstance().getLastBalanceFetch(),
-        });
       } catch (error) {
         dbg('WalletHome: Error fetching fresh data:', error);
-        showErrorToast('Failed to refresh data');
+        // Show offline-only if we detect no internet
+        try {
+          const ping = await fetch('https://mempool.space/favicon.ico', {
+            method: 'HEAD',
+          });
+          if (!ping.ok) {
+            Toast.show({
+              type: 'error',
+              text1: 'No internet',
+              text2: 'Using cached data',
+              position: 'top',
+            });
+          }
+        } catch {
+          Toast.show({
+            type: 'error',
+            text1: 'No internet',
+            text2: 'Using cached data',
+            position: 'top',
+          });
+        }
       }
 
       // Fall back to cached data only if fresh data fetch failed
@@ -258,17 +287,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             const fiatBalance =
               Number(cachedBalance.btc) * Number(rates[currency]);
             setBalanceFiat(fiatBalance.toFixed(2));
+            setCacheTimestamps({
+              price: cachedPrice.timestamp,
+              balance: cachedBalance.timestamp,
+            });
           } else {
             setBtcPrice('-');
             setBalanceFiat('-');
           }
         }
-
-        // Keep original cache timestamps when using cached data
-        setCacheTimestamps({
-          price: WalletService.getInstance().getLastPriceFetch(),
-          balance: WalletService.getInstance().getLastBalanceFetch(),
-        });
       }
     } catch (error: any) {
       dbg('WalletHome: Error fetching data:', error);
@@ -287,7 +314,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       setLoading(false);
       setIsRefreshing(false);
       isFetchInProgressRef.current = false;
-      console.log('=== Data fetch completed');
+      dbg('=== Data fetch completed');
     }
   }, [
     isInitialized,
@@ -307,7 +334,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   // Function to update address type modal with new network addresses
   const updateAddressTypeModal = useCallback(async (newNetwork: string) => {
     try {
-      console.log(
+      dbg(
         '=== updateAddressTypeModal: Updating addresses for network:',
         newNetwork,
       );
@@ -317,7 +344,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
       // Fallback: derive btcPub if not found in storage
       if (!btcPub) {
-        console.log('btcPub not found in storage, deriving from keyshare...');
+        dbg('btcPub not found in storage, deriving from keyshare...');
         const jks = await EncryptedStorage.getItem('keyshare');
         if (jks) {
           const ks = JSON.parse(jks);
@@ -329,7 +356,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           );
           // Store it for future use
           await EncryptedStorage.setItem('btcPub', btcPub!);
-          console.log('btcPub derived and stored');
+          dbg('btcPub derived and stored');
         }
       }
 
@@ -347,15 +374,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         if (segwitCompatibleAddr)
           setSegwitCompatibleAddress(segwitCompatibleAddr);
 
-        console.log('Address type modal updated for network:', newNetwork);
-        console.log('Legacy:', legacyAddr);
-        console.log('Segwit:', segwitAddr);
-        console.log('Segwit Compatible:', segwitCompatibleAddr);
+        dbg('Address type modal updated for network:', newNetwork);
+        dbg('Legacy:', legacyAddr);
+        dbg('Segwit:', segwitAddr);
+        dbg('Segwit Compatible:', segwitCompatibleAddr);
       } else {
-        console.error('Could not get or derive btcPub for address generation');
+        dbg('Could not get or derive btcPub for address generation');
       }
     } catch (error) {
-      console.error('updateAddressTypeModal: Error updating addresses:', error);
+      dbg('updateAddressTypeModal: Error updating addresses:', error);
     }
   }, []);
 
@@ -363,7 +390,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const updateAddressForNetwork = useCallback(
     async (newNetwork: string) => {
       try {
-        console.log(
+        dbg(
           '=== updateAddressForNetwork: Updating address for network:',
           newNetwork,
         );
@@ -371,7 +398,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         // Get the current address type from cache or state
         const currentAddressType =
           addressType || (await LocalCache.getItem('addressType')) || 'P2WPKH';
-        console.log(
+        dbg(
           'Using address type:',
           currentAddressType,
           'for network:',
@@ -383,13 +410,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
         // Fallback: derive btcPub if not found in storage
         if (!btcPub) {
-          console.log('btcPub not found in storage, deriving from keyshare...');
+          dbg('btcPub not found in storage, deriving from keyshare...');
           const jks = await EncryptedStorage.getItem('keyshare');
           if (!jks) {
-            console.error('No keyshare found for address generation');
+            dbg('No keyshare found for address generation');
             return;
           }
-          
+
           const ks = JSON.parse(jks);
           const path = "m/44'/0'/0'/0/0";
           btcPub = await BBMTLibNativeModule.derivePubkey(
@@ -399,14 +426,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           );
           // Store it for future use
           await EncryptedStorage.setItem('btcPub', btcPub!);
-          console.log('btcPub derived and stored');
+          dbg('btcPub derived and stored');
         }
 
         if (btcPub) {
           // Set up network parameters before generating address
           const netParams = await BBMTLibNativeModule.setBtcNetwork(newNetwork);
           const actualNet = netParams.split('@')[0];
-          
+
           const newAddress = await BBMTLibNativeModule.btcAddress(
             btcPub!,
             actualNet,
@@ -414,7 +441,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           );
 
           if (newAddress) {
-            console.log(
+            dbg(
               'updateAddressForNetwork: Generated new address:',
               newAddress,
               'for network:',
@@ -428,26 +455,18 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
             // Also update the address type display if needed
             if (newNetwork === 'testnet3') {
-              console.log('Testnet address generated and cached:', newAddress);
+              dbg('Testnet address generated and cached:', newAddress);
             } else {
-              console.log('Mainnet address generated and cached:', newAddress);
+              dbg('Mainnet address generated and cached:', newAddress);
             }
           } else {
-            console.error(
-              'Failed to generate address for network:',
-              newNetwork,
-            );
+            dbg('Failed to generate address for network:', newNetwork);
           }
         } else {
-          console.error(
-            'Could not get or derive btcPub for address generation',
-          );
+          dbg('Could not get or derive btcPub for address generation');
         }
       } catch (error) {
-        console.error(
-          'updateAddressForNetwork: Error updating address:',
-          error,
-        );
+        dbg('updateAddressForNetwork: Error updating address:', error);
       }
     },
     [addressType],
@@ -457,27 +476,25 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   useEffect(() => {
     const initializeOnMount = async () => {
       try {
-        console.log(
+        dbg(
           '=== Component mount - Initializing with current NetworkContext state',
         );
-        console.log('Current network from context:', network);
-        console.log('Current API from context:', apiBase);
+        dbg('Current network from context:', network);
+        dbg('Current API from context:', apiBase);
 
         // Wait for NetworkContext to be properly initialized
         if (network && apiBase) {
-          console.log(
-            'Mount - NetworkContext is ready, updating address if needed',
-          );
+          dbg('Mount - NetworkContext is ready, updating address if needed');
           await updateAddressForNetwork(network);
           await updateAddressTypeModal(network);
         } else {
-          console.log('Mount - NetworkContext not ready yet, waiting...', {
+          dbg('Mount - NetworkContext not ready yet, waiting...', {
             network,
             apiBase,
           });
         }
       } catch (error) {
-        console.error('Mount initialization - Error:', error);
+        dbg('Mount initialization - Error:', error);
       }
     };
 
@@ -486,18 +503,26 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
   // Comprehensive re-initialization function
   const reinitializeWallet = useCallback(
-    async (_forceReinit = false) => {
+    async (forceReinit: boolean = false) => {
       // Prevent multiple simultaneous re-initializations
       if (isReinitInProgressRef.current) {
-        console.log('Re-initialization already in progress, skipping');
+        dbg('reinitializeWallet: Re-initialization already in progress, skipping', {
+          network,
+          apiBase,
+        });
         return;
       }
-      
-      try {
-        console.log('=== reinitializeWallet: Starting full re-initialization');
+
+      if (forceReinit) {
+        dbg('=== reinitializeWallet: Starting full re-initialization (forceReinit = true)', {
+          network,
+          apiBase,
+        });
         isReinitInProgressRef.current = true;
         setLoading(true);
+      }
 
+      try {
         const jks = await EncryptedStorage.getItem('keyshare');
         if (!jks) {
           dbg('WalletHome: No keyshare found during re-initialization');
@@ -516,9 +541,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setSegwitAddress('');
         setSegwitCompatibleAddress('');
 
-        // Clear WalletService cache
-        await WalletService.getInstance().clearWalletCache();
-        console.log('WalletService cache cleared during re-initialization');
+        // Do NOT clear persistent cache here; we need it for offline startup
+        // Only ensure service is initialized to read existing caches
 
         // Initialize WalletService
         const walletService = WalletService.getInstance();
@@ -536,12 +560,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
         // Store btcPub for later use in address generation
         await EncryptedStorage.setItem('btcPub', btcPub);
-        console.log('btcPub derived and stored during re-initialization');
+        dbg('btcPub derived and stored during re-initialization');
 
         // Get current network from NetworkContext
         const net =
           network || (await LocalCache.getItem('network')) || 'mainnet';
-        console.log('Re-initializing for network:', net);
+        dbg('Re-initializing for network:', net);
 
         // Get current address type
         const addrType = (await LocalCache.getItem('addressType')) || 'legacy';
@@ -581,30 +605,75 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         await LocalCache.setItem('currentAddress', btcAddress);
         setAddress(btcAddress);
 
+        // Preload transactions from cache for this address (offline-friendly)
+        try {
+          const cachedTxs =
+            await WalletService.getInstance().transactionsFromCache(btcAddress);
+          setInitialTransactions(cachedTxs);
+        } catch {}
+
         // Set up API URL from NetworkContext
         const api = apiBase || (await LocalCache.getItem('api'));
         if (api) {
           await BBMTLibNativeModule.setAPI(actualNet, api);
-          console.log('API set for network:', actualNet, 'API:', api);
+          dbg('API set for network:', actualNet, 'API:', api);
         }
 
-        // Initialize cache timestamps
-        setCacheTimestamps({
-          price: Date.now(),
-          balance: Date.now(),
-        });
+        // Initialize UI directly from persistent wallet cache (exact v1.3.2 analogy)
+        try {
+          const cachedPrice = await WalletService.getInstance().getPrice();
+          const cachedBal = await WalletService.getInstance().getBal(
+            btcAddress,
+          );
+          const cachedTxs =
+            await WalletService.getInstance().transactionsFromCache(btcAddress);
 
-        setIsInitialized(true);
-        console.log('=== reinitializeWallet: Re-initialization completed');
+          const currency = (await LocalCache.getItem('currency')) || 'USD';
+          if (cachedBal.timestamp > 0) {
+            // timestamps
 
-        // Reset reinit flag before calling fetch so it doesnt get blocked
-        isReinitInProgressRef.current = false;
+            setCacheTimestamps({
+              price: cachedPrice.timestamp,
+              balance: cachedBal.timestamp,
+            });
 
-        // Force fresh data fetch
-        await fetchDataRef.current?.();
-      } catch (error) {
-        console.error('Error re-initializing wallet:', error);
-        showErrorToast('Failed to re-initialize wallet. Please try again.');
+            // price
+            if (cachedPrice.timestamp > 0) {
+              setPriceData(cachedPrice.rates);
+              const r = cachedPrice.rates[currency] || cachedPrice.rate || 0;
+              if (r && r > 0) {
+                setBtcPrice(r.toString());
+                setBtcRate(r);
+              }
+            }
+
+            // balance
+            if (cachedBal.timestamp > 0) {
+              setBalanceBTC(cachedBal.btc || '0.00000000');
+              const r =
+                (cachedPrice.rates?.[currency] as number) ||
+                (cachedPrice.rate as number) ||
+                0;
+              if (r && Number(cachedBal.btc) >= 0) {
+                const fiatBalance = Number(cachedBal.btc) * r;
+                setBalanceFiat(fiatBalance.toFixed(2));
+              }
+            }
+            // initial transactions
+            if (Array.isArray(cachedTxs) && cachedTxs.length > 0) {
+              setInitialTransactions(cachedTxs);
+            } else {
+              // fallback to WalletService snapshots if persistent cache not found
+              setCacheTimestamps({
+                price: cachedPrice.timestamp,
+                balance: cachedBal.timestamp,
+              });
+            }
+          }
+        } catch (error) {
+          dbg('reinitializeWallet: Error re-initializing wallet:', error);
+          showErrorToast('Failed to re-initialize wallet. Please try again.');
+        }
       } finally {
         setLoading(false);
         isReinitInProgressRef.current = false;
@@ -616,14 +685,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   // Listen for navigation state changes to detect returning from settings
   useEffect(() => {
     const unsubscribe = nav.addListener('focus', async () => {
-      console.log(
+      dbg(
         '=== Navigation focus - Screen came into focus, reinitializing wallet',
       );
 
       // Full re-initialization when returning from settings
       // This ensures everything is properly set up for the current network
       if (network && apiBase) {
-        console.log(
+        dbg(
           'Focus - NetworkContext is ready, performing full re-initialization',
         );
         await reinitializeWallet(true);
@@ -637,7 +706,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   useEffect(() => {
     const handleAppStateChange = async (nextAppState: string) => {
       if (nextAppState === 'active') {
-        console.log('=== App resumed, refreshing data');
+        dbg('=== App resumed, refreshing data');
 
         // Simply refresh data on app resume
         if (network && apiBase) {
@@ -704,7 +773,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         );
         return granted === PermissionsAndroid.RESULTS.GRANTED;
       } catch (err) {
-        console.warn(err);
+        dbg(err);
         return false;
       }
     } else {
@@ -737,14 +806,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   // Simplified focus effect - just refresh data when screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      console.log('=== Home screen focused, refreshing data');
+      dbg('=== Home screen focused, refreshing data');
 
       // Simple refresh - the NetworkContext should have the correct state
       if (network && apiBase && !isReinitInProgressRef.current) {
-        console.log(
-          'Focus - Refreshing address and data for network:',
-          network,
-        );
+        dbg('Focus - Refreshing address and data for network:', network);
         updateAddressForNetwork(network);
         updateAddressTypeModal(network);
         fetchDataRef.current?.();
@@ -752,22 +818,26 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }, [network, apiBase, updateAddressForNetwork, updateAddressTypeModal]),
   );
 
-  // Watch for network changes and perform full re-initialization
+  // Watch for network changes: derive address for that network, update modal previews, then refresh data
   useEffect(() => {
     if (network && apiBase && !isReinitInProgressRef.current) {
-      console.log(
-        '=== Network change detected in context, performing full re-initialization',
-      );
-      console.log('New network:', network, 'API:', apiBase);
-
-      // Full re-initialization for network changes
-      reinitializeWallet(true);
+      (async () => {
+        try {
+          await updateAddressForNetwork(network);
+          await updateAddressTypeModal(network);
+        } catch (e) {
+          dbg('Error updating address for network change', e);
+        } finally {
+          fetchDataRef.current?.();
+        }
+      })();
     }
-  }, [network, apiBase, reinitializeWallet]);
+  }, [network, apiBase, updateAddressForNetwork, updateAddressTypeModal]);
 
   const handleTransactionUpdate = useCallback(
     async (pendingTxs: any[], pending: number) => {
       _setPendingSent(pending);
+      dbg('handleTransactionUpdate: Pending transactions:', pendingTxs);
       return Promise.resolve();
     },
     [],
@@ -819,7 +889,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
         // Store btcPub for later use in address generation
         await EncryptedStorage.setItem('btcPub', btcPub);
-        console.log('btcPub stored in EncryptedStorage for address generation');
+        dbg('btcPub stored in EncryptedStorage for address generation');
 
         // Set default network if not set
         let net = await LocalCache.getItem('network');
@@ -838,17 +908,16 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         }
 
         // Set default currency if not set
-        let currency = await LocalCache.getItem('currency');
-        if (!currency) {
-          // Get available currencies from price data
-          const priceResponse = await walletService.getBitcoinPrice();
-          const availableCurrencies = Object.keys(priceResponse.rates);
-          currency = availableCurrencies.includes('USD')
-            ? 'USD'
-            : availableCurrencies[0];
-          await LocalCache.setItem('currency', currency);
-          dbg('WalletHome: Setting default currency to', currency);
-        }
+        let currency = (await LocalCache.getItem('currency')) || 'USD';
+
+        // Get available currencies from price data
+        const priceResponse = await walletService.getBitcoinPrice();
+        const availableCurrencies = Object.keys(priceResponse.rates);
+        currency = availableCurrencies.includes('USD')
+          ? 'USD'
+          : availableCurrencies[0];
+        await LocalCache.setItem('currency', currency);
+        dbg('WalletHome: Setting default currency to', currency);
 
         const netParams = await BBMTLibNativeModule.setBtcNetwork(net);
         net = netParams.split('@')[0];
@@ -908,16 +977,46 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           await LocalCache.setItem('api', base);
         }
 
-        // Initialize cache timestamps
-        setCacheTimestamps({
-          price: Date.now(),
-          balance: Date.now(),
-        });
+        // Initialize cache timestamps from WalletService (works offline)
+        // Seed UI with cached price/balance immediately (no network needed)
+        try {
+          const cachedPrice = await WalletService.getInstance().getPrice();
+          if (cachedPrice && cachedPrice.rates) {
+            setPriceData(cachedPrice.rates);
+            const r = cachedPrice.rates[currency] || cachedPrice.rate || 0;
+            if (r && r > 0) {
+              setBtcPrice(r.toString());
+              setBtcRate(r);
+            }
+          }
+          const cachedBal = await WalletService.getInstance().getBal(address);
+          if (cachedBal) {
+            setBalanceBTC(cachedBal.btc || '0.00000000');
+            const r =
+              (cachedPrice?.rates?.[currency] as number) ||
+              (cachedPrice?.rate as number) ||
+              0;
+            if (r && Number(cachedBal.btc) > 0) {
+              const fiatBalance = Number(cachedBal.btc) * r;
+              setBalanceFiat(fiatBalance.toFixed(2));
+            }
+          }
+
+          setCacheTimestamps({
+            price: cachedPrice.timestamp,
+            balance: cachedBal.timestamp,
+          });
+        } catch (error: any) {
+          dbg('WalletHome: Error initializing wallet:', error);
+          showErrorToast('Failed to initialize wallet. Please try again.');
+        } finally {
+          setLoading(false);
+        }
 
         setIsInitialized(true);
         // Force initial balance fetch
         await fetchDataRef.current?.();
-        console.log('Wallet initialization completed successfully');
+        dbg('Wallet initialization completed successfully');
       } catch (error) {
         dbg('Error initializing wallet:', error);
         showErrorToast('Failed to initialize wallet. Please try again.');
@@ -927,14 +1026,20 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     };
 
     init();
-  }, [showErrorToast, isInitialized]);
+  }, [showErrorToast, isInitialized, address]);
 
   const handleAddressTypeChange = async (type: string) => {
     try {
       dbg('WalletHome: Starting address type change to:', type);
       setIsAddressTypeModalVisible(false);
       await setActiveAddressType(type as any);
-      await WalletService.getInstance().clearWalletCache();
+      // Re-derive address for the active network and refresh data
+      try {
+        await updateAddressForNetwork(network);
+        await updateAddressTypeModal(network);
+      } catch (e) {
+        dbg('Error updating address after type change', e);
+      }
       await fetchDataRef.current?.();
     } catch (error) {
       dbg('WalletHome: Error changing address type:', error);
@@ -1013,7 +1118,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   // Helper to switch network using UserContext
   const handleNetworkSwitch = async (toTestnet: boolean) => {
     HapticFeedback.light();
-    console.log(
+    dbg(
       '=== Home screen network switch started:',
       toTestnet ? 'testnet' : 'mainnet',
     );
@@ -1021,7 +1126,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     const net = toTestnet ? 'testnet3' : 'mainnet';
     await setActiveNetwork(net);
     setIsNetworkModalVisible(false);
-    console.log('=== Home screen network switch completed');
+    dbg('=== Home screen network switch completed');
   };
 
   if (loading && !isInitialized) {
@@ -1200,7 +1305,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               onPress={() => {
                 HapticFeedback.light();
                 // Emit a reload event to App.tsx to trigger a full app restart
-                DeviceEventEmitter.emit('app:reload');
+                DeviceEventEmitter.emit('app:reload', {});
               }}>
               <Image
                 source={require('../assets/locker-icon.png')}
@@ -1231,6 +1336,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         onRefresh={() => fetchDataRef.current?.()}
         theme={theme}
         isRefreshing={isRefreshing}
+        usingCache={
+          !isRefreshing &&
+          cacheTimestamps.price > 0 &&
+          cacheTimestamps.balance > 0 &&
+          Date.now() -
+            Math.max(cacheTimestamps.price, cacheTimestamps.balance) >
+            0
+        }
       />
 
       {/* Provider Information Row */}
@@ -1262,6 +1375,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           baseApi={apiBase}
           address={address}
           onUpdate={handleTransactionUpdate}
+          initialTransactions={initialTransactions}
           selectedCurrency={selectedCurrency}
           btcRate={btcRate}
           getCurrencySymbol={getCurrencySymbol}
@@ -1500,10 +1614,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
             <View style={[styles.modalParagraph, styles.warningBox]}>
               <Text style={[styles.modalTextLeft, styles.warningText]}>
-                ⚠️ <Text style={styles.modalBoldText}>Note:</Text>{'\n'}- Use
-                Testnet for testing, experiments, development where coins have no value.{'\n'}- Mainnet is
-                for real transactions use.{'\n'}- Switching
-                networks will change your wallet addresses and balance. 
+                ⚠️ <Text style={styles.modalBoldText}>Note:</Text>
+                {'\n'}- Use Testnet for testing, experiments, development where
+                coins have no value.{'\n'}- Mainnet is for real transactions
+                use.{'\n'}- Switching networks will change your wallet addresses
+                and balance.
               </Text>
             </View>
           </View>

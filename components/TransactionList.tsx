@@ -236,7 +236,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
         }
 
         const cached = JSON.parse(
-          (await LocalCache.getItem('pendingTxs')) || '{}',
+          (await LocalCache.getItem(`${address}-pendingTxs`)) || '{}',
         );
 
         // Process pending transactions
@@ -255,7 +255,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
         response.data.forEach((tx: any) => {
           if (cached[tx.txid]) {
             delete cached[tx.txid];
-            LocalCache.setItem('pendingTxs', JSON.stringify(cached));
+            LocalCache.setItem(`${address}-pendingTxs`, JSON.stringify(cached));
           }
         });
 
@@ -355,7 +355,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
             setIsRefreshing(false);
           }
         } else {
-          console.error('Error fetching transactions:', error);
+          dbg('Error fetching transactions:', error);
           if (isMounted.current) {
             Toast.show({
               type: 'error',
@@ -558,7 +558,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
       }
 
       const cached = JSON.parse(
-        (await LocalCache.getItem('pendingTxs')) || '{}',
+        (await LocalCache.getItem(`${address}-pendingTxs`)) || '{}',
       );
       dbg('Cached transactions for fetch more:', Object.keys(cached).length);
 
@@ -588,7 +588,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
             if (cached[tx.txid]) {
               delete cached[tx.txid];
               dbg('delete from cache in fetch more', tx.txid);
-              LocalCache.setItem('pendingTxs', JSON.stringify(cached));
+              LocalCache.setItem(`${address}-pendingTxs`, JSON.stringify(cached));
             }
           });
 
@@ -644,7 +644,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
       }
     } catch (error: any) {
       if (error.name !== 'CanceledError') {
-        console.error('Error fetching more transactions:', error);
+        dbg('Error fetching more transactions:', error);
         dbg('Error details in fetch more:', error.message);
         Toast.show({
           type: 'error',

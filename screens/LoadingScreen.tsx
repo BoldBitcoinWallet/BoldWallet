@@ -8,7 +8,6 @@ import {
   Image,
   Animated,
   Easing,
-  useWindowDimensions,
 } from 'react-native';
 import {useTheme} from '../theme';
 import DeviceInfo from 'react-native-device-info';
@@ -18,12 +17,7 @@ const LoadingScreen = ({onRetry}: any) => {
   const [appVersion, setAppVersion] = useState('');
 
   const [loading, setLoading] = useState(false);
-  const fadeAnim = useRef(new Animated.Value(0.7)).current;
-  const {width, height} = useWindowDimensions(); // Dynamic screen size detection
-
-  // Determine if the screen is small or in landscape
-  const isSmallScreen = height < 600; // Arbitrary threshold for small screens
-  const isLandscape = width > height;
+  const fadeAnim = useRef(new Animated.Value(0.6)).current;
 
   const handlePress = async () => {
     setLoading(true);
@@ -72,28 +66,6 @@ const LoadingScreen = ({onRetry}: any) => {
       justifyContent: 'center',
       alignItems: 'center',
       width: '100%',
-    },
-    heroSection: {
-      alignItems: 'center',
-      marginBottom: 32,
-      paddingHorizontal: 20,
-    },
-    heroTitle: {
-      fontSize: 32,
-      fontWeight: '800',
-      color: theme.colors.text,
-      textAlign: 'center',
-      lineHeight: 40,
-      letterSpacing: -0.5,
-    },
-    heroSubtitle: {
-      fontSize: 18,
-      color: theme.colors.textSecondary,
-      fontWeight: '500',
-      textAlign: 'center',
-      marginTop: 16,
-      lineHeight: 24,
-      paddingHorizontal: 20,
     },
     logoContainer: {
       alignItems: 'center',
@@ -161,28 +133,12 @@ const LoadingScreen = ({onRetry}: any) => {
   return (
     <View style={styles.container}>
       <View style={styles.contentContainer}>
-        {/* Conditionally render hero text based on screen size/orientation */}
-        {!isSmallScreen && !isLandscape && (
-          <View style={styles.heroSection}>
-            <Text style={styles.heroTitle}>
-              Seedless.{'\n'}Hardware-Free.{'\n'}Limitless.
-            </Text>
-          </View>
-        )}
         <Animated.View style={[styles.logoContainer, {opacity: fadeAnim}]}>
           <Image
             style={styles.storeIcon}
             source={require('../assets/playstore-icon.png')}
           />
         </Animated.View>
-        {!isSmallScreen && !isLandscape && (
-          <View style={styles.heroSection}>
-            <Text style={styles.heroSubtitle}>
-              Roam with Peace of Mind {'\n'}
-              Self-Custody Bitcoin Wallet
-            </Text>
-          </View>
-        )}
       </View>
       <View style={styles.bottomContainer}>
         <TouchableOpacity

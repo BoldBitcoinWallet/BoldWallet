@@ -10,6 +10,11 @@ def enableProguardInReleaseBuilds = false
 
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+def releaseProperties = new Properties()
+if (rootProject.file('release.properties').exists()) {
+    releaseProperties.load(new FileInputStream(rootProject.file('release.properties')))
+}
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     compileSdk rootProject.ext.compileSdkVersion
@@ -56,14 +61,14 @@ android {
             keyPassword 'android'
         }
         release {
-            if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE') && 
-                project.hasProperty('MYAPP_UPLOAD_STORE_PASSWORD') &&
-                project.hasProperty('MYAPP_UPLOAD_KEY_ALIAS') &&
-                project.hasProperty('MYAPP_UPLOAD_KEY_PASSWORD')) {
-                storeFile file(MYAPP_UPLOAD_STORE_FILE)
-                storePassword MYAPP_UPLOAD_STORE_PASSWORD
-                keyAlias MYAPP_UPLOAD_KEY_ALIAS
-                keyPassword MYAPP_UPLOAD_KEY_PASSWORD
+            if (releaseProperties.getProperty('MYAPP_UPLOAD_STORE_FILE') != null &&
+                releaseProperties.getProperty('MYAPP_UPLOAD_KEY_ALIAS') != null &&
+                releaseProperties.getProperty('MYAPP_UPLOAD_STORE_PASSWORD') != null &&
+                releaseProperties.getProperty('MYAPP_UPLOAD_KEY_PASSWORD') != null) {
+                storeFile rootProject.file(releaseProperties.getProperty('MYAPP_UPLOAD_STORE_FILE'))
+                storePassword releaseProperties.getProperty('MYAPP_UPLOAD_STORE_PASSWORD')
+                keyAlias releaseProperties.getProperty('MYAPP_UPLOAD_KEY_ALIAS')
+                keyPassword releaseProperties.getProperty('MYAPP_UPLOAD_KEY_PASSWORD')
             } else {
                 // Fallback to debug keystore if release config not found
                 storeFile file('debug.keystore')
