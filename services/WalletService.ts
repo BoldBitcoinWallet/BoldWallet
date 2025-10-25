@@ -296,8 +296,8 @@ export class WalletService {
     try {
       dbg('WalletService: Fetching fresh BTC price from mempool.space');
 
-
-      const priceUrl =  this.currentApiUrl + '/v1/prices';
+      const priceAPI =  this.currentApiUrl + '/v1/prices';
+      const priceUrl =  priceAPI.replace(/\/testnet\/?$/, '');
 
       dbg('WalletService: Using price API URL:', priceUrl);
       const response = await this.withTimeout(
