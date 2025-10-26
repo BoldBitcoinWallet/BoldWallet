@@ -120,12 +120,12 @@ const ShowcaseScreen = ({navigation}: any) => {
       if (decryptedKeyshare.indexOf('pub_key') < 0) {
         Alert.alert('Wrong Password', 'Could not import keyshare');
       } else {
-        
+
         // validate keyshare
         try {
           const ks = JSON.parse(decryptedKeyshare);
           if (!ks.pub_key) {
-              throw 'Error: pub_key or chain_code_hex not found in keyshare';
+              throw 'Error: pub_key not found in keyshare';
           }
         } catch (error) {
           dbg('Error parsing keyshare:', error);
