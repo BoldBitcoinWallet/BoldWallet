@@ -1154,8 +1154,6 @@ const MobilesPairing = ({navigation}: any) => {
       fontWeight: '500',
       color: theme.colors.textSecondary,
       textAlign: 'center',
-      marginBottom: 12,
-      marginTop: 8,
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       lineHeight: 18,
       paddingHorizontal: 8,
@@ -1394,13 +1392,11 @@ const MobilesPairing = ({navigation}: any) => {
       tintColor: theme.colors.secondary,
     },
     securityText: {
-      fontSize: 26,
       fontWeight: '700',
       color: theme.colors.text,
       textAlign: 'center',
-      marginBottom: 20,
+      marginBottom: 10,
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
-      lineHeight: 32,
     },
     checklistContainer: {
       alignSelf: 'stretch',
@@ -1532,7 +1528,7 @@ const MobilesPairing = ({navigation}: any) => {
       borderRadius: 2,
     },
     statusText: {
-      fontSize: 20,
+      fontSize: 16,
       color: theme.colors.text,
       textAlign: 'center',
       fontWeight: '600',
@@ -1547,13 +1543,10 @@ const MobilesPairing = ({navigation}: any) => {
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     countdownText: {
-      fontSize: 18,
-      fontWeight: '600',
-      color: theme.colors.primary,
-      marginVertical: 8,
+      fontSize: 14,
+      color: theme.colors.secondary,
       textAlign: 'center',
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
-      lineHeight: 24,
     },
     loader: {
       marginTop: 10,
@@ -1656,7 +1649,7 @@ const MobilesPairing = ({navigation}: any) => {
       tintColor: theme.colors.primary,
     },
     modalTitle: {
-      fontSize: 24,
+      fontSize: 20,
       fontWeight: '700',
       color: theme.colors.text,
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
@@ -1949,13 +1942,13 @@ const MobilesPairing = ({navigation}: any) => {
       lineHeight: 24,
     },
     modalIconContainer: {
-      marginBottom: 20,
+      marginBottom: 10,
       alignItems: 'center',
     },
     modalIconBackground: {
-      width: 64,
-      height: 64,
-      borderRadius: 32,
+      width: 50,
+      height: 50,
+      borderRadius: 25,
       backgroundColor: theme.colors.primary + '20',
       alignItems: 'center',
       justifyContent: 'center',
@@ -1966,7 +1959,7 @@ const MobilesPairing = ({navigation}: any) => {
       tintColor: theme.colors.primary,
     },
     progressContainer: {
-      marginVertical: 24,
+      marginVertical: 8,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -2000,11 +1993,11 @@ const MobilesPairing = ({navigation}: any) => {
     },
     progressPercentage: {
       fontSize: 14,
-      fontWeight: '500',
+      fontWeight: 'bold',
       color: theme.colors.text,
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'center',
-      lineHeight: 14,
+      marginBottom: 8,
     },
     statusContainer: {
       width: '100%',
@@ -2150,8 +2143,7 @@ const MobilesPairing = ({navigation}: any) => {
                     </Text>
                   </View>
                   <Text style={styles.requirementsDescription}>
-                    Two mobile devices are required for secure wallet setup
-                    using threshold signatures.
+                    Two mobile devices are required.
                   </Text>
 
                   {[
@@ -2234,8 +2226,7 @@ const MobilesPairing = ({navigation}: any) => {
                   ))}
                 </View>
                 <Text style={styles.pairingHint}>
-                  ⚠️ For best privacy and reliability, use one phone as a
-                  hotpsot and connect the other phone to it.
+                  ⚠️ Tip: for ultimate privacy and reliability, put one phone in Hotspot mode, and connect the other phone to it.
                 </Text>
                 {/* Pairing Button */}
                 {!isPairing && !peerIP && (
@@ -2317,7 +2308,7 @@ const MobilesPairing = ({navigation}: any) => {
                 </View>
                 {/* Show Countdown Timer During Pairing */}
                 {isPairing && !peerIP && (
-                  <View style={{marginTop: 20}}>
+                  <View style={{marginTop: 16}}>
                     <Text style={styles.statusText}>{status}</Text>
                     <Text style={styles.countdownText}>
                       {countdown}s left to connect
@@ -2506,7 +2497,7 @@ const MobilesPairing = ({navigation}: any) => {
 
                                 {/* Subtext. suggest better wording. */}
                                 <Text style={styles.modalSubtitle}>
-                                  Could take up to a minute, given your device specs.
+                                  Could take a while, given device specs.
                                 </Text>
 
                                 {/* Loading Indicator */}
@@ -2539,7 +2530,7 @@ const MobilesPairing = ({navigation}: any) => {
                                   <View style={styles.statusRow}>
                                     <View style={styles.statusIndicator} />
                                     <Text style={styles.finalizingStatusText}>
-                                    Computing cryptographic security params
+                                    Computing cryptographic params
                                     </Text>
                                   </View>
                                   <Text style={styles.finalizingCountdownText}>

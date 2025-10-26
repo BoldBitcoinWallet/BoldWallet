@@ -170,7 +170,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       alignItems: 'center',
       justifyContent: 'center',
       textAlign: 'center',
-      paddingVertical: 40,
+      paddingVertical: 20,
     },
     heroTitle: {
       fontSize: 28,
@@ -202,8 +202,6 @@ const ShowcaseScreen = ({navigation}: any) => {
     logoContainer: {
       alignItems: 'center',
       justifyContent: 'center',
-      marginVertical: 32,
-      padding: 20,
       backgroundColor: 'transparent',
     },
     storeIcon: {
