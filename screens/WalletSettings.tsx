@@ -728,93 +728,50 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const toggleNetwork = async (value: boolean) => {
     // Haptic feedback for network toggle
     HapticFeedback.light();
-
     dbg('=== Network toggle started:', value ? 'testnet' : 'mainnet');
-
     const newNetwork = value ? 'testnet3' : 'mainnet';
-
-    // Update network via UserContext
     await setActiveNetwork(newNetwork);
-
-    // Wait a bit for NetworkContext state to update
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    // Get the updated API from cache to ensure we have the latest
-    const updatedApi = await LocalCache.getItem('api');
-    dbg('Retrieved updated API from cache:', updatedApi);
-
-    // Update local state
-    setIsTestnet(value);
-    setBaseAPI(updatedApi || apiBase);
-    dbg(
-      'Local state updated with network:',
-      newNetwork,
-      'API:',
-      updatedApi || apiBase,
-    );
-
-    // Avoid clearing persistent wallet cache; keep offline data
-
-    if (WalletService.getInstance().handleNetworkChange) {
-      await WalletService.getInstance().handleNetworkChange(
-        newNetwork,
-        updatedApi || apiBase,
-      );
-      dbg('WalletService network change handled');
-    }
-
-    // Stay in settings screen - no navigation reset
-    dbg('=== Network toggle completed, staying in settings');
+    navigation.reset({index: 0, routes: [{name: 'Bold Home'}]});
   };
 
   const resetAPI = async () => {
     dbg('resetAPI called');
-
     const net = await LocalCache.getItem('network');
     const api =
       net === 'mainnet'
         ? 'https://mempool.space/api' // MAINNET_APIS[0]
         : 'https://mempool.space/testnet/api'; // TESTNET_APIS[0]
-
     dbg('Resetting to default API for network:', net, 'API:', api);
-
     // Update local state
     setBaseAPI(api);
     dbg('Local state updated with API:', api);
-
     // Cache the API setting for the current network
     if (net) {
       await LocalCache.setItem(`api_${net}`, api);
       await LocalCache.setItem('api', api);
       dbg(`API cached for network ${net}:`, api);
     }
-
     // Update native module
     if (net) {
       await BBMTLibNativeModule.setAPI(net, api);
     }
     dbg('Native module updated with network:', net, 'API:', api);
-
     // Update WalletService if it has the method
     if (WalletService.getInstance().handleNetworkChange && net) {
       await WalletService.getInstance().handleNetworkChange(net, api);
       dbg('WalletService updated with reset API');
     }
-
     dbg('API reset and propagated successfully:', api);
   };
 
   const saveAPI = async (api: string) => {
     dbg('=== saveAPI called with:', api);
-
     try {
       // Update API via UserContext
       await setActiveApiProvider(api);
-
       // Update local state
       setBaseAPI(api);
       dbg('Local state updated with API:', api);
-
       dbg('=== API saved and propagated successfully:', api);
     } catch (error) {
       dbg('Error in saveAPI:', error);
@@ -905,7 +862,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         } catch {
           // ignore cleanup errors
         }
-        clearBackupModal();
       } else {
         Alert.alert('Error', 'Invalid keyshare.');
       }
@@ -1516,6 +1472,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 await LocalCache.clear();
                 setUsageSize(await LocalCache.usageSize());
                 Alert.alert('Cache Cleared', 'Cache cleared successfully.');
+                navigation.reset({index: 0, routes: [{name: 'Bold Home'}]});
               } catch (e) {
                 dbg('Error clearing cache', e);
                 Alert.alert(
@@ -1823,11 +1780,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 style={styles.modalIcon}
                 resizeMode="contain"
               />
-            <Text style={styles.modalTitle}>Confirm Wallet Deletion</Text>
+              <Text style={styles.modalTitle}>Confirm Wallet Deletion</Text>
             </View>
             <Text style={styles.modalDescription}>
-              Type <Text style={styles.apiName}>"delete my wallet"</Text> to confirm.{'\n'}This action is
-              irreversible.
+              Type <Text style={styles.apiName}>"delete my wallet"</Text> to
+              confirm.{'\n'}This action is irreversible.
             </Text>
             <TextInput
               style={styles.input}
