@@ -249,7 +249,7 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	time.Sleep(time.Second)
 	if err = endSession(server, session); err != nil {
 		close(endCh)
-		return "", fmt.Errorf("fail to end session: %w", err)
+		Logln("BBMTLog", "Warning: endSession", "error", err)
 	}
 	status.Step++
 	status.Info = "session ended"
