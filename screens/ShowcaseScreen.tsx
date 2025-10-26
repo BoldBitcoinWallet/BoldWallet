@@ -120,6 +120,18 @@ const ShowcaseScreen = ({navigation}: any) => {
       if (decryptedKeyshare.indexOf('pub_key') < 0) {
         Alert.alert('Wrong Password', 'Could not import keyshare');
       } else {
+        
+        // validate keyshare
+        try {
+          const ks = JSON.parse(decryptedKeyshare);
+          if (!ks.pub_key) {
+              throw 'Error: pub_key or chain_code_hex not found in keyshare';
+          }
+        } catch (error) {
+          dbg('Error parsing keyshare:', error);
+          throw 'Error: Invalid keyshare';
+        }
+
         await EncryptedStorage.setItem('keyshare', decryptedKeyshare);
         setModalVisible(false);
         setPassword('');
@@ -135,7 +147,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       }
     } catch {
       dbg('Failed to decode as UTF-8. File might be binary.');
-      Alert.alert('Error', 'Failed to decrypt the file');
+      Alert.alert('Error', 'Failed to import the file');
     }
   };
 

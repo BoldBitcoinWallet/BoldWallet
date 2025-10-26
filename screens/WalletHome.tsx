@@ -873,7 +873,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
       try {
         setLoading(true);
-
+        
         const jks = await EncryptedStorage.getItem('keyshare');
         if (!jks) {
           dbg('WalletHome: No keyshare found during initialization');
@@ -881,24 +881,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           setIsInitialized(true);
           return;
         }
-
+        
         // Initialize WalletService only after confirming we have a keyshare
         const walletService = WalletService.getInstance();
         await walletService.initialize();
 
-        let ks: any = {};
-
-        try {
-          ks = JSON.parse(jks);
-        } catch (error) {
-          dbg('Error parsing keyshare:', error);
-        }
-
-        if (!ks.pub_key || !ks.chain_code_hex) {
-          dbg('Error: pub_key or chain_code_hex not found in keyshare');
-          DeviceEventEmitter.emit('app:reload', {});
-          return;
-        }
+        const ks = JSON.parse(jks);
 
         const path = "m/44'/0'/0'/0/0";
         const btcPub = await BBMTLibNativeModule.derivePubkey(

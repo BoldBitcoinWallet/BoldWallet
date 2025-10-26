@@ -413,6 +413,18 @@ const MobilesPairing = ({navigation}: any) => {
         .then(async (result: any) => {
           dbg('keygen result', result.substring(0, 40).concat('...'));
           setKeyshare(result);
+
+          // validate keyshare
+          try {
+            const ks = JSON.parse(result);
+            if (!ks.pub_key) {
+              throw 'Error: pub_key or chain_code_hex not found in keyshare';
+            }
+          } catch (error) {
+            dbg('Error parsing keyshare:', error);
+            throw 'Error: Invalid keyshare';
+          }
+
           await EncryptedStorage.setItem('keyshare', result);
           setMpcDone(true);
           deletePreparams();
