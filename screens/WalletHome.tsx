@@ -879,6 +879,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           dbg('WalletHome: No keyshare found during initialization');
           setLoading(false);
           setIsInitialized(true);
+          navigation.reset({index: 0, routes: [{name: 'Bold Home'}]});
           return;
         }
 
@@ -886,7 +887,21 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         const walletService = WalletService.getInstance();
         await walletService.initialize();
 
-        const ks = JSON.parse(jks);
+        let ks: any = {};
+
+        try {
+          ks = JSON.parse(jks);
+        } catch (error) {
+          dbg('Error parsing keyshare:', error);
+          navigation.reset({index: 0, routes: [{name: 'Bold Home'}]});
+          return;
+        }
+
+        if (!ks.pub_key || !ks.chain_code_hex || !ks.local_party_key) {
+          dbg('Invalid pub_key or chain_code_hex or local_party_key');
+          navigation.reset({index: 0, routes: [{name: 'Bold Home'}]});
+          return;
+        }
 
         const path = "m/44'/0'/0'/0/0";
         const btcPub = await BBMTLibNativeModule.derivePubkey(

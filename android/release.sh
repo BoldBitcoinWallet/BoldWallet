@@ -46,7 +46,7 @@ echo -e "Building the Release APK..."
 ./gradlew assembleRelease
 
 # Step 4: Locate and display APK
-APK_PATH="app/release/app-release.apk"
+APK_PATH="app/build/outputs/apk/release/app-release.apk"
 if [ -f "$APK_PATH" ]; then
     echo -e "Build successful! APK located at: $APK_PATH"
 else
