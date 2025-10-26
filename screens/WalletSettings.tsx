@@ -830,7 +830,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         await LocalCache.clear();
         dbg('clearing encrypted storage...');
         await EncryptedStorage.removeItem('keyshare');
-        dbg('app reload...');
+        dbg('app restart...');
         DeviceEventEmitter.emit('app:reload', {});
       } catch (error) {
         dbg('handleResetWallet', error);

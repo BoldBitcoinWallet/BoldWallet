@@ -873,7 +873,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
       try {
         setLoading(true);
-        
+
         const jks = await EncryptedStorage.getItem('keyshare');
         if (!jks) {
           dbg('WalletHome: No keyshare found during initialization');
@@ -881,7 +881,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           setIsInitialized(true);
           return;
         }
-        
+
         // Initialize WalletService only after confirming we have a keyshare
         const walletService = WalletService.getInstance();
         await walletService.initialize();
@@ -1039,14 +1039,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       dbg('WalletHome: Starting address type change to:', type);
       setIsAddressTypeModalVisible(false);
       await setActiveAddressType(type as any);
-      // Re-derive address for the active network and refresh data
-      try {
-        await updateAddressForNetwork(network);
-        await updateAddressTypeModal(network);
-      } catch (e) {
-        dbg('Error updating address after type change', e);
-      }
-      await fetchDataRef.current?.();
+      navigation.reset({index: 0, routes: [{name: 'Bold Home'}]});
     } catch (error) {
       dbg('WalletHome: Error changing address type:', error);
       showErrorToast('Failed to change address type. Please try again.');
@@ -1123,16 +1116,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
   // Helper to switch network using UserContext
   const handleNetworkSwitch = async (toTestnet: boolean) => {
+    dbg('=== Network switch started:', toTestnet ? 'testnet' : 'mainnet');
     HapticFeedback.light();
-    dbg(
-      '=== Home screen network switch started:',
-      toTestnet ? 'testnet' : 'mainnet',
-    );
-
     const net = toTestnet ? 'testnet3' : 'mainnet';
     await setActiveNetwork(net);
-    setIsNetworkModalVisible(false);
-    dbg('=== Home screen network switch completed');
+    navigation.reset({index: 0, routes: [{name: 'Bold Home'}]});
   };
 
   if (loading && !isInitialized) {
