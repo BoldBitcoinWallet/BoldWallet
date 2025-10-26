@@ -41,18 +41,9 @@ const ShowcaseScreen = ({navigation}: any) => {
 
   // Clear all app cache on component mount
   useEffect(() => {
-    const clearAppCache = async () => {
-      try {
-        dbg('Clearing all app cache on ShowcaseScreen mount');
-        await LocalCache.clear();
-        // Avoid clearing persistent wallet cache; keep offline data
-        dbg('App cache cleared successfully');
-      } catch (_error) {
-        dbg('Error clearing app cache:', _error);
-      }
-    };
-
-    clearAppCache();
+    LocalCache.clear()
+      .then(() => dbg('App cache cleared successfully'))
+      .catch(err => dbg('Error clearing app cache:', err));
   }, []);
 
   useEffect(() => {
@@ -481,10 +472,11 @@ const ShowcaseScreen = ({navigation}: any) => {
                 setAgreeToTerms(prev => !prev);
               }}>
               <View
-                style={[styles.checkbox, agreeToTerms && styles.checkboxChecked]}>
-                {agreeToTerms && (
-                  <Text style={styles.checkmark}>✓</Text>
-                )}
+                style={[
+                  styles.checkbox,
+                  agreeToTerms && styles.checkboxChecked,
+                ]}>
+                {agreeToTerms && <Text style={styles.checkmark}>✓</Text>}
               </View>
             </TouchableOpacity>
             <Text style={styles.termsText}>
@@ -500,7 +492,7 @@ const ShowcaseScreen = ({navigation}: any) => {
               </Text>
             </Text>
           </View>
-          
+
           <View style={styles.termsRow}>
             <TouchableOpacity
               style={styles.checkboxContainer}
@@ -509,10 +501,11 @@ const ShowcaseScreen = ({navigation}: any) => {
                 setAgreeToPrivacy(prev => !prev);
               }}>
               <View
-                style={[styles.checkbox, agreeToPrivacy && styles.checkboxChecked]}>
-                {agreeToPrivacy && (
-                  <Text style={styles.checkmark}>✓</Text>
-                )}
+                style={[
+                  styles.checkbox,
+                  agreeToPrivacy && styles.checkboxChecked,
+                ]}>
+                {agreeToPrivacy && <Text style={styles.checkmark}>✓</Text>}
               </View>
             </TouchableOpacity>
             <Text style={styles.termsText}>
@@ -531,7 +524,10 @@ const ShowcaseScreen = ({navigation}: any) => {
         </View>
         <View style={styles.ctaButtons}>
           <TouchableOpacity
-            style={[styles.ctaButtonPrimary, (!agreeToTerms || !agreeToPrivacy) && styles.disabledButton]}
+            style={[
+              styles.ctaButtonPrimary,
+              (!agreeToTerms || !agreeToPrivacy) && styles.disabledButton,
+            ]}
             onPress={() => {
               HapticFeedback.medium();
               navigation.navigate('📱📱 Pairing');
@@ -549,7 +545,9 @@ const ShowcaseScreen = ({navigation}: any) => {
               handleRestoreWallet();
             }}
             disabled={!agreeToTerms || !agreeToPrivacy}>
-            <Text style={styles.ctaButtonSecondaryText}>Restore Existing Wallet</Text>
+            <Text style={styles.ctaButtonSecondaryText}>
+              Restore Existing Wallet
+            </Text>
           </TouchableOpacity>
         </View>
       </View>

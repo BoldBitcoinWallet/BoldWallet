@@ -110,11 +110,9 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
         await LocalCache.setItem('api', base);
         setBaseApi(base);
       }
-
       dbg('WalletContext: Wallet refresh completed');
     } catch (error) {
       dbg('WalletContext: Error refreshing wallet:', error);
-      dbg('Error refreshing wallet:', error);
     }
   };
 

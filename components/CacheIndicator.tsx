@@ -203,11 +203,8 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
             }}>
             {isRefreshing
               ? 'Refreshing...'
-              : latestTimestamp === 0
-              ? 'Tap to load data'
-              : isUsingCache
-              ? 'Tap to refresh data'
-              : 'Tap to refresh'}
+              : 'Tap to refresh'
+            }
           </Text>
         </View>
         {!isRefreshing && (
@@ -220,7 +217,7 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
               {latestTimestamp === 0
                 ? 'No data available'
                 : isUsingCache
-                ? `📱 Cached • ${timeAgo}`
+                ? `Cached • ${timeAgo}`
                 : timeAgo}
             </Text>
             <Image source={clockIcon} style={styles.clockIcon} />

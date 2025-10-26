@@ -1352,10 +1352,10 @@ const MobilesPairing = ({navigation}: any) => {
       color: theme.colors.textSecondary,
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       lineHeight: 20,
-      marginBottom: 20,
+      marginBottom: 10,
     },
     backupConfirmationContainer: {
-      marginBottom: 20,
+      marginBottom: 4,
     },
     enhancedBackupCheckbox: {
       flexDirection: 'row',
@@ -1869,7 +1869,6 @@ const MobilesPairing = ({navigation}: any) => {
     },
     backupButton: {
       marginTop: 12,
-      marginBottom: 12,
       backgroundColor: theme.colors.subPrimary,
       width: '100%',
       borderRadius: 12,
@@ -1933,6 +1932,23 @@ const MobilesPairing = ({navigation}: any) => {
     progressCircle: {
       marginBottom: 16,
     },
+    progressTextWrapper: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    progressPercentage: {
+      fontSize: 14,
+      fontWeight: 'bold',
+      color: theme.colors.text,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'center',
+      marginBottom: 16,
+    },
     progressText: {
       fontSize: 18,
       color: theme.colors.text,
@@ -1981,23 +1997,6 @@ const MobilesPairing = ({navigation}: any) => {
       borderRadius: 3,
       width: 0,
       alignSelf: 'center',
-    },
-    progressTextWrapper: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    progressPercentage: {
-      fontSize: 14,
-      fontWeight: 'bold',
-      color: theme.colors.text,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
-      textAlign: 'center',
-      marginBottom: 8,
     },
     statusContainer: {
       width: '100%',
@@ -2226,7 +2225,8 @@ const MobilesPairing = ({navigation}: any) => {
                   ))}
                 </View>
                 <Text style={styles.pairingHint}>
-                  ⚠️ Tip: for ultimate privacy and reliability, put one phone in Hotspot mode, and connect the other phone to it.
+                  ⚠️ Tip: for ultimate privacy and reliability, put one phone in
+                  Hotspot mode, and connect the other phone to it.
                 </Text>
                 {/* Pairing Button */}
                 {!isPairing && !peerIP && (
@@ -2530,7 +2530,7 @@ const MobilesPairing = ({navigation}: any) => {
                                   <View style={styles.statusRow}>
                                     <View style={styles.statusIndicator} />
                                     <Text style={styles.finalizingStatusText}>
-                                    Computing cryptographic params
+                                      Computing cryptographic params
                                     </Text>
                                   </View>
                                   <Text style={styles.finalizingCountdownText}>

@@ -8,9 +8,10 @@
 
 /* Begin PBXBuildFile section */
 		00E356F31AD99517003FC87E /* BoldWalletTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 00E356F21AD99517003FC87E /* BoldWalletTests.m */; };
-		0440EA632D4835DD00FE370B /* Tss.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0440EA622D4835DD00FE370B /* Tss.xcframework */; };
 		0440EA6B2D48369D00FE370B /* BBMTLibNativeModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0440EA6A2D48369D00FE370B /* BBMTLibNativeModule.swift */; };
 		0440EA6C2D48369D00FE370B /* BBMTLibNativeModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 0440EA692D48369D00FE370B /* BBMTLibNativeModule.m */; };
+		0444C49B2EAE13A800CD740F /* Tss.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0440EA622D4835DD00FE370B /* Tss.xcframework */; };
+		0444C49C2EAE13A800CD740F /* Tss.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 0440EA622D4835DD00FE370B /* Tss.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		13B07FBC1A68108700A75B9A /* AppDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 13B07FB01A68108700A75B9A /* AppDelegate.mm */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		13B07FC11A68108700A75B9A /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 13B07FB71A68108700A75B9A /* main.m */; };
@@ -29,6 +30,20 @@
 			remoteInfo = BoldWallet;
 		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		0444C49D2EAE13A800CD740F /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				0444C49C2EAE13A800CD740F /* Tss.xcframework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		00E356EE1AD99517003FC87E /* BoldWalletTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BoldWalletTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -68,7 +83,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0440EA632D4835DD00FE370B /* Tss.xcframework in Frameworks */,
+				0444C49B2EAE13A800CD740F /* Tss.xcframework in Frameworks */,
 				ABFD1A7D0A9C1E3B52BE4826 /* libPods-BoldWallet.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -198,6 +213,7 @@
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				E8D6F183D6CC6CC44ACC99AE /* [CP] Embed Pods Frameworks */,
 				A4868003626827247A694241 /* [CP] Copy Pods Resources */,
+				0444C49D2EAE13A800CD740F /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -500,6 +516,7 @@
 			baseConfigurationReference = B30564DE79120A5C03ECEF22 /* Pods-BoldWallet.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = 22;
 				DEAD_CODE_STRIPPING = YES;
@@ -508,6 +525,7 @@
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = BoldWallet/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Bold Bitcoin Wallet";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -536,6 +554,7 @@
 			baseConfigurationReference = 4C25CA2D5706ED5DDAD0669F /* Pods-BoldWallet.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = 22;
 				DEAD_CODE_STRIPPING = YES;
@@ -543,6 +562,7 @@
 				ENABLE_TESTABILITY = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = BoldWallet/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Bold Bitcoin Wallet";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (

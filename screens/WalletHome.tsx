@@ -506,18 +506,24 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     async (forceReinit: boolean = false) => {
       // Prevent multiple simultaneous re-initializations
       if (isReinitInProgressRef.current) {
-        dbg('reinitializeWallet: Re-initialization already in progress, skipping', {
-          network,
-          apiBase,
-        });
+        dbg(
+          'reinitializeWallet: Re-initialization already in progress, skipping',
+          {
+            network,
+            apiBase,
+          },
+        );
         return;
       }
 
       if (forceReinit) {
-        dbg('=== reinitializeWallet: Starting full re-initialization (forceReinit = true)', {
-          network,
-          apiBase,
-        });
+        dbg(
+          '=== reinitializeWallet: Starting full re-initialization (forceReinit = true)',
+          {
+            network,
+            apiBase,
+          },
+        );
         isReinitInProgressRef.current = true;
         setLoading(true);
       }
@@ -867,6 +873,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
       try {
         setLoading(true);
+        
         const jks = await EncryptedStorage.getItem('keyshare');
         if (!jks) {
           dbg('WalletHome: No keyshare found during initialization');
@@ -874,12 +881,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           setIsInitialized(true);
           return;
         }
-
+        
         // Initialize WalletService only after confirming we have a keyshare
         const walletService = WalletService.getInstance();
         await walletService.initialize();
 
         const ks = JSON.parse(jks);
+
         const path = "m/44'/0'/0'/0/0";
         const btcPub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,
@@ -979,39 +987,36 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
         // Initialize cache timestamps from WalletService (works offline)
         // Seed UI with cached price/balance immediately (no network needed)
-        try {
-          const cachedPrice = await WalletService.getInstance().getPrice();
-          if (cachedPrice && cachedPrice.rates) {
-            setPriceData(cachedPrice.rates);
-            const r = cachedPrice.rates[currency] || cachedPrice.rate || 0;
-            if (r && r > 0) {
-              setBtcPrice(r.toString());
-              setBtcRate(r);
-            }
+        const bitcoinPrice =
+          await WalletService.getInstance().getBitcoinPrice();
+        if (bitcoinPrice && bitcoinPrice.rates) {
+          setPriceData(bitcoinPrice.rates);
+          const r = bitcoinPrice.rates[currency] || bitcoinPrice.rate || 0;
+          if (r && r > 0) {
+            setBtcPrice(r.toString());
+            setBtcRate(r);
           }
-          const cachedBal = await WalletService.getInstance().getBal(address);
-          if (cachedBal) {
-            setBalanceBTC(cachedBal.btc || '0.00000000');
-            const r =
-              (cachedPrice?.rates?.[currency] as number) ||
-              (cachedPrice?.rate as number) ||
-              0;
-            if (r && Number(cachedBal.btc) > 0) {
-              const fiatBalance = Number(cachedBal.btc) * r;
-              setBalanceFiat(fiatBalance.toFixed(2));
-            }
-          }
-
-          setCacheTimestamps({
-            price: cachedPrice.timestamp,
-            balance: cachedBal.timestamp,
-          });
-        } catch (error: any) {
-          dbg('WalletHome: Error initializing wallet:', error);
-          showErrorToast('Failed to initialize wallet. Please try again.');
-        } finally {
-          setLoading(false);
         }
+
+        const cachedBal = await WalletService.getInstance().getBal(address);
+        if (cachedBal) {
+          setBalanceBTC(cachedBal.btc || '0.00000000');
+          const r =
+            (bitcoinPrice?.rates?.[currency] as number) ||
+            (bitcoinPrice?.rate as number) ||
+            0;
+          if (r && Number(cachedBal.btc) > 0) {
+            const fiatBalance = Number(cachedBal.btc) * r;
+            setBalanceFiat(fiatBalance.toFixed(2));
+          }
+        }
+
+        setCacheTimestamps({
+          price: bitcoinPrice.timestamp,
+          balance: cachedBal.timestamp,
+        });
+
+        setLoading(false);
 
         setIsInitialized(true);
         // Force initial balance fetch
@@ -1020,6 +1025,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       } catch (error) {
         dbg('Error initializing wallet:', error);
         showErrorToast('Failed to initialize wallet. Please try again.');
+        console.error(error);
       } finally {
         setLoading(false);
       }

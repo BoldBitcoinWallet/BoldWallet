@@ -1,5 +1,6 @@
 import React, {useMemo} from 'react';
 import {View, StyleSheet, Animated, Dimensions} from 'react-native';
+import {useTheme} from '../theme';
 
 const {width} = Dimensions.get('window');
 
@@ -12,39 +13,14 @@ const ShimmerEffect: React.FC<ShimmerEffectProps> = ({
   style,
   translateX,
 }) => {
-  
-  // Create opacity animation for shimmer effect
-  const opacityValue = useMemo(() => new Animated.Value(0.3), []);
-  
-  React.useEffect(() => {
-    const opacityAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacityValue, {
-          toValue: 0.8,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacityValue, {
-          toValue: 0.3,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    opacityAnimation.start();
-    return () => opacityAnimation.stop();
-  }, [opacityValue]);
+  const {theme} = useTheme();
   
   return (
     <View style={[style, styles.shimmerWrapper]}>
       <Animated.View
         style={[styles.shimmerContainer, {transform: [{translateX}]}]}>
-        <Animated.View
-          style={[
-            styles.gradient,
-            styles.gradientBackground,
-            {opacity: opacityValue}
-          ]}
+        <View
+          style={[styles.gradient, {backgroundColor: theme.colors.background}]}
         />
       </Animated.View>
     </View>
@@ -60,7 +36,7 @@ const TransactionSkeletonItem: React.FC<TransactionSkeletonItemProps> = ({
 }) => {
   
   return (
-    <View style={[styles.transactionItem, styles.transactionItemBackground]}>
+    <View style={styles.transactionItem}>
       {/* Top row with status and amount */}
       <View style={styles.transactionRow}>
         <View style={styles.statusContainer}>
@@ -121,7 +97,7 @@ const TransactionListSkeleton: React.FC = () => {
         Animated.sequence([
           Animated.timing(animatedValue, {
             toValue: 1,
-            duration: 1500,
+            duration: 1200,
             useNativeDriver: true,
           }),
           Animated.timing(animatedValue, {
@@ -141,12 +117,12 @@ const TransactionListSkeleton: React.FC = () => {
 
   const translateX = animatedValue.interpolate({
     inputRange: [0, 1],
-    outputRange: [-width * 1.5, width * 1.5],
+    outputRange: [-width * 1.2, width * 1.2],
   });
 
   return (
     <View style={styles.container}>
-      {[1, 2, 3].map(i => (
+      {[1, 2, 3, 4].map(i => (
         <TransactionSkeletonItem
           key={i}
           translateX={translateX}
@@ -160,85 +136,88 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 16,
+    paddingTop: 0,
+    backgroundColor: '#f8f9fa',
   },
   transactionItem: {
-    padding: 20,
-    marginVertical: 6,
-    borderRadius: 16,
-    elevation: 2,
+    padding: 16,
+    marginVertical: 4,
+    borderRadius: 12,
+    backgroundColor: '#ffffff',
+    elevation: 1,
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.05)',
+    borderColor: 'rgba(0,0,0,0.03)',
   },
   transactionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: 6,
+    marginVertical: 4,
   },
   addressRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: 8,
+    marginVertical: 6,
   },
   statusContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   statusIconSkeleton: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    marginRight: 8,
-  },
-  statusTextSkeleton: {
-    width: 80,
+    width: 18,
     height: 18,
     borderRadius: 9,
+    marginRight: 6,
+  },
+  statusTextSkeleton: {
+    width: 70,
+    height: 16,
+    borderRadius: 8,
   },
   amountSkeleton: {
-    width: 140,
-    height: 28,
-    borderRadius: 14,
+    width: 120,
+    height: 24,
+    borderRadius: 12,
   },
   addressSkeleton: {
     flex: 1,
-    height: 20,
-    borderRadius: 10,
-    marginRight: 12,
+    height: 18,
+    borderRadius: 9,
+    marginRight: 10,
   },
   usdAmountSkeleton: {
-    width: 90,
-    height: 20,
-    borderRadius: 10,
+    width: 80,
+    height: 18,
+    borderRadius: 9,
   },
   txIdContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   linkIconSkeleton: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    marginRight: 8,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    marginRight: 6,
   },
   txIdSkeleton: {
-    width: 120,
-    height: 16,
-    borderRadius: 8,
+    width: 100,
+    height: 14,
+    borderRadius: 7,
   },
   timestampSkeleton: {
-    width: 110,
-    height: 16,
-    borderRadius: 8,
+    width: 90,
+    height: 14,
+    borderRadius: 7,
   },
   shimmerWrapper: {
     overflow: 'hidden',
-    borderRadius: 8,
+    borderRadius: 6,
   },
   shimmerContainer: {
     width: '100%',
@@ -246,13 +225,8 @@ const styles = StyleSheet.create({
   },
   gradient: {
     flex: 1,
-    borderRadius: 8,
-  },
-  transactionItemBackground: {
-    backgroundColor: '#ffffff',
-  },
-  gradientBackground: {
-    backgroundColor: '#f0f0f0',
+    borderRadius: 6,
+    backgroundColor: '#e9ecef',
   },
 });
 
