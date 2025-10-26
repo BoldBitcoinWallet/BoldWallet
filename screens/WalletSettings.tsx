@@ -16,6 +16,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
+  DeviceEventEmitter,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Share from 'react-native-share';
@@ -829,11 +830,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         await LocalCache.clear();
         dbg('clearing encrypted storage...');
         await EncryptedStorage.removeItem('keyshare');
-        dbg('naviation reset...');
-        navigation.reset({
-          index: 0,
-          routes: [{name: 'Welcome'}],
-        });
+        dbg('app reload...');
+        DeviceEventEmitter.emit('app:reload', {});
       } catch (error) {
         dbg('handleResetWallet', error);
         Alert.alert('Error', 'Failed to reset wallet. Please try again.');
