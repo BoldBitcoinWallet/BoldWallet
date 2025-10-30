@@ -15,7 +15,6 @@ import DeviceInfo from 'react-native-device-info';
 
 const LoadingScreen = ({onRetry}: any) => {
   const {theme} = useTheme();
-  const [appVersion, setAppVersion] = useState('');
 
   const [loading, setLoading] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0.6)).current;
@@ -92,22 +91,12 @@ const LoadingScreen = ({onRetry}: any) => {
     return () => loop.stop();
   }, [iconPulse, loading]);
 
-  useEffect(() => {
-    const getVersion = async () => {
-      const version = await DeviceInfo.getVersion();
-      const buildNumber = await DeviceInfo.getBuildNumber();
-      setAppVersion(`v${version} (${buildNumber})`);
-    };
-    getVersion();
-  }, []);
-
   const styles = StyleSheet.create({
     container: {
       flex: 1,
       backgroundColor: theme.colors.background,
       justifyContent: 'space-between',
       alignItems: 'center',
-      padding: 24,
     },
     contentContainer: {
       flex: 1,
@@ -177,6 +166,7 @@ const LoadingScreen = ({onRetry}: any) => {
     bottomContainer: {
       alignItems: 'center',
       width: '100%',
+      paddingBottom: 64,
     },
     loadingContainer: {
       flexDirection: 'row',
@@ -184,7 +174,7 @@ const LoadingScreen = ({onRetry}: any) => {
       justifyContent: 'center',
     },
     loadingText: {
-      color: theme.colors.background,
+      color: theme.colors.primary,
       fontSize: 16,
       fontWeight: '600',
       marginLeft: 12,
@@ -213,26 +203,27 @@ const LoadingScreen = ({onRetry}: any) => {
             accessibilityRole="button"
             accessibilityLabel="Unlock with biometrics"
             accessibilityHint="Double tap to authenticate and unlock"
-            testID="unlock-biometric-button"
-          >
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color={theme.colors.background} />
-              <Text style={styles.loadingText}>Unlocking...</Text>
-            </View>
-          ) : (
-            <>
-              <View style={styles.iconWrapper}>
-                <Animated.Image
-                  source={require('../assets/fingerprint.png')}
-                  style={[styles.icon, {transform: [{scale: iconPulse}]}]}
+            testID="unlock-biometric-button">
+            {loading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator
+                  size="small"
+                  color={theme.colors.background}
                 />
+                <Text style={styles.loadingText}>Unlocking...</Text>
               </View>
-            </>
-          )}
+            ) : (
+              <>
+                <View style={styles.iconWrapper}>
+                  <Animated.Image
+                    source={require('../assets/fingerprint.png')}
+                    style={[styles.icon, {transform: [{scale: iconPulse}]}]}
+                  />
+                </View>
+              </>
+            )}
           </TouchableOpacity>
         </Animated.View>
-        <Text style={styles.versionText}>{appVersion}</Text>
       </View>
     </View>
   );
