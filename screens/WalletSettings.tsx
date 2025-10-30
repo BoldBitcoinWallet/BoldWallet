@@ -567,6 +567,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
   const {theme} = useTheme();
   const [appVersion, setAppVersion] = useState('');
+  const [buildNumber, setBuildNumber] = useState('');
   const [usageSize, setUsageSize] = useState<{fileCount: number; mb: string}>({
     fileCount: 0,
     mb: '0.00 MB',
@@ -659,6 +660,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
   useEffect(() => {
     setAppVersion(DeviceInfo.getVersion());
+    setBuildNumber(DeviceInfo.getBuildNumber());
     setHapticsEnabledState(areHapticsEnabled());
     LocalCache.usageSize().then(size => {
       setUsageSize(size);
@@ -1552,7 +1554,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           styles={styles}
           theme={theme}>
           <Text style={styles.apiName}>App Version</Text>
-          <Text style={styles.apiDescription}>v{appVersion}</Text>
+          <Text style={styles.apiDescription}> {appVersion}</Text>
+          <Text style={styles.apiName}>Build Number</Text>
+          <Text style={styles.apiDescription}> {buildNumber}</Text>
 
           <View style={styles.apiItem}>
             <Text style={styles.apiName}>Mempool.Space APIs</Text>
