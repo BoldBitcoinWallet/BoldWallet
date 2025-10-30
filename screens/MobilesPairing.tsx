@@ -165,11 +165,11 @@ const MobilesPairing = ({navigation}: any) => {
     }
   };
 
-  // Password validation functions
+  // Password validation functions (match WalletSettings rules)
   const validatePassword = (pass: string) => {
     const errors: string[] = [];
     const rules = {
-      length: pass.length >= 8,
+      length: pass.length >= 12,
       uppercase: /[A-Z]/.test(pass),
       lowercase: /[a-z]/.test(pass),
       number: /\d/.test(pass),
@@ -177,7 +177,7 @@ const MobilesPairing = ({navigation}: any) => {
     };
 
     if (!rules.length) {
-      errors.push('At least 8 characters');
+      errors.push('At least 12 characters');
     }
     if (!rules.uppercase) {
       errors.push('One uppercase letter');
@@ -592,7 +592,7 @@ const MobilesPairing = ({navigation}: any) => {
           navigation.dispatch(
             CommonActions.reset({
               index: 0,
-              routes: [{name: 'Bold Home'}],
+              routes: [{name: 'Home'}],
             }),
           );
           setMpcDone(true);
@@ -648,40 +648,49 @@ const MobilesPairing = ({navigation}: any) => {
     }
 
     try {
-      const encryptedKeyshare = await BBMTLibNativeModule.aesEncrypt(
-        keyshare,
-        await BBMTLibNativeModule.sha256(password),
-      );
+      HapticFeedback.light();
 
-      // Create friendly filename with date and time
-      const now = new Date();
-      const month = now.toLocaleDateString('en-US', {month: 'short'});
-      const day = now.getDate().toString().padStart(2, '0');
-      const year = now.getFullYear();
-      const hours = now.getHours().toString().padStart(2, '0');
-      const minutes = now.getMinutes().toString().padStart(2, '0');
-      const friendlyFilename = `${shareName}.${month}${day}.${year}.${hours}${minutes}.share`;
+      const storedKeyshare = await EncryptedStorage.getItem('keyshare');
+      if (storedKeyshare) {
+        const json = JSON.parse(storedKeyshare);
+        const encryptedKeyshare = await BBMTLibNativeModule.aesEncrypt(
+          storedKeyshare,
+          await BBMTLibNativeModule.sha256(password),
+        );
 
-      const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
-      const filePath = `${tempDir}/${friendlyFilename}`;
+        // Create friendly filename with date and time (match WalletSettings)
+        const now = new Date();
+        const month = now.toLocaleDateString('en-US', {month: 'short'});
+        const day = now.getDate().toString().padStart(2, '0');
+        const year = now.getFullYear();
+        const hours = now.getHours().toString().padStart(2, '0');
+        const minutes = now.getMinutes().toString().padStart(2, '0');
+        const share = json.local_party_key;
+        const friendlyFilename = `${share}.${month}${day}.${year}.${hours}${minutes}.share`;
 
-      await RNFS.writeFile(filePath, encryptedKeyshare, 'base64');
+        const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
+        const filePath = `${tempDir}/${friendlyFilename}`;
 
-      await Share.open({
-        title: 'Backup Your Keyshare',
-        isNewTask: true,
-        message:
-          'Save this encrypted file securely. It is required for wallet recovery.',
-        url: `file://${filePath}`,
-        type: 'application/octet-stream',
-        filename: friendlyFilename,
-        failOnCancel: false,
-      });
+        await RNFS.writeFile(filePath, encryptedKeyshare, 'base64');
 
-      try {
-        await RNFS.unlink(filePath);
-      } catch {}
-      clearBackupModal();
+        await Share.open({
+          title: 'Backup Your Keyshare',
+          isNewTask: true,
+          message:
+            'Save this encrypted file securely. It is required for wallet recovery.',
+          url: `file://${filePath}`,
+          type: 'application/octet-stream',
+          filename: friendlyFilename,
+          failOnCancel: false,
+        });
+
+        try {
+          await RNFS.unlink(filePath);
+        } catch {}
+        clearBackupModal();
+      } else {
+        Alert.alert('Error', 'Invalid keyshare.');
+      }
     } catch (error) {
       dbg('Error encrypting or sharing keyshare:', error);
       Alert.alert('Error', 'Failed to encrypt or share the keyshare.');
@@ -2869,7 +2878,7 @@ const MobilesPairing = ({navigation}: any) => {
                           navigation.dispatch(
                             CommonActions.reset({
                               index: 0,
-                              routes: [{name: 'Bold Home'}],
+                              routes: [{name: 'Home'}],
                             }),
                           );
                         }}
@@ -3088,16 +3097,16 @@ const MobilesPairing = ({navigation}: any) => {
                 <Text style={styles.modalTitle}>Backup Keyshare</Text>
               </View>
               <Text style={styles.modalDescription}>
-                Save an encrypted backup of your keyshare. Use a strong
-                password.
+                Create an encrypted backup of your keyshare, protected by a
+                strong password.
               </Text>
 
               <View style={styles.passwordContainer}>
-                <Text style={styles.passwordLabel}>Password</Text>
+                <Text style={styles.passwordLabel}>Choose Password</Text>
                 <View style={styles.passwordInputContainer}>
                   <TextInput
                     style={styles.passwordInput}
-                    placeholder="Enter password"
+                    placeholder="Enter a strong password"
                     secureTextEntry={!passwordVisible}
                     value={password}
                     onChangeText={handlePasswordChange}
@@ -3168,7 +3177,7 @@ const MobilesPairing = ({navigation}: any) => {
                         password !== confirmPassword &&
                         styles.errorInput,
                     ]}
-                    placeholder="Re-enter password"
+                    placeholder="Confirm your password"
                     secureTextEntry={!confirmPasswordVisible}
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}

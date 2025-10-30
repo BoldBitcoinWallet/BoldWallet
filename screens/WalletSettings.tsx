@@ -731,7 +731,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     dbg('=== Network toggle started:', value ? 'testnet' : 'mainnet');
     const newNetwork = value ? 'testnet3' : 'mainnet';
     await setActiveNetwork(newNetwork);
-    navigation.reset({index: 0, routes: [{name: 'Bold Home'}]});
+    navigation.reset({index: 0, routes: [{name: 'Home'}]});
   };
 
   const resetAPI = async () => {
@@ -788,7 +788,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('clearing encrypted storage...');
         await EncryptedStorage.removeItem('keyshare');
         dbg('app restart...');
-        DeviceEventEmitter.emit('app:reload', {});
+        navigation.reset({index: 0, routes: [{name: 'Welcome'}]});
       } catch (error) {
         dbg('handleResetWallet', error);
         Alert.alert('Error', 'Failed to reset wallet. Please try again.');
@@ -1472,7 +1472,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 await LocalCache.clear();
                 setUsageSize(await LocalCache.usageSize());
                 Alert.alert('Cache Cleared', 'Cache cleared successfully.');
-                navigation.reset({index: 0, routes: [{name: 'Bold Home'}]});
+                navigation.reset({index: 0, routes: [{name: 'Home'}]});
               } catch (e) {
                 dbg('Error clearing cache', e);
                 Alert.alert(

@@ -34,7 +34,7 @@ export const HeaderTitle: React.FC = () => {
   return (
     <View style={styles.headerTitleContainer}>
       <Image source={require('../assets/icon.png')} style={styles.headerLogo} />
-      <Text style={styles.headerTitleText}>Bold Home</Text>
+      <Text style={styles.headerTitleText}>Home</Text>
     </View>
   );
 };

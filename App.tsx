@@ -54,7 +54,7 @@ const App = () => {
       try {
         const keyshare = await EncryptedStorage.getItem('keyshare');
         dbg('initializeApp keyshare found', !!keyshare);
-        const route = keyshare ? 'Bold Home' : 'Welcome';
+        const route = keyshare && keyshare.length > 0 ? 'Home' : 'Welcome';
         dbg('Setting initial route to:', route);
         setInitialRoute(route);
       } catch (error) {
@@ -282,7 +282,7 @@ const App = () => {
                   headerShown: false,
                 }}>
                 <Stack.Screen
-                  name="Bold Home"
+                  name="Home"
                   component={WalletHome}
                   options={{
                     headerShown: true,

@@ -140,7 +140,7 @@ const ShowcaseScreen = ({navigation}: any) => {
           navigation.dispatch(
             CommonActions.reset({
               index: 0,
-              routes: [{name: 'Bold Home'}],
+              routes: [{name: 'Home'}],
             }),
           );
         }, 1000);

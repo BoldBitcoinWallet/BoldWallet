@@ -879,7 +879,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           dbg('WalletHome: No keyshare found during initialization');
           setLoading(false);
           setIsInitialized(true);
-          navigation.reset({index: 0, routes: [{name: 'Bold Home'}]});
+          navigation.reset({index: 0, routes: [{name: 'Welcome'}]});
           return;
         }
 
@@ -893,13 +893,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           ks = JSON.parse(jks);
         } catch (error) {
           dbg('Error parsing keyshare:', error);
-          navigation.reset({index: 0, routes: [{name: 'Bold Home'}]});
+          navigation.reset({index: 0, routes: [{name: 'Home'}]});
           return;
         }
 
         if (!ks.pub_key || !ks.chain_code_hex || !ks.local_party_key) {
           dbg('Invalid pub_key or chain_code_hex or local_party_key');
-          navigation.reset({index: 0, routes: [{name: 'Bold Home'}]});
+          navigation.reset({index: 0, routes: [{name: 'Home'}]});
           return;
         }
 
@@ -1054,7 +1054,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       dbg('WalletHome: Starting address type change to:', type);
       setIsAddressTypeModalVisible(false);
       await setActiveAddressType(type as any);
-      navigation.reset({index: 0, routes: [{name: 'Bold Home'}]});
+      navigation.reset({index: 0, routes: [{name: 'Home'}]});
     } catch (error) {
       dbg('WalletHome: Error changing address type:', error);
       showErrorToast('Failed to change address type. Please try again.');
@@ -1135,7 +1135,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     HapticFeedback.light();
     const net = toTestnet ? 'testnet3' : 'mainnet';
     await setActiveNetwork(net);
-    navigation.reset({index: 0, routes: [{name: 'Bold Home'}]});
+    navigation.reset({index: 0, routes: [{name: 'Home'}]});
   };
 
   if (loading && !isInitialized) {
