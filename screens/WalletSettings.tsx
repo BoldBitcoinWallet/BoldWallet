@@ -1086,7 +1086,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       backgroundColor: theme.colors.primary,
     },
     buttonText: {
-      color: '#ffffff',
+      color: theme.colors.textOnPrimary,
       fontSize: 16,
       fontWeight: '600',
     },
@@ -1200,7 +1200,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       backgroundColor: theme.colors.secondary,
     },
     confirmButton: {
-      backgroundColor: theme.colors.primary,
+      backgroundColor: theme.colors.accent,
     },
     disabledButton: {
       backgroundColor: theme.colors.disabled,
@@ -1813,7 +1813,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 }}
                 disabled={isDeleting}>
                 <Text style={styles.buttonText}>
-                  {isDeleting ? 'Deleting...' : 'Confirm'}
+                  {isDeleting ? 'Deleting...' : 'Delete'}
                 </Text>
               </TouchableOpacity>
             </View>

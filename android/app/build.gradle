@@ -24,8 +24,8 @@ android {
         applicationId "com.boldwallet"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 23
-        versionName "1.4.3"
+        versionCode 24
+        versionName "1.4.4"
         missingDimensionStrategy 'react-native-camera', 'general'
         missingDimensionStrategy 'react-native-arch', 'oldarch'
         

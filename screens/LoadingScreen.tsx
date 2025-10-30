@@ -10,6 +10,7 @@ import {
   Easing,
 } from 'react-native';
 import {useTheme} from '../theme';
+import {HapticFeedback} from '../utils';
 import DeviceInfo from 'react-native-device-info';
 
 const LoadingScreen = ({onRetry}: any) => {
@@ -18,11 +19,32 @@ const LoadingScreen = ({onRetry}: any) => {
 
   const [loading, setLoading] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0.6)).current;
+  const buttonScale = useRef(new Animated.Value(1)).current;
+  const iconPulse = useRef(new Animated.Value(1)).current;
 
   const handlePress = async () => {
+    HapticFeedback.medium();
     setLoading(true);
     await onRetry();
     setLoading(false);
+  };
+
+  const handlePressIn = () => {
+    Animated.spring(buttonScale, {
+      toValue: 0.97,
+      useNativeDriver: true,
+      friction: 6,
+      tension: 200,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(buttonScale, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 6,
+      tension: 200,
+    }).start();
   };
 
   useEffect(() => {
@@ -43,6 +65,32 @@ const LoadingScreen = ({onRetry}: any) => {
       ]),
     ).start();
   }, [fadeAnim]);
+
+  // Subtle fingerprint pulse when idle
+  useEffect(() => {
+    if (loading) {
+      iconPulse.setValue(1);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(iconPulse, {
+          toValue: 1.08,
+          duration: 900,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(iconPulse, {
+          toValue: 1,
+          duration: 900,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [iconPulse, loading]);
 
   useEffect(() => {
     const getVersion = async () => {
@@ -82,29 +130,42 @@ const LoadingScreen = ({onRetry}: any) => {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: theme.colors.primary,
+      backgroundColor: 'rgba(255,255,255,0.12)',
       borderRadius: 16,
       paddingVertical: 16,
       paddingHorizontal: 32,
-      shadowColor: theme.colors.primary,
-      shadowOffset: {width: 0, height: 4},
-      shadowOpacity: 0.3,
-      shadowRadius: 8,
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.25)',
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 10},
+      shadowOpacity: 0.25,
+      shadowRadius: 20,
       elevation: 6,
       marginBottom: 24,
       minWidth: 160,
     },
+    buttonDisabled: {
+      opacity: 0.7,
+    },
     buttonText: {
-      color: theme.colors.background,
+      color: theme.colors.primary,
       fontSize: 18,
       fontWeight: '700',
       marginLeft: 12,
       letterSpacing: 0.5,
     },
+    iconWrapper: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      backgroundColor: theme.colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     icon: {
-      width: 24,
-      height: 24,
-      tintColor: theme.colors.background,
+      width: 40,
+      height: 40,
+      tintColor: theme.colors.white || '#FFFFFF',
     },
     versionText: {
       color: theme.colors.textSecondary,
@@ -141,12 +202,19 @@ const LoadingScreen = ({onRetry}: any) => {
         </Animated.View>
       </View>
       <View style={styles.bottomContainer}>
-        <TouchableOpacity
-          style={styles.button}
-          onPress={handlePress}
-          disabled={loading}
-          activeOpacity={0.8}
-        >
+        <Animated.View style={{transform: [{scale: buttonScale}]}}>
+          <TouchableOpacity
+            style={[styles.button, loading && styles.buttonDisabled]}
+            onPress={handlePress}
+            onPressIn={handlePressIn}
+            onPressOut={handlePressOut}
+            disabled={loading}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Unlock with biometrics"
+            accessibilityHint="Double tap to authenticate and unlock"
+            testID="unlock-biometric-button"
+          >
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color={theme.colors.background} />
@@ -154,14 +222,16 @@ const LoadingScreen = ({onRetry}: any) => {
             </View>
           ) : (
             <>
-              <Image
-                source={require('../assets/fingerprint.png')}
-                style={styles.icon}
-              />
-              <Text style={styles.buttonText}>Unlock</Text>
+              <View style={styles.iconWrapper}>
+                <Animated.Image
+                  source={require('../assets/fingerprint.png')}
+                  style={[styles.icon, {transform: [{scale: iconPulse}]}]}
+                />
+              </View>
             </>
           )}
-        </TouchableOpacity>
+          </TouchableOpacity>
+        </Animated.View>
         <Text style={styles.versionText}>{appVersion}</Text>
       </View>
     </View>
