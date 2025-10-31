@@ -462,7 +462,7 @@ const ShowcaseScreen = ({navigation}: any) => {
           <Animated.View style={[styles.logoContainer, {opacity: fadeAnim}]}>
             <Image
               style={styles.storeIcon}
-              source={require('../assets/playstore-icon.png')}
+              source={require('../assets/logo.png')}
             />
           </Animated.View>
           <Text style={styles.heroSubtitle}>

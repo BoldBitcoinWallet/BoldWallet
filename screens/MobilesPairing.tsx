@@ -2145,7 +2145,7 @@ const MobilesPairing = ({navigation}: any) => {
                   }}>
                   <Image
                     style={{width: 100, height: 100}}
-                    source={require('../assets/playstore-icon.png')}
+                    source={require('../assets/logo.png')}
                   />
                 </View>
                 <Text

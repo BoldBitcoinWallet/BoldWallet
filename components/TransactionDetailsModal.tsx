@@ -118,17 +118,30 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
               <Text style={styles.sectionTitle}>Overview</Text>
               {renderDetailRow(
                 'Status',
-                <Text
+                <View
                   style={[
-                    styles.statusText,
+                    styles.statusBadge,
                     {
-                      color: status.confirmed
-                        ? themes.lightPolished.colors.primary
-                        : themes.lightPolished.colors.accent,
+                      backgroundColor: status.confirmed
+                        ? 'rgba(46, 204, 113, 0.15)'
+                        : 'rgba(231, 76, 60, 0.15)',
+                      borderColor: status.confirmed
+                        ? 'rgba(46, 204, 113, 0.4)'
+                        : 'rgba(231, 76, 60, 0.4)',
                     },
                   ]}>
-                  {status.text}
-                </Text>,
+                  <Text
+                    style={[
+                      styles.statusText,
+                      {
+                        color: status.confirmed
+                          ? themes.lightPolished.colors.primary
+                          : themes.lightPolished.colors.accent,
+                      },
+                    ]}>
+                    {status.text}
+                  </Text>
+                </View>,
               )}
               {renderDetailRow(
                 'Date',
@@ -220,13 +233,15 @@ const styles = StyleSheet.create({
   modalContent: {
     backgroundColor: themes.lightPolished.colors.background,
     borderRadius: 16,
-    width: '90%',
-    maxHeight: '80%',
+    width: '92%',
+    maxHeight: '85%',
     elevation: 5,
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -237,8 +252,8 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(0, 0, 0, 0.1)',
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 20,
+    fontWeight: '700',
     color: themes.lightPolished.colors.text,
   },
   closeButton: {
@@ -256,34 +271,40 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
     color: themes.lightPolished.colors.text,
     marginBottom: 12,
+    letterSpacing: 0.2,
   },
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
+    alignItems: 'flex-start',
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.05)',
+    borderBottomColor: 'rgba(0, 0, 0, 0.04)',
+    gap: 12,
   },
   detailLabel: {
-    fontSize: 14,
+    fontSize: 13,
     color: themes.lightPolished.colors.text,
-    opacity: 0.7,
+    opacity: 0.6,
+    minWidth: 108,
   },
   detailValue: {
     fontSize: 14,
     color: themes.lightPolished.colors.text,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    flexShrink: 1,
   },
   txIdContainer: {
     backgroundColor: 'rgba(0, 0, 0, 0.03)',
     padding: 12,
     borderRadius: 8,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
   },
   txId: {
     fontSize: 13,
@@ -297,8 +318,17 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
   statusText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignSelf: 'flex-start',
   },
 });
 

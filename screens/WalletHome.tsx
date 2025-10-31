@@ -1561,7 +1561,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 style={styles.modalHeaderIcon}
               />
               <Text style={styles.modalHeaderTitle}>
-                Choose Bitcoin Network
+                Select Bitcoin Network
               </Text>
             </View>
 
@@ -1620,16 +1620,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 />
               )}
             </TouchableOpacity>
-
-            <View style={[styles.modalParagraph, styles.warningBox]}>
-              <Text style={[styles.modalTextLeft, styles.warningText]}>
-                ⚠️ <Text style={styles.modalBoldText}>Note:</Text>
-                {'\n'}- Use Testnet for testing, experiments, development where
-                coins have no value.{'\n'}- Mainnet is for real transactions
-                use.{'\n'}- Switching networks will change your wallet addresses
-                and balance.
-              </Text>
-            </View>
           </View>
         </TouchableOpacity>
       </Modal>
@@ -1668,16 +1658,17 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             <View style={[styles.modalParagraph, styles.warningBox]}>
               <Text style={[styles.modalTextLeft, styles.warningText]}>
                 ⚠️ <Text style={styles.modalBoldText}>Critical:</Text> If you
-                lose this device or its keyshare backup, you'll lose access to
-                your Bitcoin forever.
+                lose any of your devices without having your keyshares backed
+                up, you'll lose access to your Bitcoin forever.
               </Text>
             </View>
 
             <View style={styles.modalParagraph}>
               <Text style={styles.modalTextLeft}>
-                <Text style={styles.modalBoldText}>
-                  Backup your device key now:
-                </Text>
+                Always keep your keyshare backup in a secure, private separate
+                location (e.g., cloud, emails, external drives, etc.) - do not
+                keep them together so no one can access them all and steal your
+                funds.
               </Text>
             </View>
 
@@ -1691,7 +1682,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 }
               }}
               activeOpacity={0.8}>
-              <Text style={styles.backupButtonText}>Go to Backup Settings</Text>
+              <Text style={styles.backupButtonText}>
+                Go to Settings {'>'} Security {'>'} Backup
+              </Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>

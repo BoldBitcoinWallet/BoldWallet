@@ -1361,7 +1361,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           {/* Network Settings */}
           <View style={styles.apiItem}>
             <Text style={styles.apiName}>Network Configuration</Text>
-            <Text style={styles.apiDescription}>Choose Bitcoin network.</Text>
+            <Text style={styles.apiDescription}>Select Bitcoin network</Text>
           </View>
 
           <View style={styles.toggleContainer}>
