@@ -590,12 +590,12 @@ const ShowcaseScreen = ({navigation}: any) => {
             {/* Modal Body */}
             <View style={styles.modalBody}>
               <Text style={styles.modalSubtitle}>
-                Import your keyshare file to unlock your wallet
+                Wallet Keyshare Restore
               </Text>
 
               {/* Password Input */}
               <View style={styles.passwordInputContainer}>
-                <Text style={styles.passwordInputLabel}>Password</Text>
+                <Text style={styles.passwordInputLabel}>Keyshare Password</Text>
                 <TextInput
                   style={[
                     styles.passwordInput,

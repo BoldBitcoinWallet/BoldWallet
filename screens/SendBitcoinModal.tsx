@@ -334,17 +334,24 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     },
   });
 
-  const device = useCameraDevice('back');
+  // Only use camera hooks on iOS - Android uses BarcodeZxingScan
+  let device;
+  let codeScanner;
 
-  const codeScanner = useCodeScanner({
-    codeTypes: ['qr'],
-    onCodeScanned: codes => {
-      if (codes.length > 0) {
-        setAddress(codes[0].value!!);
-        setIsScannerVisible(false);
-      }
-    },
-  });
+  if (Platform.OS === 'ios') {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    device = useCameraDevice('back');
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    codeScanner = useCodeScanner({
+      codeTypes: ['qr'],
+      onCodeScanned: codes => {
+        if (codes.length > 0) {
+          setAddress(codes[0].value!!);
+          setIsScannerVisible(false);
+        }
+      },
+    });
+  }
 
   const feeStrategies = [
     {label: 'Economy', value: 'eco'},
