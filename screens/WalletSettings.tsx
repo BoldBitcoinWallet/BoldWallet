@@ -547,6 +547,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
   const [hapticsEnabled, setHapticsEnabledState] = useState(true);
+  const [isApiInfoVisible, setIsApiInfoVisible] = useState(false);
 
   // Password validation states
   const [passwordStrength, setPasswordStrength] = useState(0);
@@ -1312,18 +1313,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           onToggle={() => toggleSection('backup')}
           styles={styles}
           theme={theme}>
-          <Text style={styles.toggleDescription}>
-            Secure your wallet with encrypted backups.
-          </Text>
+          <Text style={styles.apiName}>Backup Wallet Keyshare</Text>
 
-          <View style={styles.apiItem}>
-            <Text style={styles.apiName}>Backup Importance</Text>
-            <Text style={styles.apiDescription}>
-              Your keyshare is essential for wallet recovery. Without it, you
-              cannot access your funds. Always create encrypted backups and
-              store them securely.
-            </Text>
-          </View>
           <TouchableOpacity
             style={[styles.button, styles.backupButton]}
             onPress={() => {
@@ -1339,22 +1330,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               <Text style={styles.buttonText}>Backup {party}</Text>
             </View>
           </TouchableOpacity>
-          <View style={styles.apiItem}>
-            <Text style={styles.apiName}>Security Best Practices</Text>
-            <Text style={styles.apiDescription}>
-              Store each keyshare in different locations (cloud storage,
-              external drive) to eliminate single points of failure. Never store
-              all keyshares in the same place.
-            </Text>
-          </View>
 
           <View style={styles.apiItem}>
-            <Text style={styles.apiName}>Reset Wallet</Text>
-            <Text style={styles.apiDescription}>
-              Permanently erase all wallet data from this device. This action
-              cannot be undone. Make sure you have secure backups before
-              proceeding.
-            </Text>
+            <Text style={styles.apiName}>Delete Wallet Keyshare</Text>
           </View>
 
           <TouchableOpacity
@@ -1383,9 +1361,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           {/* Network Settings */}
           <View style={styles.apiItem}>
             <Text style={styles.apiName}>Network Configuration</Text>
-            <Text style={styles.apiDescription}>
-              Switch between Bitcoin mainnet and testnet.
-            </Text>
+            <Text style={styles.apiDescription}>Choose Bitcoin network.</Text>
           </View>
 
           <View style={styles.toggleContainer}>
@@ -1412,8 +1388,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <View style={styles.apiItem}>
             <Text style={styles.apiName}>API Endpoint Configuration</Text>
             <Text style={styles.apiDescription}>
-              Configure your preferred mempool API endpoint for blockchain data.
-              {isTestnet ? ' (Testnet Mode)' : ' (Mainnet Mode)'}
+              Set your mempool API endpoint
+              {isTestnet ? ' (Testnet)' : ' (Mainnet)'}.
             </Text>
           </View>
 
@@ -1425,16 +1401,21 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             theme={theme}
           />
 
-          <View style={styles.apiItem}>
-            <Text style={styles.apiName}>Privacy & Self-Hosted APIs</Text>
-            <Text style={styles.apiDescription}>
-              Using your own mempool.space instance enhances privacy by keeping
-              your wallet queries off public servers. This prevents third
-              parties from tracking your addresses, balances, and transaction
-              patterns. Self-hosted APIs give you full control over your
-              blockchain data access.
-            </Text>
-          </View>
+          <TouchableOpacity
+            style={[styles.button, styles.backupButton]}
+            onPress={() => {
+              HapticFeedback.light();
+              setIsApiInfoVisible(true);
+            }}>
+            <View style={styles.buttonContent}>
+              <Image
+                source={require('../assets/about-icon.png')}
+                style={[styles.buttonIcon, styles.whiteTint]}
+                resizeMode="contain"
+              />
+              <Text style={styles.buttonText}>Why change the API?</Text>
+            </View>
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.button, styles.backupButton]}
@@ -1463,7 +1444,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <View style={styles.apiItem}>
             <Text style={styles.apiName}>Cache Maintenance</Text>
             <Text style={styles.apiDescription}>
-              Clears locally cached data for balances and txs history.
+              Clear cached balances and history.
             </Text>
           </View>
           <TouchableOpacity
@@ -1503,8 +1484,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           styles={styles}
           theme={theme}>
           <Text style={styles.toggleDescription}>
-            Enable or disable vibration feedback.{'\n'}OS level priority
-            settings apply.
+            Enable vibration feedback.
           </Text>
           <View style={styles.toggleContainer}>
             <Text style={styles.toggleLabel}>Haptics Off</Text>
@@ -1559,10 +1539,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <Text style={styles.apiDescription}> {buildNumber}</Text>
 
           <View style={styles.apiItem}>
-            <Text style={styles.apiName}>Mempool.Space APIs</Text>
+            <Text style={styles.apiName}>Mempool.Space</Text>
             <Text style={styles.apiDescription}>
-              We use Mempool.Space APIs for fetching balances, UTXOs,
-              transaction history, and network fees estimations. For more info:{' '}
+              Used for balances, history and fees. Learn more:{' '}
               <Text
                 style={styles.linkText}
                 onPress={() => {
@@ -1575,12 +1554,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           </View>
 
           <View style={styles.apiItem}>
-            <Text style={styles.apiName}>Data and Security</Text>
+            <Text style={styles.apiName}>Data & Security</Text>
             <Text style={styles.apiDescription}>
-              We do not collect any personal data. BoldBitcoinWallet posses no
-              backend. Wallet generation and transactions signing happen locally
-              between your devices. Opensource mempool.space Self-Hosted APIs
-              are supported to enhance your security and privacy.
+              We collect no personal data and run no backend. Keys and signing
+              happen on your devices. Self‑hosted mempool APIs can improve
+              privacy.
             </Text>
           </View>
         </CollapsibleSection>
@@ -1617,9 +1595,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 />
                 <Text style={styles.modalTitle}>Backup Keyshare</Text>
               </View>
-              <Text style={styles.modalDescription}>
-                Create an encrypted backup of your keyshare, protected by a
-                strong password.
+
+              <Text style={styles.apiDescription}>
+                Store your keyshares in separate private locations (e.g., cloud,
+                emails, external drives, etc.) - do not keep them together so no
+                one can access them all and steal your funds.
               </Text>
 
               <View style={styles.passwordContainer}>
@@ -1788,7 +1768,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
             <Text style={styles.modalDescription}>
               Type <Text style={styles.apiName}>"delete my wallet"</Text> to
-              confirm.{'\n'}This action is irreversible.
+              confirm. This erases all local data on this device and cannot be
+              undone. Make sure you have backups first.
             </Text>
             <TextInput
               style={styles.input}
@@ -1833,6 +1814,42 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         }}
         type={legalModalType}
       />
+
+      {/* API Info Modal */}
+      <Modal
+        visible={isApiInfoVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsApiInfoVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Image
+                source={require('../assets/about-icon.png')}
+                style={styles.modalIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.modalTitle}>About API Endpoints</Text>
+            </View>
+            <Text style={styles.modalDescription}>
+              Using your own mempool.space server can improve privacy by keeping
+              your wallet queries off public servers. This reduces third‑party
+              insight into your addresses and activity. Enter your self‑hosted
+              URL above or pick from the suggestions.
+            </Text>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  HapticFeedback.light();
+                  setIsApiInfoVisible(false);
+                }}>
+                <Text style={styles.buttonText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };

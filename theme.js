@@ -6,9 +6,9 @@ import {dbg} from './utils';
 export const themes = {
   lightPolished: {
     colors: {
-      primary: '#34495e',
+      primary: '#1A2B3C',
       subPrimary: '#033e3e',
-      secondary: '#149077',
+      secondary: '#344960',
       danger: '#e74c3c',
       accent: '#f1c40f',
       background: '#ffffff',
