@@ -8,6 +8,7 @@ import {
   Image,
   Animated,
   Easing,
+  Platform,
 } from 'react-native';
 import {useTheme} from '../theme';
 import {HapticFeedback} from '../utils';
@@ -21,6 +22,7 @@ const LoadingScreen = ({onRetry}: any) => {
   const iconPulse = useRef(new Animated.Value(1)).current;
   const glowOpacity = useRef(new Animated.Value(0)).current;
   const glowScale = useRef(new Animated.Value(1)).current;
+  const logoScale = useRef(new Animated.Value(1)).current;
   const [particles, setParticles] = useState<
     Array<{
       id: number;
@@ -38,6 +40,7 @@ const LoadingScreen = ({onRetry}: any) => {
     height: 0,
   });
   const turbulenceRef = useRef(0); // increases briefly on tap
+  const emitterRef = useRef<number | null>(null);
 
   const handlePress = async () => {
     HapticFeedback.medium();
@@ -106,9 +109,9 @@ const LoadingScreen = ({onRetry}: any) => {
     for (let i = 0; i < count; i++) {
       // Start positions jittered by turbulence for better separation
       const originJitterX =
-        (Math.random() - 0.5) * (10 + 18 * turbulenceRef.current);
+        (Math.random() - 0.5) * (30 + 18 * turbulenceRef.current);
       const originJitterY =
-        (Math.random() - 0.5) * (6 + 10 * turbulenceRef.current);
+        (Math.random() - 0.5) * (20 + 10 * turbulenceRef.current);
       newParticles.push({
         id: Date.now() + i,
         x: new Animated.Value(originJitterX),
@@ -116,7 +119,7 @@ const LoadingScreen = ({onRetry}: any) => {
         opacity: new Animated.Value(0.9),
         scale: new Animated.Value(0.7),
         rotate: new Animated.Value(0),
-        duration: (2200 + Math.floor(Math.random() * 1400)) * intensity, // slower
+        duration: (2500 + Math.floor(Math.random() * 1400)) * intensity, // slower
         size:
           10 +
           Math.floor(Math.random() * 8) +
@@ -197,6 +200,50 @@ const LoadingScreen = ({onRetry}: any) => {
         clearInterval(decayer);
       }
     }, 160);
+  };
+
+  const startLogoTouch = () => {
+    HapticFeedback.light();
+    if (emitterRef.current != null) {
+      return;
+    }
+    // Scale down logo on touch
+    Animated.spring(logoScale, {
+      toValue: 0.92,
+      useNativeDriver: true,
+      friction: 5,
+      tension: 180,
+    }).start();
+    // Slight turbulence for wider spread while pressed
+    turbulenceRef.current = Math.min(1.2, turbulenceRef.current + 0.6);
+    // Start continuous emission while touch is active
+    emitterRef.current = setInterval(() => {
+      createFountain(2, 1);
+    }, 140) as unknown as number;
+  };
+
+  const endLogoTouch = () => {
+    if (emitterRef.current != null) {
+      clearInterval(emitterRef.current as unknown as number);
+      emitterRef.current = null;
+    }
+    // Bounce back to normal size
+    Animated.spring(logoScale, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 4,
+      tension: 200,
+    }).start();
+    // Reset turbulence gradually
+    const decaySteps = 6;
+    let step = 0;
+    const decayer = setInterval(() => {
+      step += 1;
+      turbulenceRef.current = Math.max(0, turbulenceRef.current - 0.25);
+      if (step >= decaySteps) {
+        clearInterval(decayer);
+      }
+    }, 120);
   };
 
   // Emission now happens on logo touch only
@@ -289,16 +336,17 @@ const LoadingScreen = ({onRetry}: any) => {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: 'rgba(255,255,255,0.12)',
-      borderRadius: 16,
-      paddingVertical: 16,
-      paddingHorizontal: 32,
+      backgroundColor: 'transparent',
+      borderRadius: 32,
+      paddingVertical: 0,
+      paddingHorizontal: 0,
       borderWidth: 0,
-      shadowColor: '#000',
-      shadowOffset: {width: 0, height: 10},
-      shadowOpacity: 0.25,
-      shadowRadius: 20,
-      elevation: 6,
+      borderColor: 'transparent',
+      shadowColor: 'transparent',
+      shadowOffset: {width: 0, height: 0},
+      shadowOpacity: 0,
+      shadowRadius: 0,
+      elevation: 0,
       marginBottom: 24,
       minWidth: 160,
     },
@@ -313,15 +361,15 @@ const LoadingScreen = ({onRetry}: any) => {
       letterSpacing: 0.5,
     },
     iconWrapper: {
-      width: 64,
-      height: 64,
-      borderRadius: 32,
+      width: 72,
+      height: 72,
+      borderRadius: 36,
       backgroundColor: theme.colors.primary,
       alignItems: 'center',
       justifyContent: 'center',
       overflow: 'hidden',
-      borderWidth: 0,
-      borderColor: 'transparent',
+      borderWidth: 1,
+      borderColor: theme.colors.secondary,
     },
     glowCircle: {
       position: 'absolute',
@@ -330,16 +378,11 @@ const LoadingScreen = ({onRetry}: any) => {
       borderRadius: 44,
       backgroundColor: theme.colors.primary,
       opacity: 0.25,
-      shadowColor: theme.colors.primary,
-      shadowOffset: {width: 0, height: 0},
-      shadowOpacity: 0.35,
-      shadowRadius: 12,
-      elevation: 4,
     },
     icon: {
       width: 40,
       height: 40,
-      tintColor: theme.colors.white || '#FFFFFF',
+      tintColor: theme.colors.textOnPrimary,
     },
     versionText: {
       color: theme.colors.textSecondary,
@@ -352,6 +395,32 @@ const LoadingScreen = ({onRetry}: any) => {
       alignItems: 'center',
       width: '100%',
       paddingBottom: 64,
+    },
+    buttonAnimatedContainer: {
+      position: 'relative',
+    },
+    buttonLift: {
+      transform: [{translateY: -2}],
+    },
+    dropShadow: {
+      display: 'none',
+    },
+    circleWrap: {
+      position: 'relative',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: 96,
+      height: 96,
+    },
+    circleShadowUnder: {
+      position: 'absolute',
+      bottom: 10,
+      right: 10,
+      width: 76,
+      height: 76,
+      borderRadius: 38,
+      backgroundColor: theme.colors.primary,
+      opacity: 0.3,
     },
     loadingContainer: {
       flexDirection: 'row',
@@ -413,18 +482,29 @@ const LoadingScreen = ({onRetry}: any) => {
           <TouchableOpacity
             activeOpacity={0.9}
             onPress={handleLogoPress}
+            onPressIn={startLogoTouch}
+            onPressOut={endLogoTouch}
             accessibilityRole="button"
             accessibilityLabel="Activate vapor turbulence"
             accessibilityHint="Double tap to increase particle spread">
-            <Image
-              style={styles.storeIcon}
-              source={require('../assets/logo.png')}
-            />
+            <Animated.View style={{transform: [{scale: logoScale}]}}>
+              <Image
+                style={styles.storeIcon}
+                source={require('../assets/logo.png')}
+              />
+            </Animated.View>
           </TouchableOpacity>
         </Animated.View>
       </View>
       <View style={styles.bottomContainer}>
-        <Animated.View style={{transform: [{scale: buttonScale}]}}>
+        <Animated.View
+          style={[
+            styles.buttonAnimatedContainer,
+            styles.buttonLift,
+            {transform: [{scale: buttonScale}]},
+          ]}>
+          {/* Floating drop shadow to emphasize FAB look */}
+          <View style={styles.dropShadow} />
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
             onPress={handlePress}
@@ -446,18 +526,21 @@ const LoadingScreen = ({onRetry}: any) => {
               </View>
             ) : (
               <>
-                <View style={styles.iconWrapper}>
-                  <Animated.View
-                    style={{
-                      ...StyleSheet.flatten(styles.glowCircle),
-                      transform: [{scale: glowScale}],
-                      opacity: glowOpacity,
-                    }}
-                  />
-                  <Animated.Image
-                    source={require('../assets/fingerprint.png')}
-                    style={[styles.icon, {transform: [{scale: iconPulse}]}]}
-                  />
+                <View style={styles.circleWrap}>
+                  <View style={styles.circleShadowUnder} />
+                  <View style={styles.iconWrapper}>
+                    <Animated.View
+                      style={{
+                        ...StyleSheet.flatten(styles.glowCircle),
+                        transform: [{scale: glowScale}],
+                        opacity: glowOpacity,
+                      }}
+                    />
+                    <Animated.Image
+                      source={require('../assets/fingerprint.png')}
+                      style={[styles.icon, {transform: [{scale: iconPulse}]}]}
+                    />
+                  </View>
                 </View>
               </>
             )}

@@ -602,7 +602,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                     isPasswordFocused && styles.passwordInputFocused,
                   ]}
                   secureTextEntry
-                  placeholder="Enter password"
+                  placeholder="Enter the password"
                   placeholderTextColor={`${theme.colors.text}40`}
                   value={password}
                   onChangeText={setPassword}

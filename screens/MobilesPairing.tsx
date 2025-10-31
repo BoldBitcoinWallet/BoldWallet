@@ -72,7 +72,7 @@ const MobilesPairing = ({navigation}: any) => {
   const [peerPubkey, setPeerPubkey] = useState('');
   const [shareName, setShareName] = useState('');
 
-  const [keyshare, setKeyshare] = useState('');
+  const [_keyshare, setKeyshare] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
@@ -102,7 +102,7 @@ const MobilesPairing = ({navigation}: any) => {
   const isSendBitcoin = route.params?.mode === 'send_btc';
   const addressType = route.params?.addressType;
   const title = isSendBitcoin
-    ? '🗝 Co-Signing Your Transaction'
+    ? 'Co-Signing Your Transaction'
     : 'Securely Pairing Your Devices';
 
   const [checks, setChecks] = useState({
@@ -413,7 +413,6 @@ const MobilesPairing = ({navigation}: any) => {
         .then(async (result: any) => {
           dbg('keygen result', result.substring(0, 40).concat('...'));
           setKeyshare(result);
-
 
           // validate keyshare
           try {
@@ -1128,14 +1127,14 @@ const MobilesPairing = ({navigation}: any) => {
       textAlign: 'left',
     },
     header: {
-      fontSize: 22,
-      fontWeight: '700',
-      color: theme.colors.text,
-      marginTop: 12,
-      marginBottom: 12,
+      fontSize: 16,
+      fontWeight: '600',
+      color: theme.colors.textSecondary,
+      marginTop: 4,
+      marginBottom: 8,
       textAlign: 'center',
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
-      lineHeight: 28,
+      lineHeight: 20,
     },
     summaryRow: {
       flexDirection: 'row',
@@ -1164,13 +1163,13 @@ const MobilesPairing = ({navigation}: any) => {
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     title: {
-      fontSize: 30,
+      fontSize: 24,
       fontWeight: '700',
       color: theme.colors.text,
-      marginBottom: 16,
+      marginBottom: 8,
       textAlign: 'center',
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
-      lineHeight: 36,
+      lineHeight: 28,
     },
     pairingHint: {
       fontSize: 14,
@@ -1457,8 +1456,8 @@ const MobilesPairing = ({navigation}: any) => {
     checkboxContainer: {
       flexDirection: 'row',
       alignItems: 'center',
-      paddingVertical: 3,
-      marginVertical: 1,
+      paddingVertical: 2,
+      marginVertical: 0,
     },
     checkbox: {
       width: 24,
@@ -1481,13 +1480,13 @@ const MobilesPairing = ({navigation}: any) => {
       borderColor: theme.colors.primary,
     },
     checkboxLabel: {
-      fontSize: 16,
+      fontSize: 14,
       color: theme.colors.text,
       flex: 1,
       fontWeight: '500',
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'left',
-      lineHeight: 22,
+      lineHeight: 18,
     },
     deviceContainer: {
       flexDirection: 'row',
@@ -1915,8 +1914,7 @@ const MobilesPairing = ({navigation}: any) => {
       lineHeight: 22,
     },
     clickButton: {
-      marginTop: 12,
-      marginBottom: 12,
+      marginTop: 8,
       backgroundColor: theme.colors.primary,
       borderRadius: 12,
       paddingVertical: 14,
@@ -2051,61 +2049,64 @@ const MobilesPairing = ({navigation}: any) => {
       textAlign: 'center',
     },
     transactionDetails: {
-      padding: 12,
+      padding: 8,
       paddingTop: 0,
       width: '100%',
     },
     transactionItem: {
-      borderBottomWidth: 1,
-      borderBottomColor: theme.colors.border,
-      paddingVertical: 8,
+      borderBottomWidth: 0,
+      paddingVertical: 6,
+      marginBottom: 6,
     },
     transactionLabel: {
-      fontSize: 15,
+      fontSize: 16,
       fontWeight: '600',
       color: theme.colors.text,
-      marginTop: 4,
+      marginTop: 1,
+      marginBottom: 2,
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'left',
-      lineHeight: 20,
+      lineHeight: 18,
     },
     addressContainer: {
       backgroundColor: theme.colors.background,
-      padding: 8,
+      paddingVertical: 6,
+      paddingHorizontal: 8,
       borderRadius: 8,
       borderWidth: 1,
       borderColor: theme.colors.border,
     },
     addressValue: {
-      fontSize: 14,
+      fontSize: 16,
       color: theme.colors.text,
       textAlign: 'left',
       fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-      lineHeight: 18,
+      lineHeight: 16,
     },
     amountContainer: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
       backgroundColor: theme.colors.background,
-      padding: 8,
+      paddingVertical: 6,
+      paddingHorizontal: 8,
       borderRadius: 8,
       borderWidth: 1,
       borderColor: theme.colors.border,
     },
     amountValue: {
-      fontSize: 14,
+      fontSize: 17,
       fontWeight: '600',
       color: theme.colors.text,
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'left',
-      lineHeight: 18,
+      lineHeight: 16,
     },
     fiatValue: {
-      fontSize: 12,
+      fontSize: 16,
       color: theme.colors.textSecondary,
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
-      textAlign: 'left',
+      textAlign: 'right',
       lineHeight: 16,
     },
     input: {
@@ -2144,7 +2145,7 @@ const MobilesPairing = ({navigation}: any) => {
                     justifyContent: 'center',
                   }}>
                   <Image
-                    style={{width: 100, height: 100}}
+                    style={{width: 64, height: 64}}
                     source={require('../assets/logo.png')}
                   />
                 </View>
@@ -2264,7 +2265,7 @@ const MobilesPairing = ({navigation}: any) => {
                     disabled={!allChecked}>
                     <View style={styles.buttonContent}>
                       <Image
-                        source={require('../assets/pair-icon.png')}
+                        source={require('../assets/pairing-icon.png')}
                         style={{
                           width: 22,
                           height: 22,
@@ -2905,11 +2906,30 @@ const MobilesPairing = ({navigation}: any) => {
             {peerIP && isSendBitcoin && (
               <>
                 <View style={styles.informationCard}>
-                  <Text style={styles.title}>📱 Dual Signing</Text>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginBottom: 8,
+                    }}>
+                    <Image
+                      source={require('../assets/cosign-icon.png')}
+                      style={{
+                        width: 28,
+                        height: 28,
+                        marginRight: 8,
+                        tintColor: theme.colors.primary,
+                        marginBottom: 8,
+                      }}
+                      resizeMode="contain"
+                    />
+                    <Text style={styles.title}>Co-Signing</Text>
+                  </View>
                   <Text style={styles.header}>Both phones must be ready.</Text>
                   <View style={styles.transactionDetails}>
                     <View style={styles.transactionItem}>
-                      <Text style={styles.transactionLabel}>Recipient</Text>
+                      <Text style={styles.transactionLabel}>To Address</Text>
                       <View style={styles.addressContainer}>
                         <Text
                           style={styles.addressValue}
@@ -2921,7 +2941,9 @@ const MobilesPairing = ({navigation}: any) => {
                     </View>
 
                     <View style={styles.transactionItem}>
-                      <Text style={styles.transactionLabel}>Amount</Text>
+                      <Text style={styles.transactionLabel}>
+                        Transaction Amount
+                      </Text>
                       <View style={styles.amountContainer}>
                         <Text style={styles.amountValue}>
                           {sat2btcStr(route.params.satoshiAmount)} BTC
@@ -2934,7 +2956,9 @@ const MobilesPairing = ({navigation}: any) => {
                     </View>
 
                     <View style={styles.transactionItem}>
-                      <Text style={styles.transactionLabel}>Fee</Text>
+                      <Text style={styles.transactionLabel}>
+                        Transaction Fee
+                      </Text>
                       <View style={styles.amountContainer}>
                         <Text style={styles.amountValue}>
                           {sat2btcStr(route.params.satoshiFees)} BTC
@@ -2982,7 +3006,7 @@ const MobilesPairing = ({navigation}: any) => {
 
                           {/* Header Text */}
                           <Text style={styles.modalTitle}>
-                            Co-Signing Transaction
+                            Co-Signing Your Transaction
                           </Text>
 
                           {/* Subtext */}
@@ -3041,11 +3065,7 @@ const MobilesPairing = ({navigation}: any) => {
                     }}>
                     <View style={styles.buttonContent}>
                       <Image
-                        source={
-                          isMaster
-                            ? require('../assets/start-icon.png')
-                            : require('../assets/join-icon.png')
-                        }
+                        source={ require('../assets/cosign-icon.png')}
                         style={{
                           width: 20,
                           height: 20,
@@ -3055,7 +3075,7 @@ const MobilesPairing = ({navigation}: any) => {
                         resizeMode="contain"
                       />
                       <Text style={styles.clickButtonText}>
-                        🗝 {isMaster ? 'Start' : 'Join'} Co-Signing
+                        {isMaster ? 'Start' : 'Join'} Co-Signing
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -3102,7 +3122,7 @@ const MobilesPairing = ({navigation}: any) => {
               </Text>
 
               <View style={styles.passwordContainer}>
-                <Text style={styles.passwordLabel}>Choose Password</Text>
+                <Text style={styles.passwordLabel}>Set a Password</Text>
                 <View style={styles.passwordInputContainer}>
                   <TextInput
                     style={styles.passwordInput}

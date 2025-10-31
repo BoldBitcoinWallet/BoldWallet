@@ -24,7 +24,7 @@ import Big from 'big.js';
 import {dbg, HapticFeedback} from '../utils';
 import {useTheme} from '../theme';
 import LocalCache from '../services/LocalCache';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {SafeAreaView} from 'react-native-safe-area-context';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -53,7 +53,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   const [btcAmount, setBtcAmount] = useState<Big>(Big(0));
   const [inBtcAmount, setInBtcAmount] = useState('');
   const [inUsdAmount, setInUsdAmount] = useState('');
-  const [isScannerVisible, setIsScannerVisible] = useState<boolean>(false);
   const [estimatedFee, setEstimatedFee] = useState<Big | null>(null);
   const [isCalculatingFee, setIsCalculatingFee] = useState(false);
 
@@ -163,9 +162,12 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       borderRadius: 8,
       padding: 12,
       paddingRight: 80,
-      maxHeight: 50,
+      minHeight: 48,
+      maxHeight: 120,
       fontSize: 14,
       backgroundColor: '#FFF',
+      textAlignVertical: 'top',
+      fontFamily: Platform.select({ios: 'Menlo', android: 'monospace'}) as any,
     },
     iconImage: {
       width: 24,
@@ -173,15 +175,13 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     },
     pasteIconContainer: {
       position: 'absolute',
-      top: '50%',
+      top: 12,
       right: 40,
-      transform: [{translateY: -12}],
     },
     qrIconContainer: {
       position: 'absolute',
-      top: '50%',
+      top: 12,
       right: 10,
-      transform: [{translateY: -12}],
     },
     labelContainer: {
       flexDirection: 'row',
@@ -553,7 +553,10 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     />
                     <Text style={styles.title}>Send Bitcoin</Text>
                   </View>
-                  <TouchableOpacity onPress={onClose} style={styles.closeButton} activeOpacity={0.7}>
+                  <TouchableOpacity
+                    onPress={onClose}
+                    style={styles.closeButton}
+                    activeOpacity={0.7}>
                     <Text style={styles.closeButtonText}>✖️</Text>
                   </TouchableOpacity>
                 </View>
@@ -586,8 +589,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                             }
                           },
                         );
-                      } else {
-                        setIsScannerVisible(true);
                       }
                     }}
                     style={styles.qrIconContainer}>
@@ -602,7 +603,9 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                 <View style={styles.inputContainer}>
                   <View style={styles.labelContainer}>
                     <Text style={styles.inputLabel}>Amount in BTC (₿)</Text>
-                    <TouchableOpacity onPress={handleMaxClick} activeOpacity={0.7}>
+                    <TouchableOpacity
+                      onPress={handleMaxClick}
+                      activeOpacity={0.7}>
                       <Text style={styles.maxText}>Max</Text>
                     </TouchableOpacity>
                   </View>

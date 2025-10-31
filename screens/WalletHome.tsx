@@ -69,6 +69,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [segwitAddress, setSegwitAddress] = React.useState('');
   const [addressType, setAddressType] = React.useState('');
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
+  const [isSending, setIsSending] = useState<boolean>(false);
   const [_error, setError] = useState<string>('');
   const [cacheTimestamps, setCacheTimestamps] = useState<CacheTimestamp>({
     price: 0,
@@ -1047,7 +1048,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     };
 
     init();
-  }, [showErrorToast, isInitialized, address]);
+  }, [showErrorToast, isInitialized, address, navigation]);
 
   const handleAddressTypeChange = async (type: string) => {
     try {
@@ -1091,12 +1092,17 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   };
 
   const handleSend = async (to: string, amountSats: Big, feeSats: Big) => {
-    if (amountSats.gt(0) && feeSats.gt(0) && to) {
+    if (!isSending && amountSats.gt(0) && feeSats.gt(0) && to) {
+      setIsSending(true);
       const toAddress = to;
       const satoshiAmount = amountSats.toString().split('.')[0];
       const fiatAmount = amountSats.times(btcRate).div(1e8).toFixed(2);
       const satoshiFees = feeSats.toString().split('.')[0];
       const fiatFees = feeSats.times(btcRate).div(1e8).toFixed(2);
+      setTimeout(() => {
+        setIsSendModalVisible(false);
+        setIsSending(false);
+      }, 250);
       navigation.dispatch(
         CommonActions.navigate({
           name: '📱📱 Pairing',
@@ -1112,7 +1118,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           },
         }),
       );
-      setIsSendModalVisible(false);
     }
   };
 
@@ -1409,7 +1414,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 source={require('../assets/key-icon.png')}
                 style={styles.modalHeaderIcon}
               />
-              <Text style={styles.modalHeaderTitle}>Choose Address Format</Text>
+              <Text style={styles.modalHeaderTitle}>Select Address Format</Text>
             </View>
 
             <TouchableOpacity
@@ -1427,7 +1432,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 resizeMode="contain"
               />
               <View style={styles.addressTypeContent}>
-                <Text style={styles.addressTypeLabel}>Legacy (P2PKH)</Text>
+                <Text style={styles.addressTypeLabel} numberOfLines={1}>
+                  Legacy (P2PKH)
+                </Text>
                 <Text style={styles.addressTypeValue}>
                   {shorten(legacyAddress, 6)}
                 </Text>
@@ -1457,17 +1464,17 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 resizeMode="contain"
               />
               <View style={styles.addressTypeContent}>
+                <Text style={styles.addressTypeLabel} numberOfLines={1}>
+                  Native Segwit (Bech32)
+                </Text>
                 <View style={styles.addressTypeLabelRow}>
-                  <Text style={styles.addressTypeLabel}>
-                    Native Segwit (Bech32)
+                  <Text style={styles.addressTypeValue} numberOfLines={1}>
+                    {shorten(segwitAddress, 6)}
                   </Text>
                   <View style={styles.recommendBadge}>
                     <Text style={styles.recommendBadgeText}>Recommended</Text>
                   </View>
                 </View>
-                <Text style={styles.addressTypeValue}>
-                  {shorten(segwitAddress, 6)}
-                </Text>
               </View>
               {addressType === 'segwit-native' && (
                 <Image
@@ -1494,8 +1501,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 resizeMode="contain"
               />
               <View style={styles.addressTypeContent}>
-                <Text style={styles.addressTypeLabel}>
-                  Segwit Compatible (P2SH)
+                <Text style={styles.addressTypeLabel} numberOfLines={1}>
+                  Segwit Compat (P2SH)
                 </Text>
                 <Text style={styles.addressTypeValue}>
                   {shorten(segwitCompatibleAddress, 6)}

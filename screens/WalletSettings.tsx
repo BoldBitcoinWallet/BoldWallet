@@ -1603,7 +1603,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               </Text>
 
               <View style={styles.passwordContainer}>
-                <Text style={styles.passwordLabel}>Choose Password</Text>
+                <Text style={styles.passwordLabel}>Set a Password</Text>
                 <View style={styles.passwordInputContainer}>
                   <TextInput
                     style={styles.passwordInput}

@@ -188,9 +188,13 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       borderRadius: 8,
       padding: 12,
       paddingRight: 80,
-      maxHeight: 50,
+      minHeight: 48,
+      maxHeight: 60,
       fontSize: 14,
+      lineHeight: 18,
       backgroundColor: '#FFF',
+      textAlignVertical: 'top',
+      fontFamily: Platform.select({ios: 'Menlo', android: 'monospace'}) as any,
     },
     iconImage: {
       width: 24,
@@ -198,15 +202,13 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     },
     pasteIconContainer: {
       position: 'absolute',
-      top: '50%',
+      top: 12,
       right: 40,
-      transform: [{translateY: -12}],
     },
     qrIconContainer: {
       position: 'absolute',
-      top: '50%',
+      top: 12,
       right: 10,
-      transform: [{translateY: -12}],
     },
     labelContainer: {
       flexDirection: 'row',
@@ -332,13 +334,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     },
   });
 
-  let device;
-
-  // For android, F-Droid FOSS use rn-barcode-zxing-scan
-  // For iOS use rn camera vision...
-  if (Platform.OS === 'ios') {
-    device = useCameraDevice('back');
-  }
+  const device = useCameraDevice('back');
 
   const codeScanner = useCodeScanner({
     codeTypes: ['qr'],
@@ -364,6 +360,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       maximumFractionDigits: 2,
     }).format(price);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const debouncedGetFee = useCallback(
     debounce(async (addr: string, amt: string) => {
       if (!addr || !amt || btcAmount.eq(0)) {
@@ -609,6 +606,10 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     onChangeText={setAddress}
                     autoCapitalize="none"
                     autoCorrect={false}
+                    multiline
+                    numberOfLines={2}
+                    scrollEnabled
+                    selectTextOnFocus
                   />
                   <TouchableOpacity
                     onPress={pasteAddress}
