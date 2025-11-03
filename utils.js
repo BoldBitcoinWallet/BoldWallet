@@ -2,11 +2,20 @@ import {Platform} from 'react-native';
 import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 import LocalCache from './services/LocalCache';
 
-let ip = '';
+let ips = [];
 
-export const pinRemoteIP = addr => (ip = addr);
+export const pinRemoteIP = addr => {
+  if (!addr || typeof addr !== 'string') return ips;
+  if (addr.split('.').length !== 4) return ips; // only IPv4
+  if (!ips.includes(addr)) {
+    ips.push(addr);
+  }
+  return ips;
+};
 
-export const getPinnedRemoteIP = () => ip;
+export const getPinnedRemoteIP = () => (ips.length ? ips[ips.length - 1] : '');
+
+export const getPinnedRemoteIPs = () => [...ips];
 
 export const dbg = (message, ...optionalParams) => {
   let args = optionalParams.length === 0 ? '' : optionalParams;

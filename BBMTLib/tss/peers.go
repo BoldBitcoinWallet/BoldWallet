@@ -11,12 +11,22 @@ import (
 	"time"
 )
 
-func ListenForPeer(id, pubkey, port, timeout string) (string, error) {
+func ListenForPeers(id, pubkey, port, timeout, mode string) (string, error) {
 	Logln("BBMTLog", "Listening for peer...")
 
 	// Channel to capture the peer IP (buffered to prevent deadlocks)
 	peerFound := make(chan string, 1)
 	stopServer := make(chan struct{})
+
+	// Determine listen mode: default duo (expect 1 peer). If mode == "trio", expect 2 peers
+	expectedPeers := 1
+	if strings.EqualFold(mode, "trio") {
+		expectedPeers = 2
+	}
+	// Track unique peer IPs and their payloads for trio mode
+	peerIPs := make(map[string]struct{})
+	ipToPayload := make(map[string]string)
+	collectedIPs := make([]string, 0, expectedPeers)
 
 	// Ensure no existing server is running on this port
 	if isPortInUse(port) {
@@ -49,19 +59,39 @@ func ListenForPeer(id, pubkey, port, timeout string) (string, error) {
 		srcPubkey := r.URL.Query().Get("pubkey")
 
 		if srcIP != "" && dstIP != "" && srcPubkey != "" {
-			go func() {
+			go func(remoteAddr string) {
 				client := http.Client{Timeout: 2 * time.Second}
-				srcIP, _, _ := net.SplitHostPort(r.RemoteAddr)
-				url := "http://" + srcIP + ":" + port + "/?src=" + dstIP + "&dst=" + srcIP + "&id=" + id + "&pubkey=" + pubkey
+				srcIPParsed, _, _ := net.SplitHostPort(remoteAddr)
+				url := "http://" + srcIPParsed + ":" + port + "/?src=" + dstIP + "&dst=" + srcIPParsed + "&id=" + id + "&pubkey=" + pubkey
 				Logln("BBMTLog", "Sending callback to:", url)
 				_, err := client.Get(url)
 				if err != nil {
 					Logln("BBMTLog", "Error in callback:", err)
 				}
-			}()
-			select {
-			case peerFound <- clientIP + "@" + srcId + "@" + srcPubkey + "," + dstIP + "@" + id + "@" + pubkey:
-			default:
+			}(r.RemoteAddr)
+
+			if expectedPeers == 1 {
+				// Duo mode: keep existing payload format, try non-blocking send
+				select {
+				case peerFound <- clientIP + "@" + srcId + "@" + srcPubkey + "," + dstIP + "@" + id + "@" + pubkey:
+				default:
+				}
+			} else {
+				// Trio mode: collect unique client IPs and emit two payloads joined by '|'
+				if _, exists := peerIPs[clientIP]; !exists {
+					peerIPs[clientIP] = struct{}{}
+					payload := clientIP + "@" + srcId + "@" + srcPubkey + "," + dstIP + "@" + id + "@" + pubkey
+					ipToPayload[clientIP] = payload
+					collectedIPs = append(collectedIPs, clientIP)
+					if len(collectedIPs) >= expectedPeers {
+						// Build pipe-separated payloads in order of collection
+						combined := ipToPayload[collectedIPs[0]] + "|" + ipToPayload[collectedIPs[1]]
+						select {
+						case peerFound <- combined:
+						default:
+						}
+					}
+				}
 			}
 		}
 
@@ -92,15 +122,19 @@ func ListenForPeer(id, pubkey, port, timeout string) (string, error) {
 	}
 
 	select {
-	case peerIP := <-peerFound:
+	case peerIPs := <-peerFound:
 		Logln("BBMTLog", "Peer detected, shutting down server...")
 		Logln("BBMTLog", "Forcefully stopping server...")
+		// signal handler to stop accepting new work
+		close(stopServer)
 		time.Sleep(2 * time.Second)
 		listener.Close()
 		server.Close()
-		return peerIP, nil
+		return peerIPs, nil
 	case <-time.After(time.Duration(tout) * time.Second):
 		Logln("BBMTLog", "Timeout reached, shutting down server...")
+		// signal handler to stop accepting new work
+		close(stopServer)
 		listener.Close()
 		server.Close()
 		return "", fmt.Errorf("timeout waiting for peer connection")
@@ -117,13 +151,18 @@ func isPortInUse(port string) bool {
 	return true
 }
 
-func DiscoverPeer(id, pubkey, localIP, remoteIP, port, timeout string) (string, error) {
+func DiscoverPeers(id, pubkey, localIP, remoteIP, port, timeout, mode string) (string, error) {
 	if localIP == "" {
 		return "", fmt.Errorf("no local IP detected, skipping peer discovery")
 	}
 
 	baseIP := localIP[:strings.LastIndex(localIP, ".")+1]
 	peerFound := make(chan string)
+	// Determine expected peers based on mode (duo=1, trio=2)
+	expectedPeers := 1
+	if strings.EqualFold(mode, "trio") {
+		expectedPeers = 2
+	}
 	tout, err := strconv.Atoi(timeout)
 	if err != nil {
 		tout = 30
@@ -137,6 +176,10 @@ func DiscoverPeer(id, pubkey, localIP, remoteIP, port, timeout string) (string, 
 
 	client := &http.Client{Timeout: 2000 * time.Millisecond}
 
+	// Trio mode aggregation state
+	foundIPs := make(map[string]struct{})
+	foundPayloads := make([]string, 0, expectedPeers)
+
 	// Function to check a given IP
 	checkPeer := func(ip string) {
 		select {
@@ -149,8 +192,27 @@ func DiscoverPeer(id, pubkey, localIP, remoteIP, port, timeout string) (string, 
 				Logf("Peer discovered at: %s\n", ip)
 				bodyBytes, err := io.ReadAll(resp.Body)
 				if err == nil {
-					peerFound <- string(bodyBytes)
-					cancel() // Cancel all other goroutines if a peer is found
+					payload := string(bodyBytes)
+					if expectedPeers == 1 {
+						// Duo: return immediately
+						peerFound <- payload
+						cancel()
+					} else {
+						// Trio: aggregate two distinct IPs
+						host := ip
+						if idx := strings.LastIndex(ip, ":"); idx != -1 {
+							host = ip[:idx]
+						}
+						if _, ok := foundIPs[host]; !ok {
+							foundIPs[host] = struct{}{}
+							foundPayloads = append(foundPayloads, payload)
+							if len(foundPayloads) >= expectedPeers {
+								combined := strings.Join(foundPayloads, "|")
+								peerFound <- combined
+								cancel()
+							}
+						}
+					}
 				}
 			}
 		}
@@ -173,8 +235,8 @@ func DiscoverPeer(id, pubkey, localIP, remoteIP, port, timeout string) (string, 
 	}
 
 	select {
-	case peerIP := <-peerFound:
-		return peerIP, nil
+	case peerData := <-peerFound:
+		return peerData, nil
 	case <-ctx.Done():
 		if ctx.Err() == context.DeadlineExceeded {
 			return "", fmt.Errorf("peer discovery timed out after %d seconds", tout)

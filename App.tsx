@@ -24,7 +24,7 @@ import {
 } from 'react-native';
 import WalletSettings from './screens/WalletSettings';
 import {NativeModules} from 'react-native';
-import {dbg, pinRemoteIP} from './utils';
+import {dbg, pinRemoteIP, getPinnedRemoteIPs} from './utils';
 import MobilesPairing from './screens/MobilesPairing';
 
 // Initialize react-native-screens for Fabric compatibility
@@ -104,12 +104,15 @@ const App = () => {
           service.txt.id &&
           service.txt.id !== deviceID
         ) {
-          let addresses = service.addresses;
+          let addresses = service.addresses || [];
           for (const address of addresses) {
-            if (address.split('.').length === 4) {
-              dbg('Service Pinned:', service);
+            if (address && address.split('.').length === 4) {
               pinRemoteIP(address);
             }
+          }
+          const pinned = getPinnedRemoteIPs();
+          if (pinned.length) {
+            dbg('Pinned remote IPv4 addresses:', pinned.join(', '));
           }
         }
       });
