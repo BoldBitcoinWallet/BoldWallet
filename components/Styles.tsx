@@ -133,6 +133,20 @@ export interface Styles {
   addressTypeLabelRow: ViewStyle;
   recommendBadge: ViewStyle;
   recommendBadgeText: TextStyle;
+  warningBoxWithMargin: ViewStyle;
+  modalTipText: TextStyle;
+  backupButtonWithMargin: ViewStyle;
+  modalContentCompact: ViewStyle;
+  modalHeaderRowCompact: ViewStyle;
+  modalHeaderIconCompact: ImageStyle;
+  modalHeaderTitleCompact: TextStyle;
+  modalTextCompact: TextStyle;
+  modalBoldTextCompact: TextStyle;
+  warningBoxCompact: ViewStyle;
+  warningTextCompact: TextStyle;
+  modalTipTextCompact: TextStyle;
+  backupButtonCompact: ViewStyle;
+  backupButtonTextCompact: TextStyle;
 }
 
 export const createStyles = (theme: Theme): Styles => ({
@@ -852,6 +866,98 @@ export const createStyles = (theme: Theme): Styles => ({
   backupButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
+    fontWeight: '600' as const,
+  },
+  warningBoxWithMargin: {
+    backgroundColor: 'rgba(255, 193, 7, 0.1)',
+    borderRadius: 8,
+    padding: 12,
+    marginVertical: 8,
+    marginTop: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FFC107',
+  },
+  modalTipText: {
+    fontSize: 13,
+    color: theme.colors.textSecondary,
+    marginTop: 12,
+    textAlign: 'left' as const,
+  },
+  backupButtonWithMargin: {
+    backgroundColor: theme.colors.secondary,
+    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    marginTop: 18,
+    alignItems: 'center' as const,
+  },
+  modalContentCompact: {
+    backgroundColor: theme.colors.background,
+    borderRadius: 12,
+    padding: 16,
+    width: '85%',
+    maxWidth: 400,
+  },
+  modalHeaderRowCompact: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    marginBottom: 12,
+  },
+  modalHeaderIconCompact: {
+    width: 20,
+    height: 20,
+    tintColor: theme.colors.accent,
+    marginRight: 8,
+  },
+  modalHeaderTitleCompact: {
+    fontSize: 18,
+    fontWeight: '600' as const,
+    color: theme.colors.text,
+    flex: 1,
+  },
+  modalTextCompact: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: theme.colors.text,
+    marginBottom: 12,
+    textAlign: 'left' as const,
+  },
+  modalBoldTextCompact: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: theme.colors.text,
+  },
+  warningBoxCompact: {
+    backgroundColor: 'rgba(255, 193, 7, 0.08)',
+    borderRadius: 6,
+    padding: 10,
+    marginBottom: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: '#FFC107',
+  },
+  warningTextCompact: {
+    fontSize: 13,
+    fontWeight: '500' as const,
+    color: '#FF6B35',
+    lineHeight: 18,
+  },
+  modalTipTextCompact: {
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+    marginBottom: 14,
+    textAlign: 'left' as const,
+    lineHeight: 16,
+  },
+  backupButtonCompact: {
+    backgroundColor: theme.colors.secondary,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignItems: 'center' as const,
+  },
+  backupButtonTextCompact: {
+    color: '#FFFFFF',
+    fontSize: 14,
     fontWeight: '600' as const,
   },
 });

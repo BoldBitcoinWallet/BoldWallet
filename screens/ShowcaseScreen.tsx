@@ -13,7 +13,6 @@ import {
   Animated,
   Easing,
   Image,
-  Platform,
 } from 'react-native';
 import DocumentPicker from 'react-native-document-picker';
 import EncryptedStorage from 'react-native-encrypted-storage';
@@ -386,7 +385,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       borderBottomColor: 'rgba(0,0,0,0.05)',
     },
     modalTitle: {
-      fontSize: 20,
+      fontSize: 18,
       fontWeight: '700',
       marginLeft: 12,
       color: theme.colors.text,
@@ -449,6 +448,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
+      gap: 12,
     },
     modalActionButton: {
       flex: 1,
@@ -457,6 +457,9 @@ const ShowcaseScreen = ({navigation}: any) => {
       justifyContent: 'center',
       fontWeight: '600',
       flexDirection: 'row',
+      gap: 8,
+      paddingVertical: 14,
+      minHeight: 48,
     },
     modalCancelButton: {
       backgroundColor: 'rgba(0,0,0,0.05)',
@@ -482,8 +485,8 @@ const ShowcaseScreen = ({navigation}: any) => {
       fontWeight: '600',
     },
     modalHeaderIconImage: {
-      width: 32,
-      height: 32,
+      width: 20,
+      height: 20,
       tintColor: theme.colors.primary,
     },
     buttonIcon: {
@@ -799,7 +802,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                 source={require('../assets/locker-icon.png')}
                 style={styles.modalHeaderIconImage}
               />
-              <Text style={styles.modalTitle}>Load Keyshare</Text>
+              <Text style={styles.modalTitle}>Restore Keyshare</Text>
               <TouchableOpacity
                 style={styles.closeButton}
                 onPress={handleCloseModal}
@@ -810,8 +813,6 @@ const ShowcaseScreen = ({navigation}: any) => {
 
             {/* Modal Body */}
             <View style={styles.modalBody}>
-              <Text style={styles.modalSubtitle}>Wallet Keyshare Restore</Text>
-
               {/* Password Input */}
               <View style={styles.passwordInputContainer}>
                 <Text style={styles.passwordInputLabel}>Keyshare Password</Text>
@@ -999,7 +1000,12 @@ const ShowcaseScreen = ({navigation}: any) => {
                   <View style={styles.modeOptionContent}>
                     <View style={styles.modeIconWrapper}>
                       {selectedMode === 'trio' && (
-                        <View style={[styles.modeConnectorLine, styles.modeConnectorLineTrio]} />
+                        <View
+                          style={[
+                            styles.modeConnectorLine,
+                            styles.modeConnectorLineTrio,
+                          ]}
+                        />
                       )}
                       {selectedMode === 'trio' && (
                         <Animated.View
@@ -1020,7 +1026,8 @@ const ShowcaseScreen = ({navigation}: any) => {
                           ]}
                         />
                       )}
-                      <View style={[styles.modeIconRow, styles.modeIconRowTrio]}>
+                      <View
+                        style={[styles.modeIconRow, styles.modeIconRowTrio]}>
                         <Image
                           source={require('../assets/phone-icon.png')}
                           style={[

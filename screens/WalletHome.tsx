@@ -1643,44 +1643,33 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             setIsPartyModalVisible(false);
           }}
           activeOpacity={1}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeaderRow}>
+          <View style={styles.modalContentCompact}>
+            <View style={styles.modalHeaderRowCompact}>
               <Image
                 source={require('../assets/key-icon.png')}
-                style={styles.modalHeaderIcon}
+                style={styles.modalHeaderIconCompact}
               />
-              <Text style={styles.modalHeaderTitle}>Your Device Key</Text>
+              <Text style={styles.modalHeaderTitleCompact}>Device Keyshare</Text>
             </View>
 
-            <View style={styles.modalParagraph}>
-              <Text style={styles.modalTextLeft}>
-                <Text style={styles.modalBoldText}>
-                  This device holds a keyshare of your wallet.
-                </Text>{' '}
-                You need both keyshares to access your Bitcoin. Losing either
-                device or its keyshare backup means losing your funds.
+            <Text style={styles.modalTextCompact}>
+              This device stores{' '}
+              <Text style={styles.modalBoldTextCompact}>one part</Text> of your
+              wallet's keyshare. Devices must work together to access Bitcoin.
+            </Text>
+
+            <View style={styles.warningBoxCompact}>
+              <Text style={styles.warningTextCompact}>
+                ⚠️ Keep keyshares safe. Losing a device or backup permanently locks your Bitcoin.
               </Text>
             </View>
 
-            <View style={[styles.modalParagraph, styles.warningBox]}>
-              <Text style={[styles.modalTextLeft, styles.warningText]}>
-                ⚠️ <Text style={styles.modalBoldText}>Critical:</Text> If you
-                lose any of your devices without having your keyshares backed
-                up, you'll lose access to your Bitcoin forever.
-              </Text>
-            </View>
-
-            <View style={styles.modalParagraph}>
-              <Text style={styles.modalTextLeft}>
-                Always keep your keyshare backup in a secure, private separate
-                location (e.g., cloud, emails, external drives, etc.) - do not
-                keep them together so no one can access them all and steal your
-                funds.
-              </Text>
-            </View>
+            <Text style={styles.modalTipTextCompact}>
+              💡 Store backups separately — never together.
+            </Text>
 
             <TouchableOpacity
-              style={styles.backupButton}
+              style={styles.backupButtonCompact}
               onPress={() => {
                 HapticFeedback.medium();
                 setIsPartyModalVisible(false);
@@ -1688,9 +1677,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   navigation.navigate('Settings');
                 }
               }}
-              activeOpacity={0.8}>
-              <Text style={styles.backupButtonText}>
-                Go to Settings {'>'} Security {'>'} Backup
+              activeOpacity={0.7}>
+              <Text style={styles.backupButtonTextCompact}>
+                Security Settings &gt; Backup
               </Text>
             </TouchableOpacity>
           </View>
