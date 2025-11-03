@@ -35,7 +35,7 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Share from 'react-native-share';
 import Big from 'big.js';
-import {dbg, getPinnedRemoteIP, HapticFeedback} from '../utils';
+import {dbg, getPinnedRemoteIPs, HapticFeedback} from '../utils';
 import {useTheme} from '../theme';
 import {waitMS} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
@@ -52,9 +52,14 @@ const MobilesPairing = ({navigation}: any) => {
   const [localID, setLocalID] = useState<string | null>(null);
   const [localDevice, setLocalDevice] = useState<string | null>(null);
   const [peerIP, setPeerIP] = useState<string | null>(null);
+  const [peerIP2, setPeerIP2] = useState<string | null>(null);
   const [remoteID, setRemoteID] = useState<String | null>(null);
+  const [remoteID2, setRemoteID2] = useState<String | null>(null);
   const [peerDevice, setPeerDevice] = useState<string | null>(null);
+  const [peerDevice2, setPeerDevice2] = useState<string | null>(null);
   const [peerParty, setPeerParty] = useState<string | null>(null);
+  const [peerParty2, setPeerParty2] = useState<string | null>(null);
+  const [localParty, setLocalParty] = useState<string>('');
   const [isPairing, setIsPairing] = useState(false);
   const [countdown, setCountdown] = useState(timeout);
   const [progress, setProgress] = useState(0);
@@ -66,10 +71,12 @@ const MobilesPairing = ({navigation}: any) => {
   const [doingMPC, setDoingMPC] = useState(false);
   const [mpcDone, setMpcDone] = useState(false);
   const [isMaster, setIsMaster] = useState(false);
+  const [masterHost, setMasterHost] = useState<string | null>(null);
 
   const [prepCounter, setPrepCounter] = useState(0);
   const [keypair, setKeypair] = useState('');
   const [peerPubkey, setPeerPubkey] = useState('');
+  const [peerPubkey2, setPeerPubkey2] = useState('');
   const [shareName, setShareName] = useState('');
 
   const [_keyshare, setKeyshare] = useState('');
@@ -100,6 +107,8 @@ const MobilesPairing = ({navigation}: any) => {
 
   const route = useRoute<RouteProp<{params: RouteParams}>>();
   const isSendBitcoin = route.params?.mode === 'send_btc';
+  const setupMode = route.params?.mode;
+  const isTrio = setupMode === 'trio';
   const addressType = route.params?.addressType;
   const title = isSendBitcoin
     ? 'Co-Signing Your Transaction'
@@ -113,12 +122,17 @@ const MobilesPairing = ({navigation}: any) => {
   const [backupChecks, setBackupChecks] = useState({
     deviceOne: false,
     deviceTwo: false,
+    deviceThree: false,
   });
 
   const [isBackupModalVisible, setIsBackupModalVisible] = useState(false);
 
   const allChecked = Object.values(checks).every(Boolean);
-  const allBackupChecked = Object.values(backupChecks).every(Boolean);
+  const allBackupChecked = isTrio
+    ? backupChecks.deviceOne &&
+      backupChecks.deviceTwo &&
+      backupChecks.deviceThree
+    : backupChecks.deviceOne && backupChecks.deviceTwo;
 
   const connectionAnimation = useRef(new Animated.Value(0)).current;
   const animationRef = useRef<Animated.CompositeAnimation | null>(null);
@@ -263,7 +277,13 @@ const MobilesPairing = ({navigation}: any) => {
     setIsPreParamsReady(false);
     setPrepCounter(0);
     const timeoutMinutes = 2;
-    await deletePreparams();
+
+    if (!__DEV__) {
+      await deletePreparams();
+    } else {
+      dbg('preparams dev: Not deleting ppmFile');
+    }
+
     BBMTLibNativeModule.preparams(ppmFile, String(timeoutMinutes))
       .then(() => {
         setIsPreParamsReady(true);
@@ -300,34 +320,49 @@ const MobilesPairing = ({navigation}: any) => {
         }
 
         dbg('initSession: Publishing data', {
+          masterHost,
           data: _data,
           peerPubkey,
           discoveryPort,
           timeout,
         });
 
+        const enckeyCSV = isTrio
+          ? [peerPubkey, peerPubkey2].filter(Boolean).join(',')
+          : peerPubkey;
         const published = await BBMTLibNativeModule.publishData(
           String(discoveryPort),
           String(timeout),
-          peerPubkey,
+          enckeyCSV,
           _data,
+          isTrio ? 'trio' : 'duo',
         );
 
         if (published) {
           dbg('initSession: Data published successfully', {published});
-          const peerChecksum = published.replace('data=', '');
-          const localPayload = `${kp.publicKey}/${route.params?.satoshiAmount}`;
-          const localChecksum = await BBMTLibNativeModule.sha256(localPayload);
+          // For trio the publisher returns two queries joined by '|', each containing data=<checksum>&pubkey=<key>
+          // For duo it returns a single query. Validate checksum only in duo to avoid false negatives across devices.
+          if (!isTrio) {
+            const firstQuery = (published.split('|')[0] || published) as string;
+            const dataParam = (
+              firstQuery.split('&').find(p => p.startsWith('data=')) || 'data='
+            ).slice(5);
+            const peerChecksum = dataParam;
+            const localPayload = `${kp.publicKey}/${route.params?.satoshiAmount}`;
+            const localChecksum = await BBMTLibNativeModule.sha256(
+              localPayload,
+            );
 
-          dbg('initSession: Validating checksums', {
-            localPayload,
-            localChecksum,
-            peerChecksum,
-          });
+            dbg('initSession: Validating checksums', {
+              localPayload,
+              localChecksum,
+              peerChecksum,
+            });
 
-          if (peerChecksum !== localChecksum) {
-            dbg('initSession: Checksum validation failed');
-            throw 'Make sure you\'re sending the "Same Bitcoin" amount from Both Devices';
+            if (peerChecksum !== localChecksum) {
+              dbg('initSession: Checksum validation failed');
+              throw 'Make sure you\'re sending the "Same Bitcoin" amount from Both Devices';
+            }
           }
 
           dbg('initSession: Session initialization completed successfully');
@@ -340,7 +375,7 @@ const MobilesPairing = ({navigation}: any) => {
         dbg('initSession: Running as peer device');
         const payload = `${peerPubkey}/${route.params?.satoshiAmount}`;
         const checksum = await BBMTLibNativeModule.sha256(payload);
-        const peerURL = `http://${peerIP}:${discoveryPort}/`;
+        const peerURL = `http://${masterHost}:${discoveryPort}/`;
 
         dbg('initSession: Fetching data from peer', {
           payload,
@@ -385,20 +420,45 @@ const MobilesPairing = ({navigation}: any) => {
       }
 
       await waitMS(2000);
-      const ip = isMaster ? localIP : peerIP;
-      const server = `http://${ip}:${discoveryPort}`;
 
-      const partyID = isMaster ? 'KeyShare1' : 'KeyShare2';
+      const server = `http://${masterHost}:${discoveryPort}`;
+
+      const partyID = isTrio
+        ? localParty || (isMaster ? 'KeyShare1' : 'KeyShare2')
+        : isMaster
+        ? 'KeyShare1'
+        : 'KeyShare2';
       const peerID = isMaster ? 'KeyShare2' : 'KeyShare1';
-      const partiesCSV = `${partyID},${peerID}`;
+      const partiesCSV = isTrio
+        ? 'KeyShare1,KeyShare2,KeyShare3'
+        : `${partyID},${peerID}`;
       const sessionID = await BBMTLibNativeModule.sha256(`${data}/${server}`);
       const kp = JSON.parse(keypair);
-      const encKey = peerPubkey;
-      const decKey = kp.privateKey;
-      const sessionKey = '';
+      const encKey = isTrio ? '' : peerPubkey;
+      const decKey = isTrio ? '' : kp.privateKey;
+      let sessionKey = '';
+      if (isTrio) {
+        try {
+          const seeds = [sessionID, masterHost];
+          sessionKey = await BBMTLibNativeModule.sha256(seeds.join(','));
+        } catch {}
+      }
 
       setShareName(partyID);
       setProgress(0);
+
+      dbg('starting keygen with', {
+        server,
+        partyID,
+        ppmFile,
+        partiesCSV,
+        sessionID,
+        sessionKey,
+        encKey,
+        decKey,
+        data,
+      });
+
       BBMTLibNativeModule.mpcTssSetup(
         server,
         partyID,
@@ -432,6 +492,9 @@ const MobilesPairing = ({navigation}: any) => {
         })
         .catch((error: any) => {
           dbg('keygen error', error);
+          if (__DEV__) {
+            Alert.alert('Error', error?.message || error);
+          }
         })
         .finally(async () => {
           if (isMaster) {
@@ -487,7 +550,15 @@ const MobilesPairing = ({navigation}: any) => {
         addressType,
       );
       const partyID = ks.local_party_key;
-      const partiesCSV = ks.keygen_committee_keys.join(',');
+
+      const allParties = [partyID];
+      if (peerParty) {
+        allParties.push(peerParty);
+      }
+      if (peerParty2) {
+        allParties.push(peerParty2);
+      }
+      const partiesCSV = allParties.sort().join(',');
       const sessionID = await BBMTLibNativeModule.sha256(`${data}/${server}`);
       const kp = JSON.parse(keypair);
       const encKey = peerPubkey;
@@ -544,6 +615,17 @@ const MobilesPairing = ({navigation}: any) => {
         dbg('got exception', e);
       }
       setProgress(0);
+
+      dbg('starting keysign with', {
+        server,
+        partyID,
+        partiesCSV,
+        sessionID,
+        sessionKey,
+        encKey,
+        decKey,
+      });
+
       await BBMTLibNativeModule.mpcSendBTC(
         // TSS
         server,
@@ -703,7 +785,7 @@ const MobilesPairing = ({navigation}: any) => {
     let utxoIndex = 0;
     let utxoCount = 0;
     const keysignSteps = 36;
-    const keygenSteps = 18;
+    const keygenSteps = isTrio ? 29 : 18;
     const processHook = (message: string) => {
       const msg = JSON.parse(message);
       if (msg.type === 'keygen') {
@@ -868,8 +950,9 @@ const MobilesPairing = ({navigation}: any) => {
     const ks = JSON.parse(jks || '{}');
     const localShare = ks.local_party_key;
     try {
-      dbg('checking lanIP given pinnedRemote', getPinnedRemoteIP());
-      const ip = await BBMTLibNativeModule.getLanIp(getPinnedRemoteIP());
+      const pinnedIPs = getPinnedRemoteIPs();
+      dbg('checking lanIP given pinnedRemotes', pinnedIPs);
+      const ip = await BBMTLibNativeModule.getLanIp(pinnedIPs[0] || '');
       dbg('device local lanIP', ip);
       const deviceName = await DeviceInfo.getDeviceName();
       setLocalDevice(deviceName);
@@ -913,44 +996,178 @@ const MobilesPairing = ({navigation}: any) => {
       dbg('promise race result:', result);
       if (result) {
         dbg('Got Result', result);
-        const raw = result.split(',');
-        dbg('raw', {deviceName, raw});
-
-        const peerInfo = raw[0].split('@');
-        const _peerIP = peerInfo[0].split(':')[0];
-        setPeerIP(_peerIP);
-        const _peerDevicePartyID = hexToString(peerInfo[1]).split('@');
-        const _peerDevice = _peerDevicePartyID[0];
-        const _peerParty = _peerDevicePartyID[1];
-        setRemoteID(
-          (await BBMTLibNativeModule.sha256(`${_peerDevice}${_peerIP}`))
-            .substring(0, 4)
-            .toUpperCase(),
-        );
-        setPeerDevice(_peerDevice);
-        setPeerParty(_peerParty);
+        let raws = (result || '').split('|').filter(Boolean);
+        // In trio, ensure both peers are present; sometimes one arrives first on iOS
+        if (isTrio && raws.length < 2) {
+          const extraWaitUntil = Date.now() + 3000; // wait up to 3s more
+          while (Date.now() < extraWaitUntil && raws.length < 2) {
+            await waitMS(300);
+            const updated = await LocalCache.getItem('peerFound');
+            raws = (updated || result || '').split('|').filter(Boolean);
+          }
+        }
+        const rawPrimary = raws[0] || '';
+        const primary = rawPrimary.split(',');
+        const peerInfo1 = (primary[0] || '').split('@');
+        const _peerIP = (peerInfo1[0] || '').split(':')[0];
+        setPeerIP(_peerIP || null);
+        const _peerDevicePartyID = hexToString(peerInfo1[1] || '').split('@');
+        const _peerDevice = _peerDevicePartyID[0] || '';
+        const _peerParty = _peerDevicePartyID[1] || '';
+        const remoteIDComputed = (
+          await BBMTLibNativeModule.sha256(`${_peerDevice}${_peerIP}`)
+        )
+          .substring(0, 4)
+          .toUpperCase();
+        setRemoteID(remoteIDComputed);
+        setPeerDevice(_peerDevice || null);
+        setPeerParty(_peerParty || null);
         if (localShare && _peerParty && localShare === _peerParty) {
           throw 'Please Use Two Different KeyShares per Device';
         }
 
-        const _peerPubkey = peerInfo[2];
+        const _peerPubkey = peerInfo1[2] || '';
         setPeerPubkey(_peerPubkey);
 
-        const localInfo = raw[1].split('@');
-        const _localIP = localInfo[0].split(':')[0];
-        setLocalIP(_localIP);
-        setLocalID(
-          (await BBMTLibNativeModule.sha256(`${deviceName}${_localIP}`))
+        const localInfo = (primary[1] || '').split('@');
+        const _localIP = (localInfo[0] || '').split(':')[0];
+        setLocalIP(_localIP || null);
+        const localIDComputed = (
+          await BBMTLibNativeModule.sha256(`${deviceName}${_localIP}`)
+        )
+          .substring(0, 4)
+          .toUpperCase();
+        setLocalID(localIDComputed);
+
+        let device2Local: string | null = null;
+        let remoteID2Computed: string | null = null;
+        if (isTrio && raws.length > 1) {
+          const rawSecondary = raws[1] || '';
+          const secondary = rawSecondary.split(',');
+          const peerInfo2 = (secondary[0] || '').split('@');
+          const _peerIP2 = (peerInfo2[0] || '').split(':')[0];
+          setPeerIP2(_peerIP2 || null);
+          const _peerDevicePartyID2 = hexToString(peerInfo2[1] || '').split(
+            '@',
+          );
+          const peerPubkey2Local = peerInfo2[2] || '';
+          device2Local = _peerDevicePartyID2[0] || '';
+          const peerParty2Raw = _peerDevicePartyID2[1] || '';
+          setPeerPubkey2(peerPubkey2Local);
+          remoteID2Computed = (
+            await BBMTLibNativeModule.sha256(`${device2Local}${_peerIP2}`)
+          )
             .substring(0, 4)
-            .toUpperCase(),
-        );
-        const thisIDs = _localIP.split(':')[0];
-        const nextIDs = _peerIP.split(':')[0];
-        const thisID = Number(thisIDs.split('.')[3]);
-        const peerID = Number(nextIDs.split('.')[3]);
-        const master = thisID > peerID;
+            .toUpperCase();
+          setRemoteID2(remoteID2Computed);
+          setPeerDevice2(device2Local || null);
+          setPeerParty2(peerParty2Raw || null);
+        } else {
+          setPeerIP2(null);
+          setRemoteID2(null);
+          setPeerDevice2(null);
+          setPeerParty2(null);
+        }
+
+        // Extract second peer IP for trio mode (same pattern as _peerIP)
+        let _peerIP2ForRank = '';
+        if (isTrio && raws.length > 1) {
+          const rawSecondary = raws[1] || '';
+          const secondary = rawSecondary.split(',');
+          const peerInfo2ForRank = (secondary[0] || '').split('@');
+          _peerIP2ForRank = (peerInfo2ForRank[0] || '').split(':')[0];
+          setPeerIP2(_peerIP2ForRank || null);
+        }
+
+        const thisIDs = (_localIP || '').split(':')[0];
+        const nextIDs = (_peerIP || '').split(':')[0];
+        const next2IDs = (_peerIP2ForRank || '').split(':')[0];
+        const thisID = Number(thisIDs.split('.')[3] || '0');
+        const peerID = Number(nextIDs.split('.')[3] || '0');
+        const peer2ID = Number(next2IDs.split('.')[3] || '0');
+        dbg('==================== ALL IDs ==================== \n', {
+          thisID,
+          peerID,
+          peer2ID,
+        });
+        dbg('==================== ALL IPs ==================== \n', {
+          _localIP,
+          _peerIP,
+          _peerIP2ForRank,
+        });
+
+        // Default: preserve current state to avoid flicker. Duo computes immediately; trio waits for both peers.
+        let master = isMaster;
+        if (!isTrio) {
+          master = thisID > peerID;
+        }
+
+        // Trio: determine roles KeyShare1/2/3 based on descending IP last octet
+        if (isTrio && _peerIP2ForRank) {
+          const ids: Array<{label: 'local' | 'peer1' | 'peer2'; val: number}> =
+            [
+              {label: 'local', val: thisID},
+              {label: 'peer1', val: peerID},
+              {
+                label: 'peer2',
+                val: Number(_peerIP2ForRank.split('.')[3] || '0'),
+              },
+            ];
+          ids.sort((a, b) => b.val - a.val);
+          const rankToParty = ['KeyShare1', 'KeyShare2', 'KeyShare3'];
+          const labelToParty: {[k: string]: string} = {};
+          ids.forEach((item, idx) => {
+            labelToParty[item.label] = rankToParty[idx];
+          });
+          setLocalParty(labelToParty.local);
+          setPeerParty(labelToParty.peer1);
+          setPeerParty2(labelToParty.peer2);
+          master = labelToParty.local === 'KeyShare1';
+        }
+
+        master = thisID > peerID && thisID > peer2ID;
+        dbg('==================== ALL Masters ==================== \n', {
+          master,
+        });
+
+        // Determine master host (highest last octet) and persist for later flows
+        const candidateIPs = [_localIP, _peerIP, _peerIP2ForRank || peerIP2]
+          .filter(Boolean)
+          .map(x => String(x));
+        let resolvedMasterHost: string | null = null;
+        if (candidateIPs.length > 0) {
+          resolvedMasterHost = candidateIPs.reduce((max, cur) => {
+            const lastMax = Number(
+              (max.split(':')[0] || '').split('.')[3] || '0',
+            );
+            const lastCur = Number(
+              (cur.split(':')[0] || '').split('.')[3] || '0',
+            );
+            return lastCur > lastMax ? cur : max;
+          });
+        }
+        setMasterHost(resolvedMasterHost);
+        dbg('Master Selection', {master, masterHost: resolvedMasterHost});
         setIsMaster(master);
         setStatus('Devices Discovery Completed');
+        dbg('Pairing Summary', {
+          isTrio,
+          isMaster: master,
+          roles: {localParty, peerParty, peerParty2},
+          devices: {
+            local: {device: deviceName, ip: _localIP, id: localIDComputed},
+            peer1: {device: _peerDevice, ip: _peerIP, id: remoteIDComputed},
+            peer2: isTrio
+              ? {
+                  device: device2Local,
+                  ip: _peerIP2ForRank || peerIP2,
+                  id: remoteID2Computed || remoteID2,
+                }
+              : undefined,
+          },
+          masterHost: resolvedMasterHost,
+        });
+
         await Promise.allSettled(promises).then(() =>
           LocalCache.removeItem('peerFound'),
         );
@@ -963,6 +1180,7 @@ const MobilesPairing = ({navigation}: any) => {
       dbg('Pairing Error:', error);
       setStatus('An error occurred during pairing.');
       setPeerIP(null);
+      setPeerIP2(null);
       setLocalIP(null);
       Alert.alert('Error', error?.toString() || 'Unknown error occurred');
     } finally {
@@ -1002,11 +1220,12 @@ const MobilesPairing = ({navigation}: any) => {
     deviceName: string,
   ): Promise<string | null> {
     try {
-      const result = await BBMTLibNativeModule.listenForPeer(
+      const result = await BBMTLibNativeModule.listenForPeers(
         deviceName,
         kp.publicKey,
         String(discoveryPort),
         String(timeout),
+        isTrio ? 'trio' : 'duo',
       );
       await LocalCache.setItem('peerFound', result);
       return result;
@@ -1038,9 +1257,9 @@ const MobilesPairing = ({navigation}: any) => {
     const until = Date.now() + timeout * 1000;
     const discoveryTimeout = 3;
     let backOff = 1;
-    const pinnedIP = getPinnedRemoteIP();
+    const pinnedIPs = getPinnedRemoteIPs();
     dbg('ips', {
-      pinnedIP,
+      pinnedIPs,
       ip,
     });
     while (Date.now() < until) {
@@ -1051,13 +1270,17 @@ const MobilesPairing = ({navigation}: any) => {
           return peerFound;
         }
         backOff *= 2;
-        const result = await BBMTLibNativeModule.discoverPeer(
+        const pinnedCandidatesCSV = pinnedIPs
+          .filter(p => isSameSubnet(ip, p))
+          .join(',');
+        const result = await BBMTLibNativeModule.discoverPeers(
           deviceName,
           pubkey,
           ip,
-          isSameSubnet(ip, pinnedIP) ? pinnedIP : '',
+          pinnedCandidatesCSV,
           String(discoveryPort),
           String(discoveryTimeout + backOff),
+          isTrio ? 'trio' : 'duo',
         );
         if (result) {
           dbg('discoverPeer result', result);
@@ -1097,14 +1320,14 @@ const MobilesPairing = ({navigation}: any) => {
       padding: 12,
     },
     retryButton: {
-      marginTop: 24,
+      marginTop: 32,
       alignSelf: 'center',
       backgroundColor: theme.colors.accent,
-      borderRadius: 8,
+      borderRadius: 18,
       flexDirection: 'row',
       alignItems: 'center',
-      paddingVertical: 8,
-      paddingHorizontal: 12,
+      paddingVertical: 4,
+      paddingHorizontal: 6,
       shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 1},
       shadowOpacity: 0.1,
@@ -1290,6 +1513,11 @@ const MobilesPairing = ({navigation}: any) => {
       flexDirection: 'row',
       alignItems: 'center',
       marginLeft: 8,
+    },
+    threeDevicesContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
     },
     firstPhone: {
       marginLeft: 0,
@@ -1493,18 +1721,16 @@ const MobilesPairing = ({navigation}: any) => {
       alignItems: 'center',
       justifyContent: 'center',
       position: 'relative',
-      marginBottom: 16,
-      paddingVertical: 12,
+      marginBottom: 20,
     },
     deviceWrapper: {
       alignItems: 'center',
       justifyContent: 'center',
-      marginHorizontal: 8,
       position: 'relative',
     },
     deviceIcon: {
-      width: 40,
-      height: 40,
+      width: 32,
+      height: 32,
       tintColor: theme.colors.textSecondary,
       shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 2},
@@ -1528,6 +1754,10 @@ const MobilesPairing = ({navigation}: any) => {
       width: 120,
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       lineHeight: 18,
+    },
+    deviceNameTrio: {
+      maxWidth: 90,
+      fontSize: 12,
     },
     statusLine: {
       width: 80,
@@ -2166,18 +2396,24 @@ const MobilesPairing = ({navigation}: any) => {
                     </Text>
                   </View>
                   <Text style={styles.requirementsDescription}>
-                    Two mobile devices are required.
+                    {isTrio
+                      ? 'Three devices are required.'
+                      : 'Two devices are required.'}
                   </Text>
 
                   {[
                     {
                       key: 'twoDevices',
-                      label: 'Both phones are nearby',
+                      label: isTrio
+                        ? 'All devices are nearby'
+                        : 'Both devices are nearby',
                       icon: 'pair',
                     },
                     {
                       key: 'sameNetwork',
-                      label: 'Both on same network',
+                      label: isTrio
+                        ? 'All on same network'
+                        : 'Both on same network',
                       icon: 'wifi',
                     },
                   ].map(item => (
@@ -2219,24 +2455,44 @@ const MobilesPairing = ({navigation}: any) => {
                           )}
                         </View>
                         {item.icon === 'pair' ? (
-                          <View style={styles.twoPhonesContainer}>
-                            <Image
-                              source={require('../assets/phone-icon.png')}
-                              style={[
-                                styles.checkboxIconImage,
-                                styles.firstPhone,
-                              ]}
-                              resizeMode="contain"
-                            />
-                            <Image
-                              source={require('../assets/phone-icon.png')}
-                              style={[
-                                styles.checkboxIconImage,
-                                styles.secondPhone,
-                              ]}
-                              resizeMode="contain"
-                            />
-                          </View>
+                          isTrio ? (
+                            <View style={styles.threeDevicesContainer}>
+                              <Image
+                                source={require('../assets/phone-icon.png')}
+                                style={styles.checkboxIconImage}
+                                resizeMode="contain"
+                              />
+                              <Image
+                                source={require('../assets/phone-icon.png')}
+                                style={styles.checkboxIconImage}
+                                resizeMode="contain"
+                              />
+                              <Image
+                                source={require('../assets/phone-icon.png')}
+                                style={styles.checkboxIconImage}
+                                resizeMode="contain"
+                              />
+                            </View>
+                          ) : (
+                            <View style={styles.twoPhonesContainer}>
+                              <Image
+                                source={require('../assets/phone-icon.png')}
+                                style={[
+                                  styles.checkboxIconImage,
+                                  styles.firstPhone,
+                                ]}
+                                resizeMode="contain"
+                              />
+                              <Image
+                                source={require('../assets/phone-icon.png')}
+                                style={[
+                                  styles.checkboxIconImage,
+                                  styles.secondPhone,
+                                ]}
+                                resizeMode="contain"
+                              />
+                            </View>
+                          )
                         ) : (
                           <Image
                             source={require('../assets/wifi-icon.png')}
@@ -2249,8 +2505,9 @@ const MobilesPairing = ({navigation}: any) => {
                   ))}
                 </View>
                 <Text style={styles.pairingHint}>
-                  ⚠️ Tip: for ultimate privacy and reliability, put one phone in
-                  Hotspot mode, and connect the other phone to it.
+                  ⚠️ Tip: for ultimate privacy and reliability, put one device
+                  in Hotspot mode, and connect the{' '}
+                  {isTrio ? 'other devices' : 'other device'} to it.
                 </Text>
                 {/* Pairing Button */}
                 {!isPairing && !peerIP && (
@@ -2293,7 +2550,13 @@ const MobilesPairing = ({navigation}: any) => {
                       ]}
                     />
                     {localDevice && (
-                      <Text style={styles.deviceName}>
+                      <Text
+                        style={[
+                          styles.deviceName,
+                          isTrio && styles.deviceNameTrio,
+                        ]}
+                        numberOfLines={2}
+                        ellipsizeMode="tail">
                         {localDevice}
                         {'\n'}
                         {localID}
@@ -2313,6 +2576,47 @@ const MobilesPairing = ({navigation}: any) => {
                       ]}
                     />
                   </View>
+                  {isTrio && (
+                    <>
+                      <View style={styles.deviceWrapper}>
+                        <Image
+                          source={require('../assets/phone-icon.png')}
+                          style={[
+                            styles.deviceIcon,
+                            peerIP2
+                              ? styles.deviceActive
+                              : styles.deviceInactive,
+                          ]}
+                        />
+                        {peerIP2 && (
+                          <Text
+                            style={[
+                              styles.deviceName,
+                              isTrio && styles.deviceNameTrio,
+                            ]}
+                            numberOfLines={2}
+                            ellipsizeMode="tail">
+                            {peerDevice2 || 'Other Device'}
+                            {'\n'}
+                            {remoteID2}
+                          </Text>
+                        )}
+                      </View>
+                      <View style={styles.statusLine}>
+                        <Animated.View
+                          style={[
+                            styles.connectionLine,
+                            {
+                              width: connectionAnimation.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: ['0%', '100%'],
+                              }),
+                            },
+                          ]}
+                        />
+                      </View>
+                    </>
+                  )}
                   <View style={styles.deviceWrapper}>
                     <Image
                       source={require('../assets/phone-icon.png')}
@@ -2322,8 +2626,15 @@ const MobilesPairing = ({navigation}: any) => {
                       ]}
                     />
                     {peerIP && (
-                      <Text style={styles.deviceName}>
-                        {peerDevice || 'Peer Device'}
+                      <Text
+                        style={[
+                          styles.deviceName,
+                          isTrio && styles.deviceNameTrio,
+                        ]}
+                        numberOfLines={2}
+                        ellipsizeMode="tail">
+                        {peerDevice ||
+                          (isTrio ? 'Other Device' : 'Peer Device')}
                         {'\n'}
                         {remoteID}
                       </Text>
@@ -2595,7 +2906,8 @@ const MobilesPairing = ({navigation}: any) => {
                         <View style={styles.finalStepTextContainer}>
                           <Text style={styles.finalStepTitle}>Final Step</Text>
                           <Text style={styles.finalStepDescription}>
-                            Make sure both phones preparation step is complete.
+                            Make sure {isTrio ? 'all devices' : 'both devices'}{' '}
+                            preparation step is complete.
                           </Text>
                         </View>
                       </View>
@@ -2621,7 +2933,9 @@ const MobilesPairing = ({navigation}: any) => {
                         </View>
                         <View style={styles.checkboxTextContainer}>
                           <Text style={styles.enhancedCheckboxLabel}>
-                            The other device is ready
+                            {isTrio
+                              ? 'The other devices are ready'
+                              : 'The other device is ready'}
                           </Text>
                           <Text style={styles.warningHint}>
                             Do not leave the app during setup.
@@ -2770,7 +3084,7 @@ const MobilesPairing = ({navigation}: any) => {
                           },
                         ]}>
                         Create secure backups of your keyshares. Store each
-                        phone's backup in different locations to prevent single
+                        device's backup in different locations to prevent single
                         points of failure.
                       </Text>
 
@@ -2809,8 +3123,8 @@ const MobilesPairing = ({navigation}: any) => {
                         </Text>
                       </View>
                       <Text style={styles.backupConfirmationDescription}>
-                        Verify that both devices have successfully backed up
-                        their keyshares.
+                        Verify that {isTrio ? 'all devices' : 'both devices'}{' '}
+                        have successfully backed up their keyshares.
                       </Text>
 
                       <View style={styles.backupConfirmationContainer}>
@@ -2825,6 +3139,15 @@ const MobilesPairing = ({navigation}: any) => {
                             label: `${peerDevice} backed up`,
                             device: peerDevice,
                           },
+                          ...(isTrio
+                            ? [
+                                {
+                                  key: 'deviceThree',
+                                  label: `${peerDevice2} backed up`,
+                                  device: peerDevice2,
+                                },
+                              ]
+                            : []),
                         ].map(item => (
                           <TouchableOpacity
                             key={item.key}
@@ -2926,7 +3249,11 @@ const MobilesPairing = ({navigation}: any) => {
                     />
                     <Text style={styles.title}>Co-Signing</Text>
                   </View>
-                  <Text style={styles.header}>Both phones must be ready.</Text>
+                  <Text style={styles.header}>
+                    {isTrio
+                      ? 'All devices must be ready.'
+                      : 'Both devices must be ready.'}
+                  </Text>
                   <View style={styles.transactionDetails}>
                     <View style={styles.transactionItem}>
                       <Text style={styles.transactionLabel}>To Address</Text>
@@ -3065,7 +3392,7 @@ const MobilesPairing = ({navigation}: any) => {
                     }}>
                     <View style={styles.buttonContent}>
                       <Image
-                        source={ require('../assets/cosign-icon.png')}
+                        source={require('../assets/cosign-icon.png')}
                         style={{
                           width: 20,
                           height: 20,

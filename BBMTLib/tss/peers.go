@@ -151,7 +151,7 @@ func isPortInUse(port string) bool {
 	return true
 }
 
-func DiscoverPeers(id, pubkey, localIP, remoteIP, port, timeout, mode string) (string, error) {
+func DiscoverPeers(id, pubkey, localIP, remoteIPsCSV, port, timeout, mode string) (string, error) {
 	if localIP == "" {
 		return "", fmt.Errorf("no local IP detected, skipping peer discovery")
 	}
@@ -218,9 +218,14 @@ func DiscoverPeers(id, pubkey, localIP, remoteIP, port, timeout, mode string) (s
 		}
 	}
 
-	// First, check remoteIP if provided
-	if remoteIP != "" && remoteIP != localIP {
-		checkPeer(fmt.Sprintf("%s:%s", remoteIP, port))
+	// First, check any provided remote IPs (comma-separated), skipping self
+	if strings.TrimSpace(remoteIPsCSV) != "" {
+		for _, rip := range strings.Split(remoteIPsCSV, ",") {
+			rip = strings.TrimSpace(rip)
+			if rip != "" && rip != localIP {
+				checkPeer(fmt.Sprintf("%s:%s", rip, port))
+			}
+		}
 	}
 
 	// Scan the local subnet
@@ -250,7 +255,12 @@ func FetchData(url, decKey, data string) (string, error) {
 		Timeout: 5 * time.Second,
 	}
 	Logln("BBMTLog", "checking for peer connection:", url)
-	resp, err := client.Get(url + "?data=" + data)
+	pubkey, err := EciesPubkeyFromPrivateKey(decKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to get public key from private key: %w", err)
+	}
+
+	resp, err := client.Get(url + "?data=" + data + "&pubkey=" + pubkey)
 	if err != nil {
 		return "", fmt.Errorf("error getting data: %w", err)
 	}
@@ -270,12 +280,40 @@ func FetchData(url, decKey, data string) (string, error) {
 	return decryptedData, nil
 }
 
-func PublishData(port, timeout, enckey, data string) (string, error) {
+func PublishData(port, timeout, enckey, data, mode string) (string, error) {
 	Logln("BBMTLog", "publishing data...")
 	published := make(chan string)
+	expected := 1
+	if strings.EqualFold(mode, "trio") {
+		expected = 2
+	}
+	// Track distinct client IPs and their payloads
+	clientIPs := make(map[string]struct{})
+	payloads := make([]string, 0, expected)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		encryptedData, err := EciesEncrypt(data, enckey)
+		// Determine encryption key per request
+		selectedPub := enckey
+		if expected == 2 { // trio mode
+			// enckey CSV provided in function parameter
+			allowed := map[string]struct{}{}
+			for _, k := range strings.Split(enckey, ",") {
+				k = strings.TrimSpace(k)
+				if k != "" {
+					allowed[k] = struct{}{}
+				}
+			}
+			// read client-provided pubkey from query
+			qPub := r.URL.Query().Get("pubkey")
+			if _, ok := allowed[qPub]; !ok {
+				// Not an expected key; ignore this request
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			selectedPub = qPub
+		}
+
+		encryptedData, err := EciesEncrypt(data, selectedPub)
 		if err != nil {
 			http.Error(w, "error", http.StatusInternalServerError)
 			Logln("BBMTLog", "error publishing:", err)
@@ -284,7 +322,25 @@ func PublishData(port, timeout, enckey, data string) (string, error) {
 		}
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, encryptedData)
-		published <- r.URL.RawQuery
+
+		if expected == 1 {
+			// duo: return first query observed
+			published <- r.URL.RawQuery
+			return
+		}
+		// trio: collect distinct client IPs and emit when 2 unique are served
+		clientIP, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			clientIP = r.RemoteAddr
+		}
+		if _, ok := clientIPs[clientIP]; !ok {
+			clientIPs[clientIP] = struct{}{}
+			payloads = append(payloads, r.URL.RawQuery)
+			if len(payloads) >= expected {
+				combined := strings.Join(payloads, "|")
+				published <- combined
+			}
+		}
 	})
 
 	if server != nil {

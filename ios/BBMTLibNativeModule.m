@@ -48,20 +48,22 @@ RCT_EXTERN_METHOD(getLanIp:(NSString *)peerIP
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 // Call listenForPeer
-RCT_EXTERN_METHOD(listenForPeer:(NSString *)id
+RCT_EXTERN_METHOD(listenForPeers:(NSString *)id
                   pubkey:(NSString *)pubkey
                   port:(NSString *)port
                   timeout:(NSString *)timeout
+                  mode:(NSString *)mode
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 // Call discoverPeer
-RCT_EXTERN_METHOD(discoverPeer:(NSString *)id
+RCT_EXTERN_METHOD(discoverPeers:(NSString *)id
                   pubkey:(NSString *)pubkey
                   localIp:(NSString *)localIp
                   remoteIp:(NSString *)remoteIp
                   port:(NSString *)port
                   timeout:(NSString *)timeout
+                  mode:(NSString *)mode
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -88,6 +90,7 @@ RCT_EXTERN_METHOD(publishData:(NSString *)port
                   timeout:(NSString *)timeout
                   encKey:(NSString *)encKey
                   raw:(NSString *)raw
+                  mode:(NSString *)mode
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 

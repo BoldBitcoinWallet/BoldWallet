@@ -28,6 +28,14 @@ func GenerateKeyPair() (string, error) {
 	return string(keyPairJSON), nil
 }
 
+func EciesPubkeyFromPrivateKey(privateKeyHex string) (string, error) {
+	privateKey, err := eciesgo.NewPrivateKeyFromHex(privateKeyHex)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode private key: %w", err)
+	}
+	return privateKey.PublicKey.Hex(true), nil
+}
+
 func EciesEncrypt(data, publicKeyHex string) (string, error) {
 	publicKey, err := eciesgo.NewPublicKeyFromHex(publicKeyHex)
 	if err != nil {
