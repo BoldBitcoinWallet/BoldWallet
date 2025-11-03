@@ -16,7 +16,8 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
-  DeviceEventEmitter,
+  FlatList,
+  useWindowDimensions,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Share from 'react-native-share';
@@ -192,15 +193,22 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
   styles,
   theme,
 }) => {
-  const [isDropdownVisible, setIsDropdownVisible] = useState(false);
+  const [isModalVisible, setIsModalVisible] = useState(false);
   const [filteredOptions, setFilteredOptions] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [dynamicAPIs, setDynamicAPIs] = useState<string[]>([]);
   const [isLoadingAPIs, setIsLoadingAPIs] = useState(false);
-  const [isSelecting, setIsSelecting] = useState(false);
   const inputRef = useRef<TextInput>(null);
-  const dropdownRef = useRef<View>(null);
-  const dropdownAnimation = useRef(new Animated.Value(0)).current;
+  const searchInputRef = useRef<TextInput>(null);
+  const flatListRef = useRef<FlatList<string>>(null);
+  const {height} = useWindowDimensions();
+  const modalAnimation = useRef(new Animated.Value(0)).current;
+
+  const reversedOptions = useMemo(
+    () => [...filteredOptions].reverse(),
+    [filteredOptions],
+  );
 
   // Get the appropriate API list - filter by network
   const predefinedAPIs = useMemo(() => {
@@ -249,105 +257,144 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
       isTestnet ? 'testnet' : 'mainnet',
     );
     setFilteredOptions(predefinedAPIs);
+    setSearchQuery('');
   }, [isTestnet, predefinedAPIs]);
+
+  // Handle keyboard appearance - modal adjusts via KeyboardAvoidingView
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      () => {
+        // Scroll list to top when keyboard shows to see more items
+        setTimeout(() => {
+          flatListRef.current?.scrollToOffset({offset: 0, animated: true});
+        }, 100);
+      },
+    );
+
+    return () => {
+      keyboardDidShowListener.remove();
+    };
+  }, []);
+
+  // Filter options based on search query
+  useEffect(() => {
+    if (searchQuery.trim() === '') {
+      setFilteredOptions(predefinedAPIs);
+    } else {
+      const filtered = predefinedAPIs.filter(api =>
+        api.toLowerCase().includes(searchQuery.toLowerCase()),
+      );
+      setFilteredOptions(filtered);
+    }
+  }, [searchQuery, predefinedAPIs]);
 
   const handleTextChange = (text: string) => {
     onChangeText(text);
-
-    if (text.length > 0) {
-      const filtered = predefinedAPIs.filter(api =>
-        api.toLowerCase().includes(text.toLowerCase()),
-      );
-      setFilteredOptions(filtered);
-      setIsDropdownVisible(filtered.length > 0);
-    } else {
-      setFilteredOptions(predefinedAPIs);
-      setIsDropdownVisible(true);
-    }
   };
 
   const handleFocus = () => {
     setIsFocused(true);
-    setFilteredOptions(predefinedAPIs);
-    setIsDropdownVisible(true);
-    Animated.timing(dropdownAnimation, {
-      toValue: 1,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
   };
 
   const handleBlur = () => {
     setIsFocused(false);
-    // Delay hiding dropdown to allow for option selection
-    setTimeout(() => {
-      if (isDropdownVisible) {
-        setIsDropdownVisible(false);
-        Animated.timing(dropdownAnimation, {
-          toValue: 0,
-          duration: 150,
-          useNativeDriver: true,
-        }).start();
-      }
-    }, 300);
+  };
+
+  const openModal = () => {
+    HapticFeedback.light();
+    setFilteredOptions(predefinedAPIs);
+    setSearchQuery('');
+    setIsModalVisible(true);
+    inputRef.current?.blur();
+    // Reset and animate modal entrance
+    modalAnimation.setValue(0);
+    Animated.spring(modalAnimation, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 65,
+      friction: 11,
+    }).start();
+  };
+
+  const closeModal = () => {
+    HapticFeedback.light();
+    // Animate modal exit
+    Animated.timing(modalAnimation, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      setIsModalVisible(false);
+      setSearchQuery('');
+    });
   };
 
   const selectOption = async (option: string) => {
     dbg('selectOption called with:', option);
-    dbg('isSelecting:', isSelecting);
-
-    if (isSelecting) {
-      dbg('Already selecting, ignoring');
-      return; // Prevent multiple rapid selections
-    }
-
-    dbg('Starting selection process');
-    setIsSelecting(true);
-
-    // First, hide dropdown and update UI state
-    setIsDropdownVisible(false);
-    setIsFocused(false);
-
-    Animated.timing(dropdownAnimation, {
-      toValue: 0,
-      duration: 150,
-      useNativeDriver: true,
-    }).start();
-
-    // Update the value through the parent's onChangeText
-    // This calls saveAPI which updates LocalCache and native module
-    dbg('Calling onChangeText with:', option);
+    HapticFeedback.selection();
     await onChangeText(option);
-
-    // Blur input and reset selecting state
-    setTimeout(() => {
-      inputRef.current?.blur();
-      setIsSelecting(false);
-      dbg('Selection process completed');
-    }, 200);
+    closeModal();
   };
 
-  const toggleDropdown = () => {
-    if (isDropdownVisible) {
-      setIsDropdownVisible(false);
-      setIsFocused(false);
-      Animated.timing(dropdownAnimation, {
-        toValue: 0,
-        duration: 150,
-        useNativeDriver: true,
-      }).start();
-      inputRef.current?.blur();
-    } else {
-      setIsFocused(true);
-      setFilteredOptions(predefinedAPIs);
-      setIsDropdownVisible(true);
-      Animated.timing(dropdownAnimation, {
-        toValue: 1,
-        duration: 200,
-        useNativeDriver: true,
-      }).start();
-      inputRef.current?.focus();
+  const getNetworkIcon = (api: string) => {
+    return api.toLowerCase().includes('testnet') ? '🧪' : '🌐';
+  };
+
+  const renderApiItem = ({item}: {item: string}) => {
+    const isSelected = item === value;
+
+    return (
+      <TouchableOpacity
+        key={item}
+        style={[
+          styles.apiModalItem,
+          {borderBottomColor: theme.colors.border},
+          isSelected && styles.apiModalItemSelected,
+        ]}
+        onPress={() => selectOption(item)}
+        activeOpacity={0.7}>
+        <Text style={styles.apiModalItemIcon}>{getNetworkIcon(item)}</Text>
+        <Text
+          style={[
+            styles.apiModalItemText,
+            {color: theme.colors.text},
+            isSelected && [
+              styles.apiModalItemTextSelected,
+              {color: theme.colors.primary},
+            ],
+          ]}
+          numberOfLines={1}
+          ellipsizeMode="middle">
+          {item}
+        </Text>
+        {isSelected && (
+          <View
+            style={[styles.apiModalItemCheckContainer, {backgroundColor: theme.colors.primary}]}
+          >
+            <Text style={styles.apiModalItemCheck}>✓</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
+
+
+  const renderListEmpty = () => {
+    if (isLoadingAPIs && !isTestnet) {
+      return (
+        <View style={styles.apiModalLoading}>
+          <Text
+            style={[styles.apiModalLoadingText, {color: theme.colors.textSecondary}]}>Loading API endpoints...</Text>
+        </View>
+      );
     }
+
+    return (
+      <View style={styles.apiModalEmpty}>
+        <Text style={[styles.apiModalEmptyText, {color: theme.colors.textSecondary}]}>No endpoints found</Text>
+      </View>
+    );
   };
 
   const getInputContainerStyle = () => {
@@ -359,142 +406,177 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
   };
 
   return (
-    <View style={styles.apiAutocompleteContainer}>
-      <View style={getInputContainerStyle()}>
-        <TextInput
-          ref={inputRef}
-          style={styles.apiTextInput}
-          returnKeyType="done"
-          value={value}
-          onChangeText={handleTextChange}
-          onFocus={handleFocus}
-          onBlur={handleBlur}
-          placeholder="Your Mempool Endpoint"
-          placeholderTextColor={theme.colors.textSecondary}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        <TouchableOpacity
-          style={styles.apiDropdownButton}
-          onPress={toggleDropdown}
-          activeOpacity={0.6}>
-          <Text style={[styles.apiDropdownIcon, {color: theme.colors.text}]}>
-            {isDropdownVisible ? '▲' : '▼'}
-          </Text>
-        </TouchableOpacity>
+    <>
+      <View style={styles.apiAutocompleteContainer}>
+        <View style={getInputContainerStyle()}>
+          <TextInput
+            ref={inputRef}
+            style={styles.apiTextInput}
+            returnKeyType="done"
+            value={value}
+            onChangeText={handleTextChange}
+            onFocus={handleFocus}
+            onBlur={handleBlur}
+            placeholder="Your Mempool Endpoint"
+            placeholderTextColor={theme.colors.textSecondary}
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={true}
+          />
+          <TouchableOpacity
+            style={styles.apiDropdownButton}
+            onPress={openModal}
+            activeOpacity={0.6}>
+            <Text style={[styles.apiDropdownIcon, {color: theme.colors.text}]}>
+              ▼
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {isDropdownVisible && (
-        <View
-          style={styles.dropdownWrapper}
-          onTouchStart={e => {
-            dbg('Dropdown wrapper touch start');
-            e.stopPropagation();
-          }}
-          onTouchMove={e => {
-            dbg('Dropdown wrapper touch move');
-            e.stopPropagation();
-          }}
-          onTouchEnd={e => {
-            dbg('Dropdown wrapper touch end');
-            e.stopPropagation();
-          }}>
-          <Animated.View
-            ref={dropdownRef}
-            style={[
-              styles.apiDropdownList,
-              {
-                borderColor: theme.colors.border,
-                opacity: dropdownAnimation,
-                transform: [
+      <Modal
+        visible={isModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={closeModal}>
+        <KeyboardAvoidingView
+          style={styles.apiModalKeyboardView}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={0}>
+          <TouchableOpacity
+            style={styles.apiModalBackdrop}
+            activeOpacity={1}
+            onPress={() => {
+              Keyboard.dismiss();
+              closeModal();
+            }}>
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={(e) => e.stopPropagation()}>
+              <Animated.View
+                style={[
+                  styles.apiModalContent,
                   {
-                    translateY: dropdownAnimation.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [-10, 0],
-                    }),
+                    maxHeight: height * 0.8,
+                    opacity: modalAnimation,
+                    transform: [
+                      {
+                        translateY: modalAnimation.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [100, 0],
+                        }),
+                      },
+                    ],
                   },
-                ],
-              },
-            ]}>
-            <ScrollView
-              style={styles.apiDropdownScroll}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="always"
-              nestedScrollEnabled={true}
-              scrollEnabled={true}
-              removeClippedSubviews={false}
-              pointerEvents="auto"
-              onTouchStart={e => {
-                dbg('Dropdown ScrollView touch start');
-                e.stopPropagation();
-              }}
-              onTouchMove={e => {
-                dbg('Dropdown ScrollView touch move');
-                e.stopPropagation();
-              }}
-              onTouchEnd={e => {
-                dbg('Dropdown ScrollView touch end');
-                e.stopPropagation();
-              }}>
-              {isLoadingAPIs && !isTestnet ? (
+                ]}>
                 <View
                   style={[
-                    styles.apiDropdownItem,
+                    styles.apiModalHeader,
                     {borderBottomColor: theme.colors.border},
                   ]}>
-                  <Text
-                    style={[
-                      styles.apiDropdownItemText,
-                      {color: theme.colors.textSecondary},
-                      styles.loadingText,
-                    ]}>
-                    Loading API endpoints...
-                  </Text>
-                </View>
-              ) : (
-                filteredOptions.map((item, index) => (
-                  <TouchableOpacity
-                    key={`${item}-${index}`}
-                    style={[
-                      styles.apiDropdownItem,
-                      {borderBottomColor: theme.colors.border},
-                      index === filteredOptions.length - 1 &&
-                        styles.apiDropdownItemLast,
-                    ]}
-                    onPress={() => {
-                      dbg('Dropdown item pressed:', item);
-                      selectOption(item);
-                    }}
-                    onPressIn={e => {
-                      dbg('Dropdown item press in:', item);
-                      e.stopPropagation();
-                    }}
-                    onPressOut={e => {
-                      dbg('Dropdown item press out:', item);
-                      e.stopPropagation();
-                    }}
-                    activeOpacity={0.7}
-                    delayPressIn={0}
-                    delayPressOut={0}
-                    hitSlop={{top: 5, bottom: 5, left: 5, right: 5}}
-                    accessible={true}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Select ${item}`}>
+                  <View style={styles.apiModalHeaderTop}>
                     <Text
                       style={[
-                        styles.apiDropdownItemText,
+                        styles.apiModalTitle,
                         {color: theme.colors.text},
                       ]}>
-                      {item}
+                      Select API Endpoint
                     </Text>
-                  </TouchableOpacity>
-                ))
-              )}
-            </ScrollView>
-          </Animated.View>
-        </View>
-      )}
-    </View>
+                    <TouchableOpacity
+                      onPress={closeModal}
+                      style={[
+                        styles.apiModalCloseButton,
+                        {backgroundColor: theme.colors.cardBackground},
+                      ]}
+                      activeOpacity={0.6}>
+                      <Text
+                        style={[
+                          styles.apiModalCloseText,
+                          {color: theme.colors.text},
+                        ]}>
+                        ✕
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                <View style={styles.apiModalListWrapper}>
+                  {isLoadingAPIs && !isTestnet ? (
+                    <View style={styles.apiModalLoading}>
+                      <Text
+                        style={[
+                          styles.apiModalLoadingText,
+                          {color: theme.colors.textSecondary},
+                        ]}>
+                        Loading API endpoints...
+                      </Text>
+                    </View>
+                  ) : filteredOptions.length === 0 ? (
+                    <View style={styles.apiModalEmpty}>
+                      <Text
+                        style={[
+                          styles.apiModalEmptyText,
+                          {color: theme.colors.textSecondary},
+                        ]}>
+                        No endpoints found
+                      </Text>
+                    </View>
+                  ) : (
+                    <FlatList
+                      ref={flatListRef}
+                      data={reversedOptions}
+                      renderItem={renderApiItem}
+                      keyExtractor={item => item}
+                      ListEmptyComponent={renderListEmpty}
+                      keyboardShouldPersistTaps="always"
+                      keyboardDismissMode="none"
+                      showsVerticalScrollIndicator={true}
+                      contentContainerStyle={styles.apiModalListContent}
+                      removeClippedSubviews={false}
+                      initialNumToRender={10}
+                      maxToRenderPerBatch={10}
+                      style={styles.apiModalFlatList}
+                    />
+                  )}
+                </View>
+                <View style={styles.apiModalFooter}>
+                  <View
+                    style={[
+                      styles.apiModalSearchContainer,
+                      {
+                        backgroundColor: theme.colors.cardBackground,
+                        borderColor: theme.colors.border,
+                      },
+                    ]}>
+                    <Text style={styles.apiModalSearchIcon}>🔍</Text>
+                    <TextInput
+                      ref={searchInputRef}
+                      style={[styles.apiModalSearchInput, {color: theme.colors.text}]}
+                      placeholder="Search endpoints..."
+                      placeholderTextColor={theme.colors.textSecondary}
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      returnKeyType="search"
+                      onSubmitEditing={() => Keyboard.dismiss()}
+                      blurOnSubmit={false}
+                    />
+                    {searchQuery.length > 0 && (
+                      <TouchableOpacity
+                        onPress={() => setSearchQuery('')}
+                        style={styles.apiModalSearchClear}
+                        activeOpacity={0.6}>
+                        <Text style={[styles.apiModalSearchClearText, {color: theme.colors.textSecondary}]}>✕</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              </Animated.View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
+    </>
   );
 };
 
@@ -525,7 +607,6 @@ const getSectionIcon = (title: string): any => {
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   // Use UserContext for reactive network and API state
   const {
-    activeApiProvider: apiBase,
     setActiveNetwork,
     setActiveApiProvider,
   } = useUser();
@@ -895,8 +976,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       flex: 1,
       backgroundColor: theme.colors.background,
     },
+    scrollView: {
+      flex: 1,
+    },
     scrollContent: {
+      flexGrow: 1,
       padding: 16,
+      paddingBottom: 24,
     },
     header: {
       paddingHorizontal: 16,
@@ -984,14 +1070,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     apiAutocompleteContainer: {
       position: 'relative',
       marginBottom: 8,
-      zIndex: 10000,
-    },
-    dropdownWrapper: {
-      position: 'absolute',
-      top: '100%',
-      left: 0,
-      right: 0,
-      zIndex: 10001,
     },
     apiInputContainer: {
       flexDirection: 'row',
@@ -1035,45 +1113,162 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       fontSize: 14,
       fontWeight: '600',
     },
-    apiDropdownList: {
-      position: 'absolute',
-      top: '100%',
-      left: 0,
-      right: 0,
-      backgroundColor: theme.colors.cardBackground,
-      borderWidth: 1,
-      borderRadius: 8,
-      borderTopWidth: 0,
-      borderTopLeftRadius: 0,
-      borderTopRightRadius: 0,
-      zIndex: 9999,
-      elevation: 10,
+    apiModalContainer: {
+      flex: 1,
+      justifyContent: 'flex-end',
+    },
+    apiModalKeyboardView: {
+      flex: 1,
+      justifyContent: 'flex-end',
+    },
+    apiModalBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.6)',
+      justifyContent: 'flex-end',
+    },
+    apiModalContent: {
+      backgroundColor: theme.colors.background,
+      borderTopLeftRadius: 10,
+      borderTopRightRadius: 10,
+      paddingBottom: Platform.OS === 'ios' ? 17 : 10,
+      paddingTop: 5,
       shadowColor: '#000',
-      shadowOffset: {width: 0, height: 4},
-      shadowOpacity: 0.15,
-      shadowRadius: 8,
-      marginTop: -1,
-      overflow: 'visible',
+      shadowOffset: {width: 0, height: -4},
+      shadowOpacity: 0.2,
+      shadowRadius: 12,
+      elevation: 20,
+      flexDirection: 'column',
     },
-    apiDropdownScroll: {
-      maxHeight: 200,
+    apiModalListWrapper: {
+      height: 300,
+      flexShrink: 0,
     },
-    apiDropdownItem: {
+    apiModalFlatList: {
+      flex: 1,
+    },
+    apiModalListContainer: {
+      minHeight: 200,
+      paddingBottom: 20,
+    },
+    apiModalHeader: {
+      paddingTop: 12,
+      paddingBottom: 12,
+      borderBottomWidth: 1,
+    },
+    apiModalHeaderTop: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 20,
+      paddingBottom: 0,
+    },
+    apiModalFooter: {
+      paddingHorizontal: 16,
+      paddingTop: 16,
+      paddingBottom: Platform.OS === 'ios' ? 32 : 24,
+    },
+    apiModalTitle: {
+      fontSize: 16,
+      fontWeight: '700',
+      letterSpacing: -0.5,
+    },
+    apiModalCloseButton: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    apiModalCloseText: {
+      fontSize: 18,
+      fontWeight: '600',
+    },
+    apiModalSearchContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginHorizontal: 16,
+      marginTop: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderRadius: 12,
+      borderWidth: 1,
+    },
+    apiModalSearchIcon: {
+      fontSize: 16,
+      marginRight: 8,
+    },
+    apiModalSearchInput: {
+      flex: 1,
+      fontSize: 15,
+      padding: 0,
+      margin: 0,
+    },
+    apiModalSearchClear: {
+      padding: 4,
+      marginLeft: 8,
+    },
+    apiModalSearchClearText: {
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    apiModalListContent: {
+      paddingTop: 4,
+      paddingBottom: 4,
+    },
+    apiModalItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
       paddingHorizontal: 16,
       paddingVertical: 14,
-      borderBottomWidth: 1,
+      marginHorizontal: 16,
+      marginVertical: 0,
+      borderRadius: 0,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      minHeight: 56,
+    },
+    apiModalItemSelected: {
       backgroundColor: theme.colors.cardBackground,
-      minHeight: 44,
+    },
+    apiModalItemIcon: {
+      fontSize: 18,
+      marginRight: 12,
+    },
+    apiModalItemText: {
+      flex: 1,
+      fontSize: 15,
+      lineHeight: 20,
+      letterSpacing: -0.2,
+    },
+    apiModalItemTextSelected: {
+      fontWeight: '600',
+    },
+    apiModalItemCheckContainer: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
       justifyContent: 'center',
+      alignItems: 'center',
+      marginLeft: 8,
     },
-    apiDropdownItemLast: {
-      borderBottomWidth: 0,
-    },
-    apiDropdownItemText: {
+    apiModalItemCheck: {
       fontSize: 14,
-      lineHeight: 18,
+      fontWeight: 'bold',
+      color: '#FFFFFF',
     },
-    loadingText: {
+    apiModalLoading: {
+      padding: 48,
+      alignItems: 'center',
+    },
+    apiModalLoadingText: {
+      fontSize: 14,
+      fontStyle: 'italic',
+    },
+    apiModalEmpty: {
+      padding: 48,
+      alignItems: 'center',
+    },
+    apiModalEmptyText: {
+      fontSize: 14,
       fontStyle: 'italic',
     },
     button: {
@@ -1087,6 +1282,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     },
     backupButton: {
       backgroundColor: theme.colors.primary,
+    },
+    resetButton: {
+      backgroundColor: theme.colors.accent,
     },
     buttonText: {
       color: theme.colors.textOnPrimary,
@@ -1111,6 +1309,61 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     linkText: {
       color: theme.colors.primary,
       fontWeight: 'bold',
+      textDecorationLine: 'underline',
+    },
+    aboutInfoRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 4,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: theme.colors.border,
+    },
+    aboutLabel: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: theme.colors.text,
+      letterSpacing: -0.2,
+    },
+    aboutValue: {
+      fontSize: 15,
+      fontWeight: '500',
+      color: theme.colors.textSecondary,
+      letterSpacing: -0.2,
+    },
+    aboutSection: {
+      marginTop: 20,
+      padding: 16,
+      backgroundColor: theme.colors.cardBackground,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.colors.border,
+    },
+    aboutSectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 10,
+    },
+    aboutSectionIcon: {
+      fontSize: 20,
+      marginRight: 10,
+    },
+    aboutSectionTitle: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: theme.colors.text,
+      letterSpacing: -0.3,
+    },
+    aboutSectionDescription: {
+      fontSize: 14,
+      color: theme.colors.textSecondary,
+      lineHeight: 22,
+      letterSpacing: -0.1,
+    },
+    aboutLinkText: {
+      color: theme.colors.primary,
+      fontWeight: '600',
       textDecorationLine: 'underline',
     },
     termsLink: {
@@ -1208,6 +1461,100 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     disabledButton: {
       backgroundColor: theme.colors.disabled,
     },
+    apiInfoModalContent: {
+      backgroundColor: theme.colors.background,
+      borderRadius: 16,
+      width: '85%',
+      maxWidth: 400,
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 4},
+      shadowOpacity: 0.3,
+      shadowRadius: 12,
+      elevation: 20,
+    },
+    apiInfoModalHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingTop: 20,
+      paddingBottom: 16,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: theme.colors.border,
+    },
+    apiInfoModalIconContainer: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: theme.colors.cardBackground,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    apiInfoModalIcon: {
+      fontSize: 20,
+    },
+    apiInfoModalTitle: {
+      flex: 1,
+      fontSize: 18,
+      fontWeight: '700',
+      color: theme.colors.text,
+      marginLeft: 12,
+      letterSpacing: -0.3,
+    },
+    apiInfoModalCloseButton: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: theme.colors.cardBackground,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    apiInfoModalCloseText: {
+      fontSize: 18,
+      fontWeight: '600',
+      color: theme.colors.textSecondary,
+    },
+    apiInfoModalBody: {
+      padding: 20,
+    },
+    apiInfoSection: {
+      marginBottom: 20,
+    },
+    apiInfoSectionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    apiInfoSectionIcon: {
+      fontSize: 20,
+      marginRight: 10,
+    },
+    apiInfoSectionTitle: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: theme.colors.text,
+      letterSpacing: -0.2,
+    },
+    apiInfoSectionText: {
+      fontSize: 14,
+      color: theme.colors.textSecondary,
+      lineHeight: 22,
+      letterSpacing: -0.1,
+      marginLeft: 30,
+    },
+    apiInfoModalButton: {
+      marginHorizontal: 20,
+      marginBottom: 20,
+      paddingVertical: 14,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    apiInfoModalButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
+      letterSpacing: -0.2,
+    },
     networkOption: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1302,10 +1649,14 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <ScrollView
-        style={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={true}
         keyboardShouldPersistTaps="handled"
-        nestedScrollEnabled={true}>
+        nestedScrollEnabled={true}
+        bounces={true}
+        scrollEventThrottle={16}
+        overScrollMode="auto">
         {/* Backup & Reset Section */}
         <CollapsibleSection
           title="Security"
@@ -1387,10 +1738,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           {/* API Configuration */}
           <View style={styles.apiItem}>
             <Text style={styles.apiName}>API Endpoint Configuration</Text>
-            <Text style={styles.apiDescription}>
-              Set your mempool API endpoint
-              {isTestnet ? ' (Testnet)' : ' (Mainnet)'}.
-            </Text>
           </View>
 
           <APIAutocomplete
@@ -1418,7 +1765,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.button, styles.backupButton]}
+            style={[styles.button, styles.resetButton]}
             onPress={() => {
               HapticFeedback.light();
               resetAPI();
@@ -1533,17 +1880,24 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           onToggle={() => toggleSection('about')}
           styles={styles}
           theme={theme}>
-          <Text style={styles.apiName}>App Version</Text>
-          <Text style={styles.apiDescription}> {appVersion}</Text>
-          <Text style={styles.apiName}>Build Number</Text>
-          <Text style={styles.apiDescription}> {buildNumber}</Text>
+          <View style={styles.aboutInfoRow}>
+            <Text style={styles.aboutLabel}>App Version</Text>
+            <Text style={styles.aboutValue}>{appVersion}</Text>
+          </View>
+          <View style={styles.aboutInfoRow}>
+            <Text style={styles.aboutLabel}>Build Number</Text>
+            <Text style={styles.aboutValue}>{buildNumber}</Text>
+          </View>
 
-          <View style={styles.apiItem}>
-            <Text style={styles.apiName}>Mempool.Space</Text>
-            <Text style={styles.apiDescription}>
-              Used for balances, history and fees. Learn more:{' '}
+          <View style={styles.aboutSection}>
+            <View style={styles.aboutSectionHeader}>
+              <Text style={styles.aboutSectionIcon}>📡</Text>
+              <Text style={styles.aboutSectionTitle}>Mempool.Space</Text>
+            </View>
+            <Text style={styles.aboutSectionDescription}>
+              Used for balances, history and fees.{'\n'}Learn more:{' '}
               <Text
-                style={styles.linkText}
+                style={styles.aboutLinkText}
                 onPress={() => {
                   HapticFeedback.light();
                   Linking.openURL('https://mempool.space/docs/api/rest');
@@ -1553,9 +1907,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </Text>
           </View>
 
-          <View style={styles.apiItem}>
-            <Text style={styles.apiName}>Data & Security</Text>
-            <Text style={styles.apiDescription}>
+          <View style={styles.aboutSection}>
+            <View style={styles.aboutSectionHeader}>
+              <Text style={styles.aboutSectionIcon}>🔒</Text>
+              <Text style={styles.aboutSectionTitle}>Data & Security</Text>
+            </View>
+            <Text style={styles.aboutSectionDescription}>
               We collect no personal data and run no backend. Keys and signing
               happen on your devices. Self‑hosted mempool APIs can improve
               privacy.
@@ -1821,34 +2178,73 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         transparent={true}
         animationType="fade"
         onRequestClose={() => setIsApiInfoVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Image
-                source={require('../assets/about-icon.png')}
-                style={styles.modalIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.modalTitle}>About API Endpoints</Text>
-            </View>
-            <Text style={styles.modalDescription}>
-              Using your own mempool.space server can improve privacy by keeping
-              your wallet queries off public servers. This reduces third‑party
-              insight into your addresses and activity. Enter your self‑hosted
-              URL above or pick from the suggestions.
-            </Text>
-            <View style={styles.modalActions}>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setIsApiInfoVisible(false)}>
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={(e) => e.stopPropagation()}>
+            <View style={styles.apiInfoModalContent}>
+              <View style={styles.apiInfoModalHeader}>
+                <View style={styles.apiInfoModalIconContainer}>
+                  <Text style={styles.apiInfoModalIcon}>🔒</Text>
+                </View>
+                <Text style={styles.apiInfoModalTitle}>About API Endpoints</Text>
+                <TouchableOpacity
+                  style={styles.apiInfoModalCloseButton}
+                  onPress={() => {
+                    HapticFeedback.light();
+                    setIsApiInfoVisible(false);
+                  }}
+                  activeOpacity={0.6}>
+                  <Text style={styles.apiInfoModalCloseText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.apiInfoModalBody}>
+                <View style={styles.apiInfoSection}>
+                  <View style={styles.apiInfoSectionRow}>
+                    <Text style={styles.apiInfoSectionIcon}>🌐</Text>
+                    <Text style={styles.apiInfoSectionTitle}>Privacy & Control</Text>
+                  </View>
+                  <Text style={styles.apiInfoSectionText}>
+                    Using your own mempool.space server can improve privacy by keeping
+                    your wallet queries off public servers.
+                  </Text>
+                </View>
+                <View style={styles.apiInfoSection}>
+                  <View style={styles.apiInfoSectionRow}>
+                    <Text style={styles.apiInfoSectionIcon}>🔍</Text>
+                    <Text style={styles.apiInfoSectionTitle}>Reduce Tracking</Text>
+                  </View>
+                  <Text style={styles.apiInfoSectionText}>
+                    This reduces third‑party insight into your addresses and activity.
+                  </Text>
+                </View>
+                <View style={styles.apiInfoSection}>
+                  <View style={styles.apiInfoSectionRow}>
+                    <Text style={styles.apiInfoSectionIcon}>⚙️</Text>
+                    <Text style={styles.apiInfoSectionTitle}>How to Use</Text>
+                  </View>
+                  <Text style={styles.apiInfoSectionText}>
+                    Enter your self‑hosted URL above or pick from the suggestions.
+                  </Text>
+                </View>
+              </View>
               <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
+                style={[styles.apiInfoModalButton, {backgroundColor: theme.colors.primary}]}
                 onPress={() => {
                   HapticFeedback.light();
                   setIsApiInfoVisible(false);
-                }}>
-                <Text style={styles.buttonText}>Close</Text>
+                }}
+                activeOpacity={0.8}>
+                <Text style={[styles.apiInfoModalButtonText, {color: theme.colors.textOnPrimary}]}>
+                  Got it
+                </Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
     </SafeAreaView>
   );
