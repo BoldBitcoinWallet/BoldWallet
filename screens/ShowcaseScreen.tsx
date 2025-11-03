@@ -386,7 +386,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       borderBottomColor: 'rgba(0,0,0,0.05)',
     },
     modalTitle: {
-      fontSize: 22,
+      fontSize: 20,
       fontWeight: '700',
       marginLeft: 12,
       color: theme.colors.text,
@@ -395,14 +395,17 @@ const ShowcaseScreen = ({navigation}: any) => {
     closeButton: {
       width: 40,
       height: 40,
-      borderRadius: 20,
-      backgroundColor: 'rgba(0,0,0,0.05)',
       alignItems: 'center',
       justifyContent: 'center',
       marginLeft: 12,
+      backgroundColor: theme.colors.subPrimary + '10',
+      borderRadius: 32,
+      borderWidth: 1,
+      paddingTop: 2,
+      borderColor: theme.colors.border + '10',
     },
     closeButtonText: {
-      fontSize: 24,
+      fontSize: 20,
       color: theme.colors.text,
       fontWeight: '600',
     },
@@ -444,21 +447,16 @@ const ShowcaseScreen = ({navigation}: any) => {
     },
     modalActions: {
       flexDirection: 'row',
-      gap: 12,
-      paddingHorizontal: 24,
-      paddingBottom: 24,
       justifyContent: 'space-between',
       alignItems: 'center',
     },
     modalActionButton: {
       flex: 1,
-      paddingVertical: 14,
       borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
       fontWeight: '600',
       flexDirection: 'row',
-      gap: 2,
     },
     modalCancelButton: {
       backgroundColor: 'rgba(0,0,0,0.05)',
@@ -484,8 +482,8 @@ const ShowcaseScreen = ({navigation}: any) => {
       fontWeight: '600',
     },
     modalHeaderIconImage: {
-      width: 20,
-      height: 20,
+      width: 32,
+      height: 32,
       tintColor: theme.colors.primary,
     },
     buttonIcon: {
@@ -495,7 +493,9 @@ const ShowcaseScreen = ({navigation}: any) => {
     },
     modeOptionsContainer: {
       paddingVertical: 8,
+      flexDirection: 'row',
       gap: 12,
+      width: '100%',
     },
     modeHintWrapper: {
       alignItems: 'center',
@@ -522,28 +522,23 @@ const ShowcaseScreen = ({navigation}: any) => {
       textAlign: 'center',
     },
     modeOptionCard: {
-      backgroundColor: theme.colors.primary,
-      borderRadius: 14,
-      paddingHorizontal: 12,
+      borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
-      width: '100%',
-      height: 60,
+      flex: 1,
+      paddingTop: 18,
+      paddingBottom: 12,
+      position: 'relative',
     },
     modeOptionCardPrimary: {
-      backgroundColor: theme.colors.cardBackground,
-      borderWidth: 1.5,
-      borderColor: theme.colors.primary,
+      backgroundColor: theme.colors.white,
+      borderWidth: 1,
+      borderColor: theme.colors.border + '40',
     },
     modeOptionCardSelected: {
-      backgroundColor: theme.colors.background,
+      backgroundColor: theme.colors.subPrimary + '10',
       borderWidth: 1.5,
       borderColor: theme.colors.subPrimary,
-      shadowColor: '#000',
-      shadowOffset: {width: 0, height: 4},
-      shadowOpacity: 0.15,
-      shadowRadius: 8,
-      elevation: 6,
     },
     modeOptionHeader: {
       flexDirection: 'row',
@@ -551,60 +546,75 @@ const ShowcaseScreen = ({navigation}: any) => {
       justifyContent: 'space-between',
       width: '100%',
     },
+    modeOptionContent: {
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '100%',
+      gap: 10,
+    },
     modeOptionIcon: {
-      width: 28,
-      height: 28,
+      width: 26,
+      height: 26,
       marginBottom: 0,
     },
     modeIconRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-between',
-      width: 96,
-      marginRight: 8,
+      justifyContent: 'center',
+      gap: 4,
+    },
+    modeIconRowTrio: {
+      gap: 2,
     },
     modeIconWrapper: {
       position: 'relative',
-      width: 96,
-      height: 40,
-      marginRight: 8,
-      marginTop: 12,
-      justifyContent: 'flex-start',
+      justifyContent: 'center',
+      alignItems: 'center',
+      width: '100%',
     },
     modeConnectorLine: {
       position: 'absolute',
-      left: 12,
-      right: 12,
+      left: '50%',
+      marginLeft: -15,
+      width: 30,
       top: 30,
       height: 2,
       borderRadius: 1,
       backgroundColor: theme.colors.border,
-      opacity: 0.6,
+      opacity: 0.4,
       zIndex: 0,
+    },
+    modeConnectorLineTrio: {
+      marginLeft: -28,
+      width: 56,
     },
     modeConnectorDot: {
       position: 'absolute',
       top: 27,
-      left: 12,
+      left: '50%',
+      marginLeft: -15,
       width: 6,
       height: 6,
       borderRadius: 3,
       zIndex: 0,
     },
+    modeConnectorDotTrio: {
+      marginLeft: -28,
+    },
     modeOptionTitle: {
       color: theme.colors.background,
       fontSize: 16,
       fontWeight: 'bold',
-      textAlign: 'left',
-      marginRight: 24,
-      flexShrink: 1,
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      textAlign: 'center',
     },
     modeSelectedCheck: {
+      position: 'absolute',
+      top: 10,
+      right: 10,
       width: 18,
       height: 18,
       tintColor: theme.colors.primary,
-      marginLeft: 8,
     },
     modeSelectedCheckHidden: {
       opacity: 0,
@@ -633,11 +643,11 @@ const ShowcaseScreen = ({navigation}: any) => {
       lineHeight: 18,
     },
     modeSelectedHint: {
+      opacity: 0.5,
       marginTop: 14,
-      paddingVertical: 10,
-      paddingHorizontal: 12,
-      borderRadius: 10,
-      backgroundColor: theme.colors.cardBackground,
+      backgroundColor: theme.colors.white,
+      padding: 12,
+      borderRadius: 12,
       borderWidth: 1,
       borderColor: theme.colors.border,
     },
@@ -648,17 +658,18 @@ const ShowcaseScreen = ({navigation}: any) => {
       width: '100%',
     },
     modeSelectedHintIcon: {
-      width: 16,
-      height: 16,
-      tintColor: theme.colors.accent,
+      width: 20,
+      height: 20,
+      tintColor: theme.colors.primary,
     },
     modeSelectedHintText: {
-      color: theme.colors.text,
+      color: theme.colors.primary,
       fontSize: 14,
       textAlign: 'left',
       flex: 1,
       flexWrap: 'wrap',
       maxWidth: '100%',
+      fontWeight: 'normal',
     },
     modeSelectedHintTextBold: {
       fontWeight: 'bold',
@@ -886,7 +897,10 @@ const ShowcaseScreen = ({navigation}: any) => {
               <Text style={styles.modalTitle}>Choose Your Setup</Text>
               <TouchableOpacity
                 style={styles.closeButton}
-                onPress={() => setIsModeModalVisible(false)}
+                onPress={() => {
+                  HapticFeedback.medium();
+                  setIsModeModalVisible(false);
+                }}
                 activeOpacity={0.7}>
                 <Text style={styles.closeButtonText}>✕</Text>
               </TouchableOpacity>
@@ -905,9 +919,18 @@ const ShowcaseScreen = ({navigation}: any) => {
                     setSelectedMode('duo');
                   }}
                   activeOpacity={0.8}>
-                  <View style={styles.modeOptionHeader}>
+                  {selectedMode === 'duo' && (
+                    <Image
+                      source={require('../assets/check-icon.png')}
+                      style={styles.modeSelectedCheck}
+                      resizeMode="contain"
+                    />
+                  )}
+                  <View style={styles.modeOptionContent}>
                     <View style={styles.modeIconWrapper}>
-                      {selectedMode === 'duo' && <View style={styles.modeConnectorLine} />}
+                      {selectedMode === 'duo' && (
+                        <View style={styles.modeConnectorLine} />
+                      )}
                       {selectedMode === 'duo' && (
                         <Animated.View
                           style={[
@@ -918,7 +941,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                                 {
                                   translateX: connectorAnim.interpolate({
                                     inputRange: [0, 1],
-                                    outputRange: [0, 66],
+                                    outputRange: [0, 24],
                                   }),
                                 },
                               ],
@@ -945,22 +968,13 @@ const ShowcaseScreen = ({navigation}: any) => {
                         />
                       </View>
                     </View>
-                      <Text
+                    <Text
                       style={[
                         styles.modeOptionTitle,
                         {color: theme.colors.primary},
                       ]}>
-                        Basic
+                      Basic
                     </Text>
-                    <Image
-                      source={require('../assets/check-icon.png')}
-                      style={[
-                        styles.modeSelectedCheck,
-                        selectedMode !== 'duo' &&
-                          styles.modeSelectedCheckHidden,
-                      ]}
-                      resizeMode="contain"
-                    />
                   </View>
                 </TouchableOpacity>
 
@@ -975,20 +989,30 @@ const ShowcaseScreen = ({navigation}: any) => {
                     setSelectedMode('trio');
                   }}
                   activeOpacity={0.9}>
-                  <View style={styles.modeOptionHeader}>
+                  {selectedMode === 'trio' && (
+                    <Image
+                      source={require('../assets/check-icon.png')}
+                      style={styles.modeSelectedCheck}
+                      resizeMode="contain"
+                    />
+                  )}
+                  <View style={styles.modeOptionContent}>
                     <View style={styles.modeIconWrapper}>
-                      {selectedMode === 'trio' && <View style={styles.modeConnectorLine} />}
+                      {selectedMode === 'trio' && (
+                        <View style={[styles.modeConnectorLine, styles.modeConnectorLineTrio]} />
+                      )}
                       {selectedMode === 'trio' && (
                         <Animated.View
                           style={[
                             styles.modeConnectorDot,
+                            styles.modeConnectorDotTrio,
                             {
                               backgroundColor: theme.colors.primary,
                               transform: [
                                 {
                                   translateX: connectorAnim.interpolate({
                                     inputRange: [0, 1],
-                                    outputRange: [0, 66],
+                                    outputRange: [0, 50],
                                   }),
                                 },
                               ],
@@ -996,7 +1020,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                           ]}
                         />
                       )}
-                      <View style={styles.modeIconRow}>
+                      <View style={[styles.modeIconRow, styles.modeIconRowTrio]}>
                         <Image
                           source={require('../assets/phone-icon.png')}
                           style={[
@@ -1023,22 +1047,13 @@ const ShowcaseScreen = ({navigation}: any) => {
                         />
                       </View>
                     </View>
-                      <Text
+                    <Text
                       style={[
                         styles.modeOptionTitle,
                         {color: theme.colors.primary},
                       ]}>
-                        Flexi
+                      Flexi
                     </Text>
-                    <Image
-                      source={require('../assets/check-icon.png')}
-                      style={[
-                        styles.modeSelectedCheck,
-                        selectedMode !== 'trio' &&
-                          styles.modeSelectedCheckHidden,
-                      ]}
-                      resizeMode="contain"
-                    />
                   </View>
                 </TouchableOpacity>
               </View>
@@ -1053,13 +1068,19 @@ const ShowcaseScreen = ({navigation}: any) => {
                     />
                     {selectedMode === 'duo' ? (
                       <Text style={styles.modeSelectedHintText}>
-                        <Text style={styles.modeSelectedHintTextBold}>Basic (2/2)</Text>
-                        : two devices needed for wallet setup. both of them must approve transactions when spending funds.
+                        <Text style={styles.modeSelectedHintTextBold}>
+                          Basic (2/2)
+                        </Text>
+                        : two devices needed for wallet setup. both of them must
+                        approve transactions when spending funds.
                       </Text>
                     ) : (
                       <Text style={styles.modeSelectedHintText}>
-                        <Text style={styles.modeSelectedHintTextBold}>Flexi (2/3)</Text>
-                        : three devices needed for wallet setup. any 2 of them must approve transactions when spending funds.
+                        <Text style={styles.modeSelectedHintTextBold}>
+                          Flexi (2/3)
+                        </Text>
+                        : three devices needed for wallet setup. any 2 of them
+                        must approve transactions when spending funds.
                       </Text>
                     )}
                   </View>

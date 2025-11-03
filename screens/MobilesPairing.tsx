@@ -1722,11 +1722,16 @@ const MobilesPairing = ({navigation}: any) => {
       justifyContent: 'center',
       position: 'relative',
       marginBottom: 20,
+      paddingHorizontal: 8,
     },
     deviceWrapper: {
       alignItems: 'center',
       justifyContent: 'center',
       position: 'relative',
+      minWidth: 80,
+    },
+    deviceWrapperTrio: {
+      minWidth: 70,
     },
     deviceIcon: {
       width: 32,
@@ -1756,14 +1761,16 @@ const MobilesPairing = ({navigation}: any) => {
       lineHeight: 18,
     },
     deviceNameTrio: {
-      maxWidth: 90,
-      fontSize: 12,
+      maxWidth: 75,
+      fontSize: 11,
+      lineHeight: 14,
+      width: 75,
     },
     statusLine: {
-      width: 80,
+      width: 60,
       height: 4,
       backgroundColor: theme.colors.border,
-      marginHorizontal: 8,
+      marginHorizontal: 4,
       borderRadius: 2,
       overflow: 'hidden',
       shadowColor: theme.colors.shadowColor,
@@ -1771,6 +1778,10 @@ const MobilesPairing = ({navigation}: any) => {
       shadowOpacity: 0.1,
       shadowRadius: 2,
       elevation: 1,
+    },
+    statusLineTrio: {
+      width: 40,
+      marginHorizontal: 2,
     },
     connectionLine: {
       position: 'absolute',
@@ -2541,7 +2552,7 @@ const MobilesPairing = ({navigation}: any) => {
             {!mpcDone && (isPairing || peerIP) && (
               <View style={styles.informationCard}>
                 <View style={styles.deviceContainer}>
-                  <View style={styles.deviceWrapper}>
+                  <View style={[styles.deviceWrapper, isTrio && styles.deviceWrapperTrio]}>
                     <Image
                       source={require('../assets/phone-icon.png')}
                       style={[
@@ -2563,7 +2574,7 @@ const MobilesPairing = ({navigation}: any) => {
                       </Text>
                     )}
                   </View>
-                  <View style={styles.statusLine}>
+                  <View style={[styles.statusLine, isTrio && styles.statusLineTrio]}>
                     <Animated.View
                       style={[
                         styles.connectionLine,
@@ -2578,7 +2589,7 @@ const MobilesPairing = ({navigation}: any) => {
                   </View>
                   {isTrio && (
                     <>
-                      <View style={styles.deviceWrapper}>
+                      <View style={[styles.deviceWrapper, isTrio && styles.deviceWrapperTrio]}>
                         <Image
                           source={require('../assets/phone-icon.png')}
                           style={[
@@ -2602,7 +2613,7 @@ const MobilesPairing = ({navigation}: any) => {
                           </Text>
                         )}
                       </View>
-                      <View style={styles.statusLine}>
+                      <View style={[styles.statusLine, isTrio && styles.statusLineTrio]}>
                         <Animated.View
                           style={[
                             styles.connectionLine,
@@ -2617,7 +2628,7 @@ const MobilesPairing = ({navigation}: any) => {
                       </View>
                     </>
                   )}
-                  <View style={styles.deviceWrapper}>
+                  <View style={[styles.deviceWrapper, isTrio && styles.deviceWrapperTrio]}>
                     <Image
                       source={require('../assets/phone-icon.png')}
                       style={[
