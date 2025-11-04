@@ -56,10 +56,12 @@ export interface Styles {
   partyValue: TextStyle;
   actions: ViewStyle;
   sendButton: ViewStyle;
+  sendButtonText: TextStyle;
   addressTypeModalButton: ViewStyle;
   addressTypeButtonText: TextStyle;
   addressTypeButtonIcon: ImageStyle;
   receiveButton: ViewStyle;
+  receiveButtonText: TextStyle;
   modalOverlay: ViewStyle;
   modalContent: ViewStyle;
   modalText: TextStyle;
@@ -426,6 +428,16 @@ export const createStyles = (theme: Theme): Styles => ({
     marginBottom: 10,
     textAlign: 'center' as const,
     color: theme.colors.text,
+  },
+  receiveButtonText: {
+    color: theme.colors.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  sendButtonText: {
+    color: theme.colors.white,
+    fontSize: 16,
+    fontWeight: '600',
   },
   actionButtonText: {
     color: '#fff',

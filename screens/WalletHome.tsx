@@ -1320,7 +1320,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 style={styles.actionButtonIcon}
                 resizeMode="contain"
               />
-              <Text style={styles.actionButtonText}>Send</Text>
+              <Text style={styles.sendButtonText}>Send</Text>
             </TouchableOpacity>
             {/* Lock icon button replaces address type change button */}
             <TouchableOpacity
@@ -1347,7 +1347,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 style={styles.actionButtonIcon}
                 resizeMode="contain"
               />
-              <Text style={styles.actionButtonText}>Receive</Text>
+              <Text style={styles.receiveButtonText}>Receive</Text>
             </TouchableOpacity>
           </View>
         </View>

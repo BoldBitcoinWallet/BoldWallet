@@ -455,7 +455,7 @@ const LoadingScreen = ({onRetry}: any) => {
               return (
                 <Animated.Image
                   key={p.id}
-                  source={require('../assets/bold-icon.png')}
+                  source={require('../assets/bitcoin-icon.png')}
                   style={[
                     styles.particle,
                     {
