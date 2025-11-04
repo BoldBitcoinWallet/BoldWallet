@@ -8,7 +8,6 @@ import {
   Image,
   Animated,
   Easing,
-  Platform,
 } from 'react-native';
 import {useTheme} from '../theme';
 import {HapticFeedback} from '../utils';
@@ -329,8 +328,8 @@ const LoadingScreen = ({onRetry}: any) => {
       pointerEvents: 'none',
     },
     storeIcon: {
-      width: 120,
-      height: 120,
+      width: 200,
+      height: 200,
     },
     button: {
       flexDirection: 'row',
@@ -456,7 +455,7 @@ const LoadingScreen = ({onRetry}: any) => {
               return (
                 <Animated.Image
                   key={p.id}
-                  source={require('../assets/logo.png')}
+                  source={require('../assets/bold-icon.png')}
                   style={[
                     styles.particle,
                     {
@@ -490,7 +489,7 @@ const LoadingScreen = ({onRetry}: any) => {
             <Animated.View style={{transform: [{scale: logoScale}]}}>
               <Image
                 style={styles.storeIcon}
-                source={require('../assets/logo.png')}
+                source={require('../assets/bold-bitcoin-icon.png')}
               />
             </Animated.View>
           </TouchableOpacity>

@@ -601,7 +601,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setLegacyAddress(legacyAddr);
         setSegwitAddress(segwitAddr);
         setSegwitCompatibleAddress(segwitCompAddr);
-        setParty(ks.local_party_key);
+
+        const shareID = ks.local_party_key;
+        const shareType =
+          ks.keygen_committee_keys.length === 2 ? 'Basic' : 'Flexi';
+        setParty(shareID + ' • ' + shareType);
+
 
         // Generate and store current address
         const btcAddress = await BBMTLibNativeModule.btcAddress(
@@ -971,7 +976,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setLegacyAddress(legacyAddr);
         setSegwitAddress(segwitAddr);
         setSegwitCompatibleAddress(segwitCompAddr);
-        setParty(ks.local_party_key);
+
+        const shareID = ks.local_party_key;
+        const shareType =
+          ks.keygen_committee_keys.length === 2 ? 'Basic' : 'Flexi';
+        setParty(shareID + ' • ' + shareType);
 
         // Get current address type and generate address
         const currentAddressType = addrType;
@@ -1649,7 +1658,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 source={require('../assets/key-icon.png')}
                 style={styles.modalHeaderIconCompact}
               />
-              <Text style={styles.modalHeaderTitleCompact}>Device Keyshare</Text>
+              <Text style={styles.modalHeaderTitleCompact}>
+                Device Keyshare
+              </Text>
             </View>
 
             <Text style={styles.modalTextCompact}>
@@ -1660,7 +1671,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
             <View style={styles.warningBoxCompact}>
               <Text style={styles.warningTextCompact}>
-                ⚠️ Keep keyshares safe. Losing a device or backup permanently locks your Bitcoin.
+                ⚠️ Keep keyshares safe. Losing a device or backup permanently
+                locks your Bitcoin.
               </Text>
             </View>
 
