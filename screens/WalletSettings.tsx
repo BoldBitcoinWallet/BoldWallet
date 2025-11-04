@@ -1077,6 +1077,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     },
     toggleLabel: {
       fontSize: 14,
+      fontWeight: '600',
       color: theme.colors.text,
     },
     toggleDescription: {
@@ -1384,8 +1385,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginBottom: 10,
     },
     aboutSectionIcon: {
-      fontSize: 20,
+      width: 20,
+      height: 20,
       marginRight: 10,
+      tintColor: theme.colors.text,
     },
     aboutSectionTitle: {
       fontSize: 16,
@@ -1862,7 +1865,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           styles={styles}
           theme={theme}>
           <Text style={styles.toggleDescription}>
-            Enable vibration feedback.
+            Enable vibration feedback. OS settings may override this.
           </Text>
           <View style={styles.toggleContainer}>
             <Text style={styles.toggleLabel}>Haptics Off</Text>
@@ -1922,7 +1925,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
           <View style={styles.aboutSection}>
             <View style={styles.aboutSectionHeader}>
-              <Text style={styles.aboutSectionIcon}>📡</Text>
+              <Image
+                source={require('../assets/api-icon.png')}
+                style={styles.aboutSectionIcon}
+                resizeMode="contain"
+              />
               <Text style={styles.aboutSectionTitle}>Mempool.Space</Text>
             </View>
             <Text style={styles.aboutSectionDescription}>
@@ -1941,7 +1948,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
           <View style={styles.aboutSection}>
             <View style={styles.aboutSectionHeader}>
-              <Text style={styles.aboutSectionIcon}>🔒</Text>
+              <Image
+                source={require('../assets/privacy-icon.png')}
+                style={styles.aboutSectionIcon}
+                resizeMode="contain"
+              />
               <Text style={styles.aboutSectionTitle}>Data & Security</Text>
             </View>
             <Text style={styles.aboutSectionDescription}>
@@ -1988,8 +1999,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               </View>
 
               <Text style={styles.apiDescription}>
-                Store your keyshares in separate private locations (e.g., cloud,
-                emails, external drives, etc.) - do not keep them together so no
+                Store your keyshares in separate private locations e.g. cloud,
+                emails, external drives, etc. Do not keep them together so no
                 one can access them all and steal your funds.
               </Text>
 

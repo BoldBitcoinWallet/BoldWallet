@@ -1529,6 +1529,11 @@ const MobilesPairing = ({navigation}: any) => {
       opacity: 0.7,
       zIndex: 1,
     },
+    thirdPhone: {
+      marginLeft: 0,
+      opacity: 0.5,
+      zIndex: 0,
+    },
     finalStepHeader: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1782,8 +1787,8 @@ const MobilesPairing = ({navigation}: any) => {
     },
     deviceID: {
       position: 'absolute',
-      top: -16,
-      fontSize: 13,
+      top: -20,
+      fontSize: 12,
       fontWeight: '600',
       color: theme.colors.primary,
       textAlign: 'center',
@@ -1793,7 +1798,7 @@ const MobilesPairing = ({navigation}: any) => {
     },
     deviceIDTrio: {
       maxWidth: 75,
-      fontSize: 11,
+      fontSize: 12,
       lineHeight: 14,
       width: 75,
     },
@@ -2804,31 +2809,21 @@ const MobilesPairing = ({navigation}: any) => {
                             marginBottom: 18,
                             backgroundColor: theme.colors.background,
                           }}>
-                          <View
-                            style={{
-                              width: 54,
-                              height: 54,
-                              borderRadius: 27,
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              marginRight: 16,
-                            }}>
-                            <Image
-                              source={require('../assets/security-icon.png')}
-                              style={{width: 32, height: 32}}
-                              resizeMode="contain"
-                            />
-                          </View>
                           <View style={{flex: 1}}>
                             <View
                               style={{
                                 flexDirection: 'row',
                                 alignItems: 'center',
-                                marginBottom: 6,
+                                marginBottom: 8,
                               }}>
+                              <Image
+                                source={require('../assets/security-icon.png')}
+                                style={{width: 24, height: 24, marginRight: 8}}
+                                resizeMode="contain"
+                              />
                               <Text
                                 style={{
-                                  fontSize: 16,
+                                  fontSize: 18,
                                   fontWeight: '700',
                                   color: theme.colors.text,
                                   marginRight: 8,
@@ -2844,12 +2839,12 @@ const MobilesPairing = ({navigation}: any) => {
                                 }}>
                                 <Text
                                   style={{
-                                    fontSize: 11,
+                                    fontSize: 9,
                                     fontWeight: '700',
                                     color: theme.colors.primary,
-                                    letterSpacing: 0.5,
+                                    letterSpacing: 1,
                                   }}>
-                                  A+ GRADE
+                                  ENTERPRISE-GRADE
                                 </Text>
                               </View>
                             </View>
@@ -2869,7 +2864,7 @@ const MobilesPairing = ({navigation}: any) => {
                                 hands.
                               </Text>
                               {' '}
-                              TSS cryptography ensures your keys are distributed
+                              MPC•TSS cryptography ensures your keys are distributed
                               across devices—no single device can compromise your
                               wallet.{' '}
                               <Text
@@ -3010,7 +3005,12 @@ const MobilesPairing = ({navigation}: any) => {
                     <View style={styles.informationCard}>
                       <View style={styles.finalStepHeader}>
                         <View style={styles.finalStepIconContainer}>
-                          <View style={styles.twoPhonesContainer}>
+                          <View
+                            style={
+                              isTrio
+                                ? styles.threeDevicesContainer
+                                : styles.twoPhonesContainer
+                            }>
                             <Image
                               source={require('../assets/phone-icon.png')}
                               style={[
@@ -3027,6 +3027,16 @@ const MobilesPairing = ({navigation}: any) => {
                               ]}
                               resizeMode="contain"
                             />
+                            {isTrio && (
+                              <Image
+                                source={require('../assets/phone-icon.png')}
+                                style={[
+                                  styles.finalStepPhoneIcon,
+                                  styles.thirdPhone,
+                                ]}
+                                resizeMode="contain"
+                              />
+                            )}
                           </View>
                         </View>
                         <View style={styles.finalStepTextContainer}>

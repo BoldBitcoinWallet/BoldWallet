@@ -363,25 +363,25 @@ const LoadingScreen = ({onRetry}: any) => {
       width: 72,
       height: 72,
       borderRadius: 36,
-      backgroundColor: theme.colors.primary,
+      backgroundColor: '#000000',
       alignItems: 'center',
       justifyContent: 'center',
       overflow: 'hidden',
       borderWidth: 1,
-      borderColor: theme.colors.secondary,
+      borderColor: '#1a1a1a',
     },
     glowCircle: {
       position: 'absolute',
       width: 88,
       height: 88,
       borderRadius: 44,
-      backgroundColor: theme.colors.primary,
-      opacity: 0.25,
+      backgroundColor: '#000000',
+      opacity: 0.3,
     },
     icon: {
       width: 40,
       height: 40,
-      tintColor: theme.colors.textOnPrimary,
+      tintColor: '#FFFFFF',
     },
     versionText: {
       color: theme.colors.textSecondary,
@@ -418,7 +418,7 @@ const LoadingScreen = ({onRetry}: any) => {
       width: 76,
       height: 76,
       borderRadius: 38,
-      backgroundColor: theme.colors.secondary + '40',
+      backgroundColor: 'rgba(0, 0, 0, 0.2)',
     },
     loadingContainer: {
       flexDirection: 'row',
@@ -426,7 +426,7 @@ const LoadingScreen = ({onRetry}: any) => {
       justifyContent: 'center',
     },
     loadingText: {
-      color: theme.colors.primary,
+      color: '#FFFFFF',
       fontSize: 16,
       fontWeight: '600',
       marginLeft: 12,
@@ -518,7 +518,7 @@ const LoadingScreen = ({onRetry}: any) => {
               <View style={styles.loadingContainer}>
                 <ActivityIndicator
                   size="small"
-                  color={theme.colors.background}
+                  color="#FFFFFF"
                 />
                 <Text style={styles.loadingText}>Unlocking...</Text>
               </View>

@@ -1666,13 +1666,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             <Text style={styles.modalTextCompact}>
               This device stores{' '}
               <Text style={styles.modalBoldTextCompact}>one part</Text> of your
-              wallet's keyshare. Devices must work together to access Bitcoin.
+              wallet's keyshare. Devices must work together to manage your wallet.
             </Text>
 
             <View style={styles.warningBoxCompact}>
               <Text style={styles.warningTextCompact}>
                 ⚠️ Keep keyshares safe. Losing a device or backup permanently
-                locks your Bitcoin.
+                locks out your Bitcoin.
               </Text>
             </View>
 
