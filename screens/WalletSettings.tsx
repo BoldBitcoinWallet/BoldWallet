@@ -487,13 +487,23 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                     {borderBottomColor: theme.colors.border},
                   ]}>
                   <View style={styles.apiModalHeaderTop}>
-                    <Text
-                      style={[
-                        styles.apiModalTitle,
-                        {color: theme.colors.text},
-                      ]}>
-                      Select API Endpoint
-                    </Text>
+                    <View style={styles.apiModalHeaderTitleContainer}>
+                      <Image
+                        source={require('../assets/api-icon.png')}
+                        style={[
+                          styles.apiModalHeaderIcon,
+                          {tintColor: theme.colors.primary},
+                        ]}
+                        resizeMode="contain"
+                      />
+                      <Text
+                        style={[
+                          styles.apiModalTitle,
+                          {color: theme.colors.text},
+                        ]}>
+                        Select a Mempool.Space Provider
+                      </Text>
+                    </View>
                     <TouchableOpacity
                       onPress={closeModal}
                       style={[
@@ -1189,6 +1199,16 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       fontSize: 16,
       fontWeight: '700',
       letterSpacing: -0.5,
+    },
+    apiModalHeaderTitleContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+    },
+    apiModalHeaderIcon: {
+      width: 20,
+      height: 20,
+      marginRight: 10,
     },
     apiModalCloseButton: {
       width: 32,

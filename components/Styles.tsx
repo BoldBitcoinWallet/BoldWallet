@@ -669,7 +669,6 @@ export const createStyles = (theme: Theme): Styles => ({
   networkIcon: {
     width: 16,
     height: 16,
-    marginRight: 4,
     tintColor: '#FFFFFF',
   },
   rowCenter: {

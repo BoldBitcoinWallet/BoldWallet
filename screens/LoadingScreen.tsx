@@ -418,8 +418,7 @@ const LoadingScreen = ({onRetry}: any) => {
       width: 76,
       height: 76,
       borderRadius: 38,
-      backgroundColor: theme.colors.primary,
-      opacity: 0.3,
+      backgroundColor: theme.colors.secondary + '40',
     },
     loadingContainer: {
       flexDirection: 'row',

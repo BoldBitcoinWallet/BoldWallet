@@ -299,6 +299,24 @@ const ShowcaseScreen = ({navigation}: any) => {
       fontWeight: '600',
       fontSize: 16,
     },
+    ctaButtonIconContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '100%',
+      position: 'relative',
+      gap: 8,
+    },
+    ctaButtonIcon: {
+      width: 20,
+      height: 20,
+    },
+    ctaButtonIconLeft: {
+      position: 'absolute',
+      left: 0,
+      width: 20,
+      height: 20,
+    },
     disabledButton: {
       opacity: 0.5,
     },
@@ -769,7 +787,17 @@ const ShowcaseScreen = ({navigation}: any) => {
               setIsModeModalVisible(true);
             }}
             disabled={!agreeToTerms || !agreeToPrivacy}>
-            <Text style={styles.ctaButtonText}>Setup New Wallet</Text>
+            <View style={styles.ctaButtonIconContainer}>
+              <Image
+                source={require('../assets/new-icon.png')}
+                style={[
+                  styles.ctaButtonIconLeft,
+                  {tintColor: theme.colors.background},
+                ]}
+                resizeMode="contain"
+              />
+              <Text style={styles.ctaButtonText}>Setup New Wallet</Text>
+            </View>
           </TouchableOpacity>
           <TouchableOpacity
             style={[
@@ -781,9 +809,19 @@ const ShowcaseScreen = ({navigation}: any) => {
               handleRestoreWallet();
             }}
             disabled={!agreeToTerms || !agreeToPrivacy}>
-            <Text style={styles.ctaButtonSecondaryText}>
-              Restore Existing Wallet
-            </Text>
+            <View style={styles.ctaButtonIconContainer}>
+              <Image
+                source={require('../assets/restore-icon.png')}
+                style={[
+                  styles.ctaButtonIconLeft,
+                  {tintColor: theme.colors.text},
+                ]}
+                resizeMode="contain"
+              />
+              <Text style={styles.ctaButtonSecondaryText}>
+                Restore Existing Wallet
+              </Text>
+            </View>
           </TouchableOpacity>
         </View>
       </View>

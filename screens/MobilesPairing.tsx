@@ -855,7 +855,7 @@ const MobilesPairing = ({navigation}: any) => {
     return () => {
       subscription?.remove();
     };
-  }, []);
+  }, [isTrio]);
 
   useEffect(() => {
     if (isPreparing) {
