@@ -1320,9 +1320,9 @@ const MobilesPairing = ({navigation}: any) => {
       padding: 12,
     },
     retryButton: {
-      marginTop: 32,
+      marginTop: 16,
       alignSelf: 'center',
-      backgroundColor: theme.colors.accent,
+      backgroundColor: theme.colors.secondary,
       borderRadius: 18,
       flexDirection: 'row',
       alignItems: 'center',
@@ -1401,7 +1401,7 @@ const MobilesPairing = ({navigation}: any) => {
       textAlign: 'center',
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       lineHeight: 18,
-      paddingHorizontal: 8,
+      marginTop: 10,
     },
     enhancedRequirementsContainer: {
       marginVertical: 8,
@@ -1722,6 +1722,7 @@ const MobilesPairing = ({navigation}: any) => {
       justifyContent: 'center',
       position: 'relative',
       marginBottom: 20,
+      marginTop: 10,
       paddingHorizontal: 8,
     },
     deviceWrapper: {
@@ -1744,14 +1745,27 @@ const MobilesPairing = ({navigation}: any) => {
       elevation: 2,
     },
     deviceActive: {
+      tintColor: theme.colors.primary + '95',
+    },
+    deviceSelfActive: {
       tintColor: theme.colors.primary,
     },
     deviceInactive: {
       tintColor: theme.colors.textSecondary,
     },
+    deviceSelf: {
+      width: 32,
+      height: 32,
+      tintColor: theme.colors.primary + '80',
+      shadowColor: theme.colors.shadowColor,
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 2,
+    },
     deviceName: {
       position: 'absolute',
-      bottom: -40,
+      bottom: -20,
       fontSize: 13,
       fontWeight: '600',
       color: theme.colors.text,
@@ -1759,8 +1773,25 @@ const MobilesPairing = ({navigation}: any) => {
       width: 120,
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       lineHeight: 18,
+      height: 20,
     },
     deviceNameTrio: {
+      maxWidth: 100,
+      fontSize: 11,
+      lineHeight: 14,
+    },
+    deviceID: {
+      position: 'absolute',
+      top: -16,
+      fontSize: 13,
+      fontWeight: '600',
+      color: theme.colors.primary,
+      textAlign: 'center',
+      width: 120,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      lineHeight: 18,
+    },
+    deviceIDTrio: {
       maxWidth: 75,
       fontSize: 11,
       lineHeight: 14,
@@ -2552,12 +2583,24 @@ const MobilesPairing = ({navigation}: any) => {
             {!mpcDone && (isPairing || peerIP) && (
               <View style={styles.informationCard}>
                 <View style={styles.deviceContainer}>
-                  <View style={[styles.deviceWrapper, isTrio && styles.deviceWrapperTrio]}>
+                  <View
+                    style={[
+                      styles.deviceWrapper,
+                      isTrio && styles.deviceWrapperTrio,
+                    ]}>
+                    {localID && (
+                      <Text
+                        style={[styles.deviceID, isTrio && styles.deviceIDTrio]}
+                        numberOfLines={1}
+                        ellipsizeMode="tail">
+                        🏷{localID}
+                      </Text>
+                    )}
                     <Image
                       source={require('../assets/phone-icon.png')}
                       style={[
-                        styles.deviceIcon,
-                        localIP ? styles.deviceActive : styles.deviceInactive,
+                        styles.deviceSelf,
+                        localIP ? styles.deviceSelfActive : styles.deviceInactive,
                       ]}
                     />
                     {localDevice && (
@@ -2566,15 +2609,16 @@ const MobilesPairing = ({navigation}: any) => {
                           styles.deviceName,
                           isTrio && styles.deviceNameTrio,
                         ]}
-                        numberOfLines={2}
                         ellipsizeMode="tail">
                         {localDevice}
-                        {'\n'}
-                        {localID}
                       </Text>
                     )}
                   </View>
-                  <View style={[styles.statusLine, isTrio && styles.statusLineTrio]}>
+                  <View
+                    style={[
+                      styles.statusLine,
+                      isTrio && styles.statusLineTrio,
+                    ]}>
                     <Animated.View
                       style={[
                         styles.connectionLine,
@@ -2589,7 +2633,22 @@ const MobilesPairing = ({navigation}: any) => {
                   </View>
                   {isTrio && (
                     <>
-                      <View style={[styles.deviceWrapper, isTrio && styles.deviceWrapperTrio]}>
+                      <View
+                        style={[
+                          styles.deviceWrapper,
+                          isTrio && styles.deviceWrapperTrio,
+                        ]}>
+                        {remoteID2 && (
+                          <Text
+                            style={[
+                              styles.deviceID,
+                              isTrio && styles.deviceIDTrio,
+                            ]}
+                            numberOfLines={1}
+                            ellipsizeMode="tail">
+                            🏷{remoteID2}
+                          </Text>
+                        )}
                         <Image
                           source={require('../assets/phone-icon.png')}
                           style={[
@@ -2608,12 +2667,14 @@ const MobilesPairing = ({navigation}: any) => {
                             numberOfLines={2}
                             ellipsizeMode="tail">
                             {peerDevice2 || 'Other Device'}
-                            {'\n'}
-                            {remoteID2}
                           </Text>
                         )}
                       </View>
-                      <View style={[styles.statusLine, isTrio && styles.statusLineTrio]}>
+                      <View
+                        style={[
+                          styles.statusLine,
+                          isTrio && styles.statusLineTrio,
+                        ]}>
                         <Animated.View
                           style={[
                             styles.connectionLine,
@@ -2628,7 +2689,19 @@ const MobilesPairing = ({navigation}: any) => {
                       </View>
                     </>
                   )}
-                  <View style={[styles.deviceWrapper, isTrio && styles.deviceWrapperTrio]}>
+                  <View
+                    style={[
+                      styles.deviceWrapper,
+                      isTrio && styles.deviceWrapperTrio,
+                    ]}>
+                    {remoteID && (
+                      <Text
+                        style={[styles.deviceID, isTrio && styles.deviceIDTrio]}
+                        numberOfLines={1}
+                        ellipsizeMode="tail">
+                        🏷{remoteID}
+                      </Text>
+                    )}
                     <Image
                       source={require('../assets/phone-icon.png')}
                       style={[
@@ -2646,12 +2719,17 @@ const MobilesPairing = ({navigation}: any) => {
                         ellipsizeMode="tail">
                         {peerDevice ||
                           (isTrio ? 'Other Device' : 'Peer Device')}
-                        {'\n'}
-                        {remoteID}
                       </Text>
                     )}
                   </View>
                 </View>
+                {/* Security Code Matching Hint */}
+                {peerIP && (
+                  <Text style={styles.pairingHint}>
+                    ⚠️ Make sure every device security code 🏷 **** matches on
+                    all other devices screens.
+                  </Text>
+                )}
                 {/* Show Countdown Timer During Pairing */}
                 {isPairing && !peerIP && (
                   <View style={{marginTop: 16}}>
@@ -2680,7 +2758,7 @@ const MobilesPairing = ({navigation}: any) => {
                         }}
                         resizeMode="contain"
                       />
-                      <Text style={styles.retryLink}>Start Over</Text>
+                      <Text style={styles.retryLink}>Retry</Text>
                     </TouchableOpacity>
                   </>
                 )}
@@ -2742,26 +2820,63 @@ const MobilesPairing = ({navigation}: any) => {
                             />
                           </View>
                           <View style={{flex: 1}}>
-                            <Text
+                            <View
                               style={{
-                                fontSize: 16,
-                                fontWeight: '700',
-                                color: theme.colors.text,
-                                marginBottom: 2,
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                marginBottom: 6,
                               }}>
-                              Superior Security
-                            </Text>
+                              <Text
+                                style={{
+                                  fontSize: 16,
+                                  fontWeight: '700',
+                                  color: theme.colors.text,
+                                  marginRight: 8,
+                                }}>
+                                Superior Security
+                              </Text>
+                              <View
+                                style={{
+                                  backgroundColor: theme.colors.primary + '20',
+                                  paddingHorizontal: 8,
+                                  paddingVertical: 2,
+                                  borderRadius: 8,
+                                }}>
+                                <Text
+                                  style={{
+                                    fontSize: 11,
+                                    fontWeight: '700',
+                                    color: theme.colors.primary,
+                                    letterSpacing: 0.5,
+                                  }}>
+                                  A+ GRADE
+                                </Text>
+                              </View>
+                            </View>
                             <Text
                               style={{
-                                fontSize: 14,
+                                fontSize: 13,
                                 color: theme.colors.textSecondary,
-                                lineHeight: 20,
+                                lineHeight: 18,
                               }}>
-                              Bold uses TSS cryptography. A+ Security Grade.{' '}
+                              <Text
+                                style={{
+                                  fontWeight: '600',
+                                  color: theme.colors.primary,
+                                  fontStyle: 'italic',
+                                }}>
+                                Institutional-grade security in the palm of your
+                                hands.
+                              </Text>
+                              {' '}
+                              TSS cryptography ensures your keys are distributed
+                              across devices—no single device can compromise your
+                              wallet.{' '}
                               <Text
                                 style={{
                                   color: theme.colors.accent,
                                   textDecorationLine: 'underline',
+                                  fontWeight: '500',
                                 }}
                                 onPress={() => {
                                   HapticFeedback.light();
@@ -3014,8 +3129,7 @@ const MobilesPairing = ({navigation}: any) => {
                                   </Text>
                                 </View>
                                 <Text style={styles.finalizingCountdownText}>
-                                  Estimated time remaining: {prepCounter}{' '}
-                                  seconds
+                                  Time elapsed: {prepCounter} seconds
                                 </Text>
                               </View>
                             </View>
@@ -3383,7 +3497,7 @@ const MobilesPairing = ({navigation}: any) => {
                               </Text>
                             </View>
                             <Text style={styles.finalizingCountdownText}>
-                              Estimated time remaining: {prepCounter} seconds
+                              Time elapsed: {prepCounter} seconds
                             </Text>
                           </View>
                         </View>

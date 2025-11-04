@@ -370,8 +370,10 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
         </Text>
         {isSelected && (
           <View
-            style={[styles.apiModalItemCheckContainer, {backgroundColor: theme.colors.primary}]}
-          >
+            style={[
+              styles.apiModalItemCheckContainer,
+              {backgroundColor: theme.colors.primary},
+            ]}>
             <Text style={styles.apiModalItemCheck}>✓</Text>
           </View>
         )}
@@ -379,20 +381,30 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
     );
   };
 
-
   const renderListEmpty = () => {
     if (isLoadingAPIs && !isTestnet) {
       return (
         <View style={styles.apiModalLoading}>
           <Text
-            style={[styles.apiModalLoadingText, {color: theme.colors.textSecondary}]}>Loading API endpoints...</Text>
+            style={[
+              styles.apiModalLoadingText,
+              {color: theme.colors.textSecondary},
+            ]}>
+            Loading API endpoints...
+          </Text>
         </View>
       );
     }
 
     return (
       <View style={styles.apiModalEmpty}>
-        <Text style={[styles.apiModalEmptyText, {color: theme.colors.textSecondary}]}>No endpoints found</Text>
+        <Text
+          style={[
+            styles.apiModalEmptyText,
+            {color: theme.colors.textSecondary},
+          ]}>
+          No endpoints found
+        </Text>
       </View>
     );
   };
@@ -452,7 +464,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
             }}>
             <TouchableOpacity
               activeOpacity={1}
-              onPress={(e) => e.stopPropagation()}>
+              onPress={e => e.stopPropagation()}>
               <Animated.View
                 style={[
                   styles.apiModalContent,
@@ -550,7 +562,10 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                     <Text style={styles.apiModalSearchIcon}>🔍</Text>
                     <TextInput
                       ref={searchInputRef}
-                      style={[styles.apiModalSearchInput, {color: theme.colors.text}]}
+                      style={[
+                        styles.apiModalSearchInput,
+                        {color: theme.colors.text},
+                      ]}
                       placeholder="Search endpoints..."
                       placeholderTextColor={theme.colors.textSecondary}
                       value={searchQuery}
@@ -566,7 +581,13 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                         onPress={() => setSearchQuery('')}
                         style={styles.apiModalSearchClear}
                         activeOpacity={0.6}>
-                        <Text style={[styles.apiModalSearchClearText, {color: theme.colors.textSecondary}]}>✕</Text>
+                        <Text
+                          style={[
+                            styles.apiModalSearchClearText,
+                            {color: theme.colors.textSecondary},
+                          ]}>
+                          ✕
+                        </Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -606,10 +627,7 @@ const getSectionIcon = (title: string): any => {
 
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   // Use UserContext for reactive network and API state
-  const {
-    setActiveNetwork,
-    setActiveApiProvider,
-  } = useUser();
+  const {setActiveNetwork, setActiveApiProvider} = useUser();
 
   const [deleteInput, setDeleteInput] = useState('');
   const [password, setPassword] = useState('');
@@ -1710,11 +1728,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           styles={styles}
           theme={theme}>
           {/* Network Settings */}
-          <View style={styles.apiItem}>
-            <Text style={styles.apiName}>Network Configuration</Text>
-            <Text style={styles.apiDescription}>Select Bitcoin network</Text>
-          </View>
-
+          <Text style={styles.apiDescription}>Select Bitcoin Network</Text>
           <View style={styles.toggleContainer}>
             <View style={styles.networkOption}>
               <Image
@@ -1736,10 +1750,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           </View>
 
           {/* API Configuration */}
-          <View style={styles.apiItem}>
-            <Text style={styles.apiName}>API Endpoint Configuration</Text>
-          </View>
-
+          <Text style={styles.apiDescription}>API Endpoint Configuration</Text>
           <APIAutocomplete
             value={baseAPI}
             onChangeText={saveAPI}
@@ -1895,7 +1906,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               <Text style={styles.aboutSectionTitle}>Mempool.Space</Text>
             </View>
             <Text style={styles.aboutSectionDescription}>
-              Used for balances, history and fees.{'\n'}Learn more:{' '}
+              Used for balances, history, transactions, and fees.{'\n'}Learn
+              more:{' '}
               <Text
                 style={styles.aboutLinkText}
                 onPress={() => {
@@ -1914,8 +1926,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
             <Text style={styles.aboutSectionDescription}>
               We collect no personal data and run no backend. Keys and signing
-              happen on your devices. Self‑hosted mempool APIs can improve
-              privacy.
+              operations happen solely on your devices. Connecting to your own
+              Self‑hosted mempool servers and devices can improve privacy and
+              control over your data. Without any third-party involvement or
+              data collection.
             </Text>
           </View>
         </CollapsibleSection>
@@ -2184,13 +2198,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           onPress={() => setIsApiInfoVisible(false)}>
           <TouchableOpacity
             activeOpacity={1}
-            onPress={(e) => e.stopPropagation()}>
+            onPress={e => e.stopPropagation()}>
             <View style={styles.apiInfoModalContent}>
               <View style={styles.apiInfoModalHeader}>
                 <View style={styles.apiInfoModalIconContainer}>
                   <Text style={styles.apiInfoModalIcon}>🔒</Text>
                 </View>
-                <Text style={styles.apiInfoModalTitle}>About API Endpoints</Text>
+                <Text style={styles.apiInfoModalTitle}>
+                  About API Endpoints
+                </Text>
                 <TouchableOpacity
                   style={styles.apiInfoModalCloseButton}
                   onPress={() => {
@@ -2205,20 +2221,25 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 <View style={styles.apiInfoSection}>
                   <View style={styles.apiInfoSectionRow}>
                     <Text style={styles.apiInfoSectionIcon}>🌐</Text>
-                    <Text style={styles.apiInfoSectionTitle}>Privacy & Control</Text>
+                    <Text style={styles.apiInfoSectionTitle}>
+                      Privacy & Control
+                    </Text>
                   </View>
                   <Text style={styles.apiInfoSectionText}>
-                    Using your own mempool.space server can improve privacy by keeping
-                    your wallet queries off public servers.
+                    Using your own mempool.space server can improve privacy by
+                    keeping your wallet queries off public servers.
                   </Text>
                 </View>
                 <View style={styles.apiInfoSection}>
                   <View style={styles.apiInfoSectionRow}>
                     <Text style={styles.apiInfoSectionIcon}>🔍</Text>
-                    <Text style={styles.apiInfoSectionTitle}>Reduce Tracking</Text>
+                    <Text style={styles.apiInfoSectionTitle}>
+                      Reduce Tracking
+                    </Text>
                   </View>
                   <Text style={styles.apiInfoSectionText}>
-                    This reduces third‑party insight into your addresses and activity.
+                    This reduces third‑party insight into your addresses and
+                    activity.
                   </Text>
                 </View>
                 <View style={styles.apiInfoSection}>
@@ -2227,18 +2248,26 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     <Text style={styles.apiInfoSectionTitle}>How to Use</Text>
                   </View>
                   <Text style={styles.apiInfoSectionText}>
-                    Enter your self‑hosted URL above or pick from the suggestions.
+                    Enter your self‑hosted URL above or pick from the
+                    suggestions.
                   </Text>
                 </View>
               </View>
               <TouchableOpacity
-                style={[styles.apiInfoModalButton, {backgroundColor: theme.colors.primary}]}
+                style={[
+                  styles.apiInfoModalButton,
+                  {backgroundColor: theme.colors.primary},
+                ]}
                 onPress={() => {
                   HapticFeedback.light();
                   setIsApiInfoVisible(false);
                 }}
                 activeOpacity={0.8}>
-                <Text style={[styles.apiInfoModalButtonText, {color: theme.colors.textOnPrimary}]}>
+                <Text
+                  style={[
+                    styles.apiInfoModalButtonText,
+                    {color: theme.colors.textOnPrimary},
+                  ]}>
                   Got it
                 </Text>
               </TouchableOpacity>
