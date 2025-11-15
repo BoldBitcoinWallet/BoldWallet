@@ -394,6 +394,15 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     resolve("setAPI", output, error, resolver)
   }
 
+  @objc func setFeeAPIs(
+    _ urls: String, resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    var error: NSError?
+    let output = TssUseFeeAPIs(urls, &error)
+    resolve("setFeeAPIs", output, error, resolver)
+  }
+  
   @objc func totalUTXO(
     _ address: String, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock

@@ -122,6 +122,11 @@ RCT_EXTERN_METHOD(setAPI:(NSString *)network
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+// Call setFeeAPIs
+RCT_EXTERN_METHOD(setFeeAPIs:(NSString *)urls
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 // Call totalUTXO
 RCT_EXTERN_METHOD(totalUTXO:(NSString *)address
                   resolver:(RCTPromiseResolveBlock)resolve

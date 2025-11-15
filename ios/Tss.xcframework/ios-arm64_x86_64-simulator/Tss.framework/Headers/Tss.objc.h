@@ -383,6 +383,8 @@ FOUNDATION_EXPORT NSString* _Nonnull TssTotalUTXO(NSString* _Nullable address, N
 
 FOUNDATION_EXPORT NSString* _Nonnull TssUseAPI(NSString* _Nullable network, NSString* _Nullable base, NSError* _Nullable* _Nullable error);
 
+FOUNDATION_EXPORT NSString* _Nonnull TssUseFeeAPIs(NSString* _Nullable urls, NSError* _Nullable* _Nullable error);
+
 FOUNDATION_EXPORT NSString* _Nonnull TssUseFeePolicy(NSString* _Nullable feeType, NSError* _Nullable* _Nullable error);
 
 @class TssGoLogListener;

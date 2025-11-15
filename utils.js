@@ -199,3 +199,55 @@ export const HapticFeedback = {
     }
   },
 };
+
+// API Endpoints Configuration
+const MAINNET_APIS = [
+  'https://mempool.space/api'
+];
+const TESTNET_APIS = ['https://mempool.space/testnet/api'];
+
+// Function to fetch dynamic API endpoints from GitHub
+export const fetchDynamicAPIEndpoints = async () => {
+  try {
+    const response = await fetch(
+      'https://raw.githubusercontent.com/BoldBitcoinWallet/mempool-space-hosts/refs/heads/main/README.md',
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const markdownText = await response.text();
+
+    // Parse markdown to extract URLs
+    const urlRegex = /https:\/\/[^\s\]]+/g;
+    const urls = markdownText.match(urlRegex) || [];
+
+    // Filter and format URLs to ensure they have /api suffix
+    const apiEndpoints = urls
+      .filter(url => url.includes('mempool'))
+      .map(url => {
+        // Remove trailing slash if present
+        const cleanUrl = url.replace(/\/$/, '');
+        // Add /api suffix if not already present
+        return cleanUrl.endsWith('/api') ? cleanUrl : `${cleanUrl}/api`;
+      })
+      .filter((url, index, self) => self.indexOf(url) === index); // Remove duplicates
+
+    return apiEndpoints;
+  } catch (error) {
+    dbg('Failed to fetch dynamic API endpoints:', error);
+    return [];
+  }
+};
+
+// Helper function to get mainnet API endpoints (dynamic + fallback)
+export const getMainnetAPIList = async () => {
+  const dynamicEndpoints = await fetchDynamicAPIEndpoints();
+  return dynamicEndpoints.length > 0 ? dynamicEndpoints : MAINNET_APIS;
+};
+
+// Helper function to get testnet API endpoints (dynamic + fallback)
+export const getTestnetAPIList = async () => {
+  const dynamicEndpoints = await fetchDynamicAPIEndpoints();
+  return dynamicEndpoints.length > 0 ? dynamicEndpoints : TESTNET_APIS;
+};

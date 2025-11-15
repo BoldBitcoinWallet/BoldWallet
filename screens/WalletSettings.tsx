@@ -28,54 +28,24 @@ import DeviceInfo from 'react-native-device-info';
 import {useUser} from '../context/UserContext';
 
 // Predefined API endpoints
-const MAINNET_APIS = ['https://mempool.space/api'];
-
+const MAINNET_APIS = [
+  'https://mempool.space/api',
+];
 const TESTNET_APIS = ['https://mempool.space/testnet/api'];
-
-// Function to fetch dynamic API endpoints from GitHub
-const fetchDynamicAPIEndpoints = async (): Promise<string[]> => {
-  try {
-    const response = await fetch(
-      'https://raw.githubusercontent.com/BoldBitcoinWallet/mempool-space-hosts/refs/heads/main/README.md',
-    );
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const markdownText = await response.text();
-
-    // Parse markdown to extract URLs
-    const urlRegex = /https:\/\/[^\s\]]+/g;
-    const urls = markdownText.match(urlRegex) || [];
-
-    // Filter and format URLs to ensure they have /api suffix
-    const apiEndpoints = urls
-      .filter(url => url.includes('mempool'))
-      .map(url => {
-        // Remove trailing slash if present
-        const cleanUrl = url.replace(/\/$/, '');
-        // Add /api suffix if not already present
-        return cleanUrl.endsWith('/api') ? cleanUrl : `${cleanUrl}/api`;
-      })
-      .filter((url, index, self) => self.indexOf(url) === index); // Remove duplicates
-
-    return apiEndpoints;
-  } catch (error) {
-    dbg('Failed to fetch dynamic API endpoints:', error);
-    return MAINNET_APIS;
-  }
-};
 
 import {
   dbg,
   HapticFeedback,
   setHapticsEnabled,
   areHapticsEnabled,
+  getMainnetAPIList,
+  getTestnetAPIList,
 } from '../utils';
 import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
 import LegalModal from '../components/LegalModal';
+import {fetchDynamicAPIEndpoints} from '../utils';
 
 interface CollapsibleSectionProps {
   title: string;
@@ -210,23 +180,33 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
     [filteredOptions],
   );
 
-  // Get the appropriate API list - filter by network
-  const predefinedAPIs = useMemo(() => {
-    // Filter dynamic APIs by network
-    if (dynamicAPIs.length > 0) {
-      if (isTestnet) {
-        // For testnet, only show APIs that contain "testnet" in the URL
-        return dynamicAPIs.filter(api => api.toLowerCase().includes('testnet'));
-      } else {
-        // For mainnet, exclude APIs that contain "testnet"
-        return dynamicAPIs.filter(
-          api => !api.toLowerCase().includes('testnet'),
-        );
+  // Get the appropriate API list - filter by network (using dynamic loading)
+  const [predefinedAPIs, setPredefinedAPIs] = useState<string[]>([]);
+  const [isLoadingPredefinedAPIs, setIsLoadingPredefinedAPIs] = useState(false);
+
+  // Load dynamic API lists
+  useEffect(() => {
+    const loadAPIList = async () => {
+      if (predefinedAPIs.length === 0 && !isLoadingPredefinedAPIs) {
+        setIsLoadingPredefinedAPIs(true);
+        try {
+          const apiList = isTestnet
+            ? await getTestnetAPIList()
+            : await getMainnetAPIList();
+          setPredefinedAPIs(apiList);
+          dbg('API list loaded:', apiList);
+        } catch (error) {
+          dbg('Failed to load API list:', error);
+          // Fallback to hardcoded APIs
+          setPredefinedAPIs(isTestnet ? TESTNET_APIS : MAINNET_APIS);
+        } finally {
+          setIsLoadingPredefinedAPIs(false);
+        }
       }
-    }
-    // Fallback to static APIs
-    return isTestnet ? TESTNET_APIS : MAINNET_APIS;
-  }, [isTestnet, dynamicAPIs]);
+    };
+
+    loadAPIList();
+  }, [isTestnet, predefinedAPIs.length, isLoadingPredefinedAPIs]);
 
   // Fetch dynamic APIs for both networks
   useEffect(() => {

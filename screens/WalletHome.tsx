@@ -236,6 +236,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             setBtcPrice('-');
             setBalanceFiat('-');
           }
+        } else {
+          freshData = null;
         }
       } catch (error) {
         dbg('WalletHome: Error fetching fresh data:', error);
@@ -264,8 +266,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
       // Fall back to cached data only if fresh data fetch failed
       if (!freshData) {
-        const cachedPricePromise =
-          WalletService.getInstance().getBitcoinPrice();
+        const cachedPricePromise = WalletService.getInstance().getCachePrice();
         const cachedBalancePromise =
           WalletService.getInstance().getWalletBalance(
             addr,
@@ -632,7 +633,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
         // Initialize UI directly from persistent wallet cache (exact v1.3.2 analogy)
         try {
-          const cachedPrice = await WalletService.getInstance().getPrice();
+          const cachedPrice = await WalletService.getInstance().getCachePrice();
           const cachedBal = await WalletService.getInstance().getBal(
             btcAddress,
           );
@@ -934,10 +935,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           await LocalCache.setItem('addressType', addrType);
           dbg('WalletHome: Setting default address type to legacy');
         }
-
         // Set default currency if not set
         let currency = (await LocalCache.getItem('currency')) || 'USD';
-
         // Get available currencies from price data
         const priceResponse = await walletService.getBitcoinPrice();
         const availableCurrencies = Object.keys(priceResponse.rates);
@@ -1008,40 +1007,33 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         } else {
           await LocalCache.setItem('api', base);
         }
-
         // Initialize cache timestamps from WalletService (works offline)
         // Seed UI with cached price/balance immediately (no network needed)
-        const bitcoinPrice =
-          await WalletService.getInstance().getBitcoinPrice();
-        if (bitcoinPrice && bitcoinPrice.rates) {
-          setPriceData(bitcoinPrice.rates);
-          const r = bitcoinPrice.rates[currency] || bitcoinPrice.rate || 0;
+        if (priceResponse && priceResponse.rates) {
+          setPriceData(priceResponse.rates);
+          const r = priceResponse.rates[currency] || priceResponse.rate || 0;
           if (r && r > 0) {
             setBtcPrice(r.toString());
             setBtcRate(r);
           }
         }
-
         const cachedBal = await WalletService.getInstance().getBal(address);
         if (cachedBal) {
           setBalanceBTC(cachedBal.btc || '0.00000000');
           const r =
-            (bitcoinPrice?.rates?.[currency] as number) ||
-            (bitcoinPrice?.rate as number) ||
+            (priceResponse?.rates?.[currency] as number) ||
+            (priceResponse?.rate as number) ||
             0;
           if (r && Number(cachedBal.btc) > 0) {
             const fiatBalance = Number(cachedBal.btc) * r;
             setBalanceFiat(fiatBalance.toFixed(2));
           }
         }
-
         setCacheTimestamps({
-          price: bitcoinPrice.timestamp,
-          balance: cachedBal.timestamp,
+          price: priceResponse.timestamp,
+          balance: priceResponse.timestamp,
         });
-
         setLoading(false);
-
         setIsInitialized(true);
         // Force initial balance fetch
         await fetchDataRef.current?.();

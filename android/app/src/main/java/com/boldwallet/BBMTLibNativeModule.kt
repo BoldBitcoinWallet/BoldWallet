@@ -134,6 +134,18 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             promise.reject(e)
         }
     }
+    
+    @ReactMethod
+    fun setFeeAPIs(urls: String, promise: Promise) {
+        try {
+            val result = Tss.useFeeAPIs(urls)
+            ld("setFeeAPIs", result)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            ld("setFeeAPIs", "error: ${e.stackTraceToString()}")
+            promise.reject(e)
+        }
+    }
 
     @ReactMethod
     fun estimateFees(senderAddress: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {

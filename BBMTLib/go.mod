@@ -1,6 +1,8 @@
 module github.com/BoldBitcoinWallet/BBMTLib
 
-go 1.23.3
+go 1.24.0
+
+toolchain go1.24.2
 
 require (
 	github.com/bnb-chain/tss-lib/v2 v2.0.2
@@ -18,10 +20,10 @@ require (
 	github.com/decred/dcrd/crypto/blake256 v1.0.1 // indirect
 	github.com/fomichev/secp256k1 v0.0.0-20180413221153-00116ff8c62f // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
-	golang.org/x/mobile v0.0.0-20250606033058-a2a15c67f36f // indirect
-	golang.org/x/mod v0.25.0 // indirect
-	golang.org/x/sync v0.15.0 // indirect
-	golang.org/x/tools v0.34.0 // indirect
+	golang.org/x/mobile v0.0.0-20251113184115-a159579294ab // indirect
+	golang.org/x/mod v0.30.0 // indirect
+	golang.org/x/sync v0.18.0 // indirect
+	golang.org/x/tools v0.39.0 // indirect
 )
 
 require (
@@ -44,7 +46,7 @@ require (
 	go.uber.org/multierr v1.10.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/crypto v0.31.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
 	google.golang.org/protobuf v1.32.0 // indirect
 )
 

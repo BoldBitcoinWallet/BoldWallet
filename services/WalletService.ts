@@ -1,6 +1,6 @@
 import Big from 'big.js';
 import {BBMTLibNativeModule} from '../native_modules';
-import {dbg} from '../utils';
+import {dbg, getMainnetAPIList} from '../utils';
 import LocalCache from './LocalCache';
 import EncryptedStorage from 'react-native-encrypted-storage';
 
@@ -154,7 +154,7 @@ export class WalletService {
     );
   }
 
-  public async getPrice(): Promise<{
+  public async getCachePrice(): Promise<{
     price: string;
     rate: number;
     rates: {[key: string]: number};
@@ -287,6 +287,7 @@ export class WalletService {
     }
   }
 
+
   public async getBitcoinPrice(): Promise<{
     price: string;
     rate: number;
@@ -294,52 +295,74 @@ export class WalletService {
     timestamp: number;
   }> {
     try {
-      dbg('WalletService: Fetching fresh BTC price from mempool.space');
+      // Get the list of mainnet API endpoints
+      const apiEndpoints = await getMainnetAPIList();
+      dbg('WalletService: Attempting to fetch BTC price using round-robin from APIs:', apiEndpoints);
 
-      const priceAPI =  this.currentApiUrl + '/v1/prices';
-      const priceUrl =  priceAPI.replace(/\/testnet\/?$/, '');
+      let lastError: any = null;
 
-      dbg('WalletService: Using price API URL:', priceUrl);
-      const response = await this.withTimeout(
-        'price',
-        fetch(priceUrl, {signal: this.abortController.signal}),
-      );
-      const data = await response.json();
-      dbg('WalletService: Raw price data received:', data);
+      // Try each API endpoint in sequence until one succeeds
+      for (const baseApiUrl of apiEndpoints) {
+        try {
+          // Always use mainnet price endpoint (remove any testnet suffix)
+          const priceUrl = baseApiUrl.replace(/\/testnet\/?$/, '') + '/v1/prices';
+          dbg('WalletService: Trying price API URL:', priceUrl);
 
-      if (!data || !data.USD || !validateNumber(data.USD)) {
-        dbg('WalletService: Invalid price data received:', data);
-        throw 'Invalid price data received';
-      }
+          const response = await this.withTimeout(
+            'price',
+            fetch(priceUrl, {signal: this.abortController.signal}),
+          );
 
-      const rate = parseFloat(data.USD);
-      dbg('WalletService: Parsed rate:', rate);
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
 
-      if (isNaN(rate) || rate <= 0) {
-        dbg('WalletService: Invalid rate value:', rate);
-        throw 'Invalid rate value';
-      }
+          const data = await response.json();
+          dbg('WalletService: Raw price data received from', priceUrl, ':', data);
 
-      const price = this.formatUSD(data.USD);
-      dbg('WalletService: New price fetched - Rate:', rate, 'Price:', price);
+          if (!data || !data.USD || !validateNumber(data.USD)) {
+            dbg('WalletService: Invalid price data received from', priceUrl, ':', data);
+            throw new Error('Invalid price data received');
+          }
 
-      // Use all available rates from the API response
-      const rates: {[key: string]: number} = {};
-      Object.entries(data).forEach(([currency, value]) => {
-        if (typeof value === 'number' && !isNaN(value) && value > 0) {
-          rates[currency] = value;
+          const rate = parseFloat(data.USD);
+          dbg('WalletService: Parsed rate:', rate);
+
+          if (isNaN(rate) || rate <= 0) {
+            dbg('WalletService: Invalid rate value:', rate);
+            throw new Error('Invalid rate value');
+          }
+
+          const price = this.formatUSD(data.USD);
+          dbg('WalletService: New price fetched from', priceUrl, '- Rate:', rate, 'Price:', price);
+
+          // Use all available rates from the API response
+          const rates: {[key: string]: number} = {};
+          Object.entries(data).forEach(([currency, value]) => {
+            if (typeof value === 'number' && !isNaN(value) && value > 0) {
+              rates[currency] = value;
+            }
+          });
+
+          dbg('WalletService: Available currencies:', Object.keys(rates));
+
+          await this.setPrice({price, rate, rates});
+          dbg('WalletService: Price cache updated');
+
+          return {price, rate, rates, timestamp: Date.now()};
+        } catch (error) {
+          dbg('WalletService: Failed to fetch from', baseApiUrl, ':', error);
+          lastError = error;
+          // Continue to next API endpoint
+          continue;
         }
-      });
+      }
 
-      dbg('WalletService: Available currencies:', Object.keys(rates));
-
-      await this.setPrice({price, rate, rates});
-      dbg('WalletService: Price cache updated');
-
-      return {price, rate, rates, timestamp: Date.now()};
+      // If all endpoints failed, throw the last error
+      throw lastError || new Error('All price API endpoints failed');
     } catch (error) {
-      dbg('WalletService: Error fetching BTC price:', error);
-      return await this.getPrice();
+      dbg('WalletService: Error fetching BTC price from all endpoints:', error);
+      return await this.getCachePrice();
     }
   }
 
