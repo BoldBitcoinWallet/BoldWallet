@@ -41,9 +41,17 @@ const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    const sub = DeviceEventEmitter.addListener('app:reload', () => {
+    const sub = DeviceEventEmitter.addListener('app:reload', async () => {
       //dbg('App: Received app:reload event');
       setIsAuthenticated(false);
+      // Re-check wallet state after reload to ensure correct initial route
+      try {
+        const keyshare = await EncryptedStorage.getItem('keyshare');
+        const route = keyshare && keyshare.length > 0 ? 'Home' : 'Welcome';
+        setInitialRoute(route);
+      } catch {
+        setInitialRoute('Welcome');
+      }
     });
     return () => sub.remove();
   }, []);

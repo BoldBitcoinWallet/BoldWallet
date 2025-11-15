@@ -15,6 +15,7 @@ import {
   ActivityIndicator,
   NativeModules,
   ScrollView,
+  Linking,
 } from 'react-native';
 
 import BarcodeZxingScan from 'rn-barcode-zxing-scan';
@@ -304,6 +305,33 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
+    },
+    // Setup Guide Hint Styles
+    setupGuideHint: {
+      marginTop: 12,
+      alignItems: 'center',
+    },
+    setupGuideHintTouchable: {
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 8,
+    },
+    setupGuideHintRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    setupGuideHintIcon: {
+      width: 16,
+      height: 16,
+      tintColor: theme.colors.primary,
+    },
+    setupGuideHintText: {
+      fontSize: 13,
+      color: theme.colors.primary,
+      fontWeight: '500',
+      textDecorationLine: 'underline',
+      textDecorationColor: theme.colors.primary + '80',
     },
   });
 
@@ -634,6 +662,33 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                 </View>
 
                 {renderFeeSection()}
+
+                {/* Setup Guide Hint */}
+                <View style={styles.setupGuideHint}>
+                  <TouchableOpacity
+                    style={styles.setupGuideHintTouchable}
+                    onPress={() => {
+                      HapticFeedback.medium();
+                      const url =
+                        'https://x.com/boldbtcwallet/status/1988332367489237160';
+                      Linking.openURL(url).catch(err => {
+                        Alert.alert('Error', 'Unable to open the video link');
+                        dbg('Error opening URL:', err);
+                      });
+                    }}
+                    activeOpacity={0.7}>
+                    <View style={styles.setupGuideHintRow}>
+                      <Image
+                        source={require('../assets/start-icon.png')}
+                        style={styles.setupGuideHintIcon}
+                        resizeMode="contain"
+                      />
+                      <Text style={styles.setupGuideHintText}>
+                        🎥 Watch Send Bitcoin video guide →
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
 
                 <View style={styles.sendCancelButtons}>
                   <TouchableOpacity

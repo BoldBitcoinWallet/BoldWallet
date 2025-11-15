@@ -9,6 +9,8 @@ import {
   Animated,
   Easing,
 } from 'react-native';
+import {SafeAreaView} from 'react-native-safe-area-context';
+import LinearGradient from 'react-native-linear-gradient';
 import {useTheme} from '../theme';
 import {HapticFeedback} from '../utils';
 
@@ -295,7 +297,6 @@ const LoadingScreen = ({onRetry}: any) => {
   const styles = StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: theme.colors.background,
       justifyContent: 'space-between',
       alignItems: 'center',
     },
@@ -431,121 +432,135 @@ const LoadingScreen = ({onRetry}: any) => {
       fontWeight: '600',
       marginLeft: 12,
     },
+    safeArea: {
+      flex: 1,
+    },
   });
 
   return (
-    <View style={styles.container}>
-      <View style={styles.contentContainer}>
-        <Animated.View
-          style={[styles.logoContainer, {opacity: fadeAnim}]}
-          onLayout={e => {
-            const {width, height} = e.nativeEvent.layout;
-            logoLayoutRef.current = {width, height};
-          }}>
-          {/* Particles overlay */}
-          <View style={styles.particlesContainer}>
-            {particles.map(p => {
-              const rotateInterpolate = p.rotate.interpolate({
-                inputRange: [-Math.PI, Math.PI],
-                outputRange: ['-180deg', '180deg'],
-              });
-              const centerX = logoLayoutRef.current.width / 2;
-              const centerY = logoLayoutRef.current.height / 2;
-              return (
-                <Animated.Image
-                  key={p.id}
-                  source={require('../assets/bitcoin-icon.png')}
-                  style={[
-                    styles.particle,
-                    {
-                      left: centerX - p.size / 2,
-                      top: centerY - p.size / 2,
-                      width: p.size,
-                      height: p.size,
-                      opacity: p.opacity,
-                      transform: [
-                        {translateX: p.x},
-                        {translateY: p.y},
-                        {scale: p.scale},
-                        {rotate: rotateInterpolate},
-                      ],
-                    },
-                  ]}
-                  resizeMode="contain"
-                />
-              );
-            })}
-          </View>
+    <SafeAreaView style={styles.safeArea}>
+      <LinearGradient
+        colors={[
+          'rgba(240, 245, 255, 0.15)', // Cool blue-white top
+          'rgba(255, 255, 255, 0.25)', // Bright white
+          'rgba(248, 252, 255, 0.35)', // Cool highlight
+          'rgba(255, 255, 255, 0.45)', // Peak brightness
+          'rgba(248, 252, 255, 0.35)', // Cool fade
+          'rgba(240, 245, 255, 0.25)', // Cool bottom
+        ]}
+        locations={[0, 0.2, 0.4, 0.6, 0.8, 1]}
+        start={{x: 0.5, y: 0}}
+        end={{x: 0.5, y: 1}}
+        style={[styles.container]}>
+        <View style={[styles.contentContainer]}>
+          <Animated.View
+            style={styles.logoContainer}
+            onLayout={e => {
+              const {width, height} = e.nativeEvent.layout;
+              logoLayoutRef.current = {width, height};
+            }}>
+            {/* Particles overlay */}
+            <View style={styles.particlesContainer}>
+              {particles.map(p => {
+                const rotateInterpolate = p.rotate.interpolate({
+                  inputRange: [-Math.PI, Math.PI],
+                  outputRange: ['-180deg', '180deg'],
+                });
+                const centerX = logoLayoutRef.current.width / 2;
+                const centerY = logoLayoutRef.current.height / 2;
+                return (
+                  <Animated.Image
+                    key={p.id}
+                    source={require('../assets/bitcoin-icon.png')}
+                    style={[
+                      styles.particle,
+                      {
+                        left: centerX - p.size / 2,
+                        top: centerY - p.size / 2,
+                        width: p.size,
+                        height: p.size,
+                        opacity: p.opacity,
+                        transform: [
+                          {translateX: p.x},
+                          {translateY: p.y},
+                          {scale: p.scale},
+                          {rotate: rotateInterpolate},
+                        ],
+                      },
+                    ]}
+                    resizeMode="contain"
+                  />
+                );
+              })}
+            </View>
 
-          <TouchableOpacity
-            activeOpacity={0.9}
-            onPress={handleLogoPress}
-            onPressIn={startLogoTouch}
-            onPressOut={endLogoTouch}
-            accessibilityRole="button"
-            accessibilityLabel="Activate vapor turbulence"
-            accessibilityHint="Double tap to increase particle spread">
-            <Animated.View style={{transform: [{scale: logoScale}]}}>
-              <Image
-                style={styles.storeIcon}
-                source={require('../assets/bold-bitcoin-icon.png')}
-              />
-            </Animated.View>
-          </TouchableOpacity>
-        </Animated.View>
-      </View>
-      <View style={styles.bottomContainer}>
-        <Animated.View
-          style={[
-            styles.buttonAnimatedContainer,
-            styles.buttonLift,
-            {transform: [{scale: buttonScale}]},
-          ]}>
-          {/* Floating drop shadow to emphasize FAB look */}
-          <View style={styles.dropShadow} />
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handlePress}
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
-            disabled={loading}
-            activeOpacity={0.85}
-            accessibilityRole="button"
-            accessibilityLabel="Unlock with biometrics"
-            accessibilityHint="Double tap to authenticate and unlock"
-            testID="unlock-biometric-button">
-            {loading ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator
-                  size="small"
-                  color="#FFFFFF"
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={handleLogoPress}
+              onPressIn={startLogoTouch}
+              onPressOut={endLogoTouch}
+              accessibilityRole="button"
+              accessibilityLabel="Activate vapor turbulence"
+              accessibilityHint="Double tap to increase particle spread">
+              <Animated.View style={{transform: [{scale: logoScale}]}}>
+                <Image
+                  style={[styles.storeIcon]}
+                  source={require('../assets/bold-bitcoin-icon.png')}
                 />
-                <Text style={styles.loadingText}>Unlocking...</Text>
-              </View>
-            ) : (
-              <>
-                <View style={styles.circleWrap}>
-                  <View style={styles.circleShadowUnder} />
-                  <View style={styles.iconWrapper}>
-                    <Animated.View
-                      style={{
-                        ...StyleSheet.flatten(styles.glowCircle),
-                        transform: [{scale: glowScale}],
-                        opacity: glowOpacity,
-                      }}
-                    />
-                    <Animated.Image
-                      source={require('../assets/fingerprint.png')}
-                      style={[styles.icon, {transform: [{scale: iconPulse}]}]}
-                    />
-                  </View>
+              </Animated.View>
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
+        <View style={styles.bottomContainer}>
+          <Animated.View
+            style={[
+              styles.buttonAnimatedContainer,
+              styles.buttonLift,
+              {transform: [{scale: buttonScale}]},
+            ]}>
+            {/* Floating drop shadow to emphasize FAB look */}
+            <View style={styles.dropShadow} />
+            <TouchableOpacity
+              style={[styles.button, loading && styles.buttonDisabled]}
+              onPress={handlePress}
+              onPressIn={handlePressIn}
+              onPressOut={handlePressOut}
+              disabled={loading}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Unlock with biometrics"
+              accessibilityHint="Double tap to authenticate and unlock"
+              testID="unlock-biometric-button">
+              {loading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Text style={styles.loadingText}>Unlocking...</Text>
                 </View>
-              </>
-            )}
-          </TouchableOpacity>
-        </Animated.View>
-      </View>
-    </View>
+              ) : (
+                <>
+                  <View style={styles.circleWrap}>
+                    <View style={styles.circleShadowUnder} />
+                    <View style={styles.iconWrapper}>
+                      <Animated.View
+                        style={{
+                          ...StyleSheet.flatten(styles.glowCircle),
+                          transform: [{scale: glowScale}],
+                          opacity: glowOpacity,
+                        }}
+                      />
+                      <Animated.Image
+                        source={require('../assets/fingerprint.png')}
+                        style={[styles.icon, {transform: [{scale: iconPulse}]}]}
+                      />
+                    </View>
+                  </View>
+                </>
+              )}
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
+      </LinearGradient>
+    </SafeAreaView>
   );
 };
 

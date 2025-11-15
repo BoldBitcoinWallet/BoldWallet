@@ -607,7 +607,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           ks.keygen_committee_keys.length === 2 ? 'Basic' : 'Flexi';
         setParty(shareID + ' • ' + shareType);
 
-
         // Generate and store current address
         const btcAddress = await BBMTLibNativeModule.btcAddress(
           btcPub,
@@ -1327,8 +1326,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               style={[styles.actionButton, styles.addressTypeModalButton]}
               onPress={() => {
                 HapticFeedback.light();
-                // Emit a reload event to App.tsx to trigger a full app restart
-                DeviceEventEmitter.emit('app:reload', {});
+                // Emit a reload event to App.tsx to trigger authentication lock
+                DeviceEventEmitter.emit('app:reload');
               }}>
               <Image
                 source={require('../assets/locker-icon.png')}
@@ -1666,7 +1665,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             <Text style={styles.modalTextCompact}>
               This device stores{' '}
               <Text style={styles.modalBoldTextCompact}>one part</Text> of your
-              wallet's keyshare. Devices must work together to manage your wallet.
+              wallet's keyshare. Devices must work together to manage your
+              wallet.
             </Text>
 
             <View style={styles.warningBoxCompact}>

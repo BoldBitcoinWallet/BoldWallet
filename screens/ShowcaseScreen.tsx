@@ -13,6 +13,7 @@ import {
   Animated,
   Easing,
   Image,
+  Linking,
 } from 'react-native';
 import DocumentPicker from 'react-native-document-picker';
 import EncryptedStorage from 'react-native-encrypted-storage';
@@ -695,6 +696,33 @@ const ShowcaseScreen = ({navigation}: any) => {
     modeSelectedHintTextBold: {
       fontWeight: 'bold',
     },
+    // Setup Guide Hint Styles - Subtle
+    setupGuideHint: {
+      marginTop: 12,
+      alignItems: 'center',
+    },
+    setupGuideHintTouchable: {
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 8,
+    },
+    setupGuideHintRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    setupGuideHintIcon: {
+      width: 16,
+      height: 16,
+      tintColor: theme.colors.primary,
+    },
+    setupGuideHintText: {
+      fontSize: 13,
+      color: theme.colors.primary,
+      fontWeight: '500',
+      textDecorationLine: 'underline',
+      textDecorationColor: theme.colors.primary + '80',
+    },
   });
 
   return (
@@ -1129,6 +1157,38 @@ const ShowcaseScreen = ({navigation}: any) => {
                       </Text>
                     )}
                   </View>
+                </View>
+              )}
+
+              {/* Setup Guide Video Hint - Subtle */}
+              {selectedMode && (
+                <View style={styles.setupGuideHint}>
+                  <TouchableOpacity
+                    style={styles.setupGuideHintTouchable}
+                    onPress={() => {
+                      HapticFeedback.medium();
+                      const url =
+                        'https://x.com/boldbtcwallet/status/1988322162386854108';
+                      Linking.openURL(url).catch(err => {
+                        Alert.alert(
+                          'Error',
+                          'Unable to open the video link',
+                        );
+                        dbg('Error opening URL:', err);
+                      });
+                    }}
+                    activeOpacity={0.7}>
+                    <View style={styles.setupGuideHintRow}>
+                      <Image
+                        source={require('../assets/start-icon.png')}
+                        style={styles.setupGuideHintIcon}
+                        resizeMode="contain"
+                      />
+                      <Text style={styles.setupGuideHintText}>
+                      🎥 Watch setup guide →
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
                 </View>
               )}
 
