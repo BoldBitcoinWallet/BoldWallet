@@ -317,7 +317,7 @@ const App = () => {
                     }}
                   />
                   <Stack.Screen
-                    name="📱📱 Pairing"
+                    name="Devices Pairing"
                     component={MobilesPairing}
                     options={{
                       headerShown: true,

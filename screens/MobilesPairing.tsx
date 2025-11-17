@@ -1177,7 +1177,7 @@ const MobilesPairing = ({navigation}: any) => {
       } else {
         setStatus('Pairing timed out. Please try again.');
         Alert.alert('Pairing Timeout', 'No peer device was detected.');
-        navigation.dispatch(StackActions.replace('📱📱 Pairing', route.params));
+        navigation.dispatch(StackActions.replace('Devices Pairing', route.params));
       }
     } catch (error) {
       dbg('Pairing Error:', error);
@@ -1298,6 +1298,7 @@ const MobilesPairing = ({navigation}: any) => {
     return '';
   }
 
+
   useFocusEffect(
     useCallback(() => {
       dbg('MobilesPairing screen focused');
@@ -1405,6 +1406,7 @@ const MobilesPairing = ({navigation}: any) => {
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       lineHeight: 18,
       marginTop: 10,
+      minHeight: 36, // Ensure minimum 2-line height (18 * 2)
     },
     enhancedRequirementsContainer: {
       marginVertical: 8,
@@ -2554,7 +2556,11 @@ const MobilesPairing = ({navigation}: any) => {
                     </TouchableOpacity>
                   ))}
                 </View>
-                <Text style={styles.pairingHint}>
+                <Text
+                  style={styles.pairingHint}
+                  numberOfLines={2}
+                  adjustsFontSizeToFit={true}
+                  minimumFontScale={0.8}>
                   ⚠️ Tip: for ultimate privacy and reliability, put one device
                   in Hotspot mode, and connect the{' '}
                   {isTrio ? 'other devices' : 'other device'} to it.
@@ -2733,7 +2739,11 @@ const MobilesPairing = ({navigation}: any) => {
                 </View>
                 {/* Security Code Matching Hint */}
                 {peerIP && (
-                  <Text style={styles.pairingHint}>
+                  <Text
+                    style={styles.pairingHint}
+                    numberOfLines={2}
+                    adjustsFontSizeToFit={true}
+                    minimumFontScale={0.8}>
                     ⚠️ Make sure every device security code 🏷 **** matches on
                     all other devices screens.
                   </Text>
@@ -2754,7 +2764,7 @@ const MobilesPairing = ({navigation}: any) => {
                       onPress={() => {
                         HapticFeedback.light();
                         navigation.dispatch(
-                          StackActions.replace('📱📱 Pairing', route.params),
+                          StackActions.replace('Devices Pairing', route.params),
                         );
                       }}>
                       <Image

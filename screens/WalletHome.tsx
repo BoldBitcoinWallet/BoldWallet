@@ -1105,7 +1105,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       }, 250);
       navigation.dispatch(
         CommonActions.navigate({
-          name: '📱📱 Pairing',
+          name: 'Devices Pairing',
           params: {
             mode: 'send_btc',
             addressType,

@@ -1201,7 +1201,17 @@ const ShowcaseScreen = ({navigation}: any) => {
                 onPress={() => {
                   if (!selectedMode) return;
                   setIsModeModalVisible(false);
-                  navigation.navigate('📱📱 Pairing', {mode: selectedMode});
+                  navigation.dispatch(
+                    CommonActions.reset({
+                      index: 0,
+                      routes: [
+                        {
+                          name: 'Devices Pairing',
+                          params: { mode: selectedMode },
+                        },
+                      ],
+                    })
+                  );
                 }}
                 disabled={!selectedMode}
                 activeOpacity={0.8}>
