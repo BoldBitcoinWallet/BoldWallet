@@ -1346,6 +1346,30 @@ const MobilesPairing = ({navigation}: any) => {
       fontSize: 14,
       marginLeft: 6,
     },
+    buttonRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginTop: 16,
+      gap: 12,
+    },
+    cancelButton: {
+      flex: 1,
+      backgroundColor: theme.colors.background,
+      borderColor: theme.colors.secondary,
+      borderWidth: 1,
+      borderRadius: 18,
+      alignItems: 'center',
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+    },
+    cancelLink: {
+      color: theme.colors.secondary,
+      fontWeight: '600',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'center',
+      fontSize: 14,
+    },
     termsLink: {
       color: theme.colors.accent,
       fontWeight: '600',
@@ -2758,7 +2782,25 @@ const MobilesPairing = ({navigation}: any) => {
                   </View>
                 )}
                 {peerIP && (
-                  <>
+                  <View style={styles.buttonRow}>
+                    {/* Cancel button for setup modes (duo/trio) */}
+                    {!isSendBitcoin && (
+                      <TouchableOpacity
+                        style={styles.cancelButton}
+                        onPress={() => {
+                          HapticFeedback.light();
+                          navigation.dispatch(
+                            CommonActions.reset({
+                              index: 0,
+                              routes: [{ name: 'Welcome' }],
+                            })
+                          );
+                        }}>
+                        <Text style={styles.cancelLink}>Cancel</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {/* Retry button */}
                     <TouchableOpacity
                       style={styles.retryButton}
                       onPress={() => {
@@ -2778,7 +2820,7 @@ const MobilesPairing = ({navigation}: any) => {
                       />
                       <Text style={styles.retryLink}>Retry</Text>
                     </TouchableOpacity>
-                  </>
+                  </View>
                 )}
               </View>
             )}
