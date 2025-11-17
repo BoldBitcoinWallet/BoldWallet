@@ -3,6 +3,7 @@ import {BBMTLibNativeModule} from '../native_modules';
 import {dbg, getMainnetAPIList} from '../utils';
 import LocalCache from './LocalCache';
 import EncryptedStorage from 'react-native-encrypted-storage';
+import { validate as validateBitcoinAddress } from 'bitcoin-address-validation';
 
 export interface WalletBalance {
   btc: string;
@@ -47,13 +48,46 @@ export const waitMS = (ms = 2000) =>
   new Promise(resolve => setTimeout(resolve, ms));
 
 // Add validation functions
-const validateBitcoinAddress = (address: string): boolean => {
-  if (!address) {
-    dbg('WalletService: Bitcoin address validation failed - empty address');
+const validateBitcoinAddressEnhanced = (address: string, network: string = 'mainnet'): boolean => {
+  if (!address || typeof address !== 'string') {
+    dbg('WalletService: Bitcoin address validation failed - empty or invalid type');
     return false;
   }
-  dbg('WalletService: Bitcoin address validation passed:', address);
-  return true;
+
+  try {
+    // Use the bitcoin-address-validation library for comprehensive validation
+    const result = validateBitcoinAddress(address);
+
+    if (!result) {
+      dbg('WalletService: Bitcoin address validation failed - invalid format');
+      return false;
+    }
+
+    // Additional network-specific validation
+    const isTestnet = network === 'testnet';
+
+    // Check address type based on network
+    if (isTestnet) {
+      // Testnet addresses: m, n, 2, tb1 prefixes
+      if (!(address.startsWith('m') || address.startsWith('n') ||
+            address.startsWith('2') || address.startsWith('tb1'))) {
+        dbg('WalletService: Bitcoin address validation failed - testnet address expected');
+        return false;
+      }
+    } else {
+      // Mainnet addresses: 1, 3, bc1 prefixes
+      if (!(address.startsWith('1') || address.startsWith('3') || address.startsWith('bc1'))) {
+        dbg('WalletService: Bitcoin address validation failed - mainnet address expected');
+        return false;
+      }
+    }
+
+    dbg('WalletService: Bitcoin address validation passed:', address, 'for network:', network);
+    return true;
+  } catch (error) {
+    dbg('WalletService: Bitcoin address validation error:', error);
+    return false;
+  }
 };
 
 const validateNumber = (value: any): boolean => {
@@ -505,8 +539,11 @@ export class WalletService {
         force,
       );
 
-      if (!validateBitcoinAddress(address)) {
-        dbg('WalletService: Invalid Bitcoin address format:', address);
+      // Normalize network parameter for validation (testnet3 -> testnet)
+      const normalizedNetwork = this.currentNetwork === 'testnet3' ? 'testnet' : this.currentNetwork;
+
+      if (!validateBitcoinAddressEnhanced(address, normalizedNetwork)) {
+        dbg('WalletService: Invalid Bitcoin address format:', address, 'for network:', this.currentNetwork);
         throw new Error('Invalid Bitcoin address');
       }
 

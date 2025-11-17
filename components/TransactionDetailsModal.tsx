@@ -31,6 +31,7 @@ interface TransactionDetailsModalProps {
     received: number;
     changeAmount: number;
   } | null;
+  isBlurred?: boolean;
 }
 
 const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
@@ -43,6 +44,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   getCurrencySymbol,
   status,
   amounts,
+  isBlurred = false,
 }) => {
   if (!transaction || !status || !amounts) {
     return null;
@@ -121,14 +123,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                 <View
                   style={[
                     styles.statusBadge,
-                    {
-                      backgroundColor: status.confirmed
-                        ? 'rgba(46, 204, 113, 0.15)'
-                        : 'rgba(231, 76, 60, 0.15)',
-                      borderColor: status.confirmed
-                        ? 'rgba(46, 204, 113, 0.4)'
-                        : 'rgba(231, 76, 60, 0.4)',
-                    },
+                    status.confirmed ? styles.statusBadgeConfirmed : styles.statusBadgePending,
                   ]}>
                   <Text
                     style={[
@@ -162,9 +157,11 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                 )}
               {renderDetailRow(
                 'Value',
-                `${getCurrencySymbol(selectedCurrency)}${getFiatAmount(
-                  amount,
-                )}`,
+                isBlurred
+                  ? '***'
+                  : `${getCurrencySymbol(selectedCurrency)}${getFiatAmount(
+                      amount,
+                    )}`,
               )}
             </View>
 
@@ -329,6 +326,14 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     alignSelf: 'flex-start',
+  },
+  statusBadgeConfirmed: {
+    backgroundColor: 'rgba(46, 204, 113, 0.15)',
+    borderColor: 'rgba(46, 204, 113, 0.4)',
+  },
+  statusBadgePending: {
+    backgroundColor: 'rgba(231, 76, 60, 0.15)',
+    borderColor: 'rgba(231, 76, 60, 0.4)',
   },
 });
 

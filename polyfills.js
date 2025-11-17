@@ -1,5 +1,6 @@
 // Polyfills for React Native
 import { InteractionManager } from 'react-native';
+import 'react-native-get-random-values';
 
 // Suppress InteractionManager deprecation warnings
 const originalWarn = console.warn;

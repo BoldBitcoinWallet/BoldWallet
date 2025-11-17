@@ -18,13 +18,23 @@ export const getPinnedRemoteIP = () => (ips.length ? ips[ips.length - 1] : '');
 export const getPinnedRemoteIPs = () => [...ips];
 
 export const dbg = (message, ...optionalParams) => {
+  // Disable debug logging in production builds to prevent information leakage
+  if (!__DEV__) {
+    return;
+  }
   let args = optionalParams.length === 0 ? '' : optionalParams;
   if (Platform.OS === 'android') {
-    console.log(`[android] [${new Date().toLocaleString()}] ${message}`, args);
+    console.log(
+      `[android] [${new Date().toLocaleString()}] ${message}`,
+      ...args,
+    );
   } else if (Platform.OS === 'ios') {
-    console.log(`[iphone] [${new Date().toLocaleString()}] ${message}`, args);
+    console.log(
+      `[iphone] [${new Date().toLocaleString()}] ${message}`,
+      ...args,
+    );
   } else {
-    console.log(message, args);
+    console.log(message, ...args);
   }
 };
 
@@ -201,9 +211,7 @@ export const HapticFeedback = {
 };
 
 // API Endpoints Configuration
-const MAINNET_APIS = [
-  'https://mempool.space/api'
-];
+const MAINNET_APIS = ['https://mempool.space/api'];
 const TESTNET_APIS = ['https://mempool.space/testnet/api'];
 
 // Function to fetch dynamic API endpoints from GitHub

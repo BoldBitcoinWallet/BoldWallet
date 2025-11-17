@@ -15,6 +15,7 @@ import {WalletProvider} from './context/WalletContext';
 import {UserProvider} from './context/UserContext';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {initializeHaptics} from './utils';
+import ErrorBoundary from './components/ErrorBoundary';
 import {
   Alert,
   EmitterSubscription,
@@ -282,51 +283,53 @@ const App = () => {
   dbg('Rendering main navigation with initialRoute:', initialRoute);
 
   return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        <UserProvider>
-          <WalletProvider>
-            <NavigationContainer>
-              <Stack.Navigator
-                initialRouteName={initialRoute}
-                screenOptions={{
-                  headerShown: false,
-                }}>
-                <Stack.Screen
-                  name="Home"
-                  component={WalletHome}
-                  options={{
-                    headerShown: true,
-                    headerLeft: () => null,
-                  }}
-                />
-                <Stack.Screen
-                  name="Welcome"
-                  component={ShowcaseScreen}
-                  options={{
-                    headerShown: true,
-                  }}
-                />
-                <Stack.Screen
-                  name="Settings"
-                  component={WalletSettings}
-                  options={{
-                    headerShown: true,
-                  }}
-                />
-                <Stack.Screen
-                  name="📱📱 Pairing"
-                  component={MobilesPairing}
-                  options={{
-                    headerShown: true,
-                  }}
-                />
-              </Stack.Navigator>
-            </NavigationContainer>
-          </WalletProvider>
-        </UserProvider>
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <UserProvider>
+            <WalletProvider>
+              <NavigationContainer>
+                <Stack.Navigator
+                  initialRouteName={initialRoute}
+                  screenOptions={{
+                    headerShown: false,
+                  }}>
+                  <Stack.Screen
+                    name="Home"
+                    component={WalletHome}
+                    options={{
+                      headerShown: true,
+                      headerLeft: () => null,
+                    }}
+                  />
+                  <Stack.Screen
+                    name="Welcome"
+                    component={ShowcaseScreen}
+                    options={{
+                      headerShown: true,
+                    }}
+                  />
+                  <Stack.Screen
+                    name="Settings"
+                    component={WalletSettings}
+                    options={{
+                      headerShown: true,
+                    }}
+                  />
+                  <Stack.Screen
+                    name="📱📱 Pairing"
+                    component={MobilesPairing}
+                    options={{
+                      headerShown: true,
+                    }}
+                  />
+                </Stack.Navigator>
+              </NavigationContainer>
+            </WalletProvider>
+          </UserProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 };
 

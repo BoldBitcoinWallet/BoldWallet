@@ -28,7 +28,6 @@ const ShimmerEffect: React.FC<ShimmerEffectProps> = ({
 };
 
 const WalletSkeleton: React.FC = () => {
-  const {theme} = useTheme();
   const animatedValue = useMemo(() => new Animated.Value(0), []);
 
   React.useEffect(() => {

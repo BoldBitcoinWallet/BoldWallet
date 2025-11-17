@@ -26,6 +26,7 @@ import {dbg, HapticFeedback} from '../utils';
 import {useTheme} from '../theme';
 import LocalCache from '../services/LocalCache';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import { validate as validateBitcoinAddress } from 'bitcoin-address-validation';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -490,6 +491,12 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   };
 
   const handleSendClick = () => {
+    // Client-side Bitcoin address validation
+    if (!address || !validateBitcoinAddress(address)) {
+      Alert.alert('Error', 'Please enter a valid Bitcoin address');
+      return;
+    }
+
     if (!estimatedFee) {
       Alert.alert('Error', 'Please wait for fee estimation');
       return;

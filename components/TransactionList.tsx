@@ -39,6 +39,7 @@ interface TransactionListProps {
   btcRate?: number;
   getCurrencySymbol?: (currency: string) => string;
   onPullRefresh?: () => void;
+  isBlurred?: boolean;
 }
 
 const TransactionList: React.FC<TransactionListProps> = ({
@@ -50,6 +51,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
   btcRate = 0,
   getCurrencySymbol = currency => currency,
   onPullRefresh,
+  isBlurred = false,
 }) => {
   const [transactions, setTransactions] = useState<any[]>(initialTransactions);
   const [loading, setLoading] = useState(false);
@@ -890,7 +892,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
                   ? {color: themes.cryptoVibrant.colors.accent}
                   : {color: themes.cryptoVibrant.colors.secondary},
               ]}>
-              {info}
+              {isBlurred ? '***' : info}
             </Text>
           </View>
           {relevantAddress && (
@@ -908,8 +910,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
                 </Text>
               </Text>
               <Text style={styles.fiatAmount}>
-                {getCurrencySymbol(selectedCurrency)}
-                {fiatAmount}
+                {isBlurred ? '***' : `${getCurrencySymbol(selectedCurrency)}${fiatAmount}`}
               </Text>
             </View>
           )}
@@ -934,6 +935,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
       selectedCurrency,
       btcRate,
       getCurrencySymbol,
+      isBlurred,
     ],
   );
 
@@ -1030,6 +1032,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
               ? getTransactionAmounts(selectedTransaction, address)
               : null
           }
+          isBlurred={isBlurred}
         />
       )}
       <Toast config={{}} />

@@ -394,12 +394,15 @@ const MobilesPairing = ({navigation}: any) => {
   }
 
   const randomSeed = (length = 32) => {
+    // Use cryptographically secure random generation
+    const array = new Uint8Array(length);
+    crypto.getRandomValues(array);
+
     let result = '';
     const characters = '0123456789abcdef';
     for (let i = 0; i < length; i++) {
-      result += characters.charAt(
-        Math.floor(Math.random() * characters.length),
-      );
+      // Map random bytes to hex characters (0-15)
+      result += characters.charAt(array[i] % 16);
     }
     return result;
   };

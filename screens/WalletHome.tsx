@@ -1394,6 +1394,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           btcRate={btcRate}
           getCurrencySymbol={getCurrencySymbol}
           onPullRefresh={() => cacheIndicatorRef.current?.press()}
+          isBlurred={isBlurred}
         />
       </View>
       <Modal
