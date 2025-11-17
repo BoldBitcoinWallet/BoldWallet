@@ -1324,19 +1324,19 @@ const MobilesPairing = ({navigation}: any) => {
       padding: 12,
     },
     retryButton: {
-      marginTop: 16,
-      alignSelf: 'center',
       backgroundColor: theme.colors.secondary,
       borderRadius: 18,
       flexDirection: 'row',
       alignItems: 'center',
-      paddingVertical: 4,
-      paddingHorizontal: 6,
+      justifyContent: 'center',
+      paddingVertical: 8,
+      paddingHorizontal: 12,
       shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 1},
       shadowOpacity: 0.1,
       shadowRadius: 2,
       elevation: 2,
+      minHeight: 36, // Ensure consistent height
     },
     retryLink: {
       color: theme.colors.background,
@@ -1348,20 +1348,24 @@ const MobilesPairing = ({navigation}: any) => {
     },
     buttonRow: {
       flexDirection: 'row',
-      justifyContent: 'space-between',
+      justifyContent: 'space-around',
       alignItems: 'center',
       marginTop: 16,
-      gap: 12,
     },
-    cancelButton: {
+    buttonFlex: {
       flex: 1,
+      marginHorizontal: 6,
+    },
+    cancelSetupButton: {
       backgroundColor: theme.colors.background,
       borderColor: theme.colors.secondary,
       borderWidth: 1,
       borderRadius: 18,
       alignItems: 'center',
+      justifyContent: 'center',
       paddingVertical: 8,
       paddingHorizontal: 12,
+      minHeight: 36, // Ensure consistent height with retry button
     },
     cancelLink: {
       color: theme.colors.secondary,
@@ -2783,26 +2787,9 @@ const MobilesPairing = ({navigation}: any) => {
                 )}
                 {peerIP && (
                   <View style={styles.buttonRow}>
-                    {/* Cancel button for setup modes (duo/trio) */}
-                    {!isSendBitcoin && (
-                      <TouchableOpacity
-                        style={styles.cancelButton}
-                        onPress={() => {
-                          HapticFeedback.light();
-                          navigation.dispatch(
-                            CommonActions.reset({
-                              index: 0,
-                              routes: [{ name: 'Welcome' }],
-                            })
-                          );
-                        }}>
-                        <Text style={styles.cancelLink}>Cancel</Text>
-                      </TouchableOpacity>
-                    )}
-
-                    {/* Retry button */}
+                    {/* Retry button (left) */}
                     <TouchableOpacity
-                      style={styles.retryButton}
+                      style={[styles.retryButton, styles.buttonFlex]}
                       onPress={() => {
                         HapticFeedback.light();
                         navigation.dispatch(
@@ -2820,6 +2807,23 @@ const MobilesPairing = ({navigation}: any) => {
                       />
                       <Text style={styles.retryLink}>Retry</Text>
                     </TouchableOpacity>
+
+                    {/* Cancel button for setup modes (duo/trio) - right */}
+                    {!isSendBitcoin && (
+                      <TouchableOpacity
+                        style={[styles.cancelSetupButton, styles.buttonFlex]}
+                        onPress={() => {
+                          HapticFeedback.light();
+                          navigation.dispatch(
+                            CommonActions.reset({
+                              index: 0,
+                              routes: [{ name: 'Welcome' }],
+                            })
+                          );
+                        }}>
+                        <Text style={styles.cancelLink}>Cancel</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 )}
               </View>
