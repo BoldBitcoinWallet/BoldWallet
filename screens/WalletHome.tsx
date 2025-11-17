@@ -857,6 +857,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const handleCurrencySelect = async (currency: {code: string}) => {
     setSelectedCurrency(currency.code);
     await LocalCache.setItem('currency', currency.code);
+    
     if (priceData[currency.code]) {
       const formattedPrice = priceData[currency.code].toFixed(2);
       setBtcPrice(formattedPrice);
@@ -865,6 +866,28 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       if (balanceBTC) {
         const newBalance = Number(balanceBTC) * priceData[currency.code];
         setBalanceFiat(newBalance.toFixed(2));
+      }
+    } else {
+      // If the selected currency doesn't have price data, try to fetch it
+      try {
+        const priceResponse = await WalletService.getInstance().getBitcoinPrice();
+        if (priceResponse.rates && priceResponse.rates[currency.code]) {
+          setPriceData(priceResponse.rates);
+          const rate = priceResponse.rates[currency.code];
+          setBtcPrice(rate.toFixed(2));
+          setBtcRate(rate);
+          // Update fiat balance with new currency rate
+          if (balanceBTC) {
+            const newBalance = Number(balanceBTC) * rate;
+            setBalanceFiat(newBalance.toFixed(2));
+          }
+        }
+      } catch (error) {
+        console.log('Failed to fetch price data for selected currency:', error);
+        // Set placeholder values
+        setBtcPrice('-');
+        setBtcRate(0);
+        setBalanceFiat('0.00');
       }
     }
   };
@@ -1166,8 +1189,22 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             />
             <TouchableOpacity
               style={styles.priceContainer}
-              onPress={() => {
+              onPress={async () => {
                 HapticFeedback.light();
+                
+                // Ensure we have price data before opening the selector
+                if (Object.keys(priceData).length === 0) {
+                  try {
+                    const priceResponse = await WalletService.getInstance().getBitcoinPrice();
+                    if (priceResponse.rates && Object.keys(priceResponse.rates).length > 0) {
+                      setPriceData(priceResponse.rates);
+                    }
+                  } catch (error) {
+                    console.log('Failed to fetch price data:', error);
+                    // Continue to open selector anyway - it will show fallback currencies
+                  }
+                }
+                
                 setIsCurrencySelectorVisible(true);
               }}>
               <Text style={styles.btcPrice}>

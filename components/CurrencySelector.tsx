@@ -61,7 +61,13 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
   const {height} = useWindowDimensions();
 
   // Convert available currencies object to array of Currency objects
-  const currencies: Currency[] = Object.keys(availableCurrencies)
+  // If no currencies are available from the API, show default currencies
+  const availableCodes = Object.keys(availableCurrencies);
+  const fallbackCurrencies = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF'];
+  
+  const currenciesToShow = availableCodes.length > 0 ? availableCodes : fallbackCurrencies;
+  
+  const currencies: Currency[] = currenciesToShow
     .filter(code => currencyNames[code]) // Only include currencies in our whitelist
     .map(code => ({
       code,
@@ -111,6 +117,12 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
             keyExtractor={item => item.code}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.listContent}
+            ListEmptyComponent={() => (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>No currencies available</Text>
+                <Text style={styles.emptySubText}>Please check your internet connection and try again</Text>
+              </View>
+            )}
           />
         </View>
       </View>
@@ -179,6 +191,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: themes.lightPolished.colors.textSecondary,
     marginLeft: 8,
+  },
+  emptyContainer: {
+    padding: 32,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: themes.lightPolished.colors.text,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  emptySubText: {
+    fontSize: 14,
+    color: themes.lightPolished.colors.textSecondary,
+    textAlign: 'center',
   },
 });
 
