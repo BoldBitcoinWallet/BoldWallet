@@ -56,10 +56,12 @@ export interface Styles {
   partyValue: TextStyle;
   actions: ViewStyle;
   sendButton: ViewStyle;
+  sendButtonText: TextStyle;
   addressTypeModalButton: ViewStyle;
   addressTypeButtonText: TextStyle;
   addressTypeButtonIcon: ImageStyle;
   receiveButton: ViewStyle;
+  receiveButtonText: TextStyle;
   modalOverlay: ViewStyle;
   modalContent: ViewStyle;
   modalText: TextStyle;
@@ -113,6 +115,40 @@ export interface Styles {
   modalActionLeft: ViewStyle;
   modalActionRight: ViewStyle;
   linkText: TextStyle;
+  apiDisplayContainer: ViewStyle;
+  apiDisplayButton: ViewStyle;
+  apiDisplayContent: ViewStyle;
+  apiDisplayIcon: ImageStyle;
+  apiDisplayLabel: TextStyle;
+  apiDisplayValue: TextStyle;
+  providerRow: ViewStyle;
+  providerItem: ViewStyle;
+  providerLeft: ViewStyle;
+  providerIcon: ImageStyle;
+  providerLabel: TextStyle;
+  providerValue: TextStyle;
+  warningBox: ViewStyle;
+  warningText: TextStyle;
+  backupButton: ViewStyle;
+  backupButtonText: TextStyle;
+  modalOptionCheckIcon: ImageStyle;
+  addressTypeLabelRow: ViewStyle;
+  recommendBadge: ViewStyle;
+  recommendBadgeText: TextStyle;
+  warningBoxWithMargin: ViewStyle;
+  modalTipText: TextStyle;
+  backupButtonWithMargin: ViewStyle;
+  modalContentCompact: ViewStyle;
+  modalHeaderRowCompact: ViewStyle;
+  modalHeaderIconCompact: ImageStyle;
+  modalHeaderTitleCompact: TextStyle;
+  modalTextCompact: TextStyle;
+  modalBoldTextCompact: TextStyle;
+  warningBoxCompact: ViewStyle;
+  warningTextCompact: TextStyle;
+  modalTipTextCompact: TextStyle;
+  backupButtonCompact: ViewStyle;
+  backupButtonTextCompact: TextStyle;
 }
 
 export const createStyles = (theme: Theme): Styles => ({
@@ -321,15 +357,15 @@ export const createStyles = (theme: Theme): Styles => ({
     fontSize: 10,
     color: theme.colors.textOnPrimary,
     opacity: 0.7,
-    marginBottom: 2,
+    marginBottom: 1,
     textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
+    letterSpacing: 0.2,
   },
   partyValue: {
     fontSize: 12,
     color: theme.colors.textOnPrimary,
     fontWeight: '600',
-    marginLeft: 4,
+    paddingHorizontal: 6,
   },
   actions: {
     flexDirection: 'row' as const,
@@ -393,6 +429,16 @@ export const createStyles = (theme: Theme): Styles => ({
     textAlign: 'center' as const,
     color: theme.colors.text,
   },
+  receiveButtonText: {
+    color: theme.colors.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  sendButtonText: {
+    color: theme.colors.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
   actionButtonText: {
     color: '#fff',
     fontSize: 14,
@@ -400,7 +446,7 @@ export const createStyles = (theme: Theme): Styles => ({
   },
   addressTypeButton: {
     backgroundColor: theme.colors.cardBackground,
-    padding: 16,
+    padding: 12,
     borderRadius: 8,
     marginVertical: 8,
     width: '100%',
@@ -408,17 +454,21 @@ export const createStyles = (theme: Theme): Styles => ({
     borderColor: theme.colors.border,
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    gap: 12,
+    gap: 8,
+    position: 'relative',
+    minHeight: 68,
   },
   addressTypeButtonSelected: {
     borderColor: theme.colors.accent,
     borderWidth: 2,
   },
   addressTypeLabel: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: theme.colors.text,
     marginBottom: 4,
+    flexShrink: 1,
+    marginRight: 6,
   },
   addressTypeValue: {
     marginTop: 4,
@@ -426,6 +476,23 @@ export const createStyles = (theme: Theme): Styles => ({
     color: theme.colors.textSecondary,
     textAlign: 'left' as const,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    flexShrink: 1,
+    marginRight: 6,
+  },
+  recommendBadge: {
+    backgroundColor: 'rgba(76, 175, 80, 0.12)',
+    borderColor: 'rgba(76, 175, 80, 0.35)',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 4,
+    marginTop: 4,
+    alignSelf: 'auto',
+  },
+  recommendBadgeText: {
+    color: '#4CAF50',
+    fontSize: 9,
+    fontWeight: '600' as const,
+    letterSpacing: 0.2,
   },
   addressTypeIcon: {
     width: 16,
@@ -434,13 +501,27 @@ export const createStyles = (theme: Theme): Styles => ({
     opacity: 0.9,
   },
   modalAddressTypeIcon: {
-    width: 24,
-    height: 24,
+    width: 22,
+    height: 22,
     tintColor: theme.colors.text,
     opacity: 0.9,
   },
+  modalOptionCheckIcon: {
+    width: 18,
+    height: 18,
+    tintColor: theme.colors.accent,
+    opacity: 0.9,
+    marginLeft: 4,
+  },
   addressTypeContent: {
     flex: 1,
+    paddingRight: 8,
+  },
+  addressTypeLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    flexWrap: 'nowrap',
   },
   modalTitle: {
     fontSize: 20,
@@ -588,7 +669,6 @@ export const createStyles = (theme: Theme): Styles => ({
   networkIcon: {
     width: 16,
     height: 16,
-    marginRight: 4,
     tintColor: '#FFFFFF',
   },
   rowCenter: {
@@ -604,6 +684,7 @@ export const createStyles = (theme: Theme): Styles => ({
     flexDirection: 'column' as const,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
+    paddingHorizontal: 4,
   },
   rowCenterMarginTop2: {
     flexDirection: 'row' as const,
@@ -663,8 +744,8 @@ export const createStyles = (theme: Theme): Styles => ({
     marginBottom: 12,
   },
   modalHeaderIcon: {
-    width: 36,
-    height: 36,
+    width: 24,
+    height: 24,
     tintColor: theme.colors.accent,
     marginRight: 10,
   },
@@ -694,5 +775,200 @@ export const createStyles = (theme: Theme): Styles => ({
   linkText: {
     color: theme.colors.accent,
     fontWeight: 'bold' as const,
+  },
+  apiDisplayContainer: {
+    paddingHorizontal: 16,
+    alignItems: 'center' as const,
+  },
+  apiDisplayButton: {
+    backgroundColor: 'transparent',
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    width: '100%',
+    opacity: 0.8,
+  },
+  apiDisplayContent: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    height: 16,
+    gap: 2,
+  },
+  apiDisplayIcon: {
+    width: 14,
+    height: 14,
+    marginRight: 6,
+    tintColor: theme.colors.textSecondary,
+    opacity: 0.7,
+  },
+  apiDisplayLabel: {
+    fontSize: 11,
+    fontWeight: '500' as const,
+    color: theme.colors.textSecondary,
+    marginRight: 4,
+  },
+  apiDisplayValue: {
+    fontSize: 11,
+    fontWeight: '400' as const,
+    color: theme.colors.textSecondary,
+    flex: 1,
+    textAlign: 'right' as const,
+  },
+  providerRow: {
+    marginHorizontal: 16,
+    marginVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  providerItem: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+  },
+  providerLeft: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    flex: 1,
+  },
+  providerIcon: {
+    width: 14,
+    height: 14,
+    marginRight: 6,
+    tintColor: theme.colors.textSecondary,
+    opacity: 0.8,
+  },
+  providerLabel: {
+    fontSize: 11,
+    fontWeight: '400' as const,
+    color: theme.colors.textSecondary,
+    letterSpacing: 0.2,
+  },
+  providerValue: {
+    fontSize: 11,
+    fontWeight: '400' as const,
+    color: theme.colors.textSecondary,
+    letterSpacing: 0.1,
+    flex: 1,
+    textAlign: 'right' as const,
+    opacity: 0.8,
+  },
+  warningBox: {
+    backgroundColor: 'rgba(255, 193, 7, 0.1)',
+    borderRadius: 8,
+    padding: 12,
+    marginVertical: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FFC107',
+  },
+  warningText: {
+    fontSize: 14,
+    fontWeight: '500' as const,
+    color: '#FF6B35',
+    lineHeight: 20,
+  },
+  backupButton: {
+    backgroundColor: theme.colors.primary,
+    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    marginTop: 12,
+    alignItems: 'center' as const,
+  },
+  backupButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600' as const,
+  },
+  warningBoxWithMargin: {
+    backgroundColor: 'rgba(255, 193, 7, 0.1)',
+    borderRadius: 8,
+    padding: 12,
+    marginVertical: 8,
+    marginTop: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FFC107',
+  },
+  modalTipText: {
+    fontSize: 13,
+    color: theme.colors.textSecondary,
+    marginTop: 12,
+    textAlign: 'left' as const,
+  },
+  backupButtonWithMargin: {
+    backgroundColor: theme.colors.secondary,
+    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    marginTop: 18,
+    alignItems: 'center' as const,
+  },
+  modalContentCompact: {
+    backgroundColor: theme.colors.background,
+    borderRadius: 12,
+    padding: 16,
+    width: '85%',
+    maxWidth: 400,
+  },
+  modalHeaderRowCompact: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    marginBottom: 12,
+  },
+  modalHeaderIconCompact: {
+    width: 20,
+    height: 20,
+    tintColor: theme.colors.accent,
+    marginRight: 8,
+  },
+  modalHeaderTitleCompact: {
+    fontSize: 18,
+    fontWeight: '600' as const,
+    color: theme.colors.text,
+    flex: 1,
+  },
+  modalTextCompact: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: theme.colors.text,
+    marginBottom: 12,
+    textAlign: 'left' as const,
+  },
+  modalBoldTextCompact: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: theme.colors.text,
+  },
+  warningBoxCompact: {
+    backgroundColor: 'rgba(255, 193, 7, 0.08)',
+    borderRadius: 6,
+    padding: 10,
+    marginBottom: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: '#FFC107',
+  },
+  warningTextCompact: {
+    fontSize: 13,
+    fontWeight: '500' as const,
+    color: '#FF6B35',
+    lineHeight: 18,
+  },
+  modalTipTextCompact: {
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+    marginBottom: 14,
+    textAlign: 'left' as const,
+    lineHeight: 16,
+  },
+  backupButtonCompact: {
+    backgroundColor: theme.colors.secondary,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignItems: 'center' as const,
+  },
+  backupButtonTextCompact: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600' as const,
   },
 });

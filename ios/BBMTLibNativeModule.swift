@@ -55,13 +55,13 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
   }
 
   @objc func publishData(
-    _ port: String, timeout: String, encKey: String, raw: String,
+    _ port: String, timeout: String, encKey: String, raw: String, mode: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard self != nil else { return }
       var error: NSError?
-      let output = TssPublishData(port, timeout, encKey, raw, &error)
+      let output = TssPublishData(port, timeout, encKey, raw, mode, &error)
       if error == nil {
         self?.sendLogEvent("publishData", output)
         resolver(output)
@@ -181,37 +181,37 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     resolve("stopRelay", output, error, resolver)
   }
 
-  @objc func listenForPeer(
-    _ id: String, pubkey: String, port: String, timeout: String,
+  @objc func listenForPeers(
+    _ id: String, pubkey: String, port: String, timeout: String, mode: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard self != nil else { return }
       var error: NSError?
-      let output = TssListenForPeer(id, pubkey, port, timeout, &error)
+      let output = TssListenForPeers(id, pubkey, port, timeout, mode, &error)
       if error == nil {
-        self?.sendLogEvent("listenForPeer", output)
+        self?.sendLogEvent("listenForPeers", output)
         resolver(output)
       } else {
-        self?.sendLogEvent("listenForPeer", error!.localizedDescription)
+        self?.sendLogEvent("listenForPeers", error!.localizedDescription)
         resolver("")
       }
     }
   }
 
-  @objc func discoverPeer(
-    _ id: String, pubkey: String, localIp: String, remoteIp: String, port: String, timeout: String,
+  @objc func discoverPeers(
+    _ id: String, pubkey: String, localIp: String, remoteIp: String, port: String, timeout: String, mode: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard self != nil else { return }
       var error: NSError?
-      let output = TssDiscoverPeer(id, pubkey, localIp, remoteIp, port, timeout, &error)
+      let output = TssDiscoverPeers(id, pubkey, localIp, remoteIp, port, timeout, mode, &error)
       if error == nil {
-        self?.sendLogEvent("discoverPeer", output)
+        self?.sendLogEvent("discoverPeers", output)
         resolver(output)
-      } else {
-        self?.sendLogEvent("discoverPeer", error!.localizedDescription)
+      } else { 
+        self?.sendLogEvent("discoverPeers", error!.localizedDescription)
         resolver("")
       }
     }
@@ -394,6 +394,15 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     resolve("setAPI", output, error, resolver)
   }
 
+  @objc func setFeeAPIs(
+    _ urls: String, resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    var error: NSError?
+    let output = TssUseFeeAPIs(urls, &error)
+    resolve("setFeeAPIs", output, error, resolver)
+  }
+  
   @objc func totalUTXO(
     _ address: String, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
@@ -432,7 +441,7 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
   ) {
     var error: NSError?
     let output = TssJoinKeygen(
-      ppmFile, partyID, partiesCSV, encKey, decKey, sessionID, server, chaincode, "", &error)
+      ppmFile, partyID, partiesCSV, encKey, decKey, sessionID, server, chaincode, sessionKey, &error)
     resolve("mpcTssSetup", output, error, resolver)
   }
 

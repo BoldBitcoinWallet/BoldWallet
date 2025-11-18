@@ -134,6 +134,18 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             promise.reject(e)
         }
     }
+    
+    @ReactMethod
+    fun setFeeAPIs(urls: String, promise: Promise) {
+        try {
+            val result = Tss.useFeeAPIs(urls)
+            ld("setFeeAPIs", result)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            ld("setFeeAPIs", "error: ${e.stackTraceToString()}")
+            promise.reject(e)
+        }
+    }
 
     @ReactMethod
     fun estimateFees(senderAddress: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
@@ -220,11 +232,11 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun publishData(port: String, timeout: String, encKey: String, raw: String,
+    fun publishData(port: String, timeout: String, encKey: String, raw: String, mode: String,
                     promise: Promise) {
         Thread {
             try {
-                val output = Tss.publishData(port, timeout, encKey, raw)
+                val output = Tss.publishData(port, timeout, encKey, raw, mode)
                 ld("publishData", output)
                 promise.resolve(output)
             } catch (e: Throwable) {
@@ -249,28 +261,28 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun listenForPeer(id: String, pubkey: String, port: String, timeout: String, promise: Promise) {
+    fun listenForPeers(id: String, pubkey: String, port: String, timeout: String, mode: String, promise: Promise) {
         Thread {
             try {
-                val peer = Tss.listenForPeer(id, pubkey, port, timeout)
-                ld("listenForPeer", peer)
+                val peer = Tss.listenForPeers(id, pubkey, port, timeout, mode)
+                ld("listenForPeers", peer)
                 promise.resolve(peer)
             } catch (e: Throwable) {
-                ld("listenForPeer", "error: ${e.message}")
+                ld("listenForPeers", "error: ${e.message}")
                 promise.resolve("")
             }
         }.start()
     }
 
     @ReactMethod
-    fun discoverPeer(id: String, pubkey: String, localIP: String, remoteIP: String, port: String, timeout: String, promise: Promise) {
+    fun discoverPeers(id: String, pubkey: String, localIP: String, remoteIP: String, port: String, timeout: String, mode: String, promise: Promise) {
         Thread {
             try {
-                val peer = Tss.discoverPeer(id, pubkey, localIP, remoteIP, port, timeout)
-                ld("discoverPeer", peer)
+                val peer = Tss.discoverPeers(id, pubkey, localIP, remoteIP, port, timeout, mode)
+                ld("discoverPeers", peer)
                 promise.resolve(peer)
             } catch (e: Throwable) {
-                ld("discoverPeer", "error: ${e.message}")
+                ld("discoverPeers", "error: ${e.message}")
                 promise.resolve("")
             }
         }.start()

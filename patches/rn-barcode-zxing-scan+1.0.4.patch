@@ -1,0 +1,13 @@
+diff --git a/node_modules/rn-barcode-zxing-scan/android/build.gradle b/node_modules/rn-barcode-zxing-scan/android/build.gradle
+index 2b6ecaf..515bac5 100644
+--- a/node_modules/rn-barcode-zxing-scan/android/build.gradle
++++ b/node_modules/rn-barcode-zxing-scan/android/build.gradle
+@@ -1,7 +1,7 @@
+ buildscript {
+     repositories {
+-        jcenter()
+         google()
++        mavenCentral()
+     }
+ 
+     dependencies {

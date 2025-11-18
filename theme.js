@@ -1,14 +1,14 @@
 // theme.js
 import React, {createContext, useContext, useEffect, useState} from 'react';
-import EncryptedStorage from 'react-native-encrypted-storage';
 import LocalCache from './services/LocalCache';
+import {dbg} from './utils';
 
 export const themes = {
   lightPolished: {
     colors: {
-      primary: '#34495e',
+      primary: '#1A2B3C',
       subPrimary: '#033e3e',
-      secondary: '#149077',
+      secondary: '#344960',
       danger: '#e74c3c',
       accent: '#f1c40f',
       background: '#ffffff',
@@ -134,14 +134,14 @@ export const ThemeProvider = ({children}) => {
     const loadTheme = async () => {
       try {
         const storedTheme = await LocalCache.getItem('theme');
-        console.log('Initial theme loaded:', storedTheme || 'default');
+        dbg('Initial theme loaded:', storedTheme || 'default');
         setTheme(
           storedTheme === 'cryptoVibrant'
             ? themes.cryptoVibrant
             : themes.lightPolished,
         );
       } catch (error) {
-        console.error('Error loading theme:', error);
+        dbg('Error loading theme:', error);
         setTheme(themes.lightPolished);
       }
     };
@@ -150,16 +150,16 @@ export const ThemeProvider = ({children}) => {
 
   const toggleTheme = async isCrypto => {
     const newTheme = isCrypto ? themes.cryptoVibrant : themes.lightPolished;
-    console.log('Toggling to:', isCrypto ? 'cryptoVibrant' : 'lightPolished');
+    dbg('Toggling to:', isCrypto ? 'cryptoVibrant' : 'lightPolished');
     setTheme(newTheme);
     try {
       await LocalCache.setItem(
         'theme',
         isCrypto ? 'cryptoVibrant' : 'lightPolished',
       );
-      console.log('Theme saved successfully');
+      dbg('Theme saved successfully');
     } catch (error) {
-      console.error('Error saving theme:', error);
+      dbg('Error saving theme:', error);
     }
   };
 

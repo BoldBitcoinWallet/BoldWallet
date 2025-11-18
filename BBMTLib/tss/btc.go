@@ -32,7 +32,14 @@ type UTXO struct {
 
 var _btc_net = "testnet3" // default to testnet
 var _api_url = "https://mempool.space/testnet/api"
+var _api_urls = []string{"https://mempool.space/api", "https://benpool.space/api"}
+
 var _fee_set = "30m"
+
+func UseFeeAPIs(urls string) (string, error) {
+	_api_urls = strings.Split(urls, ",")
+	return urls, nil
+}
 
 func SetNetwork(network string) (string, error) {
 	if network == "mainnet" || network == "testnet3" {
@@ -129,33 +136,34 @@ func FetchUTXODetails(txID string, vout uint32) (*wire.TxOut, bool, error) {
 }
 
 func RecommendedFees(feeType string) (int, error) {
-	url := fmt.Sprintf("%s/v1/fees/recommended", _api_url)
-	resp, err := http.Get(url)
-	if err != nil {
-		return 0, err
+	for _, url := range _api_urls {
+		fee_url := strings.TrimSuffix(url, "/")
+		url := fmt.Sprintf("%s/v1/fees/recommended", fee_url)
+		resp, err := http.Get(url)
+		if err != nil {
+			continue
+		}
+		defer resp.Body.Close()
+		var fees FeeResponse
+		if err := json.NewDecoder(resp.Body).Decode(&fees); err != nil {
+			continue
+		}
+		switch feeType {
+		case "top":
+			return fees.FastestFee, nil
+		case "30m":
+			return fees.HalfHourFee, nil
+		case "1hr":
+			return fees.HourFee, nil
+		case "eco":
+			return fees.EconomyFee, nil
+		case "min":
+			return fees.MinimumFee, nil
+		default:
+			return 0, errors.New("invalid fee type: top, eco, min, 1hr, 30m")
+		}
 	}
-	defer resp.Body.Close()
-
-	var fees FeeResponse
-	if err := json.NewDecoder(resp.Body).Decode(&fees); err != nil {
-		Logf("Error getting the feerate - using 2 sat/vB defaulted. %v", err)
-		return 0, errors.New("error getting the feerate")
-	}
-
-	switch feeType {
-	case "top":
-		return fees.FastestFee, nil
-	case "30m":
-		return fees.HalfHourFee, nil
-	case "1hr":
-		return fees.HourFee, nil
-	case "eco":
-		return fees.EconomyFee, nil
-	case "min":
-		return fees.MinimumFee, nil
-	default:
-		return 0, errors.New("invalid fee type: top, eco, min, 1hr, 30m")
-	}
+	return 0, errors.New("failed to get fees")
 }
 
 func PostTx(rawTxHex string) (string, error) {

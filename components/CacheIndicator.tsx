@@ -23,6 +23,7 @@ interface CacheIndicatorProps {
   onRefresh: () => void;
   theme: any;
   isRefreshing?: boolean;
+  usingCache?: boolean; // explicitly indicate cached mode (e.g., offline)
 }
 
 export interface CacheIndicatorHandle {
@@ -30,7 +31,7 @@ export interface CacheIndicatorHandle {
 }
 
 export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorProps>(
-  ({timestamps, onRefresh, theme, isRefreshing = false}, ref) => {
+  ({timestamps, onRefresh, theme, isRefreshing = false, usingCache = false}, ref) => {
     const latestTimestamp = Math.max(timestamps.price, timestamps.balance);
     const shimmerValue = useRef(new Animated.Value(-100)).current;
     const [currentTime, setCurrentTime] = useState(Date.now());
@@ -82,9 +83,9 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
     // Check if we're using cache
     useEffect(() => {
       const timeDiff = Date.now() - latestTimestamp;
-      const isCache = timeDiff > 60000; // More than 1 minute old
+      const isCache = usingCache || timeDiff > 60000; // Explicit or older than 1 minute
       setIsUsingCache(isCache);
-    }, [latestTimestamp]);
+    }, [latestTimestamp, usingCache]);
 
     const getTimeAgo = (timestamp: number) => {
       // Handle case when timestamp is 0
@@ -202,11 +203,8 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
             }}>
             {isRefreshing
               ? 'Refreshing...'
-              : latestTimestamp === 0
-              ? 'Tap to load data'
-              : isUsingCache
-              ? 'Tap to refresh data'
-              : 'Tap to refresh'}
+              : 'Tap to refresh'
+            }
           </Text>
         </View>
         {!isRefreshing && (
@@ -216,13 +214,11 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
                 createStyles(theme).cacheText,
                 {color: theme.colors.textSecondary},
               ]}>
-              {latestTimestamp === 0 ? (
-                'No data available'
-              ) : isUsingCache ? (
-                <>📱 Cached • {new Date(latestTimestamp).toLocaleTimeString()}</>
-              ) : (
-                timeAgo
-              )}
+              {latestTimestamp === 0
+                ? 'No data available'
+                : isUsingCache
+                ? `Cached • ${timeAgo}`
+                : timeAgo}
             </Text>
             <Image source={clockIcon} style={styles.clockIcon} />
           </View>

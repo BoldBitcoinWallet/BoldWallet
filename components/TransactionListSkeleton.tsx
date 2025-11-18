@@ -1,32 +1,26 @@
 import React, {useMemo} from 'react';
 import {View, StyleSheet, Animated, Dimensions} from 'react-native';
 import {useTheme} from '../theme';
-import LinearGradient from 'react-native-linear-gradient';
 
 const {width} = Dimensions.get('window');
 
 interface ShimmerEffectProps {
   style: any;
   translateX: Animated.AnimatedInterpolation<string | number>;
-  backgroundColor: string;
 }
 
 const ShimmerEffect: React.FC<ShimmerEffectProps> = ({
   style,
   translateX,
-  backgroundColor,
 }) => {
   const {theme} = useTheme();
-  const background = {overflow: 'hidden', backgroundColor};
+  
   return (
-    <View style={[style, styles.shimmerWrapper, background]}>
+    <View style={[style, styles.shimmerWrapper]}>
       <Animated.View
         style={[styles.shimmerContainer, {transform: [{translateX}]}]}>
-        <LinearGradient
-          colors={[backgroundColor, theme.colors.border, backgroundColor]}
-          start={{x: 1, y: 0}}
-          end={{x: 0, y: 0}}
-          style={styles.gradient}
+        <View
+          style={[styles.gradient, {backgroundColor: theme.colors.background}]}
         />
       </Animated.View>
     </View>
@@ -35,55 +29,66 @@ const ShimmerEffect: React.FC<ShimmerEffectProps> = ({
 
 interface TransactionSkeletonItemProps {
   translateX: Animated.AnimatedInterpolation<string | number>;
-  backgroundColor: string;
 }
 
 const TransactionSkeletonItem: React.FC<TransactionSkeletonItemProps> = ({
   translateX,
-  backgroundColor,
-}) => (
-  <View style={[styles.transactionItem, {backgroundColor}]}>
-    <View style={styles.transactionRow}>
-      <ShimmerEffect
-        style={styles.statusSkeleton}
-        translateX={translateX}
-        backgroundColor={backgroundColor}
-      />
-      <ShimmerEffect
-        style={styles.amountSkeleton}
-        translateX={translateX}
-        backgroundColor={backgroundColor}
-      />
+}) => {
+  
+  return (
+    <View style={styles.transactionItem}>
+      {/* Top row with status and amount */}
+      <View style={styles.transactionRow}>
+        <View style={styles.statusContainer}>
+          <ShimmerEffect
+            style={styles.statusIconSkeleton}
+            translateX={translateX}
+          />
+          <ShimmerEffect
+            style={styles.statusTextSkeleton}
+            translateX={translateX}
+          />
+        </View>
+        <ShimmerEffect
+          style={styles.amountSkeleton}
+          translateX={translateX}
+        />
+      </View>
+      
+      {/* Address row */}
+      <View style={styles.addressRow}>
+        <ShimmerEffect
+          style={styles.addressSkeleton}
+          translateX={translateX}
+        />
+        <ShimmerEffect
+          style={styles.usdAmountSkeleton}
+          translateX={translateX}
+        />
+      </View>
+      
+      {/* Bottom row with transaction ID and timestamp */}
+      <View style={styles.transactionRow}>
+        <View style={styles.txIdContainer}>
+          <ShimmerEffect
+            style={styles.linkIconSkeleton}
+            translateX={translateX}
+          />
+          <ShimmerEffect
+            style={styles.txIdSkeleton}
+            translateX={translateX}
+          />
+        </View>
+        <ShimmerEffect
+          style={styles.timestampSkeleton}
+          translateX={translateX}
+        />
+      </View>
     </View>
-    <View style={styles.addressRow}>
-      <ShimmerEffect
-        style={styles.addressSkeleton}
-        translateX={translateX}
-        backgroundColor={backgroundColor}
-      />
-      <ShimmerEffect
-        style={styles.usdAmountSkeleton}
-        translateX={translateX}
-        backgroundColor={backgroundColor}
-      />
-    </View>
-    <View style={styles.transactionRow}>
-      <ShimmerEffect
-        style={styles.txIdSkeleton}
-        translateX={translateX}
-        backgroundColor={backgroundColor}
-      />
-      <ShimmerEffect
-        style={styles.timestampSkeleton}
-        translateX={translateX}
-        backgroundColor={backgroundColor}
-      />
-    </View>
-  </View>
-);
+  );
+};
 
 const TransactionListSkeleton: React.FC = () => {
-  const {theme} = useTheme();
   const animatedValue = useMemo(() => new Animated.Value(0), []);
 
   React.useEffect(() => {
@@ -92,7 +97,7 @@ const TransactionListSkeleton: React.FC = () => {
         Animated.sequence([
           Animated.timing(animatedValue, {
             toValue: 1,
-            duration: 2000,
+            duration: 1200,
             useNativeDriver: true,
           }),
           Animated.timing(animatedValue, {
@@ -112,16 +117,15 @@ const TransactionListSkeleton: React.FC = () => {
 
   const translateX = animatedValue.interpolate({
     inputRange: [0, 1],
-    outputRange: [-width * 2, width * 2],
+    outputRange: [-width * 1.2, width * 1.2],
   });
 
   return (
     <View style={styles.container}>
-      {[1, 2, 3].map(i => (
+      {[1, 2, 3, 4].map(i => (
         <TransactionSkeletonItem
           key={i}
           translateX={translateX}
-          backgroundColor={theme.colors.cardBackground}
         />
       ))}
     </View>
@@ -132,16 +136,21 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 16,
+    paddingTop: 0,
+    backgroundColor: '#f8f9fa',
   },
   transactionItem: {
     padding: 16,
-    marginVertical: 8,
-    borderRadius: 8,
+    marginVertical: 4,
+    borderRadius: 12,
+    backgroundColor: '#ffffff',
     elevation: 1,
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.08,
-    shadowRadius: 1,
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.03)',
   },
   transactionRow: {
     flexDirection: 'row',
@@ -153,41 +162,62 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: 4,
+    marginVertical: 6,
   },
-  statusSkeleton: {
-    width: 100,
-    height: 20,
-    borderRadius: 4,
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusIconSkeleton: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    marginRight: 6,
+  },
+  statusTextSkeleton: {
+    width: 70,
+    height: 16,
+    borderRadius: 8,
   },
   amountSkeleton: {
     width: 120,
     height: 24,
-    borderRadius: 4,
+    borderRadius: 12,
   },
   addressSkeleton: {
     flex: 1,
     height: 18,
-    borderRadius: 4,
-    marginRight: 8,
+    borderRadius: 9,
+    marginRight: 10,
   },
   usdAmountSkeleton: {
     width: 80,
     height: 18,
-    borderRadius: 4,
+    borderRadius: 9,
+  },
+  txIdContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  linkIconSkeleton: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    marginRight: 6,
   },
   txIdSkeleton: {
-    width: 140,
-    height: 16,
-    borderRadius: 4,
+    width: 100,
+    height: 14,
+    borderRadius: 7,
   },
   timestampSkeleton: {
-    width: 100,
-    height: 16,
-    borderRadius: 4,
+    width: 90,
+    height: 14,
+    borderRadius: 7,
   },
   shimmerWrapper: {
     overflow: 'hidden',
+    borderRadius: 6,
   },
   shimmerContainer: {
     width: '100%',
@@ -195,6 +225,8 @@ const styles = StyleSheet.create({
   },
   gradient: {
     flex: 1,
+    borderRadius: 6,
+    backgroundColor: '#e9ecef',
   },
 });
 

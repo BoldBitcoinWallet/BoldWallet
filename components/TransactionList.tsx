@@ -1,6 +1,5 @@
 import React, {useEffect, useState, useCallback, useRef} from 'react';
 import {
-  SafeAreaView,
   FlatList,
   Text,
   StyleSheet,
@@ -12,6 +11,7 @@ import {
   TouchableOpacity,
   Image,
 } from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import axios from 'axios';
 import Toast from 'react-native-toast-message';
 import moment from 'moment';
@@ -39,6 +39,7 @@ interface TransactionListProps {
   btcRate?: number;
   getCurrencySymbol?: (currency: string) => string;
   onPullRefresh?: () => void;
+  isBlurred?: boolean;
 }
 
 const TransactionList: React.FC<TransactionListProps> = ({
@@ -50,6 +51,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
   btcRate = 0,
   getCurrencySymbol = currency => currency,
   onPullRefresh,
+  isBlurred = false,
 }) => {
   const [transactions, setTransactions] = useState<any[]>(initialTransactions);
   const [loading, setLoading] = useState(false);
@@ -62,10 +64,12 @@ const TransactionList: React.FC<TransactionListProps> = ({
   const [isDetailsModalVisible, setIsDetailsModalVisible] = useState(false);
 
   const {colors} = useTheme();
+  const insets = useSafeAreaInsets();
 
   // Add refs to track mounting state and prevent memory leaks
   const isMounted = useRef(true);
   const abortController = useRef<AbortController | null>(null);
+  const isRefreshingRef = useRef(false);
 
   // Memoized transaction amount calculator
   const getTransactionAmounts = useCallback((tx: any, addr: string) => {
@@ -119,7 +123,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
       if (isFetching.current) {
         dbg('Fetch already in progress, skipping');
         // Clear refresh state if this was a refresh attempt
-        if (isRefreshing) {
+        if (isRefreshingRef.current) {
           setIsRefreshing(false);
         }
         return;
@@ -157,10 +161,52 @@ const TransactionList: React.FC<TransactionListProps> = ({
       };
 
       try {
-        if (!url) {
+        if (!url || url === '') {
+          dbg('URL is empty, loading from cache only');
           await loadFromCache();
+          if (isMounted.current) {
+            isFetching.current = false;
+            setLoading(false);
+            setIsRefreshing(false);
+          }
           return;
         }
+
+        // Guard against network/address mismatch using baseApi
+        const isTestnetApi = /\/testnet(\/|$)/.test(url);
+        const addressMatchesNetwork = (a: string, testnetApi: boolean) => {
+          if (!a) return false;
+          if (testnetApi) {
+            return (
+              a.startsWith('m') ||
+              a.startsWith('n') ||
+              a.startsWith('2') ||
+              a.startsWith('tb1')
+            );
+          }
+          return a.startsWith('1') || a.startsWith('3') || a.startsWith('bc1');
+        };
+
+        if (!addressMatchesNetwork(address, isTestnetApi)) {
+          dbg('TransactionList: address/baseApi mismatch; skipping fetch', {
+            address,
+            url,
+          });
+          if (isMounted.current) {
+            setTransactions([]);
+            setHasMoreTransactions(false);
+            setIsRefreshing(false);
+          }
+          return;
+        }
+
+        dbg(
+          'TransactionList: Guard passed. Address matches network. Proceeding to fetch.',
+          {
+            address,
+            isTestnetApi,
+          },
+        );
 
         // Construct proper API URL
         const cleanBaseApi = url.replace(/\/+$/, '').replace(/\/api\/?$/, '');
@@ -180,13 +226,19 @@ const TransactionList: React.FC<TransactionListProps> = ({
           timeoutPromise,
         ])) as {data: any[]};
 
+        dbg(
+          'TransactionList: Received response with',
+          response.data.length,
+          'transactions',
+        );
+
         if (!isMounted.current) {
           dbg('Component unmounted, skipping state updates');
           return;
         }
 
         const cached = JSON.parse(
-          (await LocalCache.getItem('pendingTxs')) || '{}',
+          (await LocalCache.getItem(`${address}-pendingTxs`)) || '{}',
         );
 
         // Process pending transactions
@@ -205,7 +257,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
         response.data.forEach((tx: any) => {
           if (cached[tx.txid]) {
             delete cached[tx.txid];
-            LocalCache.setItem('pendingTxs', JSON.stringify(cached));
+            LocalCache.setItem(`${address}-pendingTxs`, JSON.stringify(cached));
           }
         });
 
@@ -283,6 +335,11 @@ const TransactionList: React.FC<TransactionListProps> = ({
         );
 
         if (isMounted.current) {
+          dbg(
+            'TransactionList: Setting',
+            newTransactions.length,
+            'transactions to state',
+          );
           setTransactions(newTransactions);
           setHasMoreTransactions(newTransactions.length > 0);
           if (newTransactions.length > 0) {
@@ -300,7 +357,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
             setIsRefreshing(false);
           }
         } else {
-          console.error('Error fetching transactions:', error);
+          dbg('Error fetching transactions:', error);
           if (isMounted.current) {
             Toast.show({
               type: 'error',
@@ -319,12 +376,12 @@ const TransactionList: React.FC<TransactionListProps> = ({
         }
       }
     },
-    [address, getTransactionAmounts, onUpdate, isRefreshing],
+    [address, getTransactionAmounts, onUpdate],
   );
 
   // For user pull-to-refresh
   const handlePullRefresh = useCallback(async () => {
-    if (isRefreshing || isFetching.current) {
+    if (isRefreshingRef.current || isFetching.current) {
       return;
     }
     HapticFeedback.medium();
@@ -332,14 +389,14 @@ const TransactionList: React.FC<TransactionListProps> = ({
     onPullRefresh?.();
     try {
       await memoizedFetchTransactions(baseApi);
-    } catch (error) {
+    } catch {
       // Error is already handled in memoizedFetchTransactions
     } finally {
       if (isMounted.current) {
         setIsRefreshing(false);
       }
     }
-  }, [baseApi, isRefreshing, memoizedFetchTransactions, onPullRefresh]);
+  }, [baseApi, memoizedFetchTransactions, onPullRefresh]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -351,19 +408,43 @@ const TransactionList: React.FC<TransactionListProps> = ({
     };
   }, []);
 
+  // Sync isRefreshing state to ref to avoid effect re-runs
+  useEffect(() => {
+    isRefreshingRef.current = isRefreshing;
+  }, [isRefreshing]);
+
   // Fix transaction refresh handling
   useEffect(() => {
+    // Skip effect if address or baseApi are not initialized
+    if (!address || !baseApi || address === '' || baseApi === '') {
+      dbg('Skipping transaction fetch - address or baseApi not initialized', {
+        address,
+        baseApi,
+      });
+      setTransactions([]);
+      setHasMoreTransactions(true);
+      setLastSeenTxId(null);
+      setLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
+
+    // Reset list when address or baseApi changes to prevent showing stale rows
+    setTransactions([]);
+    setHasMoreTransactions(true);
+    setLastSeenTxId(null);
+
     let mounted = true;
     let refreshInterval: NodeJS.Timeout | null = null;
     const controller = new AbortController();
     abortController.current = controller;
 
     const fetchData = async () => {
-      if (!mounted || isFetching.current || isRefreshing) {
+      if (!mounted || isFetching.current || isRefreshingRef.current) {
         dbg('Skipping fetch - conditions not met:', {
           mounted,
           isFetching: isFetching.current,
-          isRefreshing,
+          isRefreshing: isRefreshingRef.current,
         });
         return;
       }
@@ -379,13 +460,13 @@ const TransactionList: React.FC<TransactionListProps> = ({
     };
 
     // Initial fetch
-    if (!isFetching.current && !isRefreshing) {
+    if (!isFetching.current && !isRefreshingRef.current) {
       fetchData();
     }
 
     // Set up refresh interval
     refreshInterval = setInterval(() => {
-      if (mounted && !isFetching.current && !isRefreshing) {
+      if (mounted && !isFetching.current && !isRefreshingRef.current) {
         fetchData();
       }
     }, 30000); // Refresh every 30 seconds
@@ -404,7 +485,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
       setLoading(false);
       setIsRefreshing(false);
     };
-  }, [address, baseApi, memoizedFetchTransactions, isRefreshing]);
+  }, [address, baseApi, memoizedFetchTransactions]);
 
   // Memoized transaction status checker
   const getTransactionStatus = useCallback(
@@ -442,6 +523,16 @@ const TransactionList: React.FC<TransactionListProps> = ({
       return;
     }
 
+    // Guard against invalid state
+    if (!lastSeenTxId || !address || !baseApi) {
+      dbg('Skipping fetch more - invalid state:', {
+        lastSeenTxId,
+        address,
+        baseApi,
+      });
+      return;
+    }
+
     dbg('Starting fetch more from:', lastSeenTxId);
     setLoadingMore(true);
     try {
@@ -469,75 +560,80 @@ const TransactionList: React.FC<TransactionListProps> = ({
       }
 
       const cached = JSON.parse(
-        (await LocalCache.getItem('pendingTxs')) || '{}',
+        (await LocalCache.getItem(`${address}-pendingTxs`)) || '{}',
       );
       dbg('Cached transactions for fetch more:', Object.keys(cached).length);
 
       setTransactions(prevTransactions => {
-        const existingIds = new Set(prevTransactions.map(tx => tx.txid));
-        const filteredTransactions = newTransactions.filter(
-          (tx: any) => !existingIds.has(tx.txid),
-        );
-        dbg('New unique transactions:', filteredTransactions.length);
+        try {
+          const existingIds = new Set(prevTransactions.map(tx => tx.txid));
+          const filteredTransactions = newTransactions.filter(
+            (tx: any) => !existingIds.has(tx.txid),
+          );
+          dbg('New unique transactions:', filteredTransactions.length);
 
-        // Process pending transactions
-        let pending = 0;
-        let pendingTxs = filteredTransactions
-          .filter((tx: any) => !tx.status || !tx.status.confirmed)
-          .map((tx: any) => {
-            const {sent} = getTransactionAmounts(tx, address);
-            if (!isNaN(sent) && sent > 0) {
-              pending += Number(sent);
-            }
-            return tx;
-          });
-        dbg('New pending transactions:', pendingTxs.length);
-
-        // Update cache
-        filteredTransactions.filter((tx: any) => {
-          if (cached[tx.txid]) {
-            delete cached[tx.txid];
-            dbg('delete from cache in fetch more', tx.txid);
-            LocalCache.setItem('pendingTxs', JSON.stringify(cached));
-          }
-        });
-
-        // Add cached transactions
-        for (const txID in cached) {
-          dbg('prepending from cache in fetch more', txID, cached[txID]);
-          const validTxID = /^[a-fA-F0-9]{64}$/.test(txID);
-          if (!validTxID) {
-            delete cached[txID];
-          } else {
-            filteredTransactions.unshift({
-              txid: txID,
-              from: cached[txID].from,
-              to: cached[txID].to,
-              amount: cached[txID].satoshiAmount,
-              satoshiAmount: cached[txID].satoshiAmount,
-              satoshiFees: cached[txID].satoshiFees,
-              sentAt: cached[txID].sentAt,
-              status: {
-                confirmed: false,
-                block_height: null,
-              },
+          // Process pending transactions
+          let pending = 0;
+          let pendingTxs = filteredTransactions
+            .filter((tx: any) => !tx.status || !tx.status.confirmed)
+            .map((tx: any) => {
+              const {sent} = getTransactionAmounts(tx, address);
+              if (!isNaN(sent) && sent > 0) {
+                pending += Number(sent);
+              }
+              return tx;
             });
+          dbg('New pending transactions:', pendingTxs.length);
+
+          // Update cache
+          filteredTransactions.filter((tx: any) => {
+            if (cached[tx.txid]) {
+              delete cached[tx.txid];
+              dbg('delete from cache in fetch more', tx.txid);
+              LocalCache.setItem(`${address}-pendingTxs`, JSON.stringify(cached));
+            }
+          });
+
+          // Add cached transactions
+          for (const txID in cached) {
+            dbg('prepending from cache in fetch more', txID, cached[txID]);
+            const validTxID = /^[a-fA-F0-9]{64}$/.test(txID);
+            if (!validTxID) {
+              delete cached[txID];
+            } else {
+              filteredTransactions.unshift({
+                txid: txID,
+                from: cached[txID].from,
+                to: cached[txID].to,
+                amount: cached[txID].satoshiAmount,
+                satoshiAmount: cached[txID].satoshiAmount,
+                satoshiFees: cached[txID].satoshiFees,
+                sentAt: cached[txID].sentAt,
+                status: {
+                  confirmed: false,
+                  block_height: null,
+                },
+              });
+            }
           }
+
+          onUpdate(pendingTxs, pending);
+          dbg('Updated pending transactions in fetch more');
+
+          const txs = [...prevTransactions, ...filteredTransactions];
+
+          dbg('Caching transactions:', txs.length);
+          WalletService.getInstance().updateTransactionsCache(
+            address,
+            txs,
+            false, // isFromCache
+          );
+
+          return txs;
+        } catch (error: any) {
+          dbg('Error in setTransactions:', error);
+          return prevTransactions;
         }
-
-        onUpdate(pendingTxs, pending);
-        dbg('Updated pending transactions in fetch more');
-
-        const txs = [...prevTransactions, ...filteredTransactions];
-
-        dbg('Caching transactions:', txs.length);
-        WalletService.getInstance().updateTransactionsCache(
-          address,
-          txs,
-          false, // isFromCache
-        );
-
-        return txs;
       });
 
       // Only update lastSeenTxId if we have new transactions
@@ -550,7 +646,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
       }
     } catch (error: any) {
       if (error.name !== 'CanceledError') {
-        console.error('Error fetching more transactions:', error);
+        dbg('Error fetching more transactions:', error);
         dbg('Error details in fetch more:', error.message);
         Toast.show({
           type: 'error',
@@ -586,6 +682,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
     list: {
       flex: 1,
       backgroundColor: colors.card,
+      marginTop: Platform.OS === 'ios' ? -insets.top : 0,
     },
     listContent: {
       flexGrow: 1,
@@ -795,7 +892,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
                   ? {color: themes.cryptoVibrant.colors.accent}
                   : {color: themes.cryptoVibrant.colors.secondary},
               ]}>
-              {info}
+              {isBlurred ? '***' : info}
             </Text>
           </View>
           {relevantAddress && (
@@ -813,8 +910,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
                 </Text>
               </Text>
               <Text style={styles.fiatAmount}>
-                {getCurrencySymbol(selectedCurrency)}
-                {fiatAmount}
+                {isBlurred ? '***' : `${getCurrencySymbol(selectedCurrency)}${fiatAmount}`}
               </Text>
             </View>
           )}
@@ -839,6 +935,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
       selectedCurrency,
       btcRate,
       getCurrencySymbol,
+      isBlurred,
     ],
   );
 
@@ -854,13 +951,21 @@ const TransactionList: React.FC<TransactionListProps> = ({
   }, [loading, styles.emptyContainer, styles.emptyText]);
 
   return (
-    <SafeAreaView
-      style={[styles.container, {backgroundColor: colors.background}]}>
+    <View
+      style={[
+        styles.container,
+        {
+          paddingTop: insets.top,
+          paddingLeft: insets.left,
+          paddingRight: insets.right,
+        },
+      ]}>
       <FlatList
         style={styles.list}
         contentContainerStyle={styles.listContent}
         data={transactions}
         renderItem={renderItem}
+        contentInsetAdjustmentBehavior="never"
         keyExtractor={item => {
           const isPending = !item.status || !item.status.confirmed;
           const timestamp = item.sentAt || item.status?.block_time || 0;
@@ -873,7 +978,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
         ListEmptyComponent={renderEmptyComponent}
         ListFooterComponent={
           loadingMore ? (
-            <ActivityIndicator size="small" color={colors.primary} />
+            <ActivityIndicator size="small" />
           ) : !hasMoreTransactions && transactions.length > 0 ? (
             <Text style={styles.endOfListText}>End of Transactions</Text>
           ) : null
@@ -882,9 +987,6 @@ const TransactionList: React.FC<TransactionListProps> = ({
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={handlePullRefresh}
-            colors={[colors.primary]}
-            tintColor={colors.primary}
-            progressBackgroundColor={colors.card}
             progressViewOffset={0}
             enabled={true}
           />
@@ -930,10 +1032,11 @@ const TransactionList: React.FC<TransactionListProps> = ({
               ? getTransactionAmounts(selectedTransaction, address)
               : null
           }
+          isBlurred={isBlurred}
         />
       )}
       <Toast config={{}} />
-    </SafeAreaView>
+    </View>
   );
 };
 

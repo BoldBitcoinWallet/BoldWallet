@@ -264,11 +264,13 @@ FOUNDATION_EXPORT NSString* _Nonnull TssDecodeAddress(NSString* _Nullable addres
 
 FOUNDATION_EXPORT void TssDisableLogs(void);
 
-FOUNDATION_EXPORT NSString* _Nonnull TssDiscoverPeer(NSString* _Nullable id_, NSString* _Nullable pubkey, NSString* _Nullable localIP, NSString* _Nullable remoteIP, NSString* _Nullable port, NSString* _Nullable timeout, NSError* _Nullable* _Nullable error);
+FOUNDATION_EXPORT NSString* _Nonnull TssDiscoverPeers(NSString* _Nullable id_, NSString* _Nullable pubkey, NSString* _Nullable localIP, NSString* _Nullable remoteIPsCSV, NSString* _Nullable port, NSString* _Nullable timeout, NSString* _Nullable mode, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssEciesDecrypt(NSString* _Nullable encryptedData, NSString* _Nullable privateKeyHex, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssEciesEncrypt(NSString* _Nullable data, NSString* _Nullable publicKeyHex, NSError* _Nullable* _Nullable error);
+
+FOUNDATION_EXPORT NSString* _Nonnull TssEciesPubkeyFromPrivateKey(NSString* _Nullable privateKeyHex, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssEstimateFees(NSString* _Nullable senderAddress, NSString* _Nullable receiverAddress, int64_t amountSatoshi, NSError* _Nullable* _Nullable error);
 
@@ -313,7 +315,7 @@ FOUNDATION_EXPORT NSString* _Nonnull TssJoinKeygen(NSString* _Nullable ppmPath, 
 
 FOUNDATION_EXPORT NSString* _Nonnull TssJoinKeysign(NSString* _Nullable server, NSString* _Nullable key, NSString* _Nullable partiesCSV, NSString* _Nullable session, NSString* _Nullable sessionKey, NSString* _Nullable encKey, NSString* _Nullable decKey, NSString* _Nullable keyshare, NSString* _Nullable derivePath, NSString* _Nullable message, NSError* _Nullable* _Nullable error);
 
-FOUNDATION_EXPORT NSString* _Nonnull TssListenForPeer(NSString* _Nullable id_, NSString* _Nullable pubkey, NSString* _Nullable port, NSString* _Nullable timeout, NSError* _Nullable* _Nullable error);
+FOUNDATION_EXPORT NSString* _Nonnull TssListenForPeers(NSString* _Nullable id_, NSString* _Nullable pubkey, NSString* _Nullable port, NSString* _Nullable timeout, NSString* _Nullable mode, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT BOOL TssLocalPreParams(NSString* _Nullable ppmFile, long timeoutMinutes, BOOL* _Nullable ret0_, NSError* _Nullable* _Nullable error);
 
@@ -340,7 +342,7 @@ FOUNDATION_EXPORT NSString* _Nonnull TssPubToP2TR(NSString* _Nullable pubKeyComp
 
 FOUNDATION_EXPORT NSString* _Nonnull TssPubToP2WPKH(NSString* _Nullable pubKeyCompressed, NSString* _Nullable mainnetORtestnet3, NSError* _Nullable* _Nullable error);
 
-FOUNDATION_EXPORT NSString* _Nonnull TssPublishData(NSString* _Nullable port, NSString* _Nullable timeout, NSString* _Nullable enckey, NSString* _Nullable data, NSError* _Nullable* _Nullable error);
+FOUNDATION_EXPORT NSString* _Nonnull TssPublishData(NSString* _Nullable port, NSString* _Nullable timeout, NSString* _Nullable enckey, NSString* _Nullable data, NSString* _Nullable mode, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT BOOL TssRecommendedFees(NSString* _Nullable feeType, long* _Nullable ret0_, NSError* _Nullable* _Nullable error);
 
@@ -352,6 +354,8 @@ FOUNDATION_EXPORT NSString* _Nonnull TssReplaceTransaction(NSString* _Nullable s
 FOUNDATION_EXPORT NSString* _Nonnull TssRunRelay(NSString* _Nullable port, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssSecP256k1Recover(NSString* _Nullable r, NSString* _Nullable s, NSString* _Nullable v, NSString* _Nullable h, NSError* _Nullable* _Nullable error);
+
+FOUNDATION_EXPORT NSString* _Nonnull TssSecureRandom(long length, NSError* _Nullable* _Nullable error);
 
 // skipped function SelectUTXOs with unsupported parameter or return types
 
@@ -378,6 +382,8 @@ FOUNDATION_EXPORT NSString* _Nonnull TssStopRelay(NSError* _Nullable* _Nullable 
 FOUNDATION_EXPORT NSString* _Nonnull TssTotalUTXO(NSString* _Nullable address, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssUseAPI(NSString* _Nullable network, NSString* _Nullable base, NSError* _Nullable* _Nullable error);
+
+FOUNDATION_EXPORT NSString* _Nonnull TssUseFeeAPIs(NSString* _Nullable urls, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssUseFeePolicy(NSString* _Nullable feeType, NSError* _Nullable* _Nullable error);
 

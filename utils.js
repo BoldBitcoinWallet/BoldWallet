@@ -2,20 +2,39 @@ import {Platform} from 'react-native';
 import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 import LocalCache from './services/LocalCache';
 
-let ip = '';
+let ips = [];
 
-export const pinRemoteIP = addr => (ip = addr);
+export const pinRemoteIP = addr => {
+  if (!addr || typeof addr !== 'string') return ips;
+  if (addr.split('.').length !== 4) return ips; // only IPv4
+  if (!ips.includes(addr)) {
+    ips.push(addr);
+  }
+  return ips;
+};
 
-export const getPinnedRemoteIP = () => ip;
+export const getPinnedRemoteIP = () => (ips.length ? ips[ips.length - 1] : '');
+
+export const getPinnedRemoteIPs = () => [...ips];
 
 export const dbg = (message, ...optionalParams) => {
+  // Disable debug logging in production builds to prevent information leakage
+  if (!__DEV__) {
+    return;
+  }
   let args = optionalParams.length === 0 ? '' : optionalParams;
   if (Platform.OS === 'android') {
-    console.log(`[android] [${new Date().toLocaleString()}] ${message}`, args);
+    console.log(
+      `[android] [${new Date().toLocaleString()}] ${message}`,
+      ...args,
+    );
   } else if (Platform.OS === 'ios') {
-    console.log(`[iphone] [${new Date().toLocaleString()}] ${message}`, args);
+    console.log(
+      `[iphone] [${new Date().toLocaleString()}] ${message}`,
+      ...args,
+    );
   } else {
-    console.log(message, args);
+    console.log(message, ...args);
   }
 };
 
@@ -189,4 +208,53 @@ export const HapticFeedback = {
       ReactNativeHapticFeedback.trigger('soft', hapticOptions);
     }
   },
+};
+
+// API Endpoints Configuration
+const MAINNET_APIS = ['https://mempool.space/api'];
+const TESTNET_APIS = ['https://mempool.space/testnet/api'];
+
+// Function to fetch dynamic API endpoints from GitHub
+export const fetchDynamicAPIEndpoints = async () => {
+  try {
+    const response = await fetch(
+      'https://raw.githubusercontent.com/BoldBitcoinWallet/mempool-space-hosts/refs/heads/main/README.md',
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const markdownText = await response.text();
+
+    // Parse markdown to extract URLs
+    const urlRegex = /https:\/\/[^\s\]]+/g;
+    const urls = markdownText.match(urlRegex) || [];
+
+    // Filter and format URLs to ensure they have /api suffix
+    const apiEndpoints = urls
+      .filter(url => url.includes('mempool'))
+      .map(url => {
+        // Remove trailing slash if present
+        const cleanUrl = url.replace(/\/$/, '');
+        // Add /api suffix if not already present
+        return cleanUrl.endsWith('/api') ? cleanUrl : `${cleanUrl}/api`;
+      })
+      .filter((url, index, self) => self.indexOf(url) === index); // Remove duplicates
+
+    return apiEndpoints;
+  } catch (error) {
+    dbg('Failed to fetch dynamic API endpoints:', error);
+    return [];
+  }
+};
+
+// Helper function to get mainnet API endpoints (dynamic + fallback)
+export const getMainnetAPIList = async () => {
+  const dynamicEndpoints = await fetchDynamicAPIEndpoints();
+  return dynamicEndpoints.length > 0 ? dynamicEndpoints : MAINNET_APIS;
+};
+
+// Helper function to get testnet API endpoints (only hardcoded endpoint)
+export const getTestnetAPIList = async () => {
+  return TESTNET_APIS;
 };

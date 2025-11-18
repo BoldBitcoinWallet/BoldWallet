@@ -11,6 +11,7 @@ import {
   Linking,
 } from 'react-native';
 import {themes} from '../theme';
+import {dbg} from '../utils';
 
 interface LegalModalProps {
   visible: boolean;
@@ -76,7 +77,7 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
       const formattedContent = formatMarkdown(markdownContent);
       setContent(formattedContent);
     } catch (err) {
-      console.error('Error fetching content:', err);
+      dbg('Error fetching content:', err);
       setError(
         'Failed to load content. Please check your internet connection.',
       );
@@ -125,7 +126,6 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
               <View style={styles.loadingContainer}>
                 <ActivityIndicator
                   size="large"
-                  color={themes.lightPolished.colors.primary}
                 />
                 <Text style={styles.loadingText}>Loading...</Text>
               </View>

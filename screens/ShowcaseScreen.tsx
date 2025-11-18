@@ -9,10 +9,11 @@ import {
   NativeModules,
   Modal,
   TextInput,
-  Button,
   ScrollView,
   Animated,
   Easing,
+  Image,
+  Linking,
 } from 'react-native';
 import DocumentPicker from 'react-native-document-picker';
 import EncryptedStorage from 'react-native-encrypted-storage';
@@ -20,6 +21,7 @@ import RNFS from 'react-native-fs';
 import {useTheme} from '../theme';
 import {dbg, HapticFeedback} from '../utils';
 import LegalModal from '../components/LegalModal';
+import LocalCache from '../services/LocalCache';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -28,13 +30,26 @@ const ShowcaseScreen = ({navigation}: any) => {
   const [password, setPassword] = useState('');
   const [fileContent, setFileContent] = useState('');
   const [agreeToTerms, setAgreeToTerms] = useState(false);
+  const [agreeToPrivacy, setAgreeToPrivacy] = useState(false);
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
+  const [isModeModalVisible, setIsModeModalVisible] = useState(false);
+  const [selectedMode, setSelectedMode] = useState<'duo' | 'trio' | null>(null);
   const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
     'terms',
   );
+  const [isPasswordFocused, setIsPasswordFocused] = useState(false);
   const {theme} = useTheme();
 
-  const fadeAnim = useRef(new Animated.Value(0.7)).current;
+  const fadeAnim = useRef(new Animated.Value(0.6)).current;
+  const connectorAnim = useRef(new Animated.Value(0)).current;
+  const connectorLoopRef = useRef(null as Animated.CompositeAnimation | null);
+
+  // Clear all app cache on component mount
+  useEffect(() => {
+    LocalCache.clear()
+      .then(() => dbg('App cache cleared successfully'))
+      .catch(err => dbg('Error clearing app cache:', err));
+  }, []);
 
   useEffect(() => {
     Animated.loop(
@@ -46,7 +61,7 @@ const ShowcaseScreen = ({navigation}: any) => {
           useNativeDriver: true,
         }),
         Animated.timing(fadeAnim, {
-          toValue: 0.7,
+          toValue: 0.6,
           duration: 1000,
           easing: Easing.cubic,
           useNativeDriver: true,
@@ -54,6 +69,42 @@ const ShowcaseScreen = ({navigation}: any) => {
       ]),
     ).start();
   }, [fadeAnim]);
+
+  useEffect(() => {
+    // Start/stop the connector ping-pong animation based on selection and modal visibility
+    if (isModeModalVisible && selectedMode) {
+      connectorLoopRef.current?.stop?.();
+      connectorAnim.setValue(0);
+      connectorLoopRef.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(connectorAnim, {
+            toValue: 1,
+            duration: 900,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.timing(connectorAnim, {
+            toValue: 0,
+            duration: 900,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+      connectorLoopRef.current.start();
+    } else {
+      connectorLoopRef.current?.stop?.();
+      connectorAnim.stopAnimation();
+      connectorAnim.setValue(0);
+    }
+  }, [isModeModalVisible, selectedMode, connectorAnim]);
+
+  // Reset selection each time the mode modal opens
+  useEffect(() => {
+    if (isModeModalVisible) {
+      setSelectedMode(null);
+    }
+  }, [isModeModalVisible]);
 
   const handleContentUri = async (uri: any) => {
     try {
@@ -74,8 +125,8 @@ const ShowcaseScreen = ({navigation}: any) => {
       await RNFS.unlink(localFilePath);
 
       return content;
-    } catch (error) {
-      dbg('Error handling content URI:', error);
+    } catch (_error) {
+      dbg('Error handling content URI:', _error);
       return '';
     }
   };
@@ -95,7 +146,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       if (DocumentPicker.isCancel(err)) {
         dbg('User cancelled the picker');
       } else {
-        console.error('Error reading file:', err.message || err);
+        dbg('Error reading file:', err.message || err);
         Alert.alert('Error', 'Failed to read the file');
       }
     }
@@ -110,6 +161,17 @@ const ShowcaseScreen = ({navigation}: any) => {
       if (decryptedKeyshare.indexOf('pub_key') < 0) {
         Alert.alert('Wrong Password', 'Could not import keyshare');
       } else {
+        // validate keyshare
+        try {
+          const ks = JSON.parse(decryptedKeyshare);
+          if (!ks.pub_key) {
+            throw 'Error: pub_key not found in keyshare';
+          }
+        } catch (error) {
+          dbg('Error parsing keyshare:', error);
+          throw 'Error: Invalid keyshare';
+        }
+
         await EncryptedStorage.setItem('keyshare', decryptedKeyshare);
         setModalVisible(false);
         setPassword('');
@@ -118,15 +180,22 @@ const ShowcaseScreen = ({navigation}: any) => {
           navigation.dispatch(
             CommonActions.reset({
               index: 0,
-              routes: [{name: 'Bold Home'}],
+              routes: [{name: 'Home'}],
             }),
           );
         }, 1000);
       }
-    } catch (decodeError) {
-      console.warn('Failed to decode as UTF-8. File might be binary.');
-      Alert.alert('Error', 'Failed to decrypt the file');
+    } catch {
+      dbg('Failed to decode as UTF-8. File might be binary.');
+      Alert.alert('Error', 'Failed to import the file');
     }
+  };
+
+  const handleCloseModal = () => {
+    HapticFeedback.medium();
+    setModalVisible(false);
+    setPassword('');
+    setIsPasswordFocused(false);
   };
 
   const styles = StyleSheet.create({
@@ -138,129 +207,521 @@ const ShowcaseScreen = ({navigation}: any) => {
       flexGrow: 1,
       justifyContent: 'center',
       alignItems: 'center',
+      paddingHorizontal: 24,
     },
     heroSection: {
       alignItems: 'center',
       justifyContent: 'center',
       textAlign: 'center',
+      paddingVertical: 20,
     },
     heroTitle: {
       fontSize: 28,
       fontWeight: '700',
-      color: theme.colors.primary,
-      marginTop: 0,
+      color: theme.colors.text,
+      marginTop: 16,
       textAlign: 'center',
+      lineHeight: 36,
+      marginBottom: 16,
     },
     heroSubtitle: {
-      fontSize: 16,
-      color: theme.colors.secondary,
-      fontWeight: 'bold',
+      fontSize: 20,
+      color: theme.colors.primary,
+      fontWeight: '700',
       textAlign: 'center',
+      lineHeight: 28,
+      paddingHorizontal: 20,
+      marginBottom: 8,
+    },
+    heroTagline: {
+      fontSize: 16,
+      color: theme.colors.textSecondary,
+      fontWeight: '500',
+      textAlign: 'center',
+      lineHeight: 22,
+      paddingHorizontal: 20,
+      fontStyle: 'italic',
+    },
+    logoContainer: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'transparent',
     },
     storeIcon: {
-      width: 128,
-      height: 128,
+      width: 120,
+      height: 120,
     },
     bottomActions: {
       alignItems: 'center',
       width: '100%',
-      marginBottom: 10,
+      marginBottom: 24,
+      paddingHorizontal: 24,
     },
     ctaButtons: {
-      flexDirection: 'row',
+      flexDirection: 'column',
       justifyContent: 'center',
-      gap: 15,
-      marginBottom: 20,
+      gap: 12,
+      marginBottom: 24,
+      width: '100%',
+      paddingHorizontal: 8,
     },
-    ctaButton: {
+    ctaButtonPrimary: {
       backgroundColor: theme.colors.primary,
-      borderRadius: 4,
-      padding: 18,
+      borderRadius: 12,
+      paddingVertical: 16,
+      paddingHorizontal: 24,
       alignItems: 'center',
       justifyContent: 'center',
-      width: 160,
+      width: '100%',
+      shadowColor: theme.colors.primary,
+      shadowOffset: {width: 0, height: 4},
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 6,
     },
-    ctaButtonRestore: {
-      backgroundColor: theme.colors.accent,
-      borderRadius: 4,
-      padding: 18,
+    ctaButtonSecondary: {
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      borderColor: theme.colors.border,
+      borderRadius: 12,
+      paddingVertical: 14,
+      paddingHorizontal: 24,
       alignItems: 'center',
       justifyContent: 'center',
-      width: 160,
+      width: '100%',
     },
     ctaButtonText: {
       color: theme.colors.background,
-      fontWeight: '800',
+      fontWeight: '600',
       fontSize: 16,
+    },
+    ctaButtonSecondaryText: {
+      color: theme.colors.text,
+      fontWeight: '600',
+      fontSize: 16,
+    },
+    ctaButtonIconContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '100%',
+      position: 'relative',
+      gap: 8,
+    },
+    ctaButtonIcon: {
+      width: 20,
+      height: 20,
+    },
+    ctaButtonIconLeft: {
+      position: 'absolute',
+      left: 0,
+      width: 20,
+      height: 20,
     },
     disabledButton: {
       opacity: 0.5,
     },
     termsContainer: {
-      flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      marginBottom: 20,
+      marginBottom: 24,
       paddingHorizontal: 20,
-      flexWrap: 'wrap',
+    },
+    termsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'flex-start',
+      marginBottom: 16,
+      paddingHorizontal: 10,
     },
     termsText: {
-      fontSize: 13,
-      textAlign: 'center',
-      color: theme.colors.text,
+      fontSize: 14,
+      textAlign: 'left',
+      color: theme.colors.textSecondary,
       marginLeft: 8,
+      marginTop: 6,
+      lineHeight: 20,
+      flex: 1,
+      alignSelf: 'center',
     },
     termsLink: {
       color: theme.colors.accent,
       textDecorationLine: 'underline',
-      fontWeight: '500',
+      fontWeight: '600',
     },
     checkboxContainer: {
       alignItems: 'center',
       justifyContent: 'center',
+      marginTop: 0,
+      padding: 8,
+      margin: -8,
     },
     checkbox: {
-      width: 24,
-      height: 24,
+      width: 28,
+      height: 28,
       borderWidth: 2,
-      borderColor: theme.colors.text,
-      borderRadius: 4,
+      borderColor: theme.colors.border,
+      borderRadius: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     checkboxChecked: {
       backgroundColor: theme.colors.primary,
+      borderColor: theme.colors.primary,
     },
+    checkmark: {
+      color: theme.colors.background,
+      fontSize: 16,
+      fontWeight: 'bold',
+    },
+    // Enhanced Modal Styles
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.8)',
+      backgroundColor: 'rgba(0,0,0,0.75)',
       alignItems: 'center',
       justifyContent: 'center',
     },
     modalContent: {
-      backgroundColor: theme.colors.background,
-      padding: 20,
-      borderRadius: 8,
-      width: '80%',
+      backgroundColor: theme.colors.cardBackground,
+      borderRadius: 16,
+      width: '85%',
+      maxWidth: 420,
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 10},
+      shadowOpacity: 0.3,
+      shadowRadius: 20,
+      elevation: 10,
+      overflow: 'hidden',
+    },
+    modalHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 24,
+      paddingTop: 24,
+      paddingBottom: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: 'rgba(0,0,0,0.05)',
     },
     modalTitle: {
-      fontSize: 20,
-      fontWeight: 'bold',
-      marginBottom: 10,
-      textAlign: 'center',
+      fontSize: 18,
+      fontWeight: '700',
+      marginLeft: 12,
       color: theme.colors.text,
+      flex: 1,
+    },
+    closeButton: {
+      width: 40,
+      height: 40,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginLeft: 12,
+      backgroundColor: theme.colors.subPrimary + '10',
+      borderRadius: 32,
+      borderWidth: 1,
+      paddingTop: 2,
+      borderColor: theme.colors.border + '10',
+    },
+    closeButtonText: {
+      fontSize: 20,
+      color: theme.colors.text,
+      fontWeight: '600',
+    },
+    modalBody: {
+      paddingHorizontal: 24,
+      paddingVertical: 20,
+    },
+    modalSubtitle: {
+      fontSize: 14,
+      color: theme.colors.secondary,
+      marginBottom: 20,
+      textAlign: 'left',
+      fontWeight: '500',
+    },
+    passwordInputContainer: {
+      marginBottom: 24,
+    },
+    passwordInputLabel: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: theme.colors.text,
+      marginBottom: 10,
+      paddingHorizontal: 4,
     },
     passwordInput: {
-      borderWidth: 1,
-      borderColor: '#ccc',
-      borderRadius: 4,
-      padding: 10,
-      marginBottom: 15,
-      textAlign: 'center',
-      fontSize: 17,
+      borderWidth: 1.5,
+      borderColor: theme.colors.accent,
+      borderRadius: 12,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      fontSize: 16,
+      color: theme.colors.text,
+      backgroundColor: 'rgba(0,0,0,0.02)',
+      fontWeight: '500',
+    },
+    passwordInputFocused: {
+      borderColor: theme.colors.primary,
+      backgroundColor: 'rgba(0,0,0,0.03)',
     },
     modalActions: {
       flexDirection: 'row',
       justifyContent: 'space-between',
-      marginTop: 10,
+      alignItems: 'center',
+      gap: 12,
+    },
+    modalActionButton: {
+      flex: 1,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontWeight: '600',
+      flexDirection: 'row',
+      gap: 8,
+      paddingVertical: 14,
+      minHeight: 48,
+    },
+    modalCancelButton: {
+      backgroundColor: 'rgba(0,0,0,0.05)',
+      borderWidth: 1,
+      borderColor: 'rgba(0,0,0,0.1)',
+    },
+    modalSubmitButton: {
+      backgroundColor: theme.colors.primary,
+    },
+    modalActionButtonText: {
+      fontSize: 14,
+      fontWeight: '600',
+      letterSpacing: 0.3,
+    },
+    modalCancelButtonText: {
+      color: theme.colors.text,
+      fontSize: 14,
+      fontWeight: '500',
+    },
+    modalSubmitButtonText: {
+      color: theme.colors.background,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    modalHeaderIconImage: {
+      width: 20,
+      height: 20,
+      tintColor: theme.colors.primary,
+    },
+    buttonIcon: {
+      width: 16,
+      height: 16,
+      tintColor: theme.colors.background,
+    },
+    modeOptionsContainer: {
+      paddingVertical: 8,
+      flexDirection: 'row',
+      gap: 12,
+      width: '100%',
+    },
+    modeHintWrapper: {
+      alignItems: 'center',
+      marginBottom: 20,
+    },
+    modeHintTitle: {
+      fontSize: 15,
+      color: theme.colors.text,
+      textAlign: 'left',
+      alignSelf: 'flex-start',
+      fontWeight: '500',
+    },
+    modeHintLine: {
+      fontSize: 13,
+      color: theme.colors.textSecondary,
+      marginTop: 6,
+      textAlign: 'left',
+      alignSelf: 'flex-start',
+    },
+    modeHintLineCentered: {
+      fontSize: 13,
+      color: theme.colors.textSecondary,
+      marginTop: 6,
+      textAlign: 'center',
+    },
+    modeOptionCard: {
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flex: 1,
+      paddingTop: 18,
+      paddingBottom: 12,
+      position: 'relative',
+    },
+    modeOptionCardPrimary: {
+      backgroundColor: theme.colors.white,
+      borderWidth: 1,
+      borderColor: theme.colors.border + '40',
+    },
+    modeOptionCardSelected: {
+      backgroundColor: theme.colors.subPrimary + '10',
+      borderWidth: 1.5,
+      borderColor: theme.colors.subPrimary,
+    },
+    modeOptionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      width: '100%',
+    },
+    modeOptionContent: {
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '100%',
+      gap: 10,
+    },
+    modeOptionIcon: {
+      width: 26,
+      height: 26,
+      marginBottom: 0,
+    },
+    modeIconRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 4,
+    },
+    modeIconRowTrio: {
+      gap: 2,
+    },
+    modeIconWrapper: {
+      position: 'relative',
+      justifyContent: 'center',
+      alignItems: 'center',
+      width: '100%',
+    },
+    modeConnectorLine: {
+      position: 'absolute',
+      left: '50%',
+      marginLeft: -15,
+      width: 30,
+      top: 30,
+      height: 2,
+      borderRadius: 1,
+      backgroundColor: theme.colors.border,
+      opacity: 0.4,
+      zIndex: 0,
+    },
+    modeConnectorLineTrio: {
+      marginLeft: -28,
+      width: 56,
+    },
+    modeConnectorDot: {
+      position: 'absolute',
+      top: 27,
+      left: '50%',
+      marginLeft: -15,
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      zIndex: 0,
+    },
+    modeConnectorDotTrio: {
+      marginLeft: -28,
+    },
+    modeOptionTitle: {
+      color: theme.colors.background,
+      fontSize: 16,
+      fontWeight: 'bold',
+      textAlign: 'center',
+    },
+    modeSelectedCheck: {
+      position: 'absolute',
+      top: 10,
+      right: 10,
+      width: 18,
+      height: 18,
+      tintColor: theme.colors.primary,
+    },
+    modeSelectedCheckHidden: {
+      opacity: 0,
+    },
+    modeContinueButton: {
+      marginTop: 24,
+      borderRadius: 12,
+      paddingVertical: 14,
+      alignItems: 'center',
+    },
+    modeContinueButtonDisabled: {
+      opacity: 0.5,
+    },
+    modeContinueButtonText: {
+      ...StyleSheet.flatten({}),
+      color: theme.colors.background,
+      fontSize: 15,
+      fontWeight: '600',
+    },
+    modeOptionDesc: {
+      color: theme.colors.background,
+      opacity: 0.9,
+      textAlign: 'center',
+      fontSize: 13,
+      marginTop: 6,
+      lineHeight: 18,
+    },
+    modeSelectedHint: {
+      opacity: 0.5,
+      marginTop: 14,
+      backgroundColor: theme.colors.white,
+      padding: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    modeSelectedHintRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+      width: '100%',
+    },
+    modeSelectedHintIcon: {
+      width: 20,
+      height: 20,
+      tintColor: theme.colors.primary,
+    },
+    modeSelectedHintText: {
+      color: theme.colors.primary,
+      fontSize: 14,
+      textAlign: 'left',
+      flex: 1,
+      flexWrap: 'wrap',
+      maxWidth: '100%',
+      fontWeight: 'normal',
+    },
+    modeSelectedHintTextBold: {
+      fontWeight: 'bold',
+    },
+    // Setup Guide Hint Styles - Subtle
+    setupGuideHint: {
+      marginTop: 12,
+      alignItems: 'center',
+    },
+    setupGuideHintTouchable: {
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 8,
+    },
+    setupGuideHintRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    setupGuideHintIcon: {
+      width: 16,
+      height: 16,
+      tintColor: theme.colors.primary,
+    },
+    setupGuideHintText: {
+      fontSize: 13,
+      color: theme.colors.primary,
+      fontWeight: '500',
+      textDecorationLine: 'underline',
+      textDecorationColor: theme.colors.primary + '80',
     },
   });
 
@@ -268,113 +729,210 @@ const ShowcaseScreen = ({navigation}: any) => {
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.heroSection}>
-          <Text style={styles.heroTitle}>
+          <Animated.View style={[styles.logoContainer, {opacity: fadeAnim}]}>
+            <Image
+              style={styles.storeIcon}
+              source={require('../assets/bold-bitcoin-icon.png')}
+            />
+          </Animated.View>
+          <Text style={styles.heroSubtitle}>
             Seedless.{'\n'}Hardware-Free.{'\n'}Limitless.
           </Text>
-          <Animated.Image
-            style={[styles.storeIcon, {opacity: fadeAnim}]}
-            source={require('../assets/playstore-icon.png')}
-          />
-          <Text style={styles.heroSubtitle}>
-            Roam the world with Peace of Mind {'\n'}
-            Self-Custody Superior ₿itcoin Wallet
+          <Text style={styles.heroTagline}>
+            The future of Bitcoin self-custody
           </Text>
         </View>
       </ScrollView>
 
       <View style={styles.bottomActions}>
         <View style={styles.termsContainer}>
-          <TouchableOpacity
-            style={styles.checkboxContainer}
-            onPress={() => {
-              HapticFeedback.medium();
-              setAgreeToTerms(prev => !prev);
-            }}>
-            <View
-              style={[styles.checkbox, agreeToTerms && styles.checkboxChecked]}
-            />
-          </TouchableOpacity>
-          <Text style={styles.termsText}>
-            I agree to the{' '}
-            <Text
-              style={styles.termsLink}
+          <View style={styles.termsRow}>
+            <TouchableOpacity
+              style={styles.checkboxContainer}
               onPress={() => {
                 HapticFeedback.medium();
-                setLegalModalType('terms');
-                setIsLegalModalVisible(true);
+                setAgreeToTerms(prev => !prev);
               }}>
-              Terms of Service
-            </Text>{' '}
-            &{' '}
-            <Text
-              style={styles.termsLink}
-              onPress={() => {
-                HapticFeedback.medium();
-                setLegalModalType('privacy');
-                setIsLegalModalVisible(true);
-              }}>
-              Privacy Policy
+              <View
+                style={[
+                  styles.checkbox,
+                  agreeToTerms && styles.checkboxChecked,
+                ]}>
+                {agreeToTerms && <Text style={styles.checkmark}>✓</Text>}
+              </View>
+            </TouchableOpacity>
+            <Text style={styles.termsText}>
+              I agree to the{' '}
+              <Text
+                style={styles.termsLink}
+                onPress={() => {
+                  HapticFeedback.medium();
+                  setLegalModalType('terms');
+                  setIsLegalModalVisible(true);
+                }}>
+                Terms of Service
+              </Text>
             </Text>
-          </Text>
+          </View>
+
+          <View style={styles.termsRow}>
+            <TouchableOpacity
+              style={styles.checkboxContainer}
+              onPress={() => {
+                HapticFeedback.medium();
+                setAgreeToPrivacy(prev => !prev);
+              }}>
+              <View
+                style={[
+                  styles.checkbox,
+                  agreeToPrivacy && styles.checkboxChecked,
+                ]}>
+                {agreeToPrivacy && <Text style={styles.checkmark}>✓</Text>}
+              </View>
+            </TouchableOpacity>
+            <Text style={styles.termsText}>
+              I agree to the{' '}
+              <Text
+                style={styles.termsLink}
+                onPress={() => {
+                  HapticFeedback.medium();
+                  setLegalModalType('privacy');
+                  setIsLegalModalVisible(true);
+                }}>
+                Privacy Policy
+              </Text>
+            </Text>
+          </View>
         </View>
         <View style={styles.ctaButtons}>
           <TouchableOpacity
-            style={[styles.ctaButton, !agreeToTerms && styles.disabledButton]}
+            style={[
+              styles.ctaButtonPrimary,
+              (!agreeToTerms || !agreeToPrivacy) && styles.disabledButton,
+            ]}
             onPress={() => {
               HapticFeedback.medium();
-              navigation.navigate('📱📱 Pairing');
+              setIsModeModalVisible(true);
             }}
-            disabled={!agreeToTerms}>
-            <Text style={styles.ctaButtonText}>Setup Wallet</Text>
+            disabled={!agreeToTerms || !agreeToPrivacy}>
+            <View style={styles.ctaButtonIconContainer}>
+              <Image
+                source={require('../assets/new-icon.png')}
+                style={[
+                  styles.ctaButtonIconLeft,
+                  {tintColor: theme.colors.background},
+                ]}
+                resizeMode="contain"
+              />
+              <Text style={styles.ctaButtonText}>Setup New Wallet</Text>
+            </View>
           </TouchableOpacity>
           <TouchableOpacity
             style={[
-              styles.ctaButtonRestore,
-              !agreeToTerms && styles.disabledButton,
+              styles.ctaButtonSecondary,
+              (!agreeToTerms || !agreeToPrivacy) && styles.disabledButton,
             ]}
             onPress={() => {
               HapticFeedback.medium();
               handleRestoreWallet();
             }}
-            disabled={!agreeToTerms}>
-            <Text style={styles.ctaButtonText}>Restore Wallet</Text>
+            disabled={!agreeToTerms || !agreeToPrivacy}>
+            <View style={styles.ctaButtonIconContainer}>
+              <Image
+                source={require('../assets/restore-icon.png')}
+                style={[
+                  styles.ctaButtonIconLeft,
+                  {tintColor: theme.colors.text},
+                ]}
+                resizeMode="contain"
+              />
+              <Text style={styles.ctaButtonSecondaryText}>
+                Restore Existing Wallet
+              </Text>
+            </View>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Password Prompt Modal */}
+      {/* Enhanced Password Prompt Modal */}
       <Modal
         transparent={true}
         visible={modalVisible}
         animationType="fade"
-        onRequestClose={() => setModalVisible(false)}>
+        onRequestClose={handleCloseModal}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Enter Password</Text>
-            <TextInput
-              style={styles.passwordInput}
-              secureTextEntry
-              placeholder="Keyshare file password"
-              value={password}
-              onChangeText={setPassword}
-            />
-            <View style={styles.modalActions}>
-              <Button
-                color={theme.colors.secondary}
-                title="Cancel"
-                onPress={() => {
-                  HapticFeedback.medium();
-                  setModalVisible(false);
-                }}
+            {/* Modal Header with Close Button */}
+            <View style={styles.modalHeader}>
+              <Image
+                source={require('../assets/locker-icon.png')}
+                style={styles.modalHeaderIconImage}
               />
-              <Button
-                color={theme.colors.primary}
-                title="Submit"
-                onPress={() => {
-                  HapticFeedback.medium();
-                  handlePasswordSubmit();
-                }}
-              />
+              <Text style={styles.modalTitle}>Restore Keyshare</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={handleCloseModal}
+                activeOpacity={0.7}>
+                <Text style={styles.closeButtonText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Modal Body */}
+            <View style={styles.modalBody}>
+              {/* Password Input */}
+              <View style={styles.passwordInputContainer}>
+                <Text style={styles.passwordInputLabel}>Keyshare Password</Text>
+                <TextInput
+                  style={[
+                    styles.passwordInput,
+                    isPasswordFocused && styles.passwordInputFocused,
+                  ]}
+                  secureTextEntry
+                  placeholder="Enter the password"
+                  placeholderTextColor={`${theme.colors.text}40`}
+                  value={password}
+                  onChangeText={setPassword}
+                  onFocus={() => setIsPasswordFocused(true)}
+                  onBlur={() => setIsPasswordFocused(false)}
+                />
+              </View>
+
+              {/* Action Buttons */}
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalActionButton, styles.modalCancelButton]}
+                  onPress={handleCloseModal}
+                  activeOpacity={0.7}>
+                  <Text
+                    style={[
+                      styles.modalActionButtonText,
+                      styles.modalCancelButtonText,
+                    ]}>
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalActionButton, styles.modalSubmitButton]}
+                  onPress={() => {
+                    HapticFeedback.medium();
+                    handlePasswordSubmit();
+                  }}
+                  activeOpacity={0.8}>
+                  <Image
+                    source={require('../assets/key-icon.png')}
+                    style={styles.buttonIcon}
+                    resizeMode="contain"
+                  />
+                  <Text
+                    style={[
+                      styles.modalActionButtonText,
+                      styles.modalSubmitButtonText,
+                    ]}>
+                    Import
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </View>
@@ -389,6 +947,282 @@ const ShowcaseScreen = ({navigation}: any) => {
         }}
         type={legalModalType}
       />
+
+      {/* Mode Selection Modal */}
+      <Modal
+        transparent={true}
+        visible={isModeModalVisible}
+        animationType="fade"
+        onRequestClose={() => setIsModeModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Image
+                source={require('../assets/security-icon.png')}
+                style={styles.modalHeaderIconImage}
+              />
+              <Text style={styles.modalTitle}>Choose Your Setup</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => {
+                  HapticFeedback.medium();
+                  setIsModeModalVisible(false);
+                }}
+                activeOpacity={0.7}>
+                <Text style={styles.closeButtonText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalBody}>
+              <View style={styles.modeOptionsContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.modeOptionCard,
+                    styles.modeOptionCardPrimary,
+                    selectedMode === 'duo' && styles.modeOptionCardSelected,
+                  ]}
+                  onPress={() => {
+                    HapticFeedback.medium();
+                    setSelectedMode('duo');
+                  }}
+                  activeOpacity={0.8}>
+                  {selectedMode === 'duo' && (
+                    <Image
+                      source={require('../assets/check-icon.png')}
+                      style={styles.modeSelectedCheck}
+                      resizeMode="contain"
+                    />
+                  )}
+                  <View style={styles.modeOptionContent}>
+                    <View style={styles.modeIconWrapper}>
+                      {selectedMode === 'duo' && (
+                        <View style={styles.modeConnectorLine} />
+                      )}
+                      {selectedMode === 'duo' && (
+                        <Animated.View
+                          style={[
+                            styles.modeConnectorDot,
+                            {
+                              backgroundColor: theme.colors.primary,
+                              transform: [
+                                {
+                                  translateX: connectorAnim.interpolate({
+                                    inputRange: [0, 1],
+                                    outputRange: [0, 24],
+                                  }),
+                                },
+                              ],
+                            },
+                          ]}
+                        />
+                      )}
+                      <View style={styles.modeIconRow}>
+                        <Image
+                          source={require('../assets/phone-icon.png')}
+                          style={[
+                            styles.modeOptionIcon,
+                            {tintColor: theme.colors.primary},
+                          ]}
+                          resizeMode="contain"
+                        />
+                        <Image
+                          source={require('../assets/phone-icon.png')}
+                          style={[
+                            styles.modeOptionIcon,
+                            {tintColor: theme.colors.primary},
+                          ]}
+                          resizeMode="contain"
+                        />
+                      </View>
+                    </View>
+                    <Text
+                      style={[
+                        styles.modeOptionTitle,
+                        {color: theme.colors.primary},
+                      ]}>
+                      Basic
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.modeOptionCard,
+                    styles.modeOptionCardPrimary,
+                    selectedMode === 'trio' && styles.modeOptionCardSelected,
+                  ]}
+                  onPress={() => {
+                    HapticFeedback.medium();
+                    setSelectedMode('trio');
+                  }}
+                  activeOpacity={0.9}>
+                  {selectedMode === 'trio' && (
+                    <Image
+                      source={require('../assets/check-icon.png')}
+                      style={styles.modeSelectedCheck}
+                      resizeMode="contain"
+                    />
+                  )}
+                  <View style={styles.modeOptionContent}>
+                    <View style={styles.modeIconWrapper}>
+                      {selectedMode === 'trio' && (
+                        <View
+                          style={[
+                            styles.modeConnectorLine,
+                            styles.modeConnectorLineTrio,
+                          ]}
+                        />
+                      )}
+                      {selectedMode === 'trio' && (
+                        <Animated.View
+                          style={[
+                            styles.modeConnectorDot,
+                            styles.modeConnectorDotTrio,
+                            {
+                              backgroundColor: theme.colors.primary,
+                              transform: [
+                                {
+                                  translateX: connectorAnim.interpolate({
+                                    inputRange: [0, 1],
+                                    outputRange: [0, 50],
+                                  }),
+                                },
+                              ],
+                            },
+                          ]}
+                        />
+                      )}
+                      <View
+                        style={[styles.modeIconRow, styles.modeIconRowTrio]}>
+                        <Image
+                          source={require('../assets/phone-icon.png')}
+                          style={[
+                            styles.modeOptionIcon,
+                            {tintColor: theme.colors.primary},
+                          ]}
+                          resizeMode="contain"
+                        />
+                        <Image
+                          source={require('../assets/phone-icon.png')}
+                          style={[
+                            styles.modeOptionIcon,
+                            {tintColor: theme.colors.primary},
+                          ]}
+                          resizeMode="contain"
+                        />
+                        <Image
+                          source={require('../assets/phone-icon.png')}
+                          style={[
+                            styles.modeOptionIcon,
+                            {tintColor: theme.colors.border},
+                          ]}
+                          resizeMode="contain"
+                        />
+                      </View>
+                    </View>
+                    <Text
+                      style={[
+                        styles.modeOptionTitle,
+                        {color: theme.colors.primary},
+                      ]}>
+                      Flexi
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+
+              {selectedMode && (
+                <View style={styles.modeSelectedHint}>
+                  <View style={styles.modeSelectedHintRow}>
+                    <Image
+                      source={require('../assets/bulb-icon.png')}
+                      style={styles.modeSelectedHintIcon}
+                      resizeMode="contain"
+                    />
+                    {selectedMode === 'duo' ? (
+                      <Text style={styles.modeSelectedHintText}>
+                        <Text style={styles.modeSelectedHintTextBold}>
+                          Basic (2/2)
+                        </Text>
+                        : two devices needed for wallet setup. both of them must
+                        approve transactions when spending funds.
+                      </Text>
+                    ) : (
+                      <Text style={styles.modeSelectedHintText}>
+                        <Text style={styles.modeSelectedHintTextBold}>
+                          Flexi (2/3)
+                        </Text>
+                        : three devices needed for wallet setup. any 2 of them
+                        must approve transactions when spending funds.
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              )}
+
+              {/* Setup Guide Video Hint - Subtle */}
+              {selectedMode && (
+                <View style={styles.setupGuideHint}>
+                  <TouchableOpacity
+                    style={styles.setupGuideHintTouchable}
+                    onPress={() => {
+                      HapticFeedback.medium();
+                      const url =
+                        'https://x.com/boldbtcwallet/status/1988322162386854108';
+                      Linking.openURL(url).catch(err => {
+                        Alert.alert(
+                          'Error',
+                          'Unable to open the video link',
+                        );
+                        dbg('Error opening URL:', err);
+                      });
+                    }}
+                    activeOpacity={0.7}>
+                    <View style={styles.setupGuideHintRow}>
+                      <Image
+                        source={require('../assets/start-icon.png')}
+                        style={styles.setupGuideHintIcon}
+                        resizeMode="contain"
+                      />
+                      <Text style={styles.setupGuideHintText}>
+                      🎥 Watch setup guide →
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[
+                  styles.modalSubmitButton,
+                  styles.modeContinueButton,
+                  !selectedMode && styles.modeContinueButtonDisabled,
+                ]}
+                onPress={() => {
+                  if (!selectedMode) return;
+                  setIsModeModalVisible(false);
+                  navigation.dispatch(
+                    CommonActions.reset({
+                      index: 0,
+                      routes: [
+                        {
+                          name: 'Devices Pairing',
+                          params: { mode: selectedMode },
+                        },
+                      ],
+                    })
+                  );
+                }}
+                disabled={!selectedMode}
+                activeOpacity={0.8}>
+                <Text style={styles.modeContinueButtonText}>
+                  Continue to Pair Devices →
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };

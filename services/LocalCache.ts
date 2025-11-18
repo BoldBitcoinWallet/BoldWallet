@@ -83,7 +83,29 @@ class LocalCache {
     }
   }
 
+  static async usageSize(): Promise<{fileCount: number; mb: string}> {
+    try {
+      const files = await RNFS.readDir(this.baseDir);
+      let size = 0;
+      for (const file of files) {
+        size += file.size;
+      }
+      return {fileCount: files.length, mb: `${(size / 1024 / 1024).toFixed(2)} MB`}; // in MB
+    } catch (err) {
+      dbg('LocalCache usageSize error:', err);
+      return {fileCount: 0, mb: '0.00 MB'}; // in MB
+    }
+  }
+
   static async clear() {
+    try {
+      const files = await RNFS.readDir(this.baseDir);
+      for (const file of files) {
+        await RNFS.unlink(file.path);
+      }
+    } catch (err) {
+      dbg('LocalCache clear files error:', err);
+    }
     try {
       const exists = await RNFS.exists(this.baseDir);
       if (exists) {
