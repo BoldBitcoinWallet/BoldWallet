@@ -2058,13 +2058,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               style={[
                 styles.apiNetworkDescription,
                 isTestnet ? styles.apiNetworkDescriptionTestnet : styles.apiNetworkDescriptionMainnet
-              ]}
-              numberOfLines={1}
-              adjustsFontSizeToFit={true}
-              minimumFontScale={0.7}>
+              ]}>
               {isTestnet 
-                ? 'API endpoint is restricted to mempool.space/testnet' 
-                : 'Custom API endpoints are available for better privacy and control'}
+                ? 'Testnet Provider is restricted to mempool.space/testnet' 
+                : 'Mainnet Providers are customizable.'}
             </Text>
           </View>
 
