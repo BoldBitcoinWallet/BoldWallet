@@ -1301,16 +1301,19 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     apiNetworkModeRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-between',
+      gap: 8,
       marginBottom: 8,
     },
     apiNetworkModeBadge: {
+      flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'center',
       paddingHorizontal: 10,
-      paddingVertical: 6,
+      paddingVertical: 8,
       borderRadius: 6,
       gap: 6,
+      minHeight: 36,
     },
     apiNetworkModeBadgeTestnet: {
       backgroundColor: 'rgba(255, 165, 0, 0.15)',
@@ -1337,15 +1340,18 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       color: '#4CAF50',
     },
     apiInfoButton: {
+      flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'center',
       paddingHorizontal: 10,
-      paddingVertical: 6,
+      paddingVertical: 8,
       borderRadius: 6,
       backgroundColor: theme.colors.background,
       borderWidth: 1,
       borderColor: theme.colors.primary,
       gap: 6,
+      minHeight: 36,
     },
     apiInfoButtonIcon: {
       width: 14,
@@ -1372,9 +1378,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       flexDirection: 'row',
       gap: 12,
       marginTop: 8,
+      alignItems: 'stretch',
     },
     apiActionButton: {
       flex: 1,
+      minHeight: 44,
     },
     apiModalContainer: {
       flex: 1,
@@ -2035,7 +2043,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     style={styles.apiInfoButtonIcon}
                     resizeMode="contain"
                   />
-                  <Text style={styles.apiInfoButtonText}>Why change the API?</Text>
+                  <Text style={styles.apiInfoButtonText}>Change Provider?</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -2105,7 +2113,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     style={[styles.buttonIcon, styles.whiteTint]}
                     resizeMode="contain"
                   />
-                  <Text style={styles.buttonText}>Reset Default API</Text>
+                  <Text style={styles.buttonText}>Defaults</Text>
                 </View>
               </TouchableOpacity>
             )}
@@ -2533,7 +2541,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   <Text style={styles.apiInfoModalIcon}>🔒</Text>
                 </View>
                 <Text style={styles.apiInfoModalTitle}>
-                  About API Endpoints
+                  Mempool.Space Providers
                 </Text>
                 <TouchableOpacity
                   style={styles.apiInfoModalCloseButton}
