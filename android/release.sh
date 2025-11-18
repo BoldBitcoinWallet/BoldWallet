@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # Script to automate generating a release APK for React Native
-# Place this in the 'android' folder and run it using `./generate-apk.sh`
 
 # Keystore details (modify these with your own values)
 KEYSTORE_FILE="my-release-key.jks"
@@ -29,16 +28,47 @@ else
 fi
 
 # Step 2: Update *.properties with Keystore credentials
-if ! grep -q "MYAPP_UPLOAD_STORE_FILE" "$GRADLE_PROPERTIES_PATH"; then
-    echo -e "Adding Keystore configuration to gradle.properties..."
+if [ ! -f "$GRADLE_PROPERTIES_PATH" ]; then
+    echo -e "Creating release.properties file..."
+    touch "$GRADLE_PROPERTIES_PATH"
+fi
+
+# Check if the store file path is correct, update if needed
+if grep -q "MYAPP_UPLOAD_STORE_FILE" "$GRADLE_PROPERTIES_PATH"; then
+    CURRENT_PATH=$(grep "MYAPP_UPLOAD_STORE_FILE" "$GRADLE_PROPERTIES_PATH" | cut -d'=' -f2)
+    if [ "$CURRENT_PATH" != "$KEYSTORE_PATH" ]; then
+        echo -e "Updating incorrect keystore path in release.properties..."
+        # Update the path using sed
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS
+            sed -i '' "s|MYAPP_UPLOAD_STORE_FILE=.*|MYAPP_UPLOAD_STORE_FILE=$KEYSTORE_PATH|" "$GRADLE_PROPERTIES_PATH"
+        else
+            # Linux
+            sed -i "s|MYAPP_UPLOAD_STORE_FILE=.*|MYAPP_UPLOAD_STORE_FILE=$KEYSTORE_PATH|" "$GRADLE_PROPERTIES_PATH"
+        fi
+        echo -e "Updated MYAPP_UPLOAD_STORE_FILE to: $KEYSTORE_PATH"
+    else
+        echo -e "Keystore path in release.properties is correct."
+    fi
+    
+    # Update other properties if they don't exist or are incorrect
+    if ! grep -q "MYAPP_UPLOAD_KEY_ALIAS" "$GRADLE_PROPERTIES_PATH"; then
+        echo "MYAPP_UPLOAD_KEY_ALIAS=$KEY_ALIAS" >> "$GRADLE_PROPERTIES_PATH"
+    fi
+    if ! grep -q "MYAPP_UPLOAD_STORE_PASSWORD" "$GRADLE_PROPERTIES_PATH"; then
+        echo "MYAPP_UPLOAD_STORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GRADLE_PROPERTIES_PATH"
+    fi
+    if ! grep -q "MYAPP_UPLOAD_KEY_PASSWORD" "$GRADLE_PROPERTIES_PATH"; then
+        echo "MYAPP_UPLOAD_KEY_PASSWORD=$KEY_PASSWORD" >> "$GRADLE_PROPERTIES_PATH"
+    fi
+else
+    echo -e "Adding Keystore configuration to release.properties..."
     cat <<EOL >> $GRADLE_PROPERTIES_PATH
-MYAPP_UPLOAD_STORE_FILE=$KEYSTORE_FILE
+MYAPP_UPLOAD_STORE_FILE=$KEYSTORE_PATH
 MYAPP_UPLOAD_KEY_ALIAS=$KEY_ALIAS
 MYAPP_UPLOAD_STORE_PASSWORD=$KEYSTORE_PASSWORD
 MYAPP_UPLOAD_KEY_PASSWORD=$KEY_PASSWORD
 EOL
-else
-    echo -e "Keystore configuration already exists in release.properties. Skipping."
 fi
 
 # Step 3: Build the Release APK

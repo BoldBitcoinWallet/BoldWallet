@@ -615,12 +615,7 @@ export class WalletService {
     } catch (error) {
       dbg('WalletService: Error fetching wallet balance:', error);
       // Return zero balance if no cache
-      return {
-        btc: '0.00000000',
-        usd: '',
-        hasNonZeroBalance: false,
-        timestamp: 0,
-      };
+      return await this.getBal(address);
     }
   }
 
