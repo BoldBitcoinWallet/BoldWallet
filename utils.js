@@ -254,8 +254,7 @@ export const getMainnetAPIList = async () => {
   return dynamicEndpoints.length > 0 ? dynamicEndpoints : MAINNET_APIS;
 };
 
-// Helper function to get testnet API endpoints (dynamic + fallback)
+// Helper function to get testnet API endpoints (only hardcoded endpoint)
 export const getTestnetAPIList = async () => {
-  const dynamicEndpoints = await fetchDynamicAPIEndpoints();
-  return dynamicEndpoints.length > 0 ? dynamicEndpoints : TESTNET_APIS;
+  return TESTNET_APIS;
 };

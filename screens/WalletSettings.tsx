@@ -39,7 +39,6 @@ import {
   setHapticsEnabled,
   areHapticsEnabled,
   getMainnetAPIList,
-  getTestnetAPIList,
 } from '../utils';
 import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
@@ -180,21 +179,26 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
     [filteredOptions],
   );
 
-  // Get the appropriate API list - filter by network (using dynamic loading)
+  // Get the appropriate API list - filter by network
   const [predefinedAPIs, setPredefinedAPIs] = useState<string[]>([]);
   const [isLoadingPredefinedAPIs, setIsLoadingPredefinedAPIs] = useState(false);
 
-  // Load dynamic API lists
+  // Load API lists - restrict testnet to only the hardcoded endpoint
   useEffect(() => {
     const loadAPIList = async () => {
       if (predefinedAPIs.length === 0 && !isLoadingPredefinedAPIs) {
         setIsLoadingPredefinedAPIs(true);
         try {
-          const apiList = isTestnet
-            ? await getTestnetAPIList()
-            : await getMainnetAPIList();
-          setPredefinedAPIs(apiList);
-          dbg('API list loaded:', apiList);
+          if (isTestnet) {
+            // For testnet, only use the hardcoded TESTNET endpoint
+            setPredefinedAPIs(TESTNET_APIS);
+            dbg('Testnet API list loaded:', TESTNET_APIS);
+          } else {
+            // For mainnet, use dynamic loading
+            const apiList = await getMainnetAPIList();
+            setPredefinedAPIs(apiList);
+            dbg('Mainnet API list loaded:', apiList);
+          }
         } catch (error) {
           dbg('Failed to load API list:', error);
           // Fallback to hardcoded APIs
@@ -236,9 +240,21 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
       'Network changed, refreshing API options for:',
       isTestnet ? 'testnet' : 'mainnet',
     );
-    setFilteredOptions(predefinedAPIs);
+    // For mainnet, combine predefined and dynamic APIs, but filter out testnet URLs
+    // For testnet, only use predefined APIs (restricted to single endpoint)
+    let allAPIs;
+    if (isTestnet) {
+      allAPIs = predefinedAPIs;
+    } else {
+      // Filter out any testnet URLs from mainnet options
+      const combined = [...predefinedAPIs, ...dynamicAPIs];
+      allAPIs = combined.filter(api => !api.toLowerCase().includes('testnet'));
+    }
+    // Remove duplicates
+    const uniqueAPIs = [...new Set(allAPIs)];
+    setFilteredOptions(uniqueAPIs);
     setSearchQuery('');
-  }, [isTestnet, predefinedAPIs]);
+  }, [isTestnet, predefinedAPIs, dynamicAPIs]);
 
   // Handle keyboard appearance - modal adjusts via KeyboardAvoidingView
   useEffect(() => {
@@ -259,15 +275,28 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
 
   // Filter options based on search query
   useEffect(() => {
-    if (searchQuery.trim() === '') {
-      setFilteredOptions(predefinedAPIs);
+    // For mainnet, combine predefined and dynamic APIs, but filter out testnet URLs
+    // For testnet, only use predefined APIs (restricted to single endpoint)
+    let allAPIs;
+    if (isTestnet) {
+      allAPIs = predefinedAPIs;
     } else {
-      const filtered = predefinedAPIs.filter(api =>
+      // Filter out any testnet URLs from mainnet options
+      const combined = [...predefinedAPIs, ...dynamicAPIs];
+      allAPIs = combined.filter(api => !api.toLowerCase().includes('testnet'));
+    }
+    // Remove duplicates
+    const uniqueAPIs = [...new Set(allAPIs)];
+
+    if (searchQuery.trim() === '') {
+      setFilteredOptions(uniqueAPIs);
+    } else {
+      const filtered = uniqueAPIs.filter(api =>
         api.toLowerCase().includes(searchQuery.toLowerCase()),
       );
       setFilteredOptions(filtered);
     }
-  }, [searchQuery, predefinedAPIs]);
+  }, [searchQuery, predefinedAPIs, dynamicAPIs, isTestnet]);
 
   const handleTextChange = (text: string) => {
     onChangeText(text);
@@ -282,8 +311,11 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
   };
 
   const openModal = () => {
+    // Prevent modal opening in testnet mode
+    if (isTestnet) return;
+
     HapticFeedback.light();
-    setFilteredOptions(predefinedAPIs);
+    // The filtered options will be set by the useEffect that handles API options
     setSearchQuery('');
     setIsModalVisible(true);
     inputRef.current?.blur();
@@ -400,29 +432,35 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
   return (
     <>
       <View style={styles.apiAutocompleteContainer}>
-        <View style={getInputContainerStyle()}>
-          <TextInput
-            ref={inputRef}
-            style={styles.apiTextInput}
-            returnKeyType="done"
-            value={value}
-            onChangeText={handleTextChange}
-            onFocus={handleFocus}
-            onBlur={handleBlur}
-            placeholder="Your Mempool Endpoint"
-            placeholderTextColor={theme.colors.textSecondary}
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={true}
-          />
-          <TouchableOpacity
-            style={styles.apiDropdownButton}
-            onPress={openModal}
-            activeOpacity={0.6}>
-            <Text style={[styles.apiDropdownIcon, {color: theme.colors.text}]}>
-              ▼
-            </Text>
-          </TouchableOpacity>
+        <View style={styles.apiInputRow}>
+          <View style={getInputContainerStyle()}>
+            <TextInput
+              ref={inputRef}
+              style={styles.apiTextInput}
+              returnKeyType="done"
+              value={value}
+              onChangeText={handleTextChange}
+              onFocus={handleFocus}
+              onBlur={handleBlur}
+              placeholder="Your Mempool Endpoint"
+              placeholderTextColor={theme.colors.textSecondary}
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!isTestnet}
+            />
+            <TouchableOpacity
+              style={styles.apiDropdownButton}
+              onPress={isTestnet ? undefined : openModal}
+              activeOpacity={isTestnet ? 1 : 0.6}
+              disabled={isTestnet}>
+              <Text style={[
+                styles.apiDropdownIcon,
+                {color: isTestnet ? theme.colors.textSecondary : theme.colors.text}
+              ]}>
+                ▼
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -481,7 +519,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                           styles.apiModalTitle,
                           {color: theme.colors.text},
                         ]}>
-                        Select a Mempool.Space Provider
+                        Select Mempool.Space Provider
                       </Text>
                     </View>
                     <TouchableOpacity
@@ -628,6 +666,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [isTestnet, setIsTestnet] = useState(true);
   const [party, setParty] = useState('');
   const [baseAPI, setBaseAPI] = useState('');
+  const [pendingAPI, setPendingAPI] = useState('');
+  const [isAPISaving, setIsAPISaving] = useState(false);
   const [_isCryptoVibrant, setIsCryptoVibrant] = useState(false);
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
   const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
@@ -767,6 +807,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     LocalCache.getItem('network').then(async net => {
       dbg('=== Loading settings for network:', net);
       setIsTestnet(net !== 'mainnet');
+      // Clear any pending API changes when switching networks
+      setPendingAPI('');
 
       // Try to get the cached API for this network
       const cachedApi = await LocalCache.getItem(`api_${net}`);
@@ -774,6 +816,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
       if (cachedApi) {
         setBaseAPI(cachedApi);
+        setPendingAPI(cachedApi); // Initialize pending API to current API
         // Update the current API cache
         await LocalCache.setItem('api', cachedApi);
         // Update native module with the cached API
@@ -788,6 +831,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
         if (currentApi) {
           setBaseAPI(currentApi);
+          setPendingAPI(currentApi); // Initialize pending API to current API
           // Cache it for this network
           await LocalCache.setItem(`api_${net}`, currentApi);
           // Update native module
@@ -802,6 +846,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               ? 'https://mempool.space/api'
               : 'https://mempool.space/testnet/api';
           setBaseAPI(defaultApi);
+          setPendingAPI(defaultApi); // Initialize pending API to default API
           await LocalCache.setItem('api', defaultApi);
           await LocalCache.setItem(`api_${net}`, defaultApi);
           if (net) {
@@ -822,8 +867,18 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     HapticFeedback.light();
     dbg('=== Network toggle started:', value ? 'testnet' : 'mainnet');
     const newNetwork = value ? 'testnet3' : 'mainnet';
+    const networkName = value ? 'Testnet' : 'Mainnet';
+    const networkIcon = value ? '🧪' : '🌐';
+    
     await setActiveNetwork(newNetwork);
+    
+    // Navigate first, then show alert on the new screen
     navigation.reset({index: 0, routes: [{name: 'Home'}]});
+    
+    // Show brief feedback alert after a brief delay to ensure navigation completes
+    setTimeout(() => {
+      Alert.alert(`${networkIcon} Switched to ${networkName}`);
+    }, 300);
   };
 
   const resetAPI = async () => {
@@ -834,6 +889,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         ? 'https://mempool.space/api' // MAINNET_APIS[0]
         : 'https://mempool.space/testnet/api'; // TESTNET_APIS[0]
     dbg('Resetting to default API for network:', net, 'API:', api);
+
+    // Clear pending API selection and set to new API
+    setPendingAPI(api);
+
     // Update local state
     setBaseAPI(api);
     dbg('Local state updated with API:', api);
@@ -853,21 +912,91 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       await WalletService.getInstance().handleNetworkChange(net, api);
       dbg('WalletService updated with reset API');
     }
+    Alert.alert('Success', 'API endpoint reset to default!');
     dbg('API reset and propagated successfully:', api);
   };
 
-  const saveAPI = async (api: string) => {
-    dbg('=== saveAPI called with:', api);
+  const validateAPIEndpoint = async (api: string): Promise<boolean> => {
     try {
+      const testUrl = `${api.replace(/\/$/, '')}/blocks/tip/hash`;
+      dbg('Testing API endpoint:', testUrl);
+
+      // Create AbortController for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+      const response = await fetch(testUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        dbg('API validation failed: HTTP', response.status);
+        return false;
+      }
+
+      const blockHash = await response.text();
+      // Check if response looks like a valid block hash (64 character hex string)
+      const isValidBlockHash = /^[a-f0-9]{64}$/i.test(blockHash.trim());
+
+      if (!isValidBlockHash) {
+        dbg('API validation failed: Invalid block hash format:', blockHash);
+        return false;
+      }
+
+      dbg('API validation successful:', blockHash);
+      return true;
+    } catch (error) {
+      dbg('API validation error:', error);
+      return false;
+    }
+  };
+
+  const saveAPI = async (api: string) => {
+    if (!api || api.trim() === '') {
+      Alert.alert('Error', 'Please select a valid API endpoint.');
+      return;
+    }
+
+    setIsAPISaving(true);
+    try {
+      // Validate the API endpoint first
+      const isValid = await validateAPIEndpoint(api);
+      if (!isValid) {
+        Alert.alert(
+          'Invalid API Endpoint',
+          'The selected API endpoint is not responding correctly. Please choose a different endpoint.'
+        );
+        return;
+      }
+
       // Update API via UserContext
       await setActiveApiProvider(api);
       // Update local state
       setBaseAPI(api);
+      // Reset pending API to the saved API
+      setPendingAPI(api);
       dbg('Local state updated with API:', api);
+      Alert.alert('Success', 'API endpoint updated successfully!');
       dbg('=== API saved and propagated successfully:', api);
+      // Navigate to home after successful save
+      navigation.reset({index: 0, routes: [{name: 'Home'}]});
     } catch (error) {
       dbg('Error in saveAPI:', error);
+      Alert.alert('Error', 'Failed to save API endpoint. Please try again.');
+    } finally {
+      setIsAPISaving(false);
     }
+  };
+
+  const handleAPISelection = (api: string) => {
+    // Just update the pending API selection - don't save immediately
+    setPendingAPI(api);
   };
 
   const handleResetWallet = async () => {
@@ -1121,6 +1250,131 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     apiDropdownIcon: {
       fontSize: 14,
       fontWeight: '600',
+    },
+    apiInputRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    apiInputWithButton: {
+      flex: 1,
+    },
+    apiSaveButton: {
+      backgroundColor: theme.colors.primary,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderRadius: 8,
+      minHeight: 44,
+      justifyContent: 'center',
+      alignItems: 'center',
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 1},
+      shadowOpacity: 0.1,
+      shadowRadius: 2,
+      elevation: 2,
+    },
+    apiSaveButtonDisabled: {
+      backgroundColor: theme.colors.disabled,
+      shadowOpacity: 0.05,
+    },
+    apiSaveButtonText: {
+      color: theme.colors.textOnPrimary,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    apiSaveButtonTextDisabled: {
+      color: theme.colors.textSecondary,
+    },
+    apiSaveButtonContainer: {
+      marginTop: 8,
+      alignItems: 'flex-start',
+    },
+    apiNetworkInfoContainer: {
+      marginTop: 8,
+      marginBottom: 12,
+      padding: 12,
+      borderRadius: 8,
+      borderWidth: 0.7,
+      borderStyle: 'dashed',
+      borderColor: theme.colors.border,
+    },
+    apiNetworkModeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 8,
+    },
+    apiNetworkModeBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 6,
+      gap: 6,
+    },
+    apiNetworkModeBadgeTestnet: {
+      backgroundColor: 'rgba(255, 165, 0, 0.15)',
+      borderWidth: 1,
+      borderColor: 'rgba(255, 165, 0, 0.3)',
+    },
+    apiNetworkModeBadgeMainnet: {
+      backgroundColor: 'rgba(76, 175, 80, 0.15)',
+      borderWidth: 1,
+      borderColor: 'rgba(76, 175, 80, 0.3)',
+    },
+    apiNetworkModeIcon: {
+      fontSize: 16,
+    },
+    apiNetworkModeText: {
+      fontSize: 13,
+      fontWeight: '600',
+      letterSpacing: 0.2,
+    },
+    apiNetworkModeTextTestnet: {
+      color: '#FFA500',
+    },
+    apiNetworkModeTextMainnet: {
+      color: '#4CAF50',
+    },
+    apiInfoButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 6,
+      backgroundColor: theme.colors.background,
+      borderWidth: 1,
+      borderColor: theme.colors.primary,
+      gap: 6,
+    },
+    apiInfoButtonIcon: {
+      width: 14,
+      height: 14,
+      tintColor: theme.colors.primary,
+    },
+    apiInfoButtonText: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: theme.colors.primary,
+    },
+    apiNetworkDescription: {
+      fontSize: 12,
+      lineHeight: 16,
+      marginTop: 4,
+    },
+    apiNetworkDescriptionTestnet: {
+      color: theme.colors.textSecondary,
+    },
+    apiNetworkDescriptionMainnet: {
+      color: theme.colors.textSecondary,
+    },
+    apiActionButtonsRow: {
+      flexDirection: 'row',
+      gap: 12,
+      marginTop: 8,
+    },
+    apiActionButton: {
+      flex: 1,
     },
     apiModalContainer: {
       flex: 1,
@@ -1731,7 +1985,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           styles={styles}
           theme={theme}>
           {/* Network Settings */}
-          <Text style={styles.apiDescription}>Select Bitcoin Network</Text>
           <View style={styles.toggleContainer}>
             <View style={styles.networkOption}>
               <Image
@@ -1752,47 +2005,111 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </View>
 
-          {/* API Configuration */}
-          <Text style={styles.apiDescription}>API Endpoint Configuration</Text>
+          {/* Network mode indicator and info */}
+          <View style={styles.apiNetworkInfoContainer}>
+            <View style={styles.apiNetworkModeRow}>
+              <View style={[
+                styles.apiNetworkModeBadge,
+                isTestnet ? styles.apiNetworkModeBadgeTestnet : styles.apiNetworkModeBadgeMainnet
+              ]}>
+                <Text style={styles.apiNetworkModeIcon}>
+                  {isTestnet ? '🔒' : '🌐'}
+                </Text>
+                <Text style={[
+                  styles.apiNetworkModeText,
+                  isTestnet ? styles.apiNetworkModeTextTestnet : styles.apiNetworkModeTextMainnet
+                ]}>
+                  {isTestnet ? 'Testnet Mode' : 'Mainnet Mode'}
+                </Text>
+              </View>
+              {!isTestnet && (
+                <TouchableOpacity
+                  style={styles.apiInfoButton}
+                  onPress={() => {
+                    HapticFeedback.light();
+                    setIsApiInfoVisible(true);
+                  }}
+                  activeOpacity={0.7}>
+                  <Image
+                    source={require('../assets/about-icon.png')}
+                    style={styles.apiInfoButtonIcon}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.apiInfoButtonText}>Why change the API?</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <Text 
+              style={[
+                styles.apiNetworkDescription,
+                isTestnet ? styles.apiNetworkDescriptionTestnet : styles.apiNetworkDescriptionMainnet
+              ]}
+              numberOfLines={1}
+              adjustsFontSizeToFit={true}
+              minimumFontScale={0.7}>
+              {isTestnet 
+                ? 'API endpoint is restricted to mempool.space/testnet' 
+                : 'Custom API endpoints are available for better privacy and control'}
+            </Text>
+          </View>
+
           <APIAutocomplete
-            value={baseAPI}
-            onChangeText={saveAPI}
+            value={pendingAPI || baseAPI}
+            onChangeText={handleAPISelection}
             isTestnet={isTestnet}
             styles={styles}
             theme={theme}
           />
 
-          <TouchableOpacity
-            style={[styles.button, styles.backupButton]}
-            onPress={() => {
-              HapticFeedback.light();
-              setIsApiInfoVisible(true);
-            }}>
-            <View style={styles.buttonContent}>
-              <Image
-                source={require('../assets/about-icon.png')}
-                style={[styles.buttonIcon, styles.whiteTint]}
-                resizeMode="contain"
-              />
-              <Text style={styles.buttonText}>Why change the API?</Text>
-            </View>
-          </TouchableOpacity>
+          {/* Action buttons side by side */}
+          <View style={styles.apiActionButtonsRow}>
+            {/* Test & Save button - always show in mainnet, disabled when no changes */}
+            {!isTestnet && (
+              <TouchableOpacity
+                style={[
+                  styles.button,
+                  styles.backupButton,
+                  styles.apiActionButton,
+                  (isAPISaving || !pendingAPI || pendingAPI === baseAPI) && styles.disabledButton,
+                  isAPISaving && styles.halfOpacity
+                ]}
+                onPress={() => {
+                  HapticFeedback.light();
+                  saveAPI(pendingAPI);
+                }}
+                disabled={isAPISaving || !pendingAPI || pendingAPI === baseAPI}>
+                <View style={styles.buttonContent}>
+                  <Image
+                    source={require('../assets/check-icon.png')}
+                    style={[styles.buttonIcon, styles.whiteTint]}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.buttonText}>
+                    {isAPISaving ? 'Verifying...' : 'Verify & Save'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            )}
 
-          <TouchableOpacity
-            style={[styles.button, styles.resetButton]}
-            onPress={() => {
-              HapticFeedback.light();
-              resetAPI();
-            }}>
-            <View style={styles.buttonContent}>
-              <Image
-                source={require('../assets/refresh-icon.png')}
-                style={[styles.buttonIcon, styles.whiteTint]}
-                resizeMode="contain"
-              />
-              <Text style={styles.buttonText}>Reset Default API</Text>
-            </View>
-          </TouchableOpacity>
+            {/* Reset Default API button - only show in mainnet */}
+            {!isTestnet && (
+              <TouchableOpacity
+                style={[styles.button, styles.resetButton, styles.apiActionButton]}
+                onPress={() => {
+                  HapticFeedback.light();
+                  resetAPI();
+                }}>
+                <View style={styles.buttonContent}>
+                  <Image
+                    source={require('../assets/refresh-icon.png')}
+                    style={[styles.buttonIcon, styles.whiteTint]}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.buttonText}>Reset Default API</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+          </View>
         </CollapsibleSection>
         {/* Storage Section */}
         <CollapsibleSection
