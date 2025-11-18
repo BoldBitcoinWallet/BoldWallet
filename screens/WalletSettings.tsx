@@ -912,8 +912,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       await WalletService.getInstance().handleNetworkChange(net, api);
       dbg('WalletService updated with reset API');
     }
-    Alert.alert('Success', 'API endpoint reset to default!');
+    // Update API via UserContext
+    await setActiveApiProvider(api);
     dbg('API reset and propagated successfully:', api);
+    // Navigate to home after reset
+    navigation.reset({index: 0, routes: [{name: 'Home'}]});
+    // Show success alert after navigation
+    setTimeout(() => {
+      Alert.alert('Success', 'API endpoint reset to default!');
+    }, 300);
   };
 
   const validateAPIEndpoint = async (api: string): Promise<boolean> => {
@@ -1294,7 +1301,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginBottom: 12,
       padding: 12,
       borderRadius: 8,
-      borderWidth: 0.7,
+      borderWidth: 1,
       borderStyle: 'dashed',
       borderColor: theme.colors.border,
     },
