@@ -182,79 +182,113 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
   // Get the appropriate API list - filter by network
   const [predefinedAPIs, setPredefinedAPIs] = useState<string[]>([]);
   const [isLoadingPredefinedAPIs, setIsLoadingPredefinedAPIs] = useState(false);
+  const lastLoadedNetworkRef = useRef<string | null>(null);
 
   // Load API lists - restrict testnet to only the hardcoded endpoint
   useEffect(() => {
+    const currentNetwork = isTestnet ? 'testnet' : 'mainnet';
+    
+    // Only load if network changed
+    if (lastLoadedNetworkRef.current === currentNetwork) {
+      return; // Already loaded for this network
+    }
+
+    if (isLoadingPredefinedAPIs) return;
+
     const loadAPIList = async () => {
-      if (predefinedAPIs.length === 0 && !isLoadingPredefinedAPIs) {
-        setIsLoadingPredefinedAPIs(true);
-        try {
-          if (isTestnet) {
-            // For testnet, only use the hardcoded TESTNET endpoint
-            setPredefinedAPIs(TESTNET_APIS);
-            dbg('Testnet API list loaded:', TESTNET_APIS);
-          } else {
-            // For mainnet, use dynamic loading
-            const apiList = await getMainnetAPIList();
-            setPredefinedAPIs(apiList);
-            dbg('Mainnet API list loaded:', apiList);
-          }
-        } catch (error) {
-          dbg('Failed to load API list:', error);
-          // Fallback to hardcoded APIs
-          setPredefinedAPIs(isTestnet ? TESTNET_APIS : MAINNET_APIS);
-        } finally {
-          setIsLoadingPredefinedAPIs(false);
+      setIsLoadingPredefinedAPIs(true);
+      try {
+        if (isTestnet) {
+          // For testnet, only use the hardcoded TESTNET endpoint
+          setPredefinedAPIs(TESTNET_APIS);
+          dbg('Testnet API list loaded:', TESTNET_APIS);
+        } else {
+          // For mainnet, use dynamic loading
+          const apiList = await getMainnetAPIList();
+          setPredefinedAPIs(apiList);
+          dbg('Mainnet API list loaded:', apiList);
         }
+        lastLoadedNetworkRef.current = currentNetwork;
+      } catch (error) {
+        dbg('Failed to load API list:', error);
+        // Fallback to hardcoded APIs
+        setPredefinedAPIs(isTestnet ? TESTNET_APIS : MAINNET_APIS);
+        lastLoadedNetworkRef.current = currentNetwork;
+      } finally {
+        setIsLoadingPredefinedAPIs(false);
       }
     };
 
     loadAPIList();
-  }, [isTestnet, predefinedAPIs.length, isLoadingPredefinedAPIs]);
+  }, [isTestnet]);
 
-  // Fetch dynamic APIs for both networks
+  // Fetch dynamic APIs - load when in mainnet mode and not already loaded
+  const dynamicAPIsLoadingRef = useRef(false);
   useEffect(() => {
+    // Only load dynamic APIs for mainnet
+    if (isTestnet) {
+      return;
+    }
+
+    // If already loading or already have dynamic APIs, don't reload
+    if (isLoadingAPIs || dynamicAPIs.length > 0) {
+      return;
+    }
+
+    // Prevent multiple simultaneous load attempts
+    if (dynamicAPIsLoadingRef.current) {
+      return;
+    }
+
     const loadDynamicAPIs = async () => {
-      if (dynamicAPIs.length === 0 && !isLoadingAPIs) {
-        setIsLoadingAPIs(true);
-        try {
-          const fetchedAPIs = await fetchDynamicAPIEndpoints();
-          if (fetchedAPIs.length > 0) {
-            setDynamicAPIs(fetchedAPIs);
-            dbg('Dynamic APIs loaded:', fetchedAPIs);
-          }
-        } catch (error) {
-          dbg('Failed to load dynamic APIs:', error);
-        } finally {
-          setIsLoadingAPIs(false);
+      dynamicAPIsLoadingRef.current = true;
+      setIsLoadingAPIs(true);
+      try {
+        const fetchedAPIs = await fetchDynamicAPIEndpoints();
+        if (fetchedAPIs.length > 0) {
+          setDynamicAPIs(fetchedAPIs);
+          dbg('Dynamic APIs loaded:', fetchedAPIs);
         }
+      } catch (error) {
+        dbg('Failed to load dynamic APIs:', error);
+      } finally {
+        setIsLoadingAPIs(false);
+        dynamicAPIsLoadingRef.current = false;
       }
     };
 
     loadDynamicAPIs();
-  }, [dynamicAPIs.length, isLoadingAPIs]);
+  }, [isTestnet, dynamicAPIs.length, isLoadingAPIs]);
 
-  // Refresh API options when network changes
-  useEffect(() => {
-    dbg(
-      'Network changed, refreshing API options for:',
-      isTestnet ? 'testnet' : 'mainnet',
-    );
-    // For mainnet, combine predefined and dynamic APIs, but filter out testnet URLs
-    // For testnet, only use predefined APIs (restricted to single endpoint)
-    let allAPIs;
+  // Compute available APIs based on network - use useMemo to prevent unnecessary recalculations
+  const availableAPIs = useMemo(() => {
     if (isTestnet) {
-      allAPIs = predefinedAPIs;
+      return predefinedAPIs;
     } else {
-      // Filter out any testnet URLs from mainnet options
+      // For mainnet, combine predefined and dynamic APIs, but filter out testnet URLs
       const combined = [...predefinedAPIs, ...dynamicAPIs];
-      allAPIs = combined.filter(api => !api.toLowerCase().includes('testnet'));
+      const filtered = combined.filter(api => !api.toLowerCase().includes('testnet'));
+      // Remove duplicates
+      return [...new Set(filtered)];
     }
-    // Remove duplicates
-    const uniqueAPIs = [...new Set(allAPIs)];
-    setFilteredOptions(uniqueAPIs);
-    setSearchQuery('');
   }, [isTestnet, predefinedAPIs, dynamicAPIs]);
+
+  // Filter options based on search query - only update when search query or available APIs change
+  useEffect(() => {
+    if (searchQuery.trim() === '') {
+      setFilteredOptions(availableAPIs);
+    } else {
+      const filtered = availableAPIs.filter(api =>
+        api.toLowerCase().includes(searchQuery.toLowerCase()),
+      );
+      setFilteredOptions(filtered);
+    }
+  }, [searchQuery, availableAPIs]);
+
+  // Reset search query when network changes
+  useEffect(() => {
+    setSearchQuery('');
+  }, [isTestnet]);
 
   // Handle keyboard appearance - modal adjusts via KeyboardAvoidingView
   useEffect(() => {
@@ -272,31 +306,6 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
       keyboardDidShowListener.remove();
     };
   }, []);
-
-  // Filter options based on search query
-  useEffect(() => {
-    // For mainnet, combine predefined and dynamic APIs, but filter out testnet URLs
-    // For testnet, only use predefined APIs (restricted to single endpoint)
-    let allAPIs;
-    if (isTestnet) {
-      allAPIs = predefinedAPIs;
-    } else {
-      // Filter out any testnet URLs from mainnet options
-      const combined = [...predefinedAPIs, ...dynamicAPIs];
-      allAPIs = combined.filter(api => !api.toLowerCase().includes('testnet'));
-    }
-    // Remove duplicates
-    const uniqueAPIs = [...new Set(allAPIs)];
-
-    if (searchQuery.trim() === '') {
-      setFilteredOptions(uniqueAPIs);
-    } else {
-      const filtered = uniqueAPIs.filter(api =>
-        api.toLowerCase().includes(searchQuery.toLowerCase()),
-      );
-      setFilteredOptions(filtered);
-    }
-  }, [searchQuery, predefinedAPIs, dynamicAPIs, isTestnet]);
 
   const handleTextChange = (text: string) => {
     onChangeText(text);

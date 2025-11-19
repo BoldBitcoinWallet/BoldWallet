@@ -1304,6 +1304,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               style={[styles.actionButton, styles.sendButton]}
               onPress={() => {
                 HapticFeedback.medium();
+                // Check if balance is 0 or empty
+                const balance = parseFloat(balanceBTC || '0');
+                if (balance <= 0) {
+                  Alert.alert(
+                    'Insufficient Balance',
+                    'You don\'t have any satoshis to send.',
+                  );
+                  return;
+                }
                 setIsSendModalVisible(true);
               }}>
               <Image
