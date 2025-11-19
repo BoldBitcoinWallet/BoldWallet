@@ -1,11 +1,11 @@
 BoldWallet is an open-source next-generation Bitcoin wallet that eliminates traditional security tradeoffs and single points of failure.
-It uses Threshold Signatures (2of2) over your mobile devices — no internet needed for setup or signing.
+It uses Threshold Signatures (2of3) over your mobile devices — no internet needed for setup or signing.
 
 🔐 Features:
 • ✅ Seedless setup using Threshold Signature Scheme (TSS)
 • 🔐 No seed phrases, no paper backups, no hardware wallets
-• 🔄 P2P encrypted protocol between two mobile devices
-• 📱 2-of-2 device-based key generation and signing
+• 📱 up to 3 device-based key generation with 2 devices needed for signing
+• 🔄 P2P encrypted protocol between your devices
 • 🚫 No internet required for setup or signing
 • 📦 Open-source, verifiable, and offline-capable
 • 🧾 Supports Mempool.space public or self-hosted for enhanced advanced privacy
