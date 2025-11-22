@@ -6,3 +6,4 @@ gomobile init
 export GOFLAGS="-mod=mod"
 gomobile bind -v -target=android -androidapi 21 github.com/BoldBitcoinWallet/BBMTLib/tss
 cp tss.aar ../android/app/libs/tss.aar
+cp tss-sources.jar ../android/app/libs/tss-sources.jar

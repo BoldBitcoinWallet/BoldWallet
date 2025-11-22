@@ -27,6 +27,7 @@ import WalletSettings from './screens/WalletSettings';
 import {NativeModules} from 'react-native';
 import {dbg, pinRemoteIP, getPinnedRemoteIPs} from './utils';
 import MobilesPairing from './screens/MobilesPairing';
+import MobileNostrPairing from './screens/MobileNostrPairing';
 
 // Initialize react-native-screens for Fabric compatibility
 enableScreens(true);
@@ -319,6 +320,13 @@ const App = () => {
                   <Stack.Screen
                     name="Devices Pairing"
                     component={MobilesPairing}
+                    options={{
+                      headerShown: true,
+                    }}
+                  />
+                  <Stack.Screen
+                    name="Nostr Pairing"
+                    component={MobileNostrPairing}
                     options={{
                       headerShown: true,
                     }}

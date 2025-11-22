@@ -39,6 +39,7 @@ import {
   setHapticsEnabled,
   areHapticsEnabled,
   getMainnetAPIList,
+  getKeyshareLabel,
 } from '../utils';
 import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
@@ -220,6 +221,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
     };
 
     loadAPIList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTestnet]);
 
   // Fetch dynamic APIs - load when in mainnet mode and not already loaded
@@ -657,6 +659,8 @@ const getSectionIcon = (title: string): any => {
       return require('../assets/phone-icon.png');
     case 'storage':
       return require('../assets/storage-icon.png');
+    case 'nostr relays':
+      return require('../assets/link-icon.png');
     default:
       return require('../assets/advanced-icon.png');
   }
@@ -677,6 +681,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [baseAPI, setBaseAPI] = useState('');
   const [pendingAPI, setPendingAPI] = useState('');
   const [isAPISaving, setIsAPISaving] = useState(false);
+  const [nostrRelays, setNostrRelays] = useState<string>('');
+  const [pendingNostrRelays, setPendingNostrRelays] = useState<string>('');
   const [_isCryptoVibrant, setIsCryptoVibrant] = useState(false);
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
   const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
@@ -699,6 +705,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     haptics: false,
     backup: false,
     advanced: false,
+    nostr: false,
     about: false,
     legal: false,
     storage: false,
@@ -809,7 +816,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   useEffect(() => {
     EncryptedStorage.getItem('keyshare').then(ks => {
       const json = JSON.parse(ks as string);
-      setParty(json.local_party_key);
+      // Get keyshare label (KeyShare1/2/3) or fallback to local_party_key
+      const keyshareLabel = getKeyshareLabel(json);
+      setParty(keyshareLabel || json.local_party_key || '');
     });
 
     // Load network and corresponding cached API
@@ -868,6 +877,18 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
     LocalCache.getItem('theme').then(appTheme => {
       setIsCryptoVibrant(appTheme === 'cryptoVibrant');
+    });
+
+    // Load Nostr relays
+    LocalCache.getItem('nostr_relays').then(relays => {
+      if (relays) {
+        setNostrRelays(relays);
+        setPendingNostrRelays(relays);
+      } else {
+        const defaults = 'wss://nostr.hifish.org,wss://nostr.xxi.quest';
+        setNostrRelays(defaults);
+        setPendingNostrRelays(defaults);
+      }
     });
   }, []);
 
@@ -1074,7 +1095,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         const year = now.getFullYear();
         const hours = now.getHours().toString().padStart(2, '0');
         const minutes = now.getMinutes().toString().padStart(2, '0');
-        const shareName = json.local_party_key;
+        // Use keyshare label (KeyShare1/2/3) or fallback to local_party_key
+        const keyshareLabel = getKeyshareLabel(json);
+        const shareName = keyshareLabel || json.local_party_key || 'keyshare';
         const friendlyFilename = `${shareName}.${month}${day}.${year}.${hours}${minutes}.share`;
 
         const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
@@ -2131,6 +2154,116 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               </TouchableOpacity>
             )}
           </View>
+        </CollapsibleSection>
+        {/* Nostr Relays Section */}
+        <CollapsibleSection
+          title="Nostr Relays"
+          isExpanded={expandedSections.nostr}
+          onToggle={() => toggleSection('nostr')}
+          styles={styles}
+          theme={theme}>
+          <View style={styles.apiItem}>
+            <Text style={styles.apiName}>Nostr Relay Configuration</Text>
+            <Text style={styles.apiDescription}>
+              Configure Nostr relays for device pairing and transaction signing.
+              Enter comma-separated relay URLs (wss://...).
+            </Text>
+          </View>
+          <TextInput
+            style={[
+              styles.input,
+              {
+                borderColor: theme.colors.border,
+                color: theme.colors.text,
+                backgroundColor: theme.colors.cardBackground,
+              },
+            ]}
+            value={pendingNostrRelays}
+            onChangeText={setPendingNostrRelays}
+            placeholder="wss://relay1.com,wss://relay2.com"
+            placeholderTextColor={theme.colors.textSecondary + '80'}
+            autoCapitalize="none"
+            autoCorrect={false}
+            multiline
+            numberOfLines={3}
+          />
+          <View style={styles.apiActionButtonsRow}>
+            <TouchableOpacity
+              style={[
+                styles.button,
+                styles.backupButton,
+                styles.apiActionButton,
+                (!pendingNostrRelays || pendingNostrRelays === nostrRelays) &&
+                  styles.disabledButton,
+              ]}
+              onPress={async () => {
+                HapticFeedback.light();
+                try {
+                  // Validate relay URLs
+                  const relays = pendingNostrRelays
+                    .split(',')
+                    .map(r => r.trim())
+                    .filter(Boolean);
+                  if (relays.length === 0) {
+                    Alert.alert('Error', 'Please enter at least one relay URL');
+                    return;
+                  }
+                  // Basic validation - check if starts with wss:// or ws://
+                  const invalid = relays.find(
+                    r => !r.startsWith('wss://') && !r.startsWith('ws://'),
+                  );
+                  if (invalid) {
+                    Alert.alert(
+                      'Error',
+                      `Invalid relay URL: ${invalid}\nRelay URLs must start with wss:// or ws://`,
+                    );
+                    return;
+                  }
+                  // Save to cache
+                  await LocalCache.setItem('nostr_relays', pendingNostrRelays);
+                  setNostrRelays(pendingNostrRelays);
+                  Alert.alert('Success', 'Nostr relays saved successfully!');
+                } catch (error) {
+                  dbg('Error saving Nostr relays:', error);
+                  Alert.alert('Error', 'Failed to save Nostr relays');
+                }
+              }}
+              disabled={
+                !pendingNostrRelays || pendingNostrRelays === nostrRelays
+              }>
+              <View style={styles.buttonContent}>
+                <Image
+                  source={require('../assets/check-icon.png')}
+                  style={[styles.buttonIcon, styles.whiteTint]}
+                  resizeMode="contain"
+                />
+                <Text style={styles.buttonText}>Save Relays</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.button, styles.resetButton, styles.apiActionButton]}
+              onPress={() => {
+                HapticFeedback.light();
+                const defaults = 'wss://nostr.hifish.org,wss://nostr.xxi.quest';
+                setPendingNostrRelays(defaults);
+              }}>
+              <View style={styles.buttonContent}>
+                <Image
+                  source={require('../assets/refresh-icon.png')}
+                  style={[styles.buttonIcon, styles.whiteTint]}
+                  resizeMode="contain"
+                />
+                <Text style={styles.buttonText}>Defaults</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+          {nostrRelays && (
+            <View style={styles.apiItem}>
+              <Text style={styles.apiDescription}>
+                Current: {nostrRelays}
+              </Text>
+            </View>
+          )}
         </CollapsibleSection>
         {/* Storage Section */}
         <CollapsibleSection

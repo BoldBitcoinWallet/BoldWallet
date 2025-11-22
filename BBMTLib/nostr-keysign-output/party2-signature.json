@@ -1,0 +1,8 @@
+{
+  "msg": "UZqxBLqkT4saOrWkEUOXO/IKV4iNFCKdleZcfWfT+9Q=",
+  "msg_hex": "519ab104baa44f8b1a3ab5a41143973bf20a57888d14229d95e65c7d67d3fbd4",
+  "r": "4fd91043efe4f6a3284b8824306f4b1738f9d55a2ee20b4c183a12829dce84eb",
+  "s": "58f5e497c490fcad2a6a909095395179d55cb1ac259bbe9bb5f3f6c4e102a25c",
+  "der_signature": "304402204fd91043efe4f6a3284b8824306f4b1738f9d55a2ee20b4c183a12829dce84eb022058f5e497c490fcad2a6a909095395179d55cb1ac259bbe9bb5f3f6c4e102a25c",
+  "recovery_id": "00"
+}

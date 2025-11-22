@@ -258,3 +258,30 @@ export const getMainnetAPIList = async () => {
 export const getTestnetAPIList = async () => {
   return TESTNET_APIS;
 };
+
+/**
+ * Get the keyshare label (KeyShare1, KeyShare2, KeyShare3) from a keyshare JSON object.
+ * Computes from local_party_key position in sorted keygen_committee_keys array.
+ * Each device checks its local_party_key and finds where it sits in the sorted keygen_committee_keys
+ * to determine its placement (1, 2, or 3).
+ * @param {Object} keyshare - The keyshare JSON object
+ * @returns {string} - The keyshare label (e.g., "KeyShare1", "KeyShare2", "KeyShare3") or empty string
+ */
+export const getKeyshareLabel = keyshare => {
+  if (!keyshare) {
+    return '';
+  }
+
+  // Compute from keygen_committee_keys: find local_party_key's position in sorted array
+  if (keyshare.local_party_key && keyshare.keygen_committee_keys) {
+    // Sort keygen_committee_keys to ensure consistent ordering
+    const sortedKeys = [...keyshare.keygen_committee_keys].sort();
+    const index = sortedKeys.indexOf(keyshare.local_party_key);
+    if (index >= 0) {
+      return `KeyShare${index + 1}`;
+    }
+  }
+
+  // Fallback: return empty string
+  return '';
+};

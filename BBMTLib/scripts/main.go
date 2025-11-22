@@ -2,12 +2,15 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/BoldBitcoinWallet/BBMTLib/tss"
+	nostr "github.com/nbd-wtf/go-nostr"
 )
 
 func randomSeed(length int) string {
@@ -26,6 +29,16 @@ func main() {
 
 	if mode == "random" {
 		fmt.Println(randomSeed(64))
+	}
+
+	if mode == "nostr-keypair" {
+		sk := nostr.GeneratePrivateKey()
+		pk, err := nostr.GetPublicKey(sk)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error generating Nostr public key: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("%s,%s", sk, pk)
 	}
 
 	if mode == "relay" {
@@ -114,5 +127,152 @@ func main() {
 		} else {
 			fmt.Printf("\n [%s] Keysign Result %s\n", party, keysign)
 		}
+	}
+
+	if mode == "hex-decode" {
+		if len(os.Args) < 3 {
+			fmt.Fprintf(os.Stderr, "Usage: %s hex-decode <hex_string>\n", os.Args[0])
+			os.Exit(1)
+		}
+		hexStr := os.Args[2]
+		decoded, err := hex.DecodeString(hexStr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error decoding hex: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Print(string(decoded))
+	}
+
+	if mode == "extract-npub" {
+		if len(os.Args) < 3 {
+			fmt.Fprintf(os.Stderr, "Usage: %s extract-npub <keyshare_file>\n", os.Args[0])
+			os.Exit(1)
+		}
+		keyshareFile := os.Args[2]
+		data, err := os.ReadFile(keyshareFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading keyshare: %v\n", err)
+			os.Exit(1)
+		}
+		var keyshare struct {
+			NostrNpub string `json:"nostr_npub"`
+		}
+		if err := json.Unmarshal(data, &keyshare); err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing keyshare: %v\n", err)
+			os.Exit(1)
+		}
+		if keyshare.NostrNpub == "" {
+			fmt.Fprintf(os.Stderr, "Error: nostr_npub not found in keyshare\n")
+			os.Exit(1)
+		}
+		fmt.Print(keyshare.NostrNpub)
+	}
+
+	if mode == "extract-nsec" {
+		if len(os.Args) < 3 {
+			fmt.Fprintf(os.Stderr, "Usage: %s extract-nsec <keyshare_file>\n", os.Args[0])
+			os.Exit(1)
+		}
+		keyshareFile := os.Args[2]
+		data, err := os.ReadFile(keyshareFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading keyshare: %v\n", err)
+			os.Exit(1)
+		}
+		var keyshare struct {
+			Nsec string `json:"nsec"`
+		}
+		if err := json.Unmarshal(data, &keyshare); err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing keyshare: %v\n", err)
+			os.Exit(1)
+		}
+		if keyshare.Nsec == "" {
+			fmt.Fprintf(os.Stderr, "Error: nsec not found in keyshare\n")
+			os.Exit(1)
+		}
+		// Decode hex to get raw nsec
+		decoded, err := hex.DecodeString(keyshare.Nsec)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error decoding nsec hex: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Print(string(decoded))
+	}
+
+	if mode == "extract-committee" {
+		if len(os.Args) < 3 {
+			fmt.Fprintf(os.Stderr, "Usage: %s extract-committee <keyshare_file>\n", os.Args[0])
+			os.Exit(1)
+		}
+		keyshareFile := os.Args[2]
+		data, err := os.ReadFile(keyshareFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading keyshare: %v\n", err)
+			os.Exit(1)
+		}
+		var keyshare struct {
+			KeygenCommitteeKeys []string `json:"keygen_committee_keys"`
+		}
+		if err := json.Unmarshal(data, &keyshare); err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing keyshare: %v\n", err)
+			os.Exit(1)
+		}
+		if len(keyshare.KeygenCommitteeKeys) == 0 {
+			fmt.Fprintf(os.Stderr, "Error: keygen_committee_keys not found in keyshare\n")
+			os.Exit(1)
+		}
+		fmt.Print(strings.Join(keyshare.KeygenCommitteeKeys, ","))
+	}
+
+	if mode == "show-keyshare" {
+		// prepare args
+		keyshareFile := os.Args[2]
+		partyName := os.Args[3]
+
+		// Read keyshare file
+		data, err := os.ReadFile(keyshareFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading keyshare: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Try to decode as base64 first (for old format), then as JSON
+		var keyshareJSON []byte
+		decoded, err := base64.StdEncoding.DecodeString(string(data))
+		if err == nil {
+			keyshareJSON = decoded
+		} else {
+			keyshareJSON = data
+		}
+
+		var keyshare struct {
+			PubKey       string `json:"pub_key"`
+			ChainCodeHex string `json:"chain_code_hex"`
+		}
+
+		if err := json.Unmarshal(keyshareJSON, &keyshare); err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing keyshare: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Print public key
+		fmt.Printf("%s Public Key: %s\n", partyName, keyshare.PubKey)
+
+		// Derive BTC public key
+		btcPath := "m/44'/0'/0'/0/0"
+		btcPub, err := tss.GetDerivedPubKey(keyshare.PubKey, keyshare.ChainCodeHex, btcPath, false)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to generate btc pubkey for %s: %v\n", partyName, err)
+			os.Exit(1)
+		}
+		fmt.Printf("%s BTC Public Key: %s\n", partyName, btcPub)
+
+		// Generate BTC address
+		btcP2Pkh, err := tss.PubToP2KH(btcPub, "testnet3")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to generate btc address for %s: %v\n", partyName, err)
+			os.Exit(1)
+		}
+		fmt.Printf("%s address btcP2Pkh: %s\n", partyName, btcP2Pkh)
 	}
 }

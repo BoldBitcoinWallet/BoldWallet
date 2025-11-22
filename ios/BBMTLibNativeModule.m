@@ -157,4 +157,49 @@ RCT_EXTERN_METHOD(mpcSendBTC:(NSString *)server
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+// Nostr Keypair Generation
+RCT_EXTERN_METHOD(nostrKeypair:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+
+// Hex to Npub Conversion
+RCT_EXTERN_METHOD(hexToNpub:(NSString *)hexKey resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+
+// Nostr MPC TSS Setup (Keygen)
+RCT_EXTERN_METHOD(nostrMpcTssSetup:(NSString *)relaysCSV
+                  partyNsec:(NSString *)partyNsec
+                  partiesNpubsCSV:(NSString *)partiesNpubsCSV
+                  sessionID:(NSString *)sessionID
+                  sessionKey:(NSString *)sessionKey
+                  chaincode:(NSString *)chaincode
+                  ppmFile:(NSString *)ppmFile
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+// Nostr Join Keysign
+RCT_EXTERN_METHOD(nostrJoinKeysign:(NSString *)relaysCSV
+                  partyNsec:(NSString *)partyNsec
+                  partiesNpubsCSV:(NSString *)partiesNpubsCSV
+                  sessionID:(NSString *)sessionID
+                  sessionKey:(NSString *)sessionKey
+                  keyshareJSON:(NSString *)keyshareJSON
+                  derivationPath:(NSString *)derivationPath
+                  message:(NSString *)message
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+// Nostr MPC Send BTC
+RCT_EXTERN_METHOD(nostrMpcSendBTC:(NSString *)relaysCSV
+                  partyNsec:(NSString *)partyNsec
+                  partiesNpubsCSV:(NSString *)partiesNpubsCSV
+                  sessionID:(NSString *)sessionID
+                  sessionKey:(NSString *)sessionKey
+                  keyshareJSON:(NSString *)keyshareJSON
+                  derivePath:(NSString *)derivePath
+                  publicKey:(NSString *)publicKey
+                  senderAddress:(NSString *)senderAddress
+                  receiverAddress:(NSString *)receiverAddress
+                  amountSatoshi:(NSString *)amountSatoshi
+                  estimatedFee:(NSString *)estimatedFee
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 @end

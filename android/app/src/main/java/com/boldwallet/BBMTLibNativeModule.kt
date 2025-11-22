@@ -208,6 +208,47 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun nostrMpcSendBTC(
+        relaysCSV: String,
+        partyNsec: String,
+        partiesNpubsCSV: String,
+        sessionID: String,
+        sessionKey: String,
+        keyshareJSON: String,
+        derivePath: String,
+        publicKey: String,
+        senderAddress: String,
+        receiverAddress: String,
+        amountSatoshi: String,
+        estimatedFee: String,
+        promise: Promise
+    ) {
+        Thread {
+            try {
+                val result = Tss.nostrMpcSendBTC(
+                    relaysCSV,
+                    partyNsec,
+                    partiesNpubsCSV,
+                    sessionID,
+                    sessionKey,
+                    keyshareJSON,
+                    derivePath,
+                    publicKey,
+                    senderAddress,
+                    receiverAddress,
+                    amountSatoshi.toLong(),
+                    estimatedFee.toLong()
+                )
+                ld("nostrMpcSendBTC", result)
+                promise.resolve(result)
+            } catch (e: Exception) {
+                ld("nostrMpcSendBTC", "error: ${e.stackTraceToString()}")
+                promise.reject(e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
     fun runRelay(port: String, promise: Promise) {
         try {
             val result = Tss.runRelay(port)
@@ -373,10 +414,100 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             return false
         }
     }
-    
+
     private fun isClassC(ip: String): Boolean {
         val parts = ip.split(".").mapNotNull { it.toIntOrNull() }
         return parts.size == 4 && parts[0] in 192..223
+    }
+
+    @ReactMethod
+    fun nostrKeypair(promise: Promise) {
+        try {
+            val result = Tss.nostrKeypair()
+            ld("nostrKeypair", result)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            ld("nostrKeypair", "error: ${e.stackTraceToString()}")
+            promise.resolve(e.message)
+        }
+    }
+
+    @ReactMethod
+    fun hexToNpub(hexKey: String, promise: Promise) {
+        Thread {
+            try {
+                val result = Tss.hexToNpub(hexKey)
+                ld("hexToNpub", result)
+                promise.resolve(result)
+            } catch (e: Exception) {
+                ld("hexToNpub", "error: ${e.stackTraceToString()}")
+                promise.resolve(e.message)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun nostrMpcTssSetup(
+        relaysCSV: String,
+        partyNsec: String,
+        partiesNpubsCSV: String,
+        sessionID: String,
+        sessionKey: String,
+        chaincode: String,
+        ppmFile: String,
+        promise: Promise
+    ) {
+        Thread {
+            try {
+                val result = Tss.nostrJoinKeygen(
+                    relaysCSV,
+                    partyNsec,
+                    partiesNpubsCSV,
+                    sessionID,
+                    sessionKey,
+                    chaincode,
+                    ppmFile
+                )
+                ld("nostrMpcTssSetup", result)
+                promise.resolve(result)
+            } catch (e: Exception) {
+                ld("nostrMpcTssSetup", "error: ${e.stackTraceToString()}")
+                promise.reject(e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun nostrJoinKeysign(
+        relaysCSV: String,
+        partyNsec: String,
+        partiesNpubsCSV: String,
+        sessionID: String,
+        sessionKey: String,
+        keyshareJSON: String,
+        derivationPath: String,
+        message: String,
+        promise: Promise
+    ) {
+        Thread {
+            try {
+                val result = Tss.nostrJoinKeysign(
+                    relaysCSV,
+                    partyNsec,
+                    partiesNpubsCSV,
+                    sessionID,
+                    sessionKey,
+                    keyshareJSON,
+                    derivationPath,
+                    message
+                )
+                ld("nostrJoinKeysign", result)
+                promise.resolve(result)
+            } catch (e: Exception) {
+                ld("nostrJoinKeysign", "error: ${e.stackTraceToString()}")
+                promise.reject(e)
+            }
+        }.start()
     }
 
     @ReactMethod
@@ -394,6 +525,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     ) {
         Thread {
             try {
+
                 val result = Tss.joinKeygen(
                     ppmFile,
                     partyID,

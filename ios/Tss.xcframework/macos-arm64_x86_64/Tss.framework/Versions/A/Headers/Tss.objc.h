@@ -18,6 +18,7 @@
 @class TssKeysignResponse;
 @class TssLocalState;
 @class TssLocalStateAccessorImp;
+@class TssLocalStateNostr;
 @class TssMessage;
 @class TssMessageFromTss;
 @class TssMessengerImp;
@@ -136,7 +137,6 @@
 
 @property (nonatomic) NSString* _Nonnull localPartyKey;
 @property (nonatomic) NSString* _Nonnull chainCodeHex;
-@property (nonatomic) NSString* _Nonnull resharePrefix;
 @end
 
 @interface TssLocalStateAccessorImp : NSObject <goSeqRefInterface, TssLocalStateAccessor> {
@@ -147,6 +147,29 @@
 - (nonnull instancetype)init;
 - (NSString* _Nonnull)getLocalState:(NSString* _Nullable)keyshare error:(NSError* _Nullable* _Nullable)error;
 - (BOOL)saveLocalState:(NSString* _Nullable)pubKey localState:(NSString* _Nullable)localState error:(NSError* _Nullable* _Nullable)error;
+@end
+
+/**
+ * LocalStateNostr wraps LocalState with the extra nostr credentials.
+ */
+@interface TssLocalStateNostr : NSObject <goSeqRefInterface> {
+}
+@property(strong, readonly) _Nonnull id _ref;
+
+- (nonnull instancetype)initWithRef:(_Nonnull id)ref;
+- (nonnull instancetype)init;
+// skipped field LocalStateNostr.LocalState with unsupported type: github.com/BoldBitcoinWallet/BBMTLib/tss.LocalState
+
+@property (nonatomic) NSString* _Nonnull nostrNpub;
+@property (nonatomic) NSString* _Nonnull nsecHex;
+/**
+ * GetNsec returns the stored nsec by decoding from hex.
+ */
+- (NSString* _Nonnull)getNsec:(NSError* _Nullable* _Nullable)error;
+/**
+ * SetNsec stores the raw nsec as hex.
+ */
+- (BOOL)setNsec:(NSString* _Nullable)rawNsec error:(NSError* _Nullable* _Nullable)error;
 @end
 
 /**
@@ -307,6 +330,11 @@ FOUNDATION_EXPORT BOOL TssGetThreshold(long value, long* _Nullable ret0_, NSErro
 // skipped function HashToInt with unsupported parameter or return types
 
 
+/**
+ * HexToNpub converts a hex public key to bech32 npub format.
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssHexToNpub(NSString* _Nullable hexKey, NSError* _Nullable* _Nullable error);
+
 FOUNDATION_EXPORT void TssHook(NSString* _Nullable message);
 
 FOUNDATION_EXPORT void TssInitLog(void);
@@ -328,6 +356,44 @@ FOUNDATION_EXPORT BOOL TssLocalPreParams(NSString* _Nullable ppmFile, long timeo
 FOUNDATION_EXPORT NSString* _Nonnull TssMpcSendBTC(NSString* _Nullable server, NSString* _Nullable key, NSString* _Nullable partiesCSV, NSString* _Nullable session, NSString* _Nullable sessionKey, NSString* _Nullable encKey, NSString* _Nullable decKey, NSString* _Nullable keyshare, NSString* _Nullable derivePath, NSString* _Nullable publicKey, NSString* _Nullable senderAddress, NSString* _Nullable receiverAddress, int64_t amountSatoshi, int64_t estimatedFee, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT TssServiceImpl* _Nullable TssNewService(id<TssMessenger> _Nullable msg, id<TssLocalStateAccessor> _Nullable stateAccessor, BOOL createPreParam, NSString* _Nullable ppmFile, NSError* _Nullable* _Nullable error);
+
+/**
+ * NostrJoinKeygen performs a Nostr-based keygen and returns the keyshare JSON.
+Parameters:
+  - relaysCSV: Comma-separated list of Nostr relay URLs (wss://...)
+  - partyNsec: Local party's Nostr secret key (nsec1... in bech32 format)
+  - partiesNpubsCSV: Comma-separated list of all party npubs (including self, in bech32 format npub1...)
+  - sessionID: Session identifier
+  - sessionKey: Session encryption key in hex
+  - chaincode: Chain code in hex
+  - ppmPath: Path to pre-params file (optional, empty string means generate new pre-params)
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssNostrJoinKeygen(NSString* _Nullable relaysCSV, NSString* _Nullable partyNsec, NSString* _Nullable partiesNpubsCSV, NSString* _Nullable sessionID, NSString* _Nullable sessionKey, NSString* _Nullable chaincode, NSString* _Nullable ppmPath, NSError* _Nullable* _Nullable error);
+
+/**
+ * NostrJoinKeysign performs a Nostr-based keysign and returns the signature JSON.
+The message will be hashed internally before signing.
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssNostrJoinKeysign(NSString* _Nullable relaysCSV, NSString* _Nullable partyNsec, NSString* _Nullable partiesNpubsCSV, NSString* _Nullable sessionID, NSString* _Nullable sessionKey, NSString* _Nullable keyshareJSON, NSString* _Nullable derivationPath, NSString* _Nullable message, NSError* _Nullable* _Nullable error);
+
+/**
+ * NostrJoinKeysignWithSighash performs a Nostr-based keysign with a base64-encoded sighash (already a hash).
+This is used for Bitcoin transaction signing where the sighash is already computed.
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssNostrJoinKeysignWithSighash(NSString* _Nullable relaysCSV, NSString* _Nullable partyNsec, NSString* _Nullable partiesNpubsCSV, NSString* _Nullable sessionID, NSString* _Nullable sessionKey, NSString* _Nullable keyshareJSON, NSString* _Nullable derivationPath, NSString* _Nullable sighashBase64, NSError* _Nullable* _Nullable error);
+
+/**
+ * NostrKeypair generates a new Nostr keypair and returns it as JSON string.
+Returns: {"nsec": "...", "npub": "..."}
+Both nsec and npub are returned in bech32 format (nsec1... and npub1...)
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssNostrKeypair(NSError* _Nullable* _Nullable error);
+
+/**
+ * NostrMpcSendBTC performs a Nostr-based MPC Bitcoin transaction.
+This function is analogous to MpcSendBTC but uses Nostr transport for keysign operations.
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssNostrMpcSendBTC(NSString* _Nullable relaysCSV, NSString* _Nullable partyNsec, NSString* _Nullable partiesNpubsCSV, NSString* _Nullable sessionID, NSString* _Nullable sessionKey, NSString* _Nullable keyshareJSON, NSString* _Nullable derivePath, NSString* _Nullable publicKey, NSString* _Nullable senderAddress, NSString* _Nullable receiverAddress, int64_t amountSatoshi, int64_t estimatedFee, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssPostTx(NSString* _Nullable rawTxHex, NSError* _Nullable* _Nullable error);
 

@@ -1381,6 +1381,15 @@ const MobilesPairing = ({navigation}: any) => {
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'left',
     },
+    abortLink: {
+      color: theme.colors.textSecondary,
+      fontWeight: '600',
+      textDecorationLine: 'underline',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'center',
+      fontSize: 14,
+      marginTop: 12,
+    },
     header: {
       fontSize: 16,
       fontWeight: '600',
@@ -2444,6 +2453,32 @@ const MobilesPairing = ({navigation}: any) => {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.innerContainer}>
+            {/* Title and Exit Pairing Link - Show during pairing in local mode */}
+            {!isSendBitcoin && isPairing && !peerIP && (
+              <View style={styles.informationCard}>
+                <Text
+                  style={[
+                    styles.securityText,
+                    {fontSize: 18, fontWeight: 'bold'},
+                  ]}>
+                  {title}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    HapticFeedback.light();
+                    navigation.dispatch(
+                      CommonActions.reset({
+                        index: 0,
+                        routes: [{ name: 'Welcome' }],
+                      })
+                    );
+                  }}
+                  activeOpacity={0.7}
+                  style={{marginTop: 8, marginBottom: 4, alignItems: 'center'}}>
+                  <Text style={styles.abortLink}>Exit Pairing</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             {/* Checklist Section */}
             {!isPairing && !peerIP && (
               <View style={styles.informationCard}>

@@ -156,12 +156,12 @@ func (r KeysignRequest) GetKeysignCommitteeKeys() []string {
 	return strings.Split(r.KeysignCommitteeKeys, ",")
 }
 
-func (s *ServiceImpl) getParties(allPartyKeys []string, localPartyKey string, keyPrefix string) ([]*tss.PartyID, *tss.PartyID) {
+func (s *ServiceImpl) getParties(allPartyKeys []string, localPartyKey string) ([]*tss.PartyID, *tss.PartyID) {
 	var localPartyID *tss.PartyID
 	var unSortedPartiesID []*tss.PartyID
 	sort.Strings(allPartyKeys)
 	for idx, item := range allPartyKeys {
-		key := new(big.Int).SetBytes([]byte(keyPrefix + item))
+		key := new(big.Int).SetBytes([]byte(item))
 		partyID := tss.NewPartyID(strconv.Itoa(idx), item, key)
 		if item == localPartyKey {
 			localPartyID = partyID
@@ -183,7 +183,7 @@ func (s *ServiceImpl) KeygenECDSA(req *KeygenRequest) (*KeygenResponse, error) {
 	if len(chaincode) != 32 {
 		return nil, fmt.Errorf("invalid chain code length")
 	}
-	partyIDs, localPartyID := s.getParties(req.GetAllParties(), req.LocalPartyID, "")
+	partyIDs, localPartyID := s.getParties(req.GetAllParties(), req.LocalPartyID)
 
 	ctx := tss.NewPeerContext(partyIDs)
 	curve := tss.S256()
@@ -394,7 +394,7 @@ func (s *ServiceImpl) KeysignECDSA(req *KeysignRequest) (*KeysignResponse, error
 	if !Contains(keysignCommittee, localState.LocalPartyKey) {
 		return nil, errors.New("local party not in keysign committee")
 	}
-	keysignPartyIDs, localPartyID := s.getParties(keysignCommittee, localState.LocalPartyKey, localState.ResharePrefix)
+	keysignPartyIDs, localPartyID := s.getParties(keysignCommittee, localState.LocalPartyKey)
 
 	threshold, err := GetThreshold(len(localState.KeygenCommitteeKeys))
 	if err != nil {

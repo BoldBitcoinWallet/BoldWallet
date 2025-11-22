@@ -28,12 +28,14 @@ import {
   presentFiat,
   getCurrencySymbol,
   HapticFeedback,
+  getKeyshareLabel,
 } from '../utils';
 import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
 import WalletSkeleton from '../components/WalletSkeleton';
 import {useUser} from '../context/UserContext';
 import CurrencySelector from '../components/CurrencySelector';
+import TransportModeSelector from '../components/TransportModeSelector';
 import {createStyles} from '../components/Styles';
 import {
   CacheIndicator,
@@ -53,6 +55,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [address, setAddress] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [isSendModalVisible, setIsSendModalVisible] = useState<boolean>(false);
+  const [isTransportModalVisible, setIsTransportModalVisible] = useState<boolean>(false);
+  const [pendingSendParams, setPendingSendParams] = useState<{
+    to: string;
+    amountSats: Big;
+    feeSats: Big;
+  } | null>(null);
   const [btcPrice, setBtcPrice] = useState<string>('');
   const [btcRate, setBtcRate] = useState(0);
   const [balanceBTC, setBalanceBTC] = useState<string>('0.00000000');
@@ -603,7 +611,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setSegwitAddress(segwitAddr);
         setSegwitCompatibleAddress(segwitCompAddr);
 
-        const shareID = ks.local_party_key;
+        // Get keyshare label (KeyShare1/2/3) or fallback to local_party_key
+        const keyshareLabel = getKeyshareLabel(ks);
+        const shareID = keyshareLabel || ks.local_party_key || '';
         const shareType =
           ks.keygen_committee_keys.length === 2 ? 'Basic' : 'Flexi';
         setParty(shareID + ' • ' + shareType);
@@ -975,7 +985,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setSegwitAddress(segwitAddr);
         setSegwitCompatibleAddress(segwitCompAddr);
 
-        const shareID = ks.local_party_key;
+        // Get keyshare label (KeyShare1/2/3) or fallback to local_party_key
+        const keyshareLabel = getKeyshareLabel(ks);
+        const shareID = keyshareLabel || ks.local_party_key || '';
         const shareType =
           ks.keygen_committee_keys.length === 2 ? 'Basic' : 'Flexi';
         setParty(shareID + ' • ' + shareType);
@@ -1094,31 +1106,44 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const handleSend = async (to: string, amountSats: Big, feeSats: Big) => {
     if (!isSending && amountSats.gt(0) && feeSats.gt(0) && to) {
       setIsSending(true);
-      const toAddress = to;
-      const satoshiAmount = amountSats.toString().split('.')[0];
-      const fiatAmount = amountSats.times(btcRate).div(1e8).toFixed(2);
-      const satoshiFees = feeSats.toString().split('.')[0];
-      const fiatFees = feeSats.times(btcRate).div(1e8).toFixed(2);
+      // Close send modal immediately
+      setIsSendModalVisible(false);
+      // Store params and show transport selector after a brief delay to ensure send modal is closed
+      setPendingSendParams({to, amountSats, feeSats});
       setTimeout(() => {
-        setIsSendModalVisible(false);
+        setIsTransportModalVisible(true);
         setIsSending(false);
-      }, 250);
-      navigation.dispatch(
-        CommonActions.navigate({
-          name: 'Devices Pairing',
-          params: {
-            mode: 'send_btc',
-            addressType,
-            toAddress,
-            satoshiAmount,
-            fiatAmount,
-            satoshiFees,
-            fiatFees,
-            selectedCurrency,
-          },
-        }),
-      );
+      }, 300);
     }
+  };
+
+  const navigateToPairing = (transport: 'local' | 'nostr') => {
+    if (!pendingSendParams) return;
+    
+    const {to, amountSats, feeSats} = pendingSendParams;
+    const toAddress = to;
+    const satoshiAmount = amountSats.toString().split('.')[0];
+    const fiatAmount = amountSats.times(btcRate).div(1e8).toFixed(2);
+    const satoshiFees = feeSats.toString().split('.')[0];
+    const fiatFees = feeSats.times(btcRate).div(1e8).toFixed(2);
+    
+    const routeName = transport === 'local' ? 'Devices Pairing' : 'Nostr Pairing';
+    navigation.dispatch(
+      CommonActions.navigate({
+        name: routeName,
+        params: {
+          mode: 'send_btc',
+          addressType,
+          toAddress,
+          satoshiAmount,
+          fiatAmount,
+          satoshiFees,
+          fiatFees,
+          selectedCurrency,
+        },
+      }),
+    );
+    setPendingSendParams(null);
   };
 
   const getAddressTypeIcon = () => {
@@ -1548,6 +1573,20 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           selectedCurrency={selectedCurrency}
         />
       )}
+      <TransportModeSelector
+        visible={isTransportModalVisible}
+        onClose={() => {
+          HapticFeedback.medium();
+          setIsTransportModalVisible(false);
+          setPendingSendParams(null);
+        }}
+        onSelect={(transport: 'local' | 'nostr') => {
+          navigateToPairing(transport);
+          setIsTransportModalVisible(false);
+        }}
+        title="Select Signing Method"
+        description="Choose how to sign your transaction"
+      />
 
       {isReceiveModalVisible && (
         <ReceiveModal
