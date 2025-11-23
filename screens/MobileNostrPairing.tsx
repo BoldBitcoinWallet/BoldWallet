@@ -139,7 +139,9 @@ const MobileNostrPairing = ({navigation}: any) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
   const isSendBitcoin = route.params?.mode === 'send_btc';
   const setupMode = route.params?.mode;
-  const isTrio = setupMode === 'trio';
+  // In send mode, determine isTrio from keyshare (3 devices = trio, 2 devices = duo)
+  // In keygen mode, use setupMode
+  const [isTrio, setIsTrio] = useState<boolean>(setupMode === 'trio');
   const {theme} = useTheme();
   const {activeAddress} = useUser();
   const ppmFile = `${RNFS.DocumentDirectoryPath}/ppm.json`;
@@ -485,6 +487,12 @@ const MobileNostrPairing = ({navigation}: any) => {
           return;
         }
 
+        // Determine if trio mode based on number of devices in keyshare
+        const numDevices = keyshare.keygen_committee_keys?.length || 0;
+        const isTrioMode = numDevices === 3;
+        setIsTrio(isTrioMode);
+        dbg('Send mode - detected', isTrioMode ? 'trio' : 'duo', 'mode from keyshare (', numDevices, 'devices)');
+
         // Get local npub from keyshare
         const localNpubFromKeyshare = keyshare.nostr_npub || '';
 
@@ -608,6 +616,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                 typeof result === 'string' &&
                 result.startsWith('npub1')
               ) {
+                const oldNpub = updatedDevices[i].npub;
                 updatedDevices[i].npub = result;
                 dbg(
                   'Updated npub for device:',
@@ -615,6 +624,16 @@ const MobileNostrPairing = ({navigation}: any) => {
                 );
                 // Update state with new npub
                 setSendModeDevices([...updatedDevices]);
+                
+                // If this device was selected (by placeholder), update selectedPeerNpub to full npub
+                // Use a callback to access current selectedPeerNpub state
+                setSelectedPeerNpub(current => {
+                  if (current === oldNpub || (oldNpub && result.startsWith(oldNpub.substring(0, 20)))) {
+                    dbg('Updated selectedPeerNpub to full npub:', result.substring(0, 20) + '...');
+                    return result;
+                  }
+                  return current;
+                });
               }
             } catch (error) {
               dbg('Error converting hex to npub:', error);
@@ -631,18 +650,43 @@ const MobileNostrPairing = ({navigation}: any) => {
     loadKeyshareData();
   }, [isSendBitcoin]);
 
-  // Auto-select peer in duo mode
+  // Auto-select peer in duo mode, or first peer in trio mode (deterministic)
+  // Only auto-selects if no selection exists - never overrides user's manual selection
   useEffect(() => {
-    if (
-      isSendBitcoin &&
-      !isTrio &&
-      sendModeDevices.length > 0 &&
-      !selectedPeerNpub
-    ) {
-      const otherDevice = sendModeDevices.find(d => !d.isLocal);
-      if (otherDevice) {
-        setSelectedPeerNpub(otherDevice.npub);
-        dbg('Auto-selected peer in duo mode:', otherDevice.npub);
+    if (isSendBitcoin && sendModeDevices.length > 0) {
+      const otherDevices = sendModeDevices.filter(d => !d.isLocal);
+      
+      // Only auto-select if no peer is currently selected
+      if (!selectedPeerNpub) {
+        if (isTrio && otherDevices.length >= 2) {
+          // In trio mode, deterministically select the first peer (sorted by npub)
+          // This ensures both devices select the same peer by default
+          // User can still manually change the selection
+          const sortedOtherDevices = [...otherDevices].sort((a, b) => {
+            // Sort by npub (handle both full and shortened npubs)
+            const npubA = a.npub || '';
+            const npubB = b.npub || '';
+            return npubA.localeCompare(npubB);
+          });
+          const firstPeer = sortedOtherDevices[0];
+          if (firstPeer && firstPeer.npub) {
+            setSelectedPeerNpub(firstPeer.npub);
+            dbg(
+              'Auto-selected first peer in trio mode (deterministic, user can change):',
+              firstPeer.npub.substring(0, 20) + '...',
+            );
+          }
+        } else if (!isTrio && otherDevices.length >= 1) {
+          // In duo mode, auto-select the only other device
+          const otherDevice = otherDevices[0];
+          if (otherDevice && otherDevice.npub) {
+            setSelectedPeerNpub(otherDevice.npub);
+            dbg(
+              'Auto-selected peer in duo mode:',
+              otherDevice.npub.substring(0, 20) + '...',
+            );
+          }
+        }
       }
     }
   }, [isSendBitcoin, isTrio, sendModeDevices, selectedPeerNpub]);
@@ -1364,46 +1408,79 @@ const MobileNostrPairing = ({navigation}: any) => {
 
       const allNpubs = [localNpubFromKeyshare];
       if (isTrio) {
-        // For trio, use selected peer - find it in allNpubsFromKeyshare
+        // For trio, use selected peer - find it by matching device in sendModeDevices
         if (selectedPeerNpub) {
-          // Find the full npub from allNpubsFromKeyshare that matches selectedPeerNpub
-          // selectedPeerNpub might be a shortened placeholder, so we need to match by:
-          // 1. Exact match (if it's already full)
-          // 2. Prefix match (if it's shortened, match the first part)
-          let fullPeerNpub = allNpubsFromKeyshare.find(
-            n => n === selectedPeerNpub,
+          // Find the selected device in sendModeDevices to get its keyshareLabel
+          const selectedDevice = sendModeDevices.find(
+            d => d.npub === selectedPeerNpub || 
+            (selectedPeerNpub.startsWith('npub1') && d.npub && d.npub.startsWith(selectedPeerNpub.substring(0, 20))) ||
+            (d.npub && selectedPeerNpub.startsWith(d.npub.substring(0, 20)))
           );
-          if (!fullPeerNpub && selectedPeerNpub.startsWith('npub1')) {
-            // Try to match by prefix (in case selectedPeerNpub is shortened)
-            const prefix = selectedPeerNpub.substring(
-              0,
-              Math.min(20, selectedPeerNpub.length),
-            );
-            fullPeerNpub = allNpubsFromKeyshare.find(n => n.startsWith(prefix));
-          }
-          if (fullPeerNpub) {
-            allNpubs.push(fullPeerNpub);
-            dbg(
-              'Found full peer npub for trio:',
-              fullPeerNpub.substring(0, 20) + '...',
-            );
+          
+          if (selectedDevice) {
+            // Find the corresponding hex key in keyshare by keyshareLabel
+            // Use the same sortedKeys from above (already sorted)
+            const selectedIndex = parseInt(selectedDevice.keyshareLabel.replace('KeyShare', ''), 10) - 1;
+            
+            if (selectedIndex >= 0 && selectedIndex < sortedKeys.length) {
+              const selectedHexKey = sortedKeys[selectedIndex];
+              
+              // Find the full npub in allNpubsFromKeyshare that corresponds to this hex key
+              // We need to convert the hex key to npub and find it, or match by index
+              // Since allNpubsFromKeyshare is built from sortedKeys in the same order, we can use index
+              if (selectedIndex < allNpubsFromKeyshare.length) {
+                const fullPeerNpub = allNpubsFromKeyshare[selectedIndex];
+                // Verify it's not the local device
+                if (fullPeerNpub !== localNpubFromKeyshare) {
+                  allNpubs.push(fullPeerNpub);
+                  dbg(
+                    'Found full peer npub for trio by index:',
+                    fullPeerNpub.substring(0, 20) + '...',
+                  );
+                } else {
+                  throw new Error('Selected device is the local device');
+                }
+              } else {
+                // Fallback: try to convert hex key to npub
+                try {
+                  const hexPattern = /^[0-9a-fA-F]+$/;
+                  if (hexPattern.test(selectedHexKey)) {
+                    const convertedNpub = await BBMTLibNativeModule.hexToNpub(selectedHexKey);
+                    if (convertedNpub && convertedNpub.startsWith('npub1') && convertedNpub !== localNpubFromKeyshare) {
+                      allNpubs.push(convertedNpub);
+                      dbg(
+                        'Found full peer npub for trio by conversion:',
+                        convertedNpub.substring(0, 20) + '...',
+                      );
+                    } else {
+                      throw new Error('Failed to convert selected hex key to npub');
+                    }
+                  } else {
+                    throw new Error('Selected hex key is not valid hex');
+                  }
+                } catch (error) {
+                  throw new Error(`Failed to find full npub for selected peer: ${error}`);
+                }
+              }
+            } else {
+              throw new Error(`Invalid keyshare label: ${selectedDevice.keyshareLabel}`);
+            }
           } else {
-            // Last resort: if selectedPeerNpub looks like a full npub, use it
-            if (
-              selectedPeerNpub.startsWith('npub1') &&
-              selectedPeerNpub.length > 50
-            ) {
-              allNpubs.push(selectedPeerNpub);
+            // Fallback: try direct matching in allNpubsFromKeyshare
+            let fullPeerNpub = allNpubsFromKeyshare.find(
+              n => n === selectedPeerNpub || 
+              (selectedPeerNpub.startsWith('npub1') && n.startsWith(selectedPeerNpub.substring(0, 20)))
+            );
+            
+            if (fullPeerNpub && fullPeerNpub !== localNpubFromKeyshare) {
+              allNpubs.push(fullPeerNpub);
               dbg(
-                'Using selectedPeerNpub as-is (appears to be full):',
-                selectedPeerNpub.substring(0, 20) + '...',
+                'Found full peer npub for trio by direct match:',
+                fullPeerNpub.substring(0, 20) + '...',
               );
             } else {
               throw new Error(
-                `Failed to find full npub for selected peer: ${selectedPeerNpub.substring(
-                  0,
-                  30,
-                )}`,
+                `Failed to find full npub for selected peer: ${selectedPeerNpub.substring(0, 30)}. Please ensure the device is fully loaded.`,
               );
             }
           }
@@ -3289,7 +3366,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                         </Text>
                         <Text style={styles.sectionSubtitle}>
                           {isSendBitcoin
-                            ? 'Make sure two devices are ready to sign'
+                            ? 'Select one device to co-sign with (2 devices total)'
                             : 'Connect with other devices to create wallet'}
                         </Text>
                       </View>
@@ -3333,7 +3410,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                     )}
                   </View>
 
-                  {/* Send Mode: Device List - Show early in send mode */}
+                  {/* Send Mode: Device Selection - Show current device and allow selecting one other */}
                   {isSendBitcoin && (
                     <View style={styles.section}>
                       <Text
@@ -3341,13 +3418,13 @@ const MobileNostrPairing = ({navigation}: any) => {
                           fontSize: 16,
                           fontWeight: '700',
                           color: theme.colors.text,
-                          marginBottom: 16,
+                          marginBottom: 8,
                         }}>
-                        Participants
+                        Your Device
                       </Text>
                       {sendModeDevices.length === 0 ? (
                         <Text style={{color: theme.colors.text, opacity: 0.6}}>
-                          Loading participants...
+                          Loading...
                         </Text>
                       ) : (
                         (() => {
@@ -3361,11 +3438,14 @@ const MobileNostrPairing = ({navigation}: any) => {
 
                           return (
                             <>
-                              {/* Current Device - Always First */}
+                              {/* Current Device */}
                               {localDevice && (
                                 <View
                                   key={localDevice.keyshareLabel}
-                                  style={styles.sendModeDeviceItem}>
+                                  style={[
+                                    styles.sendModeDeviceItem,
+                                    {marginBottom: 24},
+                                  ]}>
                                   <Image
                                     source={require('../assets/phone-icon.png')}
                                     style={styles.sendModeDeviceIcon}
@@ -3393,92 +3473,128 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 </View>
                               )}
 
-                              {/* Other Devices */}
-                              {isTrio ? (
-                                // Trio mode: show other devices with checkboxes for selection
+                              {/* Select One Other Device */}
+                              {otherDevices.length > 0 && (
                                 <>
-                                  {otherDevices.map(dev => (
-                                    <TouchableOpacity
-                                      key={dev.keyshareLabel}
-                                      style={[
-                                        styles.sendModeDeviceItem,
-                                        selectedPeerNpub === dev.npub &&
-                                          styles.sendModeDeviceItemSelected,
-                                      ]}
-                                      onPress={() => {
-                                        HapticFeedback.medium();
-                                        setSelectedPeerNpub(
-                                          selectedPeerNpub === dev.npub
-                                            ? ''
-                                            : dev.npub,
-                                        );
-                                      }}
-                                      activeOpacity={0.7}>
-                                      <Image
-                                        source={require('../assets/phone-icon.png')}
-                                        style={styles.sendModeDeviceIcon}
-                                        resizeMode="contain"
-                                      />
-                                      <View
-                                        style={styles.sendModeDeviceContent}>
-                                        <Text
-                                          style={styles.sendModeDeviceLabel}
-                                          numberOfLines={1}
-                                          ellipsizeMode="tail">
-                                          {dev.keyshareLabel}
-                                        </Text>
-                                        <Text
-                                          style={styles.sendModeDeviceNpub}
-                                          numberOfLines={1}
-                                          ellipsizeMode="middle">
-                                          {shortenNpub(dev.npub, 8, 6)}
-                                        </Text>
-                                      </View>
-                                      <View
+                                  <Text
+                                    style={{
+                                      fontSize: 16,
+                                      fontWeight: '700',
+                                      color: theme.colors.text,
+                                      marginBottom: 12,
+                                      marginTop: 8,
+                                    }}>
+                                    {isTrio
+                                      ? 'Select one device to co-sign:'
+                                      : 'Co-signing device:'}
+                                  </Text>
+                                  {otherDevices.map(dev => {
+                                    // In duo mode, use View (not selectable)
+                                    // In trio mode, use TouchableOpacity (selectable)
+                                    if (!isTrio) {
+                                      return (
+                                        <View
+                                          key={dev.keyshareLabel}
+                                          style={styles.sendModeDeviceItem}>
+                                          <Image
+                                            source={require('../assets/phone-icon.png')}
+                                            style={styles.sendModeDeviceIcon}
+                                            resizeMode="contain"
+                                          />
+                                          <View
+                                            style={styles.sendModeDeviceContent}>
+                                            <Text
+                                              style={styles.sendModeDeviceLabel}
+                                              numberOfLines={1}
+                                              ellipsizeMode="tail">
+                                              {dev.keyshareLabel}
+                                            </Text>
+                                            <Text
+                                              style={styles.sendModeDeviceNpub}
+                                              numberOfLines={1}
+                                              ellipsizeMode="middle">
+                                              {shortenNpub(dev.npub, 8, 6)}
+                                            </Text>
+                                          </View>
+                                          {selectedPeerNpub === dev.npub && (
+                                            <View
+                                              style={[
+                                                styles.sendModeCheckbox,
+                                                styles.sendModeCheckboxChecked,
+                                              ]}>
+                                              <Text
+                                                style={styles.sendModeCheckmark}>
+                                                ✓
+                                              </Text>
+                                            </View>
+                                          )}
+                                        </View>
+                                      );
+                                    }
+                                    
+                                    // Trio mode: selectable
+                                    return (
+                                      <TouchableOpacity
+                                        key={dev.keyshareLabel}
                                         style={[
-                                          styles.sendModeCheckbox,
+                                          styles.sendModeDeviceItem,
                                           selectedPeerNpub === dev.npub &&
-                                            styles.sendModeCheckboxChecked,
-                                        ]}>
-                                        {selectedPeerNpub === dev.npub && (
+                                            styles.sendModeDeviceItemSelected,
+                                        ]}
+                                        onPress={() => {
+                                          HapticFeedback.medium();
+                                          // In trio, allow user to select any device
+                                          // If clicking the same device, deselect (allow empty selection)
+                                          // If clicking different device, select that one
+                                          setSelectedPeerNpub(
+                                            selectedPeerNpub === dev.npub
+                                              ? ''
+                                              : dev.npub,
+                                          );
+                                          dbg(
+                                            'User selected peer in trio mode:',
+                                            dev.npub === selectedPeerNpub
+                                              ? 'deselected'
+                                              : dev.npub.substring(0, 20) + '...',
+                                          );
+                                        }}
+                                        activeOpacity={0.7}>
+                                        <Image
+                                          source={require('../assets/phone-icon.png')}
+                                          style={styles.sendModeDeviceIcon}
+                                          resizeMode="contain"
+                                        />
+                                        <View
+                                          style={styles.sendModeDeviceContent}>
                                           <Text
-                                            style={styles.sendModeCheckmark}>
-                                            ✓
+                                            style={styles.sendModeDeviceLabel}
+                                            numberOfLines={1}
+                                            ellipsizeMode="tail">
+                                            {dev.keyshareLabel}
                                           </Text>
-                                        )}
-                                      </View>
-                                    </TouchableOpacity>
-                                  ))}
-                                </>
-                              ) : (
-                                // Duo mode: show other device (auto-selected)
-                                <>
-                                  {otherDevices.map(dev => (
-                                    <View
-                                      key={dev.keyshareLabel}
-                                      style={styles.sendModeDeviceItem}>
-                                      <Image
-                                        source={require('../assets/phone-icon.png')}
-                                        style={styles.sendModeDeviceIcon}
-                                        resizeMode="contain"
-                                      />
-                                      <View
-                                        style={styles.sendModeDeviceContent}>
-                                        <Text
-                                          style={styles.sendModeDeviceLabel}
-                                          numberOfLines={1}
-                                          ellipsizeMode="tail">
-                                          {dev.keyshareLabel}
-                                        </Text>
-                                        <Text
-                                          style={styles.sendModeDeviceNpub}
-                                          numberOfLines={1}
-                                          ellipsizeMode="middle">
-                                          {shortenNpub(dev.npub, 8, 6)}
-                                        </Text>
-                                      </View>
-                                    </View>
-                                  ))}
+                                          <Text
+                                            style={styles.sendModeDeviceNpub}
+                                            numberOfLines={1}
+                                            ellipsizeMode="middle">
+                                            {shortenNpub(dev.npub, 8, 6)}
+                                          </Text>
+                                        </View>
+                                        <View
+                                          style={[
+                                            styles.sendModeCheckbox,
+                                            selectedPeerNpub === dev.npub &&
+                                              styles.sendModeCheckboxChecked,
+                                          ]}>
+                                          {selectedPeerNpub === dev.npub && (
+                                            <Text
+                                              style={styles.sendModeCheckmark}>
+                                              ✓
+                                            </Text>
+                                          )}
+                                        </View>
+                                      </TouchableOpacity>
+                                    );
+                                  })}
                                 </>
                               )}
                             </>

@@ -5,10 +5,12 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	nostr "github.com/nbd-wtf/go-nostr"
+	"github.com/nbd-wtf/go-nostr/nip19"
 )
 
 // MessagePump subscribes to relay events and feeds decrypted payloads to the TSS service.
@@ -31,16 +33,44 @@ func NewMessagePump(cfg Config, client *Client) *MessagePump {
 }
 
 func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) error {
-	// Subscribe to events with session tag and recipient tag
+	// Convert local npub to hex for comparison (event.PubKey is hex)
+	localNpubHex := p.cfg.LocalNpub
+	if strings.HasPrefix(p.cfg.LocalNpub, "npub1") {
+		prefix, decoded, err := nip19.Decode(p.cfg.LocalNpub)
+		if err == nil && prefix == "npub" {
+			if pkHex, ok := decoded.(string); ok {
+				localNpubHex = pkHex
+			}
+		}
+	}
+
+	// Convert peer npubs to hex for author filter (only receive from expected peers)
+	authorsHex := make([]string, 0, len(p.cfg.PeersNpub))
+	for _, npub := range p.cfg.PeersNpub {
+		if strings.HasPrefix(npub, "npub1") {
+			prefix, decoded, err := nip19.Decode(npub)
+			if err == nil && prefix == "npub" {
+				if pkHex, ok := decoded.(string); ok {
+					authorsHex = append(authorsHex, pkHex)
+				}
+			}
+		} else if len(npub) == 64 {
+			// Already hex
+			authorsHex = append(authorsHex, npub)
+		}
+	}
+
+	// Subscribe to events with session tag, recipient tag, and author filter
 	filter := Filter{
 		Tags: nostr.TagMap{
 			"t": []string{p.cfg.SessionID},
-			"p": []string{p.cfg.LocalNpub}, // Only messages addressed to this party
+			"p": []string{p.cfg.LocalNpub}, // Only messages addressed to this party (bech32 is fine for "p" tag)
 		},
-		Kinds: []int{30303}, // TSS message kind
+		Kinds:   []int{30303}, // TSS message kind
+		Authors: authorsHex,   // Only receive messages from expected peers (hex format)
 	}
 
-	fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump subscribing to session %s, npub %s\n", p.cfg.SessionID, p.cfg.LocalNpub)
+	fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump subscribing to session %s, local npub %s (hex: %s), expecting authors (hex): %v\n", p.cfg.SessionID, p.cfg.LocalNpub, localNpubHex, authorsHex)
 	events, err := p.client.Subscribe(ctx, filter)
 	if err != nil {
 		return fmt.Errorf("subscribe: %w", err)
@@ -64,11 +94,24 @@ func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) error
 				continue
 			}
 
-			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump received event from %s, kind=%d, content_len=%d, tags_count=%d\n", event.PubKey, event.Kind, len(event.Content), len(event.Tags))
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump received event from %s (hex), kind=%d, content_len=%d, tags_count=%d\n", event.PubKey, event.Kind, len(event.Content), len(event.Tags))
 
-			// Skip events from self
-			if event.PubKey == p.cfg.LocalNpub {
-				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump skipping event from self\n")
+			// Skip events from self (compare hex to hex)
+			if event.PubKey == localNpubHex {
+				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump skipping event from self (hex: %s)\n", event.PubKey)
+				continue
+			}
+
+			// Verify event is from an expected peer (additional safety check)
+			isFromExpectedPeer := false
+			for _, expectedHex := range authorsHex {
+				if event.PubKey == expectedHex {
+					isFromExpectedPeer = true
+					break
+				}
+			}
+			if !isFromExpectedPeer && len(authorsHex) > 0 {
+				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump skipping event from unexpected peer (hex: %s, expected: %v)\n", event.PubKey, authorsHex)
 				continue
 			}
 

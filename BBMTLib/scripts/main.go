@@ -11,6 +11,7 @@ import (
 
 	"github.com/BoldBitcoinWallet/BBMTLib/tss"
 	nostr "github.com/nbd-wtf/go-nostr"
+	"github.com/nbd-wtf/go-nostr/nip19"
 )
 
 func randomSeed(length int) string {
@@ -32,13 +33,30 @@ func main() {
 	}
 
 	if mode == "nostr-keypair" {
-		sk := nostr.GeneratePrivateKey()
-		pk, err := nostr.GetPublicKey(sk)
+		// Generate private key in hex format
+		skHex := nostr.GeneratePrivateKey()
+
+		// Get public key in hex format
+		pkHex, err := nostr.GetPublicKey(skHex)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error generating Nostr public key: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("%s,%s", sk, pk)
+
+		// Convert to bech32 format (matching mobile app's NostrKeypair behavior)
+		nsec, err := nip19.EncodePrivateKey(skHex)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error encoding nsec: %v\n", err)
+			os.Exit(1)
+		}
+
+		npub, err := nip19.EncodePublicKey(pkHex)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error encoding npub: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("%s,%s", nsec, npub)
 	}
 
 	if mode == "relay" {
@@ -190,12 +208,14 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error: nsec not found in keyshare\n")
 			os.Exit(1)
 		}
-		// Decode hex to get raw nsec
+		// The nsec field is stored as hex-encoded bytes of the bech32 nsec string
+		// Decode hex to get the raw nsec (bech32 format)
 		decoded, err := hex.DecodeString(keyshare.Nsec)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error decoding nsec hex: %v\n", err)
 			os.Exit(1)
 		}
+		// Return the decoded string (should be bech32 nsec1...)
 		fmt.Print(string(decoded))
 	}
 

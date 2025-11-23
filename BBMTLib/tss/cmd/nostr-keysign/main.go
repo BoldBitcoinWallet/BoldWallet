@@ -14,7 +14,6 @@ import (
 
 	"github.com/BoldBitcoinWallet/BBMTLib/tss"
 	"github.com/BoldBitcoinWallet/BBMTLib/tss/nostrtransport"
-	nostr "github.com/nbd-wtf/go-nostr"
 )
 
 func main() {
@@ -37,8 +36,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Derive npub from nsec
-	localNpub, err := nostr.GetPublicKey(*partyNsec)
+	// Derive npub from nsec (handles both bech32 and hex formats)
+	localNpub, err := tss.DeriveNpubFromNsec(*partyNsec)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to derive npub from nsec: %v\n", err)
 		os.Exit(1)

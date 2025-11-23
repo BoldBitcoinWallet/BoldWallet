@@ -56,7 +56,7 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) error {
 					fmt.Fprintf(os.Stderr, "BBMTLog: ERROR - decoded npub but result is not string: %T\n", decoded)
 				}
 			} else {
-				// Decode failed - don't add to filter, log error with full npub
+				// Decode failed - don't add to filter, log error with full npub (v2.0.0 strict validation)
 				first50 := npub
 				if len(npub) > 50 {
 					first50 = npub[:50]
@@ -79,6 +79,7 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) error {
 	}
 
 	// Build hex pubkey list for filter (Nostr filters use hex, not Bech32)
+	// v2.0.0 strict validation: only add valid hex (64 chars, not starting with "npub1")
 	authorsHex := make([]string, 0, len(expectedHex))
 	for hexPk, npub := range expectedHex {
 		// Only add if it's actually hex (not a failed Bech32 decode that fell back to npub)
@@ -145,12 +146,11 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) error {
 						// Event.PubKey is hex, convert to npub for matching
 						evtPubKeyHex := evt.PubKey
 						evtNpub, exists := expectedHex[evtPubKeyHex]
-						if exists {
-							fmt.Fprintf(os.Stderr, "BBMTLog: Found existing ready event from %s (hex: %s) - MATCHED for session %s\n", evtNpub, evtPubKeyHex, s.cfg.SessionID)
-							seen.Store(evtNpub, true)
-						} else {
-							fmt.Fprintf(os.Stderr, "BBMTLog: Found event from unknown hex %s (not in expected peers: %v) for session %s\n", evtPubKeyHex, s.cfg.PeersNpub, s.cfg.SessionID)
+						if !exists {
+							evtNpub = evtPubKeyHex
 						}
+						fmt.Fprintf(os.Stderr, "BBMTLog: Found existing ready event from %s (hex: %s)\n", evtNpub, evtPubKeyHex)
+						seen.Store(evtNpub, true)
 					}
 				}
 			} else {
@@ -194,13 +194,12 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) error {
 			// Event.PubKey is hex, convert to npub for matching
 			evtPubKeyHex := evt.PubKey
 			evtNpub, exists := expectedHex[evtPubKeyHex]
-			if exists {
-				fmt.Fprintf(os.Stderr, "BBMTLog: Received ready event from %s (hex: %s) - MATCHED\n", evtNpub, evtPubKeyHex)
-				seen.Store(evtNpub, true)
-			} else {
-				fmt.Fprintf(os.Stderr, "BBMTLog: Received event from unknown hex %s (not in expected peers)\n", evtPubKeyHex)
-				continue
+			if !exists {
+				// Try to match directly if it's already Bech32 (shouldn't happen but be safe)
+				evtNpub = evtPubKeyHex
 			}
+			fmt.Fprintf(os.Stderr, "BBMTLog: Received ready event from %s (hex: %s)\n", evtNpub, evtPubKeyHex)
+			seen.Store(evtNpub, true)
 			if s.allPeersSeen(&seen, expected) {
 				fmt.Fprintf(os.Stderr, "BBMTLog: All peers ready!\n")
 				return nil

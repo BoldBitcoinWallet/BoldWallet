@@ -41,8 +41,9 @@ func decodeNsecFromBech32(nsec string) (string, error) {
 	return nsec, nil
 }
 
-// deriveNpubFromNsec derives a bech32 npub from a bech32 nsec.
-func deriveNpubFromNsec(partyNsec string) (string, error) {
+// DeriveNpubFromNsec derives a bech32 npub from a bech32 nsec (or hex nsec).
+// This function handles both bech32 (nsec1...) and hex formats.
+func DeriveNpubFromNsec(partyNsec string) (string, error) {
 	// Decode nsec from bech32 to hex if needed
 	skHex, err := decodeNsecFromBech32(partyNsec)
 	if err != nil {
@@ -131,7 +132,7 @@ func NostrJoinKeygen(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKe
 	setStatus(sessionID, status)
 
 	// Derive npub from nsec (handles bech32 format)
-	localNpub, err := deriveNpubFromNsec(partyNsec)
+	localNpub, err := DeriveNpubFromNsec(partyNsec)
 	if err != nil {
 		return "", err
 	}
@@ -185,7 +186,7 @@ func NostrJoinKeygen(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKe
 // This is used for Bitcoin transaction signing where the sighash is already computed.
 func NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, keyshareJSON, derivationPath, sighashBase64 string) (string, error) {
 	// Derive npub from nsec (handles bech32 format)
-	localNpub, err := deriveNpubFromNsec(partyNsec)
+	localNpub, err := DeriveNpubFromNsec(partyNsec)
 	if err != nil {
 		return "", err
 	}
@@ -247,7 +248,7 @@ func NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, sessionI
 // The message will be hashed internally before signing.
 func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, keyshareJSON, derivationPath, message string) (string, error) {
 	// Derive npub from nsec (handles bech32 format)
-	localNpub, err := deriveNpubFromNsec(partyNsec)
+	localNpub, err := DeriveNpubFromNsec(partyNsec)
 	if err != nil {
 		return "", err
 	}
@@ -1059,7 +1060,28 @@ func runNostrKeysignInternal(cfg nostrtransport.Config, keyshare *LocalStateNost
 	messageBase64 := base64.StdEncoding.EncodeToString(messageHashBytes)
 
 	// Use keyshare's keygen committee keys for keysign committee
-	keysignCommitteeKeys := strings.Join(keyshare.KeygenCommitteeKeys, ",")
+	// Convert hex keys to bech32 npubs if needed (to match LocalPartyKey format)
+	keysignCommitteeKeysList := make([]string, 0, len(keyshare.KeygenCommitteeKeys))
+	for _, key := range keyshare.KeygenCommitteeKeys {
+		if key == "" {
+			continue
+		}
+		// If already bech32 npub, use as-is
+		if strings.HasPrefix(key, "npub1") {
+			keysignCommitteeKeysList = append(keysignCommitteeKeysList, key)
+		} else {
+			// Convert hex to bech32 npub
+			npub, err := HexToNpub(key)
+			if err != nil {
+				Logf("Warning: failed to convert hex key %s to npub: %v, using as-is", key[:20]+"...", err)
+				keysignCommitteeKeysList = append(keysignCommitteeKeysList, key)
+			} else {
+				keysignCommitteeKeysList = append(keysignCommitteeKeysList, npub)
+			}
+		}
+	}
+
+	keysignCommitteeKeys := strings.Join(keysignCommitteeKeysList, ",")
 	if keysignCommitteeKeys == "" {
 		// Fallback to allParties if keygen_committee_keys is empty
 		keysignCommitteeKeys = strings.Join(allParties, ",")
@@ -1241,11 +1263,32 @@ func runNostrKeysignInternalWithSighash(cfg nostrtransport.Config, keyshare *Loc
 	// Use the base64-encoded sighash directly (no hashing)
 	messageBase64 := sighashBase64
 
-	// Use keyshare's keygen committee keys for keysign committee
-	keysignCommitteeKeys := strings.Join(keyshare.KeygenCommitteeKeys, ",")
+	// Use allParties from partiesNpubsCSV (which contains only the participating parties: local + selected peer)
+	// This ensures we only use 2 parties in trio mode, not all 3 from the keyshare
+	keysignCommitteeKeys := strings.Join(allParties, ",")
 	if keysignCommitteeKeys == "" {
-		// Fallback to allParties if keygen_committee_keys is empty
-		keysignCommitteeKeys = strings.Join(allParties, ",")
+		// Fallback: use keyshare's keygen committee keys if allParties is empty
+		// Convert hex keys to bech32 npubs if needed (to match LocalPartyKey format)
+		keysignCommitteeKeysList := make([]string, 0, len(keyshare.KeygenCommitteeKeys))
+		for _, key := range keyshare.KeygenCommitteeKeys {
+			if key == "" {
+				continue
+			}
+			// If already bech32 npub, use as-is
+			if strings.HasPrefix(key, "npub1") {
+				keysignCommitteeKeysList = append(keysignCommitteeKeysList, key)
+			} else {
+				// Convert hex to bech32 npub
+				npub, err := HexToNpub(key)
+				if err != nil {
+					Logf("Warning: failed to convert hex key %s to npub: %v, using as-is", key[:20]+"...", err)
+					keysignCommitteeKeysList = append(keysignCommitteeKeysList, key)
+				} else {
+					keysignCommitteeKeysList = append(keysignCommitteeKeysList, npub)
+				}
+			}
+		}
+		keysignCommitteeKeys = strings.Join(keysignCommitteeKeysList, ",")
 	}
 
 	// Perform keysign
