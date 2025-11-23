@@ -1108,16 +1108,28 @@ const MobileNostrPairing = ({navigation}: any) => {
       // Save relays to cache
       await LocalCache.setItem('nostr_relays', relaysCSV);
 
+      // Log detailed info for debugging trio mode
       dbg('Starting Nostr keygen with:', {
         relays: relaysCSV,
         parties: partiesNpubsCSV,
         sessionID: sessionID,
         ppmFile: ppmFile,
-        localNsec: localNsec,
+        localNsec: localNsec ? localNsec.substring(0, 20) + '...' : 'MISSING',
         partiesNpubsCSV: partiesNpubsCSV,
-        sessionKey: sessionKey,
-        chaincode: chaincode,
+        sessionKey: sessionKey.substring(0, 16) + '...',
+        chaincode: chaincode.substring(0, 16) + '...',
       });
+      
+      // Log which npubs will be sent to Go backend
+      const allPartiesList = partiesNpubsCSV.split(',');
+      dbg('=== GO BACKEND INPUT ===');
+      dbg('partiesNpubsCSV (full):', partiesNpubsCSV);
+      dbg('All parties count:', allPartiesList.length, isTrio ? '(should be 3 for trio)' : '(should be 2 for duo)');
+      dbg('All parties list:', allPartiesList.map((n, i) => `${i + 1}. ${n.substring(0, 30)}...`));
+      dbg('localNpub (will be excluded by Go backend):', localNpub ? localNpub.substring(0, 30) + '...' : 'MISSING');
+      dbg('Expected PeersNpub (after Go excludes localNpub):', expectedPeers.map((n, i) => `${i + 1}. ${n.substring(0, 30)}...`));
+      dbg('Go backend will wait for', expectedPeers.length, 'peers to publish "ready" events');
+      dbg('=== END GO BACKEND INPUT ===');
 
       // Call native module
       let keyshareJSON = await BBMTLibNativeModule.nostrMpcTssSetup(
