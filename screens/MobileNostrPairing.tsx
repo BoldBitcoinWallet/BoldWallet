@@ -224,6 +224,7 @@ const MobileNostrPairing = ({navigation}: any) => {
   // QR Scanner
   const [isQRScannerVisible, setIsQRScannerVisible] = useState(false);
   const [scanningForPeer, setScanningForPeer] = useState<1 | 2>(1);
+  const scanningForPeerRef = useRef<1 | 2>(1);
   const [isQRModalVisible, setIsQRModalVisible] = useState(false);
   const [showRelayConfig, setShowRelayConfig] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
@@ -891,31 +892,107 @@ const MobileNostrPairing = ({navigation}: any) => {
 
   const generateKeygenSessionParams = async () => {
     try {
-      // Get rounded time (250 second window for keygen)
+      // Get rounded time (60 second window for keygen)
       const now = Date.now();
-      const rounded = Math.floor(now / 60000);
+      const rounded = Math.floor(now / 90000);
       // roundedTime is only used in debug logs, no need to store in state
 
       // Collect all npubs and device names
-      const allNpubs = [localNpub];
-      const allDeviceNames = [deviceName];
+      // IMPORTANT: Trim whitespace and ensure consistent format
+      const allNpubs: string[] = [];
+      const allDeviceNames: string[] = [];
 
-      if (peerNpub1) {
-        allNpubs.push(peerNpub1);
+      // Add local npub (trimmed)
+      if (localNpub && localNpub.trim()) {
+        allNpubs.push(localNpub.trim());
       }
-      if (peerDeviceName1) {
-        allDeviceNames.push(peerDeviceName1);
-      }
-      if (isTrio && peerNpub2) {
-        allNpubs.push(peerNpub2);
-      }
-      if (isTrio && peerDeviceName2) {
-        allDeviceNames.push(peerDeviceName2);
+      if (deviceName && deviceName.trim()) {
+        allDeviceNames.push(deviceName.trim());
       }
 
-      // Sort alphabetically
+      // Add peer 1 (trimmed)
+      if (peerNpub1 && peerNpub1.trim()) {
+        allNpubs.push(peerNpub1.trim());
+      }
+      if (peerDeviceName1 && peerDeviceName1.trim()) {
+        allDeviceNames.push(peerDeviceName1.trim());
+      }
+
+      // Add peer 2 for trio (trimmed)
+      if (isTrio && peerNpub2 && peerNpub2.trim()) {
+        allNpubs.push(peerNpub2.trim());
+      }
+      if (isTrio && peerDeviceName2 && peerDeviceName2.trim()) {
+        allDeviceNames.push(peerDeviceName2.trim());
+      }
+
+      // Validate we have the correct number of npubs
+      const expectedNpubs = isTrio ? 3 : 2;
+      if (allNpubs.length !== expectedNpubs) {
+        dbg(
+          `ERROR: Expected ${expectedNpubs} npubs for ${
+            isTrio ? 'trio' : 'duo'
+          } mode, but got ${allNpubs.length}`,
+        );
+        dbg(
+          'allNpubs:',
+          allNpubs.map(n => n.substring(0, 20) + '...'),
+        );
+        dbg(
+          'localNpub:',
+          localNpub ? localNpub.substring(0, 20) + '...' : 'MISSING',
+        );
+        dbg(
+          'peerNpub1:',
+          peerNpub1 ? peerNpub1.substring(0, 20) + '...' : 'MISSING',
+        );
+        if (isTrio) {
+          dbg(
+            'peerNpub2:',
+            peerNpub2 ? peerNpub2.substring(0, 20) + '...' : 'MISSING',
+          );
+          dbg(
+            'peerDeviceName2:',
+            peerDeviceName2 ? peerDeviceName2 : 'MISSING',
+          );
+        }
+        dbg('isTrio:', isTrio);
+        return; // Don't generate session params if we don't have all npubs
+      }
+
+      // Additional validation for trio mode: ensure all 3 npubs are unique
+      if (isTrio && allNpubs.length === 3) {
+        const uniqueNpubs = new Set(allNpubs);
+        if (uniqueNpubs.size !== 3) {
+          dbg('ERROR: Duplicate npubs detected in trio mode!');
+          dbg('allNpubs:', allNpubs);
+          return;
+        }
+      }
+
+      // Sort alphabetically - CRITICAL: must be same order on all devices
       const npubsSorted = [...allNpubs].sort().join(',');
       const deviceNamesSorted = [...allDeviceNames].sort().join(',');
+
+      // Log the exact inputs for session ID calculation (for debugging)
+      dbg('=== SESSION ID CALCULATION ===');
+      dbg('Mode:', isTrio ? 'TRIO' : 'DUO');
+      dbg(
+        'All npubs (before sort):',
+        allNpubs.map(n => n.substring(0, 30) + '...'),
+      );
+      dbg(
+        'All npubs (sorted):',
+        npubsSorted.split(',').map(n => n.substring(0, 30) + '...'),
+      );
+      dbg('npubsSorted (full):', npubsSorted);
+      dbg('All device names (before sort):', allDeviceNames);
+      dbg('deviceNamesSorted:', deviceNamesSorted);
+      dbg('rounded (time window):', rounded);
+      dbg(
+        'Session ID input string:',
+        `${npubsSorted},${deviceNamesSorted},${rounded}`,
+      );
 
       // Generate session ID
       const sessionIDHash = await BBMTLibNativeModule.sha256(
@@ -937,8 +1014,12 @@ const MobileNostrPairing = ({navigation}: any) => {
 
       dbg('Generated session params:', {
         sessionID: sessionIDHash.substring(0, 16) + '...',
+        sessionKey: sessionKeyHash.substring(0, 16) + '...',
+        chaincode: chaincodeHash.substring(0, 16) + '...',
         roundedTime: rounded,
+        npubsCount: allNpubs.length,
       });
+      dbg('=== END SESSION ID CALCULATION ===');
     } catch (error: any) {
       dbg('Error generating session params:', error);
       Alert.alert('Error', 'Failed to generate session parameters');
@@ -954,10 +1035,72 @@ const MobileNostrPairing = ({navigation}: any) => {
 
     try {
       // Prepare parties npubs CSV (sorted)
-      const allNpubs = [localNpub];
-      if (peerNpub1) allNpubs.push(peerNpub1);
-      if (isTrio && peerNpub2) allNpubs.push(peerNpub2);
+      // IMPORTANT: Must use the same npubs and same sorting as session ID generation
+      const allNpubs: string[] = [];
+      if (localNpub && localNpub.trim()) {
+        allNpubs.push(localNpub.trim());
+      }
+      if (peerNpub1 && peerNpub1.trim()) {
+        allNpubs.push(peerNpub1.trim());
+      }
+      if (isTrio && peerNpub2 && peerNpub2.trim()) {
+        allNpubs.push(peerNpub2.trim());
+      }
+
+      // Validate we have the correct number
+      const expectedNpubs = isTrio ? 3 : 2;
+      if (allNpubs.length !== expectedNpubs) {
+        throw new Error(
+          `Expected ${expectedNpubs} npubs for ${
+            isTrio ? 'trio' : 'duo'
+          } mode, but got ${allNpubs.length}`,
+        );
+      }
+
+      // Sort alphabetically (same as session ID generation)
       const partiesNpubsCSV = allNpubs.sort().join(',');
+
+      dbg('=== START KEYGEN ===');
+      dbg('Mode:', isTrio ? 'TRIO' : 'DUO');
+      dbg(
+        'localNpub:',
+        localNpub ? localNpub.substring(0, 30) + '...' : 'MISSING',
+      );
+      dbg(
+        'partiesNpubsCSV (sorted, all npubs):',
+        partiesNpubsCSV.split(',').map(n => n.substring(0, 30) + '...'),
+      );
+
+      // Calculate expected peers (all npubs except local)
+      const expectedPeers = allNpubs.filter(n => {
+        const trimmedN = n.trim();
+        const trimmedLocal = localNpub?.trim() || '';
+        return trimmedN !== trimmedLocal;
+      });
+      dbg(
+        'Expected peers (excluding self):',
+        expectedPeers.map(n => n.substring(0, 30) + '...'),
+      );
+      dbg(
+        'Expected peer count:',
+        expectedPeers.length,
+        isTrio ? '(should be 2 for trio)' : '(should be 1 for duo)',
+      );
+
+      dbg('sessionID:', sessionID.substring(0, 16) + '...');
+      dbg('sessionKey:', sessionKey.substring(0, 16) + '...');
+
+      if (isTrio && expectedPeers.length !== 2) {
+        dbg(
+          '⚠️ WARNING: In trio mode, expected 2 peers but got',
+          expectedPeers.length,
+        );
+        dbg(
+          'This device will wait for',
+          expectedPeers.length,
+          'peers. Make sure all 3 devices have all npubs connected!',
+        );
+      }
 
       // Prepare relays CSV
       const relaysCSV = relays.join(',');
@@ -968,7 +1111,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       dbg('Starting Nostr keygen with:', {
         relays: relaysCSV,
         parties: partiesNpubsCSV,
-        sessionID: sessionID.substring(0, 16) + '...',
+        sessionID: sessionID,
         ppmFile: ppmFile,
         localNsec: localNsec,
         partiesNpubsCSV: partiesNpubsCSV,
@@ -1399,7 +1542,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         `${activeAddress}-pendingTxs`,
         JSON.stringify(pendingTxs),
       );
-      
+
       // Navigate to home (same as MobilesPairing.tsx)
       navigation.dispatch(
         CommonActions.reset({
@@ -1407,7 +1550,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           routes: [{name: 'Home'}],
         }),
       );
-      
+
       setMpcDone(true);
     } catch (error: any) {
       dbg('Send BTC error:', error);
@@ -1613,10 +1756,20 @@ const MobileNostrPairing = ({navigation}: any) => {
     setIsQRModalVisible(true);
   };
 
-  const handleQRScan = (data: string) => {
+  const handleQRScan = (data: string, peerNum?: 1 | 2) => {
     HapticFeedback.medium();
     setIsQRScannerVisible(false);
-    handlePeerConnectionInput(data, scanningForPeer);
+    // Use provided peerNum, or fallback to scanningForPeerRef (more reliable than state)
+    const targetPeer = peerNum || scanningForPeerRef.current;
+    dbg(
+      `handleQRScan: data="${data.substring(
+        0,
+        30,
+      )}...", peerNum=${targetPeer}, scanningForPeerRef=${
+        scanningForPeerRef.current
+      }`,
+    );
+    handlePeerConnectionInput(data, targetPeer);
   };
 
   const handlePaste = async (peerNum: 1 | 2) => {
@@ -3643,12 +3796,14 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 ]}
                                 onPress={() => {
                                   HapticFeedback.light();
-                                  setScanningForPeer(1);
+                                  const peerNum: 1 | 2 = 1;
+                                  setScanningForPeer(peerNum);
+                                  scanningForPeerRef.current = peerNum; // Update ref immediately
                                   if (Platform.OS === 'android') {
                                     BarcodeZxingScan.showQrReader(
                                       (error: any, data: any) => {
                                         if (!error && data) {
-                                          handleQRScan(data);
+                                          handleQRScan(data, peerNum);
                                         }
                                       },
                                     );
@@ -3780,12 +3935,14 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 ]}
                                 onPress={() => {
                                   HapticFeedback.light();
-                                  setScanningForPeer(2);
+                                  const peerNum: 1 | 2 = 2;
+                                  setScanningForPeer(peerNum);
+                                  scanningForPeerRef.current = peerNum; // Update ref immediately
                                   if (Platform.OS === 'android') {
                                     BarcodeZxingScan.showQrReader(
                                       (error: any, data: any) => {
                                         if (!error && data) {
-                                          handleQRScan(data);
+                                          handleQRScan(data, peerNum);
                                         }
                                       },
                                     );
@@ -4829,7 +4986,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           onRequestClose={() => setIsQRScannerVisible(false)}>
           <QRScannerComponent
             cameraDevice={device}
-            onScan={handleQRScan}
+            onScan={(data: string) => handleQRScan(data, scanningForPeer)}
             onClose={() => setIsQRScannerVisible(false)}
             theme={theme}
           />
