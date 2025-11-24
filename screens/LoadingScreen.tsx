@@ -329,8 +329,8 @@ const LoadingScreen = ({onRetry}: any) => {
       pointerEvents: 'none',
     },
     storeIcon: {
-      width: 200,
-      height: 200,
+      width: 128,
+      height: 128,
     },
     button: {
       flexDirection: 'row',
