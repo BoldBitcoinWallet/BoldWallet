@@ -122,7 +122,10 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
         <View style={styles.sectionHeaderContent}>
           <Image
             source={getSectionIcon(title)}
-            style={styles.sectionIcon}
+            style={[
+              styles.sectionIcon,
+              title.toLowerCase() === 'nostr relays' && styles.sectionIconNostrRelays,
+            ]}
             resizeMode="contain"
           />
           <Text style={styles.sectionHeaderTitle}>{title}</Text>
@@ -1200,6 +1203,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       width: 20,
       height: 20,
       marginRight: 8,
+    },
+    sectionIconNostrRelays: {
+      width: 40,
+      height: 40,
       tintColor: theme.colors.text,
     },
     sectionHeaderTitle: {
