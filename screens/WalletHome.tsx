@@ -15,6 +15,7 @@ import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {AppState} from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
+import Clipboard from '@react-native-clipboard/clipboard';
 import SendBitcoinModal from './SendBitcoinModal';
 import Toast from 'react-native-toast-message';
 import TransactionList from '../components/TransactionList';
@@ -754,6 +755,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const cacheIndicatorRef = useRef<CacheIndicatorHandle>(null);
   const [isNetworkModalVisible, setIsNetworkModalVisible] = useState(false);
   const [isPartyModalVisible, setIsPartyModalVisible] = useState(false);
+  const [keyshareInfo, setKeyshareInfo] = useState<{
+    label: string;
+    supportsLocal: boolean;
+    supportsNostr: boolean;
+    type: 'basic' | 'flexi';
+    pubKey: string;
+    npub: string | null;
+  } | null>(null);
 
   const {theme} = useTheme();
   const styles = createStyles(theme);
@@ -1053,7 +1062,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       } catch (error) {
         dbg('Error initializing wallet:', error);
         showErrorToast('Failed to initialize wallet. Please try again.');
-        console.error(error);
       } finally {
         setLoading(false);
       }
@@ -1103,11 +1111,102 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     LocalCache.setItem('mode', blurr ? 'private' : '');
   };
 
+  const loadKeyshareInfo = async () => {
+    try {
+      const keyshareJSON = await EncryptedStorage.getItem('keyshare');
+      if (!keyshareJSON) {
+        setKeyshareInfo(null);
+        return;
+      }
+
+      const keyshare = JSON.parse(keyshareJSON);
+      const pubKey = keyshare.pub_key || '';
+      const nostrNpub = keyshare.nostr_npub || null;
+      const supportsNostr = !!(nostrNpub && nostrNpub.trim() !== '');
+      const supportsLocal = true; // Always supported
+      
+      // Determine type: basic (2 devices) or flexi (3 devices)
+      const committeeKeys = keyshare.keygen_committee_keys || [];
+      const type = committeeKeys.length === 3 ? 'flexi' : 'basic';
+
+      // Determine label: if Nostr, use sorted order; otherwise use generic
+      let label = 'KeyShare1';
+      if (supportsNostr && keyshare.local_party_key && committeeKeys.length > 0) {
+        // Sort committee keys to match the ordering used in keygen
+        const sortedKeys = [...committeeKeys].sort();
+        const localIndex = sortedKeys.findIndex(
+          key => key === keyshare.local_party_key
+        );
+        if (localIndex >= 0) {
+          label = `KeyShare${localIndex + 1}`;
+        }
+      }
+
+      setKeyshareInfo({
+        label,
+        supportsLocal,
+        supportsNostr,
+        type,
+        pubKey,
+        npub: nostrNpub,
+      });
+    } catch (error) {
+      dbg('Error loading keyshare info:', error);
+      setKeyshareInfo(null);
+    }
+  };
+
+  useEffect(() => {
+    if (isPartyModalVisible) {
+      loadKeyshareInfo();
+    }
+  }, [isPartyModalVisible]);
+
   const handleSend = async (to: string, amountSats: Big, feeSats: Big) => {
     if (!isSending && amountSats.gt(0) && feeSats.gt(0) && to) {
       setIsSending(true);
       // Close send modal immediately
       setIsSendModalVisible(false);
+      
+      // Check if keyshare supports Nostr (has nostr_npub)
+      try {
+        const keyshareJSON = await EncryptedStorage.getItem('keyshare');
+        if (keyshareJSON) {
+          const keyshare = JSON.parse(keyshareJSON);
+          const hasNostrSupport = keyshare.nostr_npub && keyshare.nostr_npub.trim() !== '';
+          
+          if (!hasNostrSupport) {
+            // Keyshare was generated with local mode, navigate directly to MobilesPairing
+            const toAddress = to;
+            const satoshiAmount = amountSats.toString().split('.')[0];
+            const fiatAmount = amountSats.times(btcRate).div(1e8).toFixed(2);
+            const satoshiFees = feeSats.toString().split('.')[0];
+            const fiatFees = feeSats.times(btcRate).div(1e8).toFixed(2);
+            
+            navigation.dispatch(
+              CommonActions.navigate({
+                name: 'Devices Pairing',
+                params: {
+                  mode: 'send_btc',
+                  addressType,
+                  toAddress,
+                  satoshiAmount,
+                  fiatAmount,
+                  satoshiFees,
+                  fiatFees,
+                  selectedCurrency,
+                },
+              }),
+            );
+            setIsSending(false);
+            return;
+          }
+        }
+      } catch (error) {
+        dbg('Error checking keyshare for Nostr support:', error);
+        // Continue to show transport selector if check fails
+      }
+      
       // Store params and show transport selector after a brief delay to ensure send modal is closed
       setPendingSendParams({to, amountSats, feeSats});
       setTimeout(() => {
@@ -1247,8 +1346,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 styles.flexOneMinWidthZero,
                 styles.partyGap,
               ]}
-              onPress={() => {
+              onPress={async () => {
                 HapticFeedback.light();
+                // Load keyshare info before showing modal
+                await loadKeyshareInfo();
                 setIsPartyModalVisible(true);
               }}
               activeOpacity={0.85}>
@@ -1692,50 +1793,124 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             setIsPartyModalVisible(false);
           }}
           activeOpacity={1}>
-          <View style={styles.modalContentCompact}>
-            <View style={styles.modalHeaderRowCompact}>
-              <Image
-                source={require('../assets/key-icon.png')}
-                style={styles.modalHeaderIconCompact}
-              />
-              <Text style={styles.modalHeaderTitleCompact}>
-                Device Keyshare
-              </Text>
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={e => e.stopPropagation()}>
+            <View style={styles.modalContentCompact}>
+              <View style={styles.modalHeaderRowCompact}>
+                <Image
+                  source={require('../assets/key-icon.png')}
+                  style={styles.modalHeaderIconCompact}
+                />
+                <Text style={styles.modalHeaderTitleCompact}>
+                  Device Keyshare
+                </Text>
+              </View>
+
+              <View style={styles.keyshareModalBody}>
+                {keyshareInfo ? (
+                  <View style={styles.keyshareTable}>
+                    <View style={styles.keyshareTableRow}>
+                      <Text style={styles.keyshareTableKey}>Keyshare ID</Text>
+                      <Text style={styles.keyshareTableValue}>{keyshareInfo.label}</Text>
+                    </View>
+
+                    <View style={styles.keyshareTableRow}>
+                      <Text style={styles.keyshareTableKey}>Keyshare Type</Text>
+                      <Text style={styles.keyshareTableValue}>
+                        {keyshareInfo.type === 'flexi' ? 'Flexi (3-parties)' : 'Basic (2-parties)'}
+                      </Text>
+                    </View>
+
+                    <View style={styles.keyshareTableRow}>
+                      <Text style={styles.keyshareTableKey}>LAN/Hotspot</Text>
+                      <Text style={[styles.keyshareTableValue, styles.keyshareTableValueSuccess]}>✓ Supported</Text>
+                    </View>
+
+                    <View style={styles.keyshareTableRow}>
+                      <Text style={styles.keyshareTableKey}>Nostr Protocol</Text>
+                      <Text style={[styles.keyshareTableValue, keyshareInfo.supportsNostr ? styles.keyshareTableValueSuccess : styles.keyshareTableValueDisabled]}>
+                        {keyshareInfo.supportsNostr ? '✓ Supported' : '✗ Not Supported'}
+                      </Text>
+                    </View>
+
+                    <View style={styles.keyshareTableRow}>
+                      <Text style={styles.keyshareTableKey}>Extended Pubkey</Text>
+                      <View style={styles.keyshareTableValueContainer}>
+                        <Text style={styles.keyshareTableValueKey} numberOfLines={1} ellipsizeMode="middle">
+                          {keyshareInfo.pubKey || 'N/A'}
+                        </Text>
+                        <TouchableOpacity
+                          onPress={() => {
+                            HapticFeedback.light();
+                            Clipboard.setString(keyshareInfo.pubKey);
+                            Toast.show({
+                              type: 'success',
+                              text1: 'Copied',
+                              text2: 'Public key copied to clipboard',
+                            });
+                          }}
+                          style={styles.keyshareCopyButton}>
+                          <Image
+                            source={require('../assets/copy-icon.png')}
+                            style={styles.keyshareCopyIcon}
+                          />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    {keyshareInfo.supportsNostr && keyshareInfo.npub && (
+                      <View style={styles.keyshareTableRow}>
+                        <Text style={styles.keyshareTableKey}>Nostr Pubkey</Text>
+                        <View style={styles.keyshareTableValueContainer}>
+                          <Text style={styles.keyshareTableValueKey} numberOfLines={1} ellipsizeMode="middle">
+                            {keyshareInfo.npub}
+                          </Text>
+                          <TouchableOpacity
+                            onPress={() => {
+                              HapticFeedback.light();
+                              Clipboard.setString(keyshareInfo.npub || '');
+                              Toast.show({
+                                type: 'success',
+                                text1: 'Copied',
+                                text2: 'Nostr public key copied to clipboard',
+                              });
+                            }}
+                            style={styles.keyshareCopyButton}>
+                            <Image
+                              source={require('../assets/copy-icon.png')}
+                              style={styles.keyshareCopyIcon}
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                ) : (
+                  <View style={styles.keyshareLoadingContainer}>
+                    <Text style={styles.modalTextCompact}>
+                      Loading keyshare information...
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              <TouchableOpacity
+                style={[styles.backupButtonCompact, styles.keyshareBackupButtonMargin]}
+                onPress={() => {
+                  HapticFeedback.medium();
+                  setIsPartyModalVisible(false);
+                  if (typeof navigation.navigate === 'function') {
+                    navigation.navigate('Settings');
+                  }
+                }}
+                activeOpacity={0.7}>
+                <Text style={styles.backupButtonTextCompact}>
+                  Security Settings &gt; Backup
+                </Text>
+              </TouchableOpacity>
             </View>
-
-            <Text style={styles.modalTextCompact}>
-              This device stores{' '}
-              <Text style={styles.modalBoldTextCompact}>one part</Text> of your
-              wallet's keyshare. Devices must work together to manage your
-              wallet.
-            </Text>
-
-            <View style={styles.warningBoxCompact}>
-              <Text style={styles.warningTextCompact}>
-                ⚠️ Keep keyshares safe. Losing a device or backup permanently
-                locks out your Bitcoin.
-              </Text>
-            </View>
-
-            <Text style={styles.modalTipTextCompact}>
-              💡 Store backups separately — never together.
-            </Text>
-
-            <TouchableOpacity
-              style={styles.backupButtonCompact}
-              onPress={() => {
-                HapticFeedback.medium();
-                setIsPartyModalVisible(false);
-                if (typeof navigation.navigate === 'function') {
-                  navigation.navigate('Settings');
-                }
-              }}
-              activeOpacity={0.7}>
-              <Text style={styles.backupButtonTextCompact}>
-                Security Settings &gt; Backup
-              </Text>
-            </TouchableOpacity>
-          </View>
+          </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
     </SafeAreaView>
