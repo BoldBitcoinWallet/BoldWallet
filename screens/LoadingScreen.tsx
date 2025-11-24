@@ -505,7 +505,7 @@ const LoadingScreen = ({onRetry}: any) => {
               <Animated.View style={{transform: [{scale: logoScale}]}}>
                 <Image
                   style={[styles.storeIcon]}
-                  source={require('../assets/bold-bitcoin-icon.png')}
+                  source={require('../assets/bold-icon.png')}
                 />
               </Animated.View>
             </TouchableOpacity>
