@@ -660,7 +660,7 @@ const getSectionIcon = (title: string): any => {
     case 'storage':
       return require('../assets/storage-icon.png');
     case 'nostr relays':
-      return require('../assets/link-icon.png');
+      return require('../assets/nostr-icon.png');
     default:
       return require('../assets/advanced-icon.png');
   }
