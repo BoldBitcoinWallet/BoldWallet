@@ -285,6 +285,12 @@ FOUNDATION_EXPORT void TssClearSessionLog(NSString* _Nullable session);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssDecodeAddress(NSString* _Nullable address, NSError* _Nullable* _Nullable error);
 
+/**
+ * DeriveNpubFromNsec derives a bech32 npub from a bech32 nsec (or hex nsec).
+This function handles both bech32 (nsec1...) and hex formats.
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssDeriveNpubFromNsec(NSString* _Nullable partyNsec, NSError* _Nullable* _Nullable error);
+
 FOUNDATION_EXPORT void TssDisableLogs(void);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssDiscoverPeers(NSString* _Nullable id_, NSString* _Nullable pubkey, NSString* _Nullable localIP, NSString* _Nullable remoteIPsCSV, NSString* _Nullable port, NSString* _Nullable timeout, NSString* _Nullable mode, NSError* _Nullable* _Nullable error);
