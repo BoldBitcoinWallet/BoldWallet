@@ -160,8 +160,8 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       tintColor: theme.colors.primary,
     },
     transportOptionIconNostr: {
-      width: 64,
-      height: 64,
+      width: 40,
+      height: 40,
       backgroundColor: 'transparent',
       opacity: 1,
     },
