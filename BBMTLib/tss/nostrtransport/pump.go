@@ -23,7 +23,7 @@ type MessagePump struct {
 }
 
 func NewMessagePump(cfg Config, client *Client) *MessagePump {
-	cfg.ApplyDefaults()
+    cfg.ApplyDefaults()
 	return &MessagePump{
 		cfg:       cfg,
 		client:    client,

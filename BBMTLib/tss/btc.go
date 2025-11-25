@@ -2,6 +2,7 @@ package tss
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -254,6 +255,48 @@ func mpcHook(info, session, utxo_session string, utxo_current, utxo_total int, d
 		done,
 	)
 	Hook(hookData)
+}
+
+func SpendingHash(senderAddress, receiverAddress string, amountSatoshi int64) (string, error) {
+	Logln("BBMTLog", "invoking SpendingHash...")
+
+	// Fetch UTXOs (same as EstimateFees)
+	utxos, err := FetchUTXOs(senderAddress)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch UTXOs: %w", err)
+	}
+
+	// Select UTXOs using the same strategy as EstimateFees
+	selectedUTXOs, _, err := SelectUTXOs(utxos, amountSatoshi, "smallest")
+	if err != nil {
+		return "", err
+	}
+
+	// Sort selected UTXOs deterministically by TxID, then Vout
+	// This ensures the same hash is generated across devices for the same UTXOs
+	sortedUTXOs := make([]UTXO, len(selectedUTXOs))
+	copy(sortedUTXOs, selectedUTXOs)
+	sort.Slice(sortedUTXOs, func(i, j int) bool {
+		if sortedUTXOs[i].TxID != sortedUTXOs[j].TxID {
+			return sortedUTXOs[i].TxID < sortedUTXOs[j].TxID
+		}
+		return sortedUTXOs[i].Vout < sortedUTXOs[j].Vout
+	})
+
+	// Create a deterministic string representation of all UTXOs
+	// Format: "txid1:vout1,txid2:vout2,..."
+	var utxoStrings []string
+	for _, utxo := range sortedUTXOs {
+		utxoStrings = append(utxoStrings, fmt.Sprintf("%s:%d", utxo.TxID, utxo.Vout))
+	}
+	utxoData := strings.Join(utxoStrings, ",")
+
+	// Compute SHA256 hash
+	hash := sha256.Sum256([]byte(utxoData))
+	hashHex := hex.EncodeToString(hash[:])
+
+	Logf("SpendingHash: selected %d UTXOs, hash: %s", len(sortedUTXOs), hashHex)
+	return hashHex, nil
 }
 
 func EstimateFees(senderAddress, receiverAddress string, amountSatoshi int64) (string, error) {

@@ -29,7 +29,7 @@ func NewSessionCoordinator(cfg Config, client *Client) *SessionCoordinator {
 }
 
 func (s *SessionCoordinator) AwaitPeers(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, s.cfg.MaxTimeout)
+	ctx, cancel := context.WithTimeout(ctx, s.cfg.ConnectTimeout)
 	defer cancel()
 
 	expected := make(map[string]struct{}, len(s.cfg.PeersNpub))

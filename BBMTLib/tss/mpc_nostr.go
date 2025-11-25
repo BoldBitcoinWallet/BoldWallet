@@ -832,7 +832,7 @@ func runNostrKeygenInternal(cfg nostrtransport.Config, chaincode, ppmPath, local
 			status := getStatus(sessionID)
 			status.Step++
 			status.Index++
-			status.Info = fmt.Sprintf("Received new message %d", status.Index)
+			status.Info = fmt.Sprintf("Received Message %d", status.Index)
 			setIndex(sessionID, status.Info, status.Step, status.Index)
 			setStep(sessionID, status.Info, status.Step)
 			return tssService.ApplyData(string(payload))
@@ -1409,5 +1409,6 @@ func (a *nostrMessengerAdapter) Send(from, to, body string) error {
 	status.Step++
 	status.SeqNo++
 	setSeqNo(cfg.SessionID, status.Info, status.Step, status.SeqNo)
+	setStep(cfg.SessionID, status.Info, status.Step)
 	return a.messenger.SendMessage(a.ctx, from, to, body)
 }

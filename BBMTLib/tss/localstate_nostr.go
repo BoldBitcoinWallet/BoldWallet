@@ -7,7 +7,7 @@ import (
 
 // LocalStateNostr wraps LocalState with the extra nostr credentials.
 type LocalStateNostr struct {
-	LocalState
+    LocalState
 	NostrNpub string `json:"nostr_npub"`
 	NsecHex   string `json:"nsec"` // nsec in hex format
 }
@@ -19,7 +19,7 @@ func (l *LocalStateNostr) SetNsec(rawNsec string) error {
 	}
 	// Convert nsec string to hex
 	l.NsecHex = hex.EncodeToString([]byte(rawNsec))
-	return nil
+    return nil
 }
 
 // GetNsec returns the stored nsec by decoding from hex.

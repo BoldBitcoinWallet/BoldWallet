@@ -32,7 +32,7 @@ func (c *Client) GetPool() *nostr.SimplePool {
 }
 
 func NewClient(cfg Config) (*Client, error) {
-	cfg.ApplyDefaults()
+    cfg.ApplyDefaults()
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -150,28 +150,45 @@ func (c *Client) Publish(ctx context.Context, event *Event) error {
 	fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - signed event, PubKey (hex)=%s, tags=%v\n", event.PubKey, event.Tags)
 
 	results := c.pool.PublishMany(ctx, c.urls, *event)
-	var firstErr error
+	var successCount int
+	var failureCount int
+	var allErrors []error
+	totalRelays := len(c.urls)
+
 	for {
 		select {
 		case <-ctx.Done():
-			if firstErr == nil {
-				firstErr = ctx.Err()
+			// Context cancelled - check if we had any successes
+			if successCount > 0 {
+				fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - context cancelled but %d/%d relays succeeded\n", successCount, totalRelays)
+				return nil // At least one succeeded, so consider it a success
 			}
-			return firstErr
+			return ctx.Err()
 		case res, ok := <-results:
 			if !ok {
-				if firstErr == nil {
-					fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - all relays responded\n")
+				// All relays have responded
+				if successCount > 0 {
+					if failureCount > 0 {
+						fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - %d/%d relays succeeded, %d failed (resilient)\n", successCount, totalRelays, failureCount)
+					} else {
+						fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - all %d relays succeeded\n", totalRelays)
+					}
+					return nil // At least one succeeded
 				}
-				return firstErr
+				// All relays failed
+				if len(allErrors) > 0 {
+					fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - all %d relays failed\n", totalRelays)
+					return fmt.Errorf("all relays failed: %w", allErrors[0])
+				}
+				return fmt.Errorf("no relays responded")
 			}
 			if res.Error != nil {
-				fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - relay %s error: %v\n", res.Relay, res.Error)
-				if firstErr == nil {
-					firstErr = res.Error
-				}
+				failureCount++
+				allErrors = append(allErrors, res.Error)
+				fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - relay %s error: %v (%d/%d failed)\n", res.Relay, res.Error, failureCount, totalRelays)
 			} else {
-				fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - relay %s success\n", res.Relay)
+				successCount++
+				fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - relay %s success (%d/%d succeeded)\n", res.Relay, successCount, totalRelays)
 			}
 		}
 	}
