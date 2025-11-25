@@ -148,6 +148,22 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun spendingHash(senderAddress: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
+        Thread {
+            try {
+                val amt = amountSatoshi.toLong()
+                val result =
+                    Tss.spendingHash(senderAddress, receiverAddress, amt)
+                ld("spendingHash", result)
+                promise.resolve(result)
+            } catch (e: Exception) {
+                ld("spendingHash", "error: ${e.stackTraceToString()}")
+                promise.reject(e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
     fun estimateFees(senderAddress: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
         Thread {
             try {
@@ -414,12 +430,12 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             return false
         }
     }
-
+    
     private fun isClassC(ip: String): Boolean {
         val parts = ip.split(".").mapNotNull { it.toIntOrNull() }
         return parts.size == 4 && parts[0] in 192..223
     }
-
+    
     @ReactMethod
     fun nostrKeypair(promise: Promise) {
         try {

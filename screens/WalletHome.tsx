@@ -61,6 +61,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     to: string;
     amountSats: Big;
     feeSats: Big;
+    spendingHash: string;
   } | null>(null);
   const [btcPrice, setBtcPrice] = useState<string>('');
   const [btcRate, setBtcRate] = useState(0);
@@ -1162,7 +1163,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
   }, [isPartyModalVisible]);
 
-  const handleSend = async (to: string, amountSats: Big, feeSats: Big) => {
+  const handleSend = async (to: string, amountSats: Big, feeSats: Big, spendingHash: string) => {
     if (!isSending && amountSats.gt(0) && feeSats.gt(0) && to) {
       setIsSending(true);
       // Close send modal immediately
@@ -1195,6 +1196,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   satoshiFees,
                   fiatFees,
                   selectedCurrency,
+                  spendingHash,
                 },
               }),
             );
@@ -1208,7 +1210,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       }
       
       // Store params and show transport selector after a brief delay to ensure send modal is closed
-      setPendingSendParams({to, amountSats, feeSats});
+      setPendingSendParams({to, amountSats, feeSats, spendingHash});
       setTimeout(() => {
         setIsTransportModalVisible(true);
         setIsSending(false);
@@ -1219,7 +1221,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const navigateToPairing = (transport: 'local' | 'nostr') => {
     if (!pendingSendParams) return;
     
-    const {to, amountSats, feeSats} = pendingSendParams;
+    const {to, amountSats, feeSats, spendingHash} = pendingSendParams;
     const toAddress = to;
     const satoshiAmount = amountSats.toString().split('.')[0];
     const fiatAmount = amountSats.times(btcRate).div(1e8).toFixed(2);
@@ -1239,6 +1241,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           satoshiFees,
           fiatFees,
           selectedCurrency,
+          spendingHash,
         },
       }),
     );

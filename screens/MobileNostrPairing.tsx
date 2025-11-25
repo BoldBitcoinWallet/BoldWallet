@@ -133,6 +133,7 @@ type RouteParams = {
   satoshiFees?: string;
   fiatFees?: string;
   selectedCurrency?: string;
+  spendingHash?: string;
 };
 
 const MobileNostrPairing = ({navigation}: any) => {
@@ -247,7 +248,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       try {
         const cachedRelays = await LocalCache.getItem('nostr_relays');
         if (cachedRelays) {
-          setRelaysInput(cachedRelays);
+          // Convert CSV to newline-separated for multiline display
+          const relaysForDisplay = cachedRelays.split(',').join('\n');
+          setRelaysInput(relaysForDisplay);
           setRelays(
             cachedRelays
               .split(',')
@@ -256,7 +259,9 @@ const MobileNostrPairing = ({navigation}: any) => {
           );
         } else {
           const defaults = 'wss://nostr.hifish.org,wss://nostr.xxi.quest';
-          setRelaysInput(defaults);
+          // Convert CSV to newline-separated for multiline display
+          const defaultsForDisplay = defaults.split(',').join('\n');
+          setRelaysInput(defaultsForDisplay);
           setRelays(
             defaults
               .split(',')
@@ -267,7 +272,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       } catch (error) {
         dbg('Error loading relays:', error);
         const defaults = 'wss://nostr.hifish.org,wss://nostr.xxi.quest';
-        setRelaysInput(defaults);
+        // Convert CSV to newline-separated for multiline display
+        const defaultsForDisplay = defaults.split(',').join('\n');
+        setRelaysInput(defaultsForDisplay);
         setRelays(
           defaults
             .split(',')
@@ -279,10 +286,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     loadRelays();
   }, []);
 
-  // Update relays when input changes
+  // Update relays when input changes (support both comma and newline separation)
   useEffect(() => {
     const parsed = relaysInput
-      .split(',')
+      .split(/[,\n]/)
       .map(r => r.trim())
       .filter(Boolean);
     setRelays(parsed);
@@ -1532,7 +1539,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       );
 
       const sessionIDHash = await BBMTLibNativeModule.sha256(
-        `${npubsSorted},${balanceSats},${satoshiAmount},${rounded}`,
+        `${npubsSorted},${balanceSats},${satoshiAmount},${rounded},${route.params.spendingHash}`,
       );
       setSessionID(sessionIDHash);
 
@@ -1550,6 +1557,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         balance: balanceSats,
         amount: satoshiAmount,
         fees: satoshiFees,
+        spendingHash: route.params.spendingHash,
       });
 
       // Prepare relays CSV
@@ -3726,18 +3734,27 @@ const MobileNostrPairing = ({navigation}: any) => {
                               marginBottom: 8,
                             }}>
                             Configure Nostr relays (defaults work for most
-                            users)
+                            users). Enter relay URLs, one per line or comma-separated (wss://...).
                           </Text>
                           <TextInput
-                            style={styles.input}
+                            style={[
+                              styles.input,
+                              {
+                                minHeight: 120,
+                                textAlignVertical: 'top',
+                                paddingTop: 12,
+                              },
+                            ]}
                             value={relaysInput}
                             onChangeText={setRelaysInput}
-                            placeholder="wss://relay1.com,wss://relay2.com"
+                            placeholder={'wss://relay1.com\nwss://relay2.com\nwss://relay3.com'}
                             placeholderTextColor={
                               theme.colors.textSecondary + '80'
                             }
                             autoCapitalize="none"
                             autoCorrect={false}
+                            multiline
+                            numberOfLines={6}
                           />
                         </View>
                       )}

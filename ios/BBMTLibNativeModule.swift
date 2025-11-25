@@ -100,6 +100,24 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     }
   }
 
+  @objc func spendingHash(
+    _ senderAddress: String,
+    receiverAddress: String,
+    amountSatoshi: String,
+    resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      guard self != nil else { return }
+      var error: NSError?
+      let output = TssSpendingHash(
+        senderAddress,
+        receiverAddress,
+        Int64(amountSatoshi) ?? 0, &error)
+      self?.resolve("spendingHash", output, error, resolver)
+    }
+  }
+
   @objc func estimateFees(
     _ senderAddress: String,
     receiverAddress: String,

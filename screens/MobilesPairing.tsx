@@ -103,6 +103,7 @@ const MobilesPairing = ({navigation}: any) => {
     satoshiFees?: string;
     fiatFees?: string;
     selectedCurrency?: string;
+    spendingHash?: string;
   };
 
   const route = useRoute<RouteProp<{params: RouteParams}>>();
@@ -525,8 +526,8 @@ const MobilesPairing = ({navigation}: any) => {
     try {
       dbg('session init...');
       const data = await initSession();
-
       dbg('session init done');
+      dbg('spending hash:', route.params.spendingHash);
       if (isMaster) {
         await BBMTLibNativeModule.stopRelay('stop');
         await waitMS(2000);

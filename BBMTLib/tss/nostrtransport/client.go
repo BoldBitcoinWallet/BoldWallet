@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	nostr "github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip19"
@@ -32,7 +33,7 @@ func (c *Client) GetPool() *nostr.SimplePool {
 }
 
 func NewClient(cfg Config) (*Client, error) {
-    cfg.ApplyDefaults()
+	cfg.ApplyDefaults()
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -201,6 +202,27 @@ func (c *Client) Subscribe(ctx context.Context, filter Filter) (<-chan *Event, e
 	events := make(chan *Event)
 	relayCh := c.pool.SubscribeMany(ctx, c.urls, filter)
 
+	// Track relay connection status
+	connectedRelays := make(map[string]bool)
+	totalRelays := len(c.urls)
+	var connectionCheckDone bool
+
+	// Start a goroutine to monitor connection status
+	connectionCtx, connectionCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer connectionCancel()
+
+	go func() {
+		<-connectionCtx.Done()
+		if !connectionCheckDone {
+			connectionCheckDone = true
+			if len(connectedRelays) == 0 {
+				fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - WARNING: No relays connected after 5 seconds (all %d relays may have failed)\n", totalRelays)
+			} else if len(connectedRelays) < totalRelays {
+				fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - %d/%d relays connected\n", len(connectedRelays), totalRelays)
+			}
+		}
+	}()
+
 	go func() {
 		defer close(events)
 		for {
@@ -209,10 +231,37 @@ func (c *Client) Subscribe(ctx context.Context, filter Filter) (<-chan *Event, e
 				return
 			case relayEvent, ok := <-relayCh:
 				if !ok {
+					// Channel closed - check if we ever got any connections
+					connectionCheckDone = true
+					if len(connectedRelays) == 0 {
+						fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - ERROR: All %d relays failed to connect or disconnected\n", totalRelays)
+					} else {
+						fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - subscription closed (%d/%d relays were connected)\n", len(connectedRelays), totalRelays)
+					}
 					return
 				}
+				// Get relay URL for tracking
+				var relayURL string
+				if relayEvent.Relay != nil {
+					relayURL = relayEvent.Relay.URL
+				}
+
 				if relayEvent.Event == nil {
+					// Track relay connection (even if no event yet, the relay is responding)
+					if relayURL != "" {
+						if !connectedRelays[relayURL] {
+							connectedRelays[relayURL] = true
+							fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - relay %s connected (%d/%d)\n", relayURL, len(connectedRelays), totalRelays)
+						}
+					}
 					continue
+				}
+				// Track relay connection when we receive an event
+				if relayURL != "" {
+					if !connectedRelays[relayURL] {
+						connectedRelays[relayURL] = true
+						fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - relay %s connected (%d/%d)\n", relayURL, len(connectedRelays), totalRelays)
+					}
 				}
 				select {
 				case events <- relayEvent.Event:

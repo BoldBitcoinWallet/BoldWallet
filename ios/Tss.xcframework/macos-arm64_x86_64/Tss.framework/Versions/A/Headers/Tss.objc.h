@@ -449,6 +449,8 @@ FOUNDATION_EXPORT NSString* _Nonnull TssSetNetwork(NSString* _Nullable network, 
 
 FOUNDATION_EXPORT NSString* _Nonnull TssSha256(NSString* _Nullable msg, NSError* _Nullable* _Nullable error);
 
+FOUNDATION_EXPORT NSString* _Nonnull TssSpendingHash(NSString* _Nullable senderAddress, NSString* _Nullable receiverAddress, int64_t amountSatoshi, NSError* _Nullable* _Nullable error);
+
 FOUNDATION_EXPORT NSString* _Nonnull TssStopRelay(NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssTotalUTXO(NSString* _Nullable address, NSError* _Nullable* _Nullable error);

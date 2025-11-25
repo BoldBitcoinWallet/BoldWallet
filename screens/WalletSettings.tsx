@@ -883,11 +883,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     LocalCache.getItem('nostr_relays').then(relays => {
       if (relays) {
         setNostrRelays(relays);
-        setPendingNostrRelays(relays);
+        // Convert CSV to newline-separated for multiline display
+        const relaysForDisplay = relays.split(',').join('\n');
+        setPendingNostrRelays(relaysForDisplay);
       } else {
         const defaults = 'wss://nostr.hifish.org,wss://nostr.xxi.quest';
         setNostrRelays(defaults);
-        setPendingNostrRelays(defaults);
+        // Convert CSV to newline-separated for multiline display
+        const defaultsForDisplay = defaults.split(',').join('\n');
+        setPendingNostrRelays(defaultsForDisplay);
       }
     });
   }, []);
@@ -2166,7 +2170,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             <Text style={styles.apiName}>Nostr Relay Configuration</Text>
             <Text style={styles.apiDescription}>
               Configure Nostr relays for device pairing and transaction signing.
-              Enter comma-separated relay URLs (wss://...).
+              Enter relay URLs, one per line or comma-separated (wss://...).
             </Text>
           </View>
           <TextInput
@@ -2176,16 +2180,19 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 borderColor: theme.colors.border,
                 color: theme.colors.text,
                 backgroundColor: theme.colors.cardBackground,
+                minHeight: 120,
+                textAlignVertical: 'top',
+                paddingTop: 12,
               },
             ]}
             value={pendingNostrRelays}
             onChangeText={setPendingNostrRelays}
-            placeholder="wss://relay1.com,wss://relay2.com"
+            placeholder={'wss://relay1.com\nwss://relay2.com\nwss://relay3.com'}
             placeholderTextColor={theme.colors.textSecondary + '80'}
             autoCapitalize="none"
             autoCorrect={false}
             multiline
-            numberOfLines={3}
+            numberOfLines={6}
           />
           <View style={styles.apiActionButtonsRow}>
             <TouchableOpacity
@@ -2199,9 +2206,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               onPress={async () => {
                 HapticFeedback.light();
                 try {
-                  // Validate relay URLs
+                  // Parse relays - support both newline and comma separation
                   const relays = pendingNostrRelays
-                    .split(',')
+                    .split(/[,\n]/)
                     .map(r => r.trim())
                     .filter(Boolean);
                   if (relays.length === 0) {
@@ -2219,9 +2226,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     );
                     return;
                   }
-                  // Save to cache
-                  await LocalCache.setItem('nostr_relays', pendingNostrRelays);
-                  setNostrRelays(pendingNostrRelays);
+                  // Convert to CSV format for storage
+                  const relaysCSV = relays.join(',');
+                  // Save to cache as CSV
+                  await LocalCache.setItem('nostr_relays', relaysCSV);
+                  setNostrRelays(relaysCSV);
                   Alert.alert('Success', 'Nostr relays saved successfully!');
                 } catch (error) {
                   dbg('Error saving Nostr relays:', error);
@@ -2245,7 +2254,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               onPress={() => {
                 HapticFeedback.light();
                 const defaults = 'wss://nostr.hifish.org,wss://nostr.xxi.quest';
-                setPendingNostrRelays(defaults);
+                // Convert CSV to newline-separated for multiline display
+                const defaultsForDisplay = defaults.split(',').join('\n');
+                setPendingNostrRelays(defaultsForDisplay);
               }}>
               <View style={styles.buttonContent}>
                 <Image
@@ -2260,7 +2271,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           {nostrRelays && (
             <View style={styles.apiItem}>
               <Text style={styles.apiDescription}>
-                Current: {nostrRelays}
+                Current:{'\n'}
+                {nostrRelays.split(',').join('\n')}
               </Text>
             </View>
           )}

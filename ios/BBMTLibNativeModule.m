@@ -139,6 +139,13 @@ RCT_EXTERN_METHOD(estimateFees:(NSString *)senderAddress
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+// Call spendingHash
+RCT_EXTERN_METHOD(spendingHash:(NSString *)senderAddress
+                  receiverAddress:(NSString *)receiverAddress
+                  amountSatoshi:(NSString *)amountSatoshi
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 // Call mpcSendBTC
 RCT_EXTERN_METHOD(mpcSendBTC:(NSString *)server
                   partyID:(NSString *)partyID

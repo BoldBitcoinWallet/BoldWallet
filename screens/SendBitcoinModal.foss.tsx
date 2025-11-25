@@ -26,14 +26,14 @@ import {dbg, HapticFeedback} from '../utils';
 import {useTheme} from '../theme';
 import LocalCache from '../services/LocalCache';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import { validate as validateBitcoinAddress } from 'bitcoin-address-validation';
+import {validate as validateBitcoinAddress} from 'bitcoin-address-validation';
 
 const {BBMTLibNativeModule} = NativeModules;
 
 interface SendBitcoinModalProps {
   visible: boolean;
   onClose: () => void;
-  onSend: (address: string, amount: Big, estimatedFee: Big) => void;
+  onSend: (address: string, amount: Big, estimatedFee: Big, spendingHash: string) => void;
   btcToFiatRate: Big;
   walletBalance: Big;
   walletAddress: string;
@@ -57,7 +57,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   const [inUsdAmount, setInUsdAmount] = useState('');
   const [estimatedFee, setEstimatedFee] = useState<Big | null>(null);
   const [isCalculatingFee, setIsCalculatingFee] = useState(false);
-
+  const [spendingHash, setSpendingHash] = useState<string>('');
   const [activeInput, setActiveInput] = useState<'btc' | 'usd' | null>(null);
   const [feeStrategy, setFeeStrategy] = useState('eco');
 
@@ -350,77 +350,97 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       maximumFractionDigits: 2,
     }).format(price);
 
-  const getFee = useCallback(async (addr: string, amt: string) => {
-    if (!addr || !amt || btcAmount.eq(0)) {
-      setEstimatedFee(null);
-      return;
-    }
-
-    const amount = Big(amt);
-
-    if (amount.gt(walletBalance) || !walletBalance) {
-      setEstimatedFee(null);
-      return;
-    }
-
-    setIsCalculatingFee(true);
-    BBMTLibNativeModule.estimateFees(
-      walletAddress,
-      addr,
-      amount.times(1e8).toFixed(0),
-    )
-      .then((fee: string) => {
-        if (fee && typeof fee === 'string') {
-          // Check if the response contains an error message
-          if (
-            fee.includes('failed') ||
-            fee.includes('error') ||
-            fee.includes('[')
-          ) {
-            dbg('Fee estimation API returned error:', fee);
-            setEstimatedFee(null);
-            return;
-          }
-
-          // Try to parse the fee as a valid number
-          try {
-            const feeNumber = parseFloat(fee);
-            if (isNaN(feeNumber) || feeNumber <= 0) {
-              dbg('Invalid fee amount received:', fee);
-              setEstimatedFee(null);
-              return;
-            }
-
-            dbg('got fees:', fee);
-            const feeAmt = Big(feeNumber.toString());
-            setEstimatedFee(feeAmt);
-            if (Big(inBtcAmount).eq(walletBalance)) {
-              setInBtcAmount(walletBalance.minus(feeAmt.div(1e8)).toString());
-            }
-          } catch (parseError) {
-            dbg('Failed to parse fee amount:', fee, parseError);
-            setEstimatedFee(null);
-          }
-        } else {
-          dbg('No fee data received from API');
-          setEstimatedFee(null);
-        }
-      })
-      .catch((e: any) => {
-        dbg('Fee estimation failed:', e);
+  const getFee = useCallback(
+    async (addr: string, amt: string) => {
+      if (!addr || !amt || btcAmount.eq(0)) {
         setEstimatedFee(null);
-        // Only show alert for network/API errors, not parsing errors
-        if (e.message && !e.message.includes('Invalid number')) {
-          Alert.alert(
-            'Fee Estimation Error',
-            'Unable to estimate transaction fee. Please try again later.',
-          );
-        }
-      })
-      .finally(() => {
-        setIsCalculatingFee(false);
-      });
-  }, [btcAmount, walletBalance, walletAddress, inBtcAmount]);
+        return;
+      }
+
+      const amount = Big(amt);
+
+      if (amount.gt(walletBalance) || !walletBalance) {
+        setEstimatedFee(null);
+        return;
+      }
+
+      setIsCalculatingFee(true);
+      const satoshiAmount = amount.times(1e8).toFixed(0);
+      BBMTLibNativeModule.spendingHash(
+        walletAddress,
+        addr,
+        satoshiAmount,
+      )
+        .then((hash: string) => {
+          setSpendingHash(hash);
+          dbg('got spending hash:', hash);
+          BBMTLibNativeModule.estimateFees(
+            walletAddress,
+            addr,
+            satoshiAmount,
+          )
+            .then((fee: string) => {
+              if (fee && typeof fee === 'string') {
+                // Check if the response contains an error message
+                if (
+                  fee.includes('failed') ||
+                  fee.includes('error') ||
+                  fee.includes('[')
+                ) {
+                  dbg('Fee estimation API returned error:', fee);
+                  setEstimatedFee(null);
+                  return;
+                }
+
+                // Try to parse the fee as a valid number
+                try {
+                  const feeNumber = parseFloat(fee);
+                  if (isNaN(feeNumber) || feeNumber <= 0) {
+                    dbg('Invalid fee amount received:', fee);
+                    setEstimatedFee(null);
+                    return;
+                  }
+
+                  dbg('got fees:', fee);
+                  const feeAmt = Big(feeNumber.toString());
+                  setEstimatedFee(feeAmt);
+                  if (Big(inBtcAmount).eq(walletBalance)) {
+                    setInBtcAmount(
+                      walletBalance.minus(feeAmt.div(1e8)).toString(),
+                    );
+                  }
+                } catch (parseError) {
+                  dbg('Failed to parse fee amount:', fee, parseError);
+                  setEstimatedFee(null);
+                }
+              } else {
+                dbg('No fee data received from API');
+                setEstimatedFee(null);
+              }
+            })
+            .catch((e: any) => {
+              dbg('Fee estimation failed:', e);
+              setEstimatedFee(null);
+              // Only show alert for network/API errors, not parsing errors
+              if (e.message && !e.message.includes('Invalid number')) {
+                Alert.alert(
+                  'Fee Estimation Error',
+                  'Unable to estimate transaction fee. Please try again later.',
+                );
+              }
+            })
+            .finally(() => {
+              setIsCalculatingFee(false);
+            });
+        })
+        .catch((e: any) => {
+          dbg('Spending hash failed:', e);
+          setIsCalculatingFee(false);
+          setEstimatedFee(null);
+        });
+    },
+    [btcAmount, walletBalance, walletAddress, inBtcAmount],
+  );
 
   const debouncedGetFee = useMemo(() => debounce(getFee, 1000), [getFee]);
 
@@ -508,7 +528,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       return;
     }
     HapticFeedback.heavy();
-    onSend(address, Big(inBtcAmount).times(1e8), estimatedFee);
+    onSend(address, Big(inBtcAmount).times(1e8), estimatedFee, spendingHash);
   };
 
   const renderFeeSection = () => {
