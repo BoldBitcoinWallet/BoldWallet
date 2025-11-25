@@ -3803,7 +3803,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                             onPress={showQRModal}
                             activeOpacity={0.8}>
                             <Image
-                              source={require('../assets/qr-icon.png')}
+                              source={require('../assets/qrc-icon.png')}
                               style={styles.iconImageCompact}
                               resizeMode="contain"
                             />
@@ -3942,7 +3942,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 }}
                                 activeOpacity={0.7}>
                                 <Image
-                                  source={require('../assets/qr-icon.png')}
+                                  source={require('../assets/scan-icon.png')}
                                   style={styles.iconImage}
                                   resizeMode="contain"
                                 />
@@ -4081,7 +4081,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 }}
                                 activeOpacity={0.7}>
                                 <Image
-                                  source={require('../assets/qr-icon.png')}
+                                  source={require('../assets/scan-icon.png')}
                                   style={styles.iconImage}
                                   resizeMode="contain"
                                 />
