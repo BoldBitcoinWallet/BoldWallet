@@ -29,7 +29,7 @@ import * as Progress from 'react-native-progress';
 import {CommonActions, RouteProp, useRoute} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Big from 'big.js';
-import {dbg, HapticFeedback} from '../utils';
+import {dbg, HapticFeedback, getNostrRelays} from '../utils';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import LocalCache from '../services/LocalCache';
@@ -242,45 +242,29 @@ const MobileNostrPairing = ({navigation}: any) => {
   // Connection details for sharing
   const connectionDetails = `${localNpub}:${deviceName}`;
 
-  // Load default relays on mount
+  // Load default relays on mount (from cache if available, otherwise fetch dynamically)
   useEffect(() => {
     const loadRelays = async () => {
       try {
-        const cachedRelays = await LocalCache.getItem('nostr_relays');
-        if (cachedRelays) {
-          // Convert CSV to newline-separated for multiline display
-          const relaysForDisplay = cachedRelays.split(',').join('\n');
-          setRelaysInput(relaysForDisplay);
-          setRelays(
-            cachedRelays
-              .split(',')
-              .map(r => r.trim())
-              .filter(Boolean),
-          );
-        } else {
-          const defaults = 'wss://nostr.hifish.org,wss://nostr.xxi.quest';
-          // Convert CSV to newline-separated for multiline display
-          const defaultsForDisplay = defaults.split(',').join('\n');
-          setRelaysInput(defaultsForDisplay);
-          setRelays(
-            defaults
-              .split(',')
-              .map(r => r.trim())
-              .filter(Boolean),
-          );
-        }
+        // Use getNostrRelays which handles cache and fetching
+        const fetchedRelays = await getNostrRelays(false);
+        const relaysCSV = fetchedRelays.join(',');
+        // Convert CSV to newline-separated for multiline display
+        const relaysForDisplay = relaysCSV.split(',').join('\n');
+        setRelaysInput(relaysForDisplay);
+        setRelays(fetchedRelays);
       } catch (error) {
         dbg('Error loading relays:', error);
-        const defaults = 'wss://nostr.hifish.org,wss://nostr.xxi.quest';
-        // Convert CSV to newline-separated for multiline display
-        const defaultsForDisplay = defaults.split(',').join('\n');
+        // Fallback to defaults on error
+        const defaults = [
+          'wss://bbw-nostr.xyz',
+          'wss://nostr.hifish.org',
+          'wss://nostr.xxi.quest',
+        ];
+        const defaultsCSV = defaults.join(',');
+        const defaultsForDisplay = defaultsCSV.split(',').join('\n');
         setRelaysInput(defaultsForDisplay);
-        setRelays(
-          defaults
-            .split(',')
-            .map(r => r.trim())
-            .filter(Boolean),
-        );
+        setRelays(defaults);
       }
     };
     loadRelays();

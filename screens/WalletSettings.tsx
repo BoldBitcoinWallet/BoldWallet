@@ -45,7 +45,7 @@ import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
 import LegalModal from '../components/LegalModal';
-import {fetchDynamicAPIEndpoints} from '../utils';
+import {fetchDynamicAPIEndpoints, getNostrRelays} from '../utils';
 
 interface CollapsibleSectionProps {
   title: string;
@@ -879,20 +879,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       setIsCryptoVibrant(appTheme === 'cryptoVibrant');
     });
 
-    // Load Nostr relays
-    LocalCache.getItem('nostr_relays').then(relays => {
-      if (relays) {
-        setNostrRelays(relays);
-        // Convert CSV to newline-separated for multiline display
-        const relaysForDisplay = relays.split(',').join('\n');
-        setPendingNostrRelays(relaysForDisplay);
-      } else {
-        const defaults = 'wss://nostr.hifish.org,wss://nostr.xxi.quest';
-        setNostrRelays(defaults);
-        // Convert CSV to newline-separated for multiline display
-        const defaultsForDisplay = defaults.split(',').join('\n');
-        setPendingNostrRelays(defaultsForDisplay);
-      }
+    // Load Nostr relays (from cache if available, otherwise fetch dynamically)
+    getNostrRelays(false).then(relays => {
+      const relaysCSV = relays.join(',');
+      setNostrRelays(relaysCSV);
+      // Convert CSV to newline-separated for multiline display
+      const relaysForDisplay = relaysCSV.split(',').join('\n');
+      setPendingNostrRelays(relaysForDisplay);
     });
   }, []);
 
@@ -2251,12 +2244,14 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.button, styles.resetButton, styles.apiActionButton]}
-              onPress={() => {
+              onPress={async () => {
                 HapticFeedback.light();
-                const defaults = 'wss://nostr.hifish.org,wss://nostr.xxi.quest';
+                // Fetch dynamic relays (force fetch, same as first time)
+                const fetchedRelays = await getNostrRelays(true);
+                const relaysCSV = fetchedRelays.join(',');
                 // Convert CSV to newline-separated for multiline display
-                const defaultsForDisplay = defaults.split(',').join('\n');
-                setPendingNostrRelays(defaultsForDisplay);
+                const relaysForDisplay = relaysCSV.split(',').join('\n');
+                setPendingNostrRelays(relaysForDisplay);
               }}>
               <View style={styles.buttonContent}>
                 <Image
