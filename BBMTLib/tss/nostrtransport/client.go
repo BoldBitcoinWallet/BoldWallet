@@ -144,8 +144,11 @@ func (c *Client) Publish(ctx context.Context, event *Event) error {
 	}
 
 	// Sign the event (this will also set PubKey from the private key if not already set)
-	if err := event.Sign(nsecHex); err != nil {
-		return fmt.Errorf("sign event failed: %w", err)
+	// Only sign if not already signed (for gift wraps that are pre-signed)
+	if event.Sig == "" {
+		if err := event.Sign(nsecHex); err != nil {
+			return fmt.Errorf("sign event failed: %w", err)
+		}
 	}
 
 	fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - signed event, PubKey (hex)=%s, tags=%v\n", event.PubKey, event.Tags)
@@ -273,4 +276,68 @@ func (c *Client) Subscribe(ctx context.Context, filter Filter) (<-chan *Event, e
 	}()
 
 	return events, nil
+}
+
+// PublishWrap publishes a pre-signed gift wrap event (kind:1059)
+func (c *Client) PublishWrap(ctx context.Context, wrap *Event) error {
+	if wrap == nil {
+		return errors.New("nil wrap event")
+	}
+
+	// Ensure PubKey is set (for gift wraps, it's the wrap's one-time key)
+	if wrap.PubKey == "" {
+		return errors.New("wrap event missing PubKey")
+	}
+
+	// Ensure the wrap is signed
+	if wrap.Sig == "" {
+		return errors.New("wrap event must be pre-signed")
+	}
+
+	fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - event kind=%d, tags=%v, pubkey=%s\n", wrap.Kind, wrap.Tags, wrap.PubKey[:20]+"...")
+
+	if wrap.CreatedAt == 0 {
+		wrap.CreatedAt = nostr.Now()
+	}
+
+	results := c.pool.PublishMany(ctx, c.urls, *wrap)
+	var successCount int
+	var failureCount int
+	var allErrors []error
+	totalRelays := len(c.urls)
+
+	for {
+		select {
+		case <-ctx.Done():
+			if successCount > 0 {
+				fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - context cancelled but %d/%d relays succeeded\n", successCount, totalRelays)
+				return nil
+			}
+			return ctx.Err()
+		case res, ok := <-results:
+			if !ok {
+				if successCount > 0 {
+					if failureCount > 0 {
+						fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - %d/%d relays succeeded, %d failed (resilient)\n", successCount, totalRelays, failureCount)
+					} else {
+						fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - all %d relays succeeded\n", totalRelays)
+					}
+					return nil
+				}
+				if len(allErrors) > 0 {
+					fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - all %d relays failed\n", totalRelays)
+					return fmt.Errorf("all relays failed: %w", allErrors[0])
+				}
+				return fmt.Errorf("no relays responded")
+			}
+			if res.Error != nil {
+				failureCount++
+				allErrors = append(allErrors, res.Error)
+				fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - relay %s error: %v (%d/%d failed)\n", res.Relay, res.Error, failureCount, totalRelays)
+			} else {
+				successCount++
+				fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - relay %s success (%d/%d succeeded)\n", res.Relay, successCount, totalRelays)
+			}
+		}
+	}
 }

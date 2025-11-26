@@ -3,6 +3,7 @@ package nostrtransport
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -23,7 +24,7 @@ type MessagePump struct {
 }
 
 func NewMessagePump(cfg Config, client *Client) *MessagePump {
-    cfg.ApplyDefaults()
+	cfg.ApplyDefaults()
 	return &MessagePump{
 		cfg:       cfg,
 		client:    client,
@@ -60,14 +61,15 @@ func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) error
 		}
 	}
 
-	// Subscribe to events with session tag, recipient tag, and author filter
+	// Subscribe to gift wrap events (kind:1059) with session tag and recipient tag
 	filter := Filter{
 		Tags: nostr.TagMap{
 			"t": []string{p.cfg.SessionID},
 			"p": []string{p.cfg.LocalNpub}, // Only messages addressed to this party (bech32 is fine for "p" tag)
 		},
-		Kinds:   []int{30303}, // TSS message kind
-		Authors: authorsHex,   // Only receive messages from expected peers (hex format)
+		Kinds: []int{1059}, // NIP-59 gift wrap kind
+		// Note: We can't filter by author for gift wraps since they're signed with random keys
+		// We'll verify the sender after unwrapping
 	}
 
 	fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump subscribing to session %s, local npub %s (hex: %s), expecting authors (hex): %v\n", p.cfg.SessionID, p.cfg.LocalNpub, localNpubHex, authorsHex)
@@ -96,50 +98,88 @@ func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) error
 
 			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump received event from %s (hex), kind=%d, content_len=%d, tags_count=%d\n", event.PubKey, event.Kind, len(event.Content), len(event.Tags))
 
-			// Skip events from self (compare hex to hex)
-			if event.PubKey == localNpubHex {
-				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump skipping event from self (hex: %s)\n", event.PubKey)
+			// Verify it's a gift wrap (kind:1059)
+			if event.Kind != 1059 {
+				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump skipping non-wrap event (kind=%d)\n", event.Kind)
 				continue
 			}
 
-			// Verify event is from an expected peer (additional safety check)
+			// Step 1: Unwrap the gift wrap to get the seal
+			seal, err := unwrapGift(event, p.cfg.LocalNsec)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to unwrap gift: %v\n", err)
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump unwrapped gift, got seal from %s\n", seal.PubKey)
+
+			// Verify seal is from an expected peer
+			sealSenderNpub := seal.PubKey
 			isFromExpectedPeer := false
-			for _, expectedHex := range authorsHex {
-				if event.PubKey == expectedHex {
+			for _, expectedNpub := range p.cfg.PeersNpub {
+				expectedHex, err := npubToHex(expectedNpub)
+				if err != nil {
+					continue
+				}
+				if sealSenderNpub == expectedHex {
 					isFromExpectedPeer = true
 					break
 				}
 			}
-			if !isFromExpectedPeer && len(authorsHex) > 0 {
-				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump skipping event from unexpected peer (hex: %s, expected: %v)\n", event.PubKey, authorsHex)
+			if !isFromExpectedPeer {
+				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump seal from unexpected sender (hex: %s)\n", sealSenderNpub)
 				continue
 			}
 
-			// Debug: print all tags
-			for i, tag := range event.Tags {
-				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump tag[%d]: %v\n", i, tag)
+			// Step 2: Unseal to get the rumor
+			// Convert seal sender npub to bech32 format for unseal (it expects npub format)
+			sealSenderNpubBech32 := sealSenderNpub
+			for _, npub := range p.cfg.PeersNpub {
+				npubHex, err := npubToHex(npub)
+				if err == nil && npubHex == sealSenderNpub {
+					sealSenderNpubBech32 = npub
+					break
+				}
 			}
 
-			// Extract chunk metadata from tags
-			chunkTag := event.Tags.Find("chunk")
-			if len(chunkTag) < 2 {
-				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump event missing chunk tag or invalid format (len=%d, tag=%v)\n", len(chunkTag), chunkTag)
-				continue
-			}
-			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump found chunk tag: %v\n", chunkTag)
-
-			meta, err := ParseChunkTag(chunkTag[1])
+			rumor, err := unseal(seal, p.cfg.LocalNsec, sealSenderNpubBech32)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to parse chunk tag '%s': %v\n", chunkTag[1], err)
+				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to unseal: %v\n", err)
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump unsealed, got rumor\n")
+
+			// Step 3: Extract chunk data from rumor
+			var chunkMessage map[string]interface{}
+			if err := json.Unmarshal([]byte(rumor.Content), &chunkMessage); err != nil {
+				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to parse rumor content: %v\n", err)
+				continue
+			}
+
+			// Extract chunk metadata
+			chunkTagValue, ok := chunkMessage["chunk"].(string)
+			if !ok {
+				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump rumor missing chunk metadata\n")
+				continue
+			}
+
+			meta, err := ParseChunkTag(chunkTagValue)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to parse chunk tag '%s': %v\n", chunkTagValue, err)
 				continue
 			}
 			meta.SessionID = p.cfg.SessionID
 			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump parsed chunk metadata: hash=%s, index=%d/%d\n", meta.Hash, meta.Index, meta.Total)
 
-			// Decode chunk data
-			chunkData, err := base64.StdEncoding.DecodeString(event.Content)
+			// Extract chunk data
+			chunkDataB64, ok := chunkMessage["data"].(string)
+			if !ok {
+				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump rumor missing chunk data\n")
+				continue
+			}
+
+			chunkData, err := base64.StdEncoding.DecodeString(chunkDataB64)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to decode base64 content: %v\n", err)
+				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to decode chunk data: %v\n", err)
 				continue
 			}
 			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump decoded chunk data: %d bytes\n", len(chunkData))
@@ -162,20 +202,16 @@ func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) error
 			}
 			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump all chunks received, reassembled %d bytes\n", len(reassembled))
 
-			// Decrypt the reassembled ciphertext
-			plaintext, err := decryptAES(p.cfg.SessionKeyHex, reassembled)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to decrypt: %v\n", err)
-				continue
-			}
-			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump decrypted payload: %d bytes\n", len(plaintext))
+			// Reassemble the full message from chunks (chunks are plaintext now, not encrypted)
+			// The reassembled data is the full message body
+			plaintext := reassembled
 
 			// Mark as processed
 			p.processedMu.Lock()
 			p.processed[meta.Hash] = true
 			p.processedMu.Unlock()
 
-			// Call handler with decrypted payload
+			// Call handler with plaintext payload
 			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump calling handler with %d bytes\n", len(plaintext))
 			if err := handler(plaintext); err != nil {
 				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump handler error: %v\n", err)
