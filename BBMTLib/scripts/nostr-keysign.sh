@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-RELAYS_DEFAULT="wss://nostr.hifish.org,wss://nostr.xxi.quest,ws://localhost:7777"
+RELAYS_DEFAULT="wss://nostr.hifish.org,wss://nostr.xxi.quest,wss://bbw-nostr.xyz"
 RELAYS="${RELAYS:-$RELAYS_DEFAULT}"
 TIMEOUT="${TIMEOUT:-90}"
 OUTPUT_DIR="${OUTPUT_DIR:-./nostr-keygen-output}"
