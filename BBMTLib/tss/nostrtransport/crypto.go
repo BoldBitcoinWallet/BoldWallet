@@ -176,9 +176,16 @@ func createWrap(seal *nostr.Event, recipientNpub string, sessionID string, chunk
 		return nil, fmt.Errorf("failed to encrypt seal: %w", err)
 	}
 
+	// Convert recipient npub to hex for the "p" tag (some relays require hex format)
+	recipientNpubHex, err := npubToHex(recipientNpub)
+	if err != nil {
+		return nil, fmt.Errorf("convert recipient npub to hex: %w", err)
+	}
+
 	// Build tags - must include all tags before signing (ID is calculated from tags)
+	// Use hex format for "p" tag to ensure compatibility with stricter relays
 	tags := nostr.Tags{
-		{"p", recipientNpub}, // Recipient tag (required by NIP-59)
+		{"p", recipientNpubHex}, // Recipient tag (required by NIP-59, in hex format for relay compatibility)
 	}
 	if sessionID != "" {
 		tags = append(tags, nostr.Tag{"t", sessionID})

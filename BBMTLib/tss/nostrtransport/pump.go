@@ -62,10 +62,13 @@ func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) error
 	}
 
 	// Subscribe to gift wrap events (kind:1059) with session tag and recipient tag
+	// Convert local npub to hex for the "p" tag filter (since we publish with hex format)
+	localNpubHexForFilter := localNpubHex
+
 	filter := Filter{
 		Tags: nostr.TagMap{
 			"t": []string{p.cfg.SessionID},
-			"p": []string{p.cfg.LocalNpub}, // Only messages addressed to this party (bech32 is fine for "p" tag)
+			"p": []string{localNpubHexForFilter}, // Use hex format to match what we publish
 		},
 		Kinds: []int{1059}, // NIP-59 gift wrap kind
 		// Note: We can't filter by author for gift wraps since they're signed with random keys
