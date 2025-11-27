@@ -46,7 +46,7 @@ var (
 	encryptionKey    = ""
 	decryptionKey    = ""
 	localStateMemory = ""
-	keyGenTimeout    = 160
+	keyGenTimeout    = 120
 	keySignTimeout   = 60
 	msgFetchTimeout  = 70
 )

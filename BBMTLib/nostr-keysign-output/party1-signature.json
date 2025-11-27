@@ -1,8 +1,0 @@
-{
-  "msg": "HaR0seuJm0Aidl/wg7uV16WUXyUwdOlDO7p5gcLw7eU=",
-  "msg_hex": "1da474b1eb899b4022765ff083bb95d7a5945f253074e9433bba7981c2f0ede5",
-  "r": "539041b7d77179a3d8ff2f1dcf436c1ace7b5acb8b85ec584e03b6b27889c10e",
-  "s": "6e71c832159a37dffa1935bf4326a21a9ae9fc1c6cef00917e621c142e6ffd48",
-  "der_signature": "30440220539041b7d77179a3d8ff2f1dcf436c1ace7b5acb8b85ec584e03b6b27889c10e02206e71c832159a37dffa1935bf4326a21a9ae9fc1c6cef00917e621c142e6ffd48",
-  "recovery_id": "00"
-}

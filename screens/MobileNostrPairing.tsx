@@ -156,15 +156,20 @@ const MobileNostrPairing = ({navigation}: any) => {
   const [relaysInput, setRelaysInput] = useState<string>('');
   const [relays, setRelays] = useState<string[]>([]);
 
+  // Partial nonce (random UUID/number generated on each device)
+  const [partialNonce, setPartialNonce] = useState<string>('');
+
   // Peer Connections (for duo: 1 peer, for trio: 2 peers)
   const [peerConnectionDetails1, setPeerConnectionDetails1] =
     useState<string>('');
   const [peerNpub1, setPeerNpub1] = useState<string>('');
   const [peerDeviceName1, setPeerDeviceName1] = useState<string>('');
+  const [peerNonce1, setPeerNonce1] = useState<string>('');
   const [peerConnectionDetails2, setPeerConnectionDetails2] =
     useState<string>('');
   const [peerNpub2, setPeerNpub2] = useState<string>('');
   const [peerDeviceName2, setPeerDeviceName2] = useState<string>('');
+  const [peerNonce2, setPeerNonce2] = useState<string>('');
   const [peerInputError1, setPeerInputError1] = useState<string>('');
   const [peerInputError2, setPeerInputError2] = useState<string>('');
   const [peerInputValidating1, setPeerInputValidating1] =
@@ -239,8 +244,20 @@ const MobileNostrPairing = ({navigation}: any) => {
     device = useCameraDevice('back');
   }
 
-  // Connection details for sharing
-  const connectionDetails = `${localNpub}:${deviceName}`;
+  // Connection details for sharing (hex encoded)
+  const connectionDetails = React.useMemo(() => {
+    if (!localNpub || !deviceName || !partialNonce) {
+      return '';
+    }
+    const plaintext = `${localNpub}:${deviceName}:${partialNonce}`;
+    // Convert to hex encoding
+    let hex = '';
+    for (let i = 0; i < plaintext.length; i++) {
+      const charCode = plaintext.charCodeAt(i);
+      hex += charCode.toString(16).padStart(2, '0');
+    }
+    return hex;
+  }, [localNpub, deviceName, partialNonce]);
 
   // Load default relays on mount (from cache if available, otherwise fetch dynamically)
   useEffect(() => {
@@ -285,6 +302,13 @@ const MobileNostrPairing = ({navigation}: any) => {
       try {
         const name = await DeviceInfo.getDeviceName();
         setDeviceName(name);
+        // Generate random partial nonce (UUID or random number)
+        // Using a combination of timestamp and random for uniqueness
+        const randomNonce = await BBMTLibNativeModule.sha256(
+          `${Date.now()}-${Math.random()}`,
+        );
+        setPartialNonce(randomNonce);
+        dbg('Generated partialNonce:', randomNonce);
         // Only generate new keypair if not in send mode (send mode loads from keyshare)
         if (!isSendBitcoin) {
           await generateLocalKeypair();
@@ -299,18 +323,25 @@ const MobileNostrPairing = ({navigation}: any) => {
 
   // Generate session params when peer connections are ready
   useEffect(() => {
-    if (localNpub && deviceName) {
+    if (localNpub && deviceName && partialNonce) {
       if (isSendBitcoin) {
         // For send BTC, we need balance - will be generated when starting
         return;
       }
-      // For keygen, generate when we have peer(s)
+      // For keygen, generate when we have peer(s) with nonces
       if (isTrio) {
-        if (peerNpub1 && peerDeviceName1 && peerNpub2 && peerDeviceName2) {
+        if (
+          peerNpub1 &&
+          peerDeviceName1 &&
+          peerNonce1 &&
+          peerNpub2 &&
+          peerDeviceName2 &&
+          peerNonce2
+        ) {
           generateKeygenSessionParams();
         }
       } else {
-        if (peerNpub1 && peerDeviceName1) {
+        if (peerNpub1 && peerDeviceName1 && peerNonce1) {
           generateKeygenSessionParams();
         }
       }
@@ -319,10 +350,13 @@ const MobileNostrPairing = ({navigation}: any) => {
   }, [
     localNpub,
     deviceName,
+    partialNonce,
     peerNpub1,
     peerDeviceName1,
+    peerNonce1,
     peerNpub2,
     peerDeviceName2,
+    peerNonce2,
     isTrio,
     isSendBitcoin,
   ]);
@@ -482,7 +516,13 @@ const MobileNostrPairing = ({navigation}: any) => {
         const numDevices = keyshare.keygen_committee_keys?.length || 0;
         const isTrioMode = numDevices === 3;
         setIsTrio(isTrioMode);
-        dbg('Send mode - detected', isTrioMode ? 'trio' : 'duo', 'mode from keyshare (', numDevices, 'devices)');
+        dbg(
+          'Send mode - detected',
+          isTrioMode ? 'trio' : 'duo',
+          'mode from keyshare (',
+          numDevices,
+          'devices)',
+        );
 
         // Get local npub from keyshare
         const localNpubFromKeyshare = keyshare.nostr_npub || '';
@@ -615,12 +655,18 @@ const MobileNostrPairing = ({navigation}: any) => {
                 );
                 // Update state with new npub
                 setSendModeDevices([...updatedDevices]);
-                
+
                 // If this device was selected (by placeholder), update selectedPeerNpub to full npub
                 // Use a callback to access current selectedPeerNpub state
                 setSelectedPeerNpub(current => {
-                  if (current === oldNpub || (oldNpub && result.startsWith(oldNpub.substring(0, 20)))) {
-                    dbg('Updated selectedPeerNpub to full npub:', result.substring(0, 20) + '...');
+                  if (
+                    current === oldNpub ||
+                    (oldNpub && result.startsWith(oldNpub.substring(0, 20)))
+                  ) {
+                    dbg(
+                      'Updated selectedPeerNpub to full npub:',
+                      result.substring(0, 20) + '...',
+                    );
                     return result;
                   }
                   return current;
@@ -646,7 +692,7 @@ const MobileNostrPairing = ({navigation}: any) => {
   useEffect(() => {
     if (isSendBitcoin && sendModeDevices.length > 0) {
       const otherDevices = sendModeDevices.filter(d => !d.isLocal);
-      
+
       // Only auto-select if no peer is currently selected
       if (!selectedPeerNpub) {
         if (isTrio && otherDevices.length >= 2) {
@@ -732,32 +778,64 @@ const MobileNostrPairing = ({navigation}: any) => {
 
   const parseConnectionDetails = async (
     input: string,
-  ): Promise<{npub: string; deviceName: string} | null> => {
+  ): Promise<{
+    npub: string;
+    deviceName: string;
+    partialNonce: string;
+  } | null> => {
     const trimmed = input.trim();
-    dbg('parseConnectionDetails: input =', trimmed);
+    dbg('parseConnectionDetails: input =', trimmed.substring(0, 50) + '...');
 
     if (!trimmed) {
       dbg('parseConnectionDetails: empty input');
       return null;
     }
 
-    const parts = trimmed.split(':');
-    dbg('parseConnectionDetails: split parts =', parts);
+    // Try to decode as hex first
+    let decoded = '';
+    try {
+      // Check if it looks like hex (even length, only hex chars)
+      const hexPattern = /^[0-9a-fA-F]+$/;
+      if (hexPattern.test(trimmed) && trimmed.length % 2 === 0) {
+        // Decode hex to string
+        for (let i = 0; i < trimmed.length; i += 2) {
+          const hexByte = trimmed.substr(i, 2);
+          const charCode = parseInt(hexByte, 16);
+          decoded += String.fromCharCode(charCode);
+        }
+        dbg(
+          'parseConnectionDetails: decoded hex to:',
+          decoded.substring(0, 50) + '...',
+        );
+      } else {
+        // Not hex, try as plaintext (backward compatibility)
+        decoded = trimmed;
+        dbg('parseConnectionDetails: treating as plaintext');
+      }
+    } catch (error) {
+      dbg('parseConnectionDetails: error decoding hex:', error);
+      return null;
+    }
 
-    if (parts.length !== 2) {
+    const parts = decoded.split(':');
+    dbg('parseConnectionDetails: split parts count =', parts.length);
+
+    if (parts.length !== 3) {
       dbg(
-        'parseConnectionDetails: invalid format - expected 2 parts, got',
+        'parseConnectionDetails: invalid format - expected 3 parts (npub:deviceName:partialNonce), got',
         parts.length,
       );
       return null;
     }
 
-    let [npub, peerDeviceName] = parts;
+    let [npub, peerDeviceName, peerPartialNonce] = parts;
     let trimmedNpub = npub.trim();
     const trimmedDeviceName = peerDeviceName.trim();
+    const trimmedNonce = peerPartialNonce.trim();
 
     dbg('parseConnectionDetails: npub =', trimmedNpub.substring(0, 20) + '...');
     dbg('parseConnectionDetails: deviceName =', trimmedDeviceName);
+    dbg('parseConnectionDetails: partialNonce =', trimmedNonce);
 
     // Check if it's a hex string (64 hex characters) and try to convert to npub
     if (!trimmedNpub.startsWith('npub1')) {
@@ -797,13 +875,24 @@ const MobileNostrPairing = ({navigation}: any) => {
       return null;
     }
 
+    if (trimmedNonce.length === 0) {
+      dbg('parseConnectionDetails: invalid partialNonce - empty');
+      return null;
+    }
+
     dbg(
       'parseConnectionDetails: valid! npub =',
       trimmedNpub.substring(0, 20) + '...',
       'deviceName =',
       trimmedDeviceName,
+      'partialNonce =',
+      trimmedNonce,
     );
-    return {npub: trimmedNpub, deviceName: trimmedDeviceName};
+    return {
+      npub: trimmedNpub,
+      deviceName: trimmedDeviceName,
+      partialNonce: trimmedNonce,
+    };
   };
 
   const handlePeerConnectionInput = async (input: string, peerNum: 1 | 2) => {
@@ -824,10 +913,12 @@ const MobileNostrPairing = ({navigation}: any) => {
       if (peerNum === 1) {
         setPeerNpub1('');
         setPeerDeviceName1('');
+        setPeerNonce1('');
         setPeerConnectionDetails1('');
       } else {
         setPeerNpub2('');
         setPeerDeviceName2('');
+        setPeerNonce2('');
         setPeerConnectionDetails2('');
       }
       return;
@@ -867,8 +958,10 @@ const MobileNostrPairing = ({navigation}: any) => {
         // Clear the input text
         if (peerNum === 1) {
           setPeerConnectionDetails1('');
+          setPeerNonce1('');
         } else {
           setPeerConnectionDetails2('');
+          setPeerNonce2('');
         }
         return;
       }
@@ -876,11 +969,13 @@ const MobileNostrPairing = ({navigation}: any) => {
       if (peerNum === 1) {
         setPeerNpub1(parsed.npub);
         setPeerDeviceName1(parsed.deviceName);
+        setPeerNonce1(parsed.partialNonce);
         setPeerConnectionDetails1(input.trim());
         setPeerInputError1('');
       } else {
         setPeerNpub2(parsed.npub);
         setPeerDeviceName2(parsed.deviceName);
+        setPeerNonce2(parsed.partialNonce);
         setPeerConnectionDetails2(input.trim());
         setPeerInputError2('');
       }
@@ -914,10 +1009,12 @@ const MobileNostrPairing = ({navigation}: any) => {
       if (peerNum === 1) {
         setPeerNpub1('');
         setPeerDeviceName1('');
+        setPeerNonce1('');
         setPeerConnectionDetails1('');
       } else {
         setPeerNpub2('');
         setPeerDeviceName2('');
+        setPeerNonce2('');
         setPeerConnectionDetails2('');
       }
     }
@@ -1009,6 +1106,21 @@ const MobileNostrPairing = ({navigation}: any) => {
       const npubsSorted = [...allNpubs].sort().join(',');
       const deviceNamesSorted = [...allDeviceNames].sort().join(',');
 
+      // Collect all partial nonces (local + peers)
+      const allPartialNonces: string[] = [];
+      if (partialNonce) {
+        allPartialNonces.push(partialNonce);
+      }
+      if (peerNonce1) {
+        allPartialNonces.push(peerNonce1);
+      }
+      if (isTrio && peerNonce2) {
+        allPartialNonces.push(peerNonce2);
+      }
+
+      // Sort nonces and join as CSV
+      const fullNonce = [...allPartialNonces].sort().join(',');
+
       // Log the exact inputs for session ID calculation (for debugging)
       dbg('=== SESSION ID CALCULATION ===');
       dbg('Mode:', isTrio ? 'TRIO' : 'DUO');
@@ -1023,15 +1135,17 @@ const MobileNostrPairing = ({navigation}: any) => {
       dbg('npubsSorted (full):', npubsSorted);
       dbg('All device names (before sort):', allDeviceNames);
       dbg('deviceNamesSorted:', deviceNamesSorted);
+      dbg('All partial nonces (before sort):', allPartialNonces);
+      dbg('fullNonce (sorted, CSV):', fullNonce);
       dbg('rounded (time window):', rounded);
       dbg(
         'Session ID input string:',
-        `${npubsSorted},${deviceNamesSorted},${rounded}`,
+        `${npubsSorted},${deviceNamesSorted},${rounded}:${fullNonce}`,
       );
 
       // Generate session ID
       const sessionIDHash = await BBMTLibNativeModule.sha256(
-        `${npubsSorted},${deviceNamesSorted},${rounded}`,
+        `${npubsSorted},${deviceNamesSorted},${rounded}:${fullNonce}`,
       );
       setSessionID(sessionIDHash);
 
@@ -1154,16 +1268,33 @@ const MobileNostrPairing = ({navigation}: any) => {
         sessionKey: sessionKey.substring(0, 16) + '...',
         chaincode: chaincode.substring(0, 16) + '...',
       });
-      
+
       // Log which npubs will be sent to Go backend
       const allPartiesList = partiesNpubsCSV.split(',');
       dbg('=== GO BACKEND INPUT ===');
       dbg('partiesNpubsCSV (full):', partiesNpubsCSV);
-      dbg('All parties count:', allPartiesList.length, isTrio ? '(should be 3 for trio)' : '(should be 2 for duo)');
-      dbg('All parties list:', allPartiesList.map((n, i) => `${i + 1}. ${n.substring(0, 30)}...`));
-      dbg('localNpub (will be excluded by Go backend):', localNpub ? localNpub.substring(0, 30) + '...' : 'MISSING');
-      dbg('Expected PeersNpub (after Go excludes localNpub):', expectedPeers.map((n, i) => `${i + 1}. ${n.substring(0, 30)}...`));
-      dbg('Go backend will wait for', expectedPeers.length, 'peers to publish "ready" events');
+      dbg(
+        'All parties count:',
+        allPartiesList.length,
+        isTrio ? '(should be 3 for trio)' : '(should be 2 for duo)',
+      );
+      dbg(
+        'All parties list:',
+        allPartiesList.map((n, i) => `${i + 1}. ${n.substring(0, 30)}...`),
+      );
+      dbg(
+        'localNpub (will be excluded by Go backend):',
+        localNpub ? localNpub.substring(0, 30) + '...' : 'MISSING',
+      );
+      dbg(
+        'Expected PeersNpub (after Go excludes localNpub):',
+        expectedPeers.map((n, i) => `${i + 1}. ${n.substring(0, 30)}...`),
+      );
+      dbg(
+        'Go backend will wait for',
+        expectedPeers.length,
+        'peers to publish "ready" events',
+      );
       dbg('=== END GO BACKEND INPUT ===');
 
       // Call native module
@@ -1238,6 +1369,13 @@ const MobileNostrPairing = ({navigation}: any) => {
       dbg('Keygen error:', error);
       Alert.alert('Error', error?.message || 'Key generation failed');
       setStatus('Key generation failed');
+      // Navigate to index 0 (reload same page) on keygen failure
+      navigation.dispatch(
+        CommonActions.reset({
+          index: 0,
+          routes: [{name: 'Nostr Pairing', params: route.params}],
+        }),
+      );
     } finally {
       setIsPairing(false);
     }
@@ -1403,19 +1541,26 @@ const MobileNostrPairing = ({navigation}: any) => {
         if (selectedPeerNpub) {
           // Find the selected device in sendModeDevices to get its keyshareLabel
           const selectedDevice = sendModeDevices.find(
-            d => d.npub === selectedPeerNpub || 
-            (selectedPeerNpub.startsWith('npub1') && d.npub && d.npub.startsWith(selectedPeerNpub.substring(0, 20))) ||
-            (d.npub && selectedPeerNpub.startsWith(d.npub.substring(0, 20)))
+            d =>
+              d.npub === selectedPeerNpub ||
+              (selectedPeerNpub.startsWith('npub1') &&
+                d.npub &&
+                d.npub.startsWith(selectedPeerNpub.substring(0, 20))) ||
+              (d.npub && selectedPeerNpub.startsWith(d.npub.substring(0, 20))),
           );
-          
+
           if (selectedDevice) {
             // Find the corresponding hex key in keyshare by keyshareLabel
             // Use the same sortedKeys from above (already sorted)
-            const selectedIndex = parseInt(selectedDevice.keyshareLabel.replace('KeyShare', ''), 10) - 1;
-            
+            const selectedIndex =
+              parseInt(
+                selectedDevice.keyshareLabel.replace('KeyShare', ''),
+                10,
+              ) - 1;
+
             if (selectedIndex >= 0 && selectedIndex < sortedKeys.length) {
               const selectedHexKey = sortedKeys[selectedIndex];
-              
+
               // Find the full npub in allNpubsFromKeyshare that corresponds to this hex key
               // We need to convert the hex key to npub and find it, or match by index
               // Since allNpubsFromKeyshare is built from sortedKeys in the same order, we can use index
@@ -1436,33 +1581,47 @@ const MobileNostrPairing = ({navigation}: any) => {
                 try {
                   const hexPattern = /^[0-9a-fA-F]+$/;
                   if (hexPattern.test(selectedHexKey)) {
-                    const convertedNpub = await BBMTLibNativeModule.hexToNpub(selectedHexKey);
-                    if (convertedNpub && convertedNpub.startsWith('npub1') && convertedNpub !== localNpubFromKeyshare) {
+                    const convertedNpub = await BBMTLibNativeModule.hexToNpub(
+                      selectedHexKey,
+                    );
+                    if (
+                      convertedNpub &&
+                      convertedNpub.startsWith('npub1') &&
+                      convertedNpub !== localNpubFromKeyshare
+                    ) {
                       allNpubs.push(convertedNpub);
                       dbg(
                         'Found full peer npub for trio by conversion:',
                         convertedNpub.substring(0, 20) + '...',
                       );
                     } else {
-                      throw new Error('Failed to convert selected hex key to npub');
+                      throw new Error(
+                        'Failed to convert selected hex key to npub',
+                      );
                     }
                   } else {
                     throw new Error('Selected hex key is not valid hex');
                   }
                 } catch (error) {
-                  throw new Error(`Failed to find full npub for selected peer: ${error}`);
+                  throw new Error(
+                    `Failed to find full npub for selected peer: ${error}`,
+                  );
                 }
               }
             } else {
-              throw new Error(`Invalid keyshare label: ${selectedDevice.keyshareLabel}`);
+              throw new Error(
+                `Invalid keyshare label: ${selectedDevice.keyshareLabel}`,
+              );
             }
           } else {
             // Fallback: try direct matching in allNpubsFromKeyshare
             let fullPeerNpub = allNpubsFromKeyshare.find(
-              n => n === selectedPeerNpub || 
-              (selectedPeerNpub.startsWith('npub1') && n.startsWith(selectedPeerNpub.substring(0, 20)))
+              n =>
+                n === selectedPeerNpub ||
+                (selectedPeerNpub.startsWith('npub1') &&
+                  n.startsWith(selectedPeerNpub.substring(0, 20))),
             );
-            
+
             if (fullPeerNpub && fullPeerNpub !== localNpubFromKeyshare) {
               allNpubs.push(fullPeerNpub);
               dbg(
@@ -1471,7 +1630,10 @@ const MobileNostrPairing = ({navigation}: any) => {
               );
             } else {
               throw new Error(
-                `Failed to find full npub for selected peer: ${selectedPeerNpub.substring(0, 30)}. Please ensure the device is fully loaded.`,
+                `Failed to find full npub for selected peer: ${selectedPeerNpub.substring(
+                  0,
+                  30,
+                )}. Please ensure the device is fully loaded.`,
               );
             }
           }
@@ -1808,7 +1970,7 @@ const MobileNostrPairing = ({navigation}: any) => {
   const copyConnectionDetails = () => {
     Clipboard.setString(connectionDetails);
     HapticFeedback.medium();
-    Alert.alert('Copied', 'Connection details copied to clipboard');
+    Alert.alert('Copied', '- Connection details copied to clipboard.\n- Paste them to your other device(s)');
   };
 
   const shareConnectionDetails = async () => {
@@ -1879,11 +2041,13 @@ const MobileNostrPairing = ({navigation}: any) => {
     if (peerNum === 1) {
       setPeerNpub1('');
       setPeerDeviceName1('');
+      setPeerNonce1('');
       setPeerConnectionDetails1('');
       setPeerInputError1('');
     } else {
       setPeerNpub2('');
       setPeerDeviceName2('');
+      setPeerNonce2('');
       setPeerConnectionDetails2('');
       setPeerInputError2('');
     }
@@ -3494,7 +3658,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                                             resizeMode="contain"
                                           />
                                           <View
-                                            style={styles.sendModeDeviceContent}>
+                                            style={
+                                              styles.sendModeDeviceContent
+                                            }>
                                             <Text
                                               style={styles.sendModeDeviceLabel}
                                               numberOfLines={1}
@@ -3515,7 +3681,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                                                 styles.sendModeCheckboxChecked,
                                               ]}>
                                               <Text
-                                                style={styles.sendModeCheckmark}>
+                                                style={
+                                                  styles.sendModeCheckmark
+                                                }>
                                                 ✓
                                               </Text>
                                             </View>
@@ -3523,7 +3691,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                         </View>
                                       );
                                     }
-                                    
+
                                     // Trio mode: selectable
                                     return (
                                       <TouchableOpacity
@@ -3547,7 +3715,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                                             'User selected peer in trio mode:',
                                             dev.npub === selectedPeerNpub
                                               ? 'deselected'
-                                              : dev.npub.substring(0, 20) + '...',
+                                              : dev.npub.substring(0, 20) +
+                                                  '...',
                                           );
                                         }}
                                         activeOpacity={0.7}>
@@ -3718,7 +3887,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                               marginBottom: 8,
                             }}>
                             Configure Nostr relays (defaults work for most
-                            users). Enter relay URLs, one per line or comma-separated (wss://...).
+                            users). Enter relay URLs, one per line or
+                            comma-separated (wss://...).
                           </Text>
                           <TextInput
                             style={[
@@ -3731,7 +3901,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                             ]}
                             value={relaysInput}
                             onChangeText={setRelaysInput}
-                            placeholder={'wss://relay1.com\nwss://relay2.com\nwss://relay3.com'}
+                            placeholder={
+                              'wss://relay1.com\nwss://relay2.com\nwss://relay3.com'
+                            }
                             placeholderTextColor={
                               theme.colors.textSecondary + '80'
                             }
@@ -3746,7 +3918,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                   )}
 
                   {/* Local Device Card - Hide when Final Step is shown or in send mode */}
-                  {localNpub && !showFinalStep && !isSendBitcoin && (
+                  {localNpub && deviceName && partialNonce && !showFinalStep && !isSendBitcoin && (
                     <View style={styles.section}>
                       <Text
                         style={{
@@ -3760,7 +3932,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                       <View style={styles.card}>
                         <View style={styles.hintBox}>
                           <Text style={styles.hintText}>
-                            📱 On the other device, paste or scan this
+                            📱 On other device(s), paste or scan this
                             connection
                           </Text>
                         </View>
@@ -5147,7 +5319,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                 <QRCode value={connectionDetails} size={250} />
               </View>
               <Text style={styles.connectionDetailsText}>
-                {connectionDetails}
+                {shortenNpub(connectionDetails)}
               </Text>
               <TouchableOpacity
                 style={{

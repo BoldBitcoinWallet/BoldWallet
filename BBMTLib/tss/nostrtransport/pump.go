@@ -2,7 +2,9 @@ package nostrtransport
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -158,6 +160,16 @@ func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) error
 				continue
 			}
 
+			sessionIDValue, ok := chunkMessage["session_id"].(string)
+			if !ok {
+				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump rumor missing session_id\n")
+				continue
+			}
+			if sessionIDValue != p.cfg.SessionID {
+				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump session mismatch (got %s, expected %s)\n", sessionIDValue, p.cfg.SessionID)
+				continue
+			}
+
 			// Extract chunk metadata
 			chunkTagValue, ok := chunkMessage["chunk"].(string)
 			if !ok {
@@ -204,6 +216,13 @@ func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) error
 				continue
 			}
 			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump all chunks received, reassembled %d bytes\n", len(reassembled))
+
+			hashBytes := sha256.Sum256(reassembled)
+			calculatedHash := hex.EncodeToString(hashBytes[:])
+			if !strings.EqualFold(calculatedHash, meta.Hash) {
+				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump chunk hash mismatch (calc=%s, expected=%s)\n", calculatedHash, meta.Hash)
+				continue
+			}
 
 			// Reassemble the full message from chunks (chunks are plaintext now, not encrypted)
 			// The reassembled data is the full message body

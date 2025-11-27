@@ -1178,7 +1178,9 @@ const MobilesPairing = ({navigation}: any) => {
       } else {
         setStatus('Pairing timed out. Please try again.');
         Alert.alert('Pairing Timeout', 'No peer device was detected.');
-        navigation.dispatch(StackActions.replace('Devices Pairing', route.params));
+        navigation.dispatch(
+          StackActions.replace('Devices Pairing', route.params),
+        );
       }
     } catch (error) {
       dbg('Pairing Error:', error);
@@ -1298,7 +1300,6 @@ const MobilesPairing = ({navigation}: any) => {
     dbg('discoverPeer ended');
     return '';
   }
-
 
   useFocusEffect(
     useCallback(() => {
@@ -2470,8 +2471,8 @@ const MobilesPairing = ({navigation}: any) => {
                     navigation.dispatch(
                       CommonActions.reset({
                         index: 0,
-                        routes: [{ name: 'Welcome' }],
-                      })
+                        routes: [{name: 'Welcome'}],
+                      }),
                     );
                   }}
                   activeOpacity={0.7}
@@ -2502,6 +2503,20 @@ const MobilesPairing = ({navigation}: any) => {
                   ]}>
                   {title}
                 </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    HapticFeedback.light();
+                    navigation.dispatch(
+                      CommonActions.reset({
+                        index: 0,
+                        routes: [{name: 'Welcome'}],
+                      }),
+                    );
+                  }}
+                  activeOpacity={0.7}
+                  style={{marginTop: 8, marginBottom: 4, alignItems: 'center'}}>
+                  <Text style={styles.abortLink}>Exit Pairing</Text>
+                </TouchableOpacity>
                 <View style={styles.enhancedRequirementsContainer}>
                   <View style={styles.requirementsHeader}>
                     <View style={styles.requirementsIcon}>
@@ -2678,7 +2693,9 @@ const MobilesPairing = ({navigation}: any) => {
                       source={require('../assets/phone-icon.png')}
                       style={[
                         styles.deviceSelf,
-                        localIP ? styles.deviceSelfActive : styles.deviceInactive,
+                        localIP
+                          ? styles.deviceSelfActive
+                          : styles.deviceInactive,
                       ]}
                     />
                     {localDevice && (
@@ -2853,8 +2870,8 @@ const MobilesPairing = ({navigation}: any) => {
                           navigation.dispatch(
                             CommonActions.reset({
                               index: 0,
-                              routes: [{ name: 'Welcome' }],
-                            })
+                              routes: [{name: 'Welcome'}],
+                            }),
                           );
                         }}>
                         <Text style={styles.cancelLink}>Cancel</Text>
@@ -2957,11 +2974,10 @@ const MobilesPairing = ({navigation}: any) => {
                                 }}>
                                 Institutional-grade security in the palm of your
                                 hands.
-                              </Text>
-                              {' '}
-                              MPC•TSS cryptography ensures your keys are distributed
-                              across devices—no single device can compromise your
-                              wallet.{' '}
+                              </Text>{' '}
+                              MPC•TSS cryptography ensures your keys are
+                              distributed across devices—no single device can
+                              compromise your wallet.{' '}
                               <Text
                                 style={{
                                   color: theme.colors.accent,

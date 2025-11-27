@@ -1,264 +1,32 @@
-BBMTLog: Publishing ready event for session 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6, npub npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n, expecting peers: [npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx]
-BBMTLog: Client.Publish - event kind=30301, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [phase ready]], nsec prefix=nsec1s4t85..., localNpub=npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n
-BBMTLog: Client.Publish - signed event, PubKey (hex)=1ba0b5439c590e351ffc5493f2dcdd46d426589417a4069c4125ffff7ca5a268, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [phase ready]]
-BBMTLog: Client.Publish - relay ws://localhost:7777 success
-BBMTLog: Client.Publish - relay wss://nostr.hifish.org success
-BBMTLog: Client.Publish - relay wss://nostr.xxi.quest success
-BBMTLog: Client.Publish - all relays responded
-BBMTLog: Ready event published successfully with tag t=3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6
-BBMTLog: Successfully decoded npub npub15wck98ru5kj0t26he8yf43ak5 -> hex a3b1629c7ca5a4f5ab57...
-BBMTLog: Converted npub npub15wck98ru5kj0t26... -> hex a3b1629c7ca5a4f5ab57...
-BBMTLog: AwaitPeers - SessionID: 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6, LocalNpub: npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n, Expected peers (npub): [npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx], Authors (hex): [a3b1629c7ca5a4f5ab57c9c89ac7b6a264fa55919aaf0d009813c6787eca7873]
-BBMTLog: Querying for existing ready events for session 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6 (from last 1 minute)
-BBMTLog: Query on relay wss://nostr.hifish.org returned 1 events for session 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6
-BBMTLog: Found existing ready event from npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx (hex: a3b1629c7ca5a4f5ab57c9c89ac7b6a264fa55919aaf0d009813c6787eca7873)
-BBMTLog: Query on relay wss://nostr.xxi.quest returned 1 events for session 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6
-BBMTLog: Found existing ready event from npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx (hex: a3b1629c7ca5a4f5ab57c9c89ac7b6a264fa55919aaf0d009813c6787eca7873)
-BBMTLog: Query on relay ws://localhost:7777 returned 1 events for session 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6
-BBMTLog: Found existing ready event from npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx (hex: a3b1629c7ca5a4f5ab57c9c89ac7b6a264fa55919aaf0d009813c6787eca7873)
+BBMTLog: Publishing ready event for session 38cde21e0e4d4fab40c0d50fd3ee00a5757c28a5e1fae15a3d0830d671a5a8b3, npub npub14nu9h33psxqgt7qdm56mxkwlds460p6nc6pqthv748czn44khecqpf67cz, expecting peers: [npub1rv8rwtcg43l4wg90ryxhs0d2ltjm58rsv52fat4yw5gz479qlrfs2r845w npub122tvrhkgv6fmscss0sv70ce5x6uy9wgv0s478q2jrtn4m4pl78rs3pvf0f]
+BBMTLog: Client.Publish - event kind=30301, tags=[[t 38cde21e0e4d4fab40c0d50fd3ee00a5757c28a5e1fae15a3d0830d671a5a8b3] [phase ready]], nsec prefix=nsec1ehrlv..., localNpub=npub14nu9h33psxqgt7qdm56mxkwlds460p6nc6pqthv748czn44khecqpf67cz
+BBMTLog: Client.Publish - signed event, PubKey (hex)=acf85bc621818085f80ddd35b359df6c2ba78753c68205dd9ea9f029d6b6be70, tags=[[t 38cde21e0e4d4fab40c0d50fd3ee00a5757c28a5e1fae15a3d0830d671a5a8b3] [phase ready]]
+BBMTLog: Client.Publish - relay wss://nostr.xxi.quest success (1/3 succeeded)
+BBMTLog: Client.Publish - relay wss://bbw-nostr.xyz success (2/3 succeeded)
+BBMTLog: Client.Publish - relay wss://nostr.hifish.org success (3/3 succeeded)
+BBMTLog: Client.Publish - all 3 relays succeeded
+BBMTLog: Ready event published successfully with tag t=38cde21e0e4d4fab40c0d50fd3ee00a5757c28a5e1fae15a3d0830d671a5a8b3
+BBMTLog: Successfully decoded npub npub1rv8rwtcg43l4wg90ryxhs0d2l -> hex 1b0e372f08ac7f5720af...
+BBMTLog: Successfully decoded npub npub122tvrhkgv6fmscss0sv70ce5x -> hex 5296c1dec86693b86210...
+BBMTLog: Converted npub npub1rv8rwtcg43l4wg9... -> hex 1b0e372f08ac7f5720af...
+BBMTLog: Converted npub npub122tvrhkgv6fmscs... -> hex 5296c1dec86693b86210...
+BBMTLog: AwaitPeers - SessionID: 38cde21e0e4d4fab40c0d50fd3ee00a5757c28a5e1fae15a3d0830d671a5a8b3, LocalNpub: npub14nu9h33psxqgt7qdm56mxkwlds460p6nc6pqthv748czn44khecqpf67cz, Expected peers (npub): [npub1rv8rwtcg43l4wg90ryxhs0d2ltjm58rsv52fat4yw5gz479qlrfs2r845w npub122tvrhkgv6fmscss0sv70ce5x6uy9wgv0s478q2jrtn4m4pl78rs3pvf0f], Authors (hex): [1b0e372f08ac7f5720af190d783daafae5ba1c7065149eaea475102af8a0f8d3 5296c1dec86693b862107c19e7e33436b842b90c7c2be381521ae75dd43ff1c7]
+BBMTLog: Querying for existing ready events for session 38cde21e0e4d4fab40c0d50fd3ee00a5757c28a5e1fae15a3d0830d671a5a8b3 (from last 1 minute)
+BBMTLog: Query on relay wss://nostr.hifish.org returned 1 events for session 38cde21e0e4d4fab40c0d50fd3ee00a5757c28a5e1fae15a3d0830d671a5a8b3
+BBMTLog: Found existing ready event from npub1rv8rwtcg43l4wg90ryxhs0d2ltjm58rsv52fat4yw5gz479qlrfs2r845w (hex: 1b0e372f08ac7f5720af190d783daafae5ba1c7065149eaea475102af8a0f8d3)
+BBMTLog: Query on relay wss://nostr.xxi.quest returned 1 events for session 38cde21e0e4d4fab40c0d50fd3ee00a5757c28a5e1fae15a3d0830d671a5a8b3
+BBMTLog: Found existing ready event from npub1rv8rwtcg43l4wg90ryxhs0d2ltjm58rsv52fat4yw5gz479qlrfs2r845w (hex: 1b0e372f08ac7f5720af190d783daafae5ba1c7065149eaea475102af8a0f8d3)
+BBMTLog: Query on relay wss://bbw-nostr.xyz returned 1 events for session 38cde21e0e4d4fab40c0d50fd3ee00a5757c28a5e1fae15a3d0830d671a5a8b3
+BBMTLog: Found existing ready event from npub1rv8rwtcg43l4wg90ryxhs0d2ltjm58rsv52fat4yw5gz479qlrfs2r845w (hex: 1b0e372f08ac7f5720af190d783daafae5ba1c7065149eaea475102af8a0f8d3)
 BBMTLog: Initial query completed, found 1 peers
-BBMTLog: Starting subscription for ready events for session 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6
-BBMTLog: Awaiting 1 peers for session 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6 (already seen: 1)
-BBMTLog: Received ready event from npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx (hex: a3b1629c7ca5a4f5ab57c9c89ac7b6a264fa55919aaf0d009813c6787eca7873)
-BBMTLog: All peers ready!
-BBMTLog: MessagePump subscribing to session 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6, local npub npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n (hex: 1ba0b5439c590e351ffc5493f2dcdd46d426589417a4069c4125ffff7ca5a268), expecting authors (hex): [a3b1629c7ca5a4f5ab57c9c89ac7b6a264fa55919aaf0d009813c6787eca7873]
-2025/11/23 13:00:22 BBMTLog restoring local state...
-BBMTLog: MessagePump subscription active
-BBMTLog: MessagePump received event from a3b1629c7ca5a4f5ab57c9c89ac7b6a264fa55919aaf0d009813c6787eca7873 (hex), kind=30303, content_len=536, tags_count=3
-BBMTLog: MessagePump tag[0]: [t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6]
-BBMTLog: MessagePump tag[1]: [p npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n]
-BBMTLog: MessagePump tag[2]: [chunk cc79179c7ec46997e1cd68a3a27bf0493da93449c438bee77dc8f39b6b53dea7/0/1]
-BBMTLog: MessagePump found chunk tag: [chunk cc79179c7ec46997e1cd68a3a27bf0493da93449c438bee77dc8f39b6b53dea7/0/1]
-BBMTLog: MessagePump parsed chunk metadata: hash=cc79179c7ec46997e1cd68a3a27bf0493da93449c438bee77dc8f39b6b53dea7, index=0/1
-BBMTLog: MessagePump decoded chunk data: 400 bytes
-BBMTLog: MessagePump adding chunk 1/1 to assembler
-BBMTLog: MessagePump all chunks received, reassembled 400 bytes
-BBMTLog: MessagePump decrypted payload: 368 bytes
-BBMTLog: MessagePump calling handler with 368 bytes
-BBMTLog: MessagePump handler completed successfully
-BBMTLog: MessagePump received event from a3b1629c7ca5a4f5ab57c9c89ac7b6a264fa55919aaf0d009813c6787eca7873 (hex), kind=30303, content_len=5804, tags_count=3
-BBMTLog: MessagePump tag[0]: [t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6]
-BBMTLog: MessagePump tag[1]: [p npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n]
-BBMTLog: MessagePump tag[2]: [chunk 1e119cd1f87e1588523b616714125decdb66ffbc4fda0047d6d149c8e838479b/0/1]
-BBMTLog: MessagePump found chunk tag: [chunk 1e119cd1f87e1588523b616714125decdb66ffbc4fda0047d6d149c8e838479b/0/1]
-BBMTLog: MessagePump parsed chunk metadata: hash=1e119cd1f87e1588523b616714125decdb66ffbc4fda0047d6d149c8e838479b, index=0/1
-BBMTLog: MessagePump decoded chunk data: 4352 bytes
-BBMTLog: MessagePump adding chunk 1/1 to assembler
-BBMTLog: MessagePump all chunks received, reassembled 4352 bytes
-BBMTLog: MessagePump decrypted payload: 4332 bytes
-BBMTLog: MessagePump calling handler with 4332 bytes
-2025/11/23 13:00:22 BBMTLog send message from  {1,npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n} to []
-BBMTLog: Messenger sending message from npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n to npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx (368 bytes)
-BBMTLog: Messenger split into 1 chunks
-BBMTLog: Messenger publishing chunk 1/1 to npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx
-BBMTLog: Client.Publish - event kind=30303, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [p npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx] [chunk 3240a34b4c151b9130f460579d4a914553ee07e2141de145ad3a93efe28344da/0/1]], nsec prefix=nsec1s4t85..., localNpub=npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n
-2025/11/23 13:00:22 BBMTLog send message from  {1,npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n} to [{0,npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx}]
-BBMTLog: Messenger sending message from npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n to npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx (4332 bytes)
-BBMTLog: Messenger split into 1 chunks
-BBMTLog: Messenger publishing chunk 1/1 to npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx
-BBMTLog: Client.Publish - event kind=30303, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [p npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx] [chunk 01cae115e5a20b8e4046f91b2d4a0f2acd6a8a9b782265b1c5483fa12fc1b8f9/0/1]], nsec prefix=nsec1s4t85..., localNpub=npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n
-BBMTLog: Client.Publish - signed event, PubKey (hex)=1ba0b5439c590e351ffc5493f2dcdd46d426589417a4069c4125ffff7ca5a268, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [p npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx] [chunk 3240a34b4c151b9130f460579d4a914553ee07e2141de145ad3a93efe28344da/0/1]]
-BBMTLog: Client.Publish - signed event, PubKey (hex)=1ba0b5439c590e351ffc5493f2dcdd46d426589417a4069c4125ffff7ca5a268, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [p npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx] [chunk 01cae115e5a20b8e4046f91b2d4a0f2acd6a8a9b782265b1c5483fa12fc1b8f9/0/1]]
-BBMTLog: Client.Publish - relay ws://localhost:7777 success
-BBMTLog: Client.Publish - relay ws://localhost:7777 success
-BBMTLog: Client.Publish - relay wss://nostr.xxi.quest success
-BBMTLog: Client.Publish - relay wss://nostr.xxi.quest success
-BBMTLog: Client.Publish - relay wss://nostr.hifish.org success
-BBMTLog: Client.Publish - all relays responded
-BBMTLog: Messenger published chunk 1/1 successfully
-BBMTLog: MessagePump handler completed successfully
-BBMTLog: Client.Publish - relay wss://nostr.hifish.org success
-BBMTLog: Client.Publish - all relays responded
-BBMTLog: Messenger published chunk 1/1 successfully
-2025/11/23 13:00:23 BBMTLog send message from  {1,npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n} to [{0,npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx}]
-BBMTLog: Messenger sending message from npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n to npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx (12380 bytes)
-BBMTLog: Messenger split into 1 chunks
-BBMTLog: Messenger publishing chunk 1/1 to npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx
-BBMTLog: Client.Publish - event kind=30303, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [p npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx] [chunk 2ac7c41abbf8fa09cc10c7020db274dde70d71a79f01277ab342e0cf666f4cae/0/1]], nsec prefix=nsec1s4t85..., localNpub=npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n
-BBMTLog: Client.Publish - signed event, PubKey (hex)=1ba0b5439c590e351ffc5493f2dcdd46d426589417a4069c4125ffff7ca5a268, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [p npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx] [chunk 2ac7c41abbf8fa09cc10c7020db274dde70d71a79f01277ab342e0cf666f4cae/0/1]]
-BBMTLog: Client.Publish - relay ws://localhost:7777 success
-BBMTLog: MessagePump received event from a3b1629c7ca5a4f5ab57c9c89ac7b6a264fa55919aaf0d009813c6787eca7873 (hex), kind=30303, content_len=16536, tags_count=3
-BBMTLog: MessagePump tag[0]: [t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6]
-BBMTLog: MessagePump tag[1]: [p npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n]
-BBMTLog: MessagePump tag[2]: [chunk 91d273efc8ffb8371d0d9f34d2f91c8e3167a83171f809320d3fc8e96feea037/0/1]
-BBMTLog: MessagePump found chunk tag: [chunk 91d273efc8ffb8371d0d9f34d2f91c8e3167a83171f809320d3fc8e96feea037/0/1]
-BBMTLog: MessagePump parsed chunk metadata: hash=91d273efc8ffb8371d0d9f34d2f91c8e3167a83171f809320d3fc8e96feea037, index=0/1
-BBMTLog: MessagePump decoded chunk data: 12400 bytes
-BBMTLog: MessagePump adding chunk 1/1 to assembler
-BBMTLog: MessagePump all chunks received, reassembled 12400 bytes
-BBMTLog: MessagePump decrypted payload: 12380 bytes
-BBMTLog: MessagePump calling handler with 12380 bytes
-BBMTLog: Client.Publish - relay wss://nostr.hifish.org success
-BBMTLog: Client.Publish - relay wss://nostr.xxi.quest success
-BBMTLog: Client.Publish - all relays responded
-BBMTLog: Messenger published chunk 1/1 successfully
-BBMTLog: MessagePump handler completed successfully
-BBMTLog: MessagePump received event from a3b1629c7ca5a4f5ab57c9c89ac7b6a264fa55919aaf0d009813c6787eca7873 (hex), kind=30303, content_len=536, tags_count=3
-BBMTLog: MessagePump tag[0]: [t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6]
-BBMTLog: MessagePump tag[1]: [p npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n]
-BBMTLog: MessagePump tag[2]: [chunk 26974ad7651b15e3295f7d1e5843c2ccc98b0e03b6f3b1bd22950baafe6897b8/0/1]
-BBMTLog: MessagePump found chunk tag: [chunk 26974ad7651b15e3295f7d1e5843c2ccc98b0e03b6f3b1bd22950baafe6897b8/0/1]
-BBMTLog: MessagePump parsed chunk metadata: hash=26974ad7651b15e3295f7d1e5843c2ccc98b0e03b6f3b1bd22950baafe6897b8, index=0/1
-BBMTLog: MessagePump decoded chunk data: 400 bytes
-BBMTLog: MessagePump adding chunk 1/1 to assembler
-BBMTLog: MessagePump all chunks received, reassembled 400 bytes
-BBMTLog: MessagePump decrypted payload: 368 bytes
-BBMTLog: MessagePump calling handler with 368 bytes
-BBMTLog: MessagePump handler completed successfully
-2025/11/23 13:00:24 BBMTLog send message from  {1,npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n} to []
-BBMTLog: Messenger sending message from npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n to npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx (368 bytes)
-BBMTLog: Messenger split into 1 chunks
-BBMTLog: Messenger publishing chunk 1/1 to npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx
-BBMTLog: Client.Publish - event kind=30303, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [p npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx] [chunk 50fe72b2fb15cb14aad340ebfbc25e6ee5337adf0af0fa9aca5371bab17730b0/0/1]], nsec prefix=nsec1s4t85..., localNpub=npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n
-BBMTLog: Client.Publish - signed event, PubKey (hex)=1ba0b5439c590e351ffc5493f2dcdd46d426589417a4069c4125ffff7ca5a268, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [p npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx] [chunk 50fe72b2fb15cb14aad340ebfbc25e6ee5337adf0af0fa9aca5371bab17730b0/0/1]]
-BBMTLog: Client.Publish - relay ws://localhost:7777 success
-BBMTLog: Client.Publish - relay wss://nostr.xxi.quest success
-BBMTLog: Client.Publish - relay wss://nostr.hifish.org success
-BBMTLog: Client.Publish - all relays responded
-BBMTLog: Messenger published chunk 1/1 successfully
-2025/11/23 13:00:24 BBMTLog send message from  {1,npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n} to []
-BBMTLog: Messenger sending message from npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n to npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx (672 bytes)
-BBMTLog: Messenger split into 1 chunks
-BBMTLog: Messenger publishing chunk 1/1 to npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx
-BBMTLog: Client.Publish - event kind=30303, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [p npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx] [chunk 67dd571991ee313b81b501fafcf31fbbb9f94b060d61b2b6de50faaf5a7f8fd0/0/1]], nsec prefix=nsec1s4t85..., localNpub=npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n
-BBMTLog: Client.Publish - signed event, PubKey (hex)=1ba0b5439c590e351ffc5493f2dcdd46d426589417a4069c4125ffff7ca5a268, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [p npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx] [chunk 67dd571991ee313b81b501fafcf31fbbb9f94b060d61b2b6de50faaf5a7f8fd0/0/1]]
-BBMTLog: Client.Publish - relay ws://localhost:7777 success
-BBMTLog: MessagePump received event from a3b1629c7ca5a4f5ab57c9c89ac7b6a264fa55919aaf0d009813c6787eca7873 (hex), kind=30303, content_len=940, tags_count=3
-BBMTLog: MessagePump tag[0]: [t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6]
-BBMTLog: MessagePump tag[1]: [p npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n]
-BBMTLog: MessagePump tag[2]: [chunk 6bbe60c07841ae5354ea8b5a31ceee5585829e1adcdebd9a6601dac119d2a290/0/1]
-BBMTLog: MessagePump found chunk tag: [chunk 6bbe60c07841ae5354ea8b5a31ceee5585829e1adcdebd9a6601dac119d2a290/0/1]
-BBMTLog: MessagePump parsed chunk metadata: hash=6bbe60c07841ae5354ea8b5a31ceee5585829e1adcdebd9a6601dac119d2a290, index=0/1
-BBMTLog: MessagePump decoded chunk data: 704 bytes
-BBMTLog: MessagePump adding chunk 1/1 to assembler
-BBMTLog: MessagePump all chunks received, reassembled 704 bytes
-BBMTLog: MessagePump decrypted payload: 672 bytes
-BBMTLog: MessagePump calling handler with 672 bytes
-BBMTLog: Client.Publish - relay wss://nostr.xxi.quest success
-BBMTLog: Client.Publish - relay wss://nostr.hifish.org success
-BBMTLog: Client.Publish - all relays responded
-BBMTLog: Messenger published chunk 1/1 successfully
-BBMTLog: MessagePump handler completed successfully
-BBMTLog: MessagePump received event from a3b1629c7ca5a4f5ab57c9c89ac7b6a264fa55919aaf0d009813c6787eca7873 (hex), kind=30303, content_len=536, tags_count=3
-BBMTLog: MessagePump tag[0]: [t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6]
-BBMTLog: MessagePump tag[1]: [p npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n]
-BBMTLog: MessagePump tag[2]: [chunk 1f0aad79a85d0ca81d3841ecfb9957fe938ef6e1dda8ab5a11f49368e58cc847/0/1]
-BBMTLog: MessagePump found chunk tag: [chunk 1f0aad79a85d0ca81d3841ecfb9957fe938ef6e1dda8ab5a11f49368e58cc847/0/1]
-BBMTLog: MessagePump parsed chunk metadata: hash=1f0aad79a85d0ca81d3841ecfb9957fe938ef6e1dda8ab5a11f49368e58cc847, index=0/1
-BBMTLog: MessagePump decoded chunk data: 400 bytes
-BBMTLog: MessagePump adding chunk 1/1 to assembler
-BBMTLog: MessagePump all chunks received, reassembled 400 bytes
-BBMTLog: MessagePump decrypted payload: 368 bytes
-BBMTLog: MessagePump calling handler with 368 bytes
-BBMTLog: MessagePump handler completed successfully
-2025/11/23 13:00:24 BBMTLog send message from  {1,npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n} to []
-BBMTLog: Messenger sending message from npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n to npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx (368 bytes)
-BBMTLog: Messenger split into 1 chunks
-BBMTLog: Messenger publishing chunk 1/1 to npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx
-BBMTLog: Client.Publish - event kind=30303, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [p npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx] [chunk 110101292037ba9b3225a35de753663f57c6e3002879f8e689bdb6cc5f4baaff/0/1]], nsec prefix=nsec1s4t85..., localNpub=npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n
-BBMTLog: Client.Publish - signed event, PubKey (hex)=1ba0b5439c590e351ffc5493f2dcdd46d426589417a4069c4125ffff7ca5a268, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [p npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx] [chunk 110101292037ba9b3225a35de753663f57c6e3002879f8e689bdb6cc5f4baaff/0/1]]
-BBMTLog: Client.Publish - relay ws://localhost:7777 success
-BBMTLog: Client.Publish - relay wss://nostr.hifish.org success
-BBMTLog: Client.Publish - relay wss://nostr.xxi.quest success
-BBMTLog: Client.Publish - all relays responded
-BBMTLog: Messenger published chunk 1/1 successfully
-2025/11/23 13:00:25 BBMTLog send message from  {1,npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n} to []
-BBMTLog: Messenger sending message from npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n to npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx (1036 bytes)
-BBMTLog: Messenger split into 1 chunks
-BBMTLog: Messenger publishing chunk 1/1 to npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx
-BBMTLog: Client.Publish - event kind=30303, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [p npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx] [chunk cc61aa6be45a5b211cfc95831829b5164fd3eee48f259086f1bca6e1e0b223df/0/1]], nsec prefix=nsec1s4t85..., localNpub=npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n
-BBMTLog: Client.Publish - signed event, PubKey (hex)=1ba0b5439c590e351ffc5493f2dcdd46d426589417a4069c4125ffff7ca5a268, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [p npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx] [chunk cc61aa6be45a5b211cfc95831829b5164fd3eee48f259086f1bca6e1e0b223df/0/1]]
-BBMTLog: Client.Publish - relay ws://localhost:7777 success
-BBMTLog: Client.Publish - relay wss://nostr.hifish.org success
-BBMTLog: MessagePump received event from a3b1629c7ca5a4f5ab57c9c89ac7b6a264fa55919aaf0d009813c6787eca7873 (hex), kind=30303, content_len=1408, tags_count=3
-BBMTLog: MessagePump tag[0]: [t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6]
-BBMTLog: MessagePump tag[1]: [p npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n]
-BBMTLog: MessagePump tag[2]: [chunk 2b52874f11d8da88628dac844975bc7211c96d42ddfc0231168acb98280e7cb1/0/1]
-BBMTLog: MessagePump found chunk tag: [chunk 2b52874f11d8da88628dac844975bc7211c96d42ddfc0231168acb98280e7cb1/0/1]
-BBMTLog: MessagePump parsed chunk metadata: hash=2b52874f11d8da88628dac844975bc7211c96d42ddfc0231168acb98280e7cb1, index=0/1
-BBMTLog: MessagePump decoded chunk data: 1056 bytes
-BBMTLog: MessagePump adding chunk 1/1 to assembler
-BBMTLog: MessagePump all chunks received, reassembled 1056 bytes
-BBMTLog: MessagePump decrypted payload: 1036 bytes
-BBMTLog: MessagePump calling handler with 1036 bytes
-BBMTLog: Client.Publish - relay wss://nostr.xxi.quest success
-BBMTLog: Client.Publish - all relays responded
-BBMTLog: Messenger published chunk 1/1 successfully
-BBMTLog: MessagePump handler completed successfully
-BBMTLog: MessagePump received event from a3b1629c7ca5a4f5ab57c9c89ac7b6a264fa55919aaf0d009813c6787eca7873 (hex), kind=30303, content_len=536, tags_count=3
-BBMTLog: MessagePump tag[0]: [t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6]
-BBMTLog: MessagePump tag[1]: [p npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n]
-BBMTLog: MessagePump tag[2]: [chunk f87928a0c610d7e5b5ad4763885a70d3b79d09f982b645e32c9308e18fb58e9d/0/1]
-BBMTLog: MessagePump found chunk tag: [chunk f87928a0c610d7e5b5ad4763885a70d3b79d09f982b645e32c9308e18fb58e9d/0/1]
-BBMTLog: MessagePump parsed chunk metadata: hash=f87928a0c610d7e5b5ad4763885a70d3b79d09f982b645e32c9308e18fb58e9d, index=0/1
-BBMTLog: MessagePump decoded chunk data: 400 bytes
-BBMTLog: MessagePump adding chunk 1/1 to assembler
-BBMTLog: MessagePump all chunks received, reassembled 400 bytes
-BBMTLog: MessagePump decrypted payload: 368 bytes
-BBMTLog: MessagePump calling handler with 368 bytes
-BBMTLog: MessagePump handler completed successfully
-2025/11/23 13:00:25 BBMTLog send message from  {1,npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n} to []
-BBMTLog: Messenger sending message from npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n to npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx (368 bytes)
-BBMTLog: Messenger split into 1 chunks
-BBMTLog: Messenger publishing chunk 1/1 to npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx
-BBMTLog: Client.Publish - event kind=30303, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [p npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx] [chunk d19756da84289791b99df851aa793bf8c878f64b6983af5a8649079ea3169705/0/1]], nsec prefix=nsec1s4t85..., localNpub=npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n
-BBMTLog: Client.Publish - signed event, PubKey (hex)=1ba0b5439c590e351ffc5493f2dcdd46d426589417a4069c4125ffff7ca5a268, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [p npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx] [chunk d19756da84289791b99df851aa793bf8c878f64b6983af5a8649079ea3169705/0/1]]
-BBMTLog: Client.Publish - relay ws://localhost:7777 success
-BBMTLog: Client.Publish - relay wss://nostr.hifish.org success
-BBMTLog: Client.Publish - relay wss://nostr.xxi.quest success
-BBMTLog: Client.Publish - all relays responded
-BBMTLog: Messenger published chunk 1/1 successfully
-2025/11/23 13:00:25 BBMTLog send message from  {1,npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n} to []
-BBMTLog: Messenger sending message from npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n to npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx (612 bytes)
-BBMTLog: Messenger split into 1 chunks
-BBMTLog: Messenger publishing chunk 1/1 to npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx
-BBMTLog: Client.Publish - event kind=30303, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [p npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx] [chunk d670867c7684f3ad1c44b7af74a317ab0fdfb24164412b38192ea855a019614e/0/1]], nsec prefix=nsec1s4t85..., localNpub=npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n
-BBMTLog: Client.Publish - signed event, PubKey (hex)=1ba0b5439c590e351ffc5493f2dcdd46d426589417a4069c4125ffff7ca5a268, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [p npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx] [chunk d670867c7684f3ad1c44b7af74a317ab0fdfb24164412b38192ea855a019614e/0/1]]
-BBMTLog: Client.Publish - relay ws://localhost:7777 success
-BBMTLog: Client.Publish - relay wss://nostr.hifish.org success
-BBMTLog: MessagePump received event from a3b1629c7ca5a4f5ab57c9c89ac7b6a264fa55919aaf0d009813c6787eca7873 (hex), kind=30303, content_len=856, tags_count=3
-BBMTLog: MessagePump tag[0]: [t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6]
-BBMTLog: MessagePump tag[1]: [p npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n]
-BBMTLog: MessagePump tag[2]: [chunk 0c725bbc7b36770af769be4214e5fbc2559bb46319259f43b958ad6ff1a38105/0/1]
-BBMTLog: MessagePump found chunk tag: [chunk 0c725bbc7b36770af769be4214e5fbc2559bb46319259f43b958ad6ff1a38105/0/1]
-BBMTLog: MessagePump parsed chunk metadata: hash=0c725bbc7b36770af769be4214e5fbc2559bb46319259f43b958ad6ff1a38105, index=0/1
-BBMTLog: MessagePump decoded chunk data: 640 bytes
-BBMTLog: MessagePump adding chunk 1/1 to assembler
-BBMTLog: MessagePump all chunks received, reassembled 640 bytes
-BBMTLog: MessagePump decrypted payload: 612 bytes
-BBMTLog: MessagePump calling handler with 612 bytes
-BBMTLog: Client.Publish - relay wss://nostr.xxi.quest success
-BBMTLog: Client.Publish - all relays responded
-BBMTLog: Messenger published chunk 1/1 successfully
-BBMTLog: MessagePump handler completed successfully
-BBMTLog: MessagePump received event from a3b1629c7ca5a4f5ab57c9c89ac7b6a264fa55919aaf0d009813c6787eca7873 (hex), kind=30303, content_len=536, tags_count=3
-BBMTLog: MessagePump tag[0]: [t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6]
-BBMTLog: MessagePump tag[1]: [p npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n]
-BBMTLog: MessagePump tag[2]: [chunk 8132457aa890ed2e7d612b39ba4760c4adc18413f9421d4d26035cab515b8fb1/0/1]
-BBMTLog: MessagePump found chunk tag: [chunk 8132457aa890ed2e7d612b39ba4760c4adc18413f9421d4d26035cab515b8fb1/0/1]
-BBMTLog: MessagePump parsed chunk metadata: hash=8132457aa890ed2e7d612b39ba4760c4adc18413f9421d4d26035cab515b8fb1, index=0/1
-BBMTLog: MessagePump decoded chunk data: 400 bytes
-BBMTLog: MessagePump adding chunk 1/1 to assembler
-BBMTLog: MessagePump all chunks received, reassembled 400 bytes
-BBMTLog: MessagePump decrypted payload: 368 bytes
-BBMTLog: MessagePump calling handler with 368 bytes
-BBMTLog: MessagePump handler completed successfully
-2025/11/23 13:00:26 BBMTLog send message from  {1,npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n} to []
-BBMTLog: Messenger sending message from npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n to npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx (368 bytes)
-BBMTLog: Messenger split into 1 chunks
-BBMTLog: Messenger publishing chunk 1/1 to npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx
-BBMTLog: Client.Publish - event kind=30303, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [p npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx] [chunk 08c4f719cd89277ad3166b082685b68173c4aaee0343b5058e1026b6c1389fc6/0/1]], nsec prefix=nsec1s4t85..., localNpub=npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n
-BBMTLog: Client.Publish - signed event, PubKey (hex)=1ba0b5439c590e351ffc5493f2dcdd46d426589417a4069c4125ffff7ca5a268, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [p npub15wck98ru5kj0t26he8yf43ak5fj054v3n2hs6qycz0r8slk20pesvfupdx] [chunk 08c4f719cd89277ad3166b082685b68173c4aaee0343b5058e1026b6c1389fc6/0/1]]
-BBMTLog: Client.Publish - relay ws://localhost:7777 success
-BBMTLog: Client.Publish - relay wss://nostr.hifish.org success
-BBMTLog: Client.Publish - relay wss://nostr.xxi.quest success
-BBMTLog: Client.Publish - all relays responded
-BBMTLog: Messenger published chunk 1/1 successfully
-2025/11/23 13:00:26 BBMTLog signature generated:  npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n
-2025/11/23 13:00:27 BBMTLog signature is valid
-BBMTLog: Client.Publish - event kind=30302, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [phase keysign]], nsec prefix=nsec1s4t85..., localNpub=npub1rwst2suuty8r28lu2jfl9hxagm2zvky5z7jqd8zpyhll7l995f5q8qv62n
-BBMTLog: Client.Publish - signed event, PubKey (hex)=1ba0b5439c590e351ffc5493f2dcdd46d426589417a4069c4125ffff7ca5a268, tags=[[t 3fea63b79a084b8a7bca7dc2195d43be2fbcd3ce1536b199f20e59dc0c5fedb6] [phase keysign]]
-BBMTLog: Client.Publish - relay ws://localhost:7777 success
-BBMTLog: Client.Publish - relay wss://nostr.hifish.org success
-BBMTLog: Client.Publish - relay wss://nostr.xxi.quest success
-BBMTLog: Client.Publish - all relays responded
+BBMTLog: Starting subscription for ready events for session 38cde21e0e4d4fab40c0d50fd3ee00a5757c28a5e1fae15a3d0830d671a5a8b3
+BBMTLog: Awaiting 2 peers for session 38cde21e0e4d4fab40c0d50fd3ee00a5757c28a5e1fae15a3d0830d671a5a8b3 (already seen: 1)
+BBMTLog: Client.Subscribe - WARNING: No relays connected after 5 seconds (all 3 relays may have failed)
+BBMTLog: Client.Subscribe - relay wss://nostr.hifish.org connected (1/3)
+BBMTLog: Received ready event from npub1rv8rwtcg43l4wg90ryxhs0d2ltjm58rsv52fat4yw5gz479qlrfs2r845w (hex: 1b0e372f08ac7f5720af190d783daafae5ba1c7065149eaea475102af8a0f8d3)
+BBMTLog: Still waiting... (seen: 1/2)
+BBMTLog: Still waiting... (seen: 1/2)
+BBMTLog: Still waiting... (seen: 1/2)
+BBMTLog: AwaitPeers timed out (seen: 1/2)
+Error: await peers: waiting for peers timed out: context deadline exceeded
+exit status 1
