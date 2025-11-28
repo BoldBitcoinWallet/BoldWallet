@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-RELAYS_DEFAULT="wss://nostr.hifish.org,wss://nostr.xxi.quest,wss://bbw-nostr.xyz"
+RELAYS_DEFAULT="ws://localhost:7777"
 RELAYS="${RELAYS:-$RELAYS_DEFAULT}"
 TIMEOUT="${TIMEOUT:-90}"
 OUTPUT_DIR="${OUTPUT_DIR:-./nostr-keygen-output}"
@@ -33,6 +33,12 @@ NSEC1=$(go run ./scripts/main.go extract-nsec "$PARTY1_KEYSHARE")
 NSEC2=$(go run ./scripts/main.go extract-nsec "$PARTY2_KEYSHARE")
 
 # Extract all party npubs from keyshare (keygen_committee_keys)
+# Parties to participate in keysign (default: only party1 + party2).
+# Allows overriding via KEYSIGN_PARTIES env var if a different subset is desired.
+DEFAULT_KEYSIGN_PARTIES="$NPUB1,$NPUB2"
+KEYSIGN_PARTIES="${KEYSIGN_PARTIES:-$DEFAULT_KEYSIGN_PARTIES}"
+
+# All parties as defined in keyshare (informational only)
 ALL_PARTIES=$(go run ./scripts/main.go extract-committee "$PARTY1_KEYSHARE")
 
 # Generate session ID and key for keysign
@@ -59,6 +65,7 @@ echo ""
 echo "Party 1 npub: $NPUB1"
 echo "Party 2 npub: $NPUB2"
 echo "All Parties  : $ALL_PARTIES"
+echo "Keysign With : $KEYSIGN_PARTIES"
 echo "============================"
 
 run_party() {
@@ -72,7 +79,7 @@ run_party() {
 	go run ./tss/cmd/nostr-keysign \
 		-relays "$RELAYS" \
 		-nsec "$nsec" \
-		-peers "$ALL_PARTIES" \
+		-peers "$KEYSIGN_PARTIES" \
 		-session "$SESSION_ID" \
 		-session-key "$SESSION_KEY" \
 		-keyshare "$keyshare" \
@@ -91,12 +98,15 @@ echo "Starting Nostr keysign for both parties in parallel..."
 
 # Record start time
 START_TIME=$(date +%s)
+echo "$(pwd)/nostr-keysign-output/party1.log"
 
 # Run both parties in background
-run_party "$NSEC1" "$NPUB1" "$PARTY1_KEYSHARE" "$PARTY1_OUTPUT" "$PARTY1_LOG" &
+rm "$(pwd)/nostr-keysign-output/party1.log"
+	run_party "$NSEC1" "$NPUB1" "$PARTY1_KEYSHARE" "$PARTY1_OUTPUT" "$PARTY1_LOG" &
 PID1=$!
 
-run_party "$NSEC2" "$NPUB2" "$PARTY2_KEYSHARE" "$PARTY2_OUTPUT" "$PARTY2_LOG" &
+rm "$(pwd)/nostr-keysign-output/party2.log"
+	run_party "$NSEC2" "$NPUB2" "$PARTY2_KEYSHARE" "$PARTY2_OUTPUT" "$PARTY2_LOG" &
 PID2=$!
 
 # Handle cleanup on exit

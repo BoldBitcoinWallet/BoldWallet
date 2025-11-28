@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-RELAYS_DEFAULT="wss://nostr.hifish.org,wss://nostr.xxi.quest,ws://localhost:7777"
+RELAYS_DEFAULT="wss://nostr.hifish.org,wss://nostr.xxi.quest,wss://bbw-nostr.xyz,ws://localhost:7777"
 RELAYS="${RELAYS:-$RELAYS_DEFAULT}"
 TIMEOUT="${TIMEOUT:-90}"
 OUTPUT_DIR="${OUTPUT_DIR:-./nostr-keygen-output}"
@@ -43,14 +43,18 @@ echo "Party 3 npub: $NPUB3"
 echo "Party 3 nsec: $NSEC3"
 echo "============================"
 
+ppm=0
+
 run_party() {
 	local nsec="$1"
 	local npub="$2"
 	local peers="$3"
 	local output="$4"
+	local ppm="$5"
 
 	NOSTR_NSEC="$nsec" go run ./tss/cmd/nostr-keygen \
 		-relays "$RELAYS" \
+		-ppm "$OUTPUT_DIR/ppm-$ppm.json" \
 		-npub "$npub" \
 		-peers "$peers" \
 		-session "$SESSION_ID" \
@@ -72,15 +76,18 @@ START_TIME=$(date +%s)
 
 # Run all 3 parties in background
 # Party 1: peers are Party 2 and Party 3
-run_party "$NSEC1" "$NPUB1" "$NPUB2,$NPUB3" "$PARTY1_OUTPUT" > "$OUTPUT_DIR/party1.log" 2>&1 &
+echo "$(pwd)/nostr-keygen-output/party1.log"
+run_party "$NSEC1" "$NPUB1" "$NPUB2,$NPUB3" "$PARTY1_OUTPUT" "1"> "$OUTPUT_DIR/party1.log" 2>&1 &
 PID1=$!
 
 # Party 2: peers are Party 1 and Party 3
-run_party "$NSEC2" "$NPUB2" "$NPUB1,$NPUB3" "$PARTY2_OUTPUT" > "$OUTPUT_DIR/party2.log" 2>&1 &
+echo "$(pwd)/nostr-keygen-output/party2.log"
+run_party "$NSEC2" "$NPUB2" "$NPUB1,$NPUB3" "$PARTY2_OUTPUT" "2" > "$OUTPUT_DIR/party2.log" 2>&1 &
 PID2=$!
 
 # Party 3: peers are Party 1 and Party 2
-run_party "$NSEC3" "$NPUB3" "$NPUB1,$NPUB2" "$PARTY3_OUTPUT" > "$OUTPUT_DIR/party3.log" 2>&1 &
+echo "$(pwd)/nostr-keygen-output/party3.log"
+run_party "$NSEC3" "$NPUB3" "$NPUB1,$NPUB2" "$PARTY3_OUTPUT" "3" > "$OUTPUT_DIR/party3.log" 2>&1 &
 PID3=$!
 
 # Handle cleanup on exit

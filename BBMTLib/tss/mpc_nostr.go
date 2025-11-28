@@ -1059,33 +1059,22 @@ func runNostrKeysignInternal(cfg nostrtransport.Config, keyshare *LocalStateNost
 	}
 	messageBase64 := base64.StdEncoding.EncodeToString(messageHashBytes)
 
-	// Use keyshare's keygen committee keys for keysign committee
-	// Convert hex keys to bech32 npubs if needed (to match LocalPartyKey format)
-	keysignCommitteeKeysList := make([]string, 0, len(keyshare.KeygenCommitteeKeys))
-	for _, key := range keyshare.KeygenCommitteeKeys {
-		if key == "" {
+	// Use the actively participating parties (allParties) for keysign committee
+	// This allows duo-mode keysign even if the keyshare was generated for 3-party MPC.
+	uniqueParties := make(map[string]bool)
+	keysignCommitteeKeysList := make([]string, 0, len(allParties))
+	for _, party := range allParties {
+		party = strings.TrimSpace(party)
+		if party == "" || uniqueParties[party] {
 			continue
 		}
-		// If already bech32 npub, use as-is
-		if strings.HasPrefix(key, "npub1") {
-			keysignCommitteeKeysList = append(keysignCommitteeKeysList, key)
-		} else {
-			// Convert hex to bech32 npub
-			npub, err := HexToNpub(key)
-			if err != nil {
-				Logf("Warning: failed to convert hex key %s to npub: %v, using as-is", key[:20]+"...", err)
-				keysignCommitteeKeysList = append(keysignCommitteeKeysList, key)
-			} else {
-				keysignCommitteeKeysList = append(keysignCommitteeKeysList, npub)
-			}
-		}
+		uniqueParties[party] = true
+		keysignCommitteeKeysList = append(keysignCommitteeKeysList, party)
 	}
-
+	if len(keysignCommitteeKeysList) == 0 {
+		return "", fmt.Errorf("no parties specified for keysign")
+	}
 	keysignCommitteeKeys := strings.Join(keysignCommitteeKeysList, ",")
-	if keysignCommitteeKeys == "" {
-		// Fallback to allParties if keygen_committee_keys is empty
-		keysignCommitteeKeys = strings.Join(allParties, ",")
-	}
 
 	// Perform keysign
 	status.Step++

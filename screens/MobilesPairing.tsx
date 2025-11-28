@@ -3180,9 +3180,7 @@ const MobilesPairing = ({navigation}: any) => {
                         </View>
                         <View style={styles.checkboxTextContainer}>
                           <Text style={styles.enhancedCheckboxLabel}>
-                            {isTrio
-                              ? 'The other devices are ready'
-                              : 'The other device is ready'}
+                           All devices are ready
                           </Text>
                           <Text style={styles.warningHint}>
                             Do not leave the app during setup.

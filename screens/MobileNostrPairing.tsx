@@ -404,7 +404,7 @@ const MobileNostrPairing = ({navigation}: any) => {
   // Listen to native module events for progress tracking
   useEffect(() => {
     const eventEmitter = new NativeEventEmitter(BBMTLibNativeModule);
-    const keygenSteps = isTrio ? 29 : 18;
+    const keygenSteps = isTrio ? 25 : 18;
     const keysignSteps = 36;
     let utxoRange = 0;
     let utxoIndex = 0;
@@ -428,7 +428,10 @@ const MobileNostrPairing = ({navigation}: any) => {
               new Date(msg.time),
             );
             setProgress(Math.round((100 * msg.step) / keygenSteps));
-            setStatus(msg.info || '');
+            dbg('keygen_hook_info:', msg.info);
+            const statusDot =
+              msg.step % 3 === 0 ? '.' : msg.step % 3 === 1 ? '..' : '...';
+            setStatus('Processing cryptographic operations' + statusDot);
           }
         } else if (msg.type === 'btc_send') {
           if (msg.done) {
@@ -444,7 +447,10 @@ const MobileNostrPairing = ({navigation}: any) => {
               utxoRange,
             });
           }
-          setStatus(msg.info || '');
+          dbg('btc_send_hook_info:', msg.info);
+          const statusDot =
+            msg.step % 3 === 0 ? '.' : msg.step % 3 === 1 ? '..' : '...';
+          setStatus('Processing cryptographic operations' + statusDot);
         } else if (msg.type === 'keysign') {
           const prgUTXO = (utxoIndex - 1) * utxoRange;
           const progressValue =
@@ -464,7 +470,10 @@ const MobileNostrPairing = ({navigation}: any) => {
             new Date(msg.time),
           );
           setProgress(progressValue);
-          setStatus(msg.info || '');
+          dbg('keysign_hook_info:', msg.info);
+          const statusDot =
+            msg.step % 3 === 0 ? '.' : msg.step % 3 === 1 ? '..' : '...';
+          setStatus('Processing cryptographic operations' + statusDot);
           if (msg.done) {
             setProgress(100);
             setMpcDone(true);
@@ -1024,11 +1033,6 @@ const MobileNostrPairing = ({navigation}: any) => {
 
   const generateKeygenSessionParams = async () => {
     try {
-      // Get rounded time (60 second window for keygen)
-      const now = Date.now();
-      const rounded = Math.floor(now / 90000);
-      // roundedTime is only used in debug logs, no need to store in state
-
       // Collect all npubs and device names
       // IMPORTANT: Trim whitespace and ensure consistent format
       const allNpubs: string[] = [];
@@ -1137,15 +1141,14 @@ const MobileNostrPairing = ({navigation}: any) => {
       dbg('deviceNamesSorted:', deviceNamesSorted);
       dbg('All partial nonces (before sort):', allPartialNonces);
       dbg('fullNonce (sorted, CSV):', fullNonce);
-      dbg('rounded (time window):', rounded);
       dbg(
         'Session ID input string:',
-        `${npubsSorted},${deviceNamesSorted},${rounded}:${fullNonce}`,
+        `${npubsSorted},${deviceNamesSorted},${fullNonce}`,
       );
 
       // Generate session ID
       const sessionIDHash = await BBMTLibNativeModule.sha256(
-        `${npubsSorted},${deviceNamesSorted},${rounded}:${fullNonce}`,
+        `${npubsSorted},${deviceNamesSorted},${fullNonce}`,
       );
       setSessionID(sessionIDHash);
 
@@ -1165,7 +1168,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         sessionID: sessionIDHash.substring(0, 16) + '...',
         sessionKey: sessionKeyHash.substring(0, 16) + '...',
         chaincode: chaincodeHash.substring(0, 16) + '...',
-        roundedTime: rounded,
+        fullNonce: fullNonce,
         npubsCount: allNpubs.length,
       });
       dbg('=== END SESSION ID CALCULATION ===');
@@ -1970,7 +1973,10 @@ const MobileNostrPairing = ({navigation}: any) => {
   const copyConnectionDetails = () => {
     Clipboard.setString(connectionDetails);
     HapticFeedback.medium();
-    Alert.alert('Copied', '- Connection details copied to clipboard.\n- Paste them to your other device(s)');
+    Alert.alert(
+      'Copied',
+      '- Connection details copied to clipboard.\n- Paste them to your other device(s)',
+    );
   };
 
   const shareConnectionDetails = async () => {
@@ -3918,79 +3924,83 @@ const MobileNostrPairing = ({navigation}: any) => {
                   )}
 
                   {/* Local Device Card - Hide when Final Step is shown or in send mode */}
-                  {localNpub && deviceName && partialNonce && !showFinalStep && !isSendBitcoin && (
-                    <View style={styles.section}>
-                      <Text
-                        style={{
-                          fontSize: 14,
-                          fontWeight: '600',
-                          color: theme.colors.text,
-                          marginBottom: 12,
-                        }}>
-                        Your Device
-                      </Text>
-                      <View style={styles.card}>
-                        <View style={styles.hintBox}>
-                          <Text style={styles.hintText}>
-                            📱 On other device(s), paste or scan this
-                            connection
-                          </Text>
-                        </View>
-                        <View style={styles.deviceInfoRow}>
-                          <Text
-                            style={styles.deviceInfoSingleLine}
-                            numberOfLines={1}
-                            ellipsizeMode="middle"
-                            adjustsFontSizeToFit={true}
-                            minimumFontScale={0.8}>
-                            {deviceName}@{shortenNpub(localNpub, 8, 6)}
-                          </Text>
-                        </View>
-                        <View style={styles.buttonRow}>
-                          <TouchableOpacity
-                            style={[
-                              styles.buttonCompact,
-                              styles.buttonSecondary,
-                            ]}
-                            onPress={copyConnectionDetails}
-                            activeOpacity={0.8}>
-                            <Image
-                              source={require('../assets/copy-icon.png')}
-                              style={styles.iconImageCompact}
-                              resizeMode="contain"
-                            />
-                            <Text
-                              style={[
-                                styles.buttonTextCompact,
-                                styles.buttonTextSecondary,
-                              ]}>
-                              Copy
+                  {localNpub &&
+                    deviceName &&
+                    partialNonce &&
+                    !showFinalStep &&
+                    !isSendBitcoin && (
+                      <View style={styles.section}>
+                        <Text
+                          style={{
+                            fontSize: 14,
+                            fontWeight: '600',
+                            color: theme.colors.text,
+                            marginBottom: 12,
+                          }}>
+                          Your Device
+                        </Text>
+                        <View style={styles.card}>
+                          <View style={styles.hintBox}>
+                            <Text style={styles.hintText}>
+                              📱 On other device(s), paste or scan this
+                              connection
                             </Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[
-                              styles.buttonCompact,
-                              styles.buttonSecondary,
-                            ]}
-                            onPress={showQRModal}
-                            activeOpacity={0.8}>
-                            <Image
-                              source={require('../assets/qrc-icon.png')}
-                              style={styles.iconImageCompact}
-                              resizeMode="contain"
-                            />
+                          </View>
+                          <View style={styles.deviceInfoRow}>
                             <Text
-                              style={[
-                                styles.buttonTextCompact,
-                                styles.buttonTextSecondary,
-                              ]}>
-                              QR
+                              style={styles.deviceInfoSingleLine}
+                              numberOfLines={1}
+                              ellipsizeMode="middle"
+                              adjustsFontSizeToFit={true}
+                              minimumFontScale={0.8}>
+                              {deviceName}@{shortenNpub(localNpub, 8, 6)}
                             </Text>
-                          </TouchableOpacity>
+                          </View>
+                          <View style={styles.buttonRow}>
+                            <TouchableOpacity
+                              style={[
+                                styles.buttonCompact,
+                                styles.buttonSecondary,
+                              ]}
+                              onPress={copyConnectionDetails}
+                              activeOpacity={0.8}>
+                              <Image
+                                source={require('../assets/copy-icon.png')}
+                                style={styles.iconImageCompact}
+                                resizeMode="contain"
+                              />
+                              <Text
+                                style={[
+                                  styles.buttonTextCompact,
+                                  styles.buttonTextSecondary,
+                                ]}>
+                                Copy
+                              </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[
+                                styles.buttonCompact,
+                                styles.buttonSecondary,
+                              ]}
+                              onPress={showQRModal}
+                              activeOpacity={0.8}>
+                              <Image
+                                source={require('../assets/qrc-icon.png')}
+                                style={styles.iconImageCompact}
+                                resizeMode="contain"
+                              />
+                              <Text
+                                style={[
+                                  styles.buttonTextCompact,
+                                  styles.buttonTextSecondary,
+                                ]}>
+                                QR
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
                         </View>
                       </View>
-                    </View>
-                  )}
+                    )}
 
                   {/* Peer Connection 1 - Hide when Final Step is shown or in send mode */}
                   {!showFinalStep && !isSendBitcoin && (
@@ -4620,9 +4630,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                             </View>
                             <View style={styles.checkboxTextContainer}>
                               <Text style={styles.enhancedCheckboxLabel}>
-                                {isTrio
-                                  ? 'The other devices are ready'
-                                  : 'The other device is ready'}
+                                All devices are ready
                               </Text>
                             </View>
                           </TouchableOpacity>

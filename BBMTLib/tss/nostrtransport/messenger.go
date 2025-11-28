@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 )
 
 // Messenger publishes encrypted TSS messages over Nostr relays using NIP-44 with rumor/wrap/seal pattern.
@@ -40,7 +41,7 @@ func (m *Messenger) SendMessage(ctx context.Context, from, to, body string) erro
 
 	// Process each chunk: create rumor → seal → wrap → publish
 	for _, chunk := range chunks {
-		// Create chunk message with metadata
+		// Create chunk message with metadata (reused for all retries)
 		chunkMessage := map[string]interface{}{
 			"session_id": m.cfg.SessionID,
 			"chunk":      chunk.Metadata.TagValue(),
@@ -51,29 +52,65 @@ func (m *Messenger) SendMessage(ctx context.Context, from, to, body string) erro
 			return fmt.Errorf("marshal chunk message: %w", err)
 		}
 
-		// Step 1: Create rumor (kind:14) - unsigned event
-		rumor := createRumor(string(chunkJSON), senderNpubHex, to)
+		// Retry loop: create new wrap event for each retry to avoid "Event invalid id" errors
+		retryTicker := time.NewTicker(1 * time.Second)
+		var lastErr error
+		for {
+			// Check if context is cancelled
+			select {
+			case <-ctx.Done():
+				retryTicker.Stop()
+				if lastErr != nil {
+					return fmt.Errorf("publish wrap for chunk %d/%d: %w (context cancelled)", chunk.Metadata.Index+1, chunk.Metadata.Total, lastErr)
+				}
+				return ctx.Err()
+			default:
+			}
 
-		// Step 2: Create seal (kind:13) - encrypt rumor with NIP-44
-		seal, err := createSeal(rumor, m.cfg.LocalNsec, to)
-		if err != nil {
-			return fmt.Errorf("create seal for chunk %d/%d: %w", chunk.Metadata.Index+1, chunk.Metadata.Total, err)
+			// Step 1: Create rumor (kind:14) - unsigned event (recreated each retry)
+			rumor := createRumor(string(chunkJSON), senderNpubHex, to)
+
+			// Step 2: Create seal (kind:13) - encrypt rumor with NIP-44 (recreated each retry)
+			seal, err := createSeal(rumor, m.cfg.LocalNsec, to)
+			if err != nil {
+				retryTicker.Stop()
+				return fmt.Errorf("create seal for chunk %d/%d: %w", chunk.Metadata.Index+1, chunk.Metadata.Total, err)
+			}
+
+			// Step 3: Create wrap (kind:1059) - wrap seal in gift wrap (NEW wrap for each retry)
+			// Include session and chunk tags for filtering (must be added before signing)
+			wrap, err := createWrap(seal, to, m.cfg.SessionID, chunk.Metadata.TagValue())
+			if err != nil {
+				retryTicker.Stop()
+				return fmt.Errorf("create wrap for chunk %d/%d: %w", chunk.Metadata.Index+1, chunk.Metadata.Total, err)
+			}
+
+			fmt.Fprintf(os.Stderr, "BBMTLog: Messenger publishing wrapped chunk %d/%d to %s\n", chunk.Metadata.Index+1, chunk.Metadata.Total, to)
+
+			// Publish the wrap (kind:1059)
+			// PublishWrap returns immediately on first relay success, but continues in background
+			// If all relays fail, it returns an error and we retry
+			err = m.client.PublishWrap(ctx, wrap)
+			if err == nil {
+				// Success! At least one relay succeeded
+				retryTicker.Stop()
+				fmt.Fprintf(os.Stderr, "BBMTLog: Messenger published wrapped chunk %d/%d successfully\n", chunk.Metadata.Index+1, chunk.Metadata.Total)
+				break // Move to next chunk
+			}
+
+			// All relays failed - store error and retry
+			lastErr = err
+			fmt.Fprintf(os.Stderr, "BBMTLog: Messenger failed to publish wrap for chunk %d/%d: %v, retrying in 1 second...\n", chunk.Metadata.Index+1, chunk.Metadata.Total, err)
+
+			// Wait for retry ticker or context cancellation
+			select {
+			case <-ctx.Done():
+				retryTicker.Stop()
+				return fmt.Errorf("publish wrap for chunk %d/%d: %w (context cancelled)", chunk.Metadata.Index+1, chunk.Metadata.Total, lastErr)
+			case <-retryTicker.C:
+				// Continue retry loop (new wrap will be created)
+			}
 		}
-
-		// Step 3: Create wrap (kind:1059) - wrap seal in gift wrap
-		// Include session and chunk tags for filtering (must be added before signing)
-		wrap, err := createWrap(seal, to, m.cfg.SessionID, chunk.Metadata.TagValue())
-		if err != nil {
-			return fmt.Errorf("create wrap for chunk %d/%d: %w", chunk.Metadata.Index+1, chunk.Metadata.Total, err)
-		}
-
-		fmt.Fprintf(os.Stderr, "BBMTLog: Messenger publishing wrapped chunk %d/%d to %s\n", chunk.Metadata.Index+1, chunk.Metadata.Total, to)
-
-		// Publish the wrap (kind:1059)
-		if err := m.client.PublishWrap(ctx, wrap); err != nil {
-			return fmt.Errorf("publish wrap for chunk %d/%d: %w", chunk.Metadata.Index+1, chunk.Metadata.Total, err)
-		}
-		fmt.Fprintf(os.Stderr, "BBMTLog: Messenger published wrapped chunk %d/%d successfully\n", chunk.Metadata.Index+1, chunk.Metadata.Total)
 	}
 
 	return nil

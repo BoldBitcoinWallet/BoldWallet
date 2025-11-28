@@ -154,46 +154,101 @@ func (c *Client) Publish(ctx context.Context, event *Event) error {
 	fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - signed event, PubKey (hex)=%s, tags=%v\n", event.PubKey, event.Tags)
 
 	results := c.pool.PublishMany(ctx, c.urls, *event)
-	var successCount int
-	var failureCount int
-	var allErrors []error
 	totalRelays := len(c.urls)
 
-	for {
-		select {
-		case <-ctx.Done():
-			// Context cancelled - check if we had any successes
-			if successCount > 0 {
-				fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - context cancelled but %d/%d relays succeeded\n", successCount, totalRelays)
-				return nil // At least one succeeded, so consider it a success
-			}
-			return ctx.Err()
-		case res, ok := <-results:
-			if !ok {
-				// All relays have responded
+	// Track results in background goroutine - return immediately on first success
+	successCh := make(chan bool, 1)
+	errorCh := make(chan error, 1)
+
+	go func() {
+		var successCount int
+		var failureCount int
+		var allErrors []error
+
+		for {
+			select {
+			case <-ctx.Done():
+				// Context cancelled - check if we had any successes
 				if successCount > 0 {
-					if failureCount > 0 {
-						fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - %d/%d relays succeeded, %d failed (resilient)\n", successCount, totalRelays, failureCount)
-					} else {
-						fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - all %d relays succeeded\n", totalRelays)
+					fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - context cancelled but %d/%d relays succeeded\n", successCount, totalRelays)
+					select {
+					case successCh <- true:
+					default:
 					}
-					return nil // At least one succeeded
+					return
 				}
-				// All relays failed
-				if len(allErrors) > 0 {
-					fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - all %d relays failed\n", totalRelays)
-					return fmt.Errorf("all relays failed: %w", allErrors[0])
+				select {
+				case errorCh <- ctx.Err():
+				default:
 				}
-				return fmt.Errorf("no relays responded")
+				return
+			case res, ok := <-results:
+				if !ok {
+					// All relays have responded
+					if successCount > 0 {
+						if failureCount > 0 {
+							fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - %d/%d relays succeeded, %d failed (resilient)\n", successCount, totalRelays, failureCount)
+						} else {
+							fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - all %d relays succeeded\n", totalRelays)
+						}
+						// Send success if not already sent
+						select {
+						case successCh <- true:
+						default:
+						}
+					} else {
+						// All relays failed
+						if len(allErrors) > 0 {
+							fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - all %d relays failed\n", totalRelays)
+							select {
+							case errorCh <- fmt.Errorf("all relays failed: %w", allErrors[0]):
+							default:
+							}
+						} else {
+							select {
+							case errorCh <- fmt.Errorf("no relays responded"):
+							default:
+							}
+						}
+					}
+					return
+				}
+				if res.Error != nil {
+					failureCount++
+					allErrors = append(allErrors, res.Error)
+					fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - relay %s error: %v (%d/%d failed)\n", res.Relay, res.Error, failureCount, totalRelays)
+				} else {
+					successCount++
+					fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - relay %s success (%d/%d succeeded)\n", res.Relay, successCount, totalRelays)
+					// Return immediately on first success (non-blocking)
+					if successCount == 1 {
+						select {
+						case successCh <- true:
+							fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - first relay succeeded, returning immediately (other relays continue in background)\n")
+						default:
+						}
+					}
+				}
 			}
-			if res.Error != nil {
-				failureCount++
-				allErrors = append(allErrors, res.Error)
-				fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - relay %s error: %v (%d/%d failed)\n", res.Relay, res.Error, failureCount, totalRelays)
-			} else {
-				successCount++
-				fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - relay %s success (%d/%d succeeded)\n", res.Relay, successCount, totalRelays)
-			}
+		}
+	}()
+
+	// Wait for first success or all failures
+	select {
+	case <-successCh:
+		// At least one relay succeeded - return immediately
+		// Other relays continue publishing in background
+		return nil
+	case err := <-errorCh:
+		// All relays failed
+		return err
+	case <-ctx.Done():
+		// Context cancelled - check if we got any success
+		select {
+		case <-successCh:
+			return nil
+		default:
+			return ctx.Err()
 		}
 	}
 }
@@ -301,43 +356,108 @@ func (c *Client) PublishWrap(ctx context.Context, wrap *Event) error {
 	}
 
 	results := c.pool.PublishMany(ctx, c.urls, *wrap)
-	var successCount int
-	var failureCount int
-	var allErrors []error
 	totalRelays := len(c.urls)
 
-	for {
-		select {
-		case <-ctx.Done():
-			if successCount > 0 {
-				fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - context cancelled but %d/%d relays succeeded\n", successCount, totalRelays)
-				return nil
-			}
-			return ctx.Err()
-		case res, ok := <-results:
-			if !ok {
+	// Track results in background goroutine - return immediately on first success
+	successCh := make(chan bool, 1)
+	errorCh := make(chan error, 1)
+
+	go func() {
+		var successCount int
+		var failureCount int
+		var allErrors []error
+
+		for {
+			select {
+			case <-ctx.Done():
+				// Context cancelled - check if we had any successes
 				if successCount > 0 {
-					if failureCount > 0 {
-						fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - %d/%d relays succeeded, %d failed (resilient)\n", successCount, totalRelays, failureCount)
-					} else {
-						fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - all %d relays succeeded\n", totalRelays)
+					fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - context cancelled but %d/%d relays succeeded\n", successCount, totalRelays)
+					select {
+					case successCh <- true:
+					default:
 					}
-					return nil
+					return
 				}
 				if len(allErrors) > 0 {
-					fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - all %d relays failed\n", totalRelays)
-					return fmt.Errorf("all relays failed: %w", allErrors[0])
+					select {
+					case errorCh <- fmt.Errorf("all relays failed: %w", allErrors[0]):
+					default:
+					}
+				} else {
+					select {
+					case errorCh <- ctx.Err():
+					default:
+					}
 				}
-				return fmt.Errorf("no relays responded")
+				return
+			case res, ok := <-results:
+				if !ok {
+					// All relays have responded
+					if successCount > 0 {
+						if failureCount > 0 {
+							fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - %d/%d relays succeeded, %d failed (resilient)\n", successCount, totalRelays, failureCount)
+						} else {
+							fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - all %d relays succeeded\n", totalRelays)
+						}
+						// Send success if not already sent
+						select {
+						case successCh <- true:
+						default:
+						}
+					} else {
+						// All relays failed
+						if len(allErrors) > 0 {
+							fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - all %d relays failed\n", totalRelays)
+							select {
+							case errorCh <- fmt.Errorf("all relays failed: %w", allErrors[0]):
+							default:
+							}
+						} else {
+							select {
+							case errorCh <- fmt.Errorf("no relays responded"):
+							default:
+							}
+						}
+					}
+					return
+				}
+				if res.Error != nil {
+					failureCount++
+					allErrors = append(allErrors, res.Error)
+					fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - relay %s error: %v (%d/%d failed)\n", res.Relay, res.Error, failureCount, totalRelays)
+				} else {
+					successCount++
+					fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - relay %s success (%d/%d succeeded)\n", res.Relay, successCount, totalRelays)
+					// Return immediately on first success (non-blocking)
+					if successCount == 1 {
+						select {
+						case successCh <- true:
+							fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - first relay succeeded, returning immediately (other relays continue in background)\n")
+						default:
+						}
+					}
+				}
 			}
-			if res.Error != nil {
-				failureCount++
-				allErrors = append(allErrors, res.Error)
-				fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - relay %s error: %v (%d/%d failed)\n", res.Relay, res.Error, failureCount, totalRelays)
-			} else {
-				successCount++
-				fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - relay %s success (%d/%d succeeded)\n", res.Relay, successCount, totalRelays)
-			}
+		}
+	}()
+
+	// Wait for first success or all failures
+	select {
+	case <-successCh:
+		// At least one relay succeeded - return immediately
+		// Other relays continue publishing in background
+		return nil
+	case err := <-errorCh:
+		// All relays failed
+		return err
+	case <-ctx.Done():
+		// Context cancelled - check if we got any success
+		select {
+		case <-successCh:
+			return nil
+		default:
+			return ctx.Err()
 		}
 	}
 }

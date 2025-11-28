@@ -183,11 +183,11 @@ func runNostrKeysign(cfg nostrtransport.Config, keyshare *tss.LocalStateNostr, d
 	}
 	messageBase64 := base64.StdEncoding.EncodeToString(messageHashBytes)
 
-	// Use keyshare's keygen committee keys for keysign committee (they should match)
-	keysignCommitteeKeys := strings.Join(keyshare.KeygenCommitteeKeys, ",")
-	if keysignCommitteeKeys == "" {
-		// Fallback to allParties if keygen_committee_keys is empty
-		keysignCommitteeKeys = strings.Join(allParties, ",")
+	// Use the requested parties (allParties) for keysign so we can run subsets
+	keysignCommitteeKeys := strings.Join(allParties, ",")
+	if strings.TrimSpace(keysignCommitteeKeys) == "" {
+		// Fallback to keyshare metadata if caller didn't specify parties
+		keysignCommitteeKeys = strings.Join(keyshare.KeygenCommitteeKeys, ",")
 	}
 
 	// Perform keysign
