@@ -196,7 +196,9 @@ func GetDERSignature(r, s *big.Int) ([]byte, error) {
 func hexToBytes(s string) []byte {
 	b, err := hex.DecodeString(s)
 	if err != nil {
-		panic("invalid hex in source file: " + s)
+		Logf("ERROR: invalid hex: %s, error: %v", s, err)
+		// Return empty bytes instead of panicking to prevent app crashes
+		return []byte{}
 	}
 	return b
 }
