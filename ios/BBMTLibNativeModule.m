@@ -197,8 +197,8 @@ RCT_EXTERN_METHOD(nostrJoinKeysign:(NSString *)relaysCSV
 RCT_EXTERN_METHOD(nostrMpcSendBTC:(NSString *)relaysCSV
                   partyNsec:(NSString *)partyNsec
                   partiesNpubsCSV:(NSString *)partiesNpubsCSV
-                  sessionID:(NSString *)sessionID
-                  sessionKey:(NSString *)sessionKey
+                  npubsSorted:(NSString *)npubsSorted
+                  balanceSats:(NSString *)balanceSats
                   keyshareJSON:(NSString *)keyshareJSON
                   derivePath:(NSString *)derivePath
                   publicKey:(NSString *)publicKey

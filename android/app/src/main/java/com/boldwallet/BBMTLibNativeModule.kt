@@ -222,14 +222,13 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             }
         }.start()
     }
-
     @ReactMethod
     fun nostrMpcSendBTC(
         relaysCSV: String,
         partyNsec: String,
         partiesNpubsCSV: String,
-        sessionID: String,
-        sessionKey: String,
+        npubsSorted: String,
+        balanceSats: String,
         keyshareJSON: String,
         derivePath: String,
         publicKey: String,
@@ -245,8 +244,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     relaysCSV,
                     partyNsec,
                     partiesNpubsCSV,
-                    sessionID,
-                    sessionKey,
+                    npubsSorted,
+                    balanceSats,
                     keyshareJSON,
                     derivePath,
                     publicKey,

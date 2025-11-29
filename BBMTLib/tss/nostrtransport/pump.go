@@ -67,12 +67,16 @@ func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) error
 	// Convert local npub to hex for the "p" tag filter (since we publish with hex format)
 	localNpubHexForFilter := localNpubHex
 
+	// Query for events from the last 2 minutes to catch messages published before subscription
+	// This ensures we don't miss messages sent just before we started listening
+	sinceTime := nostr.Timestamp(time.Now().Add(-1 * time.Minute).Unix())
 	filter := Filter{
 		Tags: nostr.TagMap{
 			"t": []string{p.cfg.SessionID},
 			"p": []string{localNpubHexForFilter}, // Use hex format to match what we publish
 		},
 		Kinds: []int{1059}, // NIP-59 gift wrap kind
+		Since: &sinceTime,  // Query retroactive messages from last 2 minutes
 		// Note: We can't filter by author for gift wraps since they're signed with random keys
 		// We'll verify the sender after unwrapping
 	}

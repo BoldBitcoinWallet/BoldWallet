@@ -398,8 +398,23 @@ FOUNDATION_EXPORT NSString* _Nonnull TssNostrKeypair(NSError* _Nullable* _Nullab
 /**
  * NostrMpcSendBTC performs a Nostr-based MPC Bitcoin transaction.
 This function is analogous to MpcSendBTC but uses Nostr transport for keysign operations.
+It internally performs pre-agreement to establish sessionID and unified fees.
+Parameters:
+  - npubsSorted: Comma-separated sorted list of all party npubs (for sessionFlag calculation)
+  - balanceSats: Balance in satoshis (for sessionFlag calculation)
+  - amountSatoshi: Transaction amount in satoshis (for sessionFlag calculation)
  */
-FOUNDATION_EXPORT NSString* _Nonnull TssNostrMpcSendBTC(NSString* _Nullable relaysCSV, NSString* _Nullable partyNsec, NSString* _Nullable partiesNpubsCSV, NSString* _Nullable sessionID, NSString* _Nullable sessionKey, NSString* _Nullable keyshareJSON, NSString* _Nullable derivePath, NSString* _Nullable publicKey, NSString* _Nullable senderAddress, NSString* _Nullable receiverAddress, int64_t amountSatoshi, int64_t estimatedFee, NSError* _Nullable* _Nullable error);
+FOUNDATION_EXPORT NSString* _Nonnull TssNostrMpcSendBTC(NSString* _Nullable relaysCSV, NSString* _Nullable partyNsec, NSString* _Nullable partiesNpubsCSV, NSString* _Nullable npubsSorted, NSString* _Nullable balanceSats, NSString* _Nullable keyshareJSON, NSString* _Nullable derivePath, NSString* _Nullable publicKey, NSString* _Nullable senderAddress, NSString* _Nullable receiverAddress, int64_t amountSatoshi, int64_t estimatedFee, NSError* _Nullable* _Nullable error);
+
+/**
+ * NostrPreAgreementSendBTC performs a pre-agreement phase before starting the MPC send BTC.
+This is kept for backward compatibility but is now deprecated - use NostrMpcSendBTC which includes pre-agreement.
+Both parties exchange their peerNonce and satoshiFees, then agree on:
+- fullNonce: sorted join of both peerNonces (like in keygen)
+- averageFees: average of both satoshiFees
+Returns JSON: {"fullNonce": "...", "averageFees": 1234}
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssNostrPreAgreementSendBTC(NSString* _Nullable relaysCSV, NSString* _Nullable partyNsec, NSString* _Nullable partiesNpubsCSV, NSString* _Nullable sessionFlag, int64_t localSatoshiFees, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssPostTx(NSString* _Nullable rawTxHex, NSError* _Nullable* _Nullable error);
 

@@ -516,8 +516,8 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
   }
 
   @objc func nostrMpcSendBTC(
-    _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, sessionID: String,
-    sessionKey: String, keyshareJSON: String, derivePath: String, publicKey: String,
+    _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, npubsSorted: String,
+    balanceSats: String, keyshareJSON: String, derivePath: String, publicKey: String,
     senderAddress: String, receiverAddress: String, amountSatoshi: String, estimatedFee: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
@@ -525,7 +525,7 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
       guard self != nil else { return }
       var error: NSError?
       let output = TssNostrMpcSendBTC(
-        relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, keyshareJSON, derivePath,
+        relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON, derivePath,
         publicKey, senderAddress, receiverAddress, Int64(amountSatoshi) ?? 0,
         Int64(estimatedFee) ?? 0, &error)
       self?.resolve("nostrMpcSendBTC", output, error, resolver)

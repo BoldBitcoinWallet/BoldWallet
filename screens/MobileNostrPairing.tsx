@@ -1687,28 +1687,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         ),
       );
 
-      const sessionIDHash = await BBMTLibNativeModule.sha256(
-        `${npubsSorted},${balanceSats},${satoshiAmount},${rounded},${route.params.spendingHash}`,
-      );
-      setSessionID(sessionIDHash);
-
-      // Generate session key (deterministic, no time dependency)
-      // Format: sha256(npubsSorted,sessionID) - same pattern as keygen
-      const sessionKeyHash = await BBMTLibNativeModule.sha256(
-        `${npubsSorted},${sessionIDHash}`,
-      );
-      setSessionKey(sessionKeyHash);
-
-      dbg('Generated send BTC session params:', {
-        sessionID: sessionIDHash.substring(0, 16) + '...',
-        sessionKey: sessionKeyHash.substring(0, 16) + '...',
-        npubsSorted: npubsSorted.substring(0, 30) + '...',
-        balance: balanceSats,
-        amount: satoshiAmount,
-        fees: satoshiFees,
-        spendingHash: route.params.spendingHash,
-      });
-
       // Prepare relays CSV
       const relaysCSV = relays.join(',');
 
@@ -1732,26 +1710,28 @@ const MobileNostrPairing = ({navigation}: any) => {
       dbg('Starting Nostr send BTC with:', {
         relays: relaysCSV,
         parties: partiesNpubsCSV,
-        sessionID: sessionIDHash.substring(0, 16) + '...',
-        sessionKey: sessionKeyHash.substring(0, 16) + '...',
+        npubsSorted: npubsSorted.substring(0, 30) + '...',
+        balance: balanceSats,
         amount: route.params?.satoshiAmount,
         localNsec: nsecToUse ? nsecToUse.substring(0, 20) + '...' : 'MISSING',
         derivePath: derivePath,
         derivedPublicKey: publicKey.substring(0, 20) + '...',
+        estimatedFees: satoshiFees,
       });
 
       dbg(
-        'Calling nostrMpcSendBTC with nsec:',
+        'Calling nostrMpcSendBTC (pre-agreement handled internally):',
         nsecToUse.substring(0, 20) + '...',
       );
 
-      // Call native module - use local variables, not state
+      // Call native module - pre-agreement is now handled internally in Go
+      // The function will calculate sessionFlag, do pre-agreement, update sessionID and fees
       const txId = await BBMTLibNativeModule.nostrMpcSendBTC(
         relaysCSV,
         nsecToUse,
         partiesNpubsCSV,
-        sessionIDHash,
-        sessionKeyHash,
+        npubsSorted,
+        balanceSats,
         keyshareJSON,
         derivePath,
         publicKey,
