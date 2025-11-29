@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -26,7 +27,17 @@ func (s *ServiceImpl) ApplyData(msg string) error {
 	return nil
 }
 
-func LocalPreParams(ppmFile string, timeoutMinutes int) (bool, error) {
+func LocalPreParams(ppmFile string, timeoutMinutes int) (result bool, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in LocalPreParams: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = false
+		}
+	}()
+
 	Logln("BBMTLog", "ppm generation...")
 
 	if _, err := os.Stat(ppmFile); err != nil {

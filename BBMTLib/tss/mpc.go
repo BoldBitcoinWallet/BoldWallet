@@ -425,7 +425,17 @@ func md5Hash(data string) (string, error) {
 	return hashHex, nil
 }
 
-func AesEncrypt(data, key string) (string, error) {
+func AesEncrypt(data, key string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in AesEncrypt: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	decodedKey, err := hex.DecodeString(key)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode key: %w", err)
@@ -447,7 +457,17 @@ func AesEncrypt(data, key string) (string, error) {
 	return encodedData, nil
 }
 
-func AesDecrypt(encryptedData, key string) (string, error) {
+func AesDecrypt(encryptedData, key string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in AesDecrypt: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	// Decode the key from hex
 	decodedKey, err := hex.DecodeString(key)
 	if err != nil {

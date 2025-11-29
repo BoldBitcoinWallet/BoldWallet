@@ -94,7 +94,17 @@ func FetchUTXOs(address string) ([]UTXO, error) {
 	return utxos, nil
 }
 
-func TotalUTXO(address string) (string, error) {
+func TotalUTXO(address string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in TotalUTXO: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	utxos, err := FetchUTXOs(address)
 	if err != nil {
 		return "", err
@@ -258,7 +268,17 @@ func mpcHook(info, session, utxo_session string, utxo_current, utxo_total int, d
 	Hook(hookData)
 }
 
-func SpendingHash(senderAddress, receiverAddress string, amountSatoshi int64) (string, error) {
+func SpendingHash(senderAddress, receiverAddress string, amountSatoshi int64) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in SpendingHash: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	Logln("BBMTLog", "invoking SpendingHash...")
 
 	// Fetch UTXOs (same as EstimateFees)
@@ -300,7 +320,17 @@ func SpendingHash(senderAddress, receiverAddress string, amountSatoshi int64) (s
 	return hashHex, nil
 }
 
-func EstimateFees(senderAddress, receiverAddress string, amountSatoshi int64) (string, error) {
+func EstimateFees(senderAddress, receiverAddress string, amountSatoshi int64) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in EstimateFees: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	Logln("BBMTLog", "invoking SendBitcoin...")
 
 	utxos, err := FetchUTXOs(senderAddress)
@@ -1166,7 +1196,17 @@ func calculateFees(senderAddress string, utxos []UTXO, satoshiAmount int64, rece
 	return estimatedFee, nil
 }
 
-func SecP256k1Recover(r, s, v, h string) (string, error) {
+func SecP256k1Recover(r, s, v, h string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in SecP256k1Recover: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	// Decode r, s into bytes
 	rBytes := hexToBytes(r)
 	sBytes := hexToBytes(s)
@@ -1194,7 +1234,17 @@ func SecP256k1Recover(r, s, v, h string) (string, error) {
 	return hex.EncodeToString(pubKey.SerializeCompressed()), nil
 }
 
-func PubToP2KH(pubKeyCompressed, mainnetORtestnet3 string) (string, error) {
+func PubToP2KH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in PubToP2KH: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	// Decode the hex string to bytes
 	pubKeyBytes, err := hex.DecodeString(pubKeyCompressed)
 	if err != nil {
@@ -1223,7 +1273,17 @@ func PubToP2KH(pubKeyCompressed, mainnetORtestnet3 string) (string, error) {
 	return address.EncodeAddress(), nil
 }
 
-func PubToP2WPKH(pubKeyCompressed, mainnetORtestnet3 string) (string, error) {
+func PubToP2WPKH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in PubToP2WPKH: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	// Decode hex-encoded compressed public key
 	pubKeyBytes, err := hex.DecodeString(pubKeyCompressed)
 	if err != nil {
@@ -1254,7 +1314,17 @@ func PubToP2WPKH(pubKeyCompressed, mainnetORtestnet3 string) (string, error) {
 	return address.EncodeAddress(), nil
 }
 
-func PubToP2SHP2WKH(pubKeyCompressed, mainnetORtestnet3 string) (string, error) {
+func PubToP2SHP2WKH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in PubToP2SHP2WKH: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	// Decode hex-encoded compressed public key
 	pubKeyBytes, err := hex.DecodeString(pubKeyCompressed)
 	if err != nil {
@@ -1295,7 +1365,17 @@ func PubToP2SHP2WKH(pubKeyCompressed, mainnetORtestnet3 string) (string, error) 
 	return wrappedAddr.EncodeAddress(), nil
 }
 
-func PubToP2TR(pubKeyCompressedHex, mainnetORtestnet3 string) (string, error) {
+func PubToP2TR(pubKeyCompressedHex, mainnetORtestnet3 string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in PubToP2TR: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	// Decode the compressed public key
 	pubKeyBytes, err := hex.DecodeString(pubKeyCompressedHex)
 	if err != nil {

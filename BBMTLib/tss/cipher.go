@@ -4,11 +4,22 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"runtime/debug"
 
 	eciesgo "github.com/ecies/go/v2"
 )
 
-func GenerateKeyPair() (string, error) {
+func GenerateKeyPair() (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in GenerateKeyPair: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	privKey, err := eciesgo.GenerateKey()
 	if err != nil {
 		return "", err

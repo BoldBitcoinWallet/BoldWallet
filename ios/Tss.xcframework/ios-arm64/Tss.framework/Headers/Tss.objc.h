@@ -351,7 +351,7 @@ FOUNDATION_EXPORT NSString* _Nonnull TssJoinKeysign(NSString* _Nullable server, 
 
 FOUNDATION_EXPORT NSString* _Nonnull TssListenForPeers(NSString* _Nullable id_, NSString* _Nullable pubkey, NSString* _Nullable port, NSString* _Nullable timeout, NSString* _Nullable mode, NSError* _Nullable* _Nullable error);
 
-FOUNDATION_EXPORT BOOL TssLocalPreParams(NSString* _Nullable ppmFile, long timeoutMinutes, BOOL* _Nullable ret0_, NSError* _Nullable* _Nullable error);
+FOUNDATION_EXPORT BOOL TssLocalPreParams(NSString* _Nullable ppmFile, long timeoutMinutes, BOOL* _Nullable result, NSError* _Nullable* _Nullable error);
 
 // skipped function Logf with unsupported parameter or return types
 
