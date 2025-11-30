@@ -27,10 +27,13 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 const {BBMTLibNativeModule} = NativeModules;
 import DeviceInfo from 'react-native-device-info';
 import {useUser} from '../context/UserContext';
+import { useNavigation } from '@react-navigation/native';
 
 // Predefined API endpoints
 const MAINNET_APIS = ['https://mempool.space/api'];
 const TESTNET_APIS = ['https://mempool.space/testnet/api'];
+
+const { IconChanger } = NativeModules;  // This is fine here, as it's not a Hook
 
 import {
   dbg,
@@ -54,6 +57,8 @@ interface CollapsibleSectionProps {
   styles: any;
   theme: any;
 }
+
+const navigation = useNavigation();
 
 const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   title,
@@ -667,6 +672,8 @@ const getSectionIcon = (title: string): any => {
       return require('../assets/storage-icon.png');
     case 'nostr relays':
       return require('../assets/nostr-icon.png');
+    case 'app icon':
+      return require('../assets/icon.png');
     default:
       return require('../assets/advanced-icon.png');
   }
@@ -675,7 +682,7 @@ const getSectionIcon = (title: string): any => {
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   // Use UserContext for reactive network and API state
   const {setActiveNetwork, setActiveApiProvider} = useUser();
-
+  const [selectedIcon, setSelectedIcon] = useState<'default' | 'alternative' | 'loading'>('loading');
   const [deleteInput, setDeleteInput] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -716,6 +723,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     about: false,
     legal: false,
     storage: false,
+    appIcon: false,
+    devicePairing: false,
   });
 
   const {theme} = useTheme();
@@ -818,6 +827,25 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     LocalCache.usageSize().then(size => {
       setUsageSize(size);
     });
+  }, []);
+
+    // Load saved icon preference on component mount
+  useEffect(() => {
+    const loadIconPreference = async () => {
+      try {
+        const savedIcon = await EncryptedStorage.getItem('app_icon_preference');
+        if (savedIcon && (savedIcon === 'default' || savedIcon === 'alternative')) {
+          setSelectedIcon(savedIcon);
+        } else {
+          setSelectedIcon('default');
+        }
+      } catch (error) {
+        console.warn('Error loading icon preference:', error);
+        setSelectedIcon('default');
+      }
+    };
+
+    loadIconPreference();
   }, []);
 
   useEffect(() => {
@@ -2349,6 +2377,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </TouchableOpacity>
         </CollapsibleSection>
+
         {/* Haptics Section */}
         <CollapsibleSection
           title="Haptics"
@@ -2368,6 +2397,98 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             <Text style={styles.toggleLabel}>Haptics On</Text>
           </View>
         </CollapsibleSection>
+
+        {/* App Icon Section - Android Only */}
+        {Platform.OS === 'android' && (
+          <CollapsibleSection
+            title="App Icon"
+            isExpanded={expandedSections.appIcon}
+            onToggle={() => toggleSection('appIcon')}
+            styles={styles}
+            theme={theme}
+          >
+            <Text style={styles.toggleDescription}>
+              Change the app's launcher icon on your device.
+            </Text>
+            <TouchableOpacity
+              style={[styles.button, { marginBottom: 10, backgroundColor: theme.colors.secondary }]}
+              onPress={async () => {
+                try {
+                  if (IconChanger && IconChanger.getComponentStates) {
+                    const componentStates = await IconChanger.getComponentStates();
+                    Alert.alert(
+                      'Component States',
+                      componentStates,
+                      [{ text: 'OK' }]
+                    );
+                  } else {
+                    Alert.alert('Error', 'IconChanger module not available');
+                  }
+                } catch (error) {
+                  Alert.alert('Error', `Failed to get component states: ${error}`);
+                }
+              }}
+            >
+              <Text style={[styles.buttonText, { color: theme.colors.text }]}>Check Component States</Text>
+            </TouchableOpacity>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>BoldWallet</Text>
+              <Switch
+                trackColor={{ true: theme.colors.primary, false: theme.colors.secondary }}
+                thumbColor={theme.colors.accent}
+                onValueChange={async (value) => {
+                  try {
+                    HapticFeedback.light();
+                    const newIcon = value ? 'alternative' : 'default';
+
+                    // Check if IconChanger module is available
+                    if (!IconChanger || !IconChanger.changeIcon) {
+                      Alert.alert(
+                        'Error',
+                        'Icon switching is not available on this device.',
+                        [{ text: 'OK' }]
+                      );
+                      return;
+                    }
+
+                    // Update UI state
+                    setSelectedIcon(newIcon);
+
+                    // Save preference
+                    await EncryptedStorage.setItem('app_icon_preference', newIcon);
+
+                    // Change the icon
+                    await IconChanger.changeIcon(newIcon);
+
+                    // Show success message
+                    const iconName = newIcon === 'alternative' ? 'Calculator' : 'BoldWallet';
+                    Alert.alert(
+                      'Icon Changed',
+                      `App icon switched to ${iconName}.\n\nYou may need to refresh your launcher to see the change.`,
+                      [{ text: 'OK' }]
+                    );
+
+                  } catch (error: any) {
+                    console.error('Error changing icon:', error);
+
+                    // Revert UI state on error
+                    setSelectedIcon(value ? 'default' : 'alternative');
+
+                    Alert.alert(
+                      'Error',
+                      error?.message || 'Failed to change app icon. Please try again.',
+                      [{ text: 'OK' }]
+                    );
+                  }
+                }}
+                value={selectedIcon === 'alternative'}
+                disabled={selectedIcon === 'loading'}
+              />
+              <Text style={styles.toggleLabel}>Calculator</Text>
+            </View>
+          </CollapsibleSection>
+        )}
+
         {/* Legal Section */}
         <CollapsibleSection
           title="Legal"
