@@ -27,7 +27,6 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 const {BBMTLibNativeModule} = NativeModules;
 import DeviceInfo from 'react-native-device-info';
 import {useUser} from '../context/UserContext';
-import { useNavigation } from '@react-navigation/native';
 
 // Predefined API endpoints
 const MAINNET_APIS = ['https://mempool.space/api'];
@@ -57,8 +56,6 @@ interface CollapsibleSectionProps {
   styles: any;
   theme: any;
 }
-
-const navigation = useNavigation();
 
 const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   title,

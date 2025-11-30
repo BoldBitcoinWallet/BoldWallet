@@ -15,7 +15,8 @@ public class IconChangerModule extends ReactContextBaseJavaModule {
     private static final String PREFS_NAME = "IconChangerPrefs";
     private static final String CURRENT_ICON_KEY = "current_icon";
 
-    // Activity alias component names
+    // Activity component names
+    private static final String MAIN_ACTIVITY = "com.boldwallet.MainActivity";
     private static final String DEFAULT_ICON_ACTIVITY = "com.boldwallet.DefaultIconActivity";
     private static final String ALTERNATIVE_ICON_ACTIVITY = "com.boldwallet.AlternativeIconActivity";
 
@@ -63,11 +64,16 @@ public class IconChangerModule extends ReactContextBaseJavaModule {
             IconState targetState = IconState.fromString(iconName);
             Log.d(TAG, "Target icon state: " + targetState);
 
-            // Enable the target activity alias and disable the other
+            // Enable the target activity alias and disable the others
+            // We disable MainActivity's launcher intent and use activity-aliases instead
             if (targetState == IconState.ALTERNATIVE) {
-                enableComponent(pm, packageName, ALTERNATIVE_ICON_ACTIVITY);
+                // Switch to calculator icon
+                disableComponent(pm, packageName, MAIN_ACTIVITY);
                 disableComponent(pm, packageName, DEFAULT_ICON_ACTIVITY);
+                enableComponent(pm, packageName, ALTERNATIVE_ICON_ACTIVITY);
             } else {
+                // Switch to default icon
+                disableComponent(pm, packageName, MAIN_ACTIVITY);
                 enableComponent(pm, packageName, DEFAULT_ICON_ACTIVITY);
                 disableComponent(pm, packageName, ALTERNATIVE_ICON_ACTIVITY);
             }
@@ -142,10 +148,12 @@ public class IconChangerModule extends ReactContextBaseJavaModule {
             String packageName = getReactApplicationContext().getPackageName();
             PackageManager pm = getReactApplicationContext().getPackageManager();
 
+            int mainState = pm.getComponentEnabledSetting(new ComponentName(packageName, MAIN_ACTIVITY));
             int defaultState = pm.getComponentEnabledSetting(new ComponentName(packageName, DEFAULT_ICON_ACTIVITY));
             int altState = pm.getComponentEnabledSetting(new ComponentName(packageName, ALTERNATIVE_ICON_ACTIVITY));
 
-            String result = "DefaultIconActivity: " + getStateString(defaultState) +
+            String result = "MainActivity: " + getStateString(mainState) +
+                          ", DefaultIconActivity: " + getStateString(defaultState) +
                           ", AlternativeIconActivity: " + getStateString(altState);
             Log.d(TAG, "Component states: " + result);
             promise.resolve(result);
