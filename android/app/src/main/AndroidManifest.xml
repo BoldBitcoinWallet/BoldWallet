@@ -21,10 +21,35 @@
             android:windowSoftInputMode="adjustResize"
             android:screenOrientation="portrait"
             android:exported="true">
+        </activity>
+
+                <!-- Default BoldWallet Icon Activity Alias -->
+        <activity-alias
+            android:name=".DefaultIconActivity"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:enabled="true"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+
+
+        <!-- Calculator Icon Activity Alias -->
+        <activity-alias
+            android:name=".AlternativeIconActivity"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_calc"
+            android:roundIcon="@mipmap/ic_launcher_calc_round"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
     </application>
 </manifest>
