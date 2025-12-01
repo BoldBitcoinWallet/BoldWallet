@@ -47,7 +47,7 @@
         <activity-alias
             android:name=".AlternativeIconActivity"
             android:targetActivity=".MainActivity"
-            android:label="Calculator"
+            android:label="QuickCalc"
             android:icon="@mipmap/ic_launcher_calc"
             android:roundIcon="@mipmap/ic_launcher_calc_round"
             android:enabled="false"

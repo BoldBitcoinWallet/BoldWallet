@@ -670,7 +670,7 @@ const getSectionIcon = (title: string): any => {
     case 'nostr relays':
       return require('../assets/nostr-icon.png');
     case 'app icon':
-      return require('../assets/icon.png');
+      return require('../assets/spy-icon.png');
     default:
       return require('../assets/advanced-icon.png');
   }
@@ -1267,6 +1267,29 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       fontSize: 13,
       color: theme.colors.textSecondary,
       marginBottom: 12,
+    },
+    appIconHintRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    appIconSpyIcon: {
+      width: 28,
+      height: 28,
+      marginRight: 10,
+    },
+    appIconHintTextContainer: {
+      flex: 1,
+    },
+    appIconHintTitle: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.colors.text,
+      marginBottom: 2,
+    },
+    appIconHintSubtitle: {
+      fontSize: 12,
+      color: theme.colors.textSecondary,
+      lineHeight: 16,
     },
     inputAPI: {
       borderWidth: 1,
@@ -2007,6 +2030,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     networkStatusText: {
       fontSize: 12,
     },
+    appIconCheckStatesButton: {
+      marginBottom: 10,
+      backgroundColor: theme.colors.secondary,
+    },
   });
 
   return (
@@ -2402,32 +2429,21 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             isExpanded={expandedSections.appIcon}
             onToggle={() => toggleSection('appIcon')}
             styles={styles}
-            theme={theme}
-          >
+            theme={theme}>
+            <View style={styles.appIconHintRow}>
+              <View style={styles.appIconHintTextContainer}>
+                <Text style={styles.appIconHintTitle}>
+                  Blend in when you need to.
+                </Text>
+                <Text style={styles.appIconHintSubtitle}>
+                  Switch to the calculator icon when you want your wallet to look
+                  like just another app on your home screen.
+                </Text>
+              </View>
+            </View>
             <Text style={styles.toggleDescription}>
               Change the app's launcher icon on your device.
             </Text>
-            <TouchableOpacity
-              style={[styles.button, { marginBottom: 10, backgroundColor: theme.colors.secondary }]}
-              onPress={async () => {
-                try {
-                  if (IconChanger && IconChanger.getComponentStates) {
-                    const componentStates = await IconChanger.getComponentStates();
-                    Alert.alert(
-                      'Component States',
-                      componentStates,
-                      [{ text: 'OK' }]
-                    );
-                  } else {
-                    Alert.alert('Error', 'IconChanger module not available');
-                  }
-                } catch (error) {
-                  Alert.alert('Error', `Failed to get component states: ${error}`);
-                }
-              }}
-            >
-              <Text style={[styles.buttonText, { color: theme.colors.text }]}>Check Component States</Text>
-            </TouchableOpacity>
             <View style={styles.toggleContainer}>
               <Text style={styles.toggleLabel}>BoldWallet</Text>
               <Switch
@@ -2458,7 +2474,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     await IconChanger.changeIcon(newIcon);
 
                     // Show success message
-                    const iconName = newIcon === 'alternative' ? 'Calculator' : 'BoldWallet';
+                    const iconName = newIcon === 'alternative' ? 'QuickCalc' : 'Bold Wallet';
                     Alert.alert(
                       'Icon Changed',
                       `App icon switched to ${iconName}.\n\nYou may need to refresh your launcher to see the change.`,
