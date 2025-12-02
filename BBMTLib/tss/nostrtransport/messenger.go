@@ -68,7 +68,7 @@ func (m *Messenger) SendMessage(ctx context.Context, from, to, body string) erro
 			}
 
 			// Step 1: Create rumor (kind:14) - unsigned event (recreated each retry)
-			rumor := createRumor(string(chunkJSON), senderNpubHex, to)
+			rumor := createRumor(string(chunkJSON), senderNpubHex)
 
 			// Step 2: Create seal (kind:13) - encrypt rumor with NIP-44 (recreated each retry)
 			seal, err := createSeal(rumor, m.cfg.LocalNsec, to)
