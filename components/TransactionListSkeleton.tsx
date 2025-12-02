@@ -137,7 +137,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
     paddingTop: 0,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#ffffff',
   },
   transactionItem: {
     padding: 16,

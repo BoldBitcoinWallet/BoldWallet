@@ -2445,7 +2445,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               Change the app's launcher icon on your device.
             </Text>
             <View style={styles.toggleContainer}>
-              <Text style={styles.toggleLabel}>BoldWallet</Text>
+              <Text style={styles.toggleLabel}>Bold Wallet</Text>
               <Switch
                 trackColor={{ true: theme.colors.primary, false: theme.colors.secondary }}
                 thumbColor={theme.colors.accent}
@@ -2497,7 +2497,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 value={selectedIcon === 'alternative'}
                 disabled={selectedIcon === 'loading'}
               />
-              <Text style={styles.toggleLabel}>Calculator</Text>
+              <Text style={styles.toggleLabel}>QuickCalc</Text>
             </View>
           </CollapsibleSection>
         )}

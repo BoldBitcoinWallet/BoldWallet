@@ -2,6 +2,7 @@ package nostrtransport
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -10,11 +11,6 @@ import (
 
 	nostr "github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip19"
-)
-
-const (
-	eventKindReady    = 30301
-	eventKindComplete = 30302
 )
 
 // SessionCoordinator orchestrates the ready/complete phases using Nostr events.
@@ -106,22 +102,30 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) error {
 
 	seen := sync.Map{}
 
-	// Query for events from the last 1 minute to catch events published before subscription
-	sinceTime := nostr.Timestamp(time.Now().Add(-1 * time.Minute).Unix())
-	filter := nostr.Filter{
-		Kinds:   []int{eventKindReady},
-		Authors: authorsHex, // Use hex pubkeys, not Bech32 npubs
-		Tags: nostr.TagMap{
-			"t": []string{s.cfg.SessionID},
-		},
-		Since: &sinceTime,
+	// Convert local npub to hex for the "p" tag filter (gift wraps are addressed to us)
+	localNpubHex, err := npubToHex(s.cfg.LocalNpub)
+	if err != nil {
+		return fmt.Errorf("convert local npub to hex: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "BBMTLog: AwaitPeers - SessionID: %s, LocalNpub: %s, Expected peers (npub): %v, Authors (hex): %v\n", s.cfg.SessionID, s.cfg.LocalNpub, s.cfg.PeersNpub, authorsHex)
+	// Query for gift wrap events (kind:1059) from the last 1 minute to catch events published before subscription
+	sinceTime := nostr.Timestamp(time.Now().Add(-1 * time.Minute).Unix())
+	filter := nostr.Filter{
+		Kinds: []int{1059}, // NIP-59 gift wrap kind
+		Tags: nostr.TagMap{
+			"t": []string{s.cfg.SessionID},
+			"p": []string{localNpubHex}, // Recipient tag (we're the recipient)
+		},
+		Since: &sinceTime,
+		// Note: We can't filter by author for gift wraps since they're signed with random keys
+		// We'll verify the sender after unwrapping
+	}
+
+	fmt.Fprintf(os.Stderr, "BBMTLog: AwaitPeers - SessionID: %s, LocalNpub: %s (hex: %s), Expected peers (npub): %v\n", s.cfg.SessionID, s.cfg.LocalNpub, localNpubHex, s.cfg.PeersNpub)
 
 	// First, query for existing events BEFORE starting subscription
 	// This ensures we catch events that were published before we started listening
-	fmt.Fprintf(os.Stderr, "BBMTLog: Querying for existing ready events for session %s (from last 1 minute)\n", s.cfg.SessionID)
+	fmt.Fprintf(os.Stderr, "BBMTLog: Querying for existing ready wraps for session %s (from last 1 minute)\n", s.cfg.SessionID)
 	queryCtx, queryCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer queryCancel()
 
@@ -137,20 +141,52 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) error {
 			}
 			existingEvents, err := relay.QuerySync(queryCtx, filter)
 			if err == nil {
-				fmt.Fprintf(os.Stderr, "BBMTLog: Query on relay %s returned %d events for session %s\n", url, len(existingEvents), s.cfg.SessionID)
-				if len(existingEvents) == 0 {
-					fmt.Fprintf(os.Stderr, "BBMTLog: No events found on relay %s - filter: kind=%d, authors=%v, tag t=%s\n", url, eventKindReady, authorsHex, s.cfg.SessionID)
-				}
-				for _, evt := range existingEvents {
-					if evt != nil && evt.PubKey != "" {
-						// Event.PubKey is hex, convert to npub for matching
-						evtPubKeyHex := evt.PubKey
-						evtNpub, exists := expectedHex[evtPubKeyHex]
-						if !exists {
-							evtNpub = evtPubKeyHex
+				fmt.Fprintf(os.Stderr, "BBMTLog: Query on relay %s returned %d wrap events for session %s\n", url, len(existingEvents), s.cfg.SessionID)
+				for _, wrapEvent := range existingEvents {
+					if wrapEvent == nil || wrapEvent.Kind != 1059 {
+						continue
+					}
+					// Unwrap and unseal to get sender
+					seal, err := unwrapGift(wrapEvent, s.cfg.LocalNsec)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "BBMTLog: Failed to unwrap gift from query: %v\n", err)
+						continue
+					}
+					// Verify seal is from an expected peer
+					sealSenderHex := seal.PubKey
+					sealSenderNpub := ""
+					for hex, npub := range expectedHex {
+						if hex == sealSenderHex {
+							sealSenderNpub = npub
+							break
 						}
-						fmt.Fprintf(os.Stderr, "BBMTLog: Found existing ready event from %s (hex: %s)\n", evtNpub, evtPubKeyHex)
-						seen.Store(evtNpub, true)
+					}
+					if sealSenderNpub == "" {
+						fmt.Fprintf(os.Stderr, "BBMTLog: Seal from unexpected sender (hex: %s)\n", sealSenderHex)
+						continue
+					}
+					// Unseal to verify it's a ready message
+					sealSenderNpubBech32 := sealSenderNpub
+					for _, npub := range s.cfg.PeersNpub {
+						npubHex, err := npubToHex(npub)
+						if err == nil && npubHex == sealSenderHex {
+							sealSenderNpubBech32 = npub
+							break
+						}
+					}
+					rumor, err := unseal(seal, s.cfg.LocalNsec, sealSenderNpubBech32)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "BBMTLog: Failed to unseal from query: %v\n", err)
+						continue
+					}
+					// Parse rumor content to verify it's a ready message
+					var readyMsg map[string]interface{}
+					if err := json.Unmarshal([]byte(rumor.Content), &readyMsg); err != nil {
+						continue
+					}
+					if phase, ok := readyMsg["phase"].(string); ok && phase == "ready" {
+						fmt.Fprintf(os.Stderr, "BBMTLog: Found existing ready wrap from %s (hex: %s)\n", sealSenderNpub, sealSenderHex)
+						seen.Store(sealSenderNpub, true)
 					}
 				}
 			} else {
@@ -169,10 +205,10 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) error {
 	}
 
 	// Now start subscription to catch new events
-	fmt.Fprintf(os.Stderr, "BBMTLog: Starting subscription for ready events for session %s\n", s.cfg.SessionID)
+	fmt.Fprintf(os.Stderr, "BBMTLog: Starting subscription for ready wraps for session %s\n", s.cfg.SessionID)
 	eventsCh, err := s.client.Subscribe(ctx, filter)
 	if err != nil {
-		return fmt.Errorf("subscribe to ready events: %w", err)
+		return fmt.Errorf("subscribe to ready wraps: %w", err)
 	}
 
 	ticker := time.NewTicker(5 * time.Second)
@@ -188,21 +224,55 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) error {
 			if !ok {
 				return fmt.Errorf("relay subscription closed")
 			}
-			if evt == nil {
+			if evt == nil || evt.Kind != 1059 {
 				continue
 			}
-			// Event.PubKey is hex, convert to npub for matching
-			evtPubKeyHex := evt.PubKey
-			evtNpub, exists := expectedHex[evtPubKeyHex]
-			if !exists {
-				// Try to match directly if it's already Bech32 (shouldn't happen but be safe)
-				evtNpub = evtPubKeyHex
+			// Unwrap the gift wrap to get the seal
+			seal, err := unwrapGift(evt, s.cfg.LocalNsec)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "BBMTLog: Failed to unwrap gift: %v\n", err)
+				continue
 			}
-			fmt.Fprintf(os.Stderr, "BBMTLog: Received ready event from %s (hex: %s)\n", evtNpub, evtPubKeyHex)
-			seen.Store(evtNpub, true)
-			if s.allPeersSeen(&seen, expected) {
-				fmt.Fprintf(os.Stderr, "BBMTLog: All peers ready!\n")
-				return nil
+			// Verify seal is from an expected peer
+			sealSenderHex := seal.PubKey
+			sealSenderNpub := ""
+			for hex, npub := range expectedHex {
+				if hex == sealSenderHex {
+					sealSenderNpub = npub
+					break
+				}
+			}
+			if sealSenderNpub == "" {
+				fmt.Fprintf(os.Stderr, "BBMTLog: Seal from unexpected sender (hex: %s)\n", sealSenderHex)
+				continue
+			}
+			// Unseal to get the rumor
+			sealSenderNpubBech32 := sealSenderNpub
+			for _, npub := range s.cfg.PeersNpub {
+				npubHex, err := npubToHex(npub)
+				if err == nil && npubHex == sealSenderHex {
+					sealSenderNpubBech32 = npub
+					break
+				}
+			}
+			rumor, err := unseal(seal, s.cfg.LocalNsec, sealSenderNpubBech32)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "BBMTLog: Failed to unseal: %v\n", err)
+				continue
+			}
+			// Parse rumor content to verify it's a ready message
+			var readyMsg map[string]interface{}
+			if err := json.Unmarshal([]byte(rumor.Content), &readyMsg); err != nil {
+				fmt.Fprintf(os.Stderr, "BBMTLog: Failed to parse ready message: %v\n", err)
+				continue
+			}
+			if phase, ok := readyMsg["phase"].(string); ok && phase == "ready" {
+				fmt.Fprintf(os.Stderr, "BBMTLog: Received ready wrap from %s (hex: %s)\n", sealSenderNpub, sealSenderHex)
+				seen.Store(sealSenderNpub, true)
+				if s.allPeersSeen(&seen, expected) {
+					fmt.Fprintf(os.Stderr, "BBMTLog: All peers ready!\n")
+					return nil
+				}
 			}
 		case <-ticker.C:
 			if s.allPeersSeen(&seen, expected) {
@@ -233,22 +303,53 @@ func (s *SessionCoordinator) allPeersSeen(seen *sync.Map, expected map[string]st
 }
 
 func (s *SessionCoordinator) PublishReady(ctx context.Context) error {
-	event := &nostr.Event{
-		Kind:      eventKindReady,
-		CreatedAt: nostr.Now(),
-		Tags: nostr.Tags{
-			nostr.Tag{"t", s.cfg.SessionID},
-			nostr.Tag{"phase", "ready"},
-		},
-		Content: "ready",
-	}
-	fmt.Fprintf(os.Stderr, "BBMTLog: Publishing ready event for session %s, npub %s, expecting peers: %v\n", s.cfg.SessionID, s.cfg.LocalNpub, s.cfg.PeersNpub)
-	err := s.client.Publish(ctx, event)
+	// Convert sender npub to hex for rumor
+	senderNpubHex, err := npubToHex(s.cfg.LocalNpub)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "BBMTLog: Error publishing ready event: %v\n", err)
-		return err
+		return fmt.Errorf("convert sender npub: %w", err)
 	}
-	fmt.Fprintf(os.Stderr, "BBMTLog: Ready event published successfully with tag t=%s\n", s.cfg.SessionID)
+
+	// Create ready message content
+	readyMessage := map[string]interface{}{
+		"session_id": s.cfg.SessionID,
+		"phase":      "ready",
+		"content":    "ready",
+	}
+	readyJSON, err := json.Marshal(readyMessage)
+	if err != nil {
+		return fmt.Errorf("marshal ready message: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "BBMTLog: Publishing ready event for session %s, npub %s, expecting peers: %v\n", s.cfg.SessionID, s.cfg.LocalNpub, s.cfg.PeersNpub)
+
+	// Publish encrypted wrap to each peer using rumor/wrap/seal pattern
+	for _, peerNpub := range s.cfg.PeersNpub {
+		// Step 1: Create rumor (kind:14) - unsigned event
+		rumor := createRumor(string(readyJSON), senderNpubHex, peerNpub)
+
+		// Step 2: Create seal (kind:13) - encrypt rumor with NIP-44
+		seal, err := createSeal(rumor, s.cfg.LocalNsec, peerNpub)
+		if err != nil {
+			return fmt.Errorf("create seal for peer %s: %w", peerNpub, err)
+		}
+
+		// Step 3: Create wrap (kind:1059) - wrap seal in gift wrap
+		// Include session tag for filtering (must be added before signing)
+		wrap, err := createWrap(seal, peerNpub, s.cfg.SessionID, "")
+		if err != nil {
+			return fmt.Errorf("create wrap for peer %s: %w", peerNpub, err)
+		}
+
+		fmt.Fprintf(os.Stderr, "BBMTLog: Publishing ready wrap to peer %s\n", peerNpub)
+
+		// Publish the wrap (kind:1059)
+		err = s.client.PublishWrap(ctx, wrap)
+		if err != nil {
+			return fmt.Errorf("publish ready wrap to peer %s: %w", peerNpub, err)
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "BBMTLog: Ready event published successfully to all peers with tag t=%s\n", s.cfg.SessionID)
 
 	// Small delay to ensure event propagates to relays before peers start looking
 	time.Sleep(500 * time.Millisecond)
@@ -257,14 +358,53 @@ func (s *SessionCoordinator) PublishReady(ctx context.Context) error {
 }
 
 func (s *SessionCoordinator) PublishComplete(ctx context.Context, phase string) error {
-	event := &nostr.Event{
-		Kind:      eventKindComplete,
-		CreatedAt: nostr.Now(),
-		Tags: nostr.Tags{
-			nostr.Tag{"t", s.cfg.SessionID},
-			nostr.Tag{"phase", phase},
-		},
-		Content: "complete",
+	// Convert sender npub to hex for rumor
+	senderNpubHex, err := npubToHex(s.cfg.LocalNpub)
+	if err != nil {
+		return fmt.Errorf("convert sender npub: %w", err)
 	}
-	return s.client.Publish(ctx, event)
+
+	// Create complete message content
+	completeMessage := map[string]interface{}{
+		"session_id": s.cfg.SessionID,
+		"phase":      phase,
+		"content":    "complete",
+	}
+	completeJSON, err := json.Marshal(completeMessage)
+	if err != nil {
+		return fmt.Errorf("marshal complete message: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "BBMTLog: Publishing complete event for session %s, phase %s, npub %s, expecting peers: %v\n", s.cfg.SessionID, phase, s.cfg.LocalNpub, s.cfg.PeersNpub)
+
+	// Publish encrypted wrap to each peer using rumor/wrap/seal pattern
+	for _, peerNpub := range s.cfg.PeersNpub {
+		// Step 1: Create rumor (kind:14) - unsigned event
+		rumor := createRumor(string(completeJSON), senderNpubHex, peerNpub)
+
+		// Step 2: Create seal (kind:13) - encrypt rumor with NIP-44
+		seal, err := createSeal(rumor, s.cfg.LocalNsec, peerNpub)
+		if err != nil {
+			return fmt.Errorf("create complete seal for peer %s: %w", peerNpub, err)
+		}
+
+		// Step 3: Create wrap (kind:1059) - wrap seal in gift wrap
+		// Include session tag for filtering (must be added before signing)
+		wrap, err := createWrap(seal, peerNpub, s.cfg.SessionID, "")
+		if err != nil {
+			return fmt.Errorf("create complete wrap for peer %s: %w", peerNpub, err)
+		}
+
+		fmt.Fprintf(os.Stderr, "BBMTLog: Publishing complete wrap (phase=%s) to peer %s\n", phase, peerNpub)
+
+		// Publish the wrap (kind:1059)
+		err = s.client.PublishWrap(ctx, wrap)
+		if err != nil {
+			return fmt.Errorf("publish complete wrap to peer %s: %w", peerNpub, err)
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "BBMTLog: Complete event (phase=%s) published successfully to all peers with tag t=%s\n", phase, s.cfg.SessionID)
+
+	return nil
 }

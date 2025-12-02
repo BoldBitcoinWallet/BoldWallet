@@ -29,7 +29,7 @@ import * as Progress from 'react-native-progress';
 import {CommonActions, RouteProp, useRoute} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Big from 'big.js';
-import {dbg, HapticFeedback, getNostrRelays} from '../utils';
+import {dbg, HapticFeedback, getNostrRelays, getKeyshareLabel} from '../utils';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import LocalCache from '../services/LocalCache';
@@ -229,13 +229,14 @@ const MobileNostrPairing = ({navigation}: any) => {
     }>
   >([]);
 
-  // QR Scanner
+  // QR Scanner / QR Share
   const [isQRScannerVisible, setIsQRScannerVisible] = useState(false);
   const [scanningForPeer, setScanningForPeer] = useState<1 | 2>(1);
   const scanningForPeerRef = useRef<1 | 2>(1);
   const [isQRModalVisible, setIsQRModalVisible] = useState(false);
   const [showRelayConfig, setShowRelayConfig] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
+  const connectionQrRef = useRef<any>(null);
 
   // Only use camera hooks on iOS - Android uses BarcodeZxingScan
   let device: any = null;
@@ -1919,8 +1920,10 @@ const MobileNostrPairing = ({navigation}: any) => {
         const year = now.getFullYear();
         const hours = now.getHours().toString().padStart(2, '0');
         const minutes = now.getMinutes().toString().padStart(2, '0');
-        const share = json.local_party_key || json.nostr_npub || 'keyshare';
-        const friendlyFilename = `${share}.${month}${day}.${year}.${hours}${minutes}.share`;
+        // Use keyshare label (KeyShare1/2/3) or fallback to local_party_key
+        const keyshareLabel = getKeyshareLabel(json);
+        const shareName = keyshareLabel || json.local_party_key || 'keyshare';
+        const friendlyFilename = `${shareName}.${month}${day}.${year}.${hours}${minutes}.share`;
 
         const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
         const filePath = `${tempDir}/${friendlyFilename}`;
@@ -1960,23 +1963,54 @@ const MobileNostrPairing = ({navigation}: any) => {
   };
 
   const shareConnectionDetails = async () => {
+    HapticFeedback.medium();
+
+    if (!connectionDetails) {
+      Alert.alert('Error', 'Connection details are not ready yet');
+      return;
+    }
+
+    if (!connectionQrRef.current) {
+      Alert.alert('Error', 'QR Code is not ready yet');
+      return;
+    }
+
     try {
-      HapticFeedback.medium();
-      const result = await Share.open({
-        message: connectionDetails,
-        title: 'Share Connection Details',
+      // Generate base64 from QR component (similar to WalletHome ReceiveModal)
+      const base64Data: string = await new Promise((resolve, reject) => {
+        connectionQrRef.current.toDataURL((data: string) => {
+          if (data) {
+            resolve(data);
+          } else {
+            reject(new Error('No base64 data returned from QR code'));
+          }
+        });
       });
-      dbg('Share result:', result);
-      // Close modal if share was successful
-      if (result) {
-        setIsQRModalVisible(false);
+
+      const filePath = `${RNFS.TemporaryDirectoryPath}/boldwallet-connection-details.jpg`;
+      const fileExists = await RNFS.exists(filePath);
+      if (fileExists) {
+        await RNFS.unlink(filePath);
       }
-    } catch (error: any) {
-      dbg('Error sharing connection details:', error);
-      // Fallback to clipboard if share fails
-      Clipboard.setString(connectionDetails);
-      Alert.alert('Copied', 'Connection details copied to clipboard');
+
+      await RNFS.writeFile(filePath, base64Data, 'base64');
+
+      await Share.open({
+        title: 'Bold Wallet Connection Details',
+        message: connectionDetails,
+        url: `file://${filePath}`,
+        subject: 'Bold Wallet Connection Details',
+        isNewTask: true,
+        failOnCancel: false,
+      });
+
+      // Best-effort cleanup
+      await RNFS.unlink(filePath).catch(() => {});
+
       setIsQRModalVisible(false);
+    } catch (error: any) {
+      dbg('Error sharing connection details (QR + text):', error);
+      Alert.alert('Error', 'Failed to share connection QR code');
     }
   };
 
@@ -5304,7 +5338,13 @@ const MobileNostrPairing = ({navigation}: any) => {
             </View>
             <View style={styles.qrModalBody}>
               <View style={styles.qrContainer}>
-                <QRCode value={connectionDetails} size={250} />
+                <QRCode
+                  value={connectionDetails}
+                  size={250}
+                  getRef={ref => {
+                    connectionQrRef.current = ref;
+                  }}
+                />
               </View>
               <Text style={styles.connectionDetailsText}>
                 {shortenNpub(connectionDetails)}

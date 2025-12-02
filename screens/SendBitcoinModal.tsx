@@ -92,7 +92,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   const [estimatedFee, setEstimatedFee] = useState<Big | null>(null);
   const [isCalculatingFee, setIsCalculatingFee] = useState(false);
   const [spendingHash, setSpendingHash] = useState<string>('');
-  const [activeInput, setActiveInput] = useState<'btc' | 'usd' | null>(null);
+  const [_activeInput, setActiveInput] = useState<'btc' | 'usd' | null>(null);
   const [feeStrategy, setFeeStrategy] = useState('1hr');
 
   const {theme} = useTheme();
@@ -241,6 +241,16 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       fontWeight: '600',
       marginBottom: 8,
       color: '#7f8c8d',
+    },
+    inputError: {
+      borderColor: theme.colors.danger || '#DC3545',
+    },
+    errorText: {
+      fontSize: 12,
+      color: theme.colors.danger || '#DC3545',
+      marginTop: -8,
+      marginBottom: 8,
+      marginLeft: 4,
     },
     feeContainer: {
       marginTop: 15,
@@ -511,8 +521,12 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   }, []);
 
   useEffect(() => {
-    if (address && btcAmount) {
+    // Only trigger fee estimation if we have a valid address and non-zero amount
+    if (address && btcAmount && btcAmount.gt(0) && validateBitcoinAddress(address)) {
       debouncedGetFee(address, btcAmount.toString());
+    } else {
+      // Clear fee if conditions aren't met
+      setEstimatedFee(null);
     }
   }, [address, btcAmount, debouncedGetFee, feeStrategy]);
 
@@ -552,9 +566,8 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     try {
       const btc = Big(text || 0);
       setBtcAmount(btc);
-      if (activeInput === 'btc') {
-        setInUsdAmount(btc.mul(btcToFiatRate).toFixed(2));
-      }
+      // Always update USD amount when BTC changes (no need to check activeInput)
+      setInUsdAmount(btc.mul(btcToFiatRate).toFixed(2));
     } catch {
       dbg('Invalid BTC input:', text);
     }
@@ -565,10 +578,10 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     setInUsdAmount(text);
     try {
       const usd = Big(text || 0);
-      if (activeInput === 'usd') {
-        setBtcAmount(usd.div(btcToFiatRate));
-        setInBtcAmount(usd.div(btcToFiatRate).toFixed(8));
-      }
+      const calculatedBtc = usd.div(btcToFiatRate);
+      // Always update BTC amount when USD changes (no need to check activeInput)
+      setBtcAmount(calculatedBtc);
+      setInBtcAmount(calculatedBtc.toFixed(8));
     } catch {
       dbg('Invalid USD input:', text);
     }
@@ -609,6 +622,9 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     HapticFeedback.heavy();
     onSend(address, Big(inBtcAmount).times(1e8), estimatedFee, spendingHash);
   };
+
+  // Check if amount exceeds balance
+  const amountExceedsBalance = btcAmount.gt(0) && btcAmount.gt(walletBalance);
 
   const renderFeeSection = () => {
     if (!address || !btcAmount) {
@@ -749,13 +765,21 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     </TouchableOpacity>
                   </View>
                   <TextInput
-                    style={styles.input}
+                    style={[
+                      styles.input,
+                      amountExceedsBalance && styles.inputError,
+                    ]}
                     placeholder="Enter BTC amount"
                     value={inBtcAmount}
                     onChangeText={handleBtcChange}
                     onFocus={() => setActiveInput('btc')}
                     keyboardType="decimal-pad"
                   />
+                  {amountExceedsBalance && (
+                    <Text style={styles.errorText}>
+                      Amount exceeds wallet balance ({walletBalance.toFixed(8)} BTC)
+                    </Text>
+                  )}
                 </View>
 
                 <View style={styles.inputContainer}>
