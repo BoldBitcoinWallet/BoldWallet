@@ -334,6 +334,7 @@ func (s *ServiceImpl) processKeygen(localParty tss.Party,
 				}
 				localState.PubKey = pubKey
 				localState.ECDSALocalData = *saveData
+				localState.CreatedAt = time.Now().UnixMilli()
 				if err := s.saveLocalStateData(localState); err != nil {
 					return "", fmt.Errorf("failed to save local state data, error: %w", err)
 				}

@@ -39,7 +39,9 @@ func NewClient(cfg Config) (*Client, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	pool := nostr.NewSimplePool(ctx)
-	urls := make([]string, 0, len(cfg.Relays))
+
+	// Validate and collect relay URLs
+	validRelays := make([]string, 0, len(cfg.Relays))
 	for _, relayURL := range cfg.Relays {
 		relayURL = strings.TrimSpace(relayURL)
 		if relayURL == "" {
@@ -49,23 +51,151 @@ func NewClient(cfg Config) (*Client, error) {
 			cancel()
 			return nil, fmt.Errorf("invalid relay url: %s", relayURL)
 		}
-		if _, err := pool.EnsureRelay(relayURL); err != nil {
-			cancel()
-			return nil, fmt.Errorf("ensure relay %s: %w", relayURL, err)
-		}
-		urls = append(urls, relayURL)
+		validRelays = append(validRelays, relayURL)
 	}
-	if len(urls) == 0 {
+	if len(validRelays) == 0 {
 		cancel()
 		return nil, errors.New("no valid relays configured")
 	}
-	return &Client{
-		cfg:    cfg,
-		pool:   pool,
-		urls:   urls,
-		ctx:    ctx,
-		cancel: cancel,
-	}, nil
+
+	// Try to connect to relays with resilience:
+	// - If at least one connects, proceed immediately
+	// - If all fail, retry after 1 second indefinitely
+	// - Keep trying other relays in background after first success
+	connectedURLs := make([]string, 0)
+	connectedSet := make(map[string]bool)
+	connectedCh := make(chan string, len(validRelays))
+
+	// Function to try connecting to a single relay
+	tryConnect := func(relayURL string) {
+		relay, err := pool.EnsureRelay(relayURL)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "BBMTLog: Failed to connect to relay %s: %v\n", relayURL, err)
+			return
+		}
+		// Connection successful
+		fmt.Fprintf(os.Stderr, "BBMTLog: Successfully connected to relay %s\n", relayURL)
+		connectedCh <- relayURL
+		_ = relay // Keep reference to prevent GC
+	}
+
+	// Helper function to start background retries for remaining relays
+	startBackgroundRetries := func() {
+		remainingRelays := make([]string, 0)
+		for _, url := range validRelays {
+			if !connectedSet[url] {
+				remainingRelays = append(remainingRelays, url)
+			}
+		}
+		for _, url := range remainingRelays {
+			go func(relayURL string) {
+				for {
+					relay, err := pool.EnsureRelay(relayURL)
+					if err == nil {
+						fmt.Fprintf(os.Stderr, "BBMTLog: Background connection to relay %s succeeded\n", relayURL)
+						_ = relay
+						return
+					}
+					// Wait 1 second before retry
+					time.Sleep(1 * time.Second)
+					// Check if context is cancelled
+					select {
+					case <-ctx.Done():
+						return
+					default:
+					}
+				}
+			}(url)
+		}
+	}
+
+	// Helper function to return client with connected relays
+	returnClient := func() (*Client, error) {
+		return &Client{
+			cfg:    cfg,
+			pool:   pool,
+			urls:   connectedURLs,
+			ctx:    ctx,
+			cancel: cancel,
+		}, nil
+	}
+
+	// Retry loop: try all relays, wait for at least one success
+	attemptCount := 0
+	for {
+		attemptCount++
+		if attemptCount > 1 {
+			fmt.Fprintf(os.Stderr, "BBMTLog: Retrying relay connections (attempt %d)...\n", attemptCount)
+		}
+
+		// Count how many relays we need to try
+		remainingCount := 0
+		for _, relayURL := range validRelays {
+			if !connectedSet[relayURL] {
+				remainingCount++
+			}
+		}
+
+		if remainingCount == 0 {
+			// All relays already connected
+			startBackgroundRetries()
+			return returnClient()
+		}
+
+		// Try connecting to all remaining relays in parallel
+		for _, relayURL := range validRelays {
+			if !connectedSet[relayURL] {
+				go tryConnect(relayURL)
+			}
+		}
+
+		// Wait for at least one connection or timeout
+		timeout := time.NewTimer(5 * time.Second)
+		initialCount := len(connectedURLs)
+		shouldRetry := false
+
+		for {
+			select {
+			case relayURL := <-connectedCh:
+				if !connectedSet[relayURL] {
+					connectedSet[relayURL] = true
+					connectedURLs = append(connectedURLs, relayURL)
+					fmt.Fprintf(os.Stderr, "BBMTLog: Relay %s connected (%d/%d total)\n", relayURL, len(connectedURLs), len(validRelays))
+
+					// If we have at least one connection, proceed but keep trying others in background
+					if len(connectedURLs) > initialCount {
+						timeout.Stop()
+						if len(connectedURLs) == 1 {
+							fmt.Fprintf(os.Stderr, "BBMTLog: First relay connected, proceeding (other relays will continue connecting in background)\n")
+						} else {
+							fmt.Fprintf(os.Stderr, "BBMTLog: %d relay(s) connected, proceeding (other relays will continue connecting in background)\n", len(connectedURLs))
+						}
+						startBackgroundRetries()
+						return returnClient()
+					}
+				}
+
+			case <-timeout.C:
+				// Timeout reached - check if we have any new connections
+				if len(connectedURLs) > initialCount {
+					// We have at least one new connection, proceed
+					fmt.Fprintf(os.Stderr, "BBMTLog: Timeout reached but %d relay(s) connected, proceeding\n", len(connectedURLs))
+					startBackgroundRetries()
+					return returnClient()
+				}
+
+				// No connections yet, wait 1 second and retry
+				fmt.Fprintf(os.Stderr, "BBMTLog: No relays connected yet (attempt %d), retrying in 1 second...\n", attemptCount)
+				time.Sleep(1 * time.Second)
+				shouldRetry = true
+				break
+			}
+
+			if shouldRetry {
+				break
+			}
+		}
+	}
 }
 
 // Close tears down relay connections.

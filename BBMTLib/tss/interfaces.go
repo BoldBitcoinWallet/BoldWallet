@@ -39,6 +39,7 @@ type LocalState struct {
 	KeygenCommitteeKeys []string                       `json:"keygen_committee_keys"`
 	LocalPartyKey       string                         `json:"local_party_key"`
 	ChainCodeHex        string                         `json:"chain_code_hex"`
+	CreatedAt           int64                          `json:"created_at"`
 }
 
 type KeygenRequest struct {

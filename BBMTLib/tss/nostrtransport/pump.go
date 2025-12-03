@@ -205,6 +205,12 @@ func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) error
 					continue
 				}
 
+				// Check if this is a ready/complete message (handled by SessionCoordinator, not MessagePump)
+				if _, ok := chunkMessage["phase"].(string); ok {
+					// This is a ready/complete message, skip it (handled by SessionCoordinator)
+					continue
+				}
+
 				// Extract chunk metadata
 				chunkTagValue, ok := chunkMessage["chunk"].(string)
 				if !ok {
