@@ -41,14 +41,23 @@ jobs:
 
       - name: Tidy dependencies
         run: go mod tidy
-        continue-on-error: true
 
       - name: Check for uncommitted changes after go mod tidy
         id: check-tidy
         run: |
           if [ -n "$(git status --porcelain)" ]; then
             echo "modified=true" >> $GITHUB_OUTPUT
-            echo "❌ go.mod or go.sum has uncommitted changes after 'go mod tidy'"
+            echo "⚠️  go.mod or go.sum has uncommitted changes after 'go mod tidy'"
+            echo "This usually means some dependencies need to be cleaned up."
+            echo ""
+            echo "To fix:"
+            echo "  1. Run 'go mod tidy' locally in the BBMTLib directory"
+            echo "  2. Commit the changes to go.mod and go.sum"
+            echo ""
+            echo "Changes detected:"
+            git diff --stat
+            echo ""
+            echo "Full diff:"
             git diff
             exit 1
           else
@@ -153,6 +162,10 @@ jobs:
           # Make scripts executable
           chmod +x scripts/*.sh
           
+          # Track test results
+          KEYGEN_RESULT=0
+          KEYSIGN_RESULT=0
+          
           # Run keygen test
           echo "Starting keygen test..."
           if ./scripts/nostr-keygen.sh; then
@@ -160,16 +173,36 @@ jobs:
           else
             echo "⚠ Keygen integration test failed (may be due to relay connectivity)"
             echo "This is a non-blocking test - check logs for details"
-            exit 1
+            KEYGEN_RESULT=1
           fi
           
           # Run keysign test (requires keygen output)
+          # Note: keysign will fail if keygen failed, but we still want to attempt it
           echo "Starting keysign test..."
           if ./scripts/nostr-keysign.sh; then
             echo "✓ Keysign integration test passed"
           else
-            echo "⚠ Keysign integration test failed (may be due to relay connectivity)"
+            echo "⚠ Keysign integration test failed (may be due to relay connectivity or missing keygen output)"
             echo "This is a non-blocking test - check logs for details"
+            KEYSIGN_RESULT=1
+          fi
+          
+          # Report final status
+          echo ""
+          echo "=== Integration Test Summary ==="
+          if [ $KEYGEN_RESULT -eq 0 ]; then
+            echo "Keygen: ✓ PASSED"
+          else
+            echo "Keygen: ✗ FAILED"
+          fi
+          if [ $KEYSIGN_RESULT -eq 0 ]; then
+            echo "Keysign: ✓ PASSED"
+          else
+            echo "Keysign: ✗ FAILED"
+          fi
+          
+          # Exit with error if any test failed (but continue-on-error will prevent job failure)
+          if [ $KEYGEN_RESULT -ne 0 ] || [ $KEYSIGN_RESULT -ne 0 ]; then
             exit 1
           fi
         continue-on-error: true
