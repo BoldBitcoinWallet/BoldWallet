@@ -677,7 +677,7 @@ const MobilesPairing = ({navigation}: any) => {
           navigation.dispatch(
             CommonActions.reset({
               index: 0,
-              routes: [{name: 'Home'}],
+              routes: [{name: 'Home', params: {txId}}],
             }),
           );
           setMpcDone(true);

@@ -137,6 +137,7 @@
 
 @property (nonatomic) NSString* _Nonnull localPartyKey;
 @property (nonatomic) NSString* _Nonnull chainCodeHex;
+@property (nonatomic) int64_t createdAt;
 @end
 
 @interface TssLocalStateAccessorImp : NSObject <goSeqRefInterface, TssLocalStateAccessor> {

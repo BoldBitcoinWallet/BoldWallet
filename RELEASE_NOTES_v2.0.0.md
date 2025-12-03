@@ -80,13 +80,13 @@ New intuitive interface to choose between:
 - Enhanced native module bindings
 
 ## 📊 Statistics
-- **37 commits** from main branch
-- **133 files changed**
-- **117,417 insertions**, **2,119 deletions**
+- **40 commits** from main branch
+- **134 files changed**
+- **305,519 insertions**, **2,126 deletions**
 - Major new files:
-  - `screens/MobileNostrPairing.tsx` (5,572 lines)
+  - `screens/MobileNostrPairing.tsx` (5,566 lines)
   - `BBMTLib/tss/mpc_nostr.go` (1,782 lines)
-  - `BBMTLib/tss/nostrtransport/` (multiple new modules)
+  - `BBMTLib/tss/nostrtransport/` (1,884 lines across multiple modules)
 
 ## 🔗 Related Commits
 - `nostr-support` - Initial Nostr integration

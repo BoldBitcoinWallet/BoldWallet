@@ -140,6 +140,7 @@ const MobileNostrPairing = ({navigation}: any) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
   const isSendBitcoin = route.params?.mode === 'send_btc';
   const setupMode = route.params?.mode;
+  const addressType = route.params?.addressType;
   // In send mode, determine isTrio from keyshare (3 devices = trio, 2 devices = duo)
   // In keygen mode, use setupMode
   const [isTrio, setIsTrio] = useState<boolean>(setupMode === 'trio');
@@ -1708,6 +1709,14 @@ const MobileNostrPairing = ({navigation}: any) => {
         publicKey.substring(0, 20) + '...',
       );
 
+      // Generate BTC address using addressType (same as MobilesPairing.tsx)
+      const net = (await LocalCache.getItem('network')) || 'mainnet';
+      const btcAddress = await BBMTLibNativeModule.btcAddress(
+        publicKey,
+        net,
+        addressType,
+      );
+
       dbg('Starting Nostr send BTC with:', {
         relays: relaysCSV,
         parties: partiesNpubsCSV,
@@ -1717,6 +1726,8 @@ const MobileNostrPairing = ({navigation}: any) => {
         localNsec: nsecToUse ? nsecToUse.substring(0, 20) + '...' : 'MISSING',
         derivePath: derivePath,
         derivedPublicKey: publicKey.substring(0, 20) + '...',
+        btcAddress: btcAddress,
+        addressType: addressType,
         estimatedFees: satoshiFees,
       });
 
@@ -1727,6 +1738,7 @@ const MobileNostrPairing = ({navigation}: any) => {
 
       // Call native module - pre-agreement is now handled internally in Go
       // The function will calculate sessionFlag, do pre-agreement, update sessionID and fees
+      // Use btcAddress generated from addressType (same as MobilesPairing.tsx)
       const txId = await BBMTLibNativeModule.nostrMpcSendBTC(
         relaysCSV,
         nsecToUse,
@@ -1736,7 +1748,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         keyshareJSON,
         derivePath,
         publicKey,
-        activeAddress,
+        btcAddress,
         route.params.toAddress || '',
         route.params.satoshiAmount || '0',
         route.params.satoshiFees || '0',
@@ -1774,7 +1786,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       navigation.dispatch(
         CommonActions.reset({
           index: 0,
-          routes: [{name: 'Home'}],
+          routes: [{name: 'Home', params: {txId}}],
         }),
       );
 
@@ -3542,7 +3554,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                         </Text>
                         <Text style={styles.sectionSubtitle}>
                           {isSendBitcoin
-                            ? 'Select one device to co-sign with (2 devices total)'
+                            ? 'Select one device to co-sign'
                             : 'Connect with other devices to create wallet'}
                         </Text>
                       </View>
@@ -5278,24 +5290,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                 </View>
               </View>
             </>
-          )}
-
-          {/* Success Message for Send BTC */}
-          {mpcDone && isSendBitcoin && (
-            <View style={styles.section}>
-              <View style={styles.card}>
-                <View style={styles.statusIndicator}>
-                  <Image
-                    source={require('../assets/success-icon.png')}
-                    style={styles.statusCheck}
-                    resizeMode="contain"
-                  />
-                  <Text style={styles.statusText}>
-                    Transaction sent successfully!
-                  </Text>
-                </View>
-              </View>
-            </View>
           )}
         </ScrollView>
       </KeyboardAvoidingView>
