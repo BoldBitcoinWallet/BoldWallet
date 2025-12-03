@@ -154,8 +154,15 @@ start_local_relay() {
         
         # Additional wait to ensure WebSocket support is fully initialized
         # This is especially important in CI environments
-        echo "  Waiting additional 5 seconds for WebSocket support to fully initialize..."
-        sleep 5
+        # nostr-rs-relay can take 10-20 seconds to fully initialize WebSocket support
+        echo "  Waiting additional 20 seconds for WebSocket support to fully initialize..."
+        echo "  (nostr-rs-relay may need extra time to initialize WebSocket handlers in CI)"
+        for i in {1..20}; do
+            sleep 1
+            if [ $((i % 5)) -eq 0 ]; then
+                echo "    ... ${i}/20 seconds"
+            fi
+        done
         
         # Verify the relay is still running
         if ! docker ps --format '{{.Names}}' | grep -q "^bbmtlib-test-relay$"; then
@@ -167,16 +174,28 @@ start_local_relay() {
             return 1
         fi
         
-        # Final WebSocket connection test
+        # Final WebSocket connection test (non-blocking)
         if [ -f "./scripts/test-websocket-connection.sh" ]; then
             echo "  Performing final WebSocket connection test..."
             # Don't suppress output in CI - we want to see what's happening
+            # This test is informational only - we proceed regardless of result
             if ./scripts/test-websocket-connection.sh "$LOCAL_RELAY_URL" 2>&1; then
                 echo "  ✓ WebSocket connection verified"
             else
                 WS_TEST_EXIT=$?
-                echo "  ⚠ WebSocket test failed (exit code: $WS_TEST_EXIT), but proceeding"
-                echo "  (The relay may still work - this is a best-effort test)"
+                echo "  ⚠ WebSocket test had issues (exit code: $WS_TEST_EXIT)"
+                echo "  Proceeding anyway - the relay may still work for actual clients"
+                echo "  (Connection reset errors are common during relay initialization)"
+            fi
+        fi
+        
+        # Additional verification: check if we can at least connect via TCP
+        echo "  Verifying TCP connectivity to relay..."
+        if command -v nc >/dev/null 2>&1; then
+            if nc -z localhost 7777 2>/dev/null; then
+                echo "  ✓ TCP connection to relay port successful"
+            else
+                echo "  ⚠ TCP connection check failed"
             fi
         fi
         

@@ -112,8 +112,11 @@ while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
     # If all checks pass, relay is ready
     if [ "$CONTAINER_READY" = "true" ] && [ "$PORT_READY" = "true" ] && [ "$LOGS_READY" = "true" ]; then
         # Give it additional time to fully initialize WebSocket support
+        # nostr-rs-relay needs time to initialize its WebSocket handlers
+        # In CI environments, this can take longer
         echo "  Relay basic checks passed, waiting for WebSocket support to initialize..."
-        sleep 3
+        echo "  (This may take 5-10 seconds, especially in CI environments)"
+        sleep 8
         
         # Final verification: try a simple HTTP connection test
         # nostr-rs-relay responds to HTTP on the same port
@@ -145,9 +148,10 @@ while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
                 echo -e "${GREEN}✓ WebSocket connection test passed!${NC}"
             else
                 WS_EXIT=$?
-                echo -e "${YELLOW}⚠ WebSocket test failed (exit code: $WS_EXIT), but relay may still work${NC}"
-                echo "  (This is a best-effort test, the relay may still be initializing)"
-                echo "  Note: If this fails in CI, check that Go is available and the relay is fully ready"
+                echo -e "${YELLOW}⚠ WebSocket test had issues (exit code: $WS_EXIT)${NC}"
+                echo "  'Connection reset by peer' is common during relay initialization"
+                echo "  The relay may still work for actual clients - this is a best-effort test"
+                echo "  Proceeding - if tests fail, the relay may need more initialization time"
             fi
         fi
         
