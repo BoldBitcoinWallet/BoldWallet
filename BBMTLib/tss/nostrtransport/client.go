@@ -20,11 +20,12 @@ type Filter = nostr.Filter
 
 // Client represents a thin wrapper around the go-nostr SimplePool.
 type Client struct {
-	cfg    Config
-	pool   *nostr.SimplePool
-	urls   []string
-	ctx    context.Context
-	cancel context.CancelFunc
+	cfg         Config
+	pool        *nostr.SimplePool
+	urls        []string
+	validRelays []string // All valid relay URLs (for reference)
+	ctx         context.Context
+	cancel      context.CancelFunc
 }
 
 // Expose pool for querying existing events
@@ -112,11 +113,12 @@ func NewClient(cfg Config) (*Client, error) {
 	// Helper function to return client with connected relays
 	returnClient := func() (*Client, error) {
 		return &Client{
-			cfg:    cfg,
-			pool:   pool,
-			urls:   connectedURLs,
-			ctx:    ctx,
-			cancel: cancel,
+			cfg:         cfg,
+			pool:        pool,
+			urls:        connectedURLs,
+			validRelays: validRelays, // Store all valid relays for reference
+			ctx:         ctx,
+			cancel:      cancel,
 		}, nil
 	}
 
@@ -188,7 +190,6 @@ func NewClient(cfg Config) (*Client, error) {
 				fmt.Fprintf(os.Stderr, "BBMTLog: No relays connected yet (attempt %d), retrying in 1 second...\n", attemptCount)
 				time.Sleep(1 * time.Second)
 				shouldRetry = true
-				break
 			}
 
 			if shouldRetry {
@@ -388,11 +389,20 @@ func (c *Client) Subscribe(ctx context.Context, filter Filter) (<-chan *Event, e
 		return nil, errors.New("no relays configured")
 	}
 	events := make(chan *Event)
-	relayCh := c.pool.SubscribeMany(ctx, c.urls, filter)
+
+	// Use all valid relays, not just initially connected ones
+	// The pool will handle connections - if a relay isn't connected yet, it will try to connect
+	// This ensures we subscribe to all relays, including those that connected in background
+	relaysToUse := c.validRelays
+	if len(relaysToUse) == 0 {
+		// Fallback to urls if validRelays not set (backward compatibility)
+		relaysToUse = c.urls
+	}
+	relayCh := c.pool.SubscribeMany(ctx, relaysToUse, filter)
 
 	// Track relay connection status
 	connectedRelays := make(map[string]bool)
-	totalRelays := len(c.urls)
+	totalRelays := len(relaysToUse)
 	var connectionCheckDone bool
 
 	// Start a goroutine to monitor connection status

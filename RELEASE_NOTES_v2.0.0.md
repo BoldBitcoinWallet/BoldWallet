@@ -80,9 +80,9 @@ New intuitive interface to choose between:
 - Enhanced native module bindings
 
 ## 📊 Statistics
-- **34 commits** from main branch
-- **132 files changed**
-- **116,905 insertions**, **2,119 deletions**
+- **37 commits** from main branch
+- **133 files changed**
+- **117,417 insertions**, **2,119 deletions**
 - Major new files:
   - `screens/MobileNostrPairing.tsx` (5,572 lines)
   - `BBMTLib/tss/mpc_nostr.go` (1,782 lines)
