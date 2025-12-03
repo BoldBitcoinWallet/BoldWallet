@@ -98,15 +98,14 @@ echo "Starting Nostr keysign for both parties in parallel..."
 
 # Record start time
 START_TIME=$(date +%s)
-echo "$(pwd)/nostr-keysign-output/party1.log"
 
 # Run both parties in background
-rm "$(pwd)/nostr-keysign-output/party1.log"
-	run_party "$NSEC1" "$NPUB1" "$PARTY1_KEYSHARE" "$PARTY1_OUTPUT" "$PARTY1_LOG" &
+# Remove old log files if they exist (use -f to avoid error if they don't exist)
+rm -f "$PARTY1_LOG" "$PARTY2_LOG"
+run_party "$NSEC1" "$NPUB1" "$PARTY1_KEYSHARE" "$PARTY1_OUTPUT" "$PARTY1_LOG" &
 PID1=$!
 
-rm "$(pwd)/nostr-keysign-output/party2.log"
-	run_party "$NSEC2" "$NPUB2" "$PARTY2_KEYSHARE" "$PARTY2_OUTPUT" "$PARTY2_LOG" &
+run_party "$NSEC2" "$NPUB2" "$PARTY2_KEYSHARE" "$PARTY2_OUTPUT" "$PARTY2_LOG" &
 PID2=$!
 
 # Handle cleanup on exit

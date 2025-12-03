@@ -18,7 +18,9 @@ The testing pipeline ensures that each script in the `scripts/` folder runs corr
 
 ### Local Testing
 
-To run the test suite locally:
+#### Quick Script Tests
+
+To run just the script tests locally:
 
 ```bash
 cd BBMTLib
@@ -30,6 +32,23 @@ The script will:
 - Show colored output (green for pass, red for fail, yellow for skip)
 - Generate test output directories for inspection
 - Provide a summary at the end
+
+#### Full CI Pipeline Test
+
+To test the entire CI pipeline locally (mimics GitHub Actions):
+
+```bash
+cd BBMTLib
+./scripts/test-ci-local.sh
+```
+
+This runs all CI steps including:
+- Go tests and builds
+- Code formatting checks
+- Comprehensive script tests
+- All validation steps
+
+See [README-CI-TESTING.md](README-CI-TESTING.md) for more options including using `act` to run GitHub Actions locally.
 
 ### CI/CD Testing
 
