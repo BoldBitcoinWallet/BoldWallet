@@ -8,9 +8,11 @@ The testing pipeline ensures that each script in the `scripts/` folder runs corr
 
 1. Tests all helper commands in `main.go`
 2. Validates script syntax
-3. Runs each script and verifies outputs
-4. Checks that generated files (keyshares, signatures) are valid JSON with required fields
-5. Verifies that outputs from different parties match when expected
+3. **Automatically starts a local Nostr relay** using Docker (falls back to external relays if Docker is unavailable)
+4. Runs each script and verifies outputs
+5. Checks that generated files (keyshares, signatures) are valid JSON with required fields
+6. Verifies that outputs from different parties match when expected
+7. Automatically stops the local relay when tests complete
 
 ## Running Tests
 
@@ -110,25 +112,78 @@ The test script creates temporary output directories:
 
 These directories are preserved after tests for inspection. Log files are also created for debugging.
 
+## Local Relay for Testing
+
+The test suite automatically starts a local Nostr relay using Docker to avoid dependencies on external relays. This makes tests:
+
+- **Faster**: No network latency
+- **More reliable**: No dependency on external relay availability
+- **Isolated**: Tests don't affect or depend on external services
+
+### How It Works
+
+1. The test script automatically calls `start-local-relay.sh` before running Nostr tests
+2. A Docker container runs [nostr-rs-relay](https://github.com/scsibug/nostr-rs-relay) on `ws://localhost:7777`
+3. All Nostr scripts use this local relay instead of external ones
+4. The relay is automatically stopped when tests complete
+
+### Manual Relay Management
+
+You can also start/stop the relay manually:
+
+```bash
+# Start local relay
+./scripts/start-local-relay.sh
+
+# Stop local relay
+./scripts/stop-local-relay.sh
+```
+
+### Fallback Behavior
+
+If Docker is not available or the relay fails to start, the test script will:
+- Fall back to using external relays (the default production relays)
+- Continue with tests (they may be flaky due to connectivity)
+
 ## Environment Variables
 
 The test script respects the following environment variables:
 
-- `RELAYS`: Comma-separated list of Nostr relay URLs (default: production relays)
+- `RELAYS`: Comma-separated list of Nostr relay URLs (default: local relay `ws://localhost:7777` if available, otherwise production relays)
 - `TIMEOUT`: Timeout in seconds for script execution (default: 30 for tests, 90 for production)
 - `OUTPUT_DIR`: Directory for keygen output (default: `./nostr-keygen-output`)
 - `KEYSIGN_OUTPUT_DIR`: Directory for keysign output (default: `./nostr-keysign-output`)
+- `RELAY_PORT`: Port for local relay (default: `7777`)
 
 ## Troubleshooting
 
 ### Tests Fail Due to Relay Connectivity
 
-If tests fail with timeout or connection errors, this is expected when:
-- External Nostr relays are unreachable
-- Network connectivity is poor
-- Relays are experiencing high load
+With the local relay setup, this should be rare. However, if tests fail:
 
-The test script marks these as "skipped" rather than "failed" to distinguish between actual script errors and connectivity issues.
+1. **Check Docker availability**: Ensure Docker is installed and running
+   ```bash
+   docker --version
+   docker ps
+   ```
+
+2. **Check relay container**: Verify the relay container is running
+   ```bash
+   docker ps | grep bbmtlib-test-relay
+   ```
+
+3. **Check relay logs**: If the relay fails to start, check logs
+   ```bash
+   cat /tmp/relay-start.log
+   docker logs bbmtlib-test-relay
+   ```
+
+4. **Manual relay start**: Try starting the relay manually
+   ```bash
+   ./scripts/start-local-relay.sh
+   ```
+
+If the local relay cannot be started, the test script will automatically fall back to external relays, which may be flaky due to network conditions.
 
 ### Missing Dependencies
 

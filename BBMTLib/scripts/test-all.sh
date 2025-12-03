@@ -127,10 +127,55 @@ validate_signature() {
     return 0
 }
 
+# Local relay management (global state)
+LOCAL_RELAY_STARTED=false
+LOCAL_RELAY_URL=""
+USE_LOCAL_RELAY=false
+
+# Function to start local relay
+start_local_relay() {
+    if [ "$LOCAL_RELAY_STARTED" = "true" ]; then
+        USE_LOCAL_RELAY=true
+        return 0
+    fi
+    
+    echo ""
+    echo "=========================================="
+    echo "Setting up local Nostr relay for testing"
+    echo "=========================================="
+    
+    if ./scripts/start-local-relay.sh > /tmp/relay-start.log 2>&1; then
+        LOCAL_RELAY_STARTED=true
+        USE_LOCAL_RELAY=true
+        LOCAL_RELAY_URL="ws://localhost:7777"
+        echo "✓ Local relay started at $LOCAL_RELAY_URL"
+        # Give relay a moment to fully initialize
+        sleep 2
+        return 0
+    else
+        echo "⚠ Failed to start local relay, falling back to external relays"
+        echo "  Check /tmp/relay-start.log for details"
+        LOCAL_RELAY_STARTED=false
+        USE_LOCAL_RELAY=false
+        return 1
+    fi
+}
+
+# Function to stop local relay
+stop_local_relay() {
+    if [ "$LOCAL_RELAY_STARTED" = "true" ]; then
+        echo ""
+        echo "Stopping local relay..."
+        ./scripts/stop-local-relay.sh >/dev/null 2>&1 || true
+        LOCAL_RELAY_STARTED=false
+    fi
+}
+
 # Cleanup function
 cleanup() {
     echo ""
     echo "Cleaning up test artifacts..."
+    stop_local_relay
     # Keep output directories for inspection, but can remove if needed
     # rm -rf ./test-keygen-output ./test-keysign-output 2>/dev/null || true
 }
@@ -220,7 +265,7 @@ else
 fi
 
 # ============================================
-# Test 4: nostr-keygen.sh (requires external relays)
+# Test 4: nostr-keygen.sh (with local relay)
 # ============================================
 print_test_header "nostr-keygen.sh (2-party)"
 
@@ -233,14 +278,24 @@ else
         print_failure "nostr-keygen.sh: Syntax error"
     fi
     
-    # Try to run with a short timeout (may fail due to relay connectivity)
+    # Start local relay for testing
+    if start_local_relay; then
+        RELAYS_TO_USE="$LOCAL_RELAY_URL"
+        echo "Using local relay: $RELAYS_TO_USE"
+    else
+        RELAYS_TO_USE="${RELAYS:-wss://nostr.hifish.org,wss://nostr.xxi.quest,wss://bbw-nostr.xyz}"
+        echo "Using external relays: $RELAYS_TO_USE"
+        echo "  (Note: Tests may fail due to relay connectivity)"
+    fi
+    
+    # Try to run with a short timeout
     TEST_OUTPUT_DIR="./test-nostr-keygen-output"
     mkdir -p "$TEST_OUTPUT_DIR"
     export OUTPUT_DIR="$TEST_OUTPUT_DIR"
     export TIMEOUT="30"  # Short timeout for testing
-    export RELAYS="${RELAYS:-wss://nostr.hifish.org,wss://nostr.xxi.quest,wss://bbw-nostr.xyz}"
+    export RELAYS="$RELAYS_TO_USE"
     
-    echo "Attempting to run nostr-keygen.sh (may fail due to relay connectivity)..."
+    echo "Attempting to run nostr-keygen.sh..."
     if timeout 60 bash scripts/nostr-keygen.sh > "$TEST_OUTPUT_DIR/test.log" 2>&1; then
         # Check for output files
         if validate_keyshare "$TEST_OUTPUT_DIR/party1-keyshare.json" "party1"; then
@@ -285,14 +340,35 @@ else
     fi
     
     # Check if keygen output exists
-    if [ -f "$TEST_OUTPUT_DIR/party1-keyshare.json" ] && [ -f "$TEST_OUTPUT_DIR/party2-keyshare.json" ]; then
-        export OUTPUT_DIR="$TEST_OUTPUT_DIR"
+    # First check the test output directory, then fall back to the default output directory
+    KEYGEN_OUTPUT_DIR="$TEST_OUTPUT_DIR"
+    if [ ! -f "$KEYGEN_OUTPUT_DIR/party1-keyshare.json" ] || [ ! -f "$KEYGEN_OUTPUT_DIR/party2-keyshare.json" ]; then
+        # Try default output directory (in case keygen was run separately)
+        DEFAULT_KEYGEN_OUTPUT="./nostr-keygen-output"
+        if [ -f "$DEFAULT_KEYGEN_OUTPUT/party1-keyshare.json" ] && [ -f "$DEFAULT_KEYGEN_OUTPUT/party2-keyshare.json" ]; then
+            KEYGEN_OUTPUT_DIR="$DEFAULT_KEYGEN_OUTPUT"
+            echo "  Using keyshare files from default output directory: $KEYGEN_OUTPUT_DIR"
+        fi
+    fi
+    
+    if [ -f "$KEYGEN_OUTPUT_DIR/party1-keyshare.json" ] && [ -f "$KEYGEN_OUTPUT_DIR/party2-keyshare.json" ]; then
+        # Use local relay if available, otherwise fall back to external
+        if [ "$USE_LOCAL_RELAY" = "true" ] && [ -n "$LOCAL_RELAY_URL" ]; then
+            RELAYS_TO_USE="$LOCAL_RELAY_URL"
+            echo "  Using local relay for keysign: $RELAYS_TO_USE"
+        else
+            RELAYS_TO_USE="${RELAYS:-wss://bbw-nostr.xyz}"
+            echo "  Using external relay for keysign: $RELAYS_TO_USE"
+        fi
+        
+        export OUTPUT_DIR="$KEYGEN_OUTPUT_DIR"
         export KEYSIGN_OUTPUT_DIR="./test-nostr-keysign-output"
         export TIMEOUT="30"
-        export RELAYS="${RELAYS:-wss://bbw-nostr.xyz}"
+        export RELAYS="$RELAYS_TO_USE"
         mkdir -p "$KEYSIGN_OUTPUT_DIR"
         
         echo "Attempting to run nostr-keysign.sh..."
+        echo "  Using keyshare files from: $KEYGEN_OUTPUT_DIR"
         if timeout 60 bash scripts/nostr-keysign.sh > "$KEYSIGN_OUTPUT_DIR/test.log" 2>&1; then
             if validate_signature "$KEYSIGN_OUTPUT_DIR/party1-signature.json" "party1"; then
                 if validate_signature "$KEYSIGN_OUTPUT_DIR/party2-signature.json" "party2"; then
@@ -321,6 +397,11 @@ else
         fi
     else
         print_skip "nostr-keysign.sh: Skipped (requires nostr-keygen.sh output)"
+        echo "  Expected keyshare files not found:"
+        echo "    - $KEYGEN_OUTPUT_DIR/party1-keyshare.json"
+        echo "    - $KEYGEN_OUTPUT_DIR/party2-keyshare.json"
+        echo "  This usually means nostr-keygen.sh failed or timed out due to relay connectivity issues."
+        echo "  To test keysign, first ensure nostr-keygen.sh completes successfully."
     fi
 fi
 
@@ -338,14 +419,24 @@ else
         print_failure "nostr-keygen-3party.sh: Syntax error"
     fi
     
+    # Use local relay if available
+    if [ "$USE_LOCAL_RELAY" = "true" ] && [ -n "$LOCAL_RELAY_URL" ]; then
+        RELAYS_TO_USE="$LOCAL_RELAY_URL"
+        echo "Using local relay: $RELAYS_TO_USE"
+    else
+        RELAYS_TO_USE="${RELAYS:-wss://nostr.hifish.org,wss://nostr.xxi.quest,wss://bbw-nostr.xyz}"
+        echo "Using external relays: $RELAYS_TO_USE"
+        echo "  (Note: Tests may fail due to relay connectivity)"
+    fi
+    
     # Try to run with a short timeout
     TEST_3PARTY_OUTPUT_DIR="./test-nostr-keygen-3party-output"
     mkdir -p "$TEST_3PARTY_OUTPUT_DIR"
     export OUTPUT_DIR="$TEST_3PARTY_OUTPUT_DIR"
     export TIMEOUT="30"
-    export RELAYS="${RELAYS:-wss://nostr.hifish.org,wss://nostr.xxi.quest,wss://bbw-nostr.xyz}"
+    export RELAYS="$RELAYS_TO_USE"
     
-    echo "Attempting to run nostr-keygen-3party.sh (may fail due to relay connectivity)..."
+    echo "Attempting to run nostr-keygen-3party.sh..."
     if timeout 90 bash scripts/nostr-keygen-3party.sh > "$TEST_3PARTY_OUTPUT_DIR/test.log" 2>&1; then
         if validate_keyshare "$TEST_3PARTY_OUTPUT_DIR/party1-keyshare.json" "party1"; then
             if validate_keyshare "$TEST_3PARTY_OUTPUT_DIR/party2-keyshare.json" "party2"; then
