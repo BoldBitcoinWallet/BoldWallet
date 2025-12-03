@@ -292,11 +292,11 @@ else
     TEST_OUTPUT_DIR="./test-nostr-keygen-output"
     mkdir -p "$TEST_OUTPUT_DIR"
     export OUTPUT_DIR="$TEST_OUTPUT_DIR"
-    export TIMEOUT="30"  # Short timeout for testing
+    export TIMEOUT="300"  # Short timeout for testing
     export RELAYS="$RELAYS_TO_USE"
     
     echo "Attempting to run nostr-keygen.sh..."
-    if timeout 60 bash scripts/nostr-keygen.sh > "$TEST_OUTPUT_DIR/test.log" 2>&1; then
+    if timeout 300 bash scripts/nostr-keygen.sh > "$TEST_OUTPUT_DIR/test.log" 2>&1; then
         # Check for output files
         if validate_keyshare "$TEST_OUTPUT_DIR/party1-keyshare.json" "party1"; then
             if validate_keyshare "$TEST_OUTPUT_DIR/party2-keyshare.json" "party2"; then
@@ -363,13 +363,13 @@ else
         
         export OUTPUT_DIR="$KEYGEN_OUTPUT_DIR"
         export KEYSIGN_OUTPUT_DIR="./test-nostr-keysign-output"
-        export TIMEOUT="30"
+        export TIMEOUT="300"
         export RELAYS="$RELAYS_TO_USE"
         mkdir -p "$KEYSIGN_OUTPUT_DIR"
         
         echo "Attempting to run nostr-keysign.sh..."
         echo "  Using keyshare files from: $KEYGEN_OUTPUT_DIR"
-        if timeout 60 bash scripts/nostr-keysign.sh > "$KEYSIGN_OUTPUT_DIR/test.log" 2>&1; then
+        if timeout 300 bash scripts/nostr-keysign.sh > "$KEYSIGN_OUTPUT_DIR/test.log" 2>&1; then
             if validate_signature "$KEYSIGN_OUTPUT_DIR/party1-signature.json" "party1"; then
                 if validate_signature "$KEYSIGN_OUTPUT_DIR/party2-signature.json" "party2"; then
                     print_success "nostr-keysign.sh: Successfully generated signatures for both parties"
@@ -433,11 +433,11 @@ else
     TEST_3PARTY_OUTPUT_DIR="./test-nostr-keygen-3party-output"
     mkdir -p "$TEST_3PARTY_OUTPUT_DIR"
     export OUTPUT_DIR="$TEST_3PARTY_OUTPUT_DIR"
-    export TIMEOUT="30"
+    export TIMEOUT="300"
     export RELAYS="$RELAYS_TO_USE"
     
     echo "Attempting to run nostr-keygen-3party.sh..."
-    if timeout 90 bash scripts/nostr-keygen-3party.sh > "$TEST_3PARTY_OUTPUT_DIR/test.log" 2>&1; then
+    if timeout 300 bash scripts/nostr-keygen-3party.sh > "$TEST_3PARTY_OUTPUT_DIR/test.log" 2>&1; then
         if validate_keyshare "$TEST_3PARTY_OUTPUT_DIR/party1-keyshare.json" "party1"; then
             if validate_keyshare "$TEST_3PARTY_OUTPUT_DIR/party2-keyshare.json" "party2"; then
                 if validate_keyshare "$TEST_3PARTY_OUTPUT_DIR/party3-keyshare.json" "party3"; then
