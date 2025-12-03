@@ -3,7 +3,7 @@
 # Simple WebSocket connection test for Nostr relay
 # Tests if the relay is actually accepting WebSocket connections
 
-set -euo pipefail
+set -uo pipefail  # Removed -e to allow better error handling
 
 RELAY_URL="${1:-ws://localhost:7777}"
 
@@ -12,18 +12,57 @@ if [[ "$RELAY_URL" =~ ^ws://([^:]+):([0-9]+)$ ]] || [[ "$RELAY_URL" =~ ^wss://([
     HOST="${BASH_REMATCH[1]}"
     PORT="${BASH_REMATCH[2]}"
 else
-    echo "Invalid relay URL format: $RELAY_URL"
-    echo "Expected format: ws://host:port or wss://host:port"
+    echo "Invalid relay URL format: $RELAY_URL" >&2
+    echo "Expected format: ws://host:port or wss://host:port" >&2
     exit 1
 fi
 
-echo "Testing WebSocket connection to $RELAY_URL..."
+# Determine if we should be verbose (if not redirecting output)
+VERBOSE="${VERBOSE:-false}"
+if [ -t 1 ]; then
+    VERBOSE=true
+fi
+
+if [ "$VERBOSE" = "true" ]; then
+    echo "Testing WebSocket connection to $RELAY_URL..."
+fi
 
 # Try to connect using a simple method
 # We'll use a Go one-liner to test the connection
 if command -v go >/dev/null 2>&1; then
+    # Save current directory
+    ORIG_DIR=$(pwd)
+    
+    # Check if we're in a Go module context (required for go run)
+    # Try to find go.mod in current or parent directories
+    GO_MOD_DIR=""
+    CURRENT_DIR=$(pwd)
+    while [ "$CURRENT_DIR" != "/" ]; do
+        if [ -f "$CURRENT_DIR/go.mod" ]; then
+            GO_MOD_DIR="$CURRENT_DIR"
+            break
+        fi
+        CURRENT_DIR=$(dirname "$CURRENT_DIR")
+    done
+    
+    # If no go.mod found, create a temporary one
+    if [ -z "$GO_MOD_DIR" ]; then
+        TMP_DIR=$(mktemp -d)
+        trap "rm -rf $TMP_DIR" EXIT
+        GO_MOD_DIR="$TMP_DIR"
+        cd "$GO_MOD_DIR"
+        go mod init websocket-test >/dev/null 2>&1 || {
+            echo "Failed to create temporary Go module" >&2
+            exit 1
+        }
+    else
+        cd "$GO_MOD_DIR"
+    fi
+    
     # Use Go to test WebSocket connection
-    go run - <<'EOF' "$HOST" "$PORT"
+    # Write to a temp file instead of using heredoc to avoid stdin issues
+    TEST_FILE=$(mktemp --tmpdir="${GO_MOD_DIR}" websocket-test.XXXXXX.go)
+    cat > "$TEST_FILE" <<'EOF'
 package main
 
 import (
@@ -90,12 +129,34 @@ func min(a, b int) int {
 	return b
 }
 EOF
-    EXIT_CODE=$?
+    
+    # Run the Go test
+    if go run "$TEST_FILE" "$HOST" "$PORT" 2>&1; then
+        EXIT_CODE=0
+    else
+        EXIT_CODE=$?
+        # Show error for debugging
+        if [ "$VERBOSE" = "true" ]; then
+            echo "Go test failed with exit code: $EXIT_CODE" >&2
+        fi
+    fi
+    
+    # Cleanup
+    rm -f "$TEST_FILE"
+    cd "$ORIG_DIR"
+    if [ -n "${TMP_DIR:-}" ]; then
+        rm -rf "$TMP_DIR"
+    fi
+    
     if [ $EXIT_CODE -eq 0 ]; then
-        echo "✓ WebSocket connection test passed"
+        if [ "$VERBOSE" = "true" ]; then
+            echo "✓ WebSocket connection test passed"
+        fi
         exit 0
     else
-        echo "✗ WebSocket connection test failed"
+        if [ "$VERBOSE" = "true" ]; then
+            echo "✗ WebSocket connection test failed (exit code: $EXIT_CODE)" >&2
+        fi
         exit 1
     fi
 else

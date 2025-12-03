@@ -170,10 +170,13 @@ start_local_relay() {
         # Final WebSocket connection test
         if [ -f "./scripts/test-websocket-connection.sh" ]; then
             echo "  Performing final WebSocket connection test..."
-            if ./scripts/test-websocket-connection.sh "$LOCAL_RELAY_URL" >/dev/null 2>&1; then
+            # Don't suppress output in CI - we want to see what's happening
+            if ./scripts/test-websocket-connection.sh "$LOCAL_RELAY_URL" 2>&1; then
                 echo "  ✓ WebSocket connection verified"
             else
-                echo "  ⚠ WebSocket test failed, but proceeding (relay may still work)"
+                WS_TEST_EXIT=$?
+                echo "  ⚠ WebSocket test failed (exit code: $WS_TEST_EXIT), but proceeding"
+                echo "  (The relay may still work - this is a best-effort test)"
             fi
         fi
         

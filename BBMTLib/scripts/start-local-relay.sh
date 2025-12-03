@@ -140,11 +140,14 @@ while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
         # Test WebSocket connection if test script is available
         if [ -f "./scripts/test-websocket-connection.sh" ]; then
             echo "  Testing WebSocket connection..."
-            if ./scripts/test-websocket-connection.sh "$RELAY_URL" >/dev/null 2>&1; then
+            # Show output for debugging
+            if ./scripts/test-websocket-connection.sh "$RELAY_URL" 2>&1; then
                 echo -e "${GREEN}✓ WebSocket connection test passed!${NC}"
             else
-                echo -e "${YELLOW}⚠ WebSocket test failed, but relay may still work${NC}"
+                WS_EXIT=$?
+                echo -e "${YELLOW}⚠ WebSocket test failed (exit code: $WS_EXIT), but relay may still work${NC}"
                 echo "  (This is a best-effort test, the relay may still be initializing)"
+                echo "  Note: If this fails in CI, check that Go is available and the relay is fully ready"
             fi
         fi
         
