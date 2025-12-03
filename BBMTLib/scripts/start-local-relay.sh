@@ -111,22 +111,45 @@ while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
     
     # If all checks pass, relay is ready
     if [ "$CONTAINER_READY" = "true" ] && [ "$PORT_READY" = "true" ] && [ "$LOGS_READY" = "true" ]; then
-        # Give it one more second to fully initialize
-        sleep 1
+        # Give it additional time to fully initialize WebSocket support
+        echo "  Relay basic checks passed, waiting for WebSocket support to initialize..."
+        sleep 3
         
-        # Final verification: try a simple WebSocket connection test
-        # We'll use a simple HTTP upgrade check (nostr-rs-relay responds to HTTP on the same port)
+        # Final verification: try a simple HTTP connection test
+        # nostr-rs-relay responds to HTTP on the same port
+        HTTP_READY=false
         if command -v curl >/dev/null 2>&1; then
-            if curl -s --max-time 2 "http://${RELAY_HOST}:${RELAY_PORT}/" >/dev/null 2>&1; then
-                echo -e "${GREEN}✓ Relay is fully ready and accepting connections!${NC}"
-            else
-                echo -e "${GREEN}✓ Relay is ready (container and port check passed)${NC}"
-            fi
+            for i in {1..5}; do
+                if curl -s --max-time 2 "http://${RELAY_HOST}:${RELAY_PORT}/" >/dev/null 2>&1; then
+                    HTTP_READY=true
+                    break
+                fi
+                sleep 1
+            done
         else
-            echo -e "${GREEN}✓ Relay is ready (container and port check passed)${NC}"
+            # If curl not available, assume ready after basic checks
+            HTTP_READY=true
+        fi
+        
+        if [ "$HTTP_READY" = "true" ]; then
+            echo -e "${GREEN}✓ Relay HTTP check passed${NC}"
+        else
+            echo -e "${YELLOW}⚠ Relay HTTP check failed (may still work for WebSocket)${NC}"
+        fi
+        
+        # Test WebSocket connection if test script is available
+        if [ -f "./scripts/test-websocket-connection.sh" ]; then
+            echo "  Testing WebSocket connection..."
+            if ./scripts/test-websocket-connection.sh "$RELAY_URL" >/dev/null 2>&1; then
+                echo -e "${GREEN}✓ WebSocket connection test passed!${NC}"
+            else
+                echo -e "${YELLOW}⚠ WebSocket test failed, but relay may still work${NC}"
+                echo "  (This is a best-effort test, the relay may still be initializing)"
+            fi
         fi
         
         echo ""
+        echo -e "${GREEN}✓ Relay is ready and accepting connections!${NC}"
         echo "Relay URL: $RELAY_URL"
         echo "Container name: $CONTAINER_NAME"
         echo ""

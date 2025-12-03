@@ -151,8 +151,32 @@ start_local_relay() {
         USE_LOCAL_RELAY=true
         LOCAL_RELAY_URL="ws://localhost:7777"
         echo "✓ Local relay is ready and accepting connections at $LOCAL_RELAY_URL"
-        # Additional small delay to ensure everything is settled
-        sleep 1
+        
+        # Additional wait to ensure WebSocket support is fully initialized
+        # This is especially important in CI environments
+        echo "  Waiting additional 5 seconds for WebSocket support to fully initialize..."
+        sleep 5
+        
+        # Verify the relay is still running
+        if ! docker ps --format '{{.Names}}' | grep -q "^bbmtlib-test-relay$"; then
+            echo "⚠ Relay container stopped unexpectedly"
+            if [ -f /tmp/relay-start.log ]; then
+                echo "  Relay startup log:"
+                cat /tmp/relay-start.log | tail -20 | sed 's/^/    /'
+            fi
+            return 1
+        fi
+        
+        # Final WebSocket connection test
+        if [ -f "./scripts/test-websocket-connection.sh" ]; then
+            echo "  Performing final WebSocket connection test..."
+            if ./scripts/test-websocket-connection.sh "$LOCAL_RELAY_URL" >/dev/null 2>&1; then
+                echo "  ✓ WebSocket connection verified"
+            else
+                echo "  ⚠ WebSocket test failed, but proceeding (relay may still work)"
+            fi
+        fi
+        
         return 0
     else
         echo "⚠ Failed to start local relay, falling back to external relays"
@@ -302,6 +326,11 @@ else
     export RELAYS="$RELAYS_TO_USE"
     
     echo "Attempting to run nostr-keygen.sh..."
+    echo "  Relay URL: $RELAYS_TO_USE"
+    echo "  Timeout: 300 seconds"
+    echo "  Output directory: $TEST_OUTPUT_DIR"
+    
+    # Run the script and capture output
     if timeout 300 bash scripts/nostr-keygen.sh > "$TEST_OUTPUT_DIR/test.log" 2>&1; then
         # Check for output files
         if validate_keyshare "$TEST_OUTPUT_DIR/party1-keyshare.json" "party1"; then
@@ -324,9 +353,29 @@ else
         EXIT_CODE=$?
         if [ $EXIT_CODE -eq 124 ]; then
             print_skip "nostr-keygen.sh: Timed out (relay connectivity issue or slow network)"
+            echo "  This usually means the relay wasn't ready or there's a connection issue"
+            echo "  Relay URL used: $RELAYS_TO_USE"
+            if [ -f "$TEST_OUTPUT_DIR/test.log" ]; then
+                echo "  Last 30 lines of test log:"
+                tail -30 "$TEST_OUTPUT_DIR/test.log" | sed 's/^/    /'
+            fi
+            # Check if relay is still running
+            if [ "$USE_LOCAL_RELAY" = "true" ]; then
+                if docker ps --format '{{.Names}}' | grep -q "^bbmtlib-test-relay$"; then
+                    echo "  Relay container is still running"
+                    echo "  Relay logs (last 20 lines):"
+                    docker logs bbmtlib-test-relay 2>&1 | tail -20 | sed 's/^/    /'
+                else
+                    echo "  ⚠ Relay container is not running!"
+                fi
+            fi
         else
             print_skip "nostr-keygen.sh: Failed (exit code $EXIT_CODE) - may be due to relay connectivity"
             echo "  Check logs in $TEST_OUTPUT_DIR/test.log for details"
+            if [ -f "$TEST_OUTPUT_DIR/test.log" ]; then
+                echo "  Last 30 lines of test log:"
+                tail -30 "$TEST_OUTPUT_DIR/test.log" | sed 's/^/    /'
+            fi
         fi
     fi
 fi
