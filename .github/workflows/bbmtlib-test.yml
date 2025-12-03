@@ -167,18 +167,25 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
 
-      - name: Run comprehensive script tests (with external relays)
+      - name: Install Docker (for local relay)
+        run: |
+          # Docker is pre-installed in GitHub Actions ubuntu-latest
+          # Just verify it's available
+          docker --version || echo "Docker not available, tests will use external relays"
+
+      - name: Run comprehensive script tests (with local relay)
         env:
-          RELAYS: "wss://nostr.hifish.org,wss://nostr.xxi.quest,wss://bbw-nostr.xyz"
           TIMEOUT: "120"
         run: |
-          echo "Running comprehensive test suite with external relay integration..."
-          echo "Note: These tests require external Nostr relays and may be flaky"
+          echo "Running comprehensive test suite with local Nostr relay..."
+          echo "The test script will automatically start a local relay using Docker"
+          echo "If Docker is unavailable, it will fall back to external relays"
           
           # Make scripts executable
           chmod +x scripts/*.sh
           
           # Run comprehensive test script
+          # The script will handle starting/stopping the local relay automatically
           ./scripts/test-all.sh
         continue-on-error: true
         timeout-minutes: 15
