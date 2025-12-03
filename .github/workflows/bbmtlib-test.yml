@@ -97,6 +97,17 @@ jobs:
             fi
           done
 
+      - name: Install jq (for JSON validation)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Run comprehensive script tests
+        run: |
+          echo "Running comprehensive test suite for all scripts..."
+          ./scripts/test-all.sh
+        continue-on-error: true
+
       - name: Run vet
         run: go vet ./...
 
@@ -151,60 +162,24 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      - name: Run integration tests (nostr keygen/keysign)
+      - name: Install jq (for JSON validation)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Run comprehensive script tests (with external relays)
         env:
           RELAYS: "wss://nostr.hifish.org,wss://nostr.xxi.quest,wss://bbw-nostr.xyz"
           TIMEOUT: "120"
         run: |
-          echo "Running integration tests..."
+          echo "Running comprehensive test suite with external relay integration..."
           echo "Note: These tests require external Nostr relays and may be flaky"
           
           # Make scripts executable
           chmod +x scripts/*.sh
           
-          # Track test results
-          KEYGEN_RESULT=0
-          KEYSIGN_RESULT=0
-          
-          # Run keygen test
-          echo "Starting keygen test..."
-          if ./scripts/nostr-keygen.sh; then
-            echo "✓ Keygen integration test passed"
-          else
-            echo "⚠ Keygen integration test failed (may be due to relay connectivity)"
-            echo "This is a non-blocking test - check logs for details"
-            KEYGEN_RESULT=1
-          fi
-          
-          # Run keysign test (requires keygen output)
-          # Note: keysign will fail if keygen failed, but we still want to attempt it
-          echo "Starting keysign test..."
-          if ./scripts/nostr-keysign.sh; then
-            echo "✓ Keysign integration test passed"
-          else
-            echo "⚠ Keysign integration test failed (may be due to relay connectivity or missing keygen output)"
-            echo "This is a non-blocking test - check logs for details"
-            KEYSIGN_RESULT=1
-          fi
-          
-          # Report final status
-          echo ""
-          echo "=== Integration Test Summary ==="
-          if [ $KEYGEN_RESULT -eq 0 ]; then
-            echo "Keygen: ✓ PASSED"
-          else
-            echo "Keygen: ✗ FAILED"
-          fi
-          if [ $KEYSIGN_RESULT -eq 0 ]; then
-            echo "Keysign: ✓ PASSED"
-          else
-            echo "Keysign: ✗ FAILED"
-          fi
-          
-          # Exit with error if any test failed (but continue-on-error will prevent job failure)
-          if [ $KEYGEN_RESULT -ne 0 ] || [ $KEYSIGN_RESULT -ne 0 ]; then
-            exit 1
-          fi
+          # Run comprehensive test script
+          ./scripts/test-all.sh
         continue-on-error: true
-        timeout-minutes: 10
+        timeout-minutes: 15
 
