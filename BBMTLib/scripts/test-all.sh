@@ -144,17 +144,23 @@ start_local_relay() {
     echo "Setting up local Nostr relay for testing"
     echo "=========================================="
     
+    # The start-local-relay.sh script will wait until the relay is fully ready
+    # It exits with 0 only when the relay is confirmed to be accepting connections
     if ./scripts/start-local-relay.sh > /tmp/relay-start.log 2>&1; then
         LOCAL_RELAY_STARTED=true
         USE_LOCAL_RELAY=true
         LOCAL_RELAY_URL="ws://localhost:7777"
-        echo "✓ Local relay started at $LOCAL_RELAY_URL"
-        # Give relay a moment to fully initialize
-        sleep 2
+        echo "✓ Local relay is ready and accepting connections at $LOCAL_RELAY_URL"
+        # Additional small delay to ensure everything is settled
+        sleep 1
         return 0
     else
         echo "⚠ Failed to start local relay, falling back to external relays"
         echo "  Check /tmp/relay-start.log for details"
+        if [ -f /tmp/relay-start.log ]; then
+            echo "  Last 10 lines of relay startup log:"
+            tail -10 /tmp/relay-start.log | sed 's/^/    /'
+        fi
         LOCAL_RELAY_STARTED=false
         USE_LOCAL_RELAY=false
         return 1

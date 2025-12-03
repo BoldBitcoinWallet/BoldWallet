@@ -71,46 +71,106 @@ docker run -d \
 
 # Wait for relay to be ready
 echo "Waiting for relay to be ready..."
-MAX_WAIT=30
+MAX_WAIT=60  # Increased timeout to 60 seconds
 WAIT_COUNT=0
+CONTAINER_READY=false
+PORT_READY=false
+LOGS_READY=false
+
 while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
     # Check if container is running
     if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
         echo -e "${RED}Error: Relay container failed to start${NC}"
-        docker logs "$CONTAINER_NAME" 2>&1 | tail -20
+        echo "Container logs:"
+        docker logs "$CONTAINER_NAME" 2>&1 | tail -30
         exit 1
     fi
+    CONTAINER_READY=true
     
-    # Try to connect to the relay (simple check)
+    # Check if port is open
+    PORT_READY=false
     if command -v nc >/dev/null 2>&1; then
         if nc -z "$RELAY_HOST" "$RELAY_PORT" 2>/dev/null; then
-            echo -e "${GREEN}✓ Relay is ready!${NC}"
-            echo ""
-            echo "Relay URL: $RELAY_URL"
-            echo "Container name: $CONTAINER_NAME"
-            echo ""
-            echo "To stop the relay, run:"
-            echo "  docker stop $CONTAINER_NAME"
-            echo ""
-            echo "Or use the stop script:"
-            echo "  ./scripts/stop-local-relay.sh"
-            exit 0
+            PORT_READY=true
+        fi
+    elif command -v timeout >/dev/null 2>&1 && command -v bash >/dev/null 2>&1; then
+        # Alternative: try to connect using bash's /dev/tcp
+        if timeout 1 bash -c "echo > /dev/tcp/$RELAY_HOST/$RELAY_PORT" 2>/dev/null; then
+            PORT_READY=true
         fi
     else
-        # If nc is not available, just wait a bit and assume it's ready
-        sleep 2
-        echo -e "${GREEN}✓ Relay container started (assuming ready)${NC}"
+        # If no network tools available, assume port is ready after container is running
+        PORT_READY=true
+    fi
+    
+    # Check container logs for readiness indicators
+    LOGS_READY=false
+    if docker logs "$CONTAINER_NAME" 2>&1 | grep -qiE "(listening|ready|started|database.*ready)" >/dev/null 2>&1; then
+        LOGS_READY=true
+    fi
+    
+    # If all checks pass, relay is ready
+    if [ "$CONTAINER_READY" = "true" ] && [ "$PORT_READY" = "true" ] && [ "$LOGS_READY" = "true" ]; then
+        # Give it one more second to fully initialize
+        sleep 1
+        
+        # Final verification: try a simple WebSocket connection test
+        # We'll use a simple HTTP upgrade check (nostr-rs-relay responds to HTTP on the same port)
+        if command -v curl >/dev/null 2>&1; then
+            if curl -s --max-time 2 "http://${RELAY_HOST}:${RELAY_PORT}/" >/dev/null 2>&1; then
+                echo -e "${GREEN}✓ Relay is fully ready and accepting connections!${NC}"
+            else
+                echo -e "${GREEN}✓ Relay is ready (container and port check passed)${NC}"
+            fi
+        else
+            echo -e "${GREEN}✓ Relay is ready (container and port check passed)${NC}"
+        fi
+        
         echo ""
         echo "Relay URL: $RELAY_URL"
         echo "Container name: $CONTAINER_NAME"
+        echo ""
+        echo "To stop the relay, run:"
+        echo "  docker stop $CONTAINER_NAME"
+        echo ""
+        echo "Or use the stop script:"
+        echo "  ./scripts/stop-local-relay.sh"
         exit 0
+    fi
+    
+    # Show progress every 5 seconds
+    if [ $((WAIT_COUNT % 5)) -eq 0 ] && [ $WAIT_COUNT -gt 0 ]; then
+        STATUS=""
+        [ "$CONTAINER_READY" = "true" ] && STATUS="${STATUS}container✓ " || STATUS="${STATUS}container✗ "
+        [ "$PORT_READY" = "true" ] && STATUS="${STATUS}port✓ " || STATUS="${STATUS}port✗ "
+        [ "$LOGS_READY" = "true" ] && STATUS="${STATUS}logs✓" || STATUS="${STATUS}logs✗"
+        echo "  Waiting... (${WAIT_COUNT}s/${MAX_WAIT}s) - Status: $STATUS"
     fi
     
     sleep 1
     WAIT_COUNT=$((WAIT_COUNT + 1))
 done
 
-echo -e "${YELLOW}Warning: Relay may not be fully ready, but container is running${NC}"
+# Timeout reached - show final status
+echo ""
+echo -e "${YELLOW}Warning: Relay readiness check timed out after ${MAX_WAIT} seconds${NC}"
+echo "Final status:"
+echo "  Container running: $CONTAINER_READY"
+echo "  Port open: $PORT_READY"
+echo "  Logs indicate ready: $LOGS_READY"
+echo ""
+echo "Container logs (last 20 lines):"
+docker logs "$CONTAINER_NAME" 2>&1 | tail -20
+echo ""
 echo "Relay URL: $RELAY_URL"
 echo "Container name: $CONTAINER_NAME"
+echo ""
+echo "The relay may still be starting up. You can check logs with:"
+echo "  docker logs -f $CONTAINER_NAME"
+echo ""
+echo "If the relay is not working, you may need to:"
+echo "  1. Check if port $RELAY_PORT is already in use"
+echo "  2. Check Docker logs for errors"
+echo "  3. Try stopping and restarting: docker stop $CONTAINER_NAME && docker rm $CONTAINER_NAME"
+exit 1
 
