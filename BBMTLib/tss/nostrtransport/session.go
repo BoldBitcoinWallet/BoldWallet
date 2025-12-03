@@ -325,7 +325,7 @@ func (s *SessionCoordinator) PublishReady(ctx context.Context) error {
 	// Publish encrypted wrap to each peer using rumor/wrap/seal pattern
 	for _, peerNpub := range s.cfg.PeersNpub {
 		// Step 1: Create rumor (kind:14) - unsigned event
-		rumor := createRumor(string(readyJSON), senderNpubHex, peerNpub)
+		rumor := createRumor(string(readyJSON), senderNpubHex)
 
 		// Step 2: Create seal (kind:13) - encrypt rumor with NIP-44
 		seal, err := createSeal(rumor, s.cfg.LocalNsec, peerNpub)
@@ -380,7 +380,7 @@ func (s *SessionCoordinator) PublishComplete(ctx context.Context, phase string) 
 	// Publish encrypted wrap to each peer using rumor/wrap/seal pattern
 	for _, peerNpub := range s.cfg.PeersNpub {
 		// Step 1: Create rumor (kind:14) - unsigned event
-		rumor := createRumor(string(completeJSON), senderNpubHex, peerNpub)
+		rumor := createRumor(string(completeJSON), senderNpubHex)
 
 		// Step 2: Create seal (kind:13) - encrypt rumor with NIP-44
 		seal, err := createSeal(rumor, s.cfg.LocalNsec, peerNpub)

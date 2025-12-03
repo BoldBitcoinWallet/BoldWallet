@@ -2,6 +2,15 @@
 echo "building gomobile tss lib"
 go mod tidy
 go get golang.org/x/mobile/bind
+
+# Install gomobile if not already installed
+if ! command -v gomobile &> /dev/null; then
+    echo "gomobile not found, installing..."
+    go install golang.org/x/mobile/cmd/gomobile@latest
+    # Add Go bin directory to PATH if not already there
+    export PATH="$PATH:$(go env GOPATH)/bin"
+fi
+
 gomobile init
 export GOFLAGS="-mod=mod"
 gomobile bind -v -target=android -androidapi 21 github.com/BoldBitcoinWallet/BBMTLib/tss
