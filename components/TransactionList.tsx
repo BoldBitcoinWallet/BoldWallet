@@ -54,15 +54,15 @@ export interface TransactionListHandle {
 const TransactionList = React.forwardRef<TransactionListHandle, TransactionListProps>(
   (
     {
-      address,
-      baseApi,
-      onUpdate,
-      initialTransactions = [],
-      selectedCurrency = 'USD',
-      btcRate = 0,
-      getCurrencySymbol = currency => currency,
-      onPullRefresh,
-      isBlurred = false,
+  address,
+  baseApi,
+  onUpdate,
+  initialTransactions = [],
+  selectedCurrency = 'USD',
+  btcRate = 0,
+  getCurrencySymbol = currency => currency,
+  onPullRefresh,
+  isBlurred = false,
     },
     ref,
   ) => {

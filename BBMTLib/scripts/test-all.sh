@@ -183,13 +183,13 @@ validate_ks_file() {
         print_failure "Keyshare $party: File is empty: $file"
         return 1
     fi
-
+    
     # Prefer Go-based validation for cross-platform behavior
     if command -v go >/dev/null 2>&1 && [ -f "scripts/main.go" ]; then
         if OUTPUT=$(go run ./scripts/main.go validate-ks "$file" 2>&1); then
             print_success "Keyshare $party: Valid (.ks verified by Go helper)"
-            return 0
-        else
+                    return 0
+                else
             print_failure "Keyshare $party: Go validation failed: $OUTPUT"
             return 1
         fi

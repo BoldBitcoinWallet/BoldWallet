@@ -1,8 +1,6 @@
 #!/bin/bash
 echo "building gomobile tss lib"
 go mod tidy
-# Install mobile bind as a tool (doesn't modify go.mod)
-go install golang.org/x/mobile/bind@latest
 
 # Install gomobile if not already installed
 if ! command -v gomobile &> /dev/null; then
