@@ -19,6 +19,48 @@ TESTS_PASSED=0
 TESTS_FAILED=0
 TESTS_SKIPPED=0
 
+# Cross-platform timeout function
+# Works on both Linux (timeout) and macOS (gtimeout or bash-based fallback)
+run_with_timeout() {
+    local duration=$1
+    shift
+    
+    # Try standard timeout command (Linux)
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "$duration" "$@"
+        return $?
+    fi
+    
+    # Try gtimeout (macOS with Homebrew coreutils)
+    if command -v gtimeout >/dev/null 2>&1; then
+        gtimeout "$duration" "$@"
+        return $?
+    fi
+    
+    # Fallback: bash-based timeout implementation
+    # Start the command in background
+    "$@" &
+    local cmd_pid=$!
+    
+    # Wait for the command or timeout
+    local waited=0
+    while kill -0 $cmd_pid 2>/dev/null && [ $waited -lt $duration ]; do
+        sleep 1
+        waited=$((waited + 1))
+    done
+    
+    # If still running, kill it
+    if kill -0 $cmd_pid 2>/dev/null; then
+        kill $cmd_pid 2>/dev/null || true
+        wait $cmd_pid 2>/dev/null || true
+        return 124  # Exit code 124 indicates timeout
+    fi
+    
+    # Wait for the process to finish and get its exit code
+    wait $cmd_pid 2>/dev/null
+    return $?
+}
+
 # Function to print test header
 print_test_header() {
     echo ""
@@ -141,32 +183,21 @@ validate_ks_file() {
         print_failure "Keyshare $party: File is empty: $file"
         return 1
     fi
-    
-    # Try to decode base64 and validate as JSON
-    if command -v base64 >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-        if DECODED=$(base64 -d "$file" 2>/dev/null); then
-            if echo "$DECODED" | jq empty 2>/dev/null; then
-                # Check for required keyshare fields
-                if echo "$DECODED" | jq -e '.pub_key' >/dev/null 2>&1; then
-                    print_success "Keyshare $party: Valid base64-encoded JSON with pub_key"
-                    return 0
-                else
-                    print_failure "Keyshare $party: Missing pub_key field"
-                    return 1
-                fi
-            else
-                print_failure "Keyshare $party: Decoded content is not valid JSON"
-                return 1
-            fi
+
+    # Prefer Go-based validation for cross-platform behavior
+    if command -v go >/dev/null 2>&1 && [ -f "scripts/main.go" ]; then
+        if OUTPUT=$(go run ./scripts/main.go validate-ks "$file" 2>&1); then
+            print_success "Keyshare $party: Valid (.ks verified by Go helper)"
+            return 0
         else
-            print_failure "Keyshare $party: Failed to decode base64"
+            print_failure "Keyshare $party: Go validation failed: $OUTPUT"
             return 1
         fi
-    else
-        # If base64/jq not available, just check file exists and is not empty
-        print_success "Keyshare $party: File exists (base64/jq not available for full validation)"
-        return 0
     fi
+
+    # Fallback: no Go available, just check file exists and is not empty
+    print_success "Keyshare $party: File exists (Go validator not available for full validation)"
+    return 0
 }
 
 # Function to validate signature from stdout (JSON string)
@@ -435,8 +466,9 @@ if [ -f "scripts/keygen.sh" ]; then
                     
                     # Verify keyshares have matching public keys (if we can decode them)
                     if command -v base64 >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-                        PUB1=$(base64 -d "$TEST_KEYGEN_DIR/peer1.ks" 2>/dev/null | jq -r '.pub_key' 2>/dev/null)
-                        PUB2=$(base64 -d "$TEST_KEYGEN_DIR/peer2.ks" 2>/dev/null | jq -r '.pub_key' 2>/dev/null)
+                        # Try Linux-style base64 -d first, then macOS-style base64 -D
+                        PUB1=$(base64 -d "$TEST_KEYGEN_DIR/peer1.ks" 2>/dev/null | jq -r '.pub_key' 2>/dev/null || base64 -D "$TEST_KEYGEN_DIR/peer1.ks" 2>/dev/null | jq -r '.pub_key' 2>/dev/null)
+                        PUB2=$(base64 -d "$TEST_KEYGEN_DIR/peer2.ks" 2>/dev/null | jq -r '.pub_key' 2>/dev/null || base64 -D "$TEST_KEYGEN_DIR/peer2.ks" 2>/dev/null | jq -r '.pub_key' 2>/dev/null)
                         if [ -n "$PUB1" ] && [ -n "$PUB2" ] && [ "$PUB1" = "$PUB2" ]; then
                             print_success "keygen.sh: Both parties have matching public keys"
                         elif [ -n "$PUB1" ] && [ -n "$PUB2" ]; then
@@ -611,7 +643,7 @@ else
     echo "  Output directory: $TEST_OUTPUT_DIR"
     
     # Run the script and capture output
-    if timeout 300 bash scripts/nostr-keygen.sh > "$TEST_OUTPUT_DIR/test.log" 2>&1; then
+    if run_with_timeout 300 bash scripts/nostr-keygen.sh > "$TEST_OUTPUT_DIR/test.log" 2>&1; then
         # Check for output files
         if validate_keyshare "$TEST_OUTPUT_DIR/party1-keyshare.json" "party1"; then
             if validate_keyshare "$TEST_OUTPUT_DIR/party2-keyshare.json" "party2"; then
@@ -704,7 +736,7 @@ else
         
         echo "Attempting to run nostr-keysign.sh..."
         echo "  Using keyshare files from: $KEYGEN_OUTPUT_DIR"
-        if timeout 300 bash scripts/nostr-keysign.sh > "$KEYSIGN_OUTPUT_DIR/test.log" 2>&1; then
+        if run_with_timeout 300 bash scripts/nostr-keysign.sh > "$KEYSIGN_OUTPUT_DIR/test.log" 2>&1; then
             if validate_signature "$KEYSIGN_OUTPUT_DIR/party1-signature.json" "party1"; then
                 if validate_signature "$KEYSIGN_OUTPUT_DIR/party2-signature.json" "party2"; then
                     print_success "nostr-keysign.sh: Successfully generated signatures for both parties"
@@ -772,7 +804,7 @@ else
     export RELAYS="$RELAYS_TO_USE"
     
     echo "Attempting to run nostr-keygen-3party.sh..."
-    if timeout 300 bash scripts/nostr-keygen-3party.sh > "$TEST_3PARTY_OUTPUT_DIR/test.log" 2>&1; then
+    if run_with_timeout 300 bash scripts/nostr-keygen-3party.sh > "$TEST_3PARTY_OUTPUT_DIR/test.log" 2>&1; then
         if validate_keyshare "$TEST_3PARTY_OUTPUT_DIR/party1-keyshare.json" "party1"; then
             if validate_keyshare "$TEST_3PARTY_OUTPUT_DIR/party2-keyshare.json" "party2"; then
                 if validate_keyshare "$TEST_3PARTY_OUTPUT_DIR/party3-keyshare.json" "party3"; then

@@ -23,6 +23,10 @@ func main() {
 
 	mode := os.Args[1]
 
+	// ============================================================
+	// Simple helper commands
+	// ============================================================
+
 	if mode == "keypair" {
 		kp, _ := tss.GenerateKeyPair()
 		fmt.Println(kp)
@@ -30,6 +34,52 @@ func main() {
 
 	if mode == "random" {
 		fmt.Println(randomSeed(64))
+	}
+
+	if mode == "validate-ks" {
+		if len(os.Args) < 3 {
+			fmt.Fprintf(os.Stderr, "Usage: %s validate-ks <keyshare_file>\n", os.Args[0])
+			os.Exit(1)
+		}
+
+		keyshareFile := os.Args[2]
+
+		data, err := os.ReadFile(keyshareFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading keyshare file: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Try to decode as base64 first (for .ks files), then as JSON
+		var keyshareJSON []byte
+		if decoded, err := base64.StdEncoding.DecodeString(string(data)); err == nil {
+			keyshareJSON = decoded
+		} else {
+			keyshareJSON = data
+		}
+
+		var ks struct {
+			PubKey       string `json:"pub_key"`
+			ChainCodeHex string `json:"chain_code_hex"`
+		}
+
+		if err := json.Unmarshal(keyshareJSON, &ks); err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing keyshare JSON: %v\n", err)
+			os.Exit(1)
+		}
+
+		if ks.PubKey == "" {
+			fmt.Fprintf(os.Stderr, "Invalid keyshare: missing pub_key field\n")
+			os.Exit(1)
+		}
+
+		if ks.ChainCodeHex == "" {
+			fmt.Fprintf(os.Stderr, "Invalid keyshare: missing chain_code_hex field\n")
+			os.Exit(1)
+		}
+
+		fmt.Println("Valid keyshare: pub_key and chain_code_hex present")
+		os.Exit(0)
 	}
 
 	if mode == "nostr-keypair" {

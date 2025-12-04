@@ -1,0 +1,33 @@
+=== Generated Parameters ===
+Relays      : wss://nostr.hifish.org,wss://nostr.xxi.quest,wss://bbw-nostr.xyz
+Session ID  : 61095facdbcffcf755358c49386ed5f0358e8446c697c31f9be91d0015a19db4
+Session Key : ef3fe4fb28c3d989cdf14fd492d8f26220da6e92abf781fe234f98c530169b54
+Chaincode   : f77020a9ea731252e8f2831781d95d9585001aebfb7e5f654ee30d310d794741
+
+Party 1 npub: npub19pdc0z8t2hzs9r3u5mrvzk632796x7y6c8v0wut7dcxwjx37twes4va2g4
+Party 1 nsec: nsec18ctqtzjf3rgayt96u0c69m7wtmuf9g2r3w6rwazryw22e4069dlql2ge7u
+
+Party 2 npub: npub1dxv420vryg9myfxfqa2yj2cgdygvlv2y6uzgkp9cefghxnem328qu5sttx
+Party 2 nsec: nsec1nxhd8caqwlzxgmydt2rkrae9u0yqdaa0qqqd2psp446c5dfm0pdqr797tv
+============================
+
+Starting Nostr keygen for both parties in parallel...
+Party 1 PID: 38701
+Party 2 PID: 38702
+Logs: ./test-nostr-keygen-output/party1.log and ./test-nostr-keygen-output/party2.log
+
+Waiting for keygen to complete...
+
+✓ Keygen completed successfully!
+Time elapsed: 0m 26s
+
+party1 Public Key: 032dbec2ce0fcb205e9c10bda2d4e565c0ac305fd2db25160dcb296223d17f5a76
+party1 BTC Public Key: 03dd68bf59ed2371ad28f2316a2a9e9aee78e283210bf85903ce67b9da9b95744a
+party1 address btcP2Pkh: mwxauagZGj6EJEorzRSXMhdF7T5Wt8dXr4
+party2 Public Key: 032dbec2ce0fcb205e9c10bda2d4e565c0ac305fd2db25160dcb296223d17f5a76
+party2 BTC Public Key: 03dd68bf59ed2371ad28f2316a2a9e9aee78e283210bf85903ce67b9da9b95744a
+party2 address btcP2Pkh: mwxauagZGj6EJEorzRSXMhdF7T5Wt8dXr4
+
+Outputs saved to:
+  ./test-nostr-keygen-output/party1-keyshare.json
+  ./test-nostr-keygen-output/party2-keyshare.json

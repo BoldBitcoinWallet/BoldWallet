@@ -122,6 +122,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const isReinitInProgressRef = useRef(false);
   // Stable ref for fetchData to avoid circular dependencies
   const fetchDataRef = useRef<(() => Promise<void>) | null>(null);
+  // Ref to control TransactionList (imperative refresh)
+  const transactionListRef = useRef<import('../components/TransactionList').TransactionListHandle | null>(null);
 
   // Navigation hook for detecting screen changes
   const nav = useNavigation();
@@ -628,7 +630,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         // Get keyshare label (KeyShare1/2/3) or fallback to local_party_key
         const keyshareLabel = getKeyshareLabel(ks);
         const shareID = keyshareLabel || ks.local_party_key || '';
-        
+
         setParty(shareID);
 
         // Generate and store current address
@@ -895,6 +897,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             style: 'cancel',
             onPress: () => {
               // Clear the txId from route params to prevent showing again
+              transactionListRef.current?.refresh?.();
               navigation.setParams({txId: undefined});
             },
           },
@@ -902,6 +905,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             text: '🔎 Explorer',
             style: 'default',
             onPress: () => {
+              transactionListRef.current?.refresh?.();
               // Clear the txId from route params
               navigation.setParams({txId: undefined});
               Linking.openURL(explorerLink).catch(err => {
@@ -1546,7 +1550,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       <CacheIndicator
         ref={cacheIndicatorRef}
         timestamps={cacheTimestamps}
-        onRefresh={() => fetchDataRef.current?.()}
+        onRefresh={() => {
+          // Trigger the same behavior as a user pull-to-refresh on the list
+          transactionListRef.current?.refresh?.();
+        }}
         theme={theme}
         isRefreshing={isRefreshing}
         usingCache={
@@ -1585,6 +1592,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
       <View style={styles.transactionListContainer}>
         <TransactionList
+          ref={transactionListRef}
           baseApi={apiBase}
           address={address}
           onUpdate={handleTransactionUpdate}
@@ -1592,7 +1600,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           selectedCurrency={selectedCurrency}
           btcRate={btcRate}
           getCurrencySymbol={getCurrencySymbol}
-          onPullRefresh={() => cacheIndicatorRef.current?.press()}
+          onPullRefresh={() => fetchDataRef.current?.()}
           isBlurred={isBlurred}
         />
       </View>
