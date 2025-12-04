@@ -49,8 +49,13 @@ if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
     fi
 fi
 
-# Create data directory
-mkdir -p "$DATA_DIR"
+# Create data directory with proper permissions
+# Use absolute path to avoid issues with relative paths
+DATA_DIR_ABS="$(cd "$(dirname "$DATA_DIR")" && pwd)/$(basename "$DATA_DIR")"
+mkdir -p "$DATA_DIR_ABS"
+# Ensure the directory is writable by the container user (important for GitHub Actions)
+# Use 777 permissions to allow the container to write regardless of user mapping
+chmod 777 "$DATA_DIR_ABS" || true
 
 # Pull the latest nostr-rs-relay image (or use a specific tag)
 echo "Pulling nostr-rs-relay Docker image..."
@@ -61,11 +66,13 @@ docker pull scsibug/nostr-rs-relay:latest || {
 }
 
 # Start the relay container
+# Remove :Z flag (SELinux context) as it's not needed in GitHub Actions and can cause issues
+# Use absolute path for volume mount to ensure it works correctly
 echo "Starting relay container..."
 docker run -d \
     --name "$CONTAINER_NAME" \
     -p "${RELAY_PORT}:8080" \
-    -v "$(pwd)/${DATA_DIR}:/usr/src/app/db:Z" \
+    -v "${DATA_DIR_ABS}:/usr/src/app/db" \
     --rm \
     scsibug/nostr-rs-relay:latest >/dev/null 2>&1
 
