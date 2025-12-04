@@ -87,7 +87,7 @@ func main() {
 		} else {
 
 			// save keyshare file - base64 encoded
-			fmt.Printf(party + " Keygen Result Saved")
+			fmt.Printf("%s Keygen Result Saved\n", party)
 			encodedResult := base64.StdEncoding.EncodeToString([]byte(keyshare))
 			if err := os.WriteFile(keyshareFile, []byte(encodedResult), 0644); err != nil {
 				fmt.Printf("Failed to save keyshare for Peer1: %v\n", err)
@@ -99,19 +99,19 @@ func main() {
 			}
 
 			// print out pubkeys and p2pkh address
-			fmt.Printf(party+" Public Key: %s\n", kgR.PubKey)
+			fmt.Printf("%s Public Key: %s\n", party, kgR.PubKey)
 			xPub := kgR.PubKey
 			btcPath := "m/44'/0'/0'/0/0"
 			btcPub, err := tss.GetDerivedPubKey(xPub, chainCode, btcPath, false)
 			if err != nil {
 				fmt.Printf("Failed to generate btc pubkey for %s: %v\n", party, err)
 			} else {
-				fmt.Printf(party+" BTC Public Key: %s\n", btcPub)
+				fmt.Printf("%s BTC Public Key: %s\n", party, btcPub)
 				btcP2Pkh, err := tss.PubToP2KH(btcPub, "testnet3")
 				if err != nil {
 					fmt.Printf("Failed to generate btc address for %s: %v\n", party, err)
 				} else {
-					fmt.Printf(party+" address btcP2Pkh: %s\n", btcP2Pkh)
+					fmt.Printf("%s address btcP2Pkh: %s\n", party, btcP2Pkh)
 				}
 			}
 		}
