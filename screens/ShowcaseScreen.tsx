@@ -21,6 +21,7 @@ import RNFS from 'react-native-fs';
 import {useTheme} from '../theme';
 import {dbg, HapticFeedback} from '../utils';
 import LegalModal from '../components/LegalModal';
+import TransportModeSelector from '../components/TransportModeSelector';
 import LocalCache from '../services/LocalCache';
 
 const {BBMTLibNativeModule} = NativeModules;
@@ -34,6 +35,8 @@ const ShowcaseScreen = ({navigation}: any) => {
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
   const [isModeModalVisible, setIsModeModalVisible] = useState(false);
   const [selectedMode, setSelectedMode] = useState<'duo' | 'trio' | null>(null);
+  const [isTransportModalVisible, setIsTransportModalVisible] = useState(false);
+  const [pendingMode, setPendingMode] = useState<'duo' | 'trio' | null>(null);
   const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
     'terms',
   );
@@ -948,6 +951,46 @@ const ShowcaseScreen = ({navigation}: any) => {
         type={legalModalType}
       />
 
+      {/* Transport Mode Selector */}
+      <TransportModeSelector
+        visible={isTransportModalVisible}
+        onClose={() => {
+          HapticFeedback.medium();
+          setIsTransportModalVisible(false);
+          setPendingMode(null);
+        }}
+        onSelect={(transport: 'local' | 'nostr') => {
+          if (!pendingMode) return;
+          if (transport === 'local') {
+            navigation.dispatch(
+              CommonActions.reset({
+                index: 0,
+                routes: [
+                  {
+                    name: 'Devices Pairing',
+                    params: { mode: pendingMode },
+                  },
+                ],
+              })
+            );
+          } else {
+            navigation.dispatch(
+              CommonActions.reset({
+                index: 0,
+                routes: [
+                  {
+                    name: 'Nostr Pairing',
+                    params: { mode: pendingMode },
+                  },
+                ],
+              })
+            );
+          }
+        }}
+        title="Select Pairing Method"
+        description="Choose how to connect with other devices"
+      />
+
       {/* Mode Selection Modal */}
       <Modal
         transparent={true}
@@ -1201,17 +1244,8 @@ const ShowcaseScreen = ({navigation}: any) => {
                 onPress={() => {
                   if (!selectedMode) return;
                   setIsModeModalVisible(false);
-                  navigation.dispatch(
-                    CommonActions.reset({
-                      index: 0,
-                      routes: [
-                        {
-                          name: 'Devices Pairing',
-                          params: { mode: selectedMode },
-                        },
-                      ],
-                    })
-                  );
+                  setPendingMode(selectedMode);
+                  setIsTransportModalVisible(true);
                 }}
                 disabled={!selectedMode}
                 activeOpacity={0.8}>

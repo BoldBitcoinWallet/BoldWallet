@@ -18,6 +18,7 @@ import {
   Platform,
   FlatList,
   useWindowDimensions,
+  DeviceEventEmitter,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Share from 'react-native-share';
@@ -28,10 +29,10 @@ import DeviceInfo from 'react-native-device-info';
 import {useUser} from '../context/UserContext';
 
 // Predefined API endpoints
-const MAINNET_APIS = [
-  'https://mempool.space/api',
-];
+const MAINNET_APIS = ['https://mempool.space/api'];
 const TESTNET_APIS = ['https://mempool.space/testnet/api'];
+
+const { IconChanger } = NativeModules;  // This is fine here, as it's not a Hook
 
 import {
   dbg,
@@ -39,12 +40,13 @@ import {
   setHapticsEnabled,
   areHapticsEnabled,
   getMainnetAPIList,
+  getKeyshareLabel,
 } from '../utils';
 import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
 import LegalModal from '../components/LegalModal';
-import {fetchDynamicAPIEndpoints} from '../utils';
+import {fetchDynamicAPIEndpoints, getNostrRelays} from '../utils';
 
 interface CollapsibleSectionProps {
   title: string;
@@ -187,7 +189,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
   // Load API lists - restrict testnet to only the hardcoded endpoint
   useEffect(() => {
     const currentNetwork = isTestnet ? 'testnet' : 'mainnet';
-    
+
     // Only load if network changed
     if (lastLoadedNetworkRef.current === currentNetwork) {
       return; // Already loaded for this network
@@ -220,6 +222,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
     };
 
     loadAPIList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTestnet]);
 
   // Fetch dynamic APIs - load when in mainnet mode and not already loaded
@@ -267,7 +270,9 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
     } else {
       // For mainnet, combine predefined and dynamic APIs, but filter out testnet URLs
       const combined = [...predefinedAPIs, ...dynamicAPIs];
-      const filtered = combined.filter(api => !api.toLowerCase().includes('testnet'));
+      const filtered = combined.filter(
+        api => !api.toLowerCase().includes('testnet'),
+      );
       // Remove duplicates
       return [...new Set(filtered)];
     }
@@ -462,10 +467,15 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
               onPress={isTestnet ? undefined : openModal}
               activeOpacity={isTestnet ? 1 : 0.6}
               disabled={isTestnet}>
-              <Text style={[
-                styles.apiDropdownIcon,
-                {color: isTestnet ? theme.colors.textSecondary : theme.colors.text}
-              ]}>
+              <Text
+                style={[
+                  styles.apiDropdownIcon,
+                  {
+                    color: isTestnet
+                      ? theme.colors.textSecondary
+                      : theme.colors.text,
+                  },
+                ]}>
                 ▼
               </Text>
             </TouchableOpacity>
@@ -657,6 +667,10 @@ const getSectionIcon = (title: string): any => {
       return require('../assets/phone-icon.png');
     case 'storage':
       return require('../assets/storage-icon.png');
+    case 'nostr relays':
+      return require('../assets/nostr-icon.png');
+    case 'app icon':
+      return require('../assets/spy-icon.png');
     default:
       return require('../assets/advanced-icon.png');
   }
@@ -665,7 +679,7 @@ const getSectionIcon = (title: string): any => {
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   // Use UserContext for reactive network and API state
   const {setActiveNetwork, setActiveApiProvider} = useUser();
-
+  const [selectedIcon, setSelectedIcon] = useState<'default' | 'alternative' | 'loading'>('loading');
   const [deleteInput, setDeleteInput] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -677,7 +691,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [baseAPI, setBaseAPI] = useState('');
   const [pendingAPI, setPendingAPI] = useState('');
   const [isAPISaving, setIsAPISaving] = useState(false);
-  const [_isCryptoVibrant, setIsCryptoVibrant] = useState(false);
+  const [nostrRelays, setNostrRelays] = useState<string>('');
+  const [pendingNostrRelays, setPendingNostrRelays] = useState<string>('');
+
+  const [hasNostr, setHasNostr] = useState(false);
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
   const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
     'terms',
@@ -699,9 +716,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     haptics: false,
     backup: false,
     advanced: false,
+    nostr: false,
     about: false,
     legal: false,
     storage: false,
+    appIcon: false,
+    devicePairing: false,
   });
 
   const {theme} = useTheme();
@@ -806,10 +826,41 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     });
   }, []);
 
+    // Load saved icon preference on component mount
+  useEffect(() => {
+    const loadIconPreference = async () => {
+      try {
+        const savedIcon = await EncryptedStorage.getItem('app_icon_preference');
+        if (savedIcon && (savedIcon === 'default' || savedIcon === 'alternative')) {
+          setSelectedIcon(savedIcon);
+        } else {
+          setSelectedIcon('default');
+        }
+      } catch (error) {
+        console.warn('Error loading icon preference:', error);
+        setSelectedIcon('default');
+      }
+    };
+
+    loadIconPreference();
+  }, []);
+
   useEffect(() => {
     EncryptedStorage.getItem('keyshare').then(ks => {
-      const json = JSON.parse(ks as string);
-      setParty(json.local_party_key);
+      try {
+        if (!ks) {
+          return;
+        }
+        const json = JSON.parse(ks as string);
+        // Get keyshare label (KeyShare1/2/3) or fallback to local_party_key
+        const keyshareLabel = getKeyshareLabel(json);
+        setParty(keyshareLabel || json.local_party_key || '');
+
+        // Only show Nostr settings when the keyshare contains an npub
+        setHasNostr(!!json.nostr_npub);
+      } catch (error) {
+        dbg('Failed to parse keyshare for settings screen:', error);
+      }
     });
 
     // Load network and corresponding cached API
@@ -865,9 +916,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         }
       }
     });
-
-    LocalCache.getItem('theme').then(appTheme => {
-      setIsCryptoVibrant(appTheme === 'cryptoVibrant');
+    // Load Nostr relays (from cache if available, otherwise fetch dynamically)
+    getNostrRelays(false).then(relays => {
+      const relaysCSV = relays.join(',');
+      setNostrRelays(relaysCSV);
+      // Convert CSV to newline-separated for multiline display
+      const relaysForDisplay = relaysCSV.split(',').join('\n');
+      setPendingNostrRelays(relaysForDisplay);
     });
   }, []);
 
@@ -878,12 +933,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     const newNetwork = value ? 'testnet3' : 'mainnet';
     const networkName = value ? 'Testnet' : 'Mainnet';
     const networkIcon = value ? '🧪' : '🌐';
-    
+
     await setActiveNetwork(newNetwork);
-    
+
     // Navigate first, then show alert on the new screen
     navigation.reset({index: 0, routes: [{name: 'Home'}]});
-    
+
     // Show brief feedback alert after a brief delay to ensure navigation completes
     setTimeout(() => {
       Alert.alert(`${networkIcon} Switched to ${networkName}`);
@@ -944,7 +999,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       const response = await fetch(testUrl, {
         method: 'GET',
         headers: {
-          'Accept': 'application/json',
+          Accept: 'application/json',
         },
         signal: controller.signal,
       });
@@ -986,7 +1041,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       if (!isValid) {
         Alert.alert(
           'Invalid API Endpoint',
-          'The selected API endpoint is not responding correctly. Please choose a different endpoint.'
+          'The selected API endpoint is not responding correctly. Please choose a different endpoint.',
         );
         return;
       }
@@ -1024,8 +1079,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         await LocalCache.clear();
         dbg('clearing encrypted storage...');
         await EncryptedStorage.removeItem('keyshare');
-        dbg('app restart...');
+        // Trigger a full app reload so all providers/contexts re‑initialize
         navigation.reset({index: 0, routes: [{name: 'Welcome'}]});
+        DeviceEventEmitter.emit('app:reload');
       } catch (error) {
         dbg('handleResetWallet', error);
         Alert.alert('Error', 'Failed to reset wallet. Please try again.');
@@ -1074,7 +1130,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         const year = now.getFullYear();
         const hours = now.getHours().toString().padStart(2, '0');
         const minutes = now.getMinutes().toString().padStart(2, '0');
-        const shareName = json.local_party_key;
+        // Use keyshare label (KeyShare1/2/3) or fallback to local_party_key
+        const keyshareLabel = getKeyshareLabel(json);
+        const shareName = keyshareLabel || json.local_party_key || 'keyshare';
         const friendlyFilename = `${shareName}.${month}${day}.${year}.${hours}${minutes}.share`;
 
         const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
@@ -1209,6 +1267,29 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       fontSize: 13,
       color: theme.colors.textSecondary,
       marginBottom: 12,
+    },
+    appIconHintRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    appIconSpyIcon: {
+      width: 28,
+      height: 28,
+      marginRight: 10,
+    },
+    appIconHintTextContainer: {
+      flex: 1,
+    },
+    appIconHintTitle: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.colors.text,
+      marginBottom: 2,
+    },
+    appIconHintSubtitle: {
+      fontSize: 12,
+      color: theme.colors.textSecondary,
+      lineHeight: 16,
     },
     inputAPI: {
       borderWidth: 1,
@@ -1909,6 +1990,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       fontSize: 12,
       color: theme.colors.textSecondary,
     },
+    nostrRelaysInput: {
+      minHeight: 120,
+      textAlignVertical: 'top',
+      paddingTop: 12,
+      backgroundColor: theme.colors.cardBackground,
+    },
     errorInput: {
       borderColor: theme.colors.danger,
     },
@@ -1942,6 +2029,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     },
     networkStatusText: {
       fontSize: 12,
+    },
+    appIconCheckStatesButton: {
+      marginBottom: 10,
+      backgroundColor: theme.colors.secondary,
     },
   });
 
@@ -2032,17 +2123,23 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           {/* Network mode indicator and info */}
           <View style={styles.apiNetworkInfoContainer}>
             <View style={styles.apiNetworkModeRow}>
-              <View style={[
-                styles.apiNetworkModeBadge,
-                isTestnet ? styles.apiNetworkModeBadgeTestnet : styles.apiNetworkModeBadgeMainnet
-              ]}>
+              <View
+                style={[
+                  styles.apiNetworkModeBadge,
+                  isTestnet
+                    ? styles.apiNetworkModeBadgeTestnet
+                    : styles.apiNetworkModeBadgeMainnet,
+                ]}>
                 <Text style={styles.apiNetworkModeIcon}>
                   {isTestnet ? '🔒' : '🌐'}
                 </Text>
-                <Text style={[
-                  styles.apiNetworkModeText,
-                  isTestnet ? styles.apiNetworkModeTextTestnet : styles.apiNetworkModeTextMainnet
-                ]}>
+                <Text
+                  style={[
+                    styles.apiNetworkModeText,
+                    isTestnet
+                      ? styles.apiNetworkModeTextTestnet
+                      : styles.apiNetworkModeTextMainnet,
+                  ]}>
                   {isTestnet ? 'Testnet Mode' : 'Mainnet Mode'}
                 </Text>
               </View>
@@ -2063,13 +2160,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 </TouchableOpacity>
               )}
             </View>
-            <Text 
+            <Text
               style={[
                 styles.apiNetworkDescription,
-                isTestnet ? styles.apiNetworkDescriptionTestnet : styles.apiNetworkDescriptionMainnet
+                isTestnet
+                  ? styles.apiNetworkDescriptionTestnet
+                  : styles.apiNetworkDescriptionMainnet,
               ]}>
-              {isTestnet 
-                ? 'Testnet Provider is restricted to mempool.space/testnet' 
+              {isTestnet
+                ? 'Testnet Provider is restricted to mempool.space/testnet'
                 : 'Mainnet Providers are customizable.'}
             </Text>
           </View>
@@ -2091,8 +2190,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   styles.button,
                   styles.backupButton,
                   styles.apiActionButton,
-                  (isAPISaving || !pendingAPI || pendingAPI === baseAPI) && styles.disabledButton,
-                  isAPISaving && styles.halfOpacity
+                  (isAPISaving || !pendingAPI || pendingAPI === baseAPI) &&
+                    styles.disabledButton,
+                  isAPISaving && styles.halfOpacity,
                 ]}
                 onPress={() => {
                   HapticFeedback.light();
@@ -2115,7 +2215,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             {/* Reset Default API button - only show in mainnet */}
             {!isTestnet && (
               <TouchableOpacity
-                style={[styles.button, styles.resetButton, styles.apiActionButton]}
+                style={[
+                  styles.button,
+                  styles.resetButton,
+                  styles.apiActionButton,
+                ]}
                 onPress={() => {
                   HapticFeedback.light();
                   resetAPI();
@@ -2132,6 +2236,128 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             )}
           </View>
         </CollapsibleSection>
+        {/* Nostr Relays Section - only show when keyshare has an npub */}
+        {hasNostr && (
+          <CollapsibleSection
+            title="Nostr Relays"
+            isExpanded={expandedSections.nostr}
+            onToggle={() => toggleSection('nostr')}
+            styles={styles}
+            theme={theme}>
+            <View style={styles.apiItem}>
+              <Text style={styles.apiName}>Nostr Relay Configuration</Text>
+              <Text style={styles.apiDescription}>
+                Configure Nostr relays for device pairing and transaction
+                signing. Enter relay URLs, one per line or comma-separated
+                (wss://...).
+              </Text>
+            </View>
+            <TextInput
+              style={[styles.input, styles.nostrRelaysInput]}
+              value={pendingNostrRelays}
+              onChangeText={setPendingNostrRelays}
+              placeholder={
+                'wss://relay1.com\nwss://relay2.com\nwss://relay3.com'
+              }
+              placeholderTextColor={theme.colors.textSecondary + '80'}
+              autoCapitalize="none"
+              autoCorrect={false}
+              multiline
+              numberOfLines={6}
+            />
+            <View style={styles.apiActionButtonsRow}>
+              <TouchableOpacity
+                style={[
+                  styles.button,
+                  styles.backupButton,
+                  styles.apiActionButton,
+                  (!pendingNostrRelays || pendingNostrRelays === nostrRelays) &&
+                    styles.disabledButton,
+                ]}
+                onPress={async () => {
+                  HapticFeedback.light();
+                  try {
+                    // Parse relays - support both newline and comma separation
+                    const relays = pendingNostrRelays
+                      .split(/[,\n]/)
+                      .map(r => r.trim())
+                      .filter(Boolean);
+                    if (relays.length === 0) {
+                      Alert.alert(
+                        'Error',
+                        'Please enter at least one relay URL',
+                      );
+                      return;
+                    }
+                    // Basic validation - check if starts with wss:// or ws://
+                    const invalid = relays.find(
+                      r => !r.startsWith('wss://') && !r.startsWith('ws://'),
+                    );
+                    if (invalid) {
+                      Alert.alert(
+                        'Error',
+                        `Invalid relay URL: ${invalid}\nRelay URLs must start with wss:// or ws://`,
+                      );
+                      return;
+                    }
+                    // Convert to CSV format for storage
+                    const relaysCSV = relays.join(',');
+                    // Save to cache as CSV
+                    await LocalCache.setItem('nostr_relays', relaysCSV);
+                    setNostrRelays(relaysCSV);
+                    Alert.alert('Success', 'Nostr relays saved successfully!');
+                  } catch (error) {
+                    dbg('Error saving Nostr relays:', error);
+                    Alert.alert('Error', 'Failed to save Nostr relays');
+                  }
+                }}
+                disabled={
+                  !pendingNostrRelays || pendingNostrRelays === nostrRelays
+                }>
+                <View style={styles.buttonContent}>
+                  <Image
+                    source={require('../assets/check-icon.png')}
+                    style={[styles.buttonIcon, styles.whiteTint]}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.buttonText}>Save Relays</Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.button,
+                  styles.resetButton,
+                  styles.apiActionButton,
+                ]}
+                onPress={async () => {
+                  HapticFeedback.light();
+                  // Fetch dynamic relays (force fetch, same as first time)
+                  const fetchedRelays = await getNostrRelays(true);
+                  const relaysCSV = fetchedRelays.join(',');
+                  // Convert CSV to newline-separated for multiline display
+                  const relaysForDisplay = relaysCSV.split(',').join('\n');
+                  setPendingNostrRelays(relaysForDisplay);
+                }}>
+                <View style={styles.buttonContent}>
+                  <Image
+                    source={require('../assets/refresh-icon.png')}
+                    style={[styles.buttonIcon, styles.whiteTint]}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.buttonText}>Defaults</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+            {nostrRelays && (
+              <View style={styles.apiItem}>
+                <Text style={styles.apiDescription}>
+                  Current:{'\n'}
+                  {nostrRelays.split(',').join('\n')}
+                </Text>
+              </View>
+            )}
+          </CollapsibleSection>
+        )}
         {/* Storage Section */}
         <CollapsibleSection
           title="Storage"
@@ -2175,6 +2401,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </TouchableOpacity>
         </CollapsibleSection>
+
         {/* Haptics Section */}
         <CollapsibleSection
           title="Haptics"
@@ -2194,6 +2421,87 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             <Text style={styles.toggleLabel}>Haptics On</Text>
           </View>
         </CollapsibleSection>
+
+        {/* App Icon Section - Android Only */}
+        {Platform.OS === 'android' && (
+          <CollapsibleSection
+            title="App Icon"
+            isExpanded={expandedSections.appIcon}
+            onToggle={() => toggleSection('appIcon')}
+            styles={styles}
+            theme={theme}>
+            <View style={styles.appIconHintRow}>
+              <View style={styles.appIconHintTextContainer}>
+                <Text style={styles.appIconHintTitle}>
+                  Blend in when you need to.
+                </Text>
+                <Text style={styles.appIconHintSubtitle}>
+                  Switch to the calculator icon when you want your wallet to look
+                  like just another app on your home screen.
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.toggleDescription}>
+              Change the app's launcher icon on your device.
+            </Text>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Bold Wallet</Text>
+              <Switch
+                trackColor={{ true: theme.colors.primary, false: theme.colors.secondary }}
+                thumbColor={theme.colors.accent}
+                onValueChange={async (value) => {
+                  try {
+                    HapticFeedback.light();
+                    const newIcon = value ? 'alternative' : 'default';
+
+                    // Check if IconChanger module is available
+                    if (!IconChanger || !IconChanger.changeIcon) {
+                      Alert.alert(
+                        'Error',
+                        'Icon switching is not available on this device.',
+                        [{ text: 'OK' }]
+                      );
+                      return;
+                    }
+
+                    // Update UI state
+                    setSelectedIcon(newIcon);
+
+                    // Save preference
+                    await EncryptedStorage.setItem('app_icon_preference', newIcon);
+
+                    // Change the icon
+                    await IconChanger.changeIcon(newIcon);
+
+                    // Show success message
+                    const iconName = newIcon === 'alternative' ? 'QuickCalc' : 'Bold Wallet';
+                    Alert.alert(
+                      'Icon Changed',
+                      `App icon switched to ${iconName}.\n\nYou may need to refresh your launcher to see the change.`,
+                      [{ text: 'OK' }]
+                    );
+
+                  } catch (error: any) {
+                    console.error('Error changing icon:', error);
+
+                    // Revert UI state on error
+                    setSelectedIcon(value ? 'default' : 'alternative');
+
+                    Alert.alert(
+                      'Error',
+                      error?.message || 'Failed to change app icon. Please try again.',
+                      [{ text: 'OK' }]
+                    );
+                  }
+                }}
+                value={selectedIcon === 'alternative'}
+                disabled={selectedIcon === 'loading'}
+              />
+              <Text style={styles.toggleLabel}>QuickCalc</Text>
+            </View>
+          </CollapsibleSection>
+        )}
+
         {/* Legal Section */}
         <CollapsibleSection
           title="Legal"

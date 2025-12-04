@@ -1,12 +1,24 @@
 # Bold Bitcoin Wallet
 <p align="center"> 
-  <img src="https://github.com/user-attachments/assets/39fcd825-7046-4269-84ed-dee9cebdeed1" width=200 height=410>
+  <img src="https://github.com/user-attachments/assets/844f9927-252a-4fd8-a2e0-5e9d3e9b7d74" width=200 height=410>
 </p>
 
-## 📲 Install it on F-Droid
+
+## 📲 Install Bold Bitcoin Wallet App:
+
+[<img src="https://boldbitcoinwallet.com/playstore.svg"
+    alt="Get it on Play Store"
+    height="20">  Via Playstore](https://play.google.com/store/apps/details?id=com.boldwallet)
+
+[<img src="https://zapstore.dev/images/logo.svg"
+    alt="Get it on Zap Store"
+    height="20">  Via Zap Store](https://zapstore.dev/apps/naddr1qvzqqqr7pvpzq7xwd748yfjrsu5yuerm56fcn9tntmyv04w95etn0e23xrczvvraqq8xxmmd9e3x7mrywaskcmr9ws90nrd9)
+
 [<img src="https://f-droid.org/badge/get-it-on.png"
     alt="Get it on F-Droid"
-    height="80">](https://f-droid.org/packages/com.boldwallet)
+    height="50">](https://f-droid.org/packages/com.boldwallet)
+
+----
 
 ## ➡️ BoldWallet Official Release
 **[Download Latest APK Release](https://github.com/BoldBitcoinWallet/BoldWallet/releases/latest)**
@@ -40,6 +52,7 @@ KEY_PASSWORD="your_key_password"
 > sh docker-apk-builder.sh --fdroid #optional, for F-Droid foss tailored build
 > sh docker-apk-builder.sh --fdroid --git=main #optional, which git "branch,tag, or commit-hash" to use
 ```
+
 ![image](https://github.com/user-attachments/assets/eb8f1a45-b2cb-46ec-a061-fc0cb4f10448)
   
 ### ✍️ Via Manual Build

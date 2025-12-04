@@ -1,0 +1,192 @@
+name: BBMTLib Tests
+
+on:
+  push:
+    paths:
+      - 'BBMTLib/**'
+      - '.github/workflows/bbmtlib-test.yml'
+  pull_request:
+    paths:
+      - 'BBMTLib/**'
+      - '.github/workflows/bbmtlib-test.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test BBMTLib
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./BBMTLib
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.2'
+          cache-dependency-path: BBMTLib/go.sum
+
+      - name: Verify Go version
+        run: go version
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Tidy dependencies
+        run: go mod tidy
+
+      - name: Check for uncommitted changes after go mod tidy
+        id: check-tidy
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "modified=true" >> $GITHUB_OUTPUT
+            echo "⚠️  go.mod or go.sum has uncommitted changes after 'go mod tidy'"
+            echo "This usually means some dependencies need to be cleaned up."
+            echo ""
+            echo "To fix:"
+            echo "  1. Run 'go mod tidy' locally in the BBMTLib directory"
+            echo "  2. Commit the changes to go.mod and go.sum"
+            echo ""
+            echo "Changes detected:"
+            git diff --stat
+            echo ""
+            echo "Full diff:"
+            git diff
+            exit 1
+          else
+            echo "modified=false" >> $GITHUB_OUTPUT
+            echo "✓ go.mod and go.sum are clean"
+          fi
+
+      - name: Run Go tests
+        run: go test -v -race -coverprofile=coverage.out ./...
+        continue-on-error: true
+
+      - name: Build all packages
+        run: go build ./...
+
+      - name: Build scripts helper
+        run: go build -o /tmp/bbmtlib-scripts ./scripts/main.go
+
+      - name: Test scripts helper commands
+        run: |
+          /tmp/bbmtlib-scripts random | head -c 64
+          echo ""
+          /tmp/bbmtlib-scripts nostr-keypair | grep -q ","
+          echo "✓ Scripts helper commands work"
+
+      - name: Build nostr-keygen command
+        run: go build -o /tmp/nostr-keygen ./tss/cmd/nostr-keygen
+
+      - name: Build nostr-keysign command
+        run: go build -o /tmp/nostr-keysign ./tss/cmd/nostr-keysign
+
+      - name: Verify scripts are executable
+        run: |
+          chmod +x scripts/*.sh
+          for script in scripts/*.sh; do
+            if [ -f "$script" ]; then
+              echo "✓ $script is executable"
+            fi
+          done
+
+      - name: Install jq (for JSON validation)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Run comprehensive script tests
+        run: |
+          echo "Running comprehensive test suite for all scripts..."
+          ./scripts/test-all.sh
+        continue-on-error: true
+
+      - name: Run vet
+        run: go vet ./...
+
+      - name: Run staticcheck (if available)
+        run: |
+          if command -v staticcheck &> /dev/null || go install honnef.co/go/tools/cmd/staticcheck@latest; then
+            staticcheck ./... || true
+          else
+            echo "staticcheck not available, skipping"
+          fi
+        continue-on-error: true
+
+      - name: Check code formatting
+        run: |
+          if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+            echo "❌ Code is not formatted. Run 'gofmt -s -w .'"
+            gofmt -s -d .
+            exit 1
+          else
+            echo "✓ Code is properly formatted"
+          fi
+
+      - name: Upload coverage (if tests ran)
+        if: always()
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.out
+          flags: bbmtlib
+          name: bbmtlib-coverage
+          fail_ci_if_error: false
+        continue-on-error: true
+
+  integration-test:
+    name: Integration Tests (Optional)
+    runs-on: ubuntu-latest
+    needs: test
+    
+    defaults:
+      run:
+        working-directory: ./BBMTLib
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.2'
+          cache-dependency-path: BBMTLib/go.sum
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Install jq (for JSON validation)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Install Docker (for local relay)
+        run: |
+          # Docker is pre-installed in GitHub Actions ubuntu-latest
+          # Just verify it's available
+          docker --version || echo "Docker not available, tests will use external relays"
+
+      - name: Run comprehensive script tests (with local relay)
+        env:
+          TIMEOUT: "120"
+        run: |
+          echo "Running comprehensive test suite with local Nostr relay..."
+          echo "The test script will automatically start a local relay using Docker"
+          echo "If Docker is unavailable, it will fall back to external relays"
+          
+          # Make scripts executable
+          chmod +x scripts/*.sh
+          
+          # Run comprehensive test script
+          # The script will handle starting/stopping the local relay automatically
+          ./scripts/test-all.sh
+        continue-on-error: true
+        timeout-minutes: 15
+

@@ -10,8 +10,8 @@ A secure Multi-Party Computation (MPC) Threshold Signature Scheme (TSS) library 
 # Get dependencies
 go mod tidy
 
-# Initialize Go Mobile
-go get golang.org/x/mobile/bind
+# Initialize Go Mobile (install as tool, doesn't modify go.mod)
+go install golang.org/x/mobile/bind@latest
 
 # Set build flags
 export GOFLAGS="-mod=mod"

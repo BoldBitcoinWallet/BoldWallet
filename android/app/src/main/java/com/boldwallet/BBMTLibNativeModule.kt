@@ -148,6 +148,22 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun spendingHash(senderAddress: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
+        Thread {
+            try {
+                val amt = amountSatoshi.toLong()
+                val result =
+                    Tss.spendingHash(senderAddress, receiverAddress, amt)
+                ld("spendingHash", result)
+                promise.resolve(result)
+            } catch (e: Exception) {
+                ld("spendingHash", "error: ${e.stackTraceToString()}")
+                promise.reject(e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
     fun estimateFees(senderAddress: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
         Thread {
             try {
@@ -200,9 +216,49 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     feeSatoshi.toLong())
                 ld("mpcSendBTC", result)
                 promise.resolve(result)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 ld("mpcSendBTC", "error: ${e.stackTraceToString()}")
-                promise.reject(e)
+                promise.reject("MPC_SEND_BTC_ERROR", "Failed to send BTC: ${e.message}", e)
+            }
+        }.start()
+    }
+    @ReactMethod
+    fun nostrMpcSendBTC(
+        relaysCSV: String,
+        partyNsec: String,
+        partiesNpubsCSV: String,
+        npubsSorted: String,
+        balanceSats: String,
+        keyshareJSON: String,
+        derivePath: String,
+        publicKey: String,
+        senderAddress: String,
+        receiverAddress: String,
+        amountSatoshi: String,
+        estimatedFee: String,
+        promise: Promise
+    ) {
+        Thread {
+            try {
+                val result = Tss.nostrMpcSendBTC(
+                    relaysCSV,
+                    partyNsec,
+                    partiesNpubsCSV,
+                    npubsSorted,
+                    balanceSats,
+                    keyshareJSON,
+                    derivePath,
+                    publicKey,
+                    senderAddress,
+                    receiverAddress,
+                    amountSatoshi.toLong(),
+                    estimatedFee.toLong()
+                )
+                ld("nostrMpcSendBTC", result)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                ld("nostrMpcSendBTC", "error: ${e.stackTraceToString()}")
+                promise.reject("NOSTR_MPC_SEND_BTC_ERROR", "Failed to send BTC via Nostr: ${e.message}", e)
             }
         }.start()
     }
@@ -378,6 +434,96 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         val parts = ip.split(".").mapNotNull { it.toIntOrNull() }
         return parts.size == 4 && parts[0] in 192..223
     }
+    
+    @ReactMethod
+    fun nostrKeypair(promise: Promise) {
+        try {
+            val result = Tss.nostrKeypair()
+            ld("nostrKeypair", result)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            ld("nostrKeypair", "error: ${e.stackTraceToString()}")
+            promise.resolve(e.message)
+        }
+    }
+
+    @ReactMethod
+    fun hexToNpub(hexKey: String, promise: Promise) {
+        Thread {
+            try {
+                val result = Tss.hexToNpub(hexKey)
+                ld("hexToNpub", result)
+                promise.resolve(result)
+            } catch (e: Exception) {
+                ld("hexToNpub", "error: ${e.stackTraceToString()}")
+                promise.resolve(e.message)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun nostrMpcTssSetup(
+        relaysCSV: String,
+        partyNsec: String,
+        partiesNpubsCSV: String,
+        sessionID: String,
+        sessionKey: String,
+        chaincode: String,
+        ppmFile: String,
+        promise: Promise
+    ) {
+        Thread {
+            try {
+                val result = Tss.nostrJoinKeygen(
+                    relaysCSV,
+                    partyNsec,
+                    partiesNpubsCSV,
+                    sessionID,
+                    sessionKey,
+                    chaincode,
+                    ppmFile
+                )
+                ld("nostrMpcTssSetup", result)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                ld("nostrMpcTssSetup", "error: ${e.stackTraceToString()}")
+                promise.reject("NOSTR_MPC_TSS_SETUP_ERROR", "Failed to setup TSS via Nostr: ${e.message}", e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun nostrJoinKeysign(
+        relaysCSV: String,
+        partyNsec: String,
+        partiesNpubsCSV: String,
+        sessionID: String,
+        sessionKey: String,
+        keyshareJSON: String,
+        derivationPath: String,
+        message: String,
+        promise: Promise
+    ) {
+        Thread {
+            try {
+                val result = Tss.nostrJoinKeysign(
+                    relaysCSV,
+                    partyNsec,
+                    partiesNpubsCSV,
+                    sessionID,
+                    sessionKey,
+                    keyshareJSON,
+                    derivationPath,
+                    message
+                )
+                ld("nostrJoinKeysign", result)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                ld("nostrJoinKeysign", "error: ${e.stackTraceToString()}")
+                promise.reject("NOSTR_JOIN_KEYSIGN_ERROR", "Failed to join keysign via Nostr: ${e.message}", e)
+            }
+        }.start()
+    }
 
     @ReactMethod
     fun mpcTssSetup(
@@ -407,9 +553,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 )
                 ld("mpcTssSetup", result.toString())
                 promise.resolve(result)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 ld("mpcTssSetup", "error: ${e.stackTraceToString()}")
-                promise.reject(e)
+                promise.reject("MPC_TSS_SETUP_ERROR", "Failed to setup TSS: ${e.message}", e)
             }
         }.start()
     }
@@ -421,9 +567,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 val result = Tss.localPreParams(partyID, timeout.toLong())
                 ld("preparams", result.toString())
                 promise.resolve(result)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 ld("preparams", "error: ${e.stackTraceToString()}")
-                promise.reject(e)
+                promise.reject("PREPARAMS_ERROR", "Failed to generate pre-params: ${e.message}", e)
             }
         }.start()
     }
@@ -434,9 +580,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             val result = Tss.secP256k1Recover(r, s, v, h)
             ld("recoverPubkey", result)
             promise.resolve(result)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             ld("recoverPubkey", "error: ${e.stackTraceToString()}")
-            promise.reject(e)
+            promise.reject("RECOVER_PUBKEY_ERROR", "Failed to recover pubkey: ${e.message}", e)
         }
     }
 
@@ -446,9 +592,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             val result = Tss.getDerivedPubKey(hexPubkey, hexChaincode, path, false)
             ld("derivePubkey", result)
             promise.resolve(result)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             ld("derivePubkey", "error: ${e.stackTraceToString()}")
-            promise.reject(e)
+            promise.reject("DERIVE_PUBKEY_ERROR", "Failed to derive pubkey: ${e.message}", e)
         }
     }
 
@@ -475,9 +621,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 ld("btcAddress", "invalid-address type")
                 promise.resolve("")
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             ld("btcAddress", "error: ${e.stackTraceToString()}")
-            promise.reject(e)
+            promise.reject("BTC_ADDRESS_ERROR", "Failed to generate BTC address: ${e.message}", e)
         }
     }
 
@@ -523,9 +669,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             val result = Tss.sha256(msg)
             ld("sha256", result)
             promise.resolve(result)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             ld("sha256", "error: ${e.stackTraceToString()}")
-            promise.reject(e)
+            promise.reject("SHA256_ERROR", "Failed to compute SHA256: ${e.message}", e)
         }
     }
 }

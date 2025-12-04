@@ -149,6 +149,48 @@ export interface Styles {
   modalTipTextCompact: TextStyle;
   backupButtonCompact: ViewStyle;
   backupButtonTextCompact: TextStyle;
+  keyshareModalCloseButton: ViewStyle;
+  keyshareModalCloseText: TextStyle;
+  keyshareModalContent: ViewStyle;
+  keyshareInfoRow: ViewStyle;
+  keyshareTable: ViewStyle;
+  keyshareTableRow: ViewStyle;
+  keyshareTableKey: TextStyle;
+  keyshareTableValue: TextStyle;
+  keyshareTableValueContainer: ViewStyle;
+  keyshareTableValueKey: TextStyle;
+  keyshareTableValueSuccess: TextStyle;
+  keyshareTableValueDisabled: TextStyle;
+  keyshareInfoLabel: TextStyle;
+  keyshareInfoValue: TextStyle;
+  keyshareInfoValueSuccess: TextStyle;
+  keyshareInfoValueDisabled: TextStyle;
+  keyshareKeySection: ViewStyle;
+  keyshareKeyContainer: ViewStyle;
+  keyshareKeyText: TextStyle;
+  keyshareCopyButton: ViewStyle;
+  keyshareCopyButtonText: TextStyle;
+  keyshareCopyIcon: ImageStyle;
+  keyshareLoadingContainer: ViewStyle;
+  keyshareBackupButtonMargin: ViewStyle;
+  keyshareModalBody: ViewStyle;
+  keyshareInfoCard: ViewStyle;
+  keyshareSectionTitle: TextStyle;
+  keyshareDetailRow: ViewStyle;
+  keyshareDetailLabel: TextStyle;
+  keyshareDetailValue: TextStyle;
+  keyshareBadge: ViewStyle;
+  keyshareBadgeText: TextStyle;
+  keyshareBadgeFlexi: ViewStyle;
+  keyshareBadgeBasic: ViewStyle;
+  keyshareStatusBadge: ViewStyle;
+  keyshareStatusBadgeText: TextStyle;
+  keyshareStatusBadgeSuccess: ViewStyle;
+  keyshareStatusBadgeDisabled: ViewStyle;
+  keyshareStatusBadgeTextSuccess: TextStyle;
+  keyshareStatusBadgeTextDisabled: TextStyle;
+  keyshareKeyItem: ViewStyle;
+  keyshareKeyLabel: TextStyle;
 }
 
 export const createStyles = (theme: Theme): Styles => ({
@@ -903,26 +945,42 @@ export const createStyles = (theme: Theme): Styles => ({
     alignItems: 'center' as const,
   },
   modalContentCompact: {
-    backgroundColor: theme.colors.background,
-    borderRadius: 12,
+    backgroundColor: theme.colors.cardBackground,
+    borderRadius: 16,
     padding: 16,
-    width: '85%',
-    maxWidth: 400,
+    width: '90%',
+    maxHeight: '85%',
+    alignSelf: 'center' as const,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    flexDirection: 'column' as const,
+    justifyContent: 'flex-start' as const,
+    overflow: 'hidden' as const,
   },
   modalHeaderRowCompact: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border + '60',
+    flexShrink: 0,
+    height: 48,
   },
   modalHeaderIconCompact: {
-    width: 20,
-    height: 20,
+    width: 24,
+    height: 24,
     tintColor: theme.colors.accent,
-    marginRight: 8,
+    marginRight: 10,
   },
   modalHeaderTitleCompact: {
-    fontSize: 18,
-    fontWeight: '600' as const,
+    fontSize: 20,
+    fontWeight: 'bold' as const,
     color: theme.colors.text,
     flex: 1,
   },
@@ -932,11 +990,14 @@ export const createStyles = (theme: Theme): Styles => ({
     color: theme.colors.text,
     marginBottom: 12,
     textAlign: 'left' as const,
+    includeFontPadding: false,
   },
   modalBoldTextCompact: {
     fontSize: 14,
     fontWeight: '600' as const,
     color: theme.colors.text,
+    includeFontPadding: false,
+    lineHeight: 20,
   },
   warningBoxCompact: {
     backgroundColor: 'rgba(255, 193, 7, 0.08)',
@@ -970,5 +1031,242 @@ export const createStyles = (theme: Theme): Styles => ({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600' as const,
+  },
+  keyshareModalCloseButton: {
+    marginLeft: 'auto' as const,
+    padding: 8,
+    backgroundColor: theme.colors.cardBackground,
+    borderRadius: 16,
+    width: 36,
+    height: 36,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  keyshareModalCloseText: {
+    fontSize: 22,
+    fontWeight: '700' as const,
+    color: theme.colors.text,
+    lineHeight: 22,
+  },
+  keyshareModalContent: {
+    paddingTop: 4,
+    paddingBottom: 8,
+    paddingHorizontal: 4,
+  },
+  keyshareInfoRow: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
+    gap: 16,
+    marginBottom: 6,
+    minHeight: 24,
+  },
+  keyshareInfoLabel: {
+    fontWeight: '600' as const,
+    flexShrink: 0,
+    minWidth: 150,
+    textAlign: 'left' as const,
+    includeFontPadding: false,
+    textAlignVertical: 'center' as const,
+  },
+  keyshareInfoValue: {
+    flex: 1,
+    flexShrink: 1,
+    textAlign: 'right' as const,
+    includeFontPadding: false,
+    textAlignVertical: 'center' as const,
+  },
+  keyshareInfoValueSuccess: {
+    color: '#4CAF50',
+  },
+  keyshareInfoValueDisabled: {
+    color: '#757575',
+  },
+  keyshareKeySection: {
+    gap: 8,
+  },
+  keyshareKeyContainer: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    backgroundColor: theme.colors.cardBackground,
+    padding: 10,
+    borderRadius: 8,
+  },
+  keyshareKeyText: {
+    flex: 1,
+    fontFamily: 'monospace',
+    fontSize: 11,
+    color: theme.colors.text,
+  },
+  keyshareCopyButton: {
+    padding: 8,
+    backgroundColor: theme.colors.primary,
+    borderRadius: 6,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  keyshareCopyButtonText: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: theme.colors.textOnPrimary,
+  },
+  keyshareCopyIcon: {
+    width: 16,
+    height: 16,
+    tintColor: theme.colors.textOnPrimary,
+  },
+  keyshareLoadingContainer: {
+    padding: 16,
+  },
+  keyshareBackupButtonMargin: {
+    marginTop: 12,
+    flexShrink: 0,
+  },
+  keyshareModalBody: {
+    width: '100%',
+    paddingVertical: 8,
+    minHeight: 200,
+  },
+  keyshareInfoCard: {
+    backgroundColor: theme.colors.background,
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.border + '50',
+  },
+  keyshareSectionTitle: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: theme.colors.text,
+    marginBottom: 10,
+    letterSpacing: 0.2,
+  },
+  keyshareDetailRow: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border + '30',
+  },
+  keyshareDetailLabel: {
+    fontSize: 13,
+    color: theme.colors.textSecondary,
+    fontWeight: '500' as const,
+    flex: 1,
+  },
+  keyshareDetailValue: {
+    fontSize: 13,
+    color: theme.colors.text,
+    fontWeight: '600' as const,
+    flex: 1,
+    textAlign: 'right' as const,
+  },
+  keyshareBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    alignSelf: 'flex-end' as const,
+  },
+  keyshareBadgeText: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: '#FFFFFF',
+  },
+  keyshareBadgeFlexi: {
+    backgroundColor: '#6366F1',
+  },
+  keyshareBadgeBasic: {
+    backgroundColor: '#8B5CF6',
+  },
+  keyshareStatusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    alignSelf: 'flex-end' as const,
+  },
+  keyshareStatusBadgeText: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
+  keyshareStatusBadgeSuccess: {
+    backgroundColor: '#4CAF50' + '20',
+  },
+  keyshareStatusBadgeDisabled: {
+    backgroundColor: '#757575' + '20',
+  },
+  keyshareStatusBadgeTextSuccess: {
+    color: '#4CAF50',
+  },
+  keyshareStatusBadgeTextDisabled: {
+    color: '#757575',
+  },
+  keyshareKeyItem: {
+    marginBottom: 12,
+  },
+  keyshareKeyLabel: {
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+    fontWeight: '600' as const,
+    marginBottom: 6,
+    letterSpacing: 0.1,
+  },
+  keyshareTable: {
+    width: '100%',
+  },
+  keyshareTableRow: {
+    flexDirection: 'row' as const,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border + '40',
+    alignItems: 'center' as const,
+    minHeight: 40,
+    width: '100%',
+  },
+  keyshareTableKey: {
+    fontSize: 13,
+    color: theme.colors.textSecondary,
+    fontWeight: '600' as const,
+    width: 130,
+    flexShrink: 0,
+    marginRight: 12,
+  },
+  keyshareTableValue: {
+    fontSize: 13,
+    color: theme.colors.text,
+    fontWeight: '500' as const,
+    flex: 1,
+    flexShrink: 1,
+    textAlign: 'left' as const,
+    minWidth: 0,
+  },
+  keyshareTableValueContainer: {
+    flex: 1,
+    flexShrink: 1,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    minWidth: 0,
+  },
+  keyshareTableValueKey: {
+    flex: 1,
+    flexShrink: 1,
+    fontSize: 11,
+    fontFamily: 'monospace',
+    color: theme.colors.text,
+    textAlign: 'left' as const,
+    minWidth: 0,
+  },
+  keyshareTableValueSuccess: {
+    color: '#4CAF50',
+    fontWeight: '600' as const,
+  },
+  keyshareTableValueDisabled: {
+    color: '#757575',
   },
 });

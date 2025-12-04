@@ -10,11 +10,18 @@ import {
   PermissionsAndroid,
   Modal,
   DeviceEventEmitter,
+  Linking,
 } from 'react-native';
-import {useFocusEffect, useNavigation} from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useNavigation,
+  useRoute,
+  RouteProp,
+} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {AppState} from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
+import Clipboard from '@react-native-clipboard/clipboard';
 import SendBitcoinModal from './SendBitcoinModal';
 import Toast from 'react-native-toast-message';
 import TransactionList from '../components/TransactionList';
@@ -28,12 +35,14 @@ import {
   presentFiat,
   getCurrencySymbol,
   HapticFeedback,
+  getKeyshareLabel,
 } from '../utils';
 import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
 import WalletSkeleton from '../components/WalletSkeleton';
 import {useUser} from '../context/UserContext';
 import CurrencySelector from '../components/CurrencySelector';
+import TransportModeSelector from '../components/TransportModeSelector';
 import {createStyles} from '../components/Styles';
 import {
   CacheIndicator,
@@ -49,10 +58,23 @@ const mainnetIcon = require('../assets/mainnet-icon.png');
 const testnetIcon = require('../assets/testnet-icon.png');
 const keyIcon = require('../assets/key-icon.png');
 
+type RouteParams = {
+  txId?: string;
+};
+
 const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
+  const route = useRoute<RouteProp<{params: RouteParams}>>();
   const [address, setAddress] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [isSendModalVisible, setIsSendModalVisible] = useState<boolean>(false);
+  const [isTransportModalVisible, setIsTransportModalVisible] =
+    useState<boolean>(false);
+  const [pendingSendParams, setPendingSendParams] = useState<{
+    to: string;
+    amountSats: Big;
+    feeSats: Big;
+    spendingHash: string;
+  } | null>(null);
   const [btcPrice, setBtcPrice] = useState<string>('');
   const [btcRate, setBtcRate] = useState(0);
   const [balanceBTC, setBalanceBTC] = useState<string>('0.00000000');
@@ -100,6 +122,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const isReinitInProgressRef = useRef(false);
   // Stable ref for fetchData to avoid circular dependencies
   const fetchDataRef = useRef<(() => Promise<void>) | null>(null);
+  // Ref to control TransactionList (imperative refresh)
+  const transactionListRef = useRef<import('../components/TransactionList').TransactionListHandle | null>(null);
 
   // Navigation hook for detecting screen changes
   const nav = useNavigation();
@@ -603,10 +627,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setSegwitAddress(segwitAddr);
         setSegwitCompatibleAddress(segwitCompAddr);
 
-        const shareID = ks.local_party_key;
-        const shareType =
-          ks.keygen_committee_keys.length === 2 ? 'Basic' : 'Flexi';
-        setParty(shareID + ' • ' + shareType);
+        // Get keyshare label (KeyShare1/2/3) or fallback to local_party_key
+        const keyshareLabel = getKeyshareLabel(ks);
+        const shareID = keyshareLabel || ks.local_party_key || '';
+
+        setParty(shareID);
 
         // Generate and store current address
         const btcAddress = await BBMTLibNativeModule.btcAddress(
@@ -744,6 +769,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const cacheIndicatorRef = useRef<CacheIndicatorHandle>(null);
   const [isNetworkModalVisible, setIsNetworkModalVisible] = useState(false);
   const [isPartyModalVisible, setIsPartyModalVisible] = useState(false);
+  const [keyshareInfo, setKeyshareInfo] = useState<{
+    label: string;
+    supportsLocal: boolean;
+    supportsNostr: boolean;
+    type: 'basic' | 'flexi';
+    pubKey: string;
+    npub: string | null;
+  } | null>(null);
 
   const {theme} = useTheme();
   const styles = createStyles(theme);
@@ -845,6 +878,47 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       })();
     }
   }, [network, apiBase, updateAddressForNetwork, updateAddressTypeModal]);
+
+  // Check for txId in route params and show success alert with explorer link
+  useEffect(() => {
+    const txId = route.params?.txId;
+    if (txId && apiBase) {
+      // Construct explorer URL (same pattern as TransactionDetailsModal)
+      const baseUrl = apiBase.replace(/\/+$/, '').replace(/\/api\/?$/, '');
+      const explorerLink = `${baseUrl}/tx/${txId}`;
+
+      // Show alert with Cancel/Close and Explore buttons
+      Alert.alert(
+        '✔️ Transaction Sent',
+        `TxID: ${txId.substring(0, 8)}...${txId.substring(txId.length - 8)}`,
+        [
+          {
+            text: 'Close',
+            style: 'cancel',
+            onPress: () => {
+              // Clear the txId from route params to prevent showing again
+              transactionListRef.current?.refresh?.();
+              navigation.setParams({txId: undefined});
+            },
+          },
+          {
+            text: '🔎 Explorer',
+            style: 'default',
+            onPress: () => {
+              transactionListRef.current?.refresh?.();
+              // Clear the txId from route params
+              navigation.setParams({txId: undefined});
+              Linking.openURL(explorerLink).catch(err => {
+                dbg('Error opening explorer link:', err);
+                Alert.alert('Error', 'Failed to open explorer link');
+              });
+            },
+          },
+        ],
+        {cancelable: false},
+      );
+    }
+  }, [route.params?.txId, apiBase, navigation]);
 
   const handleTransactionUpdate = useCallback(
     async (pendingTxs: any[], pending: number) => {
@@ -975,10 +1049,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setSegwitAddress(segwitAddr);
         setSegwitCompatibleAddress(segwitCompAddr);
 
-        const shareID = ks.local_party_key;
-        const shareType =
-          ks.keygen_committee_keys.length === 2 ? 'Basic' : 'Flexi';
-        setParty(shareID + ' • ' + shareType);
+        // Get keyshare label (KeyShare1/2/3) or fallback to local_party_key
+        const keyshareLabel = getKeyshareLabel(ks);
+        const shareID = keyshareLabel || ks.local_party_key || '';
+        setParty(shareID);
 
         // Get current address type and generate address
         const currentAddressType = addrType;
@@ -1041,7 +1115,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       } catch (error) {
         dbg('Error initializing wallet:', error);
         showErrorToast('Failed to initialize wallet. Please try again.');
-        console.error(error);
       } finally {
         setLoading(false);
       }
@@ -1091,34 +1164,151 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     LocalCache.setItem('mode', blurr ? 'private' : '');
   };
 
-  const handleSend = async (to: string, amountSats: Big, feeSats: Big) => {
+  const loadKeyshareInfo = async () => {
+    try {
+      const keyshareJSON = await EncryptedStorage.getItem('keyshare');
+      if (!keyshareJSON) {
+        setKeyshareInfo(null);
+        return;
+      }
+
+      const keyshare = JSON.parse(keyshareJSON);
+      const pubKey = keyshare.pub_key || '';
+      const nostrNpub = keyshare.nostr_npub || null;
+      const supportsNostr = !!(nostrNpub && nostrNpub.trim() !== '');
+      const supportsLocal = true; // Always supported
+
+      // Determine type: basic (2 devices) or flexi (3 devices)
+      const committeeKeys = keyshare.keygen_committee_keys || [];
+      const type = committeeKeys.length === 3 ? 'flexi' : 'basic';
+
+      // Determine label: if Nostr, use sorted order; otherwise use generic
+      let label = 'KeyShare1';
+      if (
+        supportsNostr &&
+        keyshare.local_party_key &&
+        committeeKeys.length > 0
+      ) {
+        // Sort committee keys to match the ordering used in keygen
+        const sortedKeys = [...committeeKeys].sort();
+        const localIndex = sortedKeys.findIndex(
+          key => key === keyshare.local_party_key,
+        );
+        if (localIndex >= 0) {
+          label = `KeyShare${localIndex + 1}`;
+        }
+      }
+
+      setKeyshareInfo({
+        label,
+        supportsLocal,
+        supportsNostr,
+        type,
+        pubKey,
+        npub: nostrNpub,
+      });
+    } catch (error) {
+      dbg('Error loading keyshare info:', error);
+      setKeyshareInfo(null);
+    }
+  };
+
+  useEffect(() => {
+    if (isPartyModalVisible) {
+      loadKeyshareInfo();
+    }
+  }, [isPartyModalVisible]);
+
+  const handleSend = async (
+    to: string,
+    amountSats: Big,
+    feeSats: Big,
+    spendingHash: string,
+  ) => {
     if (!isSending && amountSats.gt(0) && feeSats.gt(0) && to) {
       setIsSending(true);
-      const toAddress = to;
-      const satoshiAmount = amountSats.toString().split('.')[0];
-      const fiatAmount = amountSats.times(btcRate).div(1e8).toFixed(2);
-      const satoshiFees = feeSats.toString().split('.')[0];
-      const fiatFees = feeSats.times(btcRate).div(1e8).toFixed(2);
+      // Close send modal immediately
+      setIsSendModalVisible(false);
+
+      // Check if keyshare supports Nostr (has nostr_npub)
+      try {
+        const keyshareJSON = await EncryptedStorage.getItem('keyshare');
+        if (keyshareJSON) {
+          const keyshare = JSON.parse(keyshareJSON);
+          const hasNostrSupport =
+            keyshare.nostr_npub && keyshare.nostr_npub.trim() !== '';
+
+          if (!hasNostrSupport) {
+            // Keyshare was generated with local mode, navigate directly to MobilesPairing
+            const toAddress = to;
+            const satoshiAmount = amountSats.toString().split('.')[0];
+            const fiatAmount = amountSats.times(btcRate).div(1e8).toFixed(2);
+            const satoshiFees = feeSats.toString().split('.')[0];
+            const fiatFees = feeSats.times(btcRate).div(1e8).toFixed(2);
+
+            navigation.dispatch(
+              CommonActions.navigate({
+                name: 'Devices Pairing',
+                params: {
+                  mode: 'send_btc',
+                  addressType,
+                  toAddress,
+                  satoshiAmount,
+                  fiatAmount,
+                  satoshiFees,
+                  fiatFees,
+                  selectedCurrency,
+                  spendingHash,
+                },
+              }),
+            );
+            setIsSending(false);
+            return;
+          }
+        }
+      } catch (error) {
+        dbg('Error checking keyshare for Nostr support:', error);
+        // Continue to show transport selector if check fails
+      }
+
+      // Store params and show transport selector after a brief delay to ensure send modal is closed
+      setPendingSendParams({to, amountSats, feeSats, spendingHash});
       setTimeout(() => {
-        setIsSendModalVisible(false);
+        setIsTransportModalVisible(true);
         setIsSending(false);
-      }, 250);
-      navigation.dispatch(
-        CommonActions.navigate({
-          name: 'Devices Pairing',
-          params: {
-            mode: 'send_btc',
-            addressType,
-            toAddress,
-            satoshiAmount,
-            fiatAmount,
-            satoshiFees,
-            fiatFees,
-            selectedCurrency,
-          },
-        }),
-      );
+      }, 300);
     }
+  };
+
+  const navigateToPairing = (transport: 'local' | 'nostr') => {
+    if (!pendingSendParams) return;
+
+    const {to, amountSats, feeSats, spendingHash} = pendingSendParams;
+    const toAddress = to;
+    const satoshiAmount = amountSats.toString().split('.')[0];
+    const fiatAmount = amountSats.times(btcRate).div(1e8).toFixed(2);
+    const satoshiFees = feeSats.toString().split('.')[0];
+    const fiatFees = feeSats.times(btcRate).div(1e8).toFixed(2);
+
+    const routeName =
+      transport === 'local' ? 'Devices Pairing' : 'Nostr Pairing';
+    navigation.dispatch(
+      CommonActions.navigate({
+        name: routeName,
+        params: {
+          mode: 'send_btc',
+          addressType,
+          toAddress,
+          satoshiAmount,
+          fiatAmount,
+          satoshiFees,
+          fiatFees,
+          selectedCurrency,
+          spendingHash,
+        },
+      }),
+    );
+    setPendingSendParams(null);
   };
 
   const getAddressTypeIcon = () => {
@@ -1222,8 +1412,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 styles.flexOneMinWidthZero,
                 styles.partyGap,
               ]}
-              onPress={() => {
+              onPress={async () => {
                 HapticFeedback.light();
+                // Load keyshare info before showing modal
+                await loadKeyshareInfo();
                 setIsPartyModalVisible(true);
               }}
               activeOpacity={0.85}>
@@ -1309,7 +1501,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 if (balance <= 0) {
                   Alert.alert(
                     'Insufficient Balance',
-                    'You don\'t have any satoshis to send.',
+                    "You don't have any satoshis to send.",
                   );
                   return;
                 }
@@ -1356,7 +1548,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       <CacheIndicator
         ref={cacheIndicatorRef}
         timestamps={cacheTimestamps}
-        onRefresh={() => fetchDataRef.current?.()}
+        onRefresh={() => {
+          // Trigger the same behavior as a user pull-to-refresh on the list
+          transactionListRef.current?.refresh?.();
+        }}
         theme={theme}
         isRefreshing={isRefreshing}
         usingCache={
@@ -1395,6 +1590,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
       <View style={styles.transactionListContainer}>
         <TransactionList
+          ref={transactionListRef}
           baseApi={apiBase}
           address={address}
           onUpdate={handleTransactionUpdate}
@@ -1402,7 +1598,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           selectedCurrency={selectedCurrency}
           btcRate={btcRate}
           getCurrencySymbol={getCurrencySymbol}
-          onPullRefresh={() => cacheIndicatorRef.current?.press()}
+          onPullRefresh={() => fetchDataRef.current?.()}
           isBlurred={isBlurred}
         />
       </View>
@@ -1512,7 +1708,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               />
               <View style={styles.addressTypeContent}>
                 <Text style={styles.addressTypeLabel} numberOfLines={1}>
-                  Segwit Compat (P2SH)
+                  Segwit Compatible (P2SH)
                 </Text>
                 <Text style={styles.addressTypeValue}>
                   {shorten(segwitCompatibleAddress, 6)}
@@ -1548,6 +1744,20 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           selectedCurrency={selectedCurrency}
         />
       )}
+      <TransportModeSelector
+        visible={isTransportModalVisible}
+        onClose={() => {
+          HapticFeedback.medium();
+          setIsTransportModalVisible(false);
+          setPendingSendParams(null);
+        }}
+        onSelect={(transport: 'local' | 'nostr') => {
+          navigateToPairing(transport);
+          setIsTransportModalVisible(false);
+        }}
+        title="Select Signing Method"
+        description="Choose how to sign your transaction"
+      />
 
       {isReceiveModalVisible && (
         <ReceiveModal
@@ -1653,50 +1863,157 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             setIsPartyModalVisible(false);
           }}
           activeOpacity={1}>
-          <View style={styles.modalContentCompact}>
-            <View style={styles.modalHeaderRowCompact}>
-              <Image
-                source={require('../assets/key-icon.png')}
-                style={styles.modalHeaderIconCompact}
-              />
-              <Text style={styles.modalHeaderTitleCompact}>
-                Device Keyshare
-              </Text>
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={e => e.stopPropagation()}>
+            <View style={styles.modalContentCompact}>
+              <View style={styles.modalHeaderRowCompact}>
+                <Image
+                  source={require('../assets/key-icon.png')}
+                  style={styles.modalHeaderIconCompact}
+                />
+                <Text style={styles.modalHeaderTitleCompact}>
+                  Device Keyshare
+                </Text>
+              </View>
+
+              <View style={styles.keyshareModalBody}>
+                {keyshareInfo ? (
+                  <View style={styles.keyshareTable}>
+                    <View style={styles.keyshareTableRow}>
+                      <Text style={styles.keyshareTableKey}>Keyshare ID</Text>
+                      <Text style={styles.keyshareTableValue}>
+                        {keyshareInfo.label}
+                      </Text>
+                    </View>
+
+                    <View style={styles.keyshareTableRow}>
+                      <Text style={styles.keyshareTableKey}>Keyshare Type</Text>
+                      <Text style={styles.keyshareTableValue}>
+                        {keyshareInfo.type === 'flexi'
+                          ? 'Flexi (3-parties)'
+                          : 'Basic (2-parties)'}
+                      </Text>
+                    </View>
+
+                    <View style={styles.keyshareTableRow}>
+                      <Text style={styles.keyshareTableKey}>LAN/Hotspot</Text>
+                      <Text
+                        style={[
+                          styles.keyshareTableValue,
+                          styles.keyshareTableValueSuccess,
+                        ]}>
+                        ✓ Supported
+                      </Text>
+                    </View>
+
+                    <View style={styles.keyshareTableRow}>
+                      <Text style={styles.keyshareTableKey}>
+                        Nostr Protocol
+                      </Text>
+                      <Text
+                        style={[
+                          styles.keyshareTableValue,
+                          keyshareInfo.supportsNostr
+                            ? styles.keyshareTableValueSuccess
+                            : styles.keyshareTableValueDisabled,
+                        ]}>
+                        {keyshareInfo.supportsNostr
+                          ? '✓ Supported'
+                          : '✗ Not Supported'}
+                      </Text>
+                    </View>
+
+                    <View style={styles.keyshareTableRow}>
+                      <Text style={styles.keyshareTableKey}>
+                        Extended Pubkey
+                      </Text>
+                      <View style={styles.keyshareTableValueContainer}>
+                        <Text
+                          style={styles.keyshareTableValueKey}
+                          numberOfLines={1}
+                          ellipsizeMode="middle">
+                          {keyshareInfo.pubKey || 'N/A'}
+                        </Text>
+                        <TouchableOpacity
+                          onPress={() => {
+                            HapticFeedback.light();
+                            Clipboard.setString(keyshareInfo.pubKey);
+                            Toast.show({
+                              type: 'success',
+                              text1: 'Copied',
+                              text2: 'Public key copied to clipboard',
+                            });
+                          }}
+                          style={styles.keyshareCopyButton}>
+                          <Image
+                            source={require('../assets/copy-icon.png')}
+                            style={styles.keyshareCopyIcon}
+                          />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    {keyshareInfo.supportsNostr && keyshareInfo.npub && (
+                      <View style={styles.keyshareTableRow}>
+                        <Text style={styles.keyshareTableKey}>
+                          Nostr Pubkey
+                        </Text>
+                        <View style={styles.keyshareTableValueContainer}>
+                          <Text
+                            style={styles.keyshareTableValueKey}
+                            numberOfLines={1}
+                            ellipsizeMode="middle">
+                            {keyshareInfo.npub}
+                          </Text>
+                          <TouchableOpacity
+                            onPress={() => {
+                              HapticFeedback.light();
+                              Clipboard.setString(keyshareInfo.npub || '');
+                              Toast.show({
+                                type: 'success',
+                                text1: 'Copied',
+                                text2: 'Nostr public key copied to clipboard',
+                              });
+                            }}
+                            style={styles.keyshareCopyButton}>
+                            <Image
+                              source={require('../assets/copy-icon.png')}
+                              style={styles.keyshareCopyIcon}
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                ) : (
+                  <View style={styles.keyshareLoadingContainer}>
+                    <Text style={styles.modalTextCompact}>
+                      Loading keyshare information...
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.backupButtonCompact,
+                  styles.keyshareBackupButtonMargin,
+                ]}
+                onPress={() => {
+                  HapticFeedback.medium();
+                  setIsPartyModalVisible(false);
+                  if (typeof navigation.navigate === 'function') {
+                    navigation.navigate('Settings');
+                  }
+                }}
+                activeOpacity={0.7}>
+                <Text style={styles.backupButtonTextCompact}>
+                  Security Settings &gt; Backup
+                </Text>
+              </TouchableOpacity>
             </View>
-
-            <Text style={styles.modalTextCompact}>
-              This device stores{' '}
-              <Text style={styles.modalBoldTextCompact}>one part</Text> of your
-              wallet's keyshare. Devices must work together to manage your
-              wallet.
-            </Text>
-
-            <View style={styles.warningBoxCompact}>
-              <Text style={styles.warningTextCompact}>
-                ⚠️ Keep keyshares safe. Losing a device or backup permanently
-                locks out your Bitcoin.
-              </Text>
-            </View>
-
-            <Text style={styles.modalTipTextCompact}>
-              💡 Store backups separately — never together.
-            </Text>
-
-            <TouchableOpacity
-              style={styles.backupButtonCompact}
-              onPress={() => {
-                HapticFeedback.medium();
-                setIsPartyModalVisible(false);
-                if (typeof navigation.navigate === 'function') {
-                  navigation.navigate('Settings');
-                }
-              }}
-              activeOpacity={0.7}>
-              <Text style={styles.backupButtonTextCompact}>
-                Security Settings &gt; Backup
-              </Text>
-            </TouchableOpacity>
-          </View>
+          </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
     </SafeAreaView>

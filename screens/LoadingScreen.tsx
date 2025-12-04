@@ -329,8 +329,8 @@ const LoadingScreen = ({onRetry}: any) => {
       pointerEvents: 'none',
     },
     storeIcon: {
-      width: 200,
-      height: 200,
+      width: 128,
+      height: 128,
     },
     button: {
       flexDirection: 'row',
@@ -505,7 +505,7 @@ const LoadingScreen = ({onRetry}: any) => {
               <Animated.View style={{transform: [{scale: logoScale}]}}>
                 <Image
                   style={[styles.storeIcon]}
-                  source={require('../assets/bold-bitcoin-icon.png')}
+                  source={require('../assets/bold-icon.png')}
                 />
               </Animated.View>
             </TouchableOpacity>

@@ -103,6 +103,7 @@ const MobilesPairing = ({navigation}: any) => {
     satoshiFees?: string;
     fiatFees?: string;
     selectedCurrency?: string;
+    spendingHash?: string;
   };
 
   const route = useRoute<RouteProp<{params: RouteParams}>>();
@@ -525,8 +526,8 @@ const MobilesPairing = ({navigation}: any) => {
     try {
       dbg('session init...');
       const data = await initSession();
-
       dbg('session init done');
+      dbg('spending hash:', route.params.spendingHash);
       if (isMaster) {
         await BBMTLibNativeModule.stopRelay('stop');
         await waitMS(2000);
@@ -676,7 +677,7 @@ const MobilesPairing = ({navigation}: any) => {
           navigation.dispatch(
             CommonActions.reset({
               index: 0,
-              routes: [{name: 'Home'}],
+              routes: [{name: 'Home', params: {txId}}],
             }),
           );
           setMpcDone(true);
@@ -1177,7 +1178,9 @@ const MobilesPairing = ({navigation}: any) => {
       } else {
         setStatus('Pairing timed out. Please try again.');
         Alert.alert('Pairing Timeout', 'No peer device was detected.');
-        navigation.dispatch(StackActions.replace('Devices Pairing', route.params));
+        navigation.dispatch(
+          StackActions.replace('Devices Pairing', route.params),
+        );
       }
     } catch (error) {
       dbg('Pairing Error:', error);
@@ -1298,7 +1301,6 @@ const MobilesPairing = ({navigation}: any) => {
     return '';
   }
 
-
   useFocusEffect(
     useCallback(() => {
       dbg('MobilesPairing screen focused');
@@ -1380,6 +1382,15 @@ const MobilesPairing = ({navigation}: any) => {
       textDecorationLine: 'underline',
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'left',
+    },
+    abortLink: {
+      color: theme.colors.textSecondary,
+      fontWeight: '600',
+      textDecorationLine: 'underline',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'center',
+      fontSize: 14,
+      marginTop: 12,
     },
     header: {
       fontSize: 16,
@@ -2444,6 +2455,32 @@ const MobilesPairing = ({navigation}: any) => {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.innerContainer}>
+            {/* Title and Exit Pairing Link - Show during pairing in local mode */}
+            {!isSendBitcoin && isPairing && !peerIP && (
+              <View style={styles.informationCard}>
+                <Text
+                  style={[
+                    styles.securityText,
+                    {fontSize: 18, fontWeight: 'bold'},
+                  ]}>
+                  {title}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    HapticFeedback.light();
+                    navigation.dispatch(
+                      CommonActions.reset({
+                        index: 0,
+                        routes: [{name: 'Welcome'}],
+                      }),
+                    );
+                  }}
+                  activeOpacity={0.7}
+                  style={{marginTop: 8, marginBottom: 4, alignItems: 'center'}}>
+                  <Text style={styles.abortLink}>Exit Pairing</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             {/* Checklist Section */}
             {!isPairing && !peerIP && (
               <View style={styles.informationCard}>
@@ -2466,6 +2503,20 @@ const MobilesPairing = ({navigation}: any) => {
                   ]}>
                   {title}
                 </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    HapticFeedback.light();
+                    navigation.dispatch(
+                      CommonActions.reset({
+                        index: 0,
+                        routes: [{name: 'Welcome'}],
+                      }),
+                    );
+                  }}
+                  activeOpacity={0.7}
+                  style={{marginTop: 8, marginBottom: 4, alignItems: 'center'}}>
+                  <Text style={styles.abortLink}>Exit Pairing</Text>
+                </TouchableOpacity>
                 <View style={styles.enhancedRequirementsContainer}>
                   <View style={styles.requirementsHeader}>
                     <View style={styles.requirementsIcon}>
@@ -2642,7 +2693,9 @@ const MobilesPairing = ({navigation}: any) => {
                       source={require('../assets/phone-icon.png')}
                       style={[
                         styles.deviceSelf,
-                        localIP ? styles.deviceSelfActive : styles.deviceInactive,
+                        localIP
+                          ? styles.deviceSelfActive
+                          : styles.deviceInactive,
                       ]}
                     />
                     {localDevice && (
@@ -2817,8 +2870,8 @@ const MobilesPairing = ({navigation}: any) => {
                           navigation.dispatch(
                             CommonActions.reset({
                               index: 0,
-                              routes: [{ name: 'Welcome' }],
-                            })
+                              routes: [{name: 'Welcome'}],
+                            }),
                           );
                         }}>
                         <Text style={styles.cancelLink}>Cancel</Text>
@@ -2921,11 +2974,10 @@ const MobilesPairing = ({navigation}: any) => {
                                 }}>
                                 Institutional-grade security in the palm of your
                                 hands.
-                              </Text>
-                              {' '}
-                              MPC•TSS cryptography ensures your keys are distributed
-                              across devices—no single device can compromise your
-                              wallet.{' '}
+                              </Text>{' '}
+                              MPC•TSS cryptography ensures your keys are
+                              distributed across devices—no single device can
+                              compromise your wallet.{' '}
                               <Text
                                 style={{
                                   color: theme.colors.accent,
@@ -3128,9 +3180,7 @@ const MobilesPairing = ({navigation}: any) => {
                         </View>
                         <View style={styles.checkboxTextContainer}>
                           <Text style={styles.enhancedCheckboxLabel}>
-                            {isTrio
-                              ? 'The other devices are ready'
-                              : 'The other device is ready'}
+                           All devices are ready
                           </Text>
                           <Text style={styles.warningHint}>
                             Do not leave the app during setup.

@@ -100,6 +100,24 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     }
   }
 
+  @objc func spendingHash(
+    _ senderAddress: String,
+    receiverAddress: String,
+    amountSatoshi: String,
+    resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      guard self != nil else { return }
+      var error: NSError?
+      let output = TssSpendingHash(
+        senderAddress,
+        receiverAddress,
+        Int64(amountSatoshi) ?? 0, &error)
+      self?.resolve("spendingHash", output, error, resolver)
+    }
+  }
+
   @objc func estimateFees(
     _ senderAddress: String,
     receiverAddress: String,
@@ -443,6 +461,75 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     let output = TssJoinKeygen(
       ppmFile, partyID, partiesCSV, encKey, decKey, sessionID, server, chaincode, sessionKey, &error)
     resolve("mpcTssSetup", output, error, resolver)
+  }
+
+  @objc func nostrKeypair(
+    _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      guard self != nil else { return }
+      var error: NSError?
+      let output = TssNostrKeypair(&error)
+      self?.resolve("nostrKeypair", output, error, resolver)
+    }
+  }
+
+  @objc func hexToNpub(
+    _ hexKey: String, resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      guard self != nil else { return }
+      var error: NSError?
+      let output = TssHexToNpub(hexKey, &error)
+      self?.resolve("hexToNpub", output, error, resolver)
+    }
+  }
+
+  @objc func nostrMpcTssSetup(
+    _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, sessionID: String,
+    sessionKey: String, chaincode: String, ppmFile: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      guard self != nil else { return }
+      var error: NSError?
+      let output = TssNostrJoinKeygen(
+        relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, chaincode, ppmFile, &error)
+      self?.resolve("nostrMpcTssSetup", output, error, resolver)
+    }
+  }
+
+  @objc func nostrJoinKeysign(
+    _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, sessionID: String,
+    sessionKey: String, keyshareJSON: String, derivationPath: String, message: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      guard self != nil else { return }
+      var error: NSError?
+      let output = TssNostrJoinKeysign(
+        relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, keyshareJSON,
+        derivationPath, message, &error)
+      self?.resolve("nostrJoinKeysign", output, error, resolver)
+    }
+  }
+
+  @objc func nostrMpcSendBTC(
+    _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, npubsSorted: String,
+    balanceSats: String, keyshareJSON: String, derivePath: String, publicKey: String,
+    senderAddress: String, receiverAddress: String, amountSatoshi: String, estimatedFee: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      guard self != nil else { return }
+      var error: NSError?
+      let output = TssNostrMpcSendBTC(
+        relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON, derivePath,
+        publicKey, senderAddress, receiverAddress, Int64(amountSatoshi) ?? 0,
+        Int64(estimatedFee) ?? 0, &error)
+      self?.resolve("nostrMpcSendBTC", output, error, resolver)
+    }
   }
 
   @objc func disableLogging(

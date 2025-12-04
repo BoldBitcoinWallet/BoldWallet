@@ -54,6 +54,9 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   const explorerLink = `${baseUrl}/tx/${transaction.txid}`;
 
   const formatBtcAmount = (amount: number) => {
+    if (typeof amount !== 'number' || !Number.isFinite(amount)) {
+      return '0.00000000';
+    }
     const formatted = amount.toFixed(8);
     const [whole, decimal] = formatted.split('.');
     return `${Number(whole).toLocaleString()}.${decimal}`;
@@ -69,6 +72,13 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
 
   const isSent = status.text.includes('Sen') || transaction.sentAt;
   const amount = isSent ? amounts.sent : amounts.received;
+  const hasValidAmount =
+    typeof amount === 'number' && Number.isFinite(amount);
+
+  const hasValidSent =
+    typeof amounts.sent === 'number' && Number.isFinite(amounts.sent);
+  const hasValidReceived =
+    typeof amounts.received === 'number' && Number.isFinite(amounts.received);
 
   // Get the relevant address based on transaction type
   const relevantAddress = isSent
@@ -148,21 +158,22 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                     )
                   : 'Pending',
               )}
-              {isSent &&
+              {isSent && hasValidSent &&
                 renderDetailRow('Sent', `${formatBtcAmount(amounts.sent)} BTC`)}
-              {!isSent &&
+              {!isSent && hasValidReceived &&
                 renderDetailRow(
                   'Received',
                   `${formatBtcAmount(amounts.received)} BTC`,
                 )}
-              {renderDetailRow(
-                'Value',
-                isBlurred
-                  ? '***'
-                  : `${getCurrencySymbol(selectedCurrency)}${getFiatAmount(
-                      amount,
-                    )}`,
-              )}
+              {hasValidAmount &&
+                renderDetailRow(
+                  'Value',
+                  isBlurred
+                    ? '***'
+                    : `${getCurrencySymbol(selectedCurrency)}${getFiatAmount(
+                        amount,
+                      )}`,
+                )}
             </View>
 
             {relevantAddress && (
@@ -203,15 +214,19 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                 'Block Height',
                 transaction.status?.block_height || 'Pending',
               )}
-              {renderDetailRow(
-                'Fee',
-                `${formatBtcAmount(
-                  transaction.fee / 1e8,
-                )} BTC (${getCurrencySymbol(selectedCurrency)}${getFiatAmount(
-                  transaction.fee / 1e8,
-                )})`,
-              )}
-              {renderDetailRow('Size', `${transaction.size} bytes`)}
+              {typeof transaction.fee === 'number' &&
+                Number.isFinite(transaction.fee) &&
+                renderDetailRow(
+                  'Fee',
+                  `${formatBtcAmount(
+                    transaction.fee / 1e8,
+                  )} BTC (${getCurrencySymbol(
+                    selectedCurrency,
+                  )}${getFiatAmount(transaction.fee / 1e8)})`,
+                )}
+              {typeof transaction.size === 'number' &&
+                Number.isFinite(transaction.size) &&
+                renderDetailRow('Size', `${transaction.size} bytes`)}
             </View>
           </ScrollView>
         </View>

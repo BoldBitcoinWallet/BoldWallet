@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -26,7 +27,17 @@ func (s *ServiceImpl) ApplyData(msg string) error {
 	return nil
 }
 
-func LocalPreParams(ppmFile string, timeoutMinutes int) (bool, error) {
+func LocalPreParams(ppmFile string, timeoutMinutes int) (result bool, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in LocalPreParams: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = false
+		}
+	}()
+
 	Logln("BBMTLog", "ppm generation...")
 
 	if _, err := os.Stat(ppmFile); err != nil {
@@ -156,12 +167,12 @@ func (r KeysignRequest) GetKeysignCommitteeKeys() []string {
 	return strings.Split(r.KeysignCommitteeKeys, ",")
 }
 
-func (s *ServiceImpl) getParties(allPartyKeys []string, localPartyKey string, keyPrefix string) ([]*tss.PartyID, *tss.PartyID) {
+func (s *ServiceImpl) getParties(allPartyKeys []string, localPartyKey string) ([]*tss.PartyID, *tss.PartyID) {
 	var localPartyID *tss.PartyID
 	var unSortedPartiesID []*tss.PartyID
 	sort.Strings(allPartyKeys)
 	for idx, item := range allPartyKeys {
-		key := new(big.Int).SetBytes([]byte(keyPrefix + item))
+		key := new(big.Int).SetBytes([]byte(item))
 		partyID := tss.NewPartyID(strconv.Itoa(idx), item, key)
 		if item == localPartyKey {
 			localPartyID = partyID
@@ -183,7 +194,7 @@ func (s *ServiceImpl) KeygenECDSA(req *KeygenRequest) (*KeygenResponse, error) {
 	if len(chaincode) != 32 {
 		return nil, fmt.Errorf("invalid chain code length")
 	}
-	partyIDs, localPartyID := s.getParties(req.GetAllParties(), req.LocalPartyID, "")
+	partyIDs, localPartyID := s.getParties(req.GetAllParties(), req.LocalPartyID)
 
 	ctx := tss.NewPeerContext(partyIDs)
 	curve := tss.S256()
@@ -323,6 +334,7 @@ func (s *ServiceImpl) processKeygen(localParty tss.Party,
 				}
 				localState.PubKey = pubKey
 				localState.ECDSALocalData = *saveData
+				localState.CreatedAt = time.Now().UnixMilli()
 				if err := s.saveLocalStateData(localState); err != nil {
 					return "", fmt.Errorf("failed to save local state data, error: %w", err)
 				}
@@ -394,7 +406,7 @@ func (s *ServiceImpl) KeysignECDSA(req *KeysignRequest) (*KeysignResponse, error
 	if !Contains(keysignCommittee, localState.LocalPartyKey) {
 		return nil, errors.New("local party not in keysign committee")
 	}
-	keysignPartyIDs, localPartyID := s.getParties(keysignCommittee, localState.LocalPartyKey, localState.ResharePrefix)
+	keysignPartyIDs, localPartyID := s.getParties(keysignCommittee, localState.LocalPartyKey)
 
 	threshold, err := GetThreshold(len(localState.KeygenCommitteeKeys))
 	if err != nil {

@@ -258,3 +258,112 @@ export const getMainnetAPIList = async () => {
 export const getTestnetAPIList = async () => {
   return TESTNET_APIS;
 };
+
+// Default Nostr relays
+const DEFAULT_NOSTR_RELAYS = [
+  'wss://bbw-nostr.xyz',
+  'wss://nostr.hifish.org',
+  'wss://nostr.xxi.quest',
+];
+
+// Function to fetch dynamic Nostr relays from GitHub
+export const fetchDynamicNostrRelays = async () => {
+  try {
+    const response = await fetch(
+      'https://raw.githubusercontent.com/BoldBitcoinWallet/mempool-space-hosts/refs/heads/main/NOSTR.md',
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const markdownText = await response.text();
+
+    // Parse markdown to extract relay URLs (lines starting with "- wss://")
+    const relayRegex = /^-\s*(wss:\/\/[^\s]+)/gm;
+    const matches = markdownText.match(relayRegex) || [];
+
+    // Extract URLs from matches
+    const relays = matches
+      .map(match => {
+        // Extract URL from "- wss://..." format
+        const urlMatch = match.match(/wss:\/\/[^\s]+/);
+        return urlMatch ? urlMatch[0].trim() : null;
+      })
+      .filter(url => url !== null && typeof url === 'string' && url.startsWith('wss://'))
+      .map(url => String(url)); // Ensure all are strings
+
+    if (relays.length > 0) {
+      dbg('Fetched dynamic Nostr relays:', relays);
+      return relays;
+    } else {
+      dbg('No valid relays found in fetched content, using defaults');
+      return DEFAULT_NOSTR_RELAYS;
+    }
+  } catch (error) {
+    dbg('Failed to fetch dynamic Nostr relays:', error);
+    return DEFAULT_NOSTR_RELAYS;
+  }
+};
+
+// Helper function to get Nostr relays (dynamic + fallback)
+export const getNostrRelays = async (forceFetch = false) => {
+  // Check cache first (unless forceFetch is true)
+  if (!forceFetch) {
+    try {
+      const cachedRelays = await LocalCache.getItem('nostr_relays');
+      if (cachedRelays) {
+        const relaysArray = cachedRelays
+          .split(',')
+          .map(r => r.trim())
+          .filter(Boolean);
+        if (relaysArray.length > 0) {
+          dbg('Using cached Nostr relays:', relaysArray);
+          return relaysArray;
+        }
+      }
+    } catch (error) {
+      dbg('Error reading cached relays:', error);
+    }
+  }
+
+  // If not cached or forceFetch, fetch from GitHub
+  const dynamicRelays = await fetchDynamicNostrRelays();
+  
+  // Cache the result (either fetched or defaults)
+  const relaysCSV = dynamicRelays.join(',');
+  try {
+    await LocalCache.setItem('nostr_relays', relaysCSV);
+    dbg('Cached Nostr relays:', relaysCSV);
+  } catch (error) {
+    dbg('Error caching relays:', error);
+  }
+
+  return dynamicRelays;
+};
+
+/**
+ * Get the keyshare label (KeyShare1, KeyShare2, KeyShare3) from a keyshare JSON object.
+ * Computes from local_party_key position in sorted keygen_committee_keys array.
+ * Each device checks its local_party_key and finds where it sits in the sorted keygen_committee_keys
+ * to determine its placement (1, 2, or 3).
+ * @param {Object} keyshare - The keyshare JSON object
+ * @returns {string} - The keyshare label (e.g., "KeyShare1", "KeyShare2", "KeyShare3") or empty string
+ */
+export const getKeyshareLabel = keyshare => {
+  if (!keyshare) {
+    return '';
+  }
+
+  // Compute from keygen_committee_keys: find local_party_key's position in sorted array
+  if (keyshare.local_party_key && keyshare.keygen_committee_keys) {
+    // Sort keygen_committee_keys to ensure consistent ordering
+    const sortedKeys = [...keyshare.keygen_committee_keys].sort();
+    const index = sortedKeys.indexOf(keyshare.local_party_key);
+    if (index >= 0) {
+      return `KeyShare${index + 1}`;
+    }
+  }
+
+  // Fallback: return empty string
+  return '';
+};

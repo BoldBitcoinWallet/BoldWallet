@@ -11,7 +11,7 @@ mkdir -p "$BUILD_DIR"
 
 # Build the Go binary
 echo "Building the Go binary..."
-go build -o "$BUILD_DIR/$BIN_NAME" main.go
+go build -o "$BUILD_DIR/$BIN_NAME" ./scripts/main.go
 
 # Generate key pairs
 KEYPAIR1=$("$BUILD_DIR/$BIN_NAME" keypair)

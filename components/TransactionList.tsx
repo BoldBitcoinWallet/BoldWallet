@@ -1,4 +1,10 @@
-import React, {useEffect, useState, useCallback, useRef} from 'react';
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+  useImperativeHandle,
+} from 'react';
 import {
   FlatList,
   Text,
@@ -41,8 +47,13 @@ interface TransactionListProps {
   onPullRefresh?: () => void;
   isBlurred?: boolean;
 }
+export interface TransactionListHandle {
+  refresh: () => Promise<void> | void;
+}
 
-const TransactionList: React.FC<TransactionListProps> = ({
+const TransactionList = React.forwardRef<TransactionListHandle, TransactionListProps>(
+  (
+    {
   address,
   baseApi,
   onUpdate,
@@ -52,7 +63,9 @@ const TransactionList: React.FC<TransactionListProps> = ({
   getCurrencySymbol = currency => currency,
   onPullRefresh,
   isBlurred = false,
-}) => {
+    },
+    ref,
+  ) => {
   const [transactions, setTransactions] = useState<any[]>(initialTransactions);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -397,6 +410,19 @@ const TransactionList: React.FC<TransactionListProps> = ({
       }
     }
   }, [baseApi, memoizedFetchTransactions, onPullRefresh]);
+
+  // Expose imperative refresh method so parents (e.g., WalletHome) can trigger
+  // the same behavior as a user pull-to-refresh gesture.
+  useImperativeHandle(
+    ref,
+    () => ({
+      refresh: () => {
+        // Fire and forget; internal logic handles debouncing and state updates
+        handlePullRefresh();
+      },
+    }),
+    [handlePullRefresh],
+  );
 
   // Cleanup on unmount
   useEffect(() => {
@@ -1038,6 +1064,6 @@ const TransactionList: React.FC<TransactionListProps> = ({
       <Toast config={{}} />
     </View>
   );
-};
+});
 
 export default TransactionList;
