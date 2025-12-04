@@ -500,11 +500,11 @@ if [ -f "scripts/keysign.sh" ]; then
             SIG2_FOUND=false
             
             while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
-                # Check if signatures are in the log
-                if grep -q "\[peer1\] Keysign Result" "$TEST_KEYSIGN_DIR/keysign.log" 2>/dev/null; then
+                # Check if signatures are in the log (account for leading spaces)
+                if grep -qE "\[peer1\].*Keysign Result" "$TEST_KEYSIGN_DIR/keysign.log" 2>/dev/null; then
                     SIG1_FOUND=true
                 fi
-                if grep -q "\[peer2\] Keysign Result" "$TEST_KEYSIGN_DIR/keysign.log" 2>/dev/null; then
+                if grep -qE "\[peer2\].*Keysign Result" "$TEST_KEYSIGN_DIR/keysign.log" 2>/dev/null; then
                     SIG2_FOUND=true
                 fi
                 
@@ -524,9 +524,10 @@ if [ -f "scripts/keysign.sh" ]; then
             done
             
             # Extract signatures from log
-            # Keysign outputs: "[party] Keysign Result {json}"
-            SIG1_OUTPUT=$(grep -A 1 "\[peer1\] Keysign Result" "$TEST_KEYSIGN_DIR/keysign.log" 2>/dev/null | tail -1 | sed 's/^[[:space:]]*//' || echo "")
-            SIG2_OUTPUT=$(grep -A 1 "\[peer2\] Keysign Result" "$TEST_KEYSIGN_DIR/keysign.log" 2>/dev/null | tail -1 | sed 's/^[[:space:]]*//' || echo "")
+            # Keysign outputs: "     [party] Keysign Result {json}" (with leading spaces)
+            # Extract the JSON part after "Keysign Result"
+            SIG1_OUTPUT=$(grep -E "\[peer1\].*Keysign Result" "$TEST_KEYSIGN_DIR/keysign.log" 2>/dev/null | sed -E 's/.*Keysign Result[[:space:]]*//' | sed 's/^[[:space:]]*//' || echo "")
+            SIG2_OUTPUT=$(grep -E "\[peer2\].*Keysign Result" "$TEST_KEYSIGN_DIR/keysign.log" 2>/dev/null | sed -E 's/.*Keysign Result[[:space:]]*//' | sed 's/^[[:space:]]*//' || echo "")
             
             # Stop the keysign processes
             kill $KEYSIGN_PID 2>/dev/null || true
