@@ -60,6 +60,7 @@ New intuitive interface to choose between:
   - Resilient relay connection: parallel connection attempts, proceeds on first success, background retries for remaining relays
 - **Session Management**: Improved session handling and recovery
 - **Error Recovery**: Panic recovery and better error handling
+- **Build System**: Enhanced `build.sh` to automatically maintain `go.mod`/`go.sum` in sync
 - **Optimizations**: Performance improvements in Go modules
 
 ### Frontend (React Native)
@@ -80,9 +81,9 @@ New intuitive interface to choose between:
 - Enhanced native module bindings
 
 ## 📊 Statistics
-- **40 commits** from main branch
-- **134 files changed**
-- **305,519 insertions**, **2,126 deletions**
+- **71 commits** from main branch
+- **171 files changed**
+- **732,814 insertions**, **2,158 deletions**
 - Major new files:
   - `screens/MobileNostrPairing.tsx` (5,566 lines)
   - `BBMTLib/tss/mpc_nostr.go` (1,782 lines)
@@ -102,6 +103,8 @@ New intuitive interface to choose between:
 - Corrected duplicate color definitions
 - Improved transaction list loading states
 - Better handling of empty addresses and API endpoints
+- Fixed CI pipeline issues with `go mod tidy` checks
+- Ensured `go.mod` and `go.sum` stay in sync with build process
 
 ## 📝 Notes
 - Nostr relays can be configured in wallet settings
