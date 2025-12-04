@@ -15,3 +15,8 @@ export GOFLAGS="-mod=mod"
 gomobile bind -v -target=android -androidapi 21 github.com/BoldBitcoinWallet/BBMTLib/tss
 cp tss.aar ../android/app/libs/tss.aar
 cp tss-sources.jar ../android/app/libs/tss-sources.jar
+
+# Run go mod tidy again at the end to ensure go.mod/go.sum are up to date
+# This ensures any dependencies added during the build are included
+echo "Updating go.mod/go.sum..."
+go mod tidy
