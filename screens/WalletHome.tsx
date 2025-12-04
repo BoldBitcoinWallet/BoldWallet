@@ -1052,9 +1052,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         // Get keyshare label (KeyShare1/2/3) or fallback to local_party_key
         const keyshareLabel = getKeyshareLabel(ks);
         const shareID = keyshareLabel || ks.local_party_key || '';
-        const shareType =
-          ks.keygen_committee_keys.length === 2 ? 'Basic' : 'Flexi';
-        setParty(shareID + ' • ' + shareType);
+        setParty(shareID);
 
         // Get current address type and generate address
         const currentAddressType = addrType;
