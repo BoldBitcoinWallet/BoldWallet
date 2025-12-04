@@ -15,7 +15,7 @@ NIP-44 encryption and the rumor/seal/wrap pattern works
 
 ## Overview
 
-The BoldWallet TSS implementation uses a three-layer encryption pattern based on Nostr Improvement Proposals (NIPs):
+The BoldWallet TSS implementation uses a Multi-layer encryption pattern based on Nostr Improvement Proposals (NIPs):
 
 - **NIP-44**: Encrypted Direct Messages using shared secret derivation
 - **NIP-59**: Gift Wraps (Rumor → Seal → Wrap for TSS message transport) for additional privacy
