@@ -77,23 +77,26 @@ const App = () => {
 
   useEffect(() => {
     try {
+      dbg('publishing service...');
       const deviceID = DeviceInfo.getUniqueIdSync();
       if (!deviceID || deviceID.trim() === '') {
         dbg('Warning: deviceID is empty, skipping service publication');
         return;
       }
+      dbg('deviceID:', deviceID);
       zeroOut.publishService(
-        'http',
+        'http', // Fixed with underscore
         'tcp',
         'local.',
-        'bold_bitcoin_wallet',
+        'bbw_scan',
         55056,
-        {txt: 'bold_bitcoin_wallet', id: deviceID},
+        {txt: 'bbw_scan', id: deviceID},
         ImplType.NSD,
       );
+      dbg('service bbw_scan published');
       return () => {
         try {
-          zeroOut.unpublishService('bold_bitcoin_wallet', ImplType.NSD);
+          zeroOut.unpublishService('bbw_scan', ImplType.NSD);
           zeroOut.stop();
           dbg('service publish stopped');
         } catch (e: any) {
@@ -119,7 +122,7 @@ const App = () => {
         dbg('Service Found:', service.fullName);
         if (
           service.txt &&
-          service.txt.txt === 'bold_bitcoin_wallet' &&
+          service.txt.txt === 'bbw_scan' &&
           service.txt.id &&
           service.txt.id !== deviceID
         ) {
@@ -136,7 +139,7 @@ const App = () => {
         }
       });
       zeroconf.on('error', err => {
-        dbg('Zeroconf error:', err);
+        dbg('Zeroconf error:', String(err));
       });
       return () => {
         try {

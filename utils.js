@@ -40,6 +40,10 @@ export const dbg = (message, ...optionalParams) => {
 
 export const shorten = (x, y = 12) => `${x.slice(0, y)}...${x.slice(-y)}`;
 
+export const isCanceledError = (error) => {
+  return error && (String(error) === 'canceled' || error?.name === 'CanceledError');
+};
+
 export const capitalizeWords = str => {
   if (!str) {
     return '';

@@ -346,6 +346,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun getLanIp(peerIP: String, promise: Promise) {
+        var resolved = false
         try {
             val interfaces = Collections.list(NetworkInterface.getNetworkInterfaces())
             var fallbackIp: String? = null
@@ -381,37 +382,33 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 }
             }
 
-            // Prioritize same subnet IP first
-            sameSubnetIp?.let {
-                ld("getLanIp (Same Subnet)", it)
-                promise.resolve(it)
-                return
+            // Determine which IP to return (prioritized order)
+            val resultIp = sameSubnetIp ?: iphoneHotspotIp ?: classCIP ?: fallbackIp
+            val result = resultIp ?: ""
+            
+            // Log the result type
+            when {
+                sameSubnetIp != null -> ld("getLanIp (Same Subnet)", result)
+                iphoneHotspotIp != null -> ld("getLanIp (iPhone Hotspot)", result)
+                classCIP != null -> ld("getLanIp (Class C)", result)
+                fallbackIp != null -> ld("getLanIp (Fallback)", result)
+                else -> ld("getLanIp", result)
             }
-
-            iphoneHotspotIp?.let {
-                ld("getLanIp (iPhone Hotspot)", it)
-                promise.resolve(it)
-                return
+            
+            // Resolve promise only once
+            if (!resolved) {
+                resolved = true
+                promise.resolve(result)
             }
-
-            classCIP?.let {
-                ld("getLanIp (Class C)", it)
-                promise.resolve(it)
-                return
-            }
-
-            fallbackIp?.let {
-                ld("getLanIp (Fallback)", it)
-                promise.resolve(it)
-                return
-            }
-
         } catch (e: Exception) {
             e.printStackTrace()
+            ld("getLanIp", "error: ${e.message}")
+            // Only resolve if promise hasn't been resolved yet
+            if (!resolved) {
+                resolved = true
+                promise.resolve("")
+            }
         }
-
-        ld("getLanIp", "")
-        promise.resolve("")
     }
 
     // Helper function to check if two IPs are in the same subnet
@@ -600,30 +597,29 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun btcAddress(compressedPubkey: String, network: String, addressType: String,  promise: Promise) {
+        var resolved = false
         try {
-            if(addressType == "segwit-native") {
-                val segwitNative = Tss.pubToP2WPKH(compressedPubkey, network)
-                ld("btcAddress", segwitNative)
-                promise.resolve(segwitNative)
-            } else if(addressType == "segwit-compatible") {
-                val segwitCompatible = Tss.pubToP2SHP2WKH(compressedPubkey, network)
-                ld("btcAddress", segwitCompatible)
-                promise.resolve(segwitCompatible)
-            } else if(addressType == "taproot") {
-                val taproot = Tss.pubToP2TR(compressedPubkey, network)
-                ld("btcAddress", taproot)
-                promise.resolve(taproot)
-            } else if(addressType == "legacy") {
-                val legacy = Tss.pubToP2KH(compressedPubkey, network)
-                ld("btcAddress", legacy)
-                promise.resolve(legacy)    
-            } else {
-                ld("btcAddress", "invalid-address type")
-                promise.resolve("")
+            val result = when(addressType) {
+                "segwit-native" -> Tss.pubToP2WPKH(compressedPubkey, network)
+                "segwit-compatible" -> Tss.pubToP2SHP2WKH(compressedPubkey, network)
+                "taproot" -> Tss.pubToP2TR(compressedPubkey, network)
+                "legacy" -> Tss.pubToP2KH(compressedPubkey, network)
+                else -> {
+                    ld("btcAddress", "invalid-address type")
+                    ""
+                }
+            }
+            ld("btcAddress", result)
+            if (!resolved) {
+                resolved = true
+                promise.resolve(result)
             }
         } catch (e: Throwable) {
             ld("btcAddress", "error: ${e.stackTraceToString()}")
-            promise.reject("BTC_ADDRESS_ERROR", "Failed to generate BTC address: ${e.message}", e)
+            if (!resolved) {
+                resolved = true
+                promise.reject("BTC_ADDRESS_ERROR", "Failed to generate BTC address: ${e.message}", e)
+            }
         }
     }
 
