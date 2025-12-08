@@ -107,6 +107,17 @@ jobs:
           docker --version
           echo "✓ Docker is available"
 
+      - name: Pull Nostr relay Docker image
+        run: |
+          # Pre-pull the image so Docker can use its built-in cache
+          # Docker on GitHub Actions automatically caches images between runs
+          echo "Pulling nostr-rs-relay Docker image..."
+          docker pull scsibug/nostr-rs-relay:latest || {
+            echo "❌ Failed to pull nostr-rs-relay image"
+            exit 1
+          }
+          echo "✓ Nostr relay image ready (Docker will cache this for subsequent runs)"
+
       - name: Start local Nostr relay
         run: |
           echo "Starting local Docker-based Nostr relay..."
