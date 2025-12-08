@@ -1378,7 +1378,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       navigation.dispatch(
         CommonActions.reset({
           index: 0,
-          routes: [{name: 'Nostr Pairing', params: route.params}],
+          routes: [{name: 'Nostr Connect', params: route.params}],
         }),
       );
     } finally {
@@ -1970,7 +1970,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     HapticFeedback.medium();
     Alert.alert(
       'Copied',
-      '- Connection details copied to clipboard.\n- Paste them to your other device(s)',
+      '- Pairing data copied.\n- Paste them to other device(s)',
     );
   };
 
@@ -2318,7 +2318,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     hintBox: {
       backgroundColor: theme.colors.primary + '10',
       borderRadius: 8,
-      padding: 12,
+      padding: 6,
       borderLeftWidth: 3,
       borderLeftColor: theme.colors.primary,
     },
@@ -2683,10 +2683,11 @@ const MobileNostrPairing = ({navigation}: any) => {
     headerRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
-      alignItems: 'flex-start',
+      alignItems: 'center',
     },
     headerContent: {
       flex: 1,
+      alignItems: 'center',
     },
     sectionSubtitle: {
       fontSize: 14,
@@ -2700,7 +2701,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       backgroundColor: theme.colors.primary + '20',
       alignItems: 'center',
       justifyContent: 'center',
-      marginLeft: 12,
+      marginRight: 12,
     },
     helpIcon: {
       width: 20,
@@ -2709,7 +2710,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     stepIndicatorContainer: {
       marginBottom: 8,
-      paddingVertical: 16,
+      paddingVertical: 8,
     },
     stepRow: {
       flexDirection: 'row',
@@ -3471,16 +3472,63 @@ const MobileNostrPairing = ({navigation}: any) => {
       opacity: 0.5,
     },
     cancelLinkContainer: {
+      marginTop: 8,
+      marginBottom: 4,
       alignItems: 'center',
-      marginTop: 12,
-      paddingVertical: 8,
     },
     cancelLinkText: {
-      fontSize: 15,
       color: theme.colors.textSecondary,
-      fontWeight: '500',
+      fontWeight: '600',
       textDecorationLine: 'underline',
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'center',
+      fontSize: 14,
+      marginTop: 12,
+    },
+    retryButton: {
+      backgroundColor: theme.colors.secondary,
+      borderRadius: 18,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      shadowColor: theme.colors.shadowColor,
+      shadowOffset: {width: 0, height: 1},
+      shadowOpacity: 0.1,
+      shadowRadius: 2,
+      elevation: 2,
+      minHeight: 36,
+    },
+    retryLink: {
+      color: theme.colors.background,
+      fontWeight: '600',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'center',
+      fontSize: 14,
+      marginLeft: 6,
+    },
+    buttonFlex: {
+      flex: 1,
+      marginHorizontal: 6,
+    },
+    cancelSetupButton: {
+      backgroundColor: theme.colors.background,
+      borderColor: theme.colors.secondary,
+      borderWidth: 1,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      minHeight: 36,
+    },
+    cancelLink: {
+      color: theme.colors.secondary,
+      fontWeight: '600',
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'center',
+      fontSize: 14,
     },
   });
 
@@ -3514,50 +3562,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                   {/* Header */}
                   <View style={styles.section}>
                     <View style={styles.headerRow}>
-                      <View style={styles.headerContent}>
-                        <Text style={styles.sectionTitle}>
-                          {isSendBitcoin ? (
-                            <View
-                              style={{
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                marginBottom: 8,
-                              }}>
-                              <Image
-                                source={require('../assets/cosign-icon.png')}
-                                style={{
-                                  width: 20,
-                                  height: 20,
-                                  marginRight: 8,
-                                  tintColor: theme.colors.primary,
-                                  marginBottom: 8,
-                                }}
-                                resizeMode="contain"
-                              />
-                              <Text
-                                style={{
-                                  fontSize: 16,
-                                  fontWeight: '700',
-                                  color: theme.colors.text,
-                                  marginBottom: 8,
-                                  textAlign: 'center',
-                                  fontFamily:
-                                    Platform.OS === 'ios' ? 'System' : 'Roboto',
-                                }}>
-                                Transaction Co-Signing
-                              </Text>
-                            </View>
-                          ) : (
-                            'Setup Wallet'
-                          )}
-                        </Text>
-                        <Text style={styles.sectionSubtitle}>
-                          {isSendBitcoin
-                            ? 'Select one device to co-sign'
-                            : 'Connect with other devices to create wallet'}
-                        </Text>
-                      </View>
+                      {/* Help button on the left */}
                       <TouchableOpacity
                         style={styles.helpButton}
                         onPress={() => {
@@ -3571,31 +3576,72 @@ const MobileNostrPairing = ({navigation}: any) => {
                           resizeMode="contain"
                         />
                       </TouchableOpacity>
-                    </View>
 
-                    {/* Cancel/Abort Link - Soft and centered */}
-                    {!mpcDone && !isPairing && (
-                      <TouchableOpacity
-                        style={styles.cancelLinkContainer}
-                        onPress={() => {
-                          HapticFeedback.light();
-                          if (isSendBitcoin) {
-                            navigation.goBack();
-                          } else {
-                            navigation.dispatch(
-                              CommonActions.reset({
-                                index: 0,
-                                routes: [{name: 'Welcome'}],
-                              }),
-                            );
-                          }
-                        }}
-                        activeOpacity={0.7}>
-                        <Text style={styles.cancelLinkText}>
-                          {isSendBitcoin ? 'Cancel Signing' : 'Cancel Pairing'}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
+                      {/* Title in the center */}
+                      <View style={styles.headerContent}>
+                        {isSendBitcoin ? (
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}>
+                            <Image
+                              source={require('../assets/cosign-icon.png')}
+                              style={{
+                                width: 20,
+                                height: 20,
+                                marginRight: 8,
+                                tintColor: theme.colors.primary,
+                              }}
+                              resizeMode="contain"
+                            />
+                            <Text
+                              style={{
+                                fontSize: 18,
+                                fontWeight: '700',
+                                color: theme.colors.text,
+                                textAlign: 'center',
+                                fontFamily:
+                                  Platform.OS === 'ios' ? 'System' : 'Roboto',
+                              }}>
+                              Transaction Co-Signing
+                            </Text>
+                          </View>
+                        ) : (
+                          <Text
+                            style={[styles.sectionTitle, {marginBottom: 0}]}>
+                            Setup Wallet
+                          </Text>
+                        )}
+                      </View>
+
+                      {/* Abort Setup button on the right */}
+                      {!mpcDone && !isPairing ? (
+                        <TouchableOpacity
+                          style={[styles.cancelSetupButton, {marginLeft: 12}]}
+                          onPress={() => {
+                            HapticFeedback.light();
+                            if (isSendBitcoin) {
+                              navigation.goBack();
+                            } else {
+                              navigation.dispatch(
+                                CommonActions.reset({
+                                  index: 0,
+                                  routes: [{name: 'Welcome'}],
+                                }),
+                              );
+                            }
+                          }}
+                          activeOpacity={0.7}>
+                          <Text style={styles.cancelLink}>
+                            {isSendBitcoin ? 'Cancel' : 'Abort'}
+                          </Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <View style={{width: 36}} />
+                      )}
+                    </View>
                   </View>
 
                   {/* Send Mode: Device Selection - Show current device and allow selecting one other */}
@@ -3608,7 +3654,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           color: theme.colors.text,
                           marginBottom: 8,
                         }}>
-                        Your Device
+                        This Device
                       </Text>
                       {sendModeDevices.length === 0 ? (
                         <Text style={{color: theme.colors.text, opacity: 0.6}}>
@@ -3648,7 +3694,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                         {localDevice.keyshareLabel}
                                       </Text>
                                       <Text style={styles.sendModeDeviceBadge}>
-                                        Your device
+                                        This device
                                       </Text>
                                     </View>
                                     <Text
@@ -3797,6 +3843,60 @@ const MobileNostrPairing = ({navigation}: any) => {
                     </View>
                   )}
 
+                  {/* Relay Configuration - Collapsible - Hide when Final Step is shown */}
+                  {!showFinalStep && (
+                    <View style={styles.section}>
+                      <TouchableOpacity
+                        style={styles.collapsibleHeader}
+                        onPress={() => {
+                          HapticFeedback.light();
+                          setShowRelayConfig(!showRelayConfig);
+                        }}
+                        activeOpacity={0.7}>
+                        <Text style={styles.collapsibleHeaderText}>
+                          {showRelayConfig ? '▼' : '▶'} Advanced: Nostr Relays
+                          Settings
+                        </Text>
+                      </TouchableOpacity>
+                      {showRelayConfig && (
+                        <View style={styles.collapsibleContent}>
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              color: theme.colors.textSecondary,
+                              marginBottom: 8,
+                            }}>
+                            Configure Nostr relays (defaults work for most
+                            users). Enter relay URLs, one per line or
+                            comma-separated (wss://...).
+                          </Text>
+                          <TextInput
+                            style={[
+                              styles.input,
+                              {
+                                minHeight: 120,
+                                textAlignVertical: 'top',
+                                paddingTop: 12,
+                              },
+                            ]}
+                            value={relaysInput}
+                            onChangeText={setRelaysInput}
+                            placeholder={
+                              'wss://relay1.com\nwss://relay2.com\nwss://relay3.com'
+                            }
+                            placeholderTextColor={
+                              theme.colors.textSecondary + '80'
+                            }
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            multiline
+                            numberOfLines={6}
+                          />
+                        </View>
+                      )}
+                    </View>
+                  )}
+
                   {/* Step Indicator */}
                   {!isSendBitcoin && (
                     <View style={styles.stepIndicatorContainer}>
@@ -3885,9 +3985,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                       </View>
                       <View style={styles.stepLabels}>
                         <Text style={styles.stepLabel}>Your Device</Text>
-                        <Text style={styles.stepLabel}>Second Peer</Text>
+                        <Text style={styles.stepLabel}>2nd Peer</Text>
                         {isTrio && (
-                          <Text style={styles.stepLabel}>Third Peer</Text>
+                          <Text style={styles.stepLabel}>3rd Peer</Text>
                         )}
                         <Text style={styles.stepLabel}>Prepared</Text>
                         <Text style={styles.stepLabel}>Ready</Text>
@@ -3895,65 +3995,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                     </View>
                   )}
 
-                  {/* Relay Configuration - Collapsible - Hide when Final Step is shown */}
-                  {!showFinalStep && (
-                    <View style={styles.section}>
-                      <TouchableOpacity
-                        style={styles.collapsibleHeader}
-                        onPress={() => {
-                          HapticFeedback.light();
-                          setShowRelayConfig(!showRelayConfig);
-                        }}
-                        activeOpacity={0.7}>
-                        <Text style={styles.collapsibleHeaderText}>
-                          {showRelayConfig ? '▼' : '▶'} Advanced: Nostr Relays
-                          Settings
-                        </Text>
-                      </TouchableOpacity>
-                      {showRelayConfig && (
-                        <View style={styles.collapsibleContent}>
-                          <Text
-                            style={{
-                              fontSize: 12,
-                              color: theme.colors.textSecondary,
-                              marginBottom: 8,
-                            }}>
-                            Configure Nostr relays (defaults work for most
-                            users). Enter relay URLs, one per line or
-                            comma-separated (wss://...).
-                          </Text>
-                          <TextInput
-                            style={[
-                              styles.input,
-                              {
-                                minHeight: 120,
-                                textAlignVertical: 'top',
-                                paddingTop: 12,
-                              },
-                            ]}
-                            value={relaysInput}
-                            onChangeText={setRelaysInput}
-                            placeholder={
-                              'wss://relay1.com\nwss://relay2.com\nwss://relay3.com'
-                            }
-                            placeholderTextColor={
-                              theme.colors.textSecondary + '80'
-                            }
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                            multiline
-                            numberOfLines={6}
-                          />
-                        </View>
-                      )}
-                    </View>
-                  )}
-
                   {/* Local Device Card - Hide when Final Step is shown or in send mode */}
                   {localNpub &&
                     deviceName &&
                     partialNonce &&
-                    !showFinalStep &&
                     !isSendBitcoin && (
                       <View style={styles.section}>
                         <Text
@@ -3963,65 +4008,64 @@ const MobileNostrPairing = ({navigation}: any) => {
                             color: theme.colors.text,
                             marginBottom: 12,
                           }}>
-                          Your Device
+                          This Device
                         </Text>
-                        <View style={styles.card}>
-                          <View style={styles.hintBox}>
-                            <Text style={styles.hintText}>
-                              📱 On other device(s), paste or scan this
-                              connection
-                            </Text>
-                          </View>
-                          <View style={styles.deviceInfoRow}>
-                            <Text
-                              style={styles.deviceInfoSingleLine}
-                              numberOfLines={1}
-                              ellipsizeMode="middle"
-                              adjustsFontSizeToFit={true}
-                              minimumFontScale={0.8}>
-                              {deviceName}@{shortenNpub(localNpub, 8, 6)}
-                            </Text>
-                          </View>
-                          <View style={styles.buttonRow}>
+                        <View
+                          style={[
+                            styles.hintBox,
+                            {
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                            },
+                          ]}>
+                          <Text
+                            style={[
+                              styles.deviceInfoSingleLine,
+                              {flex: 1, marginRight: 8},
+                            ]}
+                            numberOfLines={1}
+                            ellipsizeMode="middle"
+                            adjustsFontSizeToFit={true}
+                            minimumFontScale={0.8}>
+                            {deviceName}@{shortenNpub(localNpub, 8, 6)}
+                          </Text>
+                          <View style={{flexDirection: 'row', gap: 8}}>
                             <TouchableOpacity
-                              style={[
-                                styles.buttonCompact,
-                                styles.buttonSecondary,
-                              ]}
                               onPress={copyConnectionDetails}
-                              activeOpacity={0.8}>
+                              activeOpacity={0.7}
+                              style={{
+                                padding: 8,
+                                backgroundColor: theme.colors.primary + '10',
+                                borderRadius: 8,
+                              }}>
                               <Image
                                 source={require('../assets/copy-icon.png')}
-                                style={styles.iconImageCompact}
+                                style={{
+                                  width: 20,
+                                  height: 20,
+                                  tintColor: theme.colors.secondary,
+                                }}
                                 resizeMode="contain"
                               />
-                              <Text
-                                style={[
-                                  styles.buttonTextCompact,
-                                  styles.buttonTextSecondary,
-                                ]}>
-                                Copy
-                              </Text>
                             </TouchableOpacity>
                             <TouchableOpacity
-                              style={[
-                                styles.buttonCompact,
-                                styles.buttonSecondary,
-                              ]}
                               onPress={showQRModal}
-                              activeOpacity={0.8}>
+                              activeOpacity={0.7}
+                              style={{
+                                padding: 8,
+                                backgroundColor: theme.colors.primary + '10',
+                                borderRadius: 8,
+                              }}>
                               <Image
                                 source={require('../assets/qrc-icon.png')}
-                                style={styles.iconImageCompact}
+                                style={{
+                                  width: 20,
+                                  height: 20,
+                                  tintColor: theme.colors.secondary,
+                                }}
                                 resizeMode="contain"
                               />
-                              <Text
-                                style={[
-                                  styles.buttonTextCompact,
-                                  styles.buttonTextSecondary,
-                                ]}>
-                                QR
-                              </Text>
                             </TouchableOpacity>
                           </View>
                         </View>
@@ -4039,8 +4083,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                           marginBottom: 12,
                         }}>
                         {isTrio
-                          ? 'Step 2: Second Peer Device'
-                          : 'Step 2: Other Peer Device'}
+                          ? 'Step 2: Second Device'
+                          : 'Step 2: Other Device'}
                       </Text>
                       <View>
                         <View style={styles.inputWithIcons}>
@@ -4179,7 +4223,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           color: theme.colors.text,
                           marginBottom: 12,
                         }}>
-                        Step 3: Third Peer Device
+                        Step 3: Third Device
                       </Text>
                       <View>
                         <View style={styles.inputWithIcons}>
@@ -4449,19 +4493,53 @@ const MobileNostrPairing = ({navigation}: any) => {
                           style={styles.helpModalBody}
                           showsVerticalScrollIndicator={false}>
                           <View style={styles.helpSection}>
-                            <Text style={styles.helpTitle}>
-                              📱 Step 1: Your Device
-                            </Text>
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                marginBottom: 4,
+                              }}>
+                              <Image
+                                source={require('../assets/phone-icon.png')}
+                                style={{
+                                  width: 18,
+                                  height: 18,
+                                  marginRight: 8,
+                                  tintColor: theme.colors.primary,
+                                }}
+                                resizeMode="contain"
+                              />
+                              <Text style={styles.helpTitle}>
+                                Step 1: This Device
+                              </Text>
+                            </View>
                             <Text style={styles.helpText}>
-                              Your device generates a unique ID. Share this with
+                              This device generates a unique ID. Share this with
                               other devices by showing the QR code or copying
                               the connection details.
                             </Text>
                           </View>
                           <View style={styles.helpSection}>
-                            <Text style={styles.helpTitle}>
-                              🔗 Step 2: Connect Peers
-                            </Text>
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                marginBottom: 4,
+                              }}>
+                              <Image
+                                source={require('../assets/share-icon.png')}
+                                style={{
+                                  width: 18,
+                                  height: 18,
+                                  marginRight: 8,
+                                  tintColor: theme.colors.primary,
+                                }}
+                                resizeMode="contain"
+                              />
+                              <Text style={styles.helpTitle}>
+                                Step 2: Connect Peers
+                              </Text>
+                            </View>
                             <Text style={styles.helpText}>
                               On each peer device, scan your QR code or paste
                               your connection details. Then share their
@@ -4469,17 +4547,51 @@ const MobileNostrPairing = ({navigation}: any) => {
                             </Text>
                           </View>
                           <View style={styles.helpSection}>
-                            <Text style={styles.helpTitle}>
-                              ✅ Step 3: Start
-                            </Text>
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                marginBottom: 4,
+                              }}>
+                              <Image
+                                source={require('../assets/check-icon.png')}
+                                style={{
+                                  width: 18,
+                                  height: 18,
+                                  marginRight: 8,
+                                  tintColor: theme.colors.primary,
+                                }}
+                                resizeMode="contain"
+                              />
+                              <Text style={styles.helpTitle}>
+                                Step 3: Start
+                              </Text>
+                            </View>
                             <Text style={styles.helpText}>
-                              Once all devices are connected, tap "Start Key
-                              Generation" to begin the secure wallet setup
+                              Once all devices are prepared, tap proceed to Key
+                              Generation to begin the secure wallet setup
                               process.
                             </Text>
                           </View>
                           <View style={styles.helpSection}>
-                            <Text style={styles.helpTitle}>💡 Tips</Text>
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                marginBottom: 4,
+                              }}>
+                              <Image
+                                source={require('../assets/about-icon.png')}
+                                style={{
+                                  width: 18,
+                                  height: 18,
+                                  marginRight: 8,
+                                  tintColor: theme.colors.primary,
+                                }}
+                                resizeMode="contain"
+                              />
+                              <Text style={styles.helpTitle}>Tips</Text>
+                            </View>
                             <Text style={styles.helpText}>
                               • QR scanning is the easiest method{'\n'}• Make
                               sure all devices are online{'\n'}• The process

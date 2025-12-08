@@ -337,7 +337,7 @@ const App = () => {
                     }}
                   />
                   <Stack.Screen
-                    name="Nostr Pairing"
+                    name="Nostr Connect"
                     component={MobileNostrPairing}
                     options={{
                       headerShown: true,
