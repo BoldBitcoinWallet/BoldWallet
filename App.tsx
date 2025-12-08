@@ -78,6 +78,10 @@ const App = () => {
   useEffect(() => {
     try {
       const deviceID = DeviceInfo.getUniqueIdSync();
+      if (!deviceID || deviceID.trim() === '') {
+        dbg('Warning: deviceID is empty, skipping service publication');
+        return;
+      }
       zeroOut.publishService(
         'http',
         'tcp',
@@ -105,6 +109,11 @@ const App = () => {
     try {
       dbg('scanning for mDNS Services');
       const deviceID = DeviceInfo.getUniqueIdSync();
+      // Validate deviceID before scanning
+      if (!deviceID || deviceID.trim() === '') {
+        dbg('Warning: deviceID is empty, skipping mDNS scan');
+        return;
+      }
       zeroconf.scan('http', 'tcp', 'local.');
       zeroconf.on('resolved', service => {
         dbg('Service Found:', service.fullName);
