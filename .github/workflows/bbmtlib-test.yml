@@ -1,10 +1,6 @@
 name: BBMTLib Tests
 
 on:
-  push:
-    paths:
-      - 'BBMTLib/**'
-      - '.github/workflows/bbmtlib-test.yml'
   pull_request:
     paths:
       - 'BBMTLib/**'
@@ -102,11 +98,55 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
 
+      - name: Verify Docker is available
+        run: |
+          if ! command -v docker >/dev/null 2>&1; then
+            echo "❌ Docker is required for running tests with local relay"
+            exit 1
+          fi
+          docker --version
+          echo "✓ Docker is available"
+
+      - name: Start local Nostr relay
+        run: |
+          echo "Starting local Docker-based Nostr relay..."
+          chmod +x scripts/*.sh
+          if ! ./scripts/start-local-relay.sh; then
+            echo "❌ Failed to start local relay. Tests require a local Docker-based relay."
+            echo "Relay container status:"
+            docker ps -a | grep bbmtlib-test-relay || echo "No relay container found"
+            exit 1
+          fi
+          echo "✓ Local relay is running at ws://localhost:7777"
+          
+          # Verify relay is actually accessible
+          if ! docker ps --format '{{.Names}}' | grep -q "^bbmtlib-test-relay$"; then
+            echo "❌ Relay container is not running"
+            exit 1
+          fi
+
       - name: Run comprehensive script tests
+        env:
+          RELAYS: "ws://localhost:7777"
+          REQUIRE_LOCAL_RELAY: "true"
         run: |
           echo "Running comprehensive test suite for all scripts..."
+          echo "Using local relay: $RELAYS"
+          echo "Local relay is required - tests will fail if relay is unavailable"
+          
+          # Verify relay is still running before tests
+          if ! docker ps --format '{{.Names}}' | grep -q "^bbmtlib-test-relay$"; then
+            echo "❌ Local relay container is not running. Tests cannot proceed."
+            exit 1
+          fi
+          
           ./scripts/test-all.sh
-        continue-on-error: true
+
+      - name: Stop local Nostr relay
+        if: always()
+        run: |
+          echo "Stopping local relay..."
+          ./scripts/stop-local-relay.sh || true
 
       - name: Run vet
         run: go vet ./...
@@ -139,54 +179,4 @@ jobs:
           name: bbmtlib-coverage
           fail_ci_if_error: false
         continue-on-error: true
-
-  integration-test:
-    name: Integration Tests (Optional)
-    runs-on: ubuntu-latest
-    needs: test
-    
-    defaults:
-      run:
-        working-directory: ./BBMTLib
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.24.2'
-          cache-dependency-path: BBMTLib/go.sum
-
-      - name: Install dependencies
-        run: go mod download
-
-      - name: Install jq (for JSON validation)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq
-
-      - name: Install Docker (for local relay)
-        run: |
-          # Docker is pre-installed in GitHub Actions ubuntu-latest
-          # Just verify it's available
-          docker --version || echo "Docker not available, tests will use external relays"
-
-      - name: Run comprehensive script tests (with local relay)
-        env:
-          TIMEOUT: "120"
-        run: |
-          echo "Running comprehensive test suite with local Nostr relay..."
-          echo "The test script will automatically start a local relay using Docker"
-          echo "If Docker is unavailable, it will fall back to external relays"
-          
-          # Make scripts executable
-          chmod +x scripts/*.sh
-          
-          # Run comprehensive test script
-          # The script will handle starting/stopping the local relay automatically
-          ./scripts/test-all.sh
-        continue-on-error: true
-        timeout-minutes: 15
 

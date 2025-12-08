@@ -318,7 +318,7 @@ start_local_relay() {
         
         return 0
     else
-        echo "⚠ Failed to start local relay, falling back to external relays"
+        echo "❌ Failed to start local relay"
         echo "  Check /tmp/relay-start.log for details"
         if [ -f /tmp/relay-start.log ]; then
             echo "  Last 10 lines of relay startup log:"
@@ -625,9 +625,10 @@ else
         RELAYS_TO_USE="$LOCAL_RELAY_URL"
         echo "Using local relay: $RELAYS_TO_USE"
     else
-        RELAYS_TO_USE="${RELAYS:-wss://nostr.hifish.org,wss://nostr.xxi.quest,wss://bbw-nostr.xyz}"
-        echo "Using external relays: $RELAYS_TO_USE"
-        echo "  (Note: Tests may fail due to relay connectivity)"
+        print_failure "nostr-keygen.sh: Local relay is required but could not be started"
+        echo "  This test requires a local Docker-based relay to run."
+        echo "  Please ensure Docker is available and the relay can be started."
+        exit 1
     fi
     
     # Try to run with a short timeout
@@ -719,13 +720,14 @@ else
     fi
     
     if [ -f "$KEYGEN_OUTPUT_DIR/party1-keyshare.json" ] && [ -f "$KEYGEN_OUTPUT_DIR/party2-keyshare.json" ]; then
-        # Use local relay if available, otherwise fall back to external
+        # Use local relay (required)
         if [ "$USE_LOCAL_RELAY" = "true" ] && [ -n "$LOCAL_RELAY_URL" ]; then
             RELAYS_TO_USE="$LOCAL_RELAY_URL"
             echo "  Using local relay for keysign: $RELAYS_TO_USE"
         else
-            RELAYS_TO_USE="${RELAYS:-wss://bbw-nostr.xyz}"
-            echo "  Using external relay for keysign: $RELAYS_TO_USE"
+            print_failure "nostr-keysign.sh: Local relay is required but not available"
+            echo "  This test requires a local Docker-based relay to run."
+            exit 1
         fi
         
         export OUTPUT_DIR="$KEYGEN_OUTPUT_DIR"
@@ -786,14 +788,14 @@ else
         print_failure "nostr-keygen-3party.sh: Syntax error"
     fi
     
-    # Use local relay if available
+    # Use local relay (required)
     if [ "$USE_LOCAL_RELAY" = "true" ] && [ -n "$LOCAL_RELAY_URL" ]; then
         RELAYS_TO_USE="$LOCAL_RELAY_URL"
         echo "Using local relay: $RELAYS_TO_USE"
     else
-        RELAYS_TO_USE="${RELAYS:-wss://nostr.hifish.org,wss://nostr.xxi.quest,wss://bbw-nostr.xyz}"
-        echo "Using external relays: $RELAYS_TO_USE"
-        echo "  (Note: Tests may fail due to relay connectivity)"
+        print_failure "nostr-keygen-3party.sh: Local relay is required but not available"
+        echo "  This test requires a local Docker-based relay to run."
+        exit 1
     fi
     
     # Try to run with a short timeout
