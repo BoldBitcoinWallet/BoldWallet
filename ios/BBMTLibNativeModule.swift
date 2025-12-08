@@ -59,7 +59,6 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async { [weak self] in
-      guard self != nil else { return }
       var error: NSError?
       let output = TssPublishData(port, timeout, encKey, raw, mode, &error)
       if error == nil {
@@ -92,11 +91,11 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async { [weak self] in
-      guard self != nil else { return }
       var error: NSError?
       TssSetNetwork(network, &error)
       let output = TssGetNetwork(&error)
-      self?.resolve("setBtcNetwork", output, error, resolver)
+      self?.sendLogEvent("setBtcNetwork", output)
+      resolver(error == nil ? output : error!.localizedDescription)
     }
   }
 
@@ -108,13 +107,13 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async { [weak self] in
-      guard self != nil else { return }
       var error: NSError?
       let output = TssSpendingHash(
         senderAddress,
         receiverAddress,
         Int64(amountSatoshi) ?? 0, &error)
-      self?.resolve("spendingHash", output, error, resolver)
+      self?.sendLogEvent("spendingHash", output)
+      resolver(error == nil ? output : error!.localizedDescription)
     }
   }
 
@@ -126,13 +125,13 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async { [weak self] in
-      guard self != nil else { return }
       var error: NSError?
       let output = TssEstimateFees(
         senderAddress,
         receiverAddress,
         Int64(amountSatoshi) ?? 0, &error)
-      self?.resolve("estimateFee", output, error, resolver)
+      self?.sendLogEvent("estimateFee", output)
+      resolver(error == nil ? output : error!.localizedDescription)
     }
   }
 
@@ -157,7 +156,6 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async { [weak self] in
-      guard self != nil else { return }
       var error: NSError?
       let output = TssMpcSendBTC(
         server,
@@ -174,7 +172,8 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
         receiverAddress,
         Int64(amountSatoshi) ?? 0,
         Int64(feeSatoshi) ?? 0, &error)
-      self?.resolve("mpcSendBTC", output, error, resolver)
+      self?.sendLogEvent("mpcSendBTC", output)
+      resolver(error == nil ? output : error!.localizedDescription)
     }
   }
 
@@ -183,10 +182,10 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async { [weak self] in
-      guard self != nil else { return }
       var error: NSError?
       let output = TssRunRelay(port, &error)
-      self?.resolve("runRelay", output, error, resolver)
+      self?.sendLogEvent("runRelay", output)
+      resolver(error == nil ? output : error!.localizedDescription)
     }
   }
 
@@ -204,7 +203,6 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async { [weak self] in
-      guard self != nil else { return }
       var error: NSError?
       let output = TssListenForPeers(id, pubkey, port, timeout, mode, &error)
       if error == nil {
@@ -222,7 +220,6 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async { [weak self] in
-      guard self != nil else { return }
       var error: NSError?
       let output = TssDiscoverPeers(id, pubkey, localIp, remoteIp, port, timeout, mode, &error)
       if error == nil {
@@ -467,10 +464,10 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async { [weak self] in
-      guard self != nil else { return }
       var error: NSError?
       let output = TssNostrKeypair(&error)
-      self?.resolve("nostrKeypair", output, error, resolver)
+      self?.sendLogEvent("nostrKeypair", output)
+      resolver(error == nil ? output : error!.localizedDescription)
     }
   }
 
@@ -479,10 +476,10 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async { [weak self] in
-      guard self != nil else { return }
       var error: NSError?
       let output = TssHexToNpub(hexKey, &error)
-      self?.resolve("hexToNpub", output, error, resolver)
+      self?.sendLogEvent("hexToNpub", output)
+      resolver(error == nil ? output : error!.localizedDescription)
     }
   }
 
@@ -492,11 +489,11 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async { [weak self] in
-      guard self != nil else { return }
       var error: NSError?
       let output = TssNostrJoinKeygen(
         relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, chaincode, ppmFile, &error)
-      self?.resolve("nostrMpcTssSetup", output, error, resolver)
+      self?.sendLogEvent("nostrMpcTssSetup", output)
+      resolver(error == nil ? output : error!.localizedDescription)
     }
   }
 
@@ -506,12 +503,12 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async { [weak self] in
-      guard self != nil else { return }
       var error: NSError?
       let output = TssNostrJoinKeysign(
         relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, keyshareJSON,
         derivationPath, message, &error)
-      self?.resolve("nostrJoinKeysign", output, error, resolver)
+      self?.sendLogEvent("nostrJoinKeysign", output)
+      resolver(error == nil ? output : error!.localizedDescription)
     }
   }
 
@@ -522,13 +519,13 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async { [weak self] in
-      guard self != nil else { return }
       var error: NSError?
       let output = TssNostrMpcSendBTC(
         relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON, derivePath,
         publicKey, senderAddress, receiverAddress, Int64(amountSatoshi) ?? 0,
         Int64(estimatedFee) ?? 0, &error)
-      self?.resolve("nostrMpcSendBTC", output, error, resolver)
+      self?.sendLogEvent("nostrMpcSendBTC", output)
+      resolver(error == nil ? output : error!.localizedDescription)
     }
   }
 

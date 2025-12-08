@@ -1291,7 +1291,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     const fiatFees = feeSats.times(btcRate).div(1e8).toFixed(2);
 
     const routeName =
-      transport === 'local' ? 'Devices Pairing' : 'Nostr Pairing';
+      transport === 'local' ? 'Devices Pairing' : 'Nostr Connect';
     navigation.dispatch(
       CommonActions.navigate({
         name: routeName,

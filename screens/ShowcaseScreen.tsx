@@ -979,7 +979,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                 index: 0,
                 routes: [
                   {
-                    name: 'Nostr Pairing',
+                    name: 'Nostr Connect',
                     params: { mode: pendingMode },
                   },
                 ],

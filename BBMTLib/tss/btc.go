@@ -179,6 +179,25 @@ func RecommendedFees(feeType string) (int, error) {
 }
 
 func PostTx(rawTxHex string) (string, error) {
+	const maxRetries = 4
+	var lastErr error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		txid, err := postTxOnce(rawTxHex)
+		if err == nil {
+			return txid, nil
+		}
+		lastErr = err
+		Logf("PostTx attempt %d/%d failed: %v", attempt, maxRetries, err)
+		if attempt < maxRetries {
+			time.Sleep(time.Duration(attempt) * time.Second) // Exponential backoff: 1s, 2s
+		}
+	}
+
+	return "", fmt.Errorf("failed after %d attempts: %w", maxRetries, lastErr)
+}
+
+func postTxOnce(rawTxHex string) (string, error) {
 	// Define the Blockstream API endpoint for broadcasting transactions
 	url := fmt.Sprintf("%s/tx", _api_url)
 
