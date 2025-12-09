@@ -18,6 +18,12 @@ All notable changes to Bold Wallet are documented in this file.
 - **Android Launcher Icons**: Updated and optimized Android app launcher icons across all density variants
 - **Icon Optimization**: Reduced file sizes while maintaining visual quality
 
+### 🔧 CI/CD Improvements
+- **Docker Caching for Nostr Relay**: Added Docker image caching for nostr-rs-relay in GitHub Actions to speed up test runs
+- **Improved Test Pipeline**: Updated GitHub Actions workflow to require local Docker-based Nostr relay for testing
+- **Test Script Enhancements**: Enhanced test-all.sh with better error messages and local relay requirements
+- **Test Optimization**: Removed redundant tests that are already covered by the local relay
+
 ### Technical
 - Created FOSS-compatible version of MobileNostrPairing screen
 - Unified QR scanning implementation using BarcodeZxingScan across all platforms
