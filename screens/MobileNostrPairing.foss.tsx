@@ -104,8 +104,18 @@ const MobileNostrPairing = ({navigation}: any) => {
   const [status, setStatus] = useState('');
   const [isPairing, setIsPairing] = useState(false);
   const [isKeygenReady, setIsKeygenReady] = useState(false); // Manual toggle for "other devices ready"
+  const [isKeysignReady, setIsKeysignReady] = useState(false); // Manual toggle for PSBT/send signing readiness
   const [canStartKeygen, setCanStartKeygen] = useState(false); // Auto-calculated: all conditions met
   const [mpcDone, setMpcDone] = useState(false);
+  const [psbtDetails, setPsbtDetails] = useState<{
+    inputs: Array<{txid: string; vout: number; amount: number}>;
+    outputs: Array<{address: string; amount: number}>;
+    fee: number;
+    totalInput: number;
+    totalOutput: number;
+    derivePath?: string;
+    derivePaths?: string[];
+  } | null>(null);
   const [isPreParamsReady, setIsPreParamsReady] = useState(false);
   const [isPreparing, setIsPreparing] = useState(false);
   const [isPrepared, setIsPrepared] = useState(false);
@@ -310,6 +320,54 @@ const MobileNostrPairing = ({navigation}: any) => {
   const toggleKeygenReady = () => {
     setIsKeygenReady(!isKeygenReady);
   };
+
+  const toggleKeysignReady = () => {
+    HapticFeedback.medium();
+    setIsKeysignReady(!isKeysignReady);
+  };
+
+  // Parse PSBT details when PSBT is available
+  useEffect(() => {
+    const parsePSBT = async () => {
+      if (isSignPSBT && route.params?.psbtBase64) {
+        try {
+          dbg('Parsing PSBT details for summary...');
+          const detailsJson = await BBMTLibNativeModule.parsePSBTDetails(
+            route.params.psbtBase64,
+          );
+
+          if (detailsJson.startsWith('error') || detailsJson.includes('failed')) {
+            dbg('Failed to parse PSBT details:', detailsJson);
+            setPsbtDetails(null);
+            return;
+          }
+
+          const details = JSON.parse(detailsJson);
+          setPsbtDetails({
+            inputs: details.inputs || [],
+            outputs: details.outputs || [],
+            fee: details.fee || 0,
+            totalInput: details.totalInput || 0,
+            totalOutput: details.totalOutput || 0,
+            derivePath: details.derivePath,
+            derivePaths: details.derivePaths || [],
+          });
+          dbg('PSBT details parsed:', {
+            inputs: details.inputs?.length || 0,
+            outputs: details.outputs?.length || 0,
+            fee: details.fee,
+          });
+        } catch (error) {
+          dbg('Error parsing PSBT details:', error);
+          setPsbtDetails(null);
+        }
+      } else {
+        setPsbtDetails(null);
+      }
+    };
+
+    parsePSBT();
+  }, [isSignPSBT, route.params?.psbtBase64]);
 
   // Listen to native module events for progress tracking
   useEffect(() => {
@@ -1695,6 +1753,11 @@ const MobileNostrPairing = ({navigation}: any) => {
   const startSignPSBT = async () => {
     if (!route.params?.psbtBase64) {
       Alert.alert('Error', 'Missing PSBT data');
+      return;
+    }
+
+    if (!isKeysignReady) {
+      Alert.alert('Not Ready', 'Please confirm that you are ready to sign the PSBT');
       return;
     }
 
@@ -3720,59 +3783,193 @@ const MobileNostrPairing = ({navigation}: any) => {
                     <View style={styles.section}>
                       <View
                         style={{
-                          backgroundColor: theme.colors.background,
+                          backgroundColor: theme.colors.cardBackground,
                           borderRadius: 12,
                           padding: 12,
                           borderWidth: 1,
-                          borderColor: theme.colors.border,
+                          borderColor: theme.colors.border + '40',
                         }}>
                         <Text
                           style={{
-                            fontSize: 12,
+                            fontSize: 14,
                             fontWeight: '700',
-                            color: theme.colors.textSecondary,
-                            marginBottom: 8,
-                            textTransform: 'uppercase',
-                            letterSpacing: 0.5,
-                          }}>
-                          PSBT Information
-                        </Text>
-                        <Text
-                          style={{
-                            fontSize: 13,
                             color: theme.colors.text,
                             marginBottom: 8,
-                            fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                            textAlign: 'center',
                           }}>
-                          Size: {Math.round((route.params.psbtBase64.length || 0) / 1024)} KB
+                          PSBT Ready to Sign
                         </Text>
-                        {route.params.derivePath && (
-                          <View
+                        {psbtDetails ? (
+                          <>
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                justifyContent: 'space-between',
+                                marginBottom: 6,
+                              }}>
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  color: theme.colors.textSecondary,
+                                }}>
+                                Inputs:
+                              </Text>
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  color: theme.colors.text,
+                                  fontWeight: '600',
+                                }}>
+                                {psbtDetails.inputs.length}
+                              </Text>
+                            </View>
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                justifyContent: 'space-between',
+                                marginBottom: 6,
+                              }}>
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  color: theme.colors.textSecondary,
+                                }}>
+                                Outputs:
+                              </Text>
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  color: theme.colors.text,
+                                  fontWeight: '600',
+                                }}>
+                                {psbtDetails.outputs.length}
+                              </Text>
+                            </View>
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                justifyContent: 'space-between',
+                                marginBottom: 6,
+                              }}>
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  color: theme.colors.textSecondary,
+                                }}>
+                                Total Input:
+                              </Text>
+                              <Text
+                                style={{
+                                  fontSize: 13,
+                                  color: theme.colors.text,
+                                  fontWeight: '600',
+                                }}>
+                                {sat2btcStr(psbtDetails.totalInput)} BTC
+                              </Text>
+                            </View>
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                justifyContent: 'space-between',
+                                marginBottom: 6,
+                              }}>
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  color: theme.colors.textSecondary,
+                                }}>
+                                Total Output:
+                              </Text>
+                              <Text
+                                style={{
+                                  fontSize: 13,
+                                  color: theme.colors.text,
+                                  fontWeight: '600',
+                                }}>
+                                {sat2btcStr(psbtDetails.totalOutput)} BTC
+                              </Text>
+                            </View>
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                justifyContent: 'space-between',
+                                marginBottom: psbtDetails.derivePath ? 6 : 0,
+                              }}>
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  color: theme.colors.textSecondary,
+                                }}>
+                                Fee:
+                              </Text>
+                              <Text
+                                style={{
+                                  fontSize: 13,
+                                  color: theme.colors.text,
+                                  fontWeight: '600',
+                                }}>
+                                {sat2btcStr(psbtDetails.fee)} BTC
+                              </Text>
+                            </View>
+                            {psbtDetails.derivePath && (
+                              <View
+                                style={{
+                                  marginTop: 6,
+                                  paddingTop: 6,
+                                  borderTopWidth: 1,
+                                  borderTopColor: theme.colors.border,
+                                }}>
+                                <Text
+                                  style={{
+                                    fontSize: 10,
+                                    color: theme.colors.textSecondary,
+                                    marginBottom: 2,
+                                  }}>
+                                  Derivation Path:
+                                </Text>
+                                <Text
+                                  style={{
+                                    fontSize: 10,
+                                    color: theme.colors.primary,
+                                    fontFamily:
+                                      Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                                  }}>
+                                  {psbtDetails.derivePath}
+                                </Text>
+                              </View>
+                            )}
+                            {psbtDetails.derivePaths &&
+                              psbtDetails.derivePaths.length > 1 && (
+                                <View
+                                  style={{
+                                    marginTop: 4,
+                                    paddingTop: 4,
+                                    borderTopWidth: 1,
+                                    borderTopColor: theme.colors.border,
+                                  }}>
+                                  <Text
+                                    style={{
+                                      fontSize: 10,
+                                      color: theme.colors.textSecondary,
+                                    }}>
+                                    {psbtDetails.derivePaths.length} different paths
+                                  </Text>
+                                </View>
+                              )}
+                          </>
+                        ) : (
+                          <Text
                             style={{
-                              marginTop: 8,
-                              paddingTop: 8,
-                              borderTopWidth: 1,
-                              borderTopColor: theme.colors.border,
+                              fontSize: 12,
+                              color: theme.colors.text,
+                              textAlign: 'center',
                             }}>
-                            <Text
-                              style={{
-                                fontSize: 11,
-                                fontWeight: '600',
-                                color: theme.colors.textSecondary,
-                                marginBottom: 4,
-                              }}>
-                              Derivation Path:
-                            </Text>
-                            <Text
-                              style={{
-                                fontSize: 12,
-                                color: theme.colors.primary,
-                                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                                fontWeight: '600',
-                              }}>
-                              {route.params.derivePath}
-                            </Text>
-                          </View>
+                            {route.params.psbtBase64
+                              ? `PSBT (${Math.round(
+                                  (route.params.psbtBase64.length || 0) / 1024,
+                                )} KB) - Parsing...`
+                              : 'No PSBT data'}
+                          </Text>
                         )}
                       </View>
                     </View>
@@ -5135,6 +5332,29 @@ const MobileNostrPairing = ({navigation}: any) => {
                     </View>
                   )}
 
+                  {/* Readiness Checkbox for PSBT Signing */}
+                  {isSignPSBT && !isPairing && !mpcDone && (
+                    <View style={styles.section}>
+                      <TouchableOpacity
+                        style={styles.checkboxContainer}
+                        onPress={toggleKeysignReady}
+                        activeOpacity={0.7}>
+                        <View
+                          style={[
+                            styles.checkbox,
+                            isKeysignReady && styles.checkboxChecked,
+                          ]}>
+                          {isKeysignReady && (
+                            <Text style={styles.checkboxCheckmark}>✓</Text>
+                          )}
+                        </View>
+                        <Text style={styles.checkboxLabel}>
+                          Keep this app open during signing ⚠️
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
                   {/* Start Button */}
                   {!isPairing && !mpcDone && (
                     <View style={styles.section}>
@@ -5144,7 +5364,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                           ((isSendBitcoin || isSignPSBT)
                             ? !localNpub ||
                               sendModeDevices.length === 0 ||
-                              (isTrio && !selectedPeerNpub)
+                              (isTrio && !selectedPeerNpub) ||
+                              (isSignPSBT && !isKeysignReady)
                             : !canStartKeygen) && styles.buttonDisabled,
                         ]}
                         onPress={isSignPSBT ? startSignPSBT : (isSendBitcoin ? startSendBTC : startKeygen)}
@@ -5152,7 +5373,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                           (isSendBitcoin || isSignPSBT)
                             ? !localNpub ||
                               sendModeDevices.length === 0 ||
-                              (isTrio && !selectedPeerNpub)
+                              (isTrio && !selectedPeerNpub) ||
+                              (isSignPSBT && !isKeysignReady)
                             : !canStartKeygen
                         }
                         activeOpacity={0.8}>
@@ -5284,7 +5506,7 @@ const MobileNostrPairing = ({navigation}: any) => {
 
                   {/* Header Text */}
                   <Text style={styles.modalTitle}>
-                    Co-Signing Your Transaction
+                    {isSignPSBT ? 'PSBT Co-Signing' : 'Co-Signing Your Transaction'}
                   </Text>
 
                   {/* Subtext */}

@@ -1904,7 +1904,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       {/* PSBT Signing Modal */}
       <PSBTModal
         visible={isPSBTModalVisible}
-        network={network as 'mainnet' | 'testnet'}
         btcRate={btcRate}
         currencySymbol={getCurrencySymbol(selectedCurrency)}
         onClose={() => setIsPSBTModalVisible(false)}

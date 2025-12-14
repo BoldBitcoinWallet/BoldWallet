@@ -43,7 +43,6 @@ interface PSBTDetails {
 
 interface PSBTModalProps {
   visible: boolean;
-  network: string;
   btcRate?: number; // BTC to fiat rate
   currencySymbol?: string; // e.g., "$", "€"
   onClose: () => void;
@@ -52,7 +51,6 @@ interface PSBTModalProps {
 
 const PSBTModal: React.FC<PSBTModalProps> = ({
   visible,
-  network,
   btcRate = 0,
   currencySymbol = '$',
   onClose,
@@ -365,7 +363,7 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
       if (urResult.isUR) {
         if (urResult.complete && urResult.psbtBase64) {
           // Complete! Stop scanning and parse
-          dbg('UR complete, stopping scan');
+          dbg('Android: UR complete, stopping scan');
           setIsAndroidScanning(false);
           isScanningRef.current = false;
           // Reset session ID to invalidate any pending events
@@ -380,22 +378,22 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
           await parsePSBT(urResult.psbtBase64);
         } else {
           // Not complete yet - scanner stays open for next frame (Android continuous mode)
-          // For iOS, we'll need to scan again manually
           dbg(
-            'UR incomplete, continuing scan. isScanningRef:',
+            'Android: UR incomplete, continuing scan. isScanningRef:',
             isScanningRef.current,
           );
-          // Ensure isScanningRef stays true for continuous scanning (Android)
-          if (Platform.OS === 'android' && !isScanningRef.current) {
+          // Ensure isScanningRef stays true for continuous scanning
+          if (!isScanningRef.current) {
             dbg(
               'Android: WARNING - isScanningRef was false during UR processing, resetting to true',
             );
             isScanningRef.current = true;
           }
-          // On iOS, prompt user to scan next frame
-          if (Platform.OS === 'ios' && shouldContinueScanning) {
+          // On iOS, shouldContinueScanning callback is used
+          if (shouldContinueScanning && Platform.OS === 'ios') {
             shouldContinueScanning();
           }
+          // On Android, scanner is already open and will emit more events
         }
         return;
       }
@@ -409,7 +407,7 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
         (data.length > 100 && !data.startsWith('UR:'))
       ) {
         // Looks like a PSBT - stop scanning and parse
-        dbg('Found plain PSBT, stopping scan');
+        dbg('Android: Found plain PSBT, stopping scan');
         setIsAndroidScanning(false);
         isScanningRef.current = false;
         // Reset session ID to invalidate any pending events
@@ -425,19 +423,17 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
         setUrProgress(null);
         await parsePSBT(data);
       } else {
-        // Doesn't look like a PSBT - ignore and keep scanning (Android only)
-        if (Platform.OS === 'android') {
+        // Doesn't look like a PSBT - ignore and keep scanning
+        dbg(
+          'Android: Ignoring non-PSBT QR code, continuing scan. isScanningRef:',
+          isScanningRef.current,
+        );
+        // Ensure isScanningRef stays true for continuous scanning
+        if (!isScanningRef.current) {
           dbg(
-            'Android: Ignoring non-PSBT QR code, continuing scan. isScanningRef:',
-            isScanningRef.current,
+            'Android: WARNING - isScanningRef was false when ignoring non-PSBT, resetting to true',
           );
-          // Ensure isScanningRef stays true for continuous scanning
-          if (!isScanningRef.current) {
-            dbg(
-              'Android: WARNING - isScanningRef was false when ignoring non-PSBT, resetting to true',
-            );
-            isScanningRef.current = true;
-          }
+          isScanningRef.current = true;
         }
       }
     },
@@ -801,21 +797,14 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
               source={require('../assets/key-icon.png')}
               style={styles.headerIcon}
             />
-            <Text style={styles.headerTitle}>Sign PSBT</Text>
+            <Text style={styles.headerTitle}>Sign • PSBT</Text>
           </View>
 
           {/* Description */}
           <Text style={styles.description}>
             Import a Partially Signed Bitcoin Transaction (PSBT) from Sparrow or
-            another wallet to sign with your keyshare.
+            another wallet to sign with your keyshare on.
           </Text>
-
-          {/* Network indicator */}
-          <View style={styles.networkBadge}>
-            <Text style={styles.networkText}>
-              {network === 'mainnet' ? '● Mainnet' : '● Testnet'}
-            </Text>
-          </View>
 
           {/* Import buttons */}
           {!psbtBase64 && (
@@ -878,9 +867,7 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
                 <View style={styles.flowSection}>
                   <Text style={styles.flowSectionTitle}>Inputs</Text>
                   {psbtDetails.inputs.map((input, index) => {
-                    const derivePath =
-                      psbtDetails.derivePaths[index] 
-                      || 'N/A';
+                    const derivePath = psbtDetails.derivePaths[index] || 'N/A';
                     return (
                       <View key={index} style={styles.flowItem}>
                         <View style={styles.flowItemContent}>

@@ -3725,7 +3725,7 @@ const MobilesPairing = ({navigation}: any) => {
                   )}
                   {isSignPSBT && (
                     <View style={styles.transactionDetails}>
-                      <Text style={styles.transactionLabel}>
+                      <Text style={[styles.transactionLabel, {fontSize: 14, marginBottom: 8}]}>
                         PSBT Ready to Sign
                       </Text>
                       {psbtDetails ? (
@@ -3733,60 +3733,54 @@ const MobilesPairing = ({navigation}: any) => {
                           <View
                             style={[
                               styles.transactionItem,
-                              {flexDirection: 'row', justifyContent: 'space-between'},
+                              {flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4, paddingVertical: 2},
                             ]}>
-                            <Text style={styles.transactionItemLabel}>
+                            <Text style={[styles.transactionItemLabel, {fontSize: 12}]}>
                               Inputs:
                             </Text>
-                            <Text style={styles.transactionItemValue}>
+                            <Text style={[styles.transactionItemValue, {fontSize: 12}]}>
                               {psbtDetails.inputs.length}
                             </Text>
                           </View>
                           <View
                             style={[
                               styles.transactionItem,
-                              {flexDirection: 'row', justifyContent: 'space-between'},
+                              {flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4, paddingVertical: 2},
                             ]}>
-                            <Text style={styles.transactionItemLabel}>
+                            <Text style={[styles.transactionItemLabel, {fontSize: 12}]}>
                               Outputs:
                             </Text>
-                            <Text style={styles.transactionItemValue}>
+                            <Text style={[styles.transactionItemValue, {fontSize: 12}]}>
                               {psbtDetails.outputs.length}
                             </Text>
                           </View>
-                          <View style={styles.transactionItem}>
-                            <Text style={styles.transactionItemLabel}>
+                          <View style={[styles.transactionItem, {flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4, paddingVertical: 2}]}>
+                            <Text style={[styles.transactionItemLabel, {fontSize: 12}]}>
                               Total Input:
                             </Text>
-                            <View style={styles.amountContainer}>
-                              <Text style={styles.amountValue}>
-                                {sat2btcStr(psbtDetails.totalInput)} BTC
-                              </Text>
-                            </View>
+                            <Text style={[styles.transactionItemValue, {fontSize: 13, fontWeight: '600'}]}>
+                              {sat2btcStr(psbtDetails.totalInput)} BTC
+                            </Text>
                           </View>
-                          <View style={styles.transactionItem}>
-                            <Text style={styles.transactionItemLabel}>
+                          <View style={[styles.transactionItem, {flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4, paddingVertical: 2}]}>
+                            <Text style={[styles.transactionItemLabel, {fontSize: 12}]}>
                               Total Output:
                             </Text>
-                            <View style={styles.amountContainer}>
-                              <Text style={styles.amountValue}>
-                                {sat2btcStr(psbtDetails.totalOutput)} BTC
-                              </Text>
-                            </View>
+                            <Text style={[styles.transactionItemValue, {fontSize: 13, fontWeight: '600'}]}>
+                              {sat2btcStr(psbtDetails.totalOutput)} BTC
+                            </Text>
                           </View>
-                          <View style={styles.transactionItem}>
-                            <Text style={styles.transactionItemLabel}>
+                          <View style={[styles.transactionItem, {flexDirection: 'row', justifyContent: 'space-between', marginBottom: psbtDetails.derivePath ? 4 : 0, paddingVertical: 2}]}>
+                            <Text style={[styles.transactionItemLabel, {fontSize: 12}]}>
                               Fee:
                             </Text>
-                            <View style={styles.amountContainer}>
-                              <Text style={styles.amountValue}>
-                                {sat2btcStr(psbtDetails.fee)} BTC
-                              </Text>
-                            </View>
+                            <Text style={[styles.transactionItemValue, {fontSize: 13, fontWeight: '600'}]}>
+                              {sat2btcStr(psbtDetails.fee)} BTC
+                            </Text>
                           </View>
                           {psbtDetails.derivePath && (
-                            <View style={styles.transactionItem}>
-                              <Text style={styles.transactionItemLabel}>
+                            <View style={[styles.transactionItem, {marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: theme.colors.border, paddingVertical: 2}]}>
+                              <Text style={[styles.transactionItemLabel, {fontSize: 10, marginBottom: 2}]}>
                                 Derivation Path:
                               </Text>
                               <Text
@@ -3795,9 +3789,8 @@ const MobilesPairing = ({navigation}: any) => {
                                   {
                                     fontFamily:
                                       Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                                    fontSize: 11,
+                                    fontSize: 10,
                                     textAlign: 'left',
-                                    marginTop: 4,
                                   },
                                 ]}>
                                 {psbtDetails.derivePath}
@@ -3806,21 +3799,8 @@ const MobilesPairing = ({navigation}: any) => {
                           )}
                           {psbtDetails.derivePaths &&
                             psbtDetails.derivePaths.length > 1 && (
-                              <View style={styles.transactionItem}>
-                                <Text style={styles.transactionItemLabel}>
-                                  Multiple Paths:
-                                </Text>
-                                <Text
-                                  style={[
-                                    styles.transactionItemValue,
-                                    {
-                                      fontFamily:
-                                        Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                                      fontSize: 10,
-                                      textAlign: 'left',
-                                      marginTop: 4,
-                                    },
-                                  ]}>
+                              <View style={[styles.transactionItem, {marginTop: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: theme.colors.border, paddingVertical: 2}]}>
+                                <Text style={[styles.transactionItemValue, {fontSize: 10}]}>
                                   {psbtDetails.derivePaths.length} different paths
                                 </Text>
                               </View>
@@ -3830,7 +3810,7 @@ const MobilesPairing = ({navigation}: any) => {
                         <Text
                           style={[
                             styles.addressValue,
-                            {marginTop: 8, marginBottom: 8},
+                            {marginTop: 4, marginBottom: 4, fontSize: 12},
                           ]}>
                           {route.params.psbtBase64
                             ? `PSBT (${Math.round(

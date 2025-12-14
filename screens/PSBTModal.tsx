@@ -48,7 +48,6 @@ interface PSBTDetails {
 
 interface PSBTModalProps {
   visible: boolean;
-  network: string;
   btcRate?: number; // BTC to fiat rate
   currencySymbol?: string; // e.g., "$", "€"
   onClose: () => void;
@@ -128,7 +127,6 @@ const QRScanner = ({styles, device, codeScanner, onClose, urProgress}: any) => {
 
 const PSBTModal: React.FC<PSBTModalProps> = ({
   visible,
-  network,
   btcRate = 0,
   currencySymbol = '$',
   onClose,
@@ -902,7 +900,7 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
               source={require('../assets/key-icon.png')}
               style={styles.headerIcon}
             />
-            <Text style={styles.headerTitle}>Sign • PSBT • {network === 'mainnet' ? 'Mainnet' : 'Testnet'}</Text>
+            <Text style={styles.headerTitle}>Sign • PSBT</Text>
           </View>
 
           {/* Description */}
