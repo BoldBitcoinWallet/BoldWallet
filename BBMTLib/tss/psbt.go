@@ -990,7 +990,7 @@ func runNostrMpcSignPSBTInternal(
 			if bytes.Equal(txOut.PkScript, expectedP2SHScript) {
 				// P2SH-P2WPKH
 				Logf("Input %d: P2SH-P2WPKH", i)
-				sigHash, err = txscript.CalcWitnessSigHash(redeemScript, hashCache, txscript.SigHashAll, tx, i, txOut.Value)
+				sigHash, err = txscript.CalcWitnessSigHash(redeemScript, hashCache, sighashType, tx, i, txOut.Value)
 				if err != nil {
 					return "", fmt.Errorf("failed to calculate P2SH-P2WPKH sighash for input %d: %w", i, err)
 				}
@@ -1051,7 +1051,7 @@ func runNostrMpcSignPSBTInternal(
 				return "", fmt.Errorf("public key hash mismatch for input %d: script expects %x but got %x (derived from path: %s)", i, scriptPubKeyHash, pubKeyHash, inputDerivePath)
 			}
 			Logf("Input %d: Public key hash verified for P2PKH", i)
-			sigHash, err = txscript.CalcSignatureHash(txOut.PkScript, txscript.SigHashAll, tx, i)
+			sigHash, err = txscript.CalcSignatureHash(txOut.PkScript, sighashType, tx, i)
 			if err != nil {
 				return "", fmt.Errorf("failed to calculate P2PKH sighash for input %d: %w", i, err)
 			}

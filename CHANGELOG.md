@@ -4,6 +4,54 @@ All notable changes to Bold Wallet are documented in this file.
 
 ---
 
+## [2.1.0] - 2025-01-14
+
+### 🚀 Major Feature: PSBT Signer Interoperability
+
+**Bold Wallet is now a fully interoperable PSBT signer!** Use your favorite Bitcoin wallet UIs like **Sparrow Wallet**, **Electrum**, **BlueWallet**, and others to create and manage transactions, while Bold Wallet securely handles the signing process with your multi-signature keys.
+
+**Key Benefits:**
+- **Best of Both Worlds**: Enjoy the rich UI/UX of desktop wallets like Sparrow while keeping your keys secure in Bold Wallet's multi-signature setup
+- **Universal Compatibility**: Works with any wallet that supports PSBT (Partially Signed Bitcoin Transaction) standard
+- **Seamless Workflow**: Import PSBTs via QR code or file, sign with your Bold Wallet keyshares, and export the signed PSBT back to your preferred wallet
+- **Flexible Transport**: Sign PSBTs using either local WiFi/Hotspot pairing or Nostr transport - your choice
+- **Secure by Design**: Your private keys never leave Bold Wallet's secure environment, even when signing transactions created in external wallets
+
+**How It Works:**
+1. Create your transaction in Sparrow Wallet (or any PSBT-compatible wallet)
+2. Export the PSBT as a QR code or file
+3. Import it into Bold Wallet
+4. Sign with your multi-signature keyshares using device pairing
+5. Export the signed PSBT back to complete the transaction
+
+This feature transforms Bold Wallet into a powerful signing device that integrates seamlessly with the broader Bitcoin ecosystem, giving you the flexibility to use the tools you prefer while maintaining the security of multi-signature key management.
+
+### 🔧 Build & Dependencies
+- **Updated Dependencies**: Updated project dependencies and build configurations
+- **Android Build Updates**: Updated Android build.gradle configuration
+- **iOS Project Updates**: Updated iOS Xcode project settings
+- **Package Management**: Migrated from Yarn to npm (package-lock.json)
+
+### 📦 Patches
+- **Barcode Scanner Patch**: Updated patch for rn-barcode-zxing-scan dependency
+
+### 🔓 F-Droid Compatibility
+- **FOSS Version for PSBTModal**: Added `PSBTModal.foss.tsx` for F-Droid builds
+- **Removed react-native-vision-camera Dependency**: PSBTModal FOSS version uses `BarcodeZxingScan` for both iOS and Android platforms, similar to MobileNostrPairing and SendBitcoinModal
+- **F-Droid Build Support**: PSBTModal now passes F-Droid open source restrictions, enabling PSBT signing functionality in F-Droid builds
+
+### Technical
+- PSBT signing support with automatic derivation path extraction
+- Native module integration for PSBT parsing and signing
+- Support for both local and Nostr transport modes in PSBT signing flow
+- Created FOSS-compatible version of PSBTModal screen
+- Unified QR scanning implementation using BarcodeZxingScan across all platforms
+- Updated build configurations for Android and iOS
+- Dependency version updates
+- Build system improvements
+
+---
+
 ## [2.0.2] - 2025-12-10
 
 ### 🔓 F-Droid Compatibility

@@ -32,7 +32,7 @@ import {useUser} from '../context/UserContext';
 const MAINNET_APIS = ['https://mempool.space/api'];
 const TESTNET_APIS = ['https://mempool.space/testnet/api'];
 
-const { IconChanger } = NativeModules;  // This is fine here, as it's not a Hook
+const {IconChanger} = NativeModules; // This is fine here, as it's not a Hook
 
 import {
   dbg,
@@ -679,7 +679,9 @@ const getSectionIcon = (title: string): any => {
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   // Use UserContext for reactive network and API state
   const {setActiveNetwork, setActiveApiProvider} = useUser();
-  const [selectedIcon, setSelectedIcon] = useState<'default' | 'alternative' | 'loading'>('loading');
+  const [selectedIcon, setSelectedIcon] = useState<
+    'default' | 'alternative' | 'loading'
+  >('loading');
   const [deleteInput, setDeleteInput] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -826,12 +828,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     });
   }, []);
 
-    // Load saved icon preference on component mount
+  // Load saved icon preference on component mount
   useEffect(() => {
     const loadIconPreference = async () => {
       try {
         const savedIcon = await EncryptedStorage.getItem('app_icon_preference');
-        if (savedIcon && (savedIcon === 'default' || savedIcon === 'alternative')) {
+        if (
+          savedIcon &&
+          (savedIcon === 'default' || savedIcon === 'alternative')
+        ) {
           setSelectedIcon(savedIcon);
         } else {
           setSelectedIcon('default');
@@ -941,7 +946,21 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
     // Show brief feedback alert after a brief delay to ensure navigation completes
     setTimeout(() => {
-      Alert.alert(`${networkIcon} Switched to ${networkName}`);
+      // warn user if test net bitcoin is not real
+      // add i understand button to the alert
+      if (newNetwork === 'mainnet') {
+        Alert.alert(
+          `${networkIcon} Switched to ${networkName}`,
+          'Mainnet Bitcoin is the real Bitcoin. It is the main network for all Bitcoin transactions.',
+          [{text: 'I understand', onPress: () => {}}],
+        );
+      } else {
+        Alert.alert(
+          `${networkIcon} Switched to ${networkName}`,
+          'Testnet Bitcoin is not real Bitcoin. It is a test network for developers to test their applications. Do not use it for real transactions.',
+          [{text: 'I understand', onPress: () => {}}],
+        );
+      }
     }, 300);
   };
 
@@ -2436,8 +2455,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   Blend in when you need to.
                 </Text>
                 <Text style={styles.appIconHintSubtitle}>
-                  Switch to the calculator icon when you want your wallet to look
-                  like just another app on your home screen.
+                  Switch to the calculator icon when you want your wallet to
+                  look like just another app on your home screen.
                 </Text>
               </View>
             </View>
@@ -2447,9 +2466,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             <View style={styles.toggleContainer}>
               <Text style={styles.toggleLabel}>Bold Wallet</Text>
               <Switch
-                trackColor={{ true: theme.colors.primary, false: theme.colors.secondary }}
+                trackColor={{
+                  true: theme.colors.primary,
+                  false: theme.colors.secondary,
+                }}
                 thumbColor={theme.colors.accent}
-                onValueChange={async (value) => {
+                onValueChange={async value => {
                   try {
                     HapticFeedback.light();
                     const newIcon = value ? 'alternative' : 'default';
@@ -2459,7 +2481,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                       Alert.alert(
                         'Error',
                         'Icon switching is not available on this device.',
-                        [{ text: 'OK' }]
+                        [{text: 'OK'}],
                       );
                       return;
                     }
@@ -2468,19 +2490,22 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     setSelectedIcon(newIcon);
 
                     // Save preference
-                    await EncryptedStorage.setItem('app_icon_preference', newIcon);
+                    await EncryptedStorage.setItem(
+                      'app_icon_preference',
+                      newIcon,
+                    );
 
                     // Change the icon
                     await IconChanger.changeIcon(newIcon);
 
                     // Show success message
-                    const iconName = newIcon === 'alternative' ? 'QuickCalc' : 'Bold Wallet';
+                    const iconName =
+                      newIcon === 'alternative' ? 'QuickCalc' : 'Bold Wallet';
                     Alert.alert(
                       'Icon Changed',
                       `App icon switched to ${iconName}.\n\nYou may need to refresh your launcher to see the change.`,
-                      [{ text: 'OK' }]
+                      [{text: 'OK'}],
                     );
-
                   } catch (error: any) {
                     console.error('Error changing icon:', error);
 
@@ -2489,8 +2514,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
                     Alert.alert(
                       'Error',
-                      error?.message || 'Failed to change app icon. Please try again.',
-                      [{ text: 'OK' }]
+                      error?.message ||
+                        'Failed to change app icon. Please try again.',
+                      [{text: 'OK'}],
                     );
                   }
                 }}
