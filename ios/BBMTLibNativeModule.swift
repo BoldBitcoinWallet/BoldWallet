@@ -369,6 +369,24 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     resolve("derivePubkey", output, error, resolver)
   }
 
+  @objc func encodeXpub(
+    _ hexPubkey: String, hexChaincode: String, network: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    var error: NSError?
+    let output = TssEncodeXpub(hexPubkey, hexChaincode, network, &error)
+    resolve("encodeXpub", output, error, resolver)
+  }
+
+  @objc func getOutputDescriptor(
+    _ hexPubkey: String, hexChaincode: String, network: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    var error: NSError?
+    let output = TssGetOutputDescriptor(hexPubkey, hexChaincode, network, &error)
+    resolve("getOutputDescriptor", output, error, resolver)
+  }
+
   @objc func btcAddress(
     _ compressedPubkey: String, network: String, addressType: String, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
@@ -536,6 +554,64 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     useLog = false
     TssDisableLogs()
     resolver(tag)
+  }
+
+  @objc func mpcSignPSBT(
+    /* tss */
+    _ server: String,
+    partyID: String,
+    partiesCSV: String,
+    sessionID: String,
+    sessionKey: String,
+    encKey: String,
+    decKey: String,
+    keyshare: String,
+    /* psbt */
+    psbtBase64: String,
+    resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      var error: NSError?
+      let output = TssMpcSignPSBT(
+        server,
+        partyID,
+        partiesCSV,
+        sessionID,
+        sessionKey,
+        encKey,
+        decKey,
+        keyshare,
+        psbtBase64, &error)
+      self?.sendLogEvent("mpcSignPSBT", output)
+      resolver(error == nil ? output : error!.localizedDescription)
+    }
+  }
+
+  @objc func nostrMpcSignPSBT(
+    _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, npubsSorted: String,
+    keyshareJSON: String, psbtBase64: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      var error: NSError?
+      let output = TssNostrMpcSignPSBT(
+        relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, keyshareJSON, psbtBase64, &error)
+      self?.sendLogEvent("nostrMpcSignPSBT", output)
+      resolver(error == nil ? output : error!.localizedDescription)
+    }
+  }
+
+  @objc func parsePSBTDetails(
+    _ psbtBase64: String, resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      var error: NSError?
+      let output = TssParsePSBTDetails(psbtBase64, &error)
+      self?.sendLogEvent("parsePSBTDetails", output)
+      resolver(error == nil ? output : error!.localizedDescription)
+    }
   }
 
   @objc override func startObserving() {

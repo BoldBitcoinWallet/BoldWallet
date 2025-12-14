@@ -2,6 +2,7 @@ import React, {createContext, useCallback, useContext, useEffect, useMemo, useSt
 import EncryptedStorage from 'react-native-encrypted-storage';
 import LocalCache from '../services/LocalCache';
 import {BBMTLibNativeModule} from '../native_modules';
+import { getDerivePathForNetwork } from '../utils';
 
 type AddressType = 'legacy' | 'segwit-native' | 'segwit-compatible';
 
@@ -124,7 +125,7 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({children}) 
         const jks = await EncryptedStorage.getItem('keyshare');
         if (jks) {
           const ks = JSON.parse(jks);
-          const path = "m/44'/0'/0'/0/0";
+          const path = getDerivePathForNetwork(network);
           pub = await BBMTLibNativeModule.derivePubkey(
             ks.pub_key,
             ks.chain_code_hex,

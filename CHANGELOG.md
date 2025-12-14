@@ -4,6 +4,34 @@ All notable changes to Bold Wallet are documented in this file.
 
 ---
 
+## [2.0.2] - 2025-12-10
+
+### 🔓 F-Droid Compatibility
+- **FOSS Version for MobileNostrPairing**: Added `MobileNostrPairing.foss.tsx` for F-Droid builds
+- **Removed react-native-vision-camera Dependency**: Replaced iOS camera with `BarcodeZxingScan` for both iOS and Android platforms
+- **F-Droid Build Support**: MobileNostrPairing now passes F-Droid open source restrictions, similar to SendBitcoinModal
+
+### 🎨 UI Improvements
+- **Loading Screen Background Fix**: Added proper background color to safe area container for consistent theming
+
+### 📱 App Icons
+- **Android Launcher Icons**: Updated and optimized Android app launcher icons across all density variants
+- **Icon Optimization**: Reduced file sizes while maintaining visual quality
+
+### 🔧 CI/CD Improvements
+- **Docker Caching for Nostr Relay**: Added Docker image caching for nostr-rs-relay in GitHub Actions to speed up test runs
+- **Improved Test Pipeline**: Updated GitHub Actions workflow to require local Docker-based Nostr relay for testing
+- **Test Script Enhancements**: Enhanced test-all.sh with better error messages and local relay requirements
+- **Test Optimization**: Removed redundant tests that are already covered by the local relay
+
+### Technical
+- Created FOSS-compatible version of MobileNostrPairing screen
+- Unified QR scanning implementation using BarcodeZxingScan across all platforms
+- Maintained full feature parity with standard version
+- Version code bumped to 32 (Android) and build 32 (iOS)
+
+---
+
 ## [2.0.1] - 2025-12-08
 
 ### 🐛 Bug Fixes

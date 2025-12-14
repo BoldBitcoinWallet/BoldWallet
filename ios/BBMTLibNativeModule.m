@@ -101,6 +101,20 @@ RCT_EXTERN_METHOD(derivePubkey:(NSString *)hexPubkey
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+// Call encodeXpub - encode public key and chain code to xpub/tpub format
+RCT_EXTERN_METHOD(encodeXpub:(NSString *)hexPubkey
+                  hexChaincode:(NSString *)hexChaincode
+                  network:(NSString *)network
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+// Call getOutputDescriptor - generate output descriptor for watch-only wallet import (Sparrow, etc.)
+RCT_EXTERN_METHOD(getOutputDescriptor:(NSString *)hexPubkey
+                  hexChaincode:(NSString *)hexChaincode
+                  network:(NSString *)network
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 // Call setBtcNetwork
 RCT_EXTERN_METHOD(setBtcNetwork:(NSString *)network
                   resolver:(RCTPromiseResolveBlock)resolve
@@ -206,6 +220,35 @@ RCT_EXTERN_METHOD(nostrMpcSendBTC:(NSString *)relaysCSV
                   receiverAddress:(NSString *)receiverAddress
                   amountSatoshi:(NSString *)amountSatoshi
                   estimatedFee:(NSString *)estimatedFee
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+// MPC Sign PSBT (server-based transport)
+// Derivation paths and public keys are extracted from the PSBT itself
+RCT_EXTERN_METHOD(mpcSignPSBT:(NSString *)server
+                  partyID:(NSString *)partyID
+                  partiesCSV:(NSString *)partiesCSV
+                  sessionID:(NSString *)sessionID
+                  sessionKey:(NSString *)sessionKey
+                  encKey:(NSString *)encKey
+                  decKey:(NSString *)decKey
+                  keyshare:(NSString *)keyshare
+                  psbtBase64:(NSString *)psbtBase64
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+// Nostr MPC Sign PSBT
+RCT_EXTERN_METHOD(nostrMpcSignPSBT:(NSString *)relaysCSV
+                  partyNsec:(NSString *)partyNsec
+                  partiesNpubsCSV:(NSString *)partiesNpubsCSV
+                  npubsSorted:(NSString *)npubsSorted
+                  keyshareJSON:(NSString *)keyshareJSON
+                  psbtBase64:(NSString *)psbtBase64
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+// Parse PSBT Details
+RCT_EXTERN_METHOD(parsePSBTDetails:(NSString *)psbtBase64
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 

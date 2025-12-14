@@ -29,7 +29,7 @@ import * as Progress from 'react-native-progress';
 import {CommonActions, RouteProp, useRoute} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Big from 'big.js';
-import {dbg, HapticFeedback, getNostrRelays, getKeyshareLabel} from '../utils';
+import {dbg, HapticFeedback, getNostrRelays, getKeyshareLabel, hexToString, getDerivePathForNetwork} from '../utils';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import LocalCache from '../services/LocalCache';
@@ -554,15 +554,6 @@ const MobileNostrPairing = ({navigation}: any) => {
           } else {
             // Try to decode from hex
             try {
-              // Hex decode function for React Native
-              const hexToString = (hex: string): string => {
-                let result = '';
-                for (let i = 0; i < hex.length; i += 2) {
-                  result += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
-                }
-                return result;
-              };
-
               const decodedNsec = hexToString(nsecFromKeyshare);
               dbg(
                 'Decoded nsec from hex:',
@@ -1417,15 +1408,6 @@ const MobileNostrPairing = ({navigation}: any) => {
             if (nsecFromKeyshare.startsWith('nsec1')) {
               decodedNsec = nsecFromKeyshare;
             } else {
-              // Hex decode function for React Native
-              const hexToString = (hex: string): string => {
-                let result = '';
-                for (let i = 0; i < hex.length; i += 2) {
-                  result += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
-                }
-                return result;
-              };
-
               decodedNsec = hexToString(nsecFromKeyshare);
             }
 
@@ -1692,7 +1674,8 @@ const MobileNostrPairing = ({navigation}: any) => {
       // Prepare relays CSV
       const relaysCSV = relays.join(',');
 
-      const derivePath = "m/44'/0'/0'/0/0";
+      const network = (await LocalCache.getItem('network')) || 'mainnet';
+      const derivePath = getDerivePathForNetwork(network);
 
       // Derive the public key from the root key using the derivation path
       // This is critical - we need the DERIVED public key, not the root!

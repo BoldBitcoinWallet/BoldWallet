@@ -1,7 +1,7 @@
 import React, {createContext, useContext, useState, useEffect} from 'react';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {NativeModules} from 'react-native';
-import {dbg} from '../utils';
+import {dbg, getDerivePathForNetwork} from '../utils';
 import LocalCache from '../services/LocalCache';
 
 const {BBMTLibNativeModule} = NativeModules;
@@ -48,7 +48,6 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
       }
 
       const ks = JSON.parse(jks);
-      const path = "m/44'/0'/0'/0/0";
 
       // Get current network
       let net = await LocalCache.getItem('network');
@@ -57,6 +56,7 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
         await LocalCache.setItem('network', net);
       }
       dbg('WalletContext: Current network:', net);
+      const path = getDerivePathForNetwork(net);
 
       // Set network in native module first
       const netParams = await BBMTLibNativeModule.setBtcNetwork(net);

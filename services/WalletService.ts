@@ -1,6 +1,6 @@
 import Big from 'big.js';
 import {BBMTLibNativeModule} from '../native_modules';
-import {dbg, getMainnetAPIList} from '../utils';
+import {dbg, getDerivePathForNetwork, getMainnetAPIList} from '../utils';
 import LocalCache from './LocalCache';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import { validate as validateBitcoinAddress } from 'bitcoin-address-validation';
@@ -433,7 +433,7 @@ export class WalletService {
       try {
         const jks = await EncryptedStorage.getItem('keyshare');
         const ks = JSON.parse(jks || '{}');
-        const path = "m/44'/0'/0'/0/0";
+        const path = getDerivePathForNetwork(network);
         const btcPub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,
           ks.chain_code_hex,
@@ -490,7 +490,7 @@ export class WalletService {
       // Generate new address for current network and type
       const jks = await EncryptedStorage.getItem('keyshare');
       const ks = JSON.parse(jks || '{}');
-      const path = "m/44'/0'/0'/0/0";
+      const path = getDerivePathForNetwork(state.network);
       const btcPub = await BBMTLibNativeModule.derivePubkey(
         ks.pub_key,
         ks.chain_code_hex,

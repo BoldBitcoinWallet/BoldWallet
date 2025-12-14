@@ -1,4 +1,17 @@
 // Polyfills for React Native
+// IMPORTANT: These must be set BEFORE any other imports that use them
+
+// Buffer polyfill for libraries that use Node.js Buffer (e.g., bc-ur)
+const { Buffer } = require('buffer');
+global.Buffer = global.Buffer || Buffer;
+
+// Stream polyfill for libraries that use Node.js stream (e.g., cipher-base)
+const stream = require('readable-stream');
+if (typeof global.stream === 'undefined') {
+  global.stream = stream;
+}
+
+// Now we can import other modules
 import { InteractionManager } from 'react-native';
 import 'react-native-get-random-values';
 

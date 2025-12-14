@@ -127,6 +127,8 @@ export interface Styles {
   providerIcon: ImageStyle;
   providerLabel: TextStyle;
   providerValue: TextStyle;
+  networkBadge: ViewStyle;
+  networkBadgeText: TextStyle;
   warningBox: ViewStyle;
   warningText: TextStyle;
   backupButton: ViewStyle;
@@ -171,6 +173,14 @@ export interface Styles {
   keyshareCopyButton: ViewStyle;
   keyshareCopyButtonText: TextStyle;
   keyshareCopyIcon: ImageStyle;
+  keyshareButtonsRow: ViewStyle;
+  qrModalContent: ViewStyle;
+  qrModalTitle: TextStyle;
+  qrModalSubtitle: TextStyle;
+  qrCodeContainer: ViewStyle;
+  qrModalHint: TextStyle;
+  qrModalCloseButton: ViewStyle;
+  qrModalCloseButtonText: TextStyle;
   keyshareLoadingContainer: ViewStyle;
   keyshareBackupButtonMargin: ViewStyle;
   keyshareModalBody: ViewStyle;
@@ -894,6 +904,19 @@ export const createStyles = (theme: Theme): Styles => ({
     textAlign: 'right' as const,
     opacity: 0.8,
   },
+  networkBadge: {
+    backgroundColor: theme.colors.primary + '20',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  networkBadgeText: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+    color: theme.colors.primary,
+    letterSpacing: 0.5,
+  },
   warningBox: {
     backgroundColor: 'rgba(255, 193, 7, 0.1)',
     borderRadius: 8,
@@ -1117,6 +1140,53 @@ export const createStyles = (theme: Theme): Styles => ({
     width: 16,
     height: 16,
     tintColor: theme.colors.textOnPrimary,
+  },
+  keyshareButtonsRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+  },
+  qrModalContent: {
+    backgroundColor: theme.colors.cardBackground,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center' as const,
+    minWidth: 280,
+    maxWidth: 320,
+  },
+  qrModalTitle: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+    color: theme.colors.text,
+    marginBottom: 4,
+  },
+  qrModalSubtitle: {
+    fontSize: 13,
+    color: theme.colors.textSecondary,
+    marginBottom: 20,
+  },
+  qrCodeContainer: {
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  qrModalHint: {
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+    marginBottom: 16,
+    fontStyle: 'italic' as const,
+  },
+  qrModalCloseButton: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 8,
+  },
+  qrModalCloseButtonText: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: theme.colors.textOnPrimary,
   },
   keyshareLoadingContainer: {
     padding: 16,

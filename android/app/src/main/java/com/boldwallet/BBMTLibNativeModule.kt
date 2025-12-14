@@ -596,6 +596,30 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun encodeXpub(hexPubkey: String, hexChaincode: String, network: String, promise: Promise) {
+        try {
+            val result = Tss.encodeXpub(hexPubkey, hexChaincode, network)
+            ld("encodeXpub", result)
+            promise.resolve(result)
+        } catch (e: Throwable) {
+            ld("encodeXpub", "error: ${e.stackTraceToString()}")
+            promise.reject("ENCODE_XPUB_ERROR", "Failed to encode xpub: ${e.message}", e)
+        }
+    }
+
+    @ReactMethod
+    fun getOutputDescriptor(hexPubkey: String, hexChaincode: String, network: String, promise: Promise) {
+        try {
+            val result = Tss.getOutputDescriptor(hexPubkey, hexChaincode, network)
+            ld("getOutputDescriptor", result)
+            promise.resolve(result)
+        } catch (e: Throwable) {
+            ld("getOutputDescriptor", "error: ${e.stackTraceToString()}")
+            promise.reject("GET_OUTPUT_DESCRIPTOR_ERROR", "Failed to get output descriptor: ${e.message}", e)
+        }
+    }
+
+    @ReactMethod
     fun btcAddress(compressedPubkey: String, network: String, addressType: String,  promise: Promise) {
         var resolved = false
         try {
@@ -669,5 +693,85 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             ld("sha256", "error: ${e.stackTraceToString()}")
             promise.reject("SHA256_ERROR", "Failed to compute SHA256: ${e.message}", e)
         }
+    }
+
+    @ReactMethod
+    fun mpcSignPSBT(
+        // tss
+        server: String,
+        partyID: String,
+        partiesCSV: String,
+        sessionID: String,
+        sessionKey: String,
+        encKey: String,
+        decKey: String,
+        keyshare: String,
+        // psbt
+        psbtBase64: String,
+        promise: Promise
+    ) {
+        Thread {
+            try {
+                val result = Tss.mpcSignPSBT(
+                    server,
+                    partyID,
+                    partiesCSV,
+                    sessionID,
+                    sessionKey,
+                    encKey,
+                    decKey,
+                    keyshare,
+                    psbtBase64
+                )
+                ld("mpcSignPSBT signed:", result)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                ld("mpcSignPSBT", "error: ${e.stackTraceToString()}")
+                promise.reject("MPC_SIGN_PSBT_ERROR", "Failed to sign PSBT: ${e.message}", e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun nostrMpcSignPSBT(
+        relaysCSV: String,
+        partyNsec: String,
+        partiesNpubsCSV: String,
+        npubsSorted: String,
+        keyshareJSON: String,
+        psbtBase64: String,
+        promise: Promise
+    ) {
+        Thread {
+            try {
+                val result = Tss.nostrMpcSignPSBT(
+                    relaysCSV,
+                    partyNsec,
+                    partiesNpubsCSV,
+                    npubsSorted,
+                    keyshareJSON,
+                    psbtBase64
+                )
+                ld("nostrMpcSignPSBT", result)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                ld("nostrMpcSignPSBT", "error: ${e.stackTraceToString()}")
+                promise.reject("NOSTR_MPC_SIGN_PSBT_ERROR", "Failed to sign PSBT via Nostr: ${e.message}", e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun parsePSBTDetails(psbtBase64: String, promise: Promise) {
+        Thread {
+            try {
+                val result = Tss.parsePSBTDetails(psbtBase64)
+                ld("parsePSBTDetails", result)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                ld("parsePSBTDetails", "error: ${e.stackTraceToString()}")
+                promise.reject("PARSE_PSBT_ERROR", "Failed to parse PSBT: ${e.message}", e)
+            }
+        }.start()
     }
 }

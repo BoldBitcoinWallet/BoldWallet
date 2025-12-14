@@ -16,6 +16,11 @@ gomobile bind -v -target=android -androidapi 21 github.com/BoldBitcoinWallet/BBM
 cp tss.aar ../android/app/libs/tss.aar
 cp tss-sources.jar ../android/app/libs/tss-sources.jar
 
+gomobile bind -v -target=ios,iossimulator,macos github.com/BoldBitcoinWallet/BBMTLib/tss
+# Remove old framework first (cp -r fails with symlinks when destination exists)
+rm -rf ../ios/Tss.xcframework
+cp -R ./Tss.xcframework ../ios/
+
 # Run go mod tidy again at the end to ensure go.mod/go.sum are up to date
 # This ensures any dependencies added during the build are included
 echo "Updating go.mod/go.sum..."

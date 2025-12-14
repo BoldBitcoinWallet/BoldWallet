@@ -40,8 +40,32 @@ export const dbg = (message, ...optionalParams) => {
 
 export const shorten = (x, y = 12) => `${x.slice(0, y)}...${x.slice(-y)}`;
 
-export const isCanceledError = (error) => {
-  return error && (String(error) === 'canceled' || error?.name === 'CanceledError');
+/**
+ * Get the default derivation path for a given network
+ * @param {string} network - Network: 'mainnet' or 'testnet3'
+ * @returns {string} - Derivation path (e.g., "m/44'/0'/0'/0/0" for mainnet, "m/44'/1'/0'/0/0" for testnet)
+ */
+export const getDerivePathForNetwork = (network, account = 0, change = 0, index = 0) => {
+  const coinType = network === 'mainnet' ? "0'" : "1'";
+  return `m/44'/${coinType}/${account}'/${change}/${index}`;
+};
+
+/**
+ * Convert a hex string to a regular string
+ * @param {string} hex - The hex string to convert
+ * @returns {string} - The decoded string
+ */
+export const hexToString = hex => {
+  if (!hex) return '';
+  return (hex.match(/.{1,2}/g) || [])
+    .map(byte => String.fromCharCode(parseInt(byte, 16)))
+    .join('');
+};
+
+export const isCanceledError = error => {
+  return (
+    error && (String(error) === 'canceled' || error?.name === 'CanceledError')
+  );
 };
 
 export const capitalizeWords = str => {
@@ -293,7 +317,10 @@ export const fetchDynamicNostrRelays = async () => {
         const urlMatch = match.match(/wss:\/\/[^\s]+/);
         return urlMatch ? urlMatch[0].trim() : null;
       })
-      .filter(url => url !== null && typeof url === 'string' && url.startsWith('wss://'))
+      .filter(
+        url =>
+          url !== null && typeof url === 'string' && url.startsWith('wss://'),
+      )
       .map(url => String(url)); // Ensure all are strings
 
     if (relays.length > 0) {
@@ -332,7 +359,7 @@ export const getNostrRelays = async (forceFetch = false) => {
 
   // If not cached or forceFetch, fetch from GitHub
   const dynamicRelays = await fetchDynamicNostrRelays();
-  
+
   // Cache the result (either fetched or defaults)
   const relaysCSV = dynamicRelays.join(',');
   try {

@@ -58,12 +58,17 @@ mkdir -p "$DATA_DIR_ABS"
 chmod 777 "$DATA_DIR_ABS" || true
 
 # Pull the latest nostr-rs-relay image (or use a specific tag)
-echo "Pulling nostr-rs-relay Docker image..."
-docker pull scsibug/nostr-rs-relay:latest || {
-    echo -e "${YELLOW}Warning: Failed to pull image, trying to build from source...${NC}"
-    # If pull fails, we could build from source, but for now just exit
-    exit 1
-}
+# Check if image already exists to avoid unnecessary pulls
+if docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "^scsibug/nostr-rs-relay:latest$"; then
+    echo "✓ nostr-rs-relay image already exists, skipping pull"
+else
+    echo "Pulling nostr-rs-relay Docker image..."
+    docker pull scsibug/nostr-rs-relay:latest || {
+        echo -e "${YELLOW}Warning: Failed to pull image, trying to build from source...${NC}"
+        # If pull fails, we could build from source, but for now just exit
+        exit 1
+    }
+fi
 
 # Start the relay container
 # Remove :Z flag (SELinux context) as it's not needed in GitHub Actions and can cause issues
