@@ -79,7 +79,11 @@ const QRScanner = ({styles, device, codeScanner, onClose, urProgress}: any) => {
   const isAnimatedQR = urProgress && urProgress.total > 1;
   // Use percentage directly for more accurate progress display (fixes iOS progress issue)
   const progressPercent = isAnimatedQR
-    ? Math.min(100, urProgress.percentage || Math.round((urProgress.received / urProgress.total) * 100))
+    ? Math.min(
+        100,
+        urProgress.percentage ||
+          Math.round((urProgress.received / urProgress.total) * 100),
+      )
     : 0;
   const isComplete = isAnimatedQR && urProgress.received >= urProgress.total;
 
@@ -171,7 +175,10 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
   // This updates the native scanner's progress overlay (not a modal)
   useEffect(() => {
     if (Platform.OS === 'android' && isAndroidScanning && urProgress) {
-      const progressPercent = Math.min(100, Math.round(urProgress.received || 0));
+      const progressPercent = Math.min(
+        100,
+        Math.round(urProgress.received || 0),
+      );
       const progressText = `PSBT scanning progress... ${progressPercent}%`;
       BarcodeZxingScan.updateProgressText(progressText);
     } else if (Platform.OS === 'android' && isAndroidScanning && !urProgress) {
@@ -544,13 +551,15 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
 
     // Remove existing listener if any
     if (continuousScanSubscriptionRef.current) {
-      dbg('Android: Removing existing event listener before setting up new one');
+      dbg(
+        'Android: Removing existing event listener before setting up new one',
+      );
       continuousScanSubscriptionRef.current.remove();
       continuousScanSubscriptionRef.current = null;
     }
 
     dbg('Android: Setting up EventEmitter listener for continuous scanning');
-    
+
     const subscription = DeviceEventEmitter.addListener(
       'BarcodeZxingScanContinuous',
       (event: {data?: string; error?: string}) => {
@@ -583,12 +592,15 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
         }
 
         if (event.data) {
-          dbg('Android: Processing event with data:', event.data.substring(0, 50) + '...');
-          
+          dbg(
+            'Android: Processing event with data:',
+            event.data.substring(0, 50) + '...',
+          );
+
           // CRITICAL: Simplified logic - if we receive an event, process it UNLESS
           // we explicitly know the scan was completed and stopped
           // The session ID helps, but if scanner is open and we get events, process them
-          
+
           // Only reject if BOTH conditions are true: not scanning AND session ID is 0
           // This means the scan was explicitly stopped and we're not in a new session
           if (!currentIsScanning && currentSessionId === 0) {
@@ -604,7 +616,9 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
           // Re-enable scanning state if needed (handles race conditions)
           if (!currentIsScanning) {
             dbg(
-              'Android: Received event but isScanningRef is false. Enabling scanning (sessionId=' + currentSessionId + ')',
+              'Android: Received event but isScanningRef is false. Enabling scanning (sessionId=' +
+                currentSessionId +
+                ')',
             );
             isScanningRef.current = true;
             setIsAndroidScanning(true);
@@ -612,29 +626,32 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
 
           // CRITICAL: Ensure UR decoder is initialized for this scan session
           // Initialize decoder when we receive the first UR frame
-          if (!urDecoderRef.current && event.data.toLowerCase().startsWith('ur:')) {
+          if (
+            !urDecoderRef.current &&
+            event.data.toLowerCase().startsWith('ur:')
+          ) {
             dbg('Android: Initializing new UR decoder for scan session');
             urDecoderRef.current = new URDecoder();
           }
-          
+
           // If decoder exists but we're getting non-UR data, reset decoder for new scan
-          if (urDecoderRef.current && !event.data.toLowerCase().startsWith('ur:')) {
-            dbg('Android: Received non-UR data with existing decoder, resetting decoder for new scan');
+          if (
+            urDecoderRef.current &&
+            !event.data.toLowerCase().startsWith('ur:')
+          ) {
+            dbg(
+              'Android: Received non-UR data with existing decoder, resetting decoder for new scan',
+            );
             urDecoderRef.current = null;
             setUrProgress(null);
           }
 
-          dbg(
-            'Android scanned QR frame:',
-            event.data.substring(0, 50) + '...',
-          );
+          dbg('Android scanned QR frame:', event.data.substring(0, 50) + '...');
           // Process the scanned data - the scanner stays open for next frame
           // Use the latest processScannedData via closure, but also ensure refs are current
           processScannedData(event.data, () => {
             // This callback is called if UR is incomplete - scanner stays open
-            dbg(
-              'Android: UR incomplete, scanner stays open for next frame...',
-            );
+            dbg('Android: UR incomplete, scanner stays open for next frame...');
             // Ensure isScanningRef is still true (only if we're still scanning)
             if (isScanningRef.current) {
               // Only reset if we're still supposed to be scanning
@@ -691,7 +708,7 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
     dbg('Android: Setting isScanningRef to true BEFORE starting scanner');
     isScanningRef.current = true;
     setIsAndroidScanning(true);
-    
+
     dbg(
       'Android: Starting continuous scan for animated QR, sessionId:',
       currentSessionId,
@@ -768,7 +785,7 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
     setIsLoading(false); // Clear loading state
     setPsbtBase64(null); // Clear any previous PSBT data
     setPsbtDetails(null); // Clear PSBT details
-    
+
     // Ensure any previous scan is fully stopped before starting a new one
     if (Platform.OS === 'android') {
       // Always stop any existing scan first to ensure clean state
@@ -782,7 +799,7 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
         urDecoderRef.current = null;
         setUrProgress(null);
         BarcodeZxingScan.updateProgressText('');
-        
+
         // Add a small delay to ensure native scanner is fully stopped
         // before starting a new scan (fixes Android subsequent scan issue)
         // NOTE: Don't reset sessionId to 0 here - let the new scan set it
@@ -853,14 +870,17 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
       onCodeScanned: codes => {
         if (codes.length > 0 && codes[0].value) {
           dbg('Scanned QR (iOS):', codes[0].value.substring(0, 50) + '...');
-          
+
           // CRITICAL: Ensure UR decoder is initialized for this scan session
           // This ensures progress tracking works correctly on iOS
-          if (!urDecoderRef.current && codes[0].value.toLowerCase().startsWith('ur:')) {
+          if (
+            !urDecoderRef.current &&
+            codes[0].value.toLowerCase().startsWith('ur:')
+          ) {
             dbg('iOS: Initializing new UR decoder for scan session');
             urDecoderRef.current = new URDecoder();
           }
-          
+
           // Use processScannedData to handle both plain PSBT and UR format
           processScannedData(codes[0].value);
         }
@@ -882,21 +902,14 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
               source={require('../assets/key-icon.png')}
               style={styles.headerIcon}
             />
-            <Text style={styles.headerTitle}>Sign PSBT</Text>
+            <Text style={styles.headerTitle}>Sign • PSBT • {network === 'mainnet' ? 'Mainnet' : 'Testnet'}</Text>
           </View>
 
           {/* Description */}
           <Text style={styles.description}>
             Import a Partially Signed Bitcoin Transaction (PSBT) from Sparrow or
-            another wallet to sign with your keyshare.
+            another wallet to sign with your keyshare on.
           </Text>
-
-          {/* Network indicator */}
-          <View style={styles.networkBadge}>
-            <Text style={styles.networkText}>
-              {network === 'mainnet' ? '● Mainnet' : '● Testnet'}
-            </Text>
-          </View>
 
           {/* Import buttons */}
           {!psbtBase64 && (
@@ -959,9 +972,7 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
                 <View style={styles.flowSection}>
                   <Text style={styles.flowSectionTitle}>Inputs</Text>
                   {psbtDetails.inputs.map((input, index) => {
-                    const derivePath =
-                      psbtDetails.derivePaths[index] 
-                      || 'N/A';
+                    const derivePath = psbtDetails.derivePaths[index] || 'N/A';
                     return (
                       <View key={index} style={styles.flowItem}>
                         <View style={styles.flowItemContent}>

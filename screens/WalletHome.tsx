@@ -21,16 +21,16 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {AppState} from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
-import Clipboard from '@react-native-clipboard/clipboard';
 import SendBitcoinModal from './SendBitcoinModal';
 import Toast from 'react-native-toast-message';
 import TransactionList from '../components/TransactionList';
 import {CommonActions} from '@react-navigation/native';
 import Big from 'big.js';
-import QRCode from 'react-native-qrcode-svg';
 import ReceiveModal from './ReceiveModal';
 import PSBTModal from './PSBTModal';
 import SignedPSBTModal from './SignedPSBTModal';
+import KeyshareModal from '../components/KeyshareModal';
+import QRCodeModal from '../components/QRCodeModal';
 import {
   capitalizeWords,
   dbg,
@@ -92,7 +92,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [party, setParty] = useState<string>('');
   const [isBlurred, setIsBlurred] = useState<boolean>(true);
   const [isReceiveModalVisible, setIsReceiveModalVisible] = useState(false);
-  const [isSignedPSBTModalVisible, setIsSignedPSBTModalVisible] = useState(false);
+  const [isSignedPSBTModalVisible, setIsSignedPSBTModalVisible] =
+    useState(false);
   const [signedPsbt, setSignedPsbt] = useState<string | null>(null);
 
   // Additional state variables needed by fetchData
@@ -371,59 +372,66 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   }, [fetchData]);
 
   // Function to update address type modal with new network addresses
-  const updateAddressTypeModal = useCallback(async (newNetwork: string) => {
-    try {
-      dbg(
-        '=== updateAddressTypeModal: Updating addresses for network:',
-        newNetwork,
-      );
+  const updateAddressTypeModal = useCallback(
+    async (newNetwork: string) => {
+      try {
+        dbg(
+          '=== updateAddressTypeModal: Updating addresses for network:',
+          newNetwork,
+        );
 
-      // Try to get btcPub from storage first
-      let btcPub = await EncryptedStorage.getItem('btcPub');
+        // Try to get btcPub from storage first
+        let btcPub = await EncryptedStorage.getItem('btcPub');
 
-      // Fallback: derive btcPub if not found in storage
-      if (!btcPub) {
-        dbg('btcPub not found in storage, deriving from keyshare...');
-        const jks = await EncryptedStorage.getItem('keyshare');
-        if (jks) {
-          const ks = JSON.parse(jks);
-          const path = getDerivePathForNetwork(network);
-          btcPub = await BBMTLibNativeModule.derivePubkey(
-            ks.pub_key,
-            ks.chain_code_hex,
-            path,
-          );
-          // Store it for future use
-          await EncryptedStorage.setItem('btcPub', btcPub!);
-          dbg('btcPub derived and stored');
+        // Fallback: derive btcPub if not found in storage
+        if (!btcPub) {
+          dbg('btcPub not found in storage, deriving from keyshare...');
+          const jks = await EncryptedStorage.getItem('keyshare');
+          if (jks) {
+            const ks = JSON.parse(jks);
+            const path = getDerivePathForNetwork(network);
+            btcPub = await BBMTLibNativeModule.derivePubkey(
+              ks.pub_key,
+              ks.chain_code_hex,
+              path,
+            );
+            // Store it for future use
+            await EncryptedStorage.setItem('btcPub', btcPub!);
+            dbg('btcPub derived and stored');
+          }
         }
+
+        if (btcPub) {
+          // Generate addresses for all types for the new network
+          const [legacyAddr, segwitAddr, segwitCompatibleAddr] =
+            await Promise.all([
+              BBMTLibNativeModule.btcAddress(btcPub!, newNetwork, 'P2PKH'),
+              BBMTLibNativeModule.btcAddress(btcPub!, newNetwork, 'P2WPKH'),
+              BBMTLibNativeModule.btcAddress(
+                btcPub!,
+                newNetwork,
+                'P2SH-P2WPKH',
+              ),
+            ]);
+
+          if (legacyAddr) setLegacyAddress(legacyAddr);
+          if (segwitAddr) setSegwitAddress(segwitAddr);
+          if (segwitCompatibleAddr)
+            setSegwitCompatibleAddress(segwitCompatibleAddr);
+
+          dbg('Address type modal updated for network:', newNetwork);
+          dbg('Legacy:', legacyAddr);
+          dbg('Segwit:', segwitAddr);
+          dbg('Segwit Compatible:', segwitCompatibleAddr);
+        } else {
+          dbg('Could not get or derive btcPub for address generation');
+        }
+      } catch (error) {
+        dbg('updateAddressTypeModal: Error updating addresses:', error);
       }
-
-      if (btcPub) {
-        // Generate addresses for all types for the new network
-        const [legacyAddr, segwitAddr, segwitCompatibleAddr] =
-          await Promise.all([
-            BBMTLibNativeModule.btcAddress(btcPub!, newNetwork, 'P2PKH'),
-            BBMTLibNativeModule.btcAddress(btcPub!, newNetwork, 'P2WPKH'),
-            BBMTLibNativeModule.btcAddress(btcPub!, newNetwork, 'P2SH-P2WPKH'),
-          ]);
-
-        if (legacyAddr) setLegacyAddress(legacyAddr);
-        if (segwitAddr) setSegwitAddress(segwitAddr);
-        if (segwitCompatibleAddr)
-          setSegwitCompatibleAddress(segwitCompatibleAddr);
-
-        dbg('Address type modal updated for network:', newNetwork);
-        dbg('Legacy:', legacyAddr);
-        dbg('Segwit:', segwitAddr);
-        dbg('Segwit Compatible:', segwitCompatibleAddr);
-      } else {
-        dbg('Could not get or derive btcPub for address generation');
-      }
-    } catch (error) {
-      dbg('updateAddressTypeModal: Error updating addresses:', error);
-    }
-  }, [network]);
+    },
+    [network],
+  );
 
   // Function to update address for the new network
   const updateAddressForNetwork = useCallback(
@@ -816,6 +824,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       return '';
     }
   };
+
 
   const {theme} = useTheme();
   const styles = createStyles(theme);
@@ -1567,7 +1576,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               }}
               activeOpacity={0.85}>
               <View style={styles.columnCenter}>
-                <Text style={styles.partyLabel}>Sign PSBT</Text>
+                <Text style={styles.partyLabel}>Sign • PSBT</Text>
                 <View style={styles.rowCenterMarginTop2}>
                   <Image
                     source={require('../assets/cosign-icon.png')}
@@ -1741,7 +1750,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           <View style={styles.modalContent}>
             <View style={styles.modalHeaderRow}>
               <Image
-                source={require('../assets/key-icon.png')}
+                source={require('../assets/bitcoin-icon.png')}
                 style={styles.modalHeaderIcon}
               />
               <Text style={styles.modalHeaderTitle}>Select Address Format</Text>
@@ -1888,14 +1897,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           address={address}
           addressType={addressType}
           baseApi={apiBase}
-          network={network}
+          network={network as 'mainnet' | 'testnet'}
           onClose={() => setIsReceiveModalVisible(false)}
         />
       )}
       {/* PSBT Signing Modal */}
       <PSBTModal
         visible={isPSBTModalVisible}
-        network={network}
+        network={network as 'mainnet' | 'testnet'}
         btcRate={btcRate}
         currencySymbol={getCurrencySymbol(selectedCurrency)}
         onClose={() => setIsPSBTModalVisible(false)}
@@ -1926,404 +1935,61 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           }}
         />
       )}
-      {/* Keyshare Party Info Modal */}
-      <Modal
+      {/* Keyshare Modal */}
+      <KeyshareModal
         visible={isPartyModalVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setIsPartyModalVisible(false)}>
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          onPress={() => {
-            HapticFeedback.light();
-            setIsPartyModalVisible(false);
-          }}
-          activeOpacity={1}>
-          <TouchableOpacity
-            activeOpacity={1}
-            onPress={e => e.stopPropagation()}>
-            <View style={styles.modalContentCompact}>
-              <View style={styles.modalHeaderRowCompact}>
-                <Image
-                  source={require('../assets/key-icon.png')}
-                  style={styles.modalHeaderIconCompact}
-                />
-                <Text style={styles.modalHeaderTitleCompact}>
-                  Device Keyshare
-                </Text>
-              </View>
+        onClose={() => setIsPartyModalVisible(false)}
+        keyshareInfo={keyshareInfo}
+        network={network as 'mainnet' | 'testnet'}
+        onNavigateToSettings={() => {
+          if (typeof navigation.navigate === 'function') {
+            navigation.navigate('Settings');
+          }
+        }}
+        onShowXpubQR={() => setIsXpubQrVisible(true)}
+        onShowOutputDescriptorQR={() => setIsOutputDescriptorQrVisible(true)}
+        onShowNpubQR={() => setIsNpubQrVisible(true)}
+      />
 
-              <View style={styles.keyshareModalBody}>
-                {keyshareInfo ? (
-                  <View style={styles.keyshareTable}>
-                    <View style={styles.keyshareTableRow}>
-                      <Text style={styles.keyshareTableKey}>Keyshare ID</Text>
-                      <Text style={styles.keyshareTableValue}>
-                        {keyshareInfo.label}
-                      </Text>
-                    </View>
-
-                    <View style={styles.keyshareTableRow}>
-                      <Text style={styles.keyshareTableKey}>Keyshare Type</Text>
-                      <Text style={styles.keyshareTableValue}>
-                        {keyshareInfo.type === 'flexi'
-                          ? 'Flexi (3-parties)'
-                          : 'Basic (2-parties)'}
-                      </Text>
-                    </View>
-
-                    <View style={styles.keyshareTableRow}>
-                      <Text style={styles.keyshareTableKey}>LAN/Hotspot</Text>
-                      <Text
-                        style={[
-                          styles.keyshareTableValue,
-                          styles.keyshareTableValueSuccess,
-                        ]}>
-                        ✓ Supported
-                      </Text>
-                    </View>
-
-                    <View style={styles.keyshareTableRow}>
-                      <Text style={styles.keyshareTableKey}>
-                        Nostr Protocol
-                      </Text>
-                      <Text
-                        style={[
-                          styles.keyshareTableValue,
-                          keyshareInfo.supportsNostr
-                            ? styles.keyshareTableValueSuccess
-                            : styles.keyshareTableValueDisabled,
-                        ]}>
-                        {keyshareInfo.supportsNostr
-                          ? '✓ Supported'
-                          : '✗ Not Supported'}
-                      </Text>
-                    </View>
-
-                    <View style={styles.keyshareTableRow}>
-                      <Text style={styles.keyshareTableKey}>
-                        Derivation Path
-                      </Text>
-                      <View style={styles.keyshareTableValueContainer}>
-                        <Text
-                          style={[
-                            styles.keyshareTableValue,
-                          ]}
-                          numberOfLines={1}
-                          ellipsizeMode="middle">
-                          {getDerivePathForNetwork(network)}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.keyshareTableRow}>
-                      <Text style={styles.keyshareTableKey}>
-                        Extended Pubkey (
-                        {network === 'mainnet' ? 'xpub' : 'tpub'})
-                      </Text>
-                      <View style={styles.keyshareTableValueContainer}>
-                        <Text
-                          style={styles.keyshareTableValueKey}
-                          numberOfLines={1}
-                          ellipsizeMode="middle">
-                          {keyshareInfo.xpub || 'N/A'}
-                        </Text>
-                        <View style={styles.keyshareButtonsRow}>
-                          <TouchableOpacity
-                            onPress={() => {
-                              HapticFeedback.light();
-                              Clipboard.setString(keyshareInfo.xpub);
-                              Toast.show({
-                                type: 'success',
-                                text1: 'Copied',
-                                text2: 'Import in Sparrow with derivation /0/0',
-                              });
-                            }}
-                            style={styles.keyshareCopyButton}>
-                            <Image
-                              source={require('../assets/copy-icon.png')}
-                              style={styles.keyshareCopyIcon}
-                            />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => {
-                              HapticFeedback.light();
-                              setIsPartyModalVisible(false);
-                              setTimeout(() => setIsXpubQrVisible(true), 300);
-                            }}
-                            style={styles.keyshareCopyButton}>
-                            <Image
-                              source={require('../assets/qr-icon.png')}
-                              style={styles.keyshareCopyIcon}
-                            />
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </View>
-
-                    <View style={styles.keyshareTableRow}>
-                      <Text style={styles.keyshareTableKey}>
-                        Output Descriptor
-                      </Text>
-                      <View style={styles.keyshareTableValueContainer}>
-                        <Text
-                          style={styles.keyshareTableValueKey}
-                          numberOfLines={1}
-                          ellipsizeMode="middle">
-                          {keyshareInfo.outputDescriptor || 'N/A'}
-                        </Text>
-                        <View style={styles.keyshareButtonsRow}>
-                          <TouchableOpacity
-                            onPress={() => {
-                              HapticFeedback.light();
-                              Clipboard.setString(keyshareInfo.outputDescriptor);
-                              Toast.show({
-                                type: 'success',
-                                text1: 'Copied',
-                                text2: 'Paste into Sparrow wallet import',
-                              });
-                            }}
-                            style={styles.keyshareCopyButton}>
-                            <Image
-                              source={require('../assets/copy-icon.png')}
-                              style={styles.keyshareCopyIcon}
-                            />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => {
-                              HapticFeedback.light();
-                              setIsPartyModalVisible(false);
-                              setTimeout(
-                                () => setIsOutputDescriptorQrVisible(true),
-                                300,
-                              );
-                            }}
-                            style={styles.keyshareCopyButton}>
-                            <Image
-                              source={require('../assets/qr-icon.png')}
-                              style={styles.keyshareCopyIcon}
-                            />
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </View>
-
-                    {keyshareInfo.supportsNostr && keyshareInfo.npub && (
-                      <View style={styles.keyshareTableRow}>
-                        <Text style={styles.keyshareTableKey}>
-                          Nostr Pubkey
-                        </Text>
-                        <View style={styles.keyshareTableValueContainer}>
-                          <Text
-                            style={styles.keyshareTableValueKey}
-                            numberOfLines={1}
-                            ellipsizeMode="middle">
-                            {keyshareInfo.npub}
-                          </Text>
-                          <View style={styles.keyshareButtonsRow}>
-                            <TouchableOpacity
-                              onPress={() => {
-                                HapticFeedback.light();
-                                Clipboard.setString(keyshareInfo.npub || '');
-                                Toast.show({
-                                  type: 'success',
-                                  text1: 'Copied',
-                                  text2: 'Nostr public key copied to clipboard',
-                                });
-                              }}
-                              style={styles.keyshareCopyButton}>
-                              <Image
-                                source={require('../assets/copy-icon.png')}
-                                style={styles.keyshareCopyIcon}
-                              />
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              onPress={() => {
-                                HapticFeedback.light();
-                                setIsPartyModalVisible(false);
-                                setTimeout(() => setIsNpubQrVisible(true), 300);
-                              }}
-                              style={styles.keyshareCopyButton}>
-                              <Image
-                                source={require('../assets/qr-icon.png')}
-                                style={styles.keyshareCopyIcon}
-                              />
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      </View>
-                    )}
-                  </View>
-                ) : (
-                  <View style={styles.keyshareLoadingContainer}>
-                    <Text style={styles.modalTextCompact}>
-                      Loading keyshare information...
-                    </Text>
-                  </View>
-                )}
-              </View>
-
-              <TouchableOpacity
-                style={[
-                  styles.backupButtonCompact,
-                  styles.keyshareBackupButtonMargin,
-                ]}
-                onPress={() => {
-                  HapticFeedback.medium();
-                  setIsPartyModalVisible(false);
-                  if (typeof navigation.navigate === 'function') {
-                    navigation.navigate('Settings');
-                  }
-                }}
-                activeOpacity={0.7}>
-                <Text style={styles.backupButtonTextCompact}>
-                  Security Settings &gt; Backup
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* xpub QR Code Modal */}
-      <Modal
+      {/* QR Code Modals */}
+      <QRCodeModal
         visible={isXpubQrVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => {
+        onClose={() => {
           setIsXpubQrVisible(false);
           setTimeout(() => setIsPartyModalVisible(true), 300);
-        }}>
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          onPress={() => {
-            HapticFeedback.light();
-            setIsXpubQrVisible(false);
-            setTimeout(() => setIsPartyModalVisible(true), 300);
-          }}
-          activeOpacity={1}>
-          <TouchableOpacity
-            activeOpacity={1}
-            onPress={e => e.stopPropagation()}>
-            <View style={styles.qrModalContent}>
-              <Text style={styles.qrModalTitle}>
-                {network === 'mainnet' ? 'xpub' : 'tpub'} QR Code
-              </Text>
-              <View style={styles.qrCodeContainer}>
-                {keyshareInfo?.xpub && (
-                  <QRCode
-                    value={keyshareInfo.xpub}
-                    size={200}
-                    backgroundColor="white"
-                    color="black"
-                  />
-                )}
-              </View>
-              <TouchableOpacity
-                style={styles.qrModalCloseButton}
-                onPress={() => {
-                  HapticFeedback.light();
-                  setIsXpubQrVisible(false);
-                  setTimeout(() => setIsPartyModalVisible(true), 300);
-                }}>
-                <Text style={styles.qrModalCloseButtonText}>Close</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+        }}
+        title={`Wallet • ${network === 'mainnet' ? 'xpub' : 'tpub'}`}
+        value={keyshareInfo?.xpub || ''}
+        network={network as 'mainnet' | 'testnet'}
+        showShareButton={true}
+        topRightClose={true}
+        nonDismissible={true}
+      />
 
-      {/* Output Descriptor QR Code Modal */}
-      <Modal
+      <QRCodeModal
         visible={isOutputDescriptorQrVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => {
+        onClose={() => {
           setIsOutputDescriptorQrVisible(false);
           setTimeout(() => setIsPartyModalVisible(true), 300);
-        }}>
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          onPress={() => {
-            HapticFeedback.light();
-            setIsOutputDescriptorQrVisible(false);
-            setTimeout(() => setIsPartyModalVisible(true), 300);
-          }}
-          activeOpacity={1}>
-          <TouchableOpacity
-            activeOpacity={1}
-            onPress={e => e.stopPropagation()}>
-            <View style={styles.qrModalContent}>
-              <Text style={styles.qrModalTitle}>Output Descriptor QR Code</Text>
-              <View style={styles.qrCodeContainer}>
-                {keyshareInfo?.outputDescriptor && (
-                  <QRCode
-                    value={keyshareInfo.outputDescriptor}
-                    size={200}
-                    backgroundColor="white"
-                    color="black"
-                  />
-                )}
-              </View>
-              <TouchableOpacity
-                style={styles.qrModalCloseButton}
-                onPress={() => {
-                  HapticFeedback.light();
-                  setIsOutputDescriptorQrVisible(false);
-                  setTimeout(() => setIsPartyModalVisible(true), 300);
-                }}>
-                <Text style={styles.qrModalCloseButtonText}>Close</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+        }}
+        title="Wallet • Output Descriptor"
+        value={keyshareInfo?.outputDescriptor || ''}
+        network={network as 'mainnet' | 'testnet'}
+        showShareButton={true}
+        topRightClose={true}
+        nonDismissible={true}
+      />
 
-      {/* npub QR Code Modal */}
-      <Modal
+      <QRCodeModal
         visible={isNpubQrVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => {
+        onClose={() => {
           setIsNpubQrVisible(false);
           setTimeout(() => setIsPartyModalVisible(true), 300);
-        }}>
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          onPress={() => {
-            HapticFeedback.light();
-            setIsNpubQrVisible(false);
-            setTimeout(() => setIsPartyModalVisible(true), 300);
-          }}
-          activeOpacity={1}>
-          <TouchableOpacity
-            activeOpacity={1}
-            onPress={e => e.stopPropagation()}>
-            <View style={styles.qrModalContent}>
-              <Text style={styles.qrModalTitle}>Nostr Public Key</Text>
-              <View style={styles.qrCodeContainer}>
-                {keyshareInfo?.npub && (
-                  <QRCode
-                    value={keyshareInfo.npub}
-                    size={200}
-                    backgroundColor="white"
-                    color="black"
-                  />
-                )}
-              </View>
-              <TouchableOpacity
-                style={styles.qrModalCloseButton}
-                onPress={() => {
-                  HapticFeedback.light();
-                  setIsNpubQrVisible(false);
-                  setTimeout(() => setIsPartyModalVisible(true), 300);
-                }}>
-                <Text style={styles.qrModalCloseButtonText}>Close</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+        }}
+        title="Nostr Public Key"
+        value={keyshareInfo?.npub || ''}
+        showShareButton={false}
+      />
     </SafeAreaView>
   );
 };
