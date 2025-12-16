@@ -817,7 +817,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     pubKey: string;
     chainCode: string;
     xpub: string;
-    outputDescriptor: string;
     outputDescriptors?: {
       legacy: string;
       segwitNative: string;
@@ -827,8 +826,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     createdAt?: number | null;
   } | null>(null);
   const [isXpubQrVisible, setIsXpubQrVisible] = useState(false);
-  const [isOutputDescriptorQrVisible, setIsOutputDescriptorQrVisible] =
-    useState(false);
   const [isNpubQrVisible, setIsNpubQrVisible] = useState(false);
 
   // Helper function to get xpub from native module
@@ -1303,7 +1300,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         segwitNative: descriptors.segwitNative,
         segwitCompatible: descriptors.segwitCompatible,
       };
-      const outputDescriptor = descriptors.primary;
 
       setKeyshareInfo({
         label,
@@ -1313,7 +1309,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         pubKey,
         chainCode,
         xpub,
-        outputDescriptor,
         outputDescriptors,
         npub: nostrNpub,
         createdAt: keyshare.created_at || null,
@@ -1990,7 +1985,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           }
         }}
         onShowXpubQR={() => setIsXpubQrVisible(true)}
-        onShowOutputDescriptorQR={() => setIsOutputDescriptorQrVisible(true)}
+        onShowOutputDescriptorQR={() => {}}
         onShowNpubQR={() => setIsNpubQrVisible(true)}
       />
 
@@ -2009,19 +2004,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         nonDismissible={true}
       />
 
-      <QRCodeModal
-        visible={isOutputDescriptorQrVisible}
-        onClose={() => {
-          setIsOutputDescriptorQrVisible(false);
-          setTimeout(() => setIsPartyModalVisible(true), 300);
-        }}
-        title="Wallet • Output Descriptor"
-        value={keyshareInfo?.outputDescriptor || ''}
-        network={network as 'mainnet' | 'testnet'}
-        showShareButton={true}
-        topRightClose={true}
-        nonDismissible={true}
-      />
 
       <QRCodeModal
         visible={isNpubQrVisible}
