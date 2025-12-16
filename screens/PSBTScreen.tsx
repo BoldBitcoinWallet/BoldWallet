@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Alert,
   Animated,
+  DeviceEventEmitter,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import EncryptedStorage from 'react-native-encrypted-storage';
@@ -619,6 +620,26 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
             disableCancelWhenEmpty={true}
             useOverlay={false}
             onSign={handlePSBTSign}
+            middleButton={
+              <TouchableOpacity
+                style={styles.lockButton}
+                onPress={() => {
+                  HapticFeedback.light();
+                  // Emit a reload event to App.tsx to trigger authentication lock
+                  DeviceEventEmitter.emit('app:reload');
+                }}
+                activeOpacity={0.7}
+                accessible={true}
+                accessibilityRole="button"
+                accessibilityLabel="Lock wallet"
+                accessibilityHint="Double tap to lock the wallet">
+                <Image
+                  source={require('../assets/locker-icon.png')}
+                  style={styles.lockButtonIcon}
+                  resizeMode="contain"
+                />
+              </TouchableOpacity>
+            }
           />
         </View>
       </ScrollView>
@@ -814,6 +835,24 @@ const createStyles = (theme: any) =>
     psbtBodyContainer: {
       marginTop: 0,
       marginBottom: 8,
+    },
+    lockButton: {
+      width: 48,
+      height: 48,
+      borderRadius: 12,
+      backgroundColor: theme.colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+      elevation: 4,
+    },
+    lockButtonIcon: {
+      width: 20,
+      height: 20,
+      tintColor: theme.colors.textOnPrimary,
     },
   });
 

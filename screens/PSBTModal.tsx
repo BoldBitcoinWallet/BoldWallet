@@ -59,6 +59,8 @@ export interface PSBTLoaderProps {
   // When false, PSBTLoader behaves like an embedded card without blocking the
   // underlying screen (used by PSBTScreen).
   useOverlay?: boolean;
+  // Optional middle button to render between Cancel and Co-Sign buttons
+  middleButton?: React.ReactNode;
 }
 
 export interface PSBTModalProps extends PSBTLoaderProps {
@@ -143,6 +145,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
   onSign,
   disableCancelWhenEmpty = false,
   useOverlay = true,
+  middleButton,
 }) => {
   const {theme} = useTheme();
   const [psbtBase64, setPsbtBase64] = useState<string | null>(null);
@@ -1164,6 +1167,12 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
             </Text>
           </TouchableOpacity>
 
+          {middleButton && (
+            <View style={styles.middleButtonContainer}>
+              {middleButton}
+            </View>
+          )}
+
           <TouchableOpacity
             style={[
               styles.signButton,
@@ -1707,6 +1716,11 @@ const createStyles = (theme: any) =>
       borderWidth: 1,
       borderColor: theme.colors.border,
       marginRight: 6,
+    },
+    middleButtonContainer: {
+      marginHorizontal: 6,
+      justifyContent: 'center',
+      alignItems: 'center',
     },
     cancelButtonText: {
       fontSize: 16,
