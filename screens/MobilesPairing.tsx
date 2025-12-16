@@ -137,6 +137,7 @@ const MobilesPairing = ({navigation}: any) => {
   const [checks, setChecks] = useState({
     sameNetwork: false,
     twoDevices: false,
+    noVPN: false,
   });
 
   const [backupChecks, setBackupChecks] = useState({
@@ -2880,6 +2881,12 @@ const MobilesPairing = ({navigation}: any) => {
                         : 'Both on same network',
                       icon: 'wifi',
                     },
+                    {
+                      key: 'noVPN',
+                      label: 'No VPN apps active',
+                      icon: 'vpn',
+                      hint: 'VPN may break local pairing',
+                    },
                   ].map(item => (
                     <TouchableOpacity
                       key={item.key}
@@ -2915,6 +2922,11 @@ const MobilesPairing = ({navigation}: any) => {
                           {item.key === 'twoDevices' && (
                             <Text style={styles.proximityHint}>
                               (Within your reach)
+                            </Text>
+                          )}
+                          {item.key === 'noVPN' && item.hint && (
+                            <Text style={styles.networkHint}>
+                              ({item.hint})
                             </Text>
                           )}
                         </View>
@@ -2957,13 +2969,19 @@ const MobilesPairing = ({navigation}: any) => {
                               />
                             </View>
                           )
-                        ) : (
+                        ) : item.icon === 'wifi' ? (
                           <Image
                             source={require('../assets/wifi-icon.png')}
                             style={styles.checkboxIconImage}
                             resizeMode="contain"
                           />
-                        )}
+                        ) : item.icon === 'vpn' ? (
+                          <Image
+                            source={require('../assets/vpn-icon.png')}
+                            style={styles.checkboxIconImage}
+                            resizeMode="contain"
+                          />
+                        ) : null}
                       </View>
                     </TouchableOpacity>
                   ))}
