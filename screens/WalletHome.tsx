@@ -27,8 +27,8 @@ import TransactionList from '../components/TransactionList';
 import {CommonActions} from '@react-navigation/native';
 import Big from 'big.js';
 import ReceiveModal from './ReceiveModal';
-import PSBTModal from './PSBTModal';
 import SignedPSBTModal from './SignedPSBTModal';
+import PSBTModal from './PSBTModal';
 import KeyshareModal from '../components/KeyshareModal';
 import QRCodeModal from '../components/QRCodeModal';
 import {
@@ -40,6 +40,8 @@ import {
   HapticFeedback,
   getKeyshareLabel,
   getDerivePathForNetwork,
+  isLegacyWallet,
+  generateAllOutputDescriptors,
 } from '../utils';
 import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
@@ -94,6 +96,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [isReceiveModalVisible, setIsReceiveModalVisible] = useState(false);
   const [isSignedPSBTModalVisible, setIsSignedPSBTModalVisible] =
     useState(false);
+  const [isPSBTModalVisible, setIsPSBTModalVisible] = useState(false);
   const [signedPsbt, setSignedPsbt] = useState<string | null>(null);
 
   // Additional state variables needed by fetchData
@@ -389,7 +392,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           const jks = await EncryptedStorage.getItem('keyshare');
           if (jks) {
             const ks = JSON.parse(jks);
-            const path = getDerivePathForNetwork(network);
+            // Get current address type for derivation path
+            const currentAddressType = (await LocalCache.getItem('addressType')) || 'legacy';
+            // Check if this is a legacy wallet (created before migration timestamp)
+            const useLegacyPath = isLegacyWallet(ks.created_at);
+            const path = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
             btcPub = await BBMTLibNativeModule.derivePubkey(
               ks.pub_key,
               ks.chain_code_hex,
@@ -464,8 +471,17 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             return;
           }
 
-          const ks = JSON.parse(jks);
-          const path = getDerivePathForNetwork(newNetwork);
+        const ks = JSON.parse(jks);
+        // Get current address type for derivation path
+        const deriveAddressType =
+          (await LocalCache.getItem('addressType')) || 'legacy';
+        // Check if this is a legacy wallet (created before migration timestamp)
+        const useLegacyPath = isLegacyWallet(ks.created_at);
+        const path = getDerivePathForNetwork(
+          newNetwork,
+          deriveAddressType,
+          useLegacyPath,
+        );
           btcPub = await BBMTLibNativeModule.derivePubkey(
             ks.pub_key,
             ks.chain_code_hex,
@@ -602,7 +618,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         await walletService.initialize();
 
         const ks = JSON.parse(jks);
-        const path = getDerivePathForNetwork(network);
+        // Get current address type for derivation path
+        const currentAddressType = (await LocalCache.getItem('addressType')) || 'legacy';
+        // Check if this is a legacy wallet (created before migration timestamp)
+        const useLegacyPath = isLegacyWallet(ks.created_at);
+        const path = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
 
         // Always derive btcPub fresh to ensure it's current
         const btcPub = await BBMTLibNativeModule.derivePubkey(
@@ -788,7 +808,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   // No periodic check needed - NetworkContext is the single source of truth
 
   const cacheIndicatorRef = useRef<CacheIndicatorHandle>(null);
-  const [isPSBTModalVisible, setIsPSBTModalVisible] = useState(false);
   const [isPartyModalVisible, setIsPartyModalVisible] = useState(false);
   const [keyshareInfo, setKeyshareInfo] = useState<{
     label: string;
@@ -799,7 +818,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     chainCode: string;
     xpub: string;
     outputDescriptor: string;
+    outputDescriptors?: {
+      legacy: string;
+      segwitNative: string;
+      segwitCompatible: string;
+    };
     npub: string | null;
+    createdAt?: number | null;
   } | null>(null);
   const [isXpubQrVisible, setIsXpubQrVisible] = useState(false);
   const [isOutputDescriptorQrVisible, setIsOutputDescriptorQrVisible] =
@@ -1040,7 +1065,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           return;
         }
 
-        const path = getDerivePathForNetwork(network);
+        // Get current address type for derivation path
+        const currentAddressType = (await LocalCache.getItem('addressType')) || 'legacy';
+        // Check if this is a legacy wallet (created before migration timestamp)
+        const useLegacyPath = isLegacyWallet(ks.created_at);
+        const path = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
         const btcPub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,
           ks.chain_code_hex,
@@ -1112,14 +1141,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setParty(shareID);
 
         // Get current address type and generate address
-        const currentAddressType = addrType;
-        setAddressType(currentAddressType);
+        setAddressType(addrType);
 
         // Generate and store current address
         const btcAddress = await BBMTLibNativeModule.btcAddress(
           btcPub,
           net,
-          currentAddressType,
+          addrType,
         );
         await LocalCache.setItem('currentAddress', btcAddress);
         setAddress(btcAddress);
@@ -1260,17 +1288,22 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       // Generate xpub/tpub for watch-only wallet compatibility (Sparrow, etc.)
       const xpub = await getXpubFromNative(pubKey, chainCode, network);
 
-      // Generate output descriptor for Sparrow and other wallets
-      let outputDescriptor = '';
-      try {
-        outputDescriptor = await BBMTLibNativeModule.getOutputDescriptor(
-          pubKey,
-          chainCode,
-          network,
-        );
-      } catch (e) {
-        dbg('Error getting output descriptor:', e);
-      }
+      // Generate output descriptors for Sparrow and other wallets using utility function
+      const descriptors = await generateAllOutputDescriptors(
+        BBMTLibNativeModule,
+        pubKey,
+        chainCode,
+        network,
+        keyshare.created_at,
+        addressType || 'legacy',
+      );
+
+      const outputDescriptors = {
+        legacy: descriptors.legacy,
+        segwitNative: descriptors.segwitNative,
+        segwitCompatible: descriptors.segwitCompatible,
+      };
+      const outputDescriptor = descriptors.primary;
 
       setKeyshareInfo({
         label,
@@ -1281,13 +1314,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         chainCode,
         xpub,
         outputDescriptor,
+        outputDescriptors,
         npub: nostrNpub,
+        createdAt: keyshare.created_at || null,
       });
     } catch (error) {
       dbg('Error loading keyshare info:', error);
       setKeyshareInfo(null);
     }
-  }, [network]);
+  }, [network, addressType]);
 
   useEffect(() => {
     if (isPartyModalVisible) {
@@ -1387,12 +1422,21 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     setPendingSendParams(null);
   };
 
-  // Handle PSBT signing - similar to handleSend
+  // Handle PSBT signing - similar to handleSend (kept for compatibility with PSBT flows)
   const handlePSBTSign = async (psbtBase64: string, derivePath?: string) => {
     setIsPSBTModalVisible(false);
-
-    // Use provided derivation path or default to BIP44
-    const psbtDerivePath = derivePath || getDerivePathForNetwork(network);
+    // Use provided derivation path or default to current address type
+    if (!derivePath) {
+      const jks = await EncryptedStorage.getItem('keyshare');
+      if (jks) {
+        const ks = JSON.parse(jks);
+        const currentAddressType = (await LocalCache.getItem('addressType')) || 'legacy';
+        // Check if this is a legacy wallet (created before migration timestamp)
+        const useLegacyPath = isLegacyWallet(ks.created_at);
+        derivePath = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
+      }
+    }
+    const psbtDerivePath = derivePath || getDerivePathForNetwork(network, 'legacy', true);
 
     // Check if keyshare supports Nostr (has nostr_npub)
     try {
@@ -1901,7 +1945,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           onClose={() => setIsReceiveModalVisible(false)}
         />
       )}
-      {/* PSBT Signing Modal */}
+      {/* PSBT Signing Modal (overlay) */}
       <PSBTModal
         visible={isPSBTModalVisible}
         btcRate={btcRate}

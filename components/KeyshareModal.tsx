@@ -1,4 +1,4 @@
-import React, {useCallback} from 'react';
+import React, {useCallback, useState, useEffect} from 'react';
 import {
   Modal,
   View,
@@ -13,9 +13,11 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
 import Toast from 'react-native-toast-message';
-import {HapticFeedback, getDerivePathForNetwork} from '../utils';
+import {HapticFeedback, getDerivePathForNetwork, isLegacyWallet} from '../utils';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
+import EncryptedStorage from 'react-native-encrypted-storage';
+import LocalCache from '../services/LocalCache';
 
 interface KeyshareInfo {
   label: string;
@@ -27,6 +29,12 @@ interface KeyshareInfo {
   xpub: string;
   outputDescriptor: string;
   npub: string | null;
+  createdAt?: number | null;
+  outputDescriptors?: {
+    legacy: string;
+    segwitNative: string;
+    segwitCompatible: string;
+  };
 }
 
 interface KeyshareModalProps {
@@ -54,6 +62,35 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
   const styles = createStyles(theme);
   const screenHeight = Dimensions.get('window').height;
   const scrollViewHeight = screenHeight * 0.5;
+  const [derivePath, setDerivePath] = useState<string>('');
+
+  // Load derivation path based on keyshare timestamp
+  useEffect(() => {
+    const loadDerivePath = async () => {
+      try {
+        const keyshareJSON = await EncryptedStorage.getItem('keyshare');
+        let useLegacyPath = true; // Default to legacy for safety
+        let currentAddressType = 'legacy';
+        
+        if (keyshareJSON) {
+          const keyshare = JSON.parse(keyshareJSON);
+          useLegacyPath = isLegacyWallet(keyshare.created_at);
+          currentAddressType = (await LocalCache.getItem('addressType')) || 'legacy';
+        }
+        
+        const path = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
+        setDerivePath(path);
+      } catch {
+        // Fallback to legacy path on error
+        const path = getDerivePathForNetwork(network, 'legacy', true);
+        setDerivePath(path);
+      }
+    };
+    
+    if (visible) {
+      loadDerivePath();
+    }
+  }, [visible, network]);
 
   // Share text as file
   const shareTextAsFile = useCallback(
@@ -100,7 +137,9 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
     const year = now.getFullYear();
     const hours = now.getHours().toString().padStart(2, '0');
     const minutes = now.getMinutes().toString().padStart(2, '0');
-    const filename = `${network === 'mainnet' ? 'xpub' : 'tpub'}.${month}${day}.${year}.${hours}${minutes}.txt`;
+    const filename = `${
+      network === 'mainnet' ? 'xpub' : 'tpub'
+    }.${month}${day}.${year}.${hours}${minutes}.txt`;
     shareTextAsFile(keyshareInfo.xpub, filename, 'Share Extended Pubkey');
   }, [keyshareInfo, network, shareTextAsFile]);
 
@@ -152,6 +191,66 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
       text2: 'Nostr public key copied to clipboard',
     });
   }, [keyshareInfo]);
+
+  const handleCopyPubKey = useCallback(() => {
+    if (!keyshareInfo?.pubKey) return;
+    HapticFeedback.light();
+    Clipboard.setString(keyshareInfo.pubKey);
+    Toast.show({
+      type: 'success',
+      text1: 'Copied',
+      text2: 'Public key copied to clipboard',
+    });
+  }, [keyshareInfo]);
+
+  const handleCopyDerivePath = useCallback(async () => {
+    try {
+      // Load keyshare to check if it's legacy
+      const keyshareJSON = await EncryptedStorage.getItem('keyshare');
+      let useLegacyPath = true; // Default to legacy for safety
+      let currentAddressType = 'legacy';
+      
+      if (keyshareJSON) {
+        const keyshare = JSON.parse(keyshareJSON);
+        useLegacyPath = isLegacyWallet(keyshare.created_at);
+        currentAddressType = (await LocalCache.getItem('addressType')) || 'legacy';
+      }
+      
+      const path = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
+      HapticFeedback.light();
+      Clipboard.setString(path);
+      Toast.show({
+        type: 'success',
+        text1: 'Copied',
+        text2: 'Derivation path copied to clipboard',
+      });
+    } catch {
+      // Fallback to legacy path on error
+      const path = getDerivePathForNetwork(network, 'legacy', true);
+      HapticFeedback.light();
+      Clipboard.setString(path);
+      Toast.show({
+        type: 'success',
+        text1: 'Copied',
+        text2: 'Derivation path copied to clipboard',
+      });
+    }
+  }, [network]);
+
+  const handleShowPubKeyQR = useCallback(() => {
+    if (!keyshareInfo?.pubKey) return;
+    HapticFeedback.light();
+    onClose();
+    // Note: This will need to be wired up in WalletHome similar to other QR handlers
+    // For now, we'll just close the modal - the parent can add onShowPubKeyQR prop if needed
+  }, [keyshareInfo, onClose]);
+
+  const handleShowDerivePathQR = useCallback(() => {
+    HapticFeedback.light();
+    onClose();
+    // Note: This will need to be wired up in WalletHome similar to other QR handlers
+    // For now, we'll just close the modal - the parent can add onShowDerivePathQR prop if needed
+  }, [onClose]);
 
   const handleShowXpubQR = useCallback(() => {
     HapticFeedback.light();
@@ -213,184 +312,282 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
               directionalLockEnabled={true}
               alwaysBounceVertical={false}>
               {keyshareInfo ? (
-                <View style={styles.keyshareTable}>
-                  <View style={styles.keyshareTableRow}>
-                    <Text style={styles.keyshareTableKey}>Keyshare ID</Text>
-                    <Text style={styles.keyshareTableValue}>
-                      {keyshareInfo.label}
-                    </Text>
-                  </View>
-
-                  <View style={styles.keyshareTableRow}>
-                    <Text style={styles.keyshareTableKey}>Keyshare Type</Text>
-                    <Text style={styles.keyshareTableValue}>
-                      {keyshareInfo.type === 'flexi'
-                        ? 'Flexi (3-parties)'
-                        : 'Basic (2-parties)'}
-                    </Text>
-                  </View>
-
-                  <View style={styles.keyshareTableRow}>
-                    <Text style={styles.keyshareTableKey}>LAN/Hotspot</Text>
-                    <Text
-                      style={[
-                        styles.keyshareTableValue,
-                        styles.keyshareTableValueSuccess,
-                      ]}>
-                      ✓ Supported
-                    </Text>
-                  </View>
-
-                  <View style={styles.keyshareTableRow}>
-                    <Text style={styles.keyshareTableKey}>Nostr Protocol</Text>
-                    <Text
-                      style={[
-                        styles.keyshareTableValue,
-                        keyshareInfo.supportsNostr
-                          ? styles.keyshareTableValueSuccess
-                          : styles.keyshareTableValueDisabled,
-                      ]}>
-                      {keyshareInfo.supportsNostr
-                        ? '✓ Supported'
-                        : '✗ Not Supported'}
-                    </Text>
-                  </View>
-
-                  <View style={styles.keyshareTableRow}>
-                    <Text style={styles.keyshareTableKey}>Derivation Path</Text>
-                    <View style={styles.keyshareTableValueContainer}>
-                      <Text
-                        style={[styles.keyshareTableValue]}
-                        numberOfLines={1}
-                        ellipsizeMode="middle">
-                        {getDerivePathForNetwork(network)}
+                <>
+                  {/* Compact keyshare summary card */}
+                  <View style={styles.keyshareInfoCard}>
+                    <View style={styles.keyshareDetailRow}>
+                      <Text style={styles.keyshareDetailLabel}>Keyshare ID</Text>
+                      <Text style={styles.keyshareDetailValue}>
+                        {keyshareInfo.label}
                       </Text>
                     </View>
+                    <View style={styles.keyshareDetailRow}>
+                      <Text style={styles.keyshareDetailLabel}>Keyshare Type</Text>
+                      <View
+                        style={[
+                          styles.keyshareBadge,
+                          keyshareInfo.type === 'flexi'
+                            ? styles.keyshareBadgeFlexi
+                            : styles.keyshareBadgeBasic,
+                        ]}>
+                        <Text style={styles.keyshareBadgeText}>
+                          {keyshareInfo.type === 'flexi'
+                            ? 'Flexi • 3 devices'
+                            : 'Basic • 2 devices'}
+                        </Text>
+                      </View>
+                    </View>
+                    {typeof keyshareInfo.createdAt === 'number' &&
+                      keyshareInfo.createdAt > 0 && (
+                        <View style={styles.keyshareDetailRow}>
+                          <Text style={styles.keyshareDetailLabel}>
+                            Created
+                          </Text>
+                          <Text style={styles.keyshareDetailValue}>
+                            {new Date(keyshareInfo.createdAt).toLocaleString()}
+                          </Text>
+                        </View>
+                      )}
+                    <View style={styles.keyshareKeyItem}>
+                      <Text style={styles.keyshareKeyLabel}>Public Key</Text>
+                      <View style={styles.keyshareKeyContainer}>
+                        <Text
+                          style={styles.keyshareKeyText}
+                          numberOfLines={1}
+                          ellipsizeMode="middle">
+                          {keyshareInfo.pubKey || 'N/A'}
+                        </Text>
+                        <View style={styles.keyshareButtonsRow}>
+                          <TouchableOpacity
+                            onPress={handleCopyPubKey}
+                            style={styles.keyshareCopyButton}>
+                            <Image
+                              source={require('../assets/copy-icon.png')}
+                              style={styles.keyshareCopyIcon}
+                            />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={handleShowPubKeyQR}
+                            style={styles.keyshareCopyButton}>
+                            <Image
+                              source={require('../assets/qr-icon.png')}
+                              style={styles.keyshareCopyIcon}
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </View>
+                    <View style={styles.keyshareKeyItem}>
+                      <Text style={styles.keyshareKeyLabel}>Default Path</Text>
+                      <View style={styles.keyshareKeyContainer}>
+                        <Text
+                          style={styles.keyshareKeyText}
+                          numberOfLines={1}
+                          ellipsizeMode="middle">
+                          {derivePath || getDerivePathForNetwork(network, 'legacy', true)}
+                        </Text>
+                        <View style={styles.keyshareButtonsRow}>
+                          <TouchableOpacity
+                            onPress={handleCopyDerivePath}
+                            style={styles.keyshareCopyButton}>
+                            <Image
+                              source={require('../assets/copy-icon.png')}
+                              style={styles.keyshareCopyIcon}
+                            />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={handleShowDerivePathQR}
+                            style={styles.keyshareCopyButton}>
+                            <Image
+                              source={require('../assets/qr-icon.png')}
+                              style={styles.keyshareCopyIcon}
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Capabilities / connectivity summary */}
+                  <View style={styles.keyshareInfoCard}>
+                    <View style={styles.keyshareDetailRow}>
+                      <Text style={styles.keyshareDetailLabel}>LAN / Hotspot</Text>
+                      <View
+                        style={[
+                          styles.keyshareStatusBadge,
+                          styles.keyshareStatusBadgeSuccess,
+                        ]}>
+                        <Text
+                          style={[
+                            styles.keyshareStatusBadgeText,
+                            styles.keyshareStatusBadgeTextSuccess,
+                          ]}>
+                          ✓ Supported
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.keyshareDetailRow}>
+                      <Text style={styles.keyshareDetailLabel}>Nostr</Text>
+                      <View
+                        style={[
+                          styles.keyshareStatusBadge,
+                          keyshareInfo.supportsNostr
+                            ? styles.keyshareStatusBadgeSuccess
+                            : styles.keyshareStatusBadgeDisabled,
+                        ]}>
+                        <Text
+                          style={[
+                            styles.keyshareStatusBadgeText,
+                            keyshareInfo.supportsNostr
+                              ? styles.keyshareStatusBadgeTextSuccess
+                              : styles.keyshareStatusBadgeTextDisabled,
+                          ]}>
+                          {keyshareInfo.supportsNostr ? '✓ Supported' : 'Not enabled'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {keyshareInfo.supportsNostr && keyshareInfo.npub && (
+                      <View style={styles.keyshareKeyItem}>
+                        <Text style={styles.keyshareKeyLabel}>Nostr Pubkey</Text>
+                        <View style={styles.keyshareKeyContainer}>
+                          <Text
+                            style={styles.keyshareKeyText}
+                            numberOfLines={1}
+                            ellipsizeMode="middle">
+                            {keyshareInfo.npub}
+                          </Text>
+                          <View style={styles.keyshareButtonsRow}>
+                            <TouchableOpacity
+                              onPress={handleCopyNpub}
+                              style={styles.keyshareCopyButton}>
+                              <Image
+                                source={require('../assets/copy-icon.png')}
+                                style={styles.keyshareCopyIcon}
+                              />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={handleShowNpubQR}
+                              style={styles.keyshareCopyButton}>
+                              <Image
+                                source={require('../assets/qr-icon.png')}
+                                style={styles.keyshareCopyIcon}
+                              />
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      </View>
+                    )}
                   </View>
 
                   {/* Watch Wallet Header Section */}
                   <View style={styles.watchWalletHeader}>
-                    <Text style={styles.watchWalletTitle}>Watch-Wallet • Export</Text>
-                    <Text style={styles.watchWalletDescription}>
-                      Import the extended pubkey or output descriptor into
-                      Sparrow or similar wallets to create a watch-only wallet.
-                      This enables advanced PSBT workflows for interoperability
-                      with other Bitcoin tools.
+                    <Text style={styles.watchWalletTitle}>
+                      Watch-Wallet • Export
                     </Text>
-
-                    <View style={styles.watchWalletItem}>
-                      <Text style={styles.watchWalletItemLabel}>
-                        Extended Pubkey ({network === 'mainnet' ? 'xpub' : 'tpub'})
-                      </Text>
-                      <View style={styles.watchWalletItemValueContainer}>
-                        <Text
-                          style={styles.watchWalletItemValue}
-                          numberOfLines={1}
-                          ellipsizeMode="middle">
-                          {keyshareInfo.xpub || 'N/A'}
+                    <Text style={styles.watchWalletDescription}>
+                      Import the extended pubkey or output descriptor into Sparrow
+                      or another PSBT-capable wallet to create a watch-only wallet.
+                    </Text>
+                    <View>
+                      <View style={styles.watchWalletItem}>
+                        <Text style={styles.watchWalletItemLabel}>
+                          Extended Pubkey (
+                          {network === 'mainnet' ? 'xpub' : 'tpub'})
                         </Text>
-                        <View style={styles.keyshareButtonsRow}>
-                          <TouchableOpacity
-                            onPress={handleCopyXpub}
-                            style={styles.keyshareCopyButton}>
-                            <Image
-                              source={require('../assets/copy-icon.png')}
-                              style={styles.keyshareCopyIcon}
-                            />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={handleShareXpub}
-                            style={styles.keyshareCopyButton}>
-                            <Image
-                              source={require('../assets/share-icon.png')}
-                              style={styles.keyshareCopyIcon}
-                            />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={handleShowXpubQR}
-                            style={styles.keyshareCopyButton}>
-                            <Image
-                              source={require('../assets/qr-icon.png')}
-                              style={styles.keyshareCopyIcon}
-                            />
-                          </TouchableOpacity>
+                        <View style={styles.watchWalletItemValueContainer}>
+                          <Text
+                            style={styles.watchWalletItemValue}
+                            numberOfLines={1}
+                            ellipsizeMode="middle">
+                            {keyshareInfo.xpub || 'N/A'}
+                          </Text>
+                          <View style={styles.keyshareButtonsRow}>
+                            <TouchableOpacity
+                              onPress={handleCopyXpub}
+                              style={styles.keyshareCopyButton}>
+                              <Image
+                                source={require('../assets/copy-icon.png')}
+                                style={styles.keyshareCopyIcon}
+                              />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={handleShareXpub}
+                              style={styles.keyshareCopyButton}>
+                              <Image
+                                source={require('../assets/share-icon.png')}
+                                style={styles.keyshareCopyIcon}
+                              />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={handleShowXpubQR}
+                              style={styles.keyshareCopyButton}>
+                              <Image
+                                source={require('../assets/qr-icon.png')}
+                                style={styles.keyshareCopyIcon}
+                              />
+                            </TouchableOpacity>
+                          </View>
                         </View>
                       </View>
-                    </View>
-
-                    <View style={styles.watchWalletItem}>
-                      <Text style={styles.watchWalletItemLabel}>
-                        Output Descriptor
-                      </Text>
-                      <View style={styles.watchWalletItemValueContainer}>
-                        <Text
-                          style={styles.watchWalletItemValue}
-                          numberOfLines={1}
-                          ellipsizeMode="middle">
-                          {keyshareInfo.outputDescriptor || 'N/A'}
+                      <View style={styles.watchWalletItem}>
+                        <Text style={styles.watchWalletItemLabel}>
+                          Output Descriptor
                         </Text>
-                        <View style={styles.keyshareButtonsRow}>
-                          <TouchableOpacity
-                            onPress={handleCopyOutputDescriptor}
-                            style={styles.keyshareCopyButton}>
-                            <Image
-                              source={require('../assets/copy-icon.png')}
-                              style={styles.keyshareCopyIcon}
-                            />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={handleShareOutputDescriptor}
-                            style={styles.keyshareCopyButton}>
-                            <Image
-                              source={require('../assets/share-icon.png')}
-                              style={styles.keyshareCopyIcon}
-                            />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={handleShowOutputDescriptorQR}
-                            style={styles.keyshareCopyButton}>
-                            <Image
-                              source={require('../assets/qr-icon.png')}
-                              style={styles.keyshareCopyIcon}
-                            />
-                          </TouchableOpacity>
+                        <View style={styles.watchWalletItemValueContainer}>
+                          <Text
+                            style={styles.watchWalletItemValue}
+                            numberOfLines={1}
+                            ellipsizeMode="middle">
+                            {keyshareInfo.outputDescriptor || 'N/A'}
+                          </Text>
+                          <View style={styles.keyshareButtonsRow}>
+                            <TouchableOpacity
+                              onPress={handleCopyOutputDescriptor}
+                              style={styles.keyshareCopyButton}>
+                              <Image
+                                source={require('../assets/copy-icon.png')}
+                                style={styles.keyshareCopyIcon}
+                              />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={handleShareOutputDescriptor}
+                              style={styles.keyshareCopyButton}>
+                              <Image
+                                source={require('../assets/share-icon.png')}
+                                style={styles.keyshareCopyIcon}
+                              />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={handleShowOutputDescriptorQR}
+                              style={styles.keyshareCopyButton}>
+                              <Image
+                                source={require('../assets/qr-icon.png')}
+                                style={styles.keyshareCopyIcon}
+                              />
+                            </TouchableOpacity>
+                          </View>
                         </View>
                       </View>
+
+                      {keyshareInfo.outputDescriptors && (
+                        <View style={styles.watchWalletItem}>
+                          <Text style={styles.watchWalletItemLabel}>
+                            All Output Descriptors
+                          </Text>
+                          <View style={styles.watchWalletItemValueContainer}>
+                            <Text
+                              style={styles.watchWalletItemValue}
+                              numberOfLines={0}>
+                              {`Legacy:\n${keyshareInfo.outputDescriptors.legacy || 'N/A'}\n\nSegWit Native:\n${keyshareInfo.outputDescriptors.segwitNative || 'N/A'}\n\nSegWit Compatible:\n${keyshareInfo.outputDescriptors.segwitCompatible || 'N/A'}`}
+                            </Text>
+                          </View>
+                        </View>
+                      )}
                     </View>
                   </View>
-
-                  {keyshareInfo.supportsNostr && keyshareInfo.npub && (
-                    <View style={styles.keyshareTableRow}>
-                      <Text style={styles.keyshareTableKey}>Nostr Pubkey</Text>
-                      <View style={styles.keyshareTableValueContainer}>
-                        <Text
-                          style={styles.keyshareTableValueKey}
-                          numberOfLines={1}
-                          ellipsizeMode="middle">
-                          {keyshareInfo.npub}
-                        </Text>
-                        <View style={styles.keyshareButtonsRow}>
-                          <TouchableOpacity
-                            onPress={handleCopyNpub}
-                            style={styles.keyshareCopyButton}>
-                            <Image
-                              source={require('../assets/copy-icon.png')}
-                              style={styles.keyshareCopyIcon}
-                            />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={handleShowNpubQR}
-                            style={styles.keyshareCopyButton}>
-                            <Image
-                              source={require('../assets/qr-icon.png')}
-                              style={styles.keyshareCopyIcon}
-                            />
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </View>
-                  )}
-                </View>
+                </>
               ) : (
                 <View style={styles.keyshareLoadingContainer}>
                   <Text style={styles.modalTextCompact}>

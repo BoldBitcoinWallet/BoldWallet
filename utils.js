@@ -41,13 +41,154 @@ export const dbg = (message, ...optionalParams) => {
 export const shorten = (x, y = 12) => `${x.slice(0, y)}...${x.slice(-y)}`;
 
 /**
- * Get the default derivation path for a given network
+ * Generate all output descriptors (legacy, segwit-native, segwit-compatible)
+ * @param {Object} nativeModule - The BBMTLibNativeModule instance
+ * @param {string} pubKey - Compressed master public key in hex
+ * @param {string} chainCode - Master chain code in hex
  * @param {string} network - Network: 'mainnet' or 'testnet3'
- * @returns {string} - Derivation path (e.g., "m/44'/0'/0'/0/0" for mainnet, "m/44'/1'/0'/0/0" for testnet)
+ * @param {number|string|null|undefined} createdAt - Timestamp from keyshare.created_at
+ * @param {string} addressType - Optional: current address type for primary descriptor selection
+ * @returns {Promise<{legacy: string, segwitNative: string, segwitCompatible: string, primary: string}>}
  */
-export const getDerivePathForNetwork = (network, account = 0, change = 0, index = 0) => {
+export const generateAllOutputDescriptors = async (
+  nativeModule,
+  pubKey,
+  chainCode,
+  network,
+  createdAt,
+  addressType = 'legacy',
+) => {
+  const useLegacyPath = isLegacyWallet(createdAt);
+  const outputDescriptors = {
+    legacy: '',
+    segwitNative: '',
+    segwitCompatible: '',
+  };
+
+  try {
+    if (useLegacyPath) {
+      // Old wallets: generate legacy descriptor once, then construct others
+      const legacyDesc =
+        (await nativeModule
+          .getOutputDescriptor(pubKey, chainCode, network, 'legacy')
+          .catch(() => '')) || '';
+
+      outputDescriptors.legacy = legacyDesc;
+
+      if (legacyDesc) {
+        // For old wallets, all descriptors use BIP44 path (44') but different formats
+        // Legacy: pkh, SegWit Native: wpkh, SegWit Compatible: sh(wpkh)
+        // Simple string replacement
+        outputDescriptors.segwitNative = legacyDesc.replace(/^pkh\(/, 'wpkh(');
+        outputDescriptors.segwitCompatible = legacyDesc.replace(
+          /^pkh\(/,
+          'sh(wpkh(',
+        );
+      }
+    } else {
+      // New wallets: generate proper descriptors for each address type
+      const [legacyDesc, segwitNativeDesc, segwitCompatibleDesc] =
+        await Promise.all([
+          nativeModule
+            .getOutputDescriptor(pubKey, chainCode, network, 'legacy')
+            .catch(() => ''),
+          nativeModule
+            .getOutputDescriptor(pubKey, chainCode, network, 'segwit-native')
+            .catch(() => ''),
+          nativeModule
+            .getOutputDescriptor(
+              pubKey,
+              chainCode,
+              network,
+              'segwit-compatible',
+            )
+            .catch(() => ''),
+        ]);
+
+      outputDescriptors.legacy = legacyDesc || '';
+      outputDescriptors.segwitNative = segwitNativeDesc || '';
+      outputDescriptors.segwitCompatible = segwitCompatibleDesc || '';
+    }
+
+    // Determine primary descriptor based on address type
+    let primary = outputDescriptors.legacy;
+    if (addressType === 'segwit-native') {
+      primary =
+        outputDescriptors.segwitNative || outputDescriptors.legacy;
+    } else if (addressType === 'segwit-compatible') {
+      primary =
+        outputDescriptors.segwitCompatible || outputDescriptors.legacy;
+    }
+
+    return {
+      ...outputDescriptors,
+      primary,
+    };
+  } catch (error) {
+    // Return empty descriptors on error
+    return {
+      legacy: '',
+      segwitNative: '',
+      segwitCompatible: '',
+      primary: '',
+    };
+  }
+};
+
+/**
+ * Check if a wallet is a legacy wallet (created before the optimized path migration)
+ * @param {number|string|null|undefined} createdAt - Timestamp from keyshare.created_at
+ * @returns {boolean} - true if legacy wallet (should use BIP44 for all address types)
+ */
+export const isLegacyWallet = (createdAt) => {
+  if (!createdAt) {
+    // If no timestamp, assume legacy for safety
+    return true;
+  }
+  const timestamp = typeof createdAt === 'string' ? parseInt(createdAt, 10) : createdAt;
+  // Wallets created after 1765894825732 use optimized paths (BIP84/BIP49)
+  // Wallets created before or equal to this timestamp use BIP44 for all address types
+  return timestamp <= 1765894825732;
+};
+
+/**
+ * Get the default derivation path for a given network and address type
+ * @param {string} network - Network: 'mainnet' or 'testnet3'
+ * @param {string} addressType - Address type: 'legacy', 'segwit-native', or 'segwit-compatible' (defaults to 'legacy' for backward compatibility)
+ * @param {boolean} useLegacyPath - If true, always use BIP44 regardless of address type (for backward compatibility)
+ * @param {number} account - Account index (default: 0)
+ * @param {number} change - Change index (0 = external, 1 = internal, default: 0)
+ * @param {number} index - Address index (default: 0)
+ * @returns {string} - Derivation path
+ *   - Legacy wallets or useLegacyPath=true: Always "m/44'/coinType'/account'/change/index" (BIP44)
+ *   - New wallets with legacy address type: "m/44'/coinType'/account'/change/index" (BIP44)
+ *   - New wallets with segwit-native: "m/84'/coinType'/account'/change/index" (BIP84)
+ *   - New wallets with segwit-compatible: "m/49'/coinType'/account'/change/index" (BIP49)
+ */
+export const getDerivePathForNetwork = (network, addressType = 'legacy', useLegacyPath = false, account = 0, change = 0, index = 0) => {
   const coinType = network === 'mainnet' ? "0'" : "1'";
-  return `m/44'/${coinType}/${account}'/${change}/${index}`;
+  
+  // Legacy wallets always use BIP44 for all address types (backward compatibility)
+  if (useLegacyPath) {
+    return `m/44'/${coinType}/${account}'/${change}/${index}`;
+  }
+  
+  // Determine BIP path based on address type for new wallets
+  let bipPath;
+  switch (addressType) {
+    case 'segwit-native':
+      bipPath = "84'"; // BIP84
+      break;
+    case 'segwit-compatible':
+      bipPath = "49'"; // BIP49
+      break;
+    case 'legacy':
+    default:
+      bipPath = "44'"; // BIP44
+      break;
+  }
+  
+  return `m/${bipPath}/${coinType}/${account}'/${change}/${index}`;
 };
 
 /**

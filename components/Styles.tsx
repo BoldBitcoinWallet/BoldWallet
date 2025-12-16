@@ -206,6 +206,7 @@ export interface Styles {
   keyshareKeyItem: ViewStyle;
   keyshareKeyLabel: TextStyle;
   watchWalletHeader: ViewStyle;
+  keyshareInfoHeader: TextStyle;
   watchWalletTitle: TextStyle;
   watchWalletDescription: TextStyle;
   watchWalletItem: ViewStyle;
@@ -1133,18 +1134,20 @@ export const createStyles = (theme: Theme): Styles => ({
     gap: 8,
   },
   keyshareKeyContainer: {
+    flex: 1,
+    flexShrink: 1,
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 8,
-    backgroundColor: theme.colors.cardBackground,
-    padding: 10,
-    borderRadius: 8,
+    minWidth: 0,
   },
   keyshareKeyText: {
     flex: 1,
+    flexShrink: 1,
     fontFamily: 'monospace',
     fontSize: 11,
     color: theme.colors.text,
+    minWidth: 0,
   },
   keyshareCopyButton: {
     padding: 8,
@@ -1283,10 +1286,10 @@ export const createStyles = (theme: Theme): Styles => ({
     color: '#FFFFFF',
   },
   keyshareBadgeFlexi: {
-    backgroundColor: '#6366F1',
+    backgroundColor: theme.colors.primary,
   },
   keyshareBadgeBasic: {
-    backgroundColor: '#8B5CF6',
+    backgroundColor: theme.colors.secondary ,
   },
   keyshareStatusBadge: {
     paddingHorizontal: 10,
@@ -1311,13 +1314,21 @@ export const createStyles = (theme: Theme): Styles => ({
     color: '#757575',
   },
   keyshareKeyItem: {
-    marginBottom: 12,
+    flexDirection: 'row' as const,
+    paddingVertical: 6,
+    paddingHorizontal: 2,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border + '40',
+    alignItems: 'center' as const,
+    width: '100%',
   },
   keyshareKeyLabel: {
-    fontSize: 12,
+    fontSize: 13,
     color: theme.colors.textSecondary,
     fontWeight: '600' as const,
-    marginBottom: 6,
+    width: 130,
+    flexShrink: 0,
+    marginRight: 12,
     letterSpacing: 0.1,
   },
   keyshareTable: {
@@ -1373,15 +1384,22 @@ export const createStyles = (theme: Theme): Styles => ({
   keyshareTableValueDisabled: {
     color: '#757575',
   },
+  keyshareInfoHeader: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: theme.colors.text,
+  },
   watchWalletHeader: {
-    marginTop: 8,
-    marginBottom: 8,
-    alignSelf: 'stretch' as const,
+    marginTop: 12,
+    backgroundColor: theme.colors.background,
+    borderRadius: 10,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.border + '40',
   },
   watchWalletTitle: {
     fontSize: 14,
     fontWeight: '700' as const,
-    marginBottom: 6,
     color: theme.colors.text,
   },
   watchWalletDescription: {

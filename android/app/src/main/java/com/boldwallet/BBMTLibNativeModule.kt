@@ -608,9 +608,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun getOutputDescriptor(hexPubkey: String, hexChaincode: String, network: String, promise: Promise) {
+    fun getOutputDescriptor(hexPubkey: String, hexChaincode: String, network: String, addressType: String, promise: Promise) {
         try {
-            val result = Tss.getOutputDescriptor(hexPubkey, hexChaincode, network)
+            val result = Tss.getOutputDescriptor(hexPubkey, hexChaincode, network, addressType)
             ld("getOutputDescriptor", result)
             promise.resolve(result)
         } catch (e: Throwable) {

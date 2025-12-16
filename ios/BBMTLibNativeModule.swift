@@ -379,11 +379,11 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
   }
 
   @objc func getOutputDescriptor(
-    _ hexPubkey: String, hexChaincode: String, network: String,
+    _ hexPubkey: String, hexChaincode: String, network: String, addressType: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
     var error: NSError?
-    let output = TssGetOutputDescriptor(hexPubkey, hexChaincode, network, &error)
+    let output = TssGetOutputDescriptor(hexPubkey, hexChaincode, network, addressType, &error)
     resolve("getOutputDescriptor", output, error, resolver)
   }
 

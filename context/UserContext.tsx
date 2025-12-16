@@ -2,7 +2,7 @@ import React, {createContext, useCallback, useContext, useEffect, useMemo, useSt
 import EncryptedStorage from 'react-native-encrypted-storage';
 import LocalCache from '../services/LocalCache';
 import {BBMTLibNativeModule} from '../native_modules';
-import { getDerivePathForNetwork } from '../utils';
+import { getDerivePathForNetwork, isLegacyWallet } from '../utils';
 
 type AddressType = 'legacy' | 'segwit-native' | 'segwit-compatible';
 
@@ -117,7 +117,8 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({children}) 
     try {
       // Load address type
       const storedType = (await LocalCache.getItem('addressType')) as AddressType | null;
-      setActiveAddressTypeState((storedType as AddressType) || 'legacy');
+      const currentAddressType = (storedType as AddressType) || 'legacy';
+      setActiveAddressTypeState(currentAddressType);
 
       // Load/derive btcPub
       let pub = (await EncryptedStorage.getItem('btcPub')) || '';
@@ -125,7 +126,10 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({children}) 
         const jks = await EncryptedStorage.getItem('keyshare');
         if (jks) {
           const ks = JSON.parse(jks);
-          const path = getDerivePathForNetwork(network);
+          // Check if this is a legacy wallet (created before migration timestamp)
+          const useLegacyPath = isLegacyWallet(ks.created_at);
+          // Use derivation path that matches the address type (or legacy path for old wallets)
+          const path = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
           pub = await BBMTLibNativeModule.derivePubkey(
             ks.pub_key,
             ks.chain_code_hex,

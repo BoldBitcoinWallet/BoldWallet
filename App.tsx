@@ -5,6 +5,7 @@ import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {enableScreens} from 'react-native-screens';
 import ShowcaseScreen from './screens/ShowcaseScreen';
 import WalletHome from './screens/WalletHome';
+import PSBTScreen from './screens/PSBTScreen';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import LoadingScreen from './screens/LoadingScreen';
 import Zeroconf, {ImplType} from 'react-native-zeroconf';
@@ -49,7 +50,12 @@ const App = () => {
       // Re-check wallet state after reload to ensure correct initial route
       try {
         const keyshare = await EncryptedStorage.getItem('keyshare');
-        const route = keyshare && keyshare.length > 0 ? 'Home' : 'Welcome';
+        let route: string = 'Welcome';
+        if (keyshare && keyshare.length > 0) {
+          const walletMode =
+            (await EncryptedStorage.getItem('wallet_mode')) || 'full';
+          route = walletMode === 'psbt' ? 'PSBT' : 'Home';
+        }
         setInitialRoute(route);
       } catch {
         setInitialRoute('Welcome');
@@ -64,7 +70,13 @@ const App = () => {
       try {
         const keyshare = await EncryptedStorage.getItem('keyshare');
         dbg('initializeApp keyshare found', !!keyshare);
-        const route = keyshare && keyshare.length > 0 ? 'Home' : 'Welcome';
+        let route: string = 'Welcome';
+        if (keyshare && keyshare.length > 0) {
+          // Default to Home unless user explicitly chose PSBT mode
+          const walletMode =
+            (await EncryptedStorage.getItem('wallet_mode')) || 'full';
+          route = walletMode === 'psbt' ? 'PSBT' : 'Home';
+        }
         dbg('Setting initial route to:', route);
         setInitialRoute(route);
       } catch (error) {
@@ -307,6 +319,14 @@ const App = () => {
                   screenOptions={{
                     headerShown: false,
                   }}>
+                  <Stack.Screen
+                    name="PSBT"
+                    component={PSBTScreen}
+                    options={{
+                      headerShown: true,
+                      headerLeft: () => null,
+                    }}
+                  />
                   <Stack.Screen
                     name="Home"
                     component={WalletHome}

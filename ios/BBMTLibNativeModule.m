@@ -112,6 +112,7 @@ RCT_EXTERN_METHOD(encodeXpub:(NSString *)hexPubkey
 RCT_EXTERN_METHOD(getOutputDescriptor:(NSString *)hexPubkey
                   hexChaincode:(NSString *)hexChaincode
                   network:(NSString *)network
+                  addressType:(NSString *)addressType
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 

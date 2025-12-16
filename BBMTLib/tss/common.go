@@ -396,8 +396,9 @@ func SecureRandom(length int) (string, error) {
 // hexPubKey: compressed master public key in hex (33 bytes / 66 chars)
 // hexChainCode: master chain code in hex (32 bytes / 64 chars)
 // network: "mainnet" or "testnet3"
-// Returns: output descriptor string like pkh([fingerprint/44h/0h/0h]xpub.../0/wildcard)
-func GetOutputDescriptor(hexPubKey, hexChainCode, network string) (result string, err error) {
+// addressType: "legacy", "segwit-native", or "segwit-compatible"
+// Returns: output descriptor string (pkh for legacy, wpkh for segwit-native, sh(wpkh) for segwit-compatible)
+func GetOutputDescriptor(hexPubKey, hexChainCode, network, addressType string) (result string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			errMsg := fmt.Sprintf("PANIC in GetOutputDescriptor: %v", r)
@@ -435,17 +436,29 @@ func GetOutputDescriptor(hexPubKey, hexChainCode, network string) (result string
 	}
 
 	// Determine coin type based on network
-	// BIP44: 0' for mainnet, 1' for testnet
+	// BIP44/49/84: 0' for mainnet, 1' for testnet
 	coinType := "0'"
 	if network == "testnet" || network == "testnet3" {
 		coinType = "1'"
 	}
 
-	// Build output descriptor
-	// Using pkh() for legacy P2PKH (BIP44 m/44'/coinType'/0')
+	// Build output descriptor based on address type
 	// The path shown uses ' for hardened derivation in descriptor notation
 	// Since we derive non-hardened from master pubkey, we show the logical path
-	descriptor := fmt.Sprintf("pkh([%s/44'/%s/0']%s/0/*)", fingerprint, coinType, xpub)
+	var descriptor string
+	switch addressType {
+	case "segwit-native":
+		// Native SegWit P2WPKH (BIP84 m/84'/coinType'/0')
+		descriptor = fmt.Sprintf("wpkh([%s/84'/%s/0']%s/0/*)", fingerprint, coinType, xpub)
+	case "segwit-compatible":
+		// SegWit compatible P2SH-P2WPKH (BIP49 m/49'/coinType'/0')
+		descriptor = fmt.Sprintf("sh(wpkh([%s/49'/%s/0']%s/0/*))", fingerprint, coinType, xpub)
+	case "legacy":
+		fallthrough
+	default:
+		// Legacy P2PKH (BIP44 m/44'/coinType'/0')
+		descriptor = fmt.Sprintf("pkh([%s/44'/%s/0']%s/0/*)", fingerprint, coinType, xpub)
+	}
 
 	return descriptor, nil
 }

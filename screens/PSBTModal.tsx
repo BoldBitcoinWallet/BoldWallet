@@ -46,12 +46,23 @@ interface PSBTDetails {
 
 // UR (Uniform Resource) animated QR support for large PSBTs
 
-interface PSBTModalProps {
-  visible: boolean;
+export interface PSBTLoaderProps {
   btcRate?: number; // BTC to fiat rate
   currencySymbol?: string; // e.g., "$", "€"
   onClose: () => void;
   onSign: (psbtBase64: string) => void;
+  // When true, disables the Cancel button until a PSBT is loaded.
+  // Used by full-screen PSBT flows (e.g. PSBTScreen) where "Cancel"
+  // isn't meaningful before any PSBT has been imported.
+  disableCancelWhenEmpty?: boolean;
+  // When true (default), renders a dark modal-style overlay behind the content.
+  // When false, PSBTLoader behaves like an embedded card without blocking the
+  // underlying screen (used by PSBTScreen).
+  useOverlay?: boolean;
+}
+
+export interface PSBTModalProps extends PSBTLoaderProps {
+  visible: boolean;
 }
 
 // QR Scanner component with UR progress display
@@ -125,12 +136,13 @@ const QRScanner = ({styles, device, codeScanner, onClose, urProgress}: any) => {
   );
 };
 
-const PSBTModal: React.FC<PSBTModalProps> = ({
-  visible,
+export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
   btcRate = 0,
   currencySymbol = '$',
   onClose,
   onSign,
+  disableCancelWhenEmpty = false,
+  useOverlay = true,
 }) => {
   const {theme} = useTheme();
   const [psbtBase64, setPsbtBase64] = useState<string | null>(null);
@@ -139,6 +151,7 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
   const [isScannerVisible, setIsScannerVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isAndroidScanning, setIsAndroidScanning] = useState(false); // For Android continuous scanning modal
+  const isCancelDisabled = disableCancelWhenEmpty && !psbtBase64;
 
   // UR (Uniform Resource) animated QR state - using bc-ur library
   const urDecoderRef = useRef<any>(null);
@@ -887,13 +900,8 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
   }
 
   return (
-    <Modal
-      visible={visible}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={() => {}}>
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
+    <View style={useOverlay ? styles.modalOverlay : undefined}>
+      <View style={useOverlay ? styles.modalContent : styles.embeddedContent}>
           {/* Header */}
           <View style={styles.headerRow}>
             <Image
@@ -1138,35 +1146,46 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
             </ScrollView>
           )}
 
-          {/* Action buttons */}
-          <View style={styles.actionButtonsContainer}>
-            <TouchableOpacity style={styles.cancelButton} onPress={handleClose}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
+        {/* Action buttons */}
+        <View style={styles.actionButtonsContainer}>
+          <TouchableOpacity
+            style={[
+              styles.cancelButton,
+              isCancelDisabled && styles.cancelButtonDisabled,
+            ]}
+            onPress={handleClose}
+            disabled={isCancelDisabled}>
+            <Text
               style={[
-                styles.signButton,
-                !psbtBase64 && styles.signButtonDisabled,
+                styles.cancelButtonText,
+                isCancelDisabled && styles.cancelButtonTextDisabled,
+              ]}>
+              Cancel
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.signButton,
+              !psbtBase64 && styles.signButtonDisabled,
+            ]}
+            onPress={handleSign}
+            disabled={!psbtBase64 || isLoading}>
+            <Image
+              source={require('../assets/cosign-icon.png')}
+              style={[
+                styles.signButtonIcon,
+                !psbtBase64 && styles.signButtonIconDisabled,
               ]}
-              onPress={handleSign}
-              disabled={!psbtBase64 || isLoading}>
-              <Image
-                source={require('../assets/cosign-icon.png')}
-                style={[
-                  styles.signButtonIcon,
-                  !psbtBase64 && styles.signButtonIconDisabled,
-                ]}
-              />
-              <Text
-                style={[
-                  styles.signButtonText,
-                  !psbtBase64 && styles.signButtonTextDisabled,
-                ]}>
-                Co-Sign
-              </Text>
-            </TouchableOpacity>
-          </View>
+            />
+            <Text
+              style={[
+                styles.signButtonText,
+                !psbtBase64 && styles.signButtonTextDisabled,
+              ]}>
+              Co-Sign
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* QR Scanner Modal (iOS only) */}
@@ -1186,6 +1205,33 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
 
         {/* Android scanner opens directly via native activity - no modal needed */}
       </View>
+    </View>
+  );
+};
+
+const PSBTModal: React.FC<PSBTModalProps> = ({
+  visible,
+  btcRate = 0,
+  currencySymbol = '$',
+  onClose,
+  onSign,
+}) => {
+  if (!visible) {
+    return null;
+  }
+
+  return (
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => {}}>
+      <PSBTLoader
+        btcRate={btcRate}
+        currencySymbol={currencySymbol}
+        onClose={onClose}
+        onSign={onSign}
+      />
     </Modal>
   );
 };
@@ -1212,6 +1258,20 @@ const createStyles = (theme: any) =>
       shadowOpacity: 0.3,
       shadowRadius: 8,
       elevation: 8,
+    },
+    embeddedContent: {
+      backgroundColor: theme.colors.cardBackground,
+      borderRadius: 8,
+      padding: 16,
+      width: '100%',
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      overflow: 'hidden',
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 1},
+      shadowOpacity: 0.1,
+      shadowRadius: 2,
+      elevation: 2,
     },
     headerRow: {
       flexDirection: 'row',
@@ -1652,6 +1712,12 @@ const createStyles = (theme: any) =>
       fontSize: 16,
       fontWeight: '600',
       color: theme.colors.text,
+    },
+    cancelButtonDisabled: {
+      opacity: 0.5,
+    },
+    cancelButtonTextDisabled: {
+      color: theme.colors.textSecondary,
     },
     signButton: {
       flex: 1,

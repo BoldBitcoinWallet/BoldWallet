@@ -671,6 +671,8 @@ const getSectionIcon = (title: string): any => {
       return require('../assets/nostr-icon.png');
     case 'app icon':
       return require('../assets/spy-icon.png');
+    case 'wallet mode':
+      return require('../assets/mode-icon.png');
     default:
       return require('../assets/advanced-icon.png');
   }
@@ -695,6 +697,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [isAPISaving, setIsAPISaving] = useState(false);
   const [nostrRelays, setNostrRelays] = useState<string>('');
   const [pendingNostrRelays, setPendingNostrRelays] = useState<string>('');
+  const [walletMode, setWalletMode] = useState<'full' | 'psbt'>('full');
 
   const [hasNostr, setHasNostr] = useState(false);
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
@@ -724,6 +727,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     storage: false,
     appIcon: false,
     devicePairing: false,
+    walletMode: false,
   });
 
   const {theme} = useTheme();
@@ -826,6 +830,20 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     LocalCache.usageSize().then(size => {
       setUsageSize(size);
     });
+
+    // Load wallet mode preference (default to full mode)
+    EncryptedStorage.getItem('wallet_mode')
+      .then(mode => {
+        if (mode === 'psbt') {
+          setWalletMode('psbt');
+        } else {
+          setWalletMode('full');
+        }
+      })
+      .catch(error => {
+        dbg('Error loading wallet_mode from storage:', error);
+        setWalletMode('full');
+      });
   }, []);
 
   // Load saved icon preference on component mount
@@ -2053,6 +2071,23 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginBottom: 10,
       backgroundColor: theme.colors.secondary,
     },
+    walletModeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 12,
+      paddingHorizontal: 4,
+    },
+    walletModeLabel: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.colors.text,
+    },
+    walletModeDescription: {
+      fontSize: 13,
+      color: theme.colors.textSecondary,
+      marginBottom: 12,
+    },
   });
 
   return (
@@ -2111,9 +2146,44 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </TouchableOpacity>
         </CollapsibleSection>
+        {/* Wallet Mode Section */}
+        <CollapsibleSection
+          title="Wallet Mode"
+          isExpanded={expandedSections.walletMode}
+          onToggle={() => toggleSection('walletMode')}
+          styles={styles}
+          theme={theme}>
+          <Text style={styles.walletModeDescription}>
+            Choose the default wallet experience when opening the app. PSBT Mode
+            jumps directly into PSBT signing workflows, while Full Mode opens
+            the main wallet home screen.
+          </Text>
+          <View style={styles.walletModeRow}>
+            <Text style={styles.walletModeLabel}>Full Mode</Text>
+            <Switch
+              onValueChange={async value => {
+                HapticFeedback.light();
+                const mode = value ? 'psbt' : 'full';
+                setWalletMode(mode);
+                try {
+                  await EncryptedStorage.setItem('wallet_mode', mode);
+                } catch (error) {
+                  dbg('Error saving wallet_mode:', error);
+                }
+                // Immediately navigate to the selected default screen
+                navigation.reset({
+                  index: 0,
+                  routes: [{name: mode === 'psbt' ? 'PSBT' : 'Home'}],
+                });
+              }}
+              value={walletMode === 'psbt'}
+            />
+            <Text style={styles.walletModeLabel}>PSBT Only</Text>
+          </View>
+        </CollapsibleSection>
         {/* Advanced Section */}
         <CollapsibleSection
-          title="Advanced"
+          title="Network Providers"
           isExpanded={expandedSections.advanced}
           onToggle={() => toggleSection('advanced')}
           styles={styles}

@@ -41,16 +41,18 @@ interface PSBTDetails {
 
 // UR (Uniform Resource) animated QR support for large PSBTs
 
-interface PSBTModalProps {
-  visible: boolean;
+export interface PSBTLoaderProps {
   btcRate?: number; // BTC to fiat rate
   currencySymbol?: string; // e.g., "$", "€"
   onClose: () => void;
   onSign: (psbtBase64: string) => void;
 }
 
-const PSBTModal: React.FC<PSBTModalProps> = ({
-  visible,
+export interface PSBTModalProps extends PSBTLoaderProps {
+  visible: boolean;
+}
+
+export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
   btcRate = 0,
   currencySymbol = '$',
   onClose,
@@ -784,13 +786,8 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
   const styles = createStyles(theme);
 
   return (
-    <Modal
-      visible={visible}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={() => {}}>
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
+    <View style={styles.modalOverlay}>
+      <View style={styles.modalContent}>
           {/* Header */}
           <View style={styles.headerRow}>
             <Image
@@ -1066,6 +1063,32 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
           </View>
         </View>
       </View>
+  );
+};
+
+const PSBTModal: React.FC<PSBTModalProps> = ({
+  visible,
+  btcRate = 0,
+  currencySymbol = '$',
+  onClose,
+  onSign,
+}) => {
+  if (!visible) {
+    return null;
+  }
+
+  return (
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => {}}>
+      <PSBTLoader
+        btcRate={btcRate}
+        currencySymbol={currencySymbol}
+        onClose={onClose}
+        onSign={onSign}
+      />
     </Modal>
   );
 };
@@ -1564,5 +1587,21 @@ const createStyles = (theme: any) =>
       color: theme.colors.textSecondary,
     },
   });
+
+const PSBTModal: React.FC<PSBTModalProps> = props => {
+  if (!props.visible) {
+    return null;
+  }
+
+  return (
+    <Modal
+      visible={props.visible}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => {}}>
+      <PSBTBody {...props} />
+    </Modal>
+  );
+};
 
 export default PSBTModal;

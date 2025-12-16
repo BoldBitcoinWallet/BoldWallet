@@ -342,9 +342,10 @@ FOUNDATION_EXPORT NSString* _Nonnull TssGetNetwork(NSError* _Nullable* _Nullable
 hexPubKey: compressed master public key in hex (33 bytes / 66 chars)
 hexChainCode: master chain code in hex (32 bytes / 64 chars)
 network: "mainnet" or "testnet3"
-Returns: output descriptor string like pkh([fingerprint/44h/0h/0h]xpub.../0/wildcard)
+addressType: "legacy", "segwit-native", or "segwit-compatible"
+Returns: output descriptor string (pkh for legacy, wpkh for segwit-native, sh(wpkh) for segwit-compatible)
  */
-FOUNDATION_EXPORT NSString* _Nonnull TssGetOutputDescriptor(NSString* _Nullable hexPubKey, NSString* _Nullable hexChainCode, NSString* _Nullable network, NSError* _Nullable* _Nullable error);
+FOUNDATION_EXPORT NSString* _Nonnull TssGetOutputDescriptor(NSString* _Nullable hexPubKey, NSString* _Nullable hexChainCode, NSString* _Nullable network, NSString* _Nullable addressType, NSError* _Nullable* _Nullable error);
 
 /**
  * GetThreshold calculates the threshold value based on the input value.

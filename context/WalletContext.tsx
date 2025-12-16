@@ -1,7 +1,7 @@
 import React, {createContext, useContext, useState, useEffect} from 'react';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {NativeModules} from 'react-native';
-import {dbg, getDerivePathForNetwork} from '../utils';
+import {dbg, getDerivePathForNetwork, isLegacyWallet} from '../utils';
 import LocalCache from '../services/LocalCache';
 
 const {BBMTLibNativeModule} = NativeModules;
@@ -56,16 +56,21 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
         await LocalCache.setItem('network', net);
       }
       dbg('WalletContext: Current network:', net);
-      const path = getDerivePathForNetwork(net);
+      
+      // Get current address type for path calculation
+      const storedAddressType = await LocalCache.getItem('addressType');
+      const currentAddressType = (storedAddressType as string) || 'legacy';
+      // Check if this is a legacy wallet (created before migration timestamp)
+      const useLegacyPath = isLegacyWallet(ks.created_at);
+      const path = getDerivePathForNetwork(net, currentAddressType, useLegacyPath);
+      dbg('WalletContext: Using derivation path:', path);
 
       // Set network in native module first
       const netParams = await BBMTLibNativeModule.setBtcNetwork(net);
       net = netParams.split('@')[0];
       dbg('WalletContext: Network set in native module:', net);
 
-      // Get current address type
-      const storedAddressType = await LocalCache.getItem('addressType');
-      const currentAddressType = (storedAddressType as string) || 'legacy';
+      // Address type already loaded above, just set it
       setAddressType(currentAddressType);
       dbg('WalletContext: Current address type:', currentAddressType);
 
