@@ -6,7 +6,7 @@ It uses Threshold Signatures (2of3) over your mobile devices — no internet nee
 • 🔐 No seed phrases, no paper backups, no hardware wallets
 • 📱 up to 3 device-based key generation with 2 devices needed for signing
 • 🎛 PSBT-Signer compatible with wallets like Sparrow, Electrum, etc.
-• 🔄 P2P encrypted protocol between your devices
+• 🔄 P2P encrypted protocol between your devices, over Nostr or Local/Wifi-Hotspot
 • 🚫 No internet required for setup or signing
 • 📦 Open-source, verifiable, and offline-capable
 • 🧾 Supports Mempool.space public or self-hosted for enhanced advanced privacy
