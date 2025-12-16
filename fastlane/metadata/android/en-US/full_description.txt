@@ -5,7 +5,7 @@ It uses Threshold Signatures (2of3) over your mobile devices — no internet nee
 • ✅ Seedless setup using Threshold Signature Scheme (TSS)
 • 🔐 No seed phrases, no paper backups, no hardware wallets
 • 📱 up to 3 device-based key generation with 2 devices needed for signing
-• 🎛 PSBT Compatible with Wallets like Sparrow, Electrum, etc.
+• 🎛 PSBT-Signer compatible with wallets like Sparrow, Electrum, etc.
 • 🔄 P2P encrypted protocol between your devices
 • 🚫 No internet required for setup or signing
 • 📦 Open-source, verifiable, and offline-capable
