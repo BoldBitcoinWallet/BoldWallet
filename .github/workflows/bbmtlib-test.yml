@@ -1,10 +1,6 @@
 name: BBMTLib Tests
 
 on:
-  push:
-    paths:
-      - 'BBMTLib/**'
-      - '.github/workflows/bbmtlib-test.yml'
   pull_request:
     paths:
       - 'BBMTLib/**'
