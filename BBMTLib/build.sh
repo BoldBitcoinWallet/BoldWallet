@@ -1,6 +1,26 @@
 #!/bin/bash
+
+# Check for --clear-cache flag
+CLEAR_CACHE=false
+for arg in "$@"; do
+    if [ "$arg" = "--clear-cache" ]; then
+        CLEAR_CACHE=true
+        break
+    fi
+done
+
 echo "building gomobile tss lib"
 go mod tidy
+
+# Clear module cache if --clear-cache flag is provided
+if [ "$CLEAR_CACHE" = true ]; then
+    echo "Clearing module cache to force fresh download..."
+    go clean -modcache
+fi
+
+# Force download of all dependencies
+echo "Downloading all dependencies..."
+go mod download
 
 # Install gomobile if not already installed
 if ! command -v gomobile &> /dev/null; then
