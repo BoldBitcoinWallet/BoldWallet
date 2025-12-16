@@ -672,10 +672,26 @@ const MobilesPairing = ({navigation}: any) => {
             ) {
               throw new Error(signedPsbt || 'PSBT signing failed');
             }
+            // Check user's wallet mode preference before navigating
+            let targetRoute = 'Home';
+            try {
+              const walletMode =
+                (await EncryptedStorage.getItem('wallet_mode')) || 'full';
+              targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
+              dbg(
+                'PSBT signing complete: Navigating to',
+                targetRoute,
+                'based on wallet_mode:',
+                walletMode,
+              );
+            } catch (error) {
+              dbg('Error loading wallet_mode after PSBT signing:', error);
+              // Default to 'Home' if there's an error
+            }
             navigation.dispatch(
               CommonActions.reset({
                 index: 0,
-                routes: [{name: 'Home', params: {signedPsbt}}],
+                routes: [{name: targetRoute, params: {signedPsbt}}],
               }),
             );
             setMpcDone(true);
@@ -2811,7 +2827,7 @@ const MobilesPairing = ({navigation}: any) => {
                   ]}>
                   {title}
                 </Text>
-                {!isSendBitcoin && !isSignPSBT && isPairing && !peerIP && (
+                {!isSendBitcoin && !isSignPSBT && (
                   <>
                     <TouchableOpacity
                       onPress={() => {

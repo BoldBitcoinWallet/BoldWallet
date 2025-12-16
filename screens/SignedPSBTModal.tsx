@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+  Image,
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -363,18 +364,26 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
       borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
+      flexDirection: 'row',
     },
     buttonText: {
       color: theme.colors.textOnPrimary,
       fontSize: 16,
       height: 20,
       fontWeight: '600',
+      marginLeft: 8,
     },
     buttonSecondary: {
       backgroundColor: theme.colors.cardBackground,
     },
     buttonSecondaryText: {
       color: theme.colors.text,
+      marginLeft: 8,
+    },
+    buttonIcon: {
+      width: 20,
+      height: 20,
+      tintColor: theme.colors.text,
     },
     closeButton: {
       marginTop: 12,
@@ -500,14 +509,24 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
               style={[styles.button, styles.buttonSecondary]}
               onPress={handleCopy}
               activeOpacity={0.7}>
+              <Image
+                source={require('../assets/paste-icon.png')}
+                style={styles.buttonIcon}
+                resizeMode="contain"
+              />
               <Text style={styles.buttonSecondaryText}>
-                {isCopied ? '✓ Copied' : 'Copy Base64'}
+                {isCopied ? '✓ Copied' : 'Copy'}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.button, styles.buttonSecondary]}
               onPress={handleShareFile}
               activeOpacity={0.7}>
+              <Image
+                source={require('../assets/share-icon.png')}
+                style={styles.buttonIcon}
+                resizeMode="contain"
+              />
               <Text style={styles.buttonSecondaryText}>Share File</Text>
             </TouchableOpacity>
           </View>
@@ -517,6 +536,11 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
               style={styles.button}
               onPress={handleShareQR}
               activeOpacity={0.7}>
+              <Image
+                source={require('../assets/share-icon.png')}
+                style={[styles.buttonIcon, {tintColor: theme.colors.textOnPrimary}]}
+                resizeMode="contain"
+              />
               <Text style={styles.buttonText}>Share QR Code</Text>
             </TouchableOpacity>
           )}

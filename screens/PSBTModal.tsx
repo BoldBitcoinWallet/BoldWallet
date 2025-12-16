@@ -49,6 +49,7 @@ interface PSBTDetails {
 export interface PSBTLoaderProps {
   btcRate?: number; // BTC to fiat rate
   currencySymbol?: string; // e.g., "$", "€"
+  network?: string; // Network: 'mainnet' or 'testnet3'
   onClose: () => void;
   onSign: (psbtBase64: string) => void;
   // When true, disables the Cancel button until a PSBT is loaded.
@@ -141,6 +142,7 @@ const QRScanner = ({styles, device, codeScanner, onClose, urProgress}: any) => {
 export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
   btcRate = 0,
   currencySymbol = '$',
+  network = 'mainnet',
   onClose,
   onSign,
   disableCancelWhenEmpty = false,
@@ -912,6 +914,11 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
               style={styles.headerIcon}
             />
             <Text style={styles.headerTitle}>Sign • PSBT</Text>
+            <View style={styles.networkBadge}>
+              <Text style={styles.networkBadgeText}>
+                {network === 'mainnet' ? 'MAINNET' : 'TESTNET'}
+              </Text>
+            </View>
           </View>
 
           {/* Description */}
@@ -1222,6 +1229,7 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
   visible,
   btcRate = 0,
   currencySymbol = '$',
+  network = 'mainnet',
   onClose,
   onSign,
 }) => {
@@ -1238,6 +1246,7 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
       <PSBTLoader
         btcRate={btcRate}
         currencySymbol={currencySymbol}
+        network={network}
         onClose={onClose}
         onSign={onSign}
       />
@@ -1285,6 +1294,7 @@ const createStyles = (theme: any) =>
     headerRow: {
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'space-between',
       marginBottom: 12,
     },
     headerIcon: {
@@ -1297,25 +1307,27 @@ const createStyles = (theme: any) =>
       fontSize: 20,
       fontWeight: '700',
       color: theme.colors.text,
+      flex: 1,
+    },
+    networkBadge: {
+      backgroundColor: theme.colors.background,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    networkBadgeText: {
+      fontSize: 10,
+      fontWeight: '700',
+      color: theme.colors.text,
+      letterSpacing: 0.5,
     },
     description: {
       fontSize: 14,
       color: theme.colors.textSecondary,
       lineHeight: 20,
       marginBottom: 16,
-    },
-    networkBadge: {
-      alignSelf: 'flex-start',
-      backgroundColor: theme.colors.background,
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-      borderRadius: 12,
-      marginBottom: 20,
-    },
-    networkText: {
-      fontSize: 12,
-      fontWeight: '600',
-      color: theme.colors.primary,
     },
     importButtonsContainer: {
       marginBottom: 20,

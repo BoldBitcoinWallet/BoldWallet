@@ -18,13 +18,14 @@ import {useUser} from '../context/UserContext';
 import {HeaderRightButton, HeaderTitle} from '../components/Header';
 import {PSBTLoader} from './PSBTModal';
 import {dbg, HapticFeedback, getDerivePathForNetwork, isLegacyWallet, generateAllOutputDescriptors} from '../utils';
-import {CommonActions} from '@react-navigation/native';
+import {CommonActions, useRoute, RouteProp} from '@react-navigation/native';
 import TransportModeSelector from '../components/TransportModeSelector';
 import Clipboard from '@react-native-clipboard/clipboard';
 import Toast from 'react-native-toast-message';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
 import QRCodeModal from '../components/QRCodeModal';
+import SignedPSBTModal from './SignedPSBTModal';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -37,7 +38,12 @@ interface KeyshareInfoForPsbt {
   };
 }
 
+type RouteParams = {
+  signedPsbt?: string;
+};
+
 const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
+  const route = useRoute<RouteProp<{params: RouteParams}>>();
   const {theme} = useTheme();
   const styles = createStyles(theme);
   const {activeNetwork: network, activeAddressType: addressType} = useUser();
@@ -58,6 +64,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     psbtBase64: string;
     derivePath: string;
   } | null>(null);
+  const [signedPsbt, setSignedPsbt] = useState<string | null>(null);
+  const [isSignedPSBTModalVisible, setIsSignedPSBTModalVisible] =
+    useState(false);
 
   // Animation for collapsible section
   const rotationAnim = useRef(
@@ -128,6 +137,17 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       setKeyshareInfo(null);
     }
   }, [network]);
+
+  // Check for signedPsbt in route params and show modal
+  useEffect(() => {
+    const signedPsbtParam = route.params?.signedPsbt;
+    if (signedPsbtParam) {
+      setSignedPsbt(signedPsbtParam);
+      setIsSignedPSBTModalVisible(true);
+      // Clear the param to prevent showing again
+      navigation.setParams({signedPsbt: undefined});
+    }
+  }, [route.params?.signedPsbt, navigation]);
 
   // Share helper for exporting text as a small file (xpub / descriptor)
   const shareTextAsFile = useCallback(
@@ -613,6 +633,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
             // We don't show fiat conversions here, so rate/symbol can be neutral
             btcRate={0}
             currencySymbol="$"
+            network={network}
             onClose={() => {
               // In PSBT screen, Cancel should only reset the loader state,
               // not navigate away from this screen.
@@ -690,6 +711,18 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
           setIsPSBTTransportModalVisible(false);
         }}
       />
+      {/* Signed PSBT Modal */}
+      {signedPsbt && (
+        <SignedPSBTModal
+          visible={isSignedPSBTModalVisible}
+          signedPsbtBase64={signedPsbt}
+          onClose={() => {
+            HapticFeedback.medium();
+            setIsSignedPSBTModalVisible(false);
+            setSignedPsbt(null);
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 };

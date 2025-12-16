@@ -959,8 +959,23 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
     await setActiveNetwork(newNetwork);
 
-    // Navigate first, then show alert on the new screen
-    navigation.reset({index: 0, routes: [{name: 'Home'}]});
+    // Check user's wallet mode preference before navigating
+    let targetRoute = 'Home';
+    try {
+      targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
+      dbg(
+        'Network toggle: Navigating to',
+        targetRoute,
+        'based on wallet_mode:',
+        walletMode,
+      );
+    } catch (error) {
+      dbg('Error loading wallet_mode during network toggle:', error);
+      // Default to 'Home' if there's an error
+    }
+
+    // Navigate to the appropriate screen based on user preference
+    navigation.reset({index: 0, routes: [{name: targetRoute}]});
 
     // Show brief feedback alert after a brief delay to ensure navigation completes
     setTimeout(() => {

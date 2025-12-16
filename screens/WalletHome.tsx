@@ -1945,6 +1945,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         visible={isPSBTModalVisible}
         btcRate={btcRate}
         currencySymbol={getCurrencySymbol(selectedCurrency)}
+        network={network}
         onClose={() => setIsPSBTModalVisible(false)}
         onSign={handlePSBTSign}
       />

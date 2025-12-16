@@ -429,18 +429,101 @@ func GetOutputDescriptor(hexPubKey, hexChainCode, network, addressType string) (
 	hash160 := btcutil.Hash160(pubKeyBuf)
 	fingerprint := hex.EncodeToString(hash160[:4])
 
-	// Get the xpub at account level
-	xpub, err := EncodeXpub(hexPubKey, hexChainCode, network)
-	if err != nil {
-		return "", fmt.Errorf("encode xpub failed: %w", err)
+	// Determine coin type and BIP path based on network and address type
+	coinType := uint32(0) // mainnet
+	if network == "testnet" || network == "testnet3" {
+		coinType = uint32(1) // testnet
 	}
 
-	// Determine coin type based on network
-	// BIP44/49/84: 0' for mainnet, 1' for testnet
-	coinType := "0'"
-	if network == "testnet" || network == "testnet3" {
-		coinType = "1'"
+	// Determine BIP path based on address type
+	var bipPath uint32
+	var coinTypeStr string
+	switch addressType {
+	case "segwit-native":
+		bipPath = 84 // BIP84
+		coinTypeStr = "1'"
+		if coinType == 0 {
+			coinTypeStr = "0'"
+		}
+	case "segwit-compatible":
+		bipPath = 49 // BIP49
+		coinTypeStr = "1'"
+		if coinType == 0 {
+			coinTypeStr = "0'"
+		}
+	case "legacy":
+		fallthrough
+	default:
+		bipPath = 44 // BIP44
+		coinTypeStr = "1'"
+		if coinType == 0 {
+			coinTypeStr = "0'"
+		}
 	}
+
+	// Derive xpub to the correct BIP account level (non-hardened, as we're deriving from public key)
+	// Parse the master public key
+	masterPubKey, err := btcec.ParsePubKey(pubKeyBuf)
+	if err != nil {
+		return "", fmt.Errorf("parse pub key failed: %w", err)
+	}
+
+	chainCodeBuf, err := hex.DecodeString(hexChainCode)
+	if err != nil {
+		return "", fmt.Errorf("decode hex chain code failed: %w", err)
+	}
+	if len(chainCodeBuf) != 32 {
+		return "", errors.New("invalid chain code length, expected 32 bytes")
+	}
+
+	// Create EC point for derivation
+	curve := tss.S256()
+	ecPoint, err := tcrypto.NewECPoint(curve, masterPubKey.X(), masterPubKey.Y())
+	if err != nil {
+		return "", fmt.Errorf("new ec point failed: %w", err)
+	}
+
+	// Derive to account level for the specific BIP path (non-hardened)
+	accountPath := []uint32{bipPath, coinType, 0}
+	Logf("GetOutputDescriptor: Deriving to account level m/%d/%d/0 (network: %s, addressType: %s)", bipPath, coinType, network, addressType)
+	_, accountKey, err := derivingPubkeyFromPath(ecPoint, chainCodeBuf, accountPath, curve)
+	if err != nil {
+		return "", fmt.Errorf("deriving to account path failed: %w", err)
+	}
+
+	// Select network parameters for xpub encoding
+	var net *chaincfg.Params
+	if network == "mainnet" {
+		net = &chaincfg.MainNetParams
+	} else {
+		net = &chaincfg.TestNet3Params
+	}
+
+	// Build the extended public key at account level
+	// Format: version(4) + depth(1) + fingerprint(4) + childIndex(4) + chainCode(32) + pubKey(33) = 78 bytes
+	var serialized [78]byte
+
+	// Version bytes (xpub or tpub)
+	copy(serialized[0:4], net.HDPublicKeyID[:])
+
+	// Depth: 3 for account level (m/bipPath/coinType/0)
+	serialized[4] = 3
+
+	// Parent fingerprint: we use zeros since we don't track the parent
+	copy(serialized[5:9], []byte{0x00, 0x00, 0x00, 0x00})
+
+	// Child index: 0 (last component of m/bipPath/coinType/0)
+	copy(serialized[9:13], []byte{0x00, 0x00, 0x00, 0x00})
+
+	// Chain code from the derived key (32 bytes)
+	copy(serialized[13:45], accountKey.ChainCode)
+
+	// Public key from the derived key (33 bytes, compressed)
+	derivedPubKey := elliptic.MarshalCompressed(curve, accountKey.X, accountKey.Y)
+	copy(serialized[45:78], derivedPubKey)
+
+	// Base58Check encode to get xpub
+	xpub := base58CheckEncode(serialized[:])
 
 	// Build output descriptor based on address type
 	// The path shown uses ' for hardened derivation in descriptor notation
@@ -449,15 +532,15 @@ func GetOutputDescriptor(hexPubKey, hexChainCode, network, addressType string) (
 	switch addressType {
 	case "segwit-native":
 		// Native SegWit P2WPKH (BIP84 m/84'/coinType'/0')
-		descriptor = fmt.Sprintf("wpkh([%s/84'/%s/0']%s/0/*)", fingerprint, coinType, xpub)
+		descriptor = fmt.Sprintf("wpkh([%s/84'/%s/0']%s/0/*)", fingerprint, coinTypeStr, xpub)
 	case "segwit-compatible":
 		// SegWit compatible P2SH-P2WPKH (BIP49 m/49'/coinType'/0')
-		descriptor = fmt.Sprintf("sh(wpkh([%s/49'/%s/0']%s/0/*))", fingerprint, coinType, xpub)
+		descriptor = fmt.Sprintf("sh(wpkh([%s/49'/%s/0']%s/0/*))", fingerprint, coinTypeStr, xpub)
 	case "legacy":
 		fallthrough
 	default:
 		// Legacy P2PKH (BIP44 m/44'/coinType'/0')
-		descriptor = fmt.Sprintf("pkh([%s/44'/%s/0']%s/0/*)", fingerprint, coinType, xpub)
+		descriptor = fmt.Sprintf("pkh([%s/44'/%s/0']%s/0/*)", fingerprint, coinTypeStr, xpub)
 	}
 
 	return descriptor, nil
