@@ -21,6 +21,7 @@ import {
 } from 'react-native';
 import {NativeModules} from 'react-native';
 import DeviceInfo from 'react-native-device-info';
+import NetInfo from '@react-native-community/netinfo';
 import RNFS from 'react-native-fs';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import * as Progress from 'react-native-progress';
@@ -88,6 +89,9 @@ const MobilesPairing = ({navigation}: any) => {
   const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
   const [passwordStrength, setPasswordStrength] = useState(0);
   const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
+  
+  // VPN detection state
+  const [isVPNConnected, setIsVPNConnected] = useState(false);
   const [psbtDetails, setPsbtDetails] = useState<{
     inputs: Array<{txid: string; vout: number; amount: number}>;
     outputs: Array<{address: string; amount: number}>;
@@ -201,19 +205,19 @@ const MobilesPairing = ({navigation}: any) => {
     };
 
     if (!rules.length) {
-      errors.push('At least 12 characters');
+      errors.push('12+ characters');
     }
     if (!rules.uppercase) {
-      errors.push('One uppercase letter');
+      errors.push('Uppercase letter (A-Z)');
     }
     if (!rules.lowercase) {
-      errors.push('One lowercase letter');
+      errors.push('Lowercase letter (a-z)');
     }
     if (!rules.number) {
-      errors.push('One number');
+      errors.push('Number (0-9)');
     }
     if (!rules.symbol) {
-      errors.push('One special character');
+      errors.push('Special character (!@#$...)');
     }
     setPasswordErrors(errors);
 
@@ -856,16 +860,20 @@ const MobilesPairing = ({navigation}: any) => {
   async function backupShare() {
     if (!validatePassword(password)) {
       dbg('❌ [BACKUP] Password validation failed');
+      const missingRequirements = passwordErrors.join('\n• ');
       Alert.alert(
-        'Weak Password',
-        'Please use a stronger password that meets all requirements.',
+        'Password Requirements Not Met',
+        `Your password must meet all of the following requirements:\n\n• ${missingRequirements}\n\nPlease update your password and try again.`,
       );
       return;
     }
 
     if (password !== confirmPassword) {
       dbg('❌ [BACKUP] Password mismatch');
-      Alert.alert('Password Mismatch', 'Passwords do not match.');
+      Alert.alert(
+        'Passwords Do Not Match',
+        'The password and confirmation password must be identical. Please check both fields and try again.',
+      );
       return;
     }
 
@@ -1438,9 +1446,79 @@ const MobilesPairing = ({navigation}: any) => {
     return '';
   }
 
+  // VPN detection
+  useEffect(() => {
+    const checkVPNStatus = async () => {
+      try {
+        const netInfo = await NetInfo.fetch();
+        // Check for VPN on both platforms
+        let isVPN = false;
+        
+        if (netInfo.type === 'vpn') {
+          isVPN = true;
+        } else if (Platform.OS === 'android' && netInfo.details) {
+          // Android: Check details.isVPN if available
+          const details = netInfo.details as any;
+          isVPN = details.isVPN === true || false;
+        } else if (Platform.OS === 'ios' && netInfo.type === 'other' && netInfo.details) {
+          // iOS: Check details.isVPN if available
+          const details = netInfo.details as any;
+          isVPN = details.isVPN === true || false;
+        }
+        
+        setIsVPNConnected(isVPN);
+        dbg('VPN Status:', {isVPN, type: netInfo.type, details: netInfo.details});
+      } catch (error) {
+        dbg('Error checking VPN status:', error);
+        setIsVPNConnected(false);
+      }
+    };
+
+    // Check VPN status on mount
+    checkVPNStatus();
+
+    // Subscribe to network state changes
+    const unsubscribe = NetInfo.addEventListener(state => {
+      let isVPN = false;
+      
+      if (state.type === 'vpn') {
+        isVPN = true;
+      } else if (Platform.OS === 'android' && state.details) {
+        const details = state.details as any;
+        isVPN = details.isVPN === true || false;
+      } else if (Platform.OS === 'ios' && state.type === 'other' && state.details) {
+        const details = state.details as any;
+        isVPN = details.isVPN === true || false;
+      }
+      
+      setIsVPNConnected(isVPN);
+      dbg('VPN Status Changed:', {isVPN, type: state.type, details: state.details});
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       dbg('MobilesPairing screen focused');
+      // Re-check VPN status when screen is focused
+      NetInfo.fetch().then(state => {
+        let isVPN = false;
+        
+        if (state.type === 'vpn') {
+          isVPN = true;
+        } else if (Platform.OS === 'android' && state.details) {
+          const details = state.details as any;
+          isVPN = details.isVPN === true || false;
+        } else if (Platform.OS === 'ios' && state.type === 'other' && state.details) {
+          const details = state.details as any;
+          isVPN = details.isVPN === true || false;
+        }
+        
+        setIsVPNConnected(isVPN);
+      });
       return () => {
         dbg('MobilesPairing screen blurred');
       };
@@ -2218,11 +2296,12 @@ const MobilesPairing = ({navigation}: any) => {
     },
     requirementText: {
       fontSize: 12,
-      color: theme.colors.textSecondary,
+      color: '#FF6B35',
       marginBottom: 2,
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'left',
       lineHeight: 16,
+      fontWeight: '500',
     },
     errorInput: {
       borderColor: theme.colors.danger,
@@ -2614,6 +2693,46 @@ const MobilesPairing = ({navigation}: any) => {
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       backgroundColor: theme.colors.background,
     },
+    vpnWarningBanner: {
+      backgroundColor: '#FF6B6B',
+      marginBottom: 16,
+      marginHorizontal: 16,
+      borderRadius: 12,
+      padding: 16,
+      borderWidth: 2,
+      borderColor: '#FF5252',
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+      elevation: 4,
+    },
+    vpnWarningContent: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+    },
+    vpnWarningIcon: {
+      width: 24,
+      height: 24,
+      marginRight: 12,
+      tintColor: '#FFFFFF',
+    },
+    vpnWarningTextContainer: {
+      flex: 1,
+    },
+    vpnWarningTitle: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: '#FFFFFF',
+      marginBottom: 6,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+    },
+    vpnWarningMessage: {
+      fontSize: 14,
+      color: '#FFFFFF',
+      lineHeight: 20,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+    },
   });
 
   return (
@@ -2624,6 +2743,26 @@ const MobilesPairing = ({navigation}: any) => {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.innerContainer}>
+            {/* VPN Warning Banner */}
+            {isVPNConnected && (
+              <View style={styles.vpnWarningBanner}>
+                <View style={styles.vpnWarningContent}>
+                  <Image
+                    source={require('../assets/warning-icon.png')}
+                    style={styles.vpnWarningIcon}
+                    resizeMode="contain"
+                  />
+                  <View style={styles.vpnWarningTextContainer}>
+                    <Text style={styles.vpnWarningTitle}>
+                      VPN Detected
+                    </Text>
+                    <Text style={styles.vpnWarningMessage}>
+                      Please turn off your VPN to ensure a secure local network connection for device pairing.
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
             {/* Title and Exit Pairing Link - Show during pairing in local mode */}
             {!isSendBitcoin && !isSignPSBT && isPairing && !peerIP && (
               <View style={styles.informationCard}>

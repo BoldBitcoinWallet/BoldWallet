@@ -1968,19 +1968,19 @@ const MobileNostrPairing = ({navigation}: any) => {
     };
 
     if (!rules.length) {
-      errors.push('At least 12 characters');
+      errors.push('12+ characters');
     }
     if (!rules.uppercase) {
-      errors.push('One uppercase letter');
+      errors.push('Uppercase letter (A-Z)');
     }
     if (!rules.lowercase) {
-      errors.push('One lowercase letter');
+      errors.push('Lowercase letter (a-z)');
     }
     if (!rules.number) {
-      errors.push('One number');
+      errors.push('Number (0-9)');
     }
     if (!rules.symbol) {
-      errors.push('One special character');
+      errors.push('Special character (!@#$...)');
     }
     setPasswordErrors(errors);
 
@@ -2035,16 +2035,20 @@ const MobileNostrPairing = ({navigation}: any) => {
   async function backupShare() {
     if (!validatePassword(password)) {
       dbg('❌ [BACKUP] Password validation failed');
+      const missingRequirements = passwordErrors.join('\n• ');
       Alert.alert(
-        'Weak Password',
-        'Please use a stronger password that meets all requirements.',
+        'Password Requirements Not Met',
+        `Your password must meet all of the following requirements:\n\n• ${missingRequirements}\n\nPlease update your password and try again.`,
       );
       return;
     }
 
     if (password !== confirmPassword) {
       dbg('❌ [BACKUP] Password mismatch');
-      Alert.alert('Password Mismatch', 'Passwords do not match.');
+      Alert.alert(
+        'Passwords Do Not Match',
+        'The password and confirmation password must be identical. Please check both fields and try again.',
+      );
       return;
     }
 
@@ -3576,9 +3580,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     requirementText: {
       fontSize: 12,
-      color: theme.colors.textSecondary,
+      color: '#FF6B35',
       marginBottom: 4,
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      fontWeight: '500',
     },
     errorInput: {
       borderColor: theme.colors.danger || '#FF3B30',

@@ -749,19 +749,19 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     };
 
     if (!checks.length) {
-      errors.push('At least 12 characters');
+      errors.push('12+ characters');
     }
     if (!checks.uppercase) {
-      errors.push('One uppercase letter');
+      errors.push('Uppercase letter (A-Z)');
     }
     if (!checks.lowercase) {
-      errors.push('One lowercase letter');
+      errors.push('Lowercase letter (a-z)');
     }
     if (!checks.number) {
-      errors.push('One number');
+      errors.push('Number (0-9)');
     }
     if (!checks.symbol) {
-      errors.push('One special character');
+      errors.push('Special character (!@#$...)');
     }
 
     setPasswordErrors(errors);
@@ -1136,15 +1136,19 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
   const handleBackupWallet = async () => {
     if (!validatePassword(password)) {
+      const missingRequirements = passwordErrors.join('\n• ');
       Alert.alert(
-        'Weak Password',
-        'Please use a stronger password that meets all requirements.',
+        'Password Requirements Not Met',
+        `Your password must meet all of the following requirements:\n\n• ${missingRequirements}\n\nPlease update your password and try again.`,
       );
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert('Password Mismatch', 'Passwords do not match.');
+      Alert.alert(
+        'Passwords Do Not Match',
+        'The password and confirmation password must be identical. Please check both fields and try again.',
+      );
       return;
     }
 
@@ -2025,7 +2029,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     },
     requirementText: {
       fontSize: 12,
-      color: theme.colors.textSecondary,
+      color: '#FF6B35',
+      fontWeight: '500',
     },
     nostrRelaysInput: {
       minHeight: 120,
