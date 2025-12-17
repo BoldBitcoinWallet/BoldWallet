@@ -61,7 +61,7 @@ func MpcSignPSBT(
 	if keyshareData.ChainCodeHex == "" {
 		return "", fmt.Errorf("keyshare missing chain_code_hex")
 	}
-	Logf("Keyshare parsed: pub_key (hex, full)=%s, chaincode (hex, full)=%s", keyshareData.PubKey, keyshareData.ChainCodeHex)
+	Logf("Keyshare parsed: pub_key (hex, full)=%s, chaincode (hex, full)=%s", truncateHex(keyshareData.PubKey), truncateHex(keyshareData.ChainCodeHex))
 	Logf("Keyshare parsed: pub_key (hex) length=%d, chaincode (hex) length=%d", len(keyshareData.PubKey), len(keyshareData.ChainCodeHex))
 
 	// Decode PSBT from base64
@@ -89,25 +89,25 @@ func MpcSignPSBT(
 			if len(xpub.ExtendedKey) >= 78 {
 				psbtChaincodeHex := hex.EncodeToString(xpub.ExtendedKey[13:45]) // bytes 13-45 (32 bytes)
 				psbtPubkeyHex := hex.EncodeToString(xpub.ExtendedKey[45:78])    // bytes 45-78 (33 bytes)
-				Logf("PSBT XPubs[%d]: pubkey (hex, extracted from xpub)=%s, chaincode (hex, extracted from xpub)=%s", i, psbtPubkeyHex, psbtChaincodeHex)
+				Logf("PSBT XPubs[%d]: pubkey (hex, extracted from xpub)=%s, chaincode (hex, extracted from xpub)=%s", i, truncateHex(psbtPubkeyHex), truncateHex(psbtChaincodeHex))
 
 				// Derive from keyshare's master key to the PSBT's xpub path level for comparison
 				if xpubPath != "" {
 					Logf("COMPARISON: PSBT xpub is at path %s (account level)", xpubPath)
 					Logf("COMPARISON: Deriving from keyshare master key to PSBT xpub path: %s", xpubPath)
-					Logf("COMPARISON: Keyshare master pub_key (hex)=%s", keyshareData.PubKey)
-					Logf("COMPARISON: Keyshare master chaincode (hex)=%s", keyshareData.ChainCodeHex)
+					Logf("COMPARISON: Keyshare master pub_key (hex)=%s", truncateHex(keyshareData.PubKey))
+					Logf("COMPARISON: Keyshare master chaincode (hex)=%s", truncateHex(keyshareData.ChainCodeHex))
 
 					derivedPubKeyHex, err := GetDerivedPubKey(keyshareData.PubKey, keyshareData.ChainCodeHex, xpubPath, false)
 					if err != nil {
 						Logf("COMPARISON ERROR: Failed to derive keyshare to PSBT xpub path %s: %v", xpubPath, err)
 					} else {
-						Logf("COMPARISON: Keyshare derived to %s: pubkey (hex)=%s", xpubPath, derivedPubKeyHex)
-						Logf("COMPARISON: PSBT xpub pubkey (hex)=%s", psbtPubkeyHex)
+						Logf("COMPARISON: Keyshare derived to %s: pubkey (hex)=%s", xpubPath, truncateHex(derivedPubKeyHex))
+						Logf("COMPARISON: PSBT xpub pubkey (hex)=%s", truncateHex(psbtPubkeyHex))
 						if derivedPubKeyHex == psbtPubkeyHex {
 							Logf("COMPARISON: ✅ MATCH - Keyshare derived pubkey matches PSBT xpub pubkey at account level %s", xpubPath)
 						} else {
-							Logf("COMPARISON: ❌ MISMATCH - Keyshare derived pubkey (%s) does NOT match PSBT xpub pubkey (%s) at path %s", derivedPubKeyHex, psbtPubkeyHex, xpubPath)
+							Logf("COMPARISON: ❌ MISMATCH - Keyshare derived pubkey (%s) does NOT match PSBT xpub pubkey (%s) at path %s", truncateHex(derivedPubKeyHex), truncateHex(psbtPubkeyHex), xpubPath)
 							Logf("COMPARISON: This indicates the keyshare and PSBT are from different wallets or networks")
 						}
 					}
@@ -199,7 +199,7 @@ func MpcSignPSBT(
 
 		// Derive the public key from keyshare using GetDerivedPubKey with the path from PSBT
 		// Use the keyshare's pub_key and chaincode to derive the corresponding public key
-		Logf("Input %d: Deriving public key from keyshare - xpub: %s, chaincode: %s, path: %s", i, keyshareData.PubKey, keyshareData.ChainCodeHex, inputDerivePath)
+		Logf("Input %d: Deriving public key from keyshare - xpub: %s, chaincode: %s, path: %s", i, truncateHex(keyshareData.PubKey), truncateHex(keyshareData.ChainCodeHex), inputDerivePath)
 		derivedPubKeyHex, err := GetDerivedPubKey(keyshareData.PubKey, keyshareData.ChainCodeHex, inputDerivePath, false)
 		if err != nil {
 			return "", fmt.Errorf("failed to derive public key for input %d with path %s: %w", i, inputDerivePath, err)
@@ -208,7 +208,7 @@ func MpcSignPSBT(
 		if err != nil {
 			return "", fmt.Errorf("failed to decode derived public key for input %d: %w", i, err)
 		}
-		Logf("Input %d: Derived public key (hex): %s, bytes: %x (length: %d)", i, derivedPubKeyHex, derivedPubKeyBytes, len(derivedPubKeyBytes))
+		Logf("Input %d: Derived public key (hex): %s, bytes: %x (length: %d)", i, truncateHex(derivedPubKeyHex), derivedPubKeyBytes, len(derivedPubKeyBytes))
 
 		// Use the derived key for signing
 		inputPubKeyBytes = derivedPubKeyBytes
@@ -534,6 +534,14 @@ func min(a, b int) int {
 	return b
 }
 
+// truncateHex truncates a hex string to show only first 4 and last 4 characters
+func truncateHex(hexStr string) string {
+	if len(hexStr) <= 8 {
+		return hexStr
+	}
+	return hexStr[:4] + "..." + hexStr[len(hexStr)-4:]
+}
+
 // formatBip32Path converts a BIP32 path from []uint32 to string format like "m/44'/0'/0'/0/0"
 // Values >= 0x80000000 are hardened (indicated by ')
 func formatBip32Path(path []uint32) string {
@@ -756,7 +764,7 @@ func runNostrMpcSignPSBTInternal(
 	if keyshareData.ChainCodeHex == "" {
 		return "", fmt.Errorf("keyshare missing chain_code_hex")
 	}
-	Logf("Keyshare parsed: pub_key (hex, full)=%s, chaincode (hex, full)=%s", keyshareData.PubKey, keyshareData.ChainCodeHex)
+	Logf("Keyshare parsed: pub_key (hex, full)=%s, chaincode (hex, full)=%s", truncateHex(keyshareData.PubKey), truncateHex(keyshareData.ChainCodeHex))
 	Logf("Keyshare parsed: pub_key (hex) length=%d, chaincode (hex) length=%d", len(keyshareData.PubKey), len(keyshareData.ChainCodeHex))
 
 	// Decode PSBT from base64
@@ -784,25 +792,25 @@ func runNostrMpcSignPSBTInternal(
 			if len(xpub.ExtendedKey) >= 78 {
 				psbtChaincodeHex := hex.EncodeToString(xpub.ExtendedKey[13:45]) // bytes 13-45 (32 bytes)
 				psbtPubkeyHex := hex.EncodeToString(xpub.ExtendedKey[45:78])    // bytes 45-78 (33 bytes)
-				Logf("PSBT XPubs[%d]: pubkey (hex, extracted from xpub)=%s, chaincode (hex, extracted from xpub)=%s", i, psbtPubkeyHex, psbtChaincodeHex)
+				Logf("PSBT XPubs[%d]: pubkey (hex, extracted from xpub)=%s, chaincode (hex, extracted from xpub)=%s", i, truncateHex(psbtPubkeyHex), truncateHex(psbtChaincodeHex))
 
 				// Derive from keyshare's master key to the PSBT's xpub path level for comparison
 				if xpubPath != "" {
 					Logf("COMPARISON: PSBT xpub is at path %s (account level)", xpubPath)
 					Logf("COMPARISON: Deriving from keyshare master key to PSBT xpub path: %s", xpubPath)
-					Logf("COMPARISON: Keyshare master pub_key (hex)=%s", keyshareData.PubKey)
-					Logf("COMPARISON: Keyshare master chaincode (hex)=%s", keyshareData.ChainCodeHex)
+					Logf("COMPARISON: Keyshare master pub_key (hex)=%s", truncateHex(keyshareData.PubKey))
+					Logf("COMPARISON: Keyshare master chaincode (hex)=%s", truncateHex(keyshareData.ChainCodeHex))
 
 					derivedPubKeyHex, err := GetDerivedPubKey(keyshareData.PubKey, keyshareData.ChainCodeHex, xpubPath, false)
 					if err != nil {
 						Logf("COMPARISON ERROR: Failed to derive keyshare to PSBT xpub path %s: %v", xpubPath, err)
 					} else {
-						Logf("COMPARISON: Keyshare derived to %s: pubkey (hex)=%s", xpubPath, derivedPubKeyHex)
-						Logf("COMPARISON: PSBT xpub pubkey (hex)=%s", psbtPubkeyHex)
+						Logf("COMPARISON: Keyshare derived to %s: pubkey (hex)=%s", xpubPath, truncateHex(derivedPubKeyHex))
+						Logf("COMPARISON: PSBT xpub pubkey (hex)=%s", truncateHex(psbtPubkeyHex))
 						if derivedPubKeyHex == psbtPubkeyHex {
 							Logf("COMPARISON: ✅ MATCH - Keyshare derived pubkey matches PSBT xpub pubkey at account level %s", xpubPath)
 						} else {
-							Logf("COMPARISON: ❌ MISMATCH - Keyshare derived pubkey (%s) does NOT match PSBT xpub pubkey (%s) at path %s", derivedPubKeyHex, psbtPubkeyHex, xpubPath)
+							Logf("COMPARISON: ❌ MISMATCH - Keyshare derived pubkey (%s) does NOT match PSBT xpub pubkey (%s) at path %s", truncateHex(derivedPubKeyHex), truncateHex(psbtPubkeyHex), xpubPath)
 							Logf("COMPARISON: This indicates the keyshare and PSBT are from different wallets or networks")
 						}
 					}
@@ -894,7 +902,7 @@ func runNostrMpcSignPSBTInternal(
 
 		// Derive the public key from keyshare using GetDerivedPubKey with the path from PSBT
 		// Use the keyshare's pub_key and chaincode to derive the corresponding public key
-		Logf("Input %d: Deriving public key from keyshare - xpub: %s, chaincode: %s, path: %s", i, keyshareData.PubKey, keyshareData.ChainCodeHex, inputDerivePath)
+		Logf("Input %d: Deriving public key from keyshare - xpub: %s, chaincode: %s, path: %s", i, truncateHex(keyshareData.PubKey), truncateHex(keyshareData.ChainCodeHex), inputDerivePath)
 		derivedPubKeyHex, err := GetDerivedPubKey(keyshareData.PubKey, keyshareData.ChainCodeHex, inputDerivePath, false)
 		if err != nil {
 			return "", fmt.Errorf("failed to derive public key for input %d with path %s: %w", i, inputDerivePath, err)
@@ -903,7 +911,7 @@ func runNostrMpcSignPSBTInternal(
 		if err != nil {
 			return "", fmt.Errorf("failed to decode derived public key for input %d: %w", i, err)
 		}
-		Logf("Input %d: Derived public key (hex): %s, bytes: %x (length: %d)", i, derivedPubKeyHex, derivedPubKeyBytes, len(derivedPubKeyBytes))
+		Logf("Input %d: Derived public key (hex): %s, bytes: %x (length: %d)", i, truncateHex(derivedPubKeyHex), derivedPubKeyBytes, len(derivedPubKeyBytes))
 
 		// Use the derived key for signing
 		inputPubKeyBytes = derivedPubKeyBytes
