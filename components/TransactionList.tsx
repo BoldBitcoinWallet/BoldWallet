@@ -371,7 +371,6 @@ const TransactionList = React.forwardRef<
             setIsRefreshing(false);
           }
         } catch (error: any) {
-          dbg('got error', error);
           if (isCanceledError(error)) {
             dbg('Request canceled');
             // Clear refresh state on cancel

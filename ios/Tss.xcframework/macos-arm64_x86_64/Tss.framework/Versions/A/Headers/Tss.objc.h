@@ -302,6 +302,16 @@ FOUNDATION_EXPORT NSString* _Nonnull TssEciesEncrypt(NSString* _Nullable data, N
 
 FOUNDATION_EXPORT NSString* _Nonnull TssEciesPubkeyFromPrivateKey(NSString* _Nullable privateKeyHex, NSError* _Nullable* _Nullable error);
 
+/**
+ * EncodeXpub encodes a public key and chain code into xpub/tpub format for watch-only wallets (Sparrow, etc.)
+It derives to the BIP44 account level (m/44/0/0) so Sparrow can derive /0/x for addresses.
+hexPubKey: compressed public key in hex (33 bytes / 66 chars) - the master public key
+hexChainCode: chain code in hex (32 bytes / 64 chars) - the master chain code
+network: "mainnet" or "testnet3"
+Returns: xpub (mainnet) or tpub (testnet) encoded string at account level m/44/0/0
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssEncodeXpub(NSString* _Nullable hexPubKey, NSString* _Nullable hexChainCode, NSString* _Nullable network, NSError* _Nullable* _Nullable error);
+
 FOUNDATION_EXPORT NSString* _Nonnull TssEstimateFees(NSString* _Nullable senderAddress, NSString* _Nullable receiverAddress, int64_t amountSatoshi, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssFetchData(NSString* _Nullable url, NSString* _Nullable decKey, NSString* _Nullable data, NSError* _Nullable* _Nullable error);
@@ -326,6 +336,16 @@ FOUNDATION_EXPORT NSString* _Nonnull TssGetDerivedPubKey(NSString* _Nullable hex
 
 
 FOUNDATION_EXPORT NSString* _Nonnull TssGetNetwork(NSError* _Nullable* _Nullable error);
+
+/**
+ * GetOutputDescriptor generates a wallet output descriptor for watch-only wallet import (Sparrow, etc.)
+hexPubKey: compressed master public key in hex (33 bytes / 66 chars)
+hexChainCode: master chain code in hex (32 bytes / 64 chars)
+network: "mainnet" or "testnet3"
+addressType: "legacy", "segwit-native", or "segwit-compatible"
+Returns: output descriptor string (pkh for legacy, wpkh for segwit-native, sh(wpkh) for segwit-compatible)
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssGetOutputDescriptor(NSString* _Nullable hexPubKey, NSString* _Nullable hexChainCode, NSString* _Nullable network, NSString* _Nullable addressType, NSError* _Nullable* _Nullable error);
 
 /**
  * GetThreshold calculates the threshold value based on the input value.
@@ -361,6 +381,19 @@ FOUNDATION_EXPORT BOOL TssLocalPreParams(NSString* _Nullable ppmFile, long timeo
 
 
 FOUNDATION_EXPORT NSString* _Nonnull TssMpcSendBTC(NSString* _Nullable server, NSString* _Nullable key, NSString* _Nullable partiesCSV, NSString* _Nullable session, NSString* _Nullable sessionKey, NSString* _Nullable encKey, NSString* _Nullable decKey, NSString* _Nullable keyshare, NSString* _Nullable derivePath, NSString* _Nullable publicKey, NSString* _Nullable senderAddress, NSString* _Nullable receiverAddress, int64_t amountSatoshi, int64_t estimatedFee, NSError* _Nullable* _Nullable error);
+
+/**
+ * MpcSignPSBT signs a PSBT using MPC (server-based transport)
+Parameters:
+  - server, key, partiesCSV, session, sessionKey, encKey, decKey: TSS parameters
+  - keyshare: JSON keyshare data
+  - psbtBase64: base64-encoded PSBT to sign
+
+Derivation paths and public keys are extracted from the PSBT's Bip32Derivation fields.
+
+Returns: base64-encoded signed PSBT
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssMpcSignPSBT(NSString* _Nullable server, NSString* _Nullable key, NSString* _Nullable partiesCSV, NSString* _Nullable session, NSString* _Nullable sessionKey, NSString* _Nullable encKey, NSString* _Nullable decKey, NSString* _Nullable keyshare, NSString* _Nullable psbtBase64, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT TssServiceImpl* _Nullable TssNewService(id<TssMessenger> _Nullable msg, id<TssLocalStateAccessor> _Nullable stateAccessor, BOOL createPreParam, NSString* _Nullable ppmFile, NSError* _Nullable* _Nullable error);
 
@@ -408,6 +441,21 @@ Parameters:
 FOUNDATION_EXPORT NSString* _Nonnull TssNostrMpcSendBTC(NSString* _Nullable relaysCSV, NSString* _Nullable partyNsec, NSString* _Nullable partiesNpubsCSV, NSString* _Nullable npubsSorted, NSString* _Nullable balanceSats, NSString* _Nullable keyshareJSON, NSString* _Nullable derivePath, NSString* _Nullable publicKey, NSString* _Nullable senderAddress, NSString* _Nullable receiverAddress, int64_t amountSatoshi, int64_t estimatedFee, NSError* _Nullable* _Nullable error);
 
 /**
+ * NostrMpcSignPSBT signs a PSBT using MPC over Nostr transport
+This is analogous to NostrMpcSendBTC but for PSBT signing
+Parameters:
+  - relaysCSV: comma-separated Nostr relay URLs
+  - partyNsec: party's Nostr secret key (bech32)
+  - partiesNpubsCSV: comma-separated public keys of all parties (bech32)
+  - npubsSorted: sorted comma-separated npubs (for sessionFlag calculation)
+  - keyshareJSON: JSON keyshare data
+  - psbtBase64: base64-encoded PSBT to sign
+
+Returns: base64-encoded signed PSBT
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssNostrMpcSignPSBT(NSString* _Nullable relaysCSV, NSString* _Nullable partyNsec, NSString* _Nullable partiesNpubsCSV, NSString* _Nullable npubsSorted, NSString* _Nullable keyshareJSON, NSString* _Nullable psbtBase64, NSError* _Nullable* _Nullable error);
+
+/**
  * NostrPreAgreementSendBTC performs a pre-agreement phase before starting the MPC send BTC.
 This is kept for backward compatibility but is now deprecated - use NostrMpcSendBTC which includes pre-agreement.
 Both parties exchange their peerNonce and satoshiFees, then agree on:
@@ -416,6 +464,12 @@ Both parties exchange their peerNonce and satoshiFees, then agree on:
 Returns JSON: {"fullNonce": "...", "averageFees": 1234}
  */
 FOUNDATION_EXPORT NSString* _Nonnull TssNostrPreAgreementSendBTC(NSString* _Nullable relaysCSV, NSString* _Nullable partyNsec, NSString* _Nullable partiesNpubsCSV, NSString* _Nullable sessionFlag, int64_t localSatoshiFees, NSError* _Nullable* _Nullable error);
+
+/**
+ * ParsePSBTDetails extracts transaction details from a PSBT for display
+Returns JSON with inputs, outputs, fee, and total amounts
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssParsePSBTDetails(NSString* _Nullable psbtBase64, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssPostTx(NSString* _Nullable rawTxHex, NSError* _Nullable* _Nullable error);
 

@@ -21,13 +21,16 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {AppState} from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
-import Clipboard from '@react-native-clipboard/clipboard';
 import SendBitcoinModal from './SendBitcoinModal';
 import Toast from 'react-native-toast-message';
 import TransactionList from '../components/TransactionList';
 import {CommonActions} from '@react-navigation/native';
 import Big from 'big.js';
 import ReceiveModal from './ReceiveModal';
+import SignedPSBTModal from './SignedPSBTModal';
+import PSBTModal from './PSBTModal';
+import KeyshareModal from '../components/KeyshareModal';
+import QRCodeModal from '../components/QRCodeModal';
 import {
   capitalizeWords,
   dbg,
@@ -36,6 +39,9 @@ import {
   getCurrencySymbol,
   HapticFeedback,
   getKeyshareLabel,
+  getDerivePathForNetwork,
+  isLegacyWallet,
+  generateAllOutputDescriptors,
 } from '../utils';
 import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
@@ -54,12 +60,11 @@ import LocalCache from '../services/LocalCache';
 
 const {BBMTLibNativeModule} = NativeModules;
 
-const mainnetIcon = require('../assets/mainnet-icon.png');
-const testnetIcon = require('../assets/testnet-icon.png');
 const keyIcon = require('../assets/key-icon.png');
 
 type RouteParams = {
   txId?: string;
+  signedPsbt?: string;
 };
 
 const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
@@ -75,6 +80,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     feeSats: Big;
     spendingHash: string;
   } | null>(null);
+  // PSBT signing state
+  const [isPSBTTransportModalVisible, setIsPSBTTransportModalVisible] =
+    useState<boolean>(false);
+  const [pendingPSBTParams, setPendingPSBTParams] = useState<{
+    psbtBase64: string;
+    derivePath: string;
+  } | null>(null);
   const [btcPrice, setBtcPrice] = useState<string>('');
   const [btcRate, setBtcRate] = useState(0);
   const [balanceBTC, setBalanceBTC] = useState<string>('0.00000000');
@@ -82,6 +94,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [party, setParty] = useState<string>('');
   const [isBlurred, setIsBlurred] = useState<boolean>(true);
   const [isReceiveModalVisible, setIsReceiveModalVisible] = useState(false);
+  const [isSignedPSBTModalVisible, setIsSignedPSBTModalVisible] =
+    useState(false);
+  const [isPSBTModalVisible, setIsPSBTModalVisible] = useState(false);
+  const [signedPsbt, setSignedPsbt] = useState<string | null>(null);
 
   // Additional state variables needed by fetchData
   const [_pendingSent, _setPendingSent] = useState(0);
@@ -123,7 +139,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   // Stable ref for fetchData to avoid circular dependencies
   const fetchDataRef = useRef<(() => Promise<void>) | null>(null);
   // Ref to control TransactionList (imperative refresh)
-  const transactionListRef = useRef<import('../components/TransactionList').TransactionListHandle | null>(null);
+  const transactionListRef = useRef<
+    import('../components/TransactionList').TransactionListHandle | null
+  >(null);
 
   // Navigation hook for detecting screen changes
   const nav = useNavigation();
@@ -133,7 +151,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     activeNetwork,
     activeAddressType: userAddressType,
     activeAddress: userActiveAddress,
-    setActiveNetwork,
     setActiveAddressType,
     activeApiProvider: apiBase,
     activeNetwork: network,
@@ -358,59 +375,70 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   }, [fetchData]);
 
   // Function to update address type modal with new network addresses
-  const updateAddressTypeModal = useCallback(async (newNetwork: string) => {
-    try {
-      dbg(
-        '=== updateAddressTypeModal: Updating addresses for network:',
-        newNetwork,
-      );
+  const updateAddressTypeModal = useCallback(
+    async (newNetwork: string) => {
+      try {
+        dbg(
+          '=== updateAddressTypeModal: Updating addresses for network:',
+          newNetwork,
+        );
 
-      // Try to get btcPub from storage first
-      let btcPub = await EncryptedStorage.getItem('btcPub');
+        // Try to get btcPub from storage first
+        let btcPub = await EncryptedStorage.getItem('btcPub');
 
-      // Fallback: derive btcPub if not found in storage
-      if (!btcPub) {
-        dbg('btcPub not found in storage, deriving from keyshare...');
-        const jks = await EncryptedStorage.getItem('keyshare');
-        if (jks) {
-          const ks = JSON.parse(jks);
-          const path = "m/44'/0'/0'/0/0";
-          btcPub = await BBMTLibNativeModule.derivePubkey(
-            ks.pub_key,
-            ks.chain_code_hex,
-            path,
-          );
-          // Store it for future use
-          await EncryptedStorage.setItem('btcPub', btcPub!);
-          dbg('btcPub derived and stored');
+        // Fallback: derive btcPub if not found in storage
+        if (!btcPub) {
+          dbg('btcPub not found in storage, deriving from keyshare...');
+          const jks = await EncryptedStorage.getItem('keyshare');
+          if (jks) {
+            const ks = JSON.parse(jks);
+            // Get current address type for derivation path
+            const currentAddressType = (await LocalCache.getItem('addressType')) || 'legacy';
+            // Check if this is a legacy wallet (created before migration timestamp)
+            const useLegacyPath = isLegacyWallet(ks.created_at);
+            const path = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
+            btcPub = await BBMTLibNativeModule.derivePubkey(
+              ks.pub_key,
+              ks.chain_code_hex,
+              path,
+            );
+            // Store it for future use
+            await EncryptedStorage.setItem('btcPub', btcPub!);
+            dbg('btcPub derived and stored');
+          }
         }
+
+        if (btcPub) {
+          // Generate addresses for all types for the new network
+          const [legacyAddr, segwitAddr, segwitCompatibleAddr] =
+            await Promise.all([
+              BBMTLibNativeModule.btcAddress(btcPub!, newNetwork, 'P2PKH'),
+              BBMTLibNativeModule.btcAddress(btcPub!, newNetwork, 'P2WPKH'),
+              BBMTLibNativeModule.btcAddress(
+                btcPub!,
+                newNetwork,
+                'P2SH-P2WPKH',
+              ),
+            ]);
+
+          if (legacyAddr) setLegacyAddress(legacyAddr);
+          if (segwitAddr) setSegwitAddress(segwitAddr);
+          if (segwitCompatibleAddr)
+            setSegwitCompatibleAddress(segwitCompatibleAddr);
+
+          dbg('Address type modal updated for network:', newNetwork);
+          dbg('Legacy:', legacyAddr);
+          dbg('Segwit:', segwitAddr);
+          dbg('Segwit Compatible:', segwitCompatibleAddr);
+        } else {
+          dbg('Could not get or derive btcPub for address generation');
+        }
+      } catch (error) {
+        dbg('updateAddressTypeModal: Error updating addresses:', error);
       }
-
-      if (btcPub) {
-        // Generate addresses for all types for the new network
-        const [legacyAddr, segwitAddr, segwitCompatibleAddr] =
-          await Promise.all([
-            BBMTLibNativeModule.btcAddress(btcPub!, newNetwork, 'P2PKH'),
-            BBMTLibNativeModule.btcAddress(btcPub!, newNetwork, 'P2WPKH'),
-            BBMTLibNativeModule.btcAddress(btcPub!, newNetwork, 'P2SH-P2WPKH'),
-          ]);
-
-        if (legacyAddr) setLegacyAddress(legacyAddr);
-        if (segwitAddr) setSegwitAddress(segwitAddr);
-        if (segwitCompatibleAddr)
-          setSegwitCompatibleAddress(segwitCompatibleAddr);
-
-        dbg('Address type modal updated for network:', newNetwork);
-        dbg('Legacy:', legacyAddr);
-        dbg('Segwit:', segwitAddr);
-        dbg('Segwit Compatible:', segwitCompatibleAddr);
-      } else {
-        dbg('Could not get or derive btcPub for address generation');
-      }
-    } catch (error) {
-      dbg('updateAddressTypeModal: Error updating addresses:', error);
-    }
-  }, []);
+    },
+    [network],
+  );
 
   // Function to update address for the new network
   const updateAddressForNetwork = useCallback(
@@ -443,8 +471,17 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             return;
           }
 
-          const ks = JSON.parse(jks);
-          const path = "m/44'/0'/0'/0/0";
+        const ks = JSON.parse(jks);
+        // Get current address type for derivation path
+        const deriveAddressType =
+          (await LocalCache.getItem('addressType')) || 'legacy';
+        // Check if this is a legacy wallet (created before migration timestamp)
+        const useLegacyPath = isLegacyWallet(ks.created_at);
+        const path = getDerivePathForNetwork(
+          newNetwork,
+          deriveAddressType,
+          useLegacyPath,
+        );
           btcPub = await BBMTLibNativeModule.derivePubkey(
             ks.pub_key,
             ks.chain_code_hex,
@@ -581,7 +618,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         await walletService.initialize();
 
         const ks = JSON.parse(jks);
-        const path = "m/44'/0'/0'/0/0";
+        // Get current address type for derivation path
+        const currentAddressType = (await LocalCache.getItem('addressType')) || 'legacy';
+        // Check if this is a legacy wallet (created before migration timestamp)
+        const useLegacyPath = isLegacyWallet(ks.created_at);
+        const path = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
 
         // Always derive btcPub fresh to ensure it's current
         const btcPub = await BBMTLibNativeModule.derivePubkey(
@@ -767,7 +808,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   // No periodic check needed - NetworkContext is the single source of truth
 
   const cacheIndicatorRef = useRef<CacheIndicatorHandle>(null);
-  const [isNetworkModalVisible, setIsNetworkModalVisible] = useState(false);
   const [isPartyModalVisible, setIsPartyModalVisible] = useState(false);
   const [keyshareInfo, setKeyshareInfo] = useState<{
     label: string;
@@ -775,8 +815,38 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     supportsNostr: boolean;
     type: 'basic' | 'flexi';
     pubKey: string;
+    chainCode: string;
+    xpub: string;
+    outputDescriptors?: {
+      legacy: string;
+      segwitNative: string;
+      segwitCompatible: string;
+    };
     npub: string | null;
+    createdAt?: number | null;
   } | null>(null);
+  const [isXpubQrVisible, setIsXpubQrVisible] = useState(false);
+  const [isNpubQrVisible, setIsNpubQrVisible] = useState(false);
+
+  // Helper function to get xpub from native module
+  const getXpubFromNative = async (
+    pubKeyHex: string,
+    chainCodeHex: string,
+    net: string,
+  ): Promise<string> => {
+    try {
+      const xpub = await BBMTLibNativeModule.encodeXpub(
+        pubKeyHex,
+        chainCodeHex,
+        net,
+      );
+      return xpub || '';
+    } catch (error) {
+      dbg('Error getting xpub from native:', error);
+      return '';
+    }
+  };
+
 
   const {theme} = useTheme();
   const styles = createStyles(theme);
@@ -785,8 +855,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     () => <HeaderRightButton navigation={navigation} />,
     [navigation],
   );
-
-  const networkIcon = () => (network === 'mainnet' ? mainnetIcon : testnetIcon);
 
   const headerTitle = React.useCallback(() => <HeaderTitle />, []);
 
@@ -920,6 +988,17 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
   }, [route.params?.txId, apiBase, navigation]);
 
+  // Check for signedPsbt in route params and show modal
+  useEffect(() => {
+    const signedPsbtParam = route.params?.signedPsbt;
+    if (signedPsbtParam) {
+      setSignedPsbt(signedPsbtParam);
+      setIsSignedPSBTModalVisible(true);
+      // Clear the param to prevent showing again
+      navigation.setParams({signedPsbt: undefined});
+    }
+  }, [route.params?.signedPsbt, navigation]);
+
   const handleTransactionUpdate = useCallback(
     async (pendingTxs: any[], pending: number) => {
       _setPendingSent(pending);
@@ -983,7 +1062,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           return;
         }
 
-        const path = "m/44'/0'/0'/0/0";
+        // Get current address type for derivation path
+        const currentAddressType = (await LocalCache.getItem('addressType')) || 'legacy';
+        // Check if this is a legacy wallet (created before migration timestamp)
+        const useLegacyPath = isLegacyWallet(ks.created_at);
+        const path = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
         const btcPub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,
           ks.chain_code_hex,
@@ -1055,14 +1138,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setParty(shareID);
 
         // Get current address type and generate address
-        const currentAddressType = addrType;
-        setAddressType(currentAddressType);
+        setAddressType(addrType);
 
         // Generate and store current address
         const btcAddress = await BBMTLibNativeModule.btcAddress(
           btcPub,
           net,
-          currentAddressType,
+          addrType,
         );
         await LocalCache.setItem('currentAddress', btcAddress);
         setAddress(btcAddress);
@@ -1121,7 +1203,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     };
 
     init();
-  }, [showErrorToast, isInitialized, address, navigation]);
+  }, [showErrorToast, isInitialized, address, navigation, network]);
 
   const handleAddressTypeChange = async (type: string) => {
     try {
@@ -1164,7 +1246,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     LocalCache.setItem('mode', blurr ? 'private' : '');
   };
 
-  const loadKeyshareInfo = async () => {
+  const loadKeyshareInfo = useCallback(async () => {
     try {
       const keyshareJSON = await EncryptedStorage.getItem('keyshare');
       if (!keyshareJSON) {
@@ -1174,6 +1256,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
       const keyshare = JSON.parse(keyshareJSON);
       const pubKey = keyshare.pub_key || '';
+      const chainCode = keyshare.chain_code_hex || '';
       const nostrNpub = keyshare.nostr_npub || null;
       const supportsNostr = !!(nostrNpub && nostrNpub.trim() !== '');
       const supportsLocal = true; // Always supported
@@ -1199,25 +1282,48 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         }
       }
 
+      // Generate xpub/tpub for watch-only wallet compatibility (Sparrow, etc.)
+      const xpub = await getXpubFromNative(pubKey, chainCode, network);
+
+      // Generate output descriptors for Sparrow and other wallets using utility function
+      const descriptors = await generateAllOutputDescriptors(
+        BBMTLibNativeModule,
+        pubKey,
+        chainCode,
+        network,
+        keyshare.created_at,
+        addressType || 'legacy',
+      );
+
+      const outputDescriptors = {
+        legacy: descriptors.legacy,
+        segwitNative: descriptors.segwitNative,
+        segwitCompatible: descriptors.segwitCompatible,
+      };
+
       setKeyshareInfo({
         label,
         supportsLocal,
         supportsNostr,
         type,
         pubKey,
+        chainCode,
+        xpub,
+        outputDescriptors,
         npub: nostrNpub,
+        createdAt: keyshare.created_at || null,
       });
     } catch (error) {
       dbg('Error loading keyshare info:', error);
       setKeyshareInfo(null);
     }
-  };
+  }, [network, addressType]);
 
   useEffect(() => {
     if (isPartyModalVisible) {
       loadKeyshareInfo();
     }
-  }, [isPartyModalVisible]);
+  }, [isPartyModalVisible, loadKeyshareInfo]);
 
   const handleSend = async (
     to: string,
@@ -1311,6 +1417,79 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     setPendingSendParams(null);
   };
 
+  // Handle PSBT signing - similar to handleSend (kept for compatibility with PSBT flows)
+  const handlePSBTSign = async (psbtBase64: string, derivePath?: string) => {
+    setIsPSBTModalVisible(false);
+    // Use provided derivation path or default to current address type
+    if (!derivePath) {
+      const jks = await EncryptedStorage.getItem('keyshare');
+      if (jks) {
+        const ks = JSON.parse(jks);
+        const currentAddressType = (await LocalCache.getItem('addressType')) || 'legacy';
+        // Check if this is a legacy wallet (created before migration timestamp)
+        const useLegacyPath = isLegacyWallet(ks.created_at);
+        derivePath = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
+      }
+    }
+    const psbtDerivePath = derivePath || getDerivePathForNetwork(network, 'legacy', true);
+
+    // Check if keyshare supports Nostr (has nostr_npub)
+    try {
+      const keyshareJSON = await EncryptedStorage.getItem('keyshare');
+      if (keyshareJSON) {
+        const keyshare = JSON.parse(keyshareJSON);
+        const hasNostrSupport =
+          keyshare.nostr_npub && keyshare.nostr_npub.trim() !== '';
+
+        if (!hasNostrSupport) {
+          // Keyshare was generated with local mode, navigate directly to MobilesPairing
+          navigation.dispatch(
+            CommonActions.navigate({
+              name: 'Devices Pairing',
+              params: {
+                mode: 'sign_psbt',
+                addressType,
+                psbtBase64,
+                derivePath: psbtDerivePath,
+              },
+            }),
+          );
+          return;
+        }
+      }
+    } catch (error) {
+      dbg('Error checking keyshare for Nostr support:', error);
+      // Continue to show transport selector if check fails
+    }
+
+    // Store params and show transport selector
+    setPendingPSBTParams({psbtBase64, derivePath: psbtDerivePath});
+    setTimeout(() => {
+      setIsPSBTTransportModalVisible(true);
+    }, 300);
+  };
+
+  const navigateToPSBTSigning = (transport: 'local' | 'nostr') => {
+    if (!pendingPSBTParams) return;
+
+    const {psbtBase64, derivePath} = pendingPSBTParams;
+
+    const routeName =
+      transport === 'local' ? 'Devices Pairing' : 'Nostr Connect';
+    navigation.dispatch(
+      CommonActions.navigate({
+        name: routeName,
+        params: {
+          mode: 'sign_psbt',
+          addressType,
+          psbtBase64,
+          derivePath,
+        },
+      }),
+    );
+    setPendingPSBTParams(null);
+  };
+
   const getAddressTypeIcon = () => {
     switch (addressType) {
       case 'legacy':
@@ -1322,15 +1501,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       default:
         return require('../assets/bricks-icon.png');
     }
-  };
-
-  // Helper to switch network using UserContext
-  const handleNetworkSwitch = async (toTestnet: boolean) => {
-    dbg('=== Network switch started:', toTestnet ? 'testnet' : 'mainnet');
-    HapticFeedback.light();
-    const net = toTestnet ? 'testnet3' : 'mainnet';
-    await setActiveNetwork(net);
-    navigation.reset({index: 0, routes: [{name: 'Home'}]});
   };
 
   if (loading && !isInitialized) {
@@ -1441,18 +1611,21 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               ]}
               onPress={() => {
                 HapticFeedback.light();
-                setIsNetworkModalVisible(true);
+                setIsPSBTModalVisible(true);
               }}
               activeOpacity={0.85}>
               <View style={styles.columnCenter}>
-                <Text style={styles.partyLabel}>Network</Text>
+                <Text style={styles.partyLabel}>Sign • PSBT</Text>
                 <View style={styles.rowCenterMarginTop2}>
-                  <Image source={networkIcon()} style={styles.networkIcon} />
+                  <Image
+                    source={require('../assets/cosign-icon.png')}
+                    style={styles.networkIcon}
+                  />
                   <Text
                     style={styles.partyValue}
                     numberOfLines={1}
                     adjustsFontSizeToFit>
-                    {capitalizeWords(network)}
+                    Sparrow
                   </Text>
                 </View>
               </View>
@@ -1568,12 +1741,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       <View style={styles.providerRow}>
         <View style={styles.providerItem}>
           <View style={styles.providerLeft}>
-            <Image
-              source={require('../assets/network-icon.png')}
-              style={styles.providerIcon}
-              resizeMode="contain"
-            />
-            <Text style={styles.providerLabel}>Provider</Text>
+            <View style={styles.networkBadge}>
+              <Text style={styles.networkBadgeText}>
+                {network === 'mainnet' ? 'MAINNET' : 'TESTNET'}
+              </Text>
+            </View>
           </View>
           <Text style={styles.providerValue} numberOfLines={1}>
             {apiBase
@@ -1617,7 +1789,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           <View style={styles.modalContent}>
             <View style={styles.modalHeaderRow}>
               <Image
-                source={require('../assets/key-icon.png')}
+                source={require('../assets/bitcoin-icon.png')}
                 style={styles.modalHeaderIcon}
               />
               <Text style={styles.modalHeaderTitle}>Select Address Format</Text>
@@ -1764,258 +1936,86 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           address={address}
           addressType={addressType}
           baseApi={apiBase}
-          network={network}
+          network={network as 'mainnet' | 'testnet'}
           onClose={() => setIsReceiveModalVisible(false)}
         />
       )}
-      {/* Network Switch Modal */}
-      <Modal
-        visible={isNetworkModalVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setIsNetworkModalVisible(false)}>
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          onPress={() => {
-            HapticFeedback.light();
-            setIsNetworkModalVisible(false);
+      {/* PSBT Signing Modal (overlay) */}
+      <PSBTModal
+        visible={isPSBTModalVisible}
+        btcRate={btcRate}
+        currencySymbol={getCurrencySymbol(selectedCurrency)}
+        network={network}
+        onClose={() => setIsPSBTModalVisible(false)}
+        onSign={handlePSBTSign}
+      />
+      {/* PSBT Transport Mode Selector */}
+      <TransportModeSelector
+        visible={isPSBTTransportModalVisible}
+        onClose={() => {
+          HapticFeedback.medium();
+          setIsPSBTTransportModalVisible(false);
+          setPendingPSBTParams(null);
+        }}
+        onSelect={(transport: 'local' | 'nostr') => {
+          navigateToPSBTSigning(transport);
+          setIsPSBTTransportModalVisible(false);
+        }}
+      />
+      {/* Signed PSBT Modal */}
+      {signedPsbt && (
+        <SignedPSBTModal
+          visible={isSignedPSBTModalVisible}
+          signedPsbtBase64={signedPsbt}
+          onClose={() => {
+            HapticFeedback.medium();
+            setIsSignedPSBTModalVisible(false);
+            setSignedPsbt(null);
           }}
-          activeOpacity={1}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeaderRow}>
-              <Image
-                source={require('../assets/network-icon.png')}
-                style={styles.modalHeaderIcon}
-              />
-              <Text style={styles.modalHeaderTitle}>
-                Select Bitcoin Network
-              </Text>
-            </View>
-
-            <TouchableOpacity
-              style={[
-                styles.addressTypeButton,
-                network === 'mainnet' && styles.addressTypeButtonSelected,
-              ]}
-              onPress={async () => {
-                await handleNetworkSwitch(false);
-              }}>
-              <Image
-                source={require('../assets/mainnet-icon.png')}
-                style={styles.modalAddressTypeIcon}
-                resizeMode="contain"
-              />
-              <View style={styles.addressTypeContent}>
-                <Text style={styles.addressTypeLabel}>Mainnet</Text>
-                <Text style={styles.addressTypeValue}>
-                  Real Bitcoin, Main Net
-                </Text>
-              </View>
-              {network === 'mainnet' && (
-                <Image
-                  source={require('../assets/check-icon.png')}
-                  style={styles.modalOptionCheckIcon}
-                  resizeMode="contain"
-                />
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.addressTypeButton,
-                network !== 'mainnet' && styles.addressTypeButtonSelected,
-              ]}
-              onPress={async () => {
-                await handleNetworkSwitch(true);
-              }}>
-              <Image
-                source={require('../assets/testnet-icon.png')}
-                style={styles.modalAddressTypeIcon}
-                resizeMode="contain"
-              />
-              <View style={styles.addressTypeContent}>
-                <Text style={styles.addressTypeLabel}>Testnet</Text>
-                <Text style={styles.addressTypeValue}>
-                  Fake Bitcoin, Test Net
-                </Text>
-              </View>
-              {network !== 'mainnet' && (
-                <Image
-                  source={require('../assets/check-icon.png')}
-                  style={styles.modalOptionCheckIcon}
-                  resizeMode="contain"
-                />
-              )}
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
-      {/* Keyshare Party Info Modal */}
-      <Modal
+        />
+      )}
+      {/* Keyshare Modal */}
+      <KeyshareModal
         visible={isPartyModalVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setIsPartyModalVisible(false)}>
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          onPress={() => {
-            HapticFeedback.light();
-            setIsPartyModalVisible(false);
-          }}
-          activeOpacity={1}>
-          <TouchableOpacity
-            activeOpacity={1}
-            onPress={e => e.stopPropagation()}>
-            <View style={styles.modalContentCompact}>
-              <View style={styles.modalHeaderRowCompact}>
-                <Image
-                  source={require('../assets/key-icon.png')}
-                  style={styles.modalHeaderIconCompact}
-                />
-                <Text style={styles.modalHeaderTitleCompact}>
-                  Device Keyshare
-                </Text>
-              </View>
+        onClose={() => setIsPartyModalVisible(false)}
+        keyshareInfo={keyshareInfo}
+        network={network as 'mainnet' | 'testnet'}
+        onNavigateToSettings={() => {
+          if (typeof navigation.navigate === 'function') {
+            navigation.navigate('Settings');
+          }
+        }}
+        onShowXpubQR={() => setIsXpubQrVisible(true)}
+        onShowOutputDescriptorQR={() => {}}
+        onShowNpubQR={() => setIsNpubQrVisible(true)}
+      />
 
-              <View style={styles.keyshareModalBody}>
-                {keyshareInfo ? (
-                  <View style={styles.keyshareTable}>
-                    <View style={styles.keyshareTableRow}>
-                      <Text style={styles.keyshareTableKey}>Keyshare ID</Text>
-                      <Text style={styles.keyshareTableValue}>
-                        {keyshareInfo.label}
-                      </Text>
-                    </View>
+      {/* QR Code Modals */}
+      <QRCodeModal
+        visible={isXpubQrVisible}
+        onClose={() => {
+          setIsXpubQrVisible(false);
+          setTimeout(() => setIsPartyModalVisible(true), 300);
+        }}
+        title={`Wallet • ${network === 'mainnet' ? 'xpub' : 'tpub'}`}
+        value={keyshareInfo?.xpub || ''}
+        network={network as 'mainnet' | 'testnet'}
+        showShareButton={true}
+        topRightClose={true}
+        nonDismissible={true}
+      />
 
-                    <View style={styles.keyshareTableRow}>
-                      <Text style={styles.keyshareTableKey}>Keyshare Type</Text>
-                      <Text style={styles.keyshareTableValue}>
-                        {keyshareInfo.type === 'flexi'
-                          ? 'Flexi (3-parties)'
-                          : 'Basic (2-parties)'}
-                      </Text>
-                    </View>
 
-                    <View style={styles.keyshareTableRow}>
-                      <Text style={styles.keyshareTableKey}>LAN/Hotspot</Text>
-                      <Text
-                        style={[
-                          styles.keyshareTableValue,
-                          styles.keyshareTableValueSuccess,
-                        ]}>
-                        ✓ Supported
-                      </Text>
-                    </View>
-
-                    <View style={styles.keyshareTableRow}>
-                      <Text style={styles.keyshareTableKey}>
-                        Nostr Protocol
-                      </Text>
-                      <Text
-                        style={[
-                          styles.keyshareTableValue,
-                          keyshareInfo.supportsNostr
-                            ? styles.keyshareTableValueSuccess
-                            : styles.keyshareTableValueDisabled,
-                        ]}>
-                        {keyshareInfo.supportsNostr
-                          ? '✓ Supported'
-                          : '✗ Not Supported'}
-                      </Text>
-                    </View>
-
-                    <View style={styles.keyshareTableRow}>
-                      <Text style={styles.keyshareTableKey}>
-                        Extended Pubkey
-                      </Text>
-                      <View style={styles.keyshareTableValueContainer}>
-                        <Text
-                          style={styles.keyshareTableValueKey}
-                          numberOfLines={1}
-                          ellipsizeMode="middle">
-                          {keyshareInfo.pubKey || 'N/A'}
-                        </Text>
-                        <TouchableOpacity
-                          onPress={() => {
-                            HapticFeedback.light();
-                            Clipboard.setString(keyshareInfo.pubKey);
-                            Toast.show({
-                              type: 'success',
-                              text1: 'Copied',
-                              text2: 'Public key copied to clipboard',
-                            });
-                          }}
-                          style={styles.keyshareCopyButton}>
-                          <Image
-                            source={require('../assets/copy-icon.png')}
-                            style={styles.keyshareCopyIcon}
-                          />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-
-                    {keyshareInfo.supportsNostr && keyshareInfo.npub && (
-                      <View style={styles.keyshareTableRow}>
-                        <Text style={styles.keyshareTableKey}>
-                          Nostr Pubkey
-                        </Text>
-                        <View style={styles.keyshareTableValueContainer}>
-                          <Text
-                            style={styles.keyshareTableValueKey}
-                            numberOfLines={1}
-                            ellipsizeMode="middle">
-                            {keyshareInfo.npub}
-                          </Text>
-                          <TouchableOpacity
-                            onPress={() => {
-                              HapticFeedback.light();
-                              Clipboard.setString(keyshareInfo.npub || '');
-                              Toast.show({
-                                type: 'success',
-                                text1: 'Copied',
-                                text2: 'Nostr public key copied to clipboard',
-                              });
-                            }}
-                            style={styles.keyshareCopyButton}>
-                            <Image
-                              source={require('../assets/copy-icon.png')}
-                              style={styles.keyshareCopyIcon}
-                            />
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    )}
-                  </View>
-                ) : (
-                  <View style={styles.keyshareLoadingContainer}>
-                    <Text style={styles.modalTextCompact}>
-                      Loading keyshare information...
-                    </Text>
-                  </View>
-                )}
-              </View>
-
-              <TouchableOpacity
-                style={[
-                  styles.backupButtonCompact,
-                  styles.keyshareBackupButtonMargin,
-                ]}
-                onPress={() => {
-                  HapticFeedback.medium();
-                  setIsPartyModalVisible(false);
-                  if (typeof navigation.navigate === 'function') {
-                    navigation.navigate('Settings');
-                  }
-                }}
-                activeOpacity={0.7}>
-                <Text style={styles.backupButtonTextCompact}>
-                  Security Settings &gt; Backup
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+      <QRCodeModal
+        visible={isNpubQrVisible}
+        onClose={() => {
+          setIsNpubQrVisible(false);
+          setTimeout(() => setIsPartyModalVisible(true), 300);
+        }}
+        title="Nostr Public Key"
+        value={keyshareInfo?.npub || ''}
+        showShareButton={false}
+      />
     </SafeAreaView>
   );
 };

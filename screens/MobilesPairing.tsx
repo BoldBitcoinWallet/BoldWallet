@@ -21,6 +21,7 @@ import {
 } from 'react-native';
 import {NativeModules} from 'react-native';
 import DeviceInfo from 'react-native-device-info';
+import NetInfo from '@react-native-community/netinfo';
 import RNFS from 'react-native-fs';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import * as Progress from 'react-native-progress';
@@ -35,7 +36,7 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Share from 'react-native-share';
 import Big from 'big.js';
-import {dbg, getPinnedRemoteIPs, HapticFeedback} from '../utils';
+import {dbg, getDerivePathForNetwork, getPinnedRemoteIPs, HapticFeedback, hexToString} from '../utils';
 import {useTheme} from '../theme';
 import {waitMS} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
@@ -88,6 +89,18 @@ const MobilesPairing = ({navigation}: any) => {
   const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
   const [passwordStrength, setPasswordStrength] = useState(0);
   const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
+  
+  // VPN detection state
+  const [isVPNConnected, setIsVPNConnected] = useState(false);
+  const [psbtDetails, setPsbtDetails] = useState<{
+    inputs: Array<{txid: string; vout: number; amount: number}>;
+    outputs: Array<{address: string; amount: number}>;
+    fee: number;
+    totalInput: number;
+    totalOutput: number;
+    derivePath?: string;
+    derivePaths?: string[];
+  } | null>(null);
 
   const {theme} = useTheme();
 
@@ -95,7 +108,7 @@ const MobilesPairing = ({navigation}: any) => {
   const progressAnimation = useRef(new Animated.Value(0)).current;
 
   type RouteParams = {
-    mode?: string;
+    mode?: string; // 'duo' | 'trio' | 'send_btc' | 'sign_psbt'
     addressType?: string;
     toAddress?: string;
     satoshiAmount?: string;
@@ -104,20 +117,27 @@ const MobilesPairing = ({navigation}: any) => {
     fiatFees?: string;
     selectedCurrency?: string;
     spendingHash?: string;
+    psbtBase64?: string; // For PSBT signing mode
+    derivePath?: string; // BIP32 derivation path for PSBT
   };
 
   const route = useRoute<RouteProp<{params: RouteParams}>>();
   const isSendBitcoin = route.params?.mode === 'send_btc';
+  const isSignPSBT = route.params?.mode === 'sign_psbt';
   const setupMode = route.params?.mode;
   const isTrio = setupMode === 'trio';
   const addressType = route.params?.addressType;
-  const title = isSendBitcoin
-    ? 'Co-Signing Your Transaction'
-    : 'Securely Pairing Your Devices';
+  const title =
+    isSendBitcoin || isSignPSBT
+      ? isSignPSBT
+        ? 'PSBT Co-Signing'
+        : 'Co-Signing Your Transaction'
+      : 'Securely Pairing Your Devices';
 
   const [checks, setChecks] = useState({
     sameNetwork: false,
     twoDevices: false,
+    noVPN: false,
   });
 
   const [backupChecks, setBackupChecks] = useState({
@@ -164,12 +184,6 @@ const MobilesPairing = ({navigation}: any) => {
       .join('');
   };
 
-  const hexToString = (hex: string) => {
-    return ((hex || '').match(/.{1,2}/g) || [''])
-      .map((byte: string) => String.fromCharCode(parseInt(byte, 16)))
-      .join('');
-  };
-
   const deletePreparams = async () => {
     try {
       dbg(`deleting ppmFile: ${ppmFile}`);
@@ -192,19 +206,19 @@ const MobilesPairing = ({navigation}: any) => {
     };
 
     if (!rules.length) {
-      errors.push('At least 12 characters');
+      errors.push('12+ characters');
     }
     if (!rules.uppercase) {
-      errors.push('One uppercase letter');
+      errors.push('Uppercase letter (A-Z)');
     }
     if (!rules.lowercase) {
-      errors.push('One lowercase letter');
+      errors.push('Lowercase letter (a-z)');
     }
     if (!rules.number) {
-      errors.push('One number');
+      errors.push('Number (0-9)');
     }
     if (!rules.symbol) {
-      errors.push('One special character');
+      errors.push('Special character (!@#$...)');
     }
     setPasswordErrors(errors);
 
@@ -268,10 +282,53 @@ const MobilesPairing = ({navigation}: any) => {
       maximumFractionDigits: 2,
     }).format(Number(price));
 
-  const sat2btcStr = (sats?: string) =>
+  const sat2btcStr = (sats?: string | number) =>
     Big(sats || 0)
       .div(1e8)
       .toFixed(8);
+
+  // Parse PSBT details when PSBT is available
+  useEffect(() => {
+    const parsePSBT = async () => {
+      if (isSignPSBT && route.params.psbtBase64) {
+        try {
+          dbg('Parsing PSBT details for summary...');
+          const detailsJson = await BBMTLibNativeModule.parsePSBTDetails(
+            route.params.psbtBase64,
+          );
+
+          if (detailsJson.startsWith('error') || detailsJson.includes('failed')) {
+            dbg('Failed to parse PSBT details:', detailsJson);
+            setPsbtDetails(null);
+            return;
+          }
+
+          const details = JSON.parse(detailsJson);
+          setPsbtDetails({
+            inputs: details.inputs || [],
+            outputs: details.outputs || [],
+            fee: details.fee || 0,
+            totalInput: details.totalInput || 0,
+            totalOutput: details.totalOutput || 0,
+            derivePath: details.derivePath,
+            derivePaths: details.derivePaths || [],
+          });
+          dbg('PSBT details parsed:', {
+            inputs: details.inputs?.length || 0,
+            outputs: details.outputs?.length || 0,
+            fee: details.fee,
+          });
+        } catch (error) {
+          dbg('Error parsing PSBT details:', error);
+          setPsbtDetails(null);
+        }
+      } else {
+        setPsbtDetails(null);
+      }
+    };
+
+    parsePSBT();
+  }, [isSignPSBT, route.params.psbtBase64]);
 
   const preparams = async () => {
     setIsPreparing(true);
@@ -318,6 +375,17 @@ const MobilesPairing = ({navigation}: any) => {
           _data += ':' + route.params.satoshiFees;
           _data += ':' + ks.local_party_key;
           dbg('initSession: Added Bitcoin transaction data to session data');
+        } else if (isSignPSBT) {
+          dbg('initSession: Preparing for PSBT signing');
+          const jks = await EncryptedStorage.getItem('keyshare');
+          const ks = JSON.parse(jks || '{}');
+          // For PSBT, use PSBT hash instead of amount/fees
+          const psbtHash = await BBMTLibNativeModule.sha256(
+            route.params.psbtBase64 || '',
+          );
+          _data += ':' + psbtHash;
+          _data += ':' + ks.local_party_key;
+          dbg('initSession: Added PSBT data to session data');
         }
 
         dbg('initSession: Publishing data', {
@@ -542,17 +610,6 @@ const MobilesPairing = ({navigation}: any) => {
       const jks = await EncryptedStorage.getItem('keyshare');
       const net = (await LocalCache.getItem('network')) || 'mainnet';
       const ks = JSON.parse(jks || '{}');
-      const path = "m/44'/0'/0'/0/0";
-      const btcPub = await BBMTLibNativeModule.derivePubkey(
-        ks.pub_key,
-        ks.chain_code_hex,
-        path,
-      );
-      const btcAddress = await BBMTLibNativeModule.btcAddress(
-        btcPub,
-        net,
-        addressType,
-      );
       const partyID = ks.local_party_key;
 
       const allParties = [partyID];
@@ -570,9 +627,110 @@ const MobilesPairing = ({navigation}: any) => {
       const sessionKey = '';
       const decoded = data.split(':');
       dbg('public-decoded', decoded);
+
+      if (isSignPSBT) {
+        // PSBT mode: decoded[1] = psbtHash, decoded[2] = peerShare
+        const psbtHash = `${decoded[1]}`;
+        const peerShare = `${decoded[2]}`;
+        const localPsbtHash = await BBMTLibNativeModule.sha256(
+          route.params.psbtBase64 || '',
+        );
+
+        dbg('starting PSBT signing...', {
+          peerShare,
+          peerParty,
+          partyID,
+          psbtHash,
+          localPsbtHash,
+        });
+
+        if (peerParty === partyID) {
+          throw 'Please Use "Two Different KeyShares" per Device';
+        }
+
+        if (psbtHash !== localPsbtHash) {
+          throw 'Make sure you\'re signing the "Same PSBT" from Both Devices';
+        }
+
+        // Call PSBT signing - derivation paths and public keys are extracted from PSBT
+        await BBMTLibNativeModule.mpcSignPSBT(
+          server,
+          partyID,
+          partiesCSV,
+          sessionID,
+          sessionKey,
+          encKey,
+          decKey,
+          jks,
+          route.params.psbtBase64 || '',
+        )
+          .then(async (signedPsbt: any) => {
+            dbg(partyID, 'PSBT signed successfully');
+            if (
+              !signedPsbt ||
+              signedPsbt.includes('error') ||
+              signedPsbt.includes('failed')
+            ) {
+              throw new Error(signedPsbt || 'PSBT signing failed');
+            }
+            // Check user's wallet mode preference before navigating
+            let targetRoute = 'Home';
+            try {
+              const walletMode =
+                (await EncryptedStorage.getItem('wallet_mode')) || 'full';
+              targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
+              dbg(
+                'PSBT signing complete: Navigating to',
+                targetRoute,
+                'based on wallet_mode:',
+                walletMode,
+              );
+            } catch (error) {
+              dbg('Error loading wallet_mode after PSBT signing:', error);
+              // Default to 'Home' if there's an error
+            }
+            navigation.dispatch(
+              CommonActions.reset({
+                index: 0,
+                routes: [{name: targetRoute, params: {signedPsbt}}],
+              }),
+            );
+            setMpcDone(true);
+          })
+          .catch((e: any) => {
+            Alert.alert(
+              'Operation Error',
+              `Could not sign PSBT.\n${e?.message}`,
+            );
+            dbg(partyID, 'PSBT signing error', e);
+          })
+          .finally(async () => {
+            if (isMaster) {
+              await waitMS(2000);
+              stopRelay();
+            }
+            setDoingMPC(false);
+          });
+        return; // Exit early for PSBT
+      }
+
+      // Send BTC mode (existing logic)
       const satoshiAmount = `${decoded[1]}`;
       const satoshiFees = `${decoded[2]}`;
       const peerShare = `${decoded[3]}`;
+
+      // Derive public key and address for regular BTC sending (not needed for PSBT)
+      const path = route.params?.derivePath || getDerivePathForNetwork(net);
+      const btcPub = await BBMTLibNativeModule.derivePubkey(
+        ks.pub_key,
+        ks.chain_code_hex,
+        path,
+      );
+      const btcAddress = await BBMTLibNativeModule.btcAddress(
+        btcPub,
+        net,
+        addressType,
+      );
 
       dbg('starting...', {
         peerShare,
@@ -719,16 +877,20 @@ const MobilesPairing = ({navigation}: any) => {
   async function backupShare() {
     if (!validatePassword(password)) {
       dbg('❌ [BACKUP] Password validation failed');
+      const missingRequirements = passwordErrors.join('\n• ');
       Alert.alert(
-        'Weak Password',
-        'Please use a stronger password that meets all requirements.',
+        'Password Requirements Not Met',
+        `Your password must meet all of the following requirements:\n\n• ${missingRequirements}\n\nPlease update your password and try again.`,
       );
       return;
     }
 
     if (password !== confirmPassword) {
       dbg('❌ [BACKUP] Password mismatch');
-      Alert.alert('Password Mismatch', 'Passwords do not match.');
+      Alert.alert(
+        'Passwords Do Not Match',
+        'The password and confirmation password must be identical. Please check both fields and try again.',
+      );
       return;
     }
 
@@ -1301,9 +1463,79 @@ const MobilesPairing = ({navigation}: any) => {
     return '';
   }
 
+  // VPN detection
+  useEffect(() => {
+    const checkVPNStatus = async () => {
+      try {
+        const netInfo = await NetInfo.fetch();
+        // Check for VPN on both platforms
+        let isVPN = false;
+        
+        if (netInfo.type === 'vpn') {
+          isVPN = true;
+        } else if (Platform.OS === 'android' && netInfo.details) {
+          // Android: Check details.isVPN if available
+          const details = netInfo.details as any;
+          isVPN = details.isVPN === true || false;
+        } else if (Platform.OS === 'ios' && netInfo.type === 'other' && netInfo.details) {
+          // iOS: Check details.isVPN if available
+          const details = netInfo.details as any;
+          isVPN = details.isVPN === true || false;
+        }
+        
+        setIsVPNConnected(isVPN);
+        dbg('VPN Status:', {isVPN, type: netInfo.type, details: netInfo.details});
+      } catch (error) {
+        dbg('Error checking VPN status:', error);
+        setIsVPNConnected(false);
+      }
+    };
+
+    // Check VPN status on mount
+    checkVPNStatus();
+
+    // Subscribe to network state changes
+    const unsubscribe = NetInfo.addEventListener(state => {
+      let isVPN = false;
+      
+      if (state.type === 'vpn') {
+        isVPN = true;
+      } else if (Platform.OS === 'android' && state.details) {
+        const details = state.details as any;
+        isVPN = details.isVPN === true || false;
+      } else if (Platform.OS === 'ios' && state.type === 'other' && state.details) {
+        const details = state.details as any;
+        isVPN = details.isVPN === true || false;
+      }
+      
+      setIsVPNConnected(isVPN);
+      dbg('VPN Status Changed:', {isVPN, type: state.type, details: state.details});
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       dbg('MobilesPairing screen focused');
+      // Re-check VPN status when screen is focused
+      NetInfo.fetch().then(state => {
+        let isVPN = false;
+        
+        if (state.type === 'vpn') {
+          isVPN = true;
+        } else if (Platform.OS === 'android' && state.details) {
+          const details = state.details as any;
+          isVPN = details.isVPN === true || false;
+        } else if (Platform.OS === 'ios' && state.type === 'other' && state.details) {
+          const details = state.details as any;
+          isVPN = details.isVPN === true || false;
+        }
+        
+        setIsVPNConnected(isVPN);
+      });
       return () => {
         dbg('MobilesPairing screen blurred');
       };
@@ -2081,11 +2313,12 @@ const MobilesPairing = ({navigation}: any) => {
     },
     requirementText: {
       fontSize: 12,
-      color: theme.colors.textSecondary,
+      color: '#FF6B35',
       marginBottom: 2,
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'left',
       lineHeight: 16,
+      fontWeight: '500',
     },
     errorInput: {
       borderColor: theme.colors.danger,
@@ -2389,6 +2622,18 @@ const MobilesPairing = ({navigation}: any) => {
       textAlign: 'left',
       lineHeight: 18,
     },
+    transactionItemLabel: {
+      fontSize: 13,
+      fontWeight: '500',
+      color: theme.colors.textSecondary,
+      marginBottom: 4,
+    },
+    transactionItemValue: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.colors.text,
+      textAlign: 'right',
+    },
     addressContainer: {
       backgroundColor: theme.colors.background,
       paddingVertical: 6,
@@ -2403,6 +2648,26 @@ const MobilesPairing = ({navigation}: any) => {
       textAlign: 'left',
       fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
       lineHeight: 16,
+    },
+    derivePathInfo: {
+      marginTop: 8,
+      paddingTop: 8,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+    },
+    derivePathLabel: {
+      fontSize: 10,
+      fontWeight: '600',
+      color: theme.colors.textSecondary,
+      marginBottom: 4,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    derivePathValue: {
+      fontSize: 11,
+      color: theme.colors.primary,
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      fontWeight: '600',
     },
     amountContainer: {
       flexDirection: 'row',
@@ -2445,6 +2710,46 @@ const MobilesPairing = ({navigation}: any) => {
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       backgroundColor: theme.colors.background,
     },
+    vpnWarningBanner: {
+      backgroundColor: '#FF6B6B',
+      marginBottom: 16,
+      marginHorizontal: 16,
+      borderRadius: 12,
+      padding: 16,
+      borderWidth: 2,
+      borderColor: '#FF5252',
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+      elevation: 4,
+    },
+    vpnWarningContent: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+    },
+    vpnWarningIcon: {
+      width: 24,
+      height: 24,
+      marginRight: 12,
+      tintColor: '#FFFFFF',
+    },
+    vpnWarningTextContainer: {
+      flex: 1,
+    },
+    vpnWarningTitle: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: '#FFFFFF',
+      marginBottom: 6,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+    },
+    vpnWarningMessage: {
+      fontSize: 14,
+      color: '#FFFFFF',
+      lineHeight: 20,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+    },
   });
 
   return (
@@ -2455,8 +2760,28 @@ const MobilesPairing = ({navigation}: any) => {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.innerContainer}>
+            {/* VPN Warning Banner */}
+            {isVPNConnected && (
+              <View style={styles.vpnWarningBanner}>
+                <View style={styles.vpnWarningContent}>
+                  <Image
+                    source={require('../assets/warning-icon.png')}
+                    style={styles.vpnWarningIcon}
+                    resizeMode="contain"
+                  />
+                  <View style={styles.vpnWarningTextContainer}>
+                    <Text style={styles.vpnWarningTitle}>
+                      VPN Detected
+                    </Text>
+                    <Text style={styles.vpnWarningMessage}>
+                      Please turn off your VPN to ensure a secure local network connection for device pairing.
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
             {/* Title and Exit Pairing Link - Show during pairing in local mode */}
-            {!isSendBitcoin && isPairing && !peerIP && (
+            {!isSendBitcoin && !isSignPSBT && isPairing && !peerIP && (
               <View style={styles.informationCard}>
                 <Text
                   style={[
@@ -2503,20 +2828,29 @@ const MobilesPairing = ({navigation}: any) => {
                   ]}>
                   {title}
                 </Text>
-                <TouchableOpacity
-                  onPress={() => {
-                    HapticFeedback.light();
-                    navigation.dispatch(
-                      CommonActions.reset({
-                        index: 0,
-                        routes: [{name: 'Welcome'}],
-                      }),
-                    );
-                  }}
-                  activeOpacity={0.7}
-                  style={{marginTop: 8, marginBottom: 4, alignItems: 'center'}}>
-                  <Text style={styles.abortLink}>Exit Pairing</Text>
-                </TouchableOpacity>
+                {!isSendBitcoin && !isSignPSBT && (
+                  <>
+                    <TouchableOpacity
+                      onPress={() => {
+                        HapticFeedback.light();
+                        navigation.dispatch(
+                          CommonActions.reset({
+                            index: 0,
+                            routes: [{name: 'Welcome'}],
+                          }),
+                        );
+                      }}
+                      activeOpacity={0.7}
+                      style={{
+                        marginTop: 8,
+                        marginBottom: 4,
+                        alignItems: 'center',
+                      }}>
+                      <Text style={styles.abortLink}>Exit Pairing</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+
                 <View style={styles.enhancedRequirementsContainer}>
                   <View style={styles.requirementsHeader}>
                     <View style={styles.requirementsIcon}>
@@ -2546,6 +2880,12 @@ const MobilesPairing = ({navigation}: any) => {
                         ? 'All on same network'
                         : 'Both on same network',
                       icon: 'wifi',
+                    },
+                    {
+                      key: 'noVPN',
+                      label: 'No VPN apps active',
+                      icon: 'vpn',
+                      hint: 'VPN may break local pairing',
                     },
                   ].map(item => (
                     <TouchableOpacity
@@ -2582,6 +2922,11 @@ const MobilesPairing = ({navigation}: any) => {
                           {item.key === 'twoDevices' && (
                             <Text style={styles.proximityHint}>
                               (Within your reach)
+                            </Text>
+                          )}
+                          {item.key === 'noVPN' && item.hint && (
+                            <Text style={styles.networkHint}>
+                              ({item.hint})
                             </Text>
                           )}
                         </View>
@@ -2624,13 +2969,19 @@ const MobilesPairing = ({navigation}: any) => {
                               />
                             </View>
                           )
-                        ) : (
+                        ) : item.icon === 'wifi' ? (
                           <Image
                             source={require('../assets/wifi-icon.png')}
                             style={styles.checkboxIconImage}
                             resizeMode="contain"
                           />
-                        )}
+                        ) : item.icon === 'vpn' ? (
+                          <Image
+                            source={require('../assets/vpn-icon.png')}
+                            style={styles.checkboxIconImage}
+                            resizeMode="contain"
+                          />
+                        ) : null}
                       </View>
                     </TouchableOpacity>
                   ))}
@@ -2862,7 +3213,7 @@ const MobilesPairing = ({navigation}: any) => {
                     </TouchableOpacity>
 
                     {/* Cancel button for setup modes (duo/trio) - right */}
-                    {!isSendBitcoin && (
+                    {!isSendBitcoin && !isSignPSBT && (
                       <TouchableOpacity
                         style={[styles.cancelSetupButton, styles.buttonFlex]}
                         onPress={() => {
@@ -2882,7 +3233,7 @@ const MobilesPairing = ({navigation}: any) => {
               </View>
             )}
 
-            {!isSendBitcoin && (
+            {!isSendBitcoin && !isSignPSBT && (
               <>
                 {/* Preparation Panel */}
                 {peerIP &&
@@ -3180,7 +3531,7 @@ const MobilesPairing = ({navigation}: any) => {
                         </View>
                         <View style={styles.checkboxTextContainer}>
                           <Text style={styles.enhancedCheckboxLabel}>
-                           All devices are ready
+                            All devices are ready
                           </Text>
                           <Text style={styles.warningHint}>
                             Do not leave the app during setup.
@@ -3470,7 +3821,7 @@ const MobilesPairing = ({navigation}: any) => {
                 )}
               </>
             )}
-            {peerIP && isSendBitcoin && (
+            {peerIP && (isSendBitcoin || isSignPSBT) && (
               <>
                 <View style={styles.informationCard}>
                   <View
@@ -3491,56 +3842,158 @@ const MobilesPairing = ({navigation}: any) => {
                       }}
                       resizeMode="contain"
                     />
-                    <Text style={styles.title}>Co-Signing</Text>
+                    <Text style={styles.title}>
+                      {isSignPSBT ? 'PSBT Co-Signing' : 'Co-Signing'}
+                    </Text>
                   </View>
                   <Text style={styles.header}>
                     {isTrio
                       ? 'All devices must be ready.'
                       : 'Both devices must be ready.'}
                   </Text>
-                  <View style={styles.transactionDetails}>
-                    <View style={styles.transactionItem}>
-                      <Text style={styles.transactionLabel}>To Address</Text>
-                      <View style={styles.addressContainer}>
+                  {isSendBitcoin && (
+                    <View style={styles.transactionDetails}>
+                      <View style={styles.transactionItem}>
+                        <Text style={styles.transactionLabel}>To Address</Text>
+                        <View style={styles.addressContainer}>
+                          <Text
+                            style={styles.addressValue}
+                            numberOfLines={1}
+                            ellipsizeMode="middle">
+                            {route.params.toAddress}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.transactionItem}>
+                        <Text style={styles.transactionLabel}>
+                          Transaction Amount
+                        </Text>
+                        <View style={styles.amountContainer}>
+                          <Text style={styles.amountValue}>
+                            {sat2btcStr(route.params.satoshiAmount)} BTC
+                          </Text>
+                          <Text style={styles.fiatValue}>
+                            {route.params.selectedCurrency}{' '}
+                            {formatFiat(route.params.fiatAmount)}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.transactionItem}>
+                        <Text style={styles.transactionLabel}>
+                          Transaction Fee
+                        </Text>
+                        <View style={styles.amountContainer}>
+                          <Text style={styles.amountValue}>
+                            {sat2btcStr(route.params.satoshiFees)} BTC
+                          </Text>
+                          <Text style={styles.fiatValue}>
+                            {route.params.selectedCurrency}{' '}
+                            {formatFiat(route.params.fiatFees)}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                  {isSignPSBT && (
+                    <View style={styles.transactionDetails}>
+                      <Text style={[styles.transactionLabel, {fontSize: 14, marginBottom: 8}]}>
+                        PSBT Ready to Sign
+                      </Text>
+                      {psbtDetails ? (
+                        <>
+                          <View
+                            style={[
+                              styles.transactionItem,
+                              {flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4, paddingVertical: 2},
+                            ]}>
+                            <Text style={[styles.transactionItemLabel, {fontSize: 12}]}>
+                              Inputs:
+                            </Text>
+                            <Text style={[styles.transactionItemValue, {fontSize: 12}]}>
+                              {psbtDetails.inputs.length}
+                            </Text>
+                          </View>
+                          <View
+                            style={[
+                              styles.transactionItem,
+                              {flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4, paddingVertical: 2},
+                            ]}>
+                            <Text style={[styles.transactionItemLabel, {fontSize: 12}]}>
+                              Outputs:
+                            </Text>
+                            <Text style={[styles.transactionItemValue, {fontSize: 12}]}>
+                              {psbtDetails.outputs.length}
+                            </Text>
+                          </View>
+                          <View style={[styles.transactionItem, {flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4, paddingVertical: 2}]}>
+                            <Text style={[styles.transactionItemLabel, {fontSize: 12}]}>
+                              Total Input:
+                            </Text>
+                            <Text style={[styles.transactionItemValue, {fontSize: 13, fontWeight: '600'}]}>
+                              {sat2btcStr(psbtDetails.totalInput)} BTC
+                            </Text>
+                          </View>
+                          <View style={[styles.transactionItem, {flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4, paddingVertical: 2}]}>
+                            <Text style={[styles.transactionItemLabel, {fontSize: 12}]}>
+                              Total Output:
+                            </Text>
+                            <Text style={[styles.transactionItemValue, {fontSize: 13, fontWeight: '600'}]}>
+                              {sat2btcStr(psbtDetails.totalOutput)} BTC
+                            </Text>
+                          </View>
+                          <View style={[styles.transactionItem, {flexDirection: 'row', justifyContent: 'space-between', marginBottom: psbtDetails.derivePath ? 4 : 0, paddingVertical: 2}]}>
+                            <Text style={[styles.transactionItemLabel, {fontSize: 12}]}>
+                              Fee:
+                            </Text>
+                            <Text style={[styles.transactionItemValue, {fontSize: 13, fontWeight: '600'}]}>
+                              {sat2btcStr(psbtDetails.fee)} BTC
+                            </Text>
+                          </View>
+                          {psbtDetails.derivePath && (
+                            <View style={[styles.transactionItem, {marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: theme.colors.border, paddingVertical: 2}]}>
+                              <Text style={[styles.transactionItemLabel, {fontSize: 10, marginBottom: 2}]}>
+                                Derivation Path:
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.transactionItemValue,
+                                  {
+                                    fontFamily:
+                                      Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                                    fontSize: 10,
+                                    textAlign: 'left',
+                                  },
+                                ]}>
+                                {psbtDetails.derivePath}
+                              </Text>
+                            </View>
+                          )}
+                          {psbtDetails.derivePaths &&
+                            psbtDetails.derivePaths.length > 1 && (
+                              <View style={[styles.transactionItem, {marginTop: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: theme.colors.border, paddingVertical: 2}]}>
+                                <Text style={[styles.transactionItemValue, {fontSize: 10}]}>
+                                  {psbtDetails.derivePaths.length} different paths
+                                </Text>
+                              </View>
+                            )}
+                        </>
+                      ) : (
                         <Text
-                          style={styles.addressValue}
-                          numberOfLines={1}
-                          ellipsizeMode="middle">
-                          {route.params.toAddress}
+                          style={[
+                            styles.addressValue,
+                            {marginTop: 4, marginBottom: 4, fontSize: 12},
+                          ]}>
+                          {route.params.psbtBase64
+                            ? `PSBT (${Math.round(
+                                (route.params.psbtBase64.length || 0) / 1024,
+                              )} KB) - Parsing...`
+                            : 'No PSBT data'}
                         </Text>
-                      </View>
+                      )}
                     </View>
-
-                    <View style={styles.transactionItem}>
-                      <Text style={styles.transactionLabel}>
-                        Transaction Amount
-                      </Text>
-                      <View style={styles.amountContainer}>
-                        <Text style={styles.amountValue}>
-                          {sat2btcStr(route.params.satoshiAmount)} BTC
-                        </Text>
-                        <Text style={styles.fiatValue}>
-                          {route.params.selectedCurrency}{' '}
-                          {formatFiat(route.params.fiatAmount)}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.transactionItem}>
-                      <Text style={styles.transactionLabel}>
-                        Transaction Fee
-                      </Text>
-                      <View style={styles.amountContainer}>
-                        <Text style={styles.amountValue}>
-                          {sat2btcStr(route.params.satoshiFees)} BTC
-                        </Text>
-                        <Text style={styles.fiatValue}>
-                          {route.params.selectedCurrency}{' '}
-                          {formatFiat(route.params.fiatFees)}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
+                  )}
                   <TouchableOpacity
                     style={styles.checkboxContainer}
                     onPress={() => {
@@ -3577,7 +4030,7 @@ const MobilesPairing = ({navigation}: any) => {
 
                           {/* Header Text */}
                           <Text style={styles.modalTitle}>
-                            Co-Signing Your Transaction
+                            {isSignPSBT ? 'PSBT Co-Signing' : 'Co-Signing Your Transaction'}
                           </Text>
 
                           {/* Subtext */}
@@ -3646,7 +4099,9 @@ const MobilesPairing = ({navigation}: any) => {
                         resizeMode="contain"
                       />
                       <Text style={styles.clickButtonText}>
-                        {isMaster ? 'Start' : 'Join'} Co-Signing
+                        {isSignPSBT
+                          ? `${isMaster ? 'Start' : 'Join'} PSBT Signing`
+                          : `${isMaster ? 'Start' : 'Join'} Co-Signing`}
                       </Text>
                     </View>
                   </TouchableOpacity>

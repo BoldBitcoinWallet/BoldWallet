@@ -22,7 +22,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
   visible,
   onClose,
   onSelect,
-  title = 'Select Transport Method',
+  title = 'Transport Method',
   description = 'Choose how to connect with other devices',
 }) => {
   const {theme} = useTheme();

@@ -32,7 +32,7 @@ import {useUser} from '../context/UserContext';
 const MAINNET_APIS = ['https://mempool.space/api'];
 const TESTNET_APIS = ['https://mempool.space/testnet/api'];
 
-const { IconChanger } = NativeModules;  // This is fine here, as it's not a Hook
+const {IconChanger} = NativeModules; // This is fine here, as it's not a Hook
 
 import {
   dbg,
@@ -671,6 +671,8 @@ const getSectionIcon = (title: string): any => {
       return require('../assets/nostr-icon.png');
     case 'app icon':
       return require('../assets/spy-icon.png');
+    case 'wallet mode':
+      return require('../assets/mode-icon.png');
     default:
       return require('../assets/advanced-icon.png');
   }
@@ -679,7 +681,9 @@ const getSectionIcon = (title: string): any => {
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   // Use UserContext for reactive network and API state
   const {setActiveNetwork, setActiveApiProvider} = useUser();
-  const [selectedIcon, setSelectedIcon] = useState<'default' | 'alternative' | 'loading'>('loading');
+  const [selectedIcon, setSelectedIcon] = useState<
+    'default' | 'alternative' | 'loading'
+  >('loading');
   const [deleteInput, setDeleteInput] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -693,6 +697,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [isAPISaving, setIsAPISaving] = useState(false);
   const [nostrRelays, setNostrRelays] = useState<string>('');
   const [pendingNostrRelays, setPendingNostrRelays] = useState<string>('');
+  const [walletMode, setWalletMode] = useState<'full' | 'psbt'>('full');
 
   const [hasNostr, setHasNostr] = useState(false);
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
@@ -722,6 +727,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     storage: false,
     appIcon: false,
     devicePairing: false,
+    walletMode: false,
   });
 
   const {theme} = useTheme();
@@ -743,19 +749,19 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     };
 
     if (!checks.length) {
-      errors.push('At least 12 characters');
+      errors.push('12+ characters');
     }
     if (!checks.uppercase) {
-      errors.push('One uppercase letter');
+      errors.push('Uppercase letter (A-Z)');
     }
     if (!checks.lowercase) {
-      errors.push('One lowercase letter');
+      errors.push('Lowercase letter (a-z)');
     }
     if (!checks.number) {
-      errors.push('One number');
+      errors.push('Number (0-9)');
     }
     if (!checks.symbol) {
-      errors.push('One special character');
+      errors.push('Special character (!@#$...)');
     }
 
     setPasswordErrors(errors);
@@ -824,14 +830,31 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     LocalCache.usageSize().then(size => {
       setUsageSize(size);
     });
+
+    // Load wallet mode preference (default to full mode)
+    EncryptedStorage.getItem('wallet_mode')
+      .then(mode => {
+        if (mode === 'psbt') {
+          setWalletMode('psbt');
+        } else {
+          setWalletMode('full');
+        }
+      })
+      .catch(error => {
+        dbg('Error loading wallet_mode from storage:', error);
+        setWalletMode('full');
+      });
   }, []);
 
-    // Load saved icon preference on component mount
+  // Load saved icon preference on component mount
   useEffect(() => {
     const loadIconPreference = async () => {
       try {
         const savedIcon = await EncryptedStorage.getItem('app_icon_preference');
-        if (savedIcon && (savedIcon === 'default' || savedIcon === 'alternative')) {
+        if (
+          savedIcon &&
+          (savedIcon === 'default' || savedIcon === 'alternative')
+        ) {
           setSelectedIcon(savedIcon);
         } else {
           setSelectedIcon('default');
@@ -936,12 +959,41 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
     await setActiveNetwork(newNetwork);
 
-    // Navigate first, then show alert on the new screen
-    navigation.reset({index: 0, routes: [{name: 'Home'}]});
+    // Check user's wallet mode preference before navigating
+    let targetRoute = 'Home';
+    try {
+      targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
+      dbg(
+        'Network toggle: Navigating to',
+        targetRoute,
+        'based on wallet_mode:',
+        walletMode,
+      );
+    } catch (error) {
+      dbg('Error loading wallet_mode during network toggle:', error);
+      // Default to 'Home' if there's an error
+    }
+
+    // Navigate to the appropriate screen based on user preference
+    navigation.reset({index: 0, routes: [{name: targetRoute}]});
 
     // Show brief feedback alert after a brief delay to ensure navigation completes
     setTimeout(() => {
-      Alert.alert(`${networkIcon} Switched to ${networkName}`);
+      // warn user if test net bitcoin is not real
+      // add i understand button to the alert
+      if (newNetwork === 'mainnet') {
+        Alert.alert(
+          `${networkIcon} Switched to ${networkName}`,
+          'Mainnet Bitcoin is the real Bitcoin. It is the main network for all Bitcoin transactions.',
+          [{text: 'I understand', onPress: () => {}}],
+        );
+      } else {
+        Alert.alert(
+          `${networkIcon} Switched to ${networkName}`,
+          'Testnet Bitcoin is not real Bitcoin. It is a test network for developers to test their applications. Do not use it for real transactions.',
+          [{text: 'I understand', onPress: () => {}}],
+        );
+      }
     }, 300);
   };
 
@@ -1099,15 +1151,19 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
   const handleBackupWallet = async () => {
     if (!validatePassword(password)) {
+      const missingRequirements = passwordErrors.join('\n• ');
       Alert.alert(
-        'Weak Password',
-        'Please use a stronger password that meets all requirements.',
+        'Password Requirements Not Met',
+        `Your password must meet all of the following requirements:\n\n• ${missingRequirements}\n\nPlease update your password and try again.`,
       );
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert('Password Mismatch', 'Passwords do not match.');
+      Alert.alert(
+        'Passwords Do Not Match',
+        'The password and confirmation password must be identical. Please check both fields and try again.',
+      );
       return;
     }
 
@@ -1988,7 +2044,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     },
     requirementText: {
       fontSize: 12,
-      color: theme.colors.textSecondary,
+      color: '#FF6B35',
+      fontWeight: '500',
     },
     nostrRelaysInput: {
       minHeight: 120,
@@ -2033,6 +2090,23 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     appIconCheckStatesButton: {
       marginBottom: 10,
       backgroundColor: theme.colors.secondary,
+    },
+    walletModeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 12,
+      paddingHorizontal: 4,
+    },
+    walletModeLabel: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.colors.text,
+    },
+    walletModeDescription: {
+      fontSize: 13,
+      color: theme.colors.textSecondary,
+      marginBottom: 12,
     },
   });
 
@@ -2092,9 +2166,44 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </TouchableOpacity>
         </CollapsibleSection>
+        {/* Wallet Mode Section */}
+        <CollapsibleSection
+          title="Wallet Mode"
+          isExpanded={expandedSections.walletMode}
+          onToggle={() => toggleSection('walletMode')}
+          styles={styles}
+          theme={theme}>
+          <Text style={styles.walletModeDescription}>
+            Choose the default wallet experience when opening the app. PSBT Mode
+            jumps directly into PSBT signing workflows, while Full Mode opens
+            the main wallet home screen.
+          </Text>
+          <View style={styles.walletModeRow}>
+            <Text style={styles.walletModeLabel}>Full Mode</Text>
+            <Switch
+              onValueChange={async value => {
+                HapticFeedback.light();
+                const mode = value ? 'psbt' : 'full';
+                setWalletMode(mode);
+                try {
+                  await EncryptedStorage.setItem('wallet_mode', mode);
+                } catch (error) {
+                  dbg('Error saving wallet_mode:', error);
+                }
+                // Immediately navigate to the selected default screen
+                navigation.reset({
+                  index: 0,
+                  routes: [{name: mode === 'psbt' ? 'PSBT' : 'Home'}],
+                });
+              }}
+              value={walletMode === 'psbt'}
+            />
+            <Text style={styles.walletModeLabel}>PSBT Only</Text>
+          </View>
+        </CollapsibleSection>
         {/* Advanced Section */}
         <CollapsibleSection
-          title="Advanced"
+          title="Network Providers"
           isExpanded={expandedSections.advanced}
           onToggle={() => toggleSection('advanced')}
           styles={styles}
@@ -2436,8 +2545,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   Blend in when you need to.
                 </Text>
                 <Text style={styles.appIconHintSubtitle}>
-                  Switch to the calculator icon when you want your wallet to look
-                  like just another app on your home screen.
+                  Switch to the calculator icon when you want your wallet to
+                  look like just another app on your home screen.
                 </Text>
               </View>
             </View>
@@ -2447,9 +2556,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             <View style={styles.toggleContainer}>
               <Text style={styles.toggleLabel}>Bold Wallet</Text>
               <Switch
-                trackColor={{ true: theme.colors.primary, false: theme.colors.secondary }}
+                trackColor={{
+                  true: theme.colors.primary,
+                  false: theme.colors.secondary,
+                }}
                 thumbColor={theme.colors.accent}
-                onValueChange={async (value) => {
+                onValueChange={async value => {
                   try {
                     HapticFeedback.light();
                     const newIcon = value ? 'alternative' : 'default';
@@ -2459,7 +2571,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                       Alert.alert(
                         'Error',
                         'Icon switching is not available on this device.',
-                        [{ text: 'OK' }]
+                        [{text: 'OK'}],
                       );
                       return;
                     }
@@ -2468,19 +2580,22 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     setSelectedIcon(newIcon);
 
                     // Save preference
-                    await EncryptedStorage.setItem('app_icon_preference', newIcon);
+                    await EncryptedStorage.setItem(
+                      'app_icon_preference',
+                      newIcon,
+                    );
 
                     // Change the icon
                     await IconChanger.changeIcon(newIcon);
 
                     // Show success message
-                    const iconName = newIcon === 'alternative' ? 'QuickCalc' : 'Bold Wallet';
+                    const iconName =
+                      newIcon === 'alternative' ? 'QuickCalc' : 'Bold Wallet';
                     Alert.alert(
                       'Icon Changed',
                       `App icon switched to ${iconName}.\n\nYou may need to refresh your launcher to see the change.`,
-                      [{ text: 'OK' }]
+                      [{text: 'OK'}],
                     );
-
                   } catch (error: any) {
                     console.error('Error changing icon:', error);
 
@@ -2489,8 +2604,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
 
                     Alert.alert(
                       'Error',
-                      error?.message || 'Failed to change app icon. Please try again.',
-                      [{ text: 'OK' }]
+                      error?.message ||
+                        'Failed to change app icon. Please try again.',
+                      [{text: 'OK'}],
                     );
                   }
                 }}

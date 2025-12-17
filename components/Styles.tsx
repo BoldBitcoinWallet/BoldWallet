@@ -127,6 +127,8 @@ export interface Styles {
   providerIcon: ImageStyle;
   providerLabel: TextStyle;
   providerValue: TextStyle;
+  networkBadge: ViewStyle;
+  networkBadgeText: TextStyle;
   warningBox: ViewStyle;
   warningText: TextStyle;
   backupButton: ViewStyle;
@@ -171,9 +173,21 @@ export interface Styles {
   keyshareCopyButton: ViewStyle;
   keyshareCopyButtonText: TextStyle;
   keyshareCopyIcon: ImageStyle;
+  keyshareButtonsRow: ViewStyle;
+  qrModalContent: ViewStyle;
+  qrModalTitle: TextStyle;
+  qrModalSubtitle: TextStyle;
+  qrCodeContainer: ViewStyle;
+  qrModalHint: TextStyle;
+  qrModalCloseButton: ViewStyle;
+  qrModalCloseButtonText: TextStyle;
   keyshareLoadingContainer: ViewStyle;
   keyshareBackupButtonMargin: ViewStyle;
+  keyshareButtonsContainer: ViewStyle;
+  keyshareCloseButton: ViewStyle;
+  keyshareBackupButton: ViewStyle;
   keyshareModalBody: ViewStyle;
+  keyshareModalBodyContent: ViewStyle;
   keyshareInfoCard: ViewStyle;
   keyshareSectionTitle: TextStyle;
   keyshareDetailRow: ViewStyle;
@@ -191,6 +205,27 @@ export interface Styles {
   keyshareStatusBadgeTextDisabled: TextStyle;
   keyshareKeyItem: ViewStyle;
   keyshareKeyLabel: TextStyle;
+  watchWalletHeader: ViewStyle;
+  keyshareInfoHeader: TextStyle;
+  watchWalletTitle: TextStyle;
+  watchWalletDescription: TextStyle;
+  watchWalletItem: ViewStyle;
+  watchWalletItemLabel: TextStyle;
+  watchWalletItemValue: TextStyle;
+  watchWalletItemValueContainer: ViewStyle;
+  clickableTextContainer: ViewStyle;
+  clickableText: TextStyle;
+  qrModalButtonsContainer: ViewStyle;
+  qrModalShareButton: ViewStyle;
+  qrModalShareIcon: ImageStyle;
+  qrModalCloseButtonWithMargin: ViewStyle;
+  toastContainer: ViewStyle;
+  qrModalHeader: ViewStyle;
+  qrModalHeaderTitle: TextStyle;
+  qrModalTopRightCloseButton: ViewStyle;
+  qrModalTopRightCloseText: TextStyle;
+  qrModalShareButtonSingle: ViewStyle;
+  qrModalButtonsContainerCentered: ViewStyle;
 }
 
 export const createStyles = (theme: Theme): Styles => ({
@@ -788,7 +823,7 @@ export const createStyles = (theme: Theme): Styles => ({
   modalHeaderIcon: {
     width: 24,
     height: 24,
-    tintColor: theme.colors.accent,
+    tintColor: theme.colors.primary,
     marginRight: 10,
   },
   modalHeaderTitle: {
@@ -894,6 +929,19 @@ export const createStyles = (theme: Theme): Styles => ({
     textAlign: 'right' as const,
     opacity: 0.8,
   },
+  networkBadge: {
+    backgroundColor: theme.colors.primary + '20',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  networkBadgeText: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+    color: theme.colors.primary,
+    letterSpacing: 0.5,
+  },
   warningBox: {
     backgroundColor: 'rgba(255, 193, 7, 0.1)',
     borderRadius: 8,
@@ -949,7 +997,7 @@ export const createStyles = (theme: Theme): Styles => ({
     borderRadius: 16,
     padding: 16,
     width: '90%',
-    maxHeight: '85%',
+    maxHeight: '100%',
     alignSelf: 'center' as const,
     elevation: 8,
     shadowColor: '#000',
@@ -961,6 +1009,7 @@ export const createStyles = (theme: Theme): Styles => ({
     flexDirection: 'column' as const,
     justifyContent: 'flex-start' as const,
     overflow: 'hidden' as const,
+    minHeight: 500,
   },
   modalHeaderRowCompact: {
     flexDirection: 'row' as const,
@@ -975,7 +1024,7 @@ export const createStyles = (theme: Theme): Styles => ({
   modalHeaderIconCompact: {
     width: 24,
     height: 24,
-    tintColor: theme.colors.accent,
+    tintColor: theme.colors.primary,
     marginRight: 10,
   },
   modalHeaderTitleCompact: {
@@ -1034,15 +1083,12 @@ export const createStyles = (theme: Theme): Styles => ({
   },
   keyshareModalCloseButton: {
     marginLeft: 'auto' as const,
-    padding: 8,
     backgroundColor: theme.colors.cardBackground,
-    borderRadius: 16,
-    width: 36,
-    height: 36,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    width: 36,
+    height: 36,
+    marginTop: 4,
   },
   keyshareModalCloseText: {
     fontSize: 22,
@@ -1088,18 +1134,20 @@ export const createStyles = (theme: Theme): Styles => ({
     gap: 8,
   },
   keyshareKeyContainer: {
+    flex: 1,
+    flexShrink: 1,
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 8,
-    backgroundColor: theme.colors.cardBackground,
-    padding: 10,
-    borderRadius: 8,
+    minWidth: 0,
   },
   keyshareKeyText: {
     flex: 1,
+    flexShrink: 1,
     fontFamily: 'monospace',
     fontSize: 11,
     color: theme.colors.text,
+    minWidth: 0,
   },
   keyshareCopyButton: {
     padding: 8,
@@ -1118,6 +1166,53 @@ export const createStyles = (theme: Theme): Styles => ({
     height: 16,
     tintColor: theme.colors.textOnPrimary,
   },
+  keyshareButtonsRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+  },
+  qrModalContent: {
+    backgroundColor: theme.colors.cardBackground,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center' as const,
+    minWidth: 280,
+    maxWidth: 320,
+  },
+  qrModalTitle: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+    color: theme.colors.text,
+    marginBottom: 4,
+  },
+  qrModalSubtitle: {
+    fontSize: 13,
+    color: theme.colors.textSecondary,
+    marginBottom: 20,
+  },
+  qrCodeContainer: {
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  qrModalHint: {
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+    marginBottom: 16,
+    fontStyle: 'italic' as const,
+  },
+  qrModalCloseButton: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 8,
+  },
+  qrModalCloseButtonText: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: theme.colors.textOnPrimary,
+  },
   keyshareLoadingContainer: {
     padding: 16,
   },
@@ -1125,10 +1220,23 @@ export const createStyles = (theme: Theme): Styles => ({
     marginTop: 12,
     flexShrink: 0,
   },
+  keyshareButtonsContainer: {
+    flexDirection: 'row' as const,
+    gap: 8,
+    width: '100%',
+  },
+  keyshareCloseButton: {
+    flex: 1,
+  },
+  keyshareBackupButton: {
+    flex: 1,
+  },
   keyshareModalBody: {
     width: '100%',
+  },
+  keyshareModalBodyContent: {
     paddingVertical: 8,
-    minHeight: 200,
+    paddingBottom: 16,
   },
   keyshareInfoCard: {
     backgroundColor: theme.colors.background,
@@ -1178,10 +1286,10 @@ export const createStyles = (theme: Theme): Styles => ({
     color: '#FFFFFF',
   },
   keyshareBadgeFlexi: {
-    backgroundColor: '#6366F1',
+    backgroundColor: theme.colors.primary,
   },
   keyshareBadgeBasic: {
-    backgroundColor: '#8B5CF6',
+    backgroundColor: theme.colors.secondary ,
   },
   keyshareStatusBadge: {
     paddingHorizontal: 10,
@@ -1206,13 +1314,21 @@ export const createStyles = (theme: Theme): Styles => ({
     color: '#757575',
   },
   keyshareKeyItem: {
-    marginBottom: 12,
+    flexDirection: 'row' as const,
+    paddingVertical: 6,
+    paddingHorizontal: 2,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border + '40',
+    alignItems: 'center' as const,
+    width: '100%',
   },
   keyshareKeyLabel: {
-    fontSize: 12,
+    fontSize: 13,
     color: theme.colors.textSecondary,
     fontWeight: '600' as const,
-    marginBottom: 6,
+    width: 130,
+    flexShrink: 0,
+    marginRight: 12,
     letterSpacing: 0.1,
   },
   keyshareTable: {
@@ -1220,12 +1336,11 @@ export const createStyles = (theme: Theme): Styles => ({
   },
   keyshareTableRow: {
     flexDirection: 'row' as const,
-    paddingVertical: 8,
-    paddingHorizontal: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 2,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border + '40',
     alignItems: 'center' as const,
-    minHeight: 40,
     width: '100%',
   },
   keyshareTableKey: {
@@ -1268,5 +1383,136 @@ export const createStyles = (theme: Theme): Styles => ({
   },
   keyshareTableValueDisabled: {
     color: '#757575',
+  },
+  keyshareInfoHeader: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: theme.colors.text,
+  },
+  watchWalletHeader: {
+    marginTop: 12,
+    backgroundColor: theme.colors.background,
+    borderRadius: 10,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.border + '40',
+  },
+  watchWalletTitle: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: theme.colors.text,
+  },
+  watchWalletDescription: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: theme.colors.text,
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  watchWalletItem: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border + '40',
+  },
+  watchWalletItemLabel: {
+    fontSize: 13,
+    color: theme.colors.textSecondary,
+    fontWeight: '600' as const,
+    marginBottom: 8,
+  },
+  watchWalletItemValue: {
+    flex: 1,
+    flexShrink: 1,
+    fontSize: 11,
+    fontFamily: 'monospace',
+    textAlign: 'left' as const,
+    minWidth: 0,
+  },
+  watchWalletItemValueContainer: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    minWidth: 0,
+  },
+  clickableTextContainer: {
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  clickableText: {
+    color: theme.colors.primary,
+    textDecorationLine: 'underline' as const,
+  },
+  qrModalButtonsContainer: {
+    flexDirection: 'row' as const,
+    width: '100%',
+    paddingHorizontal: 20,
+    marginTop: 12,
+  },
+  qrModalShareButton: {
+    flex: 1,
+    backgroundColor: theme.colors.primary,
+    marginRight: 6,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  qrModalShareIcon: {
+    width: 18,
+    height: 18,
+    tintColor: theme.colors.white,
+    marginRight: 6,
+  },
+  qrModalCloseButtonWithMargin: {
+    flex: 1,
+    backgroundColor: theme.colors.border,
+    marginLeft: 6,
+  },
+  toastContainer: {
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
+    pointerEvents: 'box-none' as const,
+  },
+  qrModalHeader: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    width: '100%',
+    marginBottom: 16,
+  },
+  qrModalHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+    color: theme.colors.text,
+    flex: 1,
+  },
+  qrModalTopRightCloseButton: {
+    marginLeft: 'auto' as const,
+    backgroundColor: theme.colors.cardBackground,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
+  qrModalTopRightCloseText: {
+    fontSize: 22,
+    fontWeight: '700' as const,
+    color: theme.colors.text,
+    lineHeight: 22,
+  },
+  qrModalShareButtonSingle: {
+    flex: 0,
+    marginRight: 0,
+    paddingHorizontal: 24,
+  },
+  qrModalButtonsContainerCentered: {
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
   },
 });
