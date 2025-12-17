@@ -65,3 +65,134 @@
 ---
 
 ## [2.0.1] - 2025-12-08
+
+### 🐛 Bug Fixes
+- **Fix Double Promise Callback Crash**: Prevented SIGABRT crash caused by double promise resolution in native modules
+
+### 🔄 Transaction Broadcast Reliability
+- **PostTx Retry Logic**: Transaction broadcasting now automatically retries up to 4 times with exponential backoff (1s, 2s, 3s delays) if the initial broadcast fails
+
+### 🎨 Nostr Pairing UI Enhancements
+- **Redesigned Header Layout**: Help button moved to the left, title centered, abort/cancel button aligned to the right
+- **Consistent Button Styling**: Cancel/Abort buttons now use pill-shaped outlined style matching local pairing screen
+- **Icon-Based Help Modal**: Replaced emoji icons with consistent app asset icons
+- **Improved Text Labels**: "Your Device" → "This Device", shortened step labels
+- **Compact Copy/QR Buttons**: Icon-only buttons for copy and QR actions
+- **Relay Config Repositioned**: Advanced Nostr relay settings moved for better flow
+- **Reduced Padding**: Tighter spacing for a more compact layout
+
+### Technical
+- Refactored `PostTx` with retry logic and exponential backoff
+- Added new button styles for consistency across screens
+- Updated header alignment styles
+
+---
+
+## [2.0.0] - 2025-12-04
+
+### 🚀 Major Features
+
+#### 🌐 Nostr Integration - Decentralized Device Pairing
+Bold Wallet now supports **Nostr** for device pairing and transaction signing. Connect devices through decentralized Nostr relays - no local network required. Works from anywhere in the world.
+
+**Key Benefits:**
+- Connect devices from anywhere, not just on the same WiFi network
+- Uses decentralized Nostr relays for communication
+- Enhanced security with NIP-44 encryption
+- Flexible transport mode selection (Local WiFi/Hotspot or Nostr)
+
+#### 🔐 Enhanced Security with NIP-44 Encryption
+All Nostr communications use **NIP-44 encryption** for maximum security.
+
+#### 🎨 Android Icon Changer
+Android users can now customize their app icon from wallet settings.
+
+#### 📱 Improved Transaction Details
+- Better address display and linking
+- Improved amount formatting
+- Clearer transaction status indicators
+- Direct links to blockchain explorers
+
+#### 🔄 Transport Mode Selector
+New interface to choose between:
+- **Local WiFi/Hotspot**: Fast and reliable for nearby devices
+- **Nostr**: Connect through decentralized relays from anywhere
+
+### 🛡️ Enhanced Resiliency & Error Handling
+- Improved session management and recovery
+- Better error handling for network issues
+- Go panic recovery coverage
+- Unique pre-send session agreements
+- Resilient relay connection with background retries
+
+### ⚙️ Settings Improvements
+- Nostr relay configuration
+- Dynamic relay fetching from GitHub
+- Better backup setup with filename handling
+- Improved keyshare information display
+
+### Technical
+- Complete Nostr transport layer implementation
+- `MobileNostrPairing.tsx` screen (5,500+ lines)
+- NIP-44 encryption integration
+- Rumor/wrap/seal message pattern
+
+---
+
+## [1.5.4] - 2025-11-19
+
+### Improvements
+- Performance optimizations
+- Bug fixes and stability improvements
+
+---
+
+## [1.3.2] - 2025-08-01
+
+### Store Updates
+- App store metadata updates
+- Compliance improvements
+
+---
+
+## [1.3.0] - 2025-07-10
+
+### UI & Lock Optimizations
+- User interface improvements
+- Lock screen optimizations
+- Performance enhancements
+
+---
+
+## [1.2.0] - 2025-06-25
+
+### Terms & Privacy
+- Added Terms and Conditions
+- Added Privacy Policy
+- Settings improvements
+
+---
+
+## [1.1.0] - 2025-06-12
+
+### SegWit Support
+- Support for SegWit Native addresses
+- Support for SegWit Compatible addresses
+- Wallet cache checks
+
+---
+
+## [1.0] - 2025-05-09
+
+### Initial Release
+- Multi-signature Bitcoin wallet
+- TSS (Threshold Signature Scheme) support
+- Duo and Trio wallet modes
+- Local WiFi/Hotspot device pairing
+- Transaction signing and broadcasting
+- QR code scanning for addresses
+- Blockchain explorer integration
+
+---
+
+**Repository**: [BoldBitcoinWallet/BoldWallet](https://github.com/BoldBitcoinWallet/BoldWallet)
