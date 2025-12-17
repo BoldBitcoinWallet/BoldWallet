@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased] - Output Descriptors with Multiple Address Types
+## [Unreleased]
+
+## [2.1.1] - 2025-12-17
 
 ### Added
 - **Multi-address type output descriptors**: Support for generating output descriptors for all three Bitcoin address types (Legacy, SegWit Native, SegWit Compatible)
