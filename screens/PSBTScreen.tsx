@@ -16,7 +16,7 @@ import {NativeModules} from 'react-native';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {HeaderRightButton, HeaderTitle} from '../components/Header';
-import {PSBTLoader} from './PSBTModal';
+import {PSBTLoader} from './PSBTModal.foss';
 import {dbg, HapticFeedback, getDerivePathForNetwork, isLegacyWallet, generateAllOutputDescriptors} from '../utils';
 import {CommonActions, useRoute, RouteProp} from '@react-navigation/native';
 import TransportModeSelector from '../components/TransportModeSelector';
@@ -83,7 +83,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
 
   const rotateInterpolate = rotationAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ['0deg', '180deg'],
+    outputRange: ['0deg', '90deg'],
   });
 
   const handleToggleWatchWallet = () => {
@@ -370,6 +370,26 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     loadKeyshareInfo();
   }, [loadKeyshareInfo]);
 
+  // Check if Bold Connect section should be expanded on mount (after PSBT mode toggle)
+  useEffect(() => {
+    const checkAndExpandBoldConnect = async () => {
+      try {
+        const shouldExpand = await EncryptedStorage.getItem(
+          'show_bold_connect_on_next_open',
+        );
+        if (shouldExpand === 'true') {
+          // Expand the Bold Connect section
+          setIsWatchWalletExpanded(true);
+          // Clear the flag so it doesn't expand on subsequent opens
+          await EncryptedStorage.removeItem('show_bold_connect_on_next_open');
+        }
+      } catch (error) {
+        dbg('PSBTScreen: Error checking show_bold_connect flag:', error);
+      }
+    };
+    checkAndExpandBoldConnect();
+  }, []);
+
   return (
     <SafeAreaView style={styles.screenContainer} edges={['left', 'right']}>
       <ScrollView
@@ -399,7 +419,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   style={styles.watchWalletIcon}
                   resizeMode="contain"
                 />
-                <Text style={styles.watchWalletTitle}>Bold Connect</Text>
+                <Text style={styles.watchWalletTitle}>Bold Connect | Watch-only</Text>
               </View>
               <Animated.Text
                 style={[

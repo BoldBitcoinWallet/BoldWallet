@@ -81,6 +81,43 @@ BBMTLib/*.jar
 BBMTLib/Tss.xcframework/
 BBMTLib/scripts/bin/
 BBMTLib/scripts/*.json
+# Build binaries (bold-spend cross-platform binaries - ignore these)
+BBMTLib/bin/bold-spend-*
+# Note: BBMTLib/bin/bbmt is tracked and should not be ignored
+# Go build artifacts
+BBMTLib/*.exe
+BBMTLib/*.dll
+BBMTLib/*.so
+BBMTLib/*.dylib
+# Keyshare files (backup files from mobile app or testing)
+*.ks
+*.share
+peer*.ks
+KeyShare*.share
+peer*.share
+# Testing data and temporary files
+BBMTLib/test-data/
+BBMTLib/test-keygen-output/
+BBMTLib/test-keysign-output/
+BBMTLib/test-nostr-keygen-output/
+BBMTLib/test-nostr-keygen-3party-output/
+BBMTLib/test-nostr-keysign-output/
+BBMTLib/tmp/
+BBMTLib/temp/
+BBMTLib/*.test
+BBMTLib/*.log
+BBMTLib/scripts/peer*.ks
+BBMTLib/scripts/*.share
+# Test output directories (ignore all contents)
+**/test-keygen-output/
+**/test-keysign-output/
+**/test-nostr-keygen-output/
+**/test-nostr-keygen-3party-output/
+**/test-nostr-keysign-output/
+**/test-output/
+**/test-data/
+# Test output JSON files
+**/test-*-output/*.json
 
 #
 android/signed-release.sh
@@ -248,9 +285,9 @@ web-build/
 *.aab
 *.dex
 *.class
-bin/
-gen/
-out/
+android/bin/
+android/gen/
+android/out/
 .gradle/
 local.properties
 proguard/

@@ -6,6 +6,92 @@ set -o pipefail  # Catch errors in pipes
 BIN_NAME="bbmt"
 BUILD_DIR="./bin"
 
+print_usage() {
+  cat <<EOF
+Usage:
+  $0 [--network <mainnet|testnet3>] [--address-type <p2pkh|p2wpkh|p2sh-p2wpkh|p2tr>]
+
+Options:
+  --network        Network to use (default: testnet3)
+  --address-type   Address type (default: p2pkh)
+                   Options: p2pkh, p2wpkh, p2sh-p2wpkh, p2tr
+
+Examples:
+  # Testnet P2PKH (default)
+  $0
+
+  # Mainnet SegWit Native
+  $0 --network mainnet --address-type p2wpkh
+
+  # Testnet SegWit Compatible
+  $0 --network testnet3 --address-type p2sh-p2wpkh
+EOF
+}
+
+# Defaults
+NETWORK="testnet3"
+ADDRESS_TYPE="p2pkh"
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --network)
+      NETWORK="$2"
+      shift 2
+      ;;
+    --address-type)
+      ADDRESS_TYPE="$2"
+      shift 2
+      ;;
+    -h|--help)
+      print_usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      print_usage
+      exit 1
+      ;;
+  esac
+done
+
+# Determine derivation path based on network and address type
+case "$ADDRESS_TYPE" in
+  p2pkh|legacy)
+    if [ "$NETWORK" = "mainnet" ]; then
+      DERIVATION_PATH="m/44'/0'/0'/0/0"
+    else
+      DERIVATION_PATH="m/44'/1'/0'/0/0"
+    fi
+    ;;
+  p2wpkh|segwit|bech32)
+    if [ "$NETWORK" = "mainnet" ]; then
+      DERIVATION_PATH="m/84'/0'/0'/0/0"
+    else
+      DERIVATION_PATH="m/84'/1'/0'/0/0"
+    fi
+    ;;
+  p2sh-p2wpkh|p2sh)
+    if [ "$NETWORK" = "mainnet" ]; then
+      DERIVATION_PATH="m/49'/0'/0'/0/0"
+    else
+      DERIVATION_PATH="m/49'/1'/0'/0/0"
+    fi
+    ;;
+  p2tr|taproot)
+    if [ "$NETWORK" = "mainnet" ]; then
+      DERIVATION_PATH="m/86'/0'/0'/0/0"
+    else
+      DERIVATION_PATH="m/86'/1'/0'/0/0"
+    fi
+    ;;
+  *)
+    echo "Error: Invalid address type: $ADDRESS_TYPE"
+    echo "Valid options: p2pkh, p2wpkh, p2sh-p2wpkh, p2tr"
+    exit 1
+    ;;
+esac
+
 # Ensure build directory exists
 mkdir -p "$BUILD_DIR"
 
@@ -52,6 +138,14 @@ echo "PUBLIC_KEY2: $PUBLIC_KEY2"
 
 echo "SESSION ID: $SESSION_ID"
 echo "CHAIN CODE: $CHAIN_CODE"
+echo ""
+echo "Configuration:"
+echo "  NETWORK        : $NETWORK"
+echo "  ADDRESS_TYPE   : $ADDRESS_TYPE"
+echo "  DERIVATION_PATH: $DERIVATION_PATH"
+echo ""
+echo "Note: The keyshare is network-agnostic. Use the derivation path above"
+echo "      when spending funds with spend-bitcoin.sh"
 
 # Start Relay in the background and track its PID
 echo "Starting Relay..."

@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+## [2.1.2] - 2025-12-19
+
+### Added
+- **`bold-spend` cross-platform binary**: New standalone binary for spending Bitcoin from keyshares
+  - Works on Windows, Linux, and macOS (AMD64 and ARM64)
+  - Self-contained - spawns itself as separate processes (no external dependencies)
+  - Supports all address types (P2PKH, P2WPKH, P2SH-P2WPKH, P2TR)
+  - Preview mode for fee estimation without sending transactions
+  - Support for encrypted keyshares with separate passphrases per keyshare
+  - Direct file path support (works with mobile app backup files)
+- **Enhanced `spend-bitcoin.sh` script**:
+  - Named arguments (flags) for better clarity and user experience
+  - `--passphrase1` and `--passphrase2` for individual keyshare decryption
+  - `--keyshare1` and `--keyshare2` flags to override default file paths
+  - `--preview` flag for fee estimation without executing transactions
+  - Improved error messages listing missing required arguments
+  - Default keyshare files: `peer1.ks` and `peer2.ks`
+- **Comprehensive Recovery Documentation**:
+  - Updated `RECOVER.md` with mobile app backup file naming conventions
+  - Examples for using `.share` files directly from mobile app backups
+  - Platform-specific instructions for Windows, Linux, and macOS
+  - Complete workflow examples for both `bold-spend` binary and `spend-bitcoin.sh` script
+
+### Technical Details
+- **New binary**: `BBMTLib/tss/cmd/bold-spend/main.go` - Cross-platform Go binary
+- **Build script**: `BBMTLib/build-bold-spend.sh` - Automated cross-compilation for all platforms
+- **Documentation**: Enhanced `RECOVER.md` with mobile app backup file format examples and platform-specific guidance
+
+---
+
 ## [2.1.1] - 2025-12-17
 
 ### Added

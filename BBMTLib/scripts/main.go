@@ -5,7 +5,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,6 +36,20 @@ func main() {
 
 	if mode == "random" {
 		fmt.Println(randomSeed(64))
+	}
+
+	if mode == "sha256" {
+		if len(os.Args) < 3 {
+			fmt.Fprintf(os.Stderr, "Usage: %s sha256 <message>\n", os.Args[0])
+			os.Exit(1)
+		}
+		msg := os.Args[2]
+		hash, err := tss.Sha256(msg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error computing sha256: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Print(hash)
 	}
 
 	if mode == "validate-ks" {
@@ -209,6 +225,244 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Print(string(decoded))
+	}
+
+	if mode == "aes-decrypt" {
+		// aes-decrypt <ciphertext_base64> <hex_key>
+		if len(os.Args) < 4 {
+			fmt.Fprintf(os.Stderr, "Usage: %s aes-decrypt <ciphertext_base64> <hex_key>\n", os.Args[0])
+			os.Exit(1)
+		}
+		ciphertext := os.Args[2]
+		hexKey := os.Args[3]
+
+		plaintext, err := tss.AesDecrypt(ciphertext, hexKey)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error in aes-decrypt: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Print(plaintext)
+	}
+
+	if mode == "spend" {
+		// Arguments:
+		//  2: server
+		//  3: session ID
+		//  4: party ID
+		//  5: parties CSV
+		//  6: encryption public key (peer)
+		//  7: decryption private key (self)
+		//  8: keyshare JSON/base64 (current party)
+		//  9: derivation path (BIP32)
+		// 10: address type (p2pkh, p2wpkh, p2sh-p2wpkh, p2tr)
+		// 11: destination address (receiver)
+		// 12: amount in satoshis
+		// 13: fee in satoshis (already estimated/negotiated)
+		// 14: network (mainnet | testnet3)
+		// 15: mempool URL base (e.g. https://mempool.space/testnet/api)
+
+		if len(os.Args) < 16 {
+			fmt.Fprintf(os.Stderr, "Usage: %s spend <server> <session_id> <party_id> <parties_csv> <enc_key> <dec_key> <keyshare_json_or_b64> <derivation_path> <address_type> <to_address> <amount_sats> <fee_sats> <network> <mempool_url>\n", os.Args[0])
+			os.Exit(1)
+		}
+
+		server := os.Args[2]
+		sessionID := os.Args[3]
+		partyID := os.Args[4]
+		partiesCSV := os.Args[5]
+		encKey := os.Args[6]
+		decKey := os.Args[7]
+		keyshareRaw := os.Args[8]
+		derivePath := os.Args[9]
+		addressType := strings.ToLower(os.Args[10])
+		toAddress := os.Args[11]
+		amountStr := os.Args[12]
+		feeStr := os.Args[13]
+		network := os.Args[14]
+		mempoolURL := os.Args[15]
+
+		// Configure network + mempool API
+		if _, err := tss.UseAPI(network, mempoolURL); err != nil {
+			fmt.Fprintf(os.Stderr, "Error configuring network/API: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Parse amount / fee
+		amount, err := strconv.ParseInt(amountStr, 10, 64)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Invalid amount_sats: %v\n", err)
+			os.Exit(1)
+		}
+		fee, err := strconv.ParseInt(feeStr, 10, 64)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Invalid fee_sats: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Decode keyshare (accept base64 or raw JSON)
+		var keyshareJSON []byte
+		if decoded, err := base64.StdEncoding.DecodeString(keyshareRaw); err == nil {
+			keyshareJSON = decoded
+		} else {
+			keyshareJSON = []byte(keyshareRaw)
+		}
+
+		var keyshare struct {
+			PubKey       string `json:"pub_key"`
+			ChainCodeHex string `json:"chain_code_hex"`
+		}
+		if err := json.Unmarshal(keyshareJSON, &keyshare); err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing keyshare: %v\n", err)
+			os.Exit(1)
+		}
+		if keyshare.PubKey == "" || keyshare.ChainCodeHex == "" {
+			fmt.Fprintf(os.Stderr, "Invalid keyshare: missing pub_key/chain_code_hex\n")
+			os.Exit(1)
+		}
+
+		// Derive child public key for this spend
+		derivedPub, err := tss.GetDerivedPubKey(keyshare.PubKey, keyshare.ChainCodeHex, derivePath, false)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to derive pubkey: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Derive sender address from derived pubkey + network + address type
+		var senderAddress string
+		switch addressType {
+		case "p2pkh", "legacy":
+			senderAddress, err = tss.PubToP2KH(derivedPub, network)
+		case "p2wpkh", "segwit", "bech32":
+			senderAddress, err = tss.PubToP2WPKH(derivedPub, network)
+		case "p2sh-p2wpkh", "p2sh":
+			senderAddress, err = tss.PubToP2SHP2WKH(derivedPub, network)
+		case "p2tr", "taproot":
+			senderAddress, err = tss.PubToP2TR(derivedPub, network)
+		default:
+			err = fmt.Errorf("unsupported address_type %q", addressType)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to derive sender address: %v\n", err)
+			os.Exit(1)
+		}
+
+		log.Printf("Using sender address %s (type=%s, network=%s)", senderAddress, addressType, network)
+
+		// Perform MPC send (sessionKey left empty -> use enc/dec transport keys)
+		sessionKey := ""
+		txid, err := tss.MpcSendBTC(
+			server,
+			partyID,
+			partiesCSV,
+			sessionID,
+			sessionKey,
+			encKey,
+			decKey,
+			string(keyshareJSON),
+			derivePath,
+			derivedPub,
+			senderAddress,
+			toAddress,
+			amount,
+			fee,
+		)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error in MpcSendBTC: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("\n[%s] Spend transaction broadcast, txid=%s\n", partyID, txid)
+	}
+
+	if mode == "estimate-fees-spend" {
+		// estimate-fees-spend:
+		//  2: keyshare JSON/base64
+		//  3: derivation path
+		//  4: address type
+		//  5: destination address
+		//  6: amount in satoshis
+		//  7: network
+		//  8: mempool URL
+
+		if len(os.Args) < 9 {
+			fmt.Fprintf(os.Stderr, "Usage: %s estimate-fees-spend <keyshare_json_or_b64> <derivation_path> <address_type> <to_address> <amount_sats> <network> <mempool_url>\n", os.Args[0])
+			os.Exit(1)
+		}
+
+		keyshareRaw := os.Args[2]
+		derivePath := os.Args[3]
+		addressType := strings.ToLower(os.Args[4])
+		toAddress := os.Args[5]
+		amountStr := os.Args[6]
+		network := os.Args[7]
+		mempoolURL := os.Args[8]
+
+		if _, err := tss.UseAPI(network, mempoolURL); err != nil {
+			fmt.Fprintf(os.Stderr, "Error configuring network/API: %v\n", err)
+			os.Exit(1)
+		}
+		if _, err := tss.UseFeePolicy("30m"); err != nil {
+			fmt.Fprintf(os.Stderr, "Error setting fee policy: %v\n", err)
+			os.Exit(1)
+		}
+
+		amount, err := strconv.ParseInt(amountStr, 10, 64)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Invalid amount_sats: %v\n", err)
+			os.Exit(1)
+		}
+
+		var keyshareJSON []byte
+		if decoded, err := base64.StdEncoding.DecodeString(keyshareRaw); err == nil {
+			keyshareJSON = decoded
+		} else {
+			keyshareJSON = []byte(keyshareRaw)
+		}
+
+		var keyshare struct {
+			PubKey       string `json:"pub_key"`
+			ChainCodeHex string `json:"chain_code_hex"`
+		}
+		if err := json.Unmarshal(keyshareJSON, &keyshare); err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing keyshare: %v\n", err)
+			os.Exit(1)
+		}
+		if keyshare.PubKey == "" || keyshare.ChainCodeHex == "" {
+			fmt.Fprintf(os.Stderr, "Invalid keyshare: missing pub_key/chain_code_hex\n")
+			os.Exit(1)
+		}
+
+		derivedPub, err := tss.GetDerivedPubKey(keyshare.PubKey, keyshare.ChainCodeHex, derivePath, false)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to derive pubkey: %v\n", err)
+			os.Exit(1)
+		}
+
+		var senderAddress string
+		switch addressType {
+		case "p2pkh", "legacy":
+			senderAddress, err = tss.PubToP2KH(derivedPub, network)
+		case "p2wpkh", "segwit", "bech32":
+			senderAddress, err = tss.PubToP2WPKH(derivedPub, network)
+		case "p2sh-p2wpkh", "p2sh":
+			senderAddress, err = tss.PubToP2SHP2WKH(derivedPub, network)
+		case "p2tr", "taproot":
+			senderAddress, err = tss.PubToP2TR(derivedPub, network)
+		default:
+			err = fmt.Errorf("unsupported address_type %q", addressType)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to derive sender address: %v\n", err)
+			os.Exit(1)
+		}
+
+		feeStr, err := tss.EstimateFees(senderAddress, toAddress, amount)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error estimating fees: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Print(feeStr)
 	}
 
 	if mode == "extract-npub" {
