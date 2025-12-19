@@ -376,3 +376,7 @@ vendor/bundle/
 *.der
 *.p12
 *.pfx
+
+# PR documentation (local only, not for git)
+PR_SUMMARY.md
+PR_README.md
