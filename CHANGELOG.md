@@ -25,10 +25,30 @@
   - Platform-specific instructions for Windows, Linux, and macOS
   - Complete workflow examples for both `bold-spend` binary and `spend-bitcoin.sh` script
 
+### Changed
+- **PSBT Screen Section Titles**: Updated to "Bold Cosign | PSBT Signer" for clarity
+- **Import Button Text**: "Upload PSBT File" → "Load PSBT File" for better clarity
+- **Expand Icon Rotation**: Fixed to rotate 90° clockwise (was 180°) for both collapsible sections in PSBT screen and settings
+- **Embedded PSBT Modal**: Removed redundant borders when used inside collapsible sections
+
+### Fixed
+- **PSBTModal.foss.tsx Alignment**: Fully aligned styles and UI with PSBTModal.tsx
+  - Network badge styling (fontSize: 10, fontWeight: 700, letterSpacing: 0.5)
+  - Cancel button disabled state (opacity: 0.5, added text disabled style)
+  - Middle button container positioning (moved inside action buttons container)
+- **Double Borders**: Removed borders from embedded PSBT modal to prevent double borders in collapsible sections
+- **Collapsible Section Expand Icons**: Fixed rotation animation in both PSBTScreen and WalletSettings
+
 ### Technical Details
 - **New binary**: `BBMTLib/tss/cmd/bold-spend/main.go` - Cross-platform Go binary
 - **Build script**: `BBMTLib/build-bold-spend.sh` - Automated cross-compilation for all platforms
 - **Documentation**: Enhanced `RECOVER.md` with mobile app backup file format examples and platform-specific guidance
+- **PSBT Screen**: Added collapsible Sign PSBT section with smart default states
+  - Added `psbt_mode_first_visit` flag in EncryptedStorage for state tracking
+  - Added `psbtRotationAnim` animation for Sign PSBT section
+  - First visit after PSBT mode toggle: Both sections closed
+  - Subsequent visits: Bold Connect closed, Sign PSBT open by default
+- **Modal Alignment**: Aligned all style properties between PSBTModal.tsx and PSBTModal.foss.tsx
 
 ---
 

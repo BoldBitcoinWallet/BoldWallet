@@ -58,6 +58,7 @@ yarn-error.log
 # Ruby / CocoaPods
 **/Pods/
 /vendor/bundle/
+.bundle/
 
 # Temporary files created by Metro to check the health of the file watcher
 .metro-health-check*
@@ -83,7 +84,10 @@ BBMTLib/scripts/bin/
 BBMTLib/scripts/*.json
 # Build binaries (bold-spend cross-platform binaries - ignore these)
 BBMTLib/bin/bold-spend-*
-# Note: BBMTLib/bin/bbmt is tracked and should not be ignored
+# Build binaries (bbmt and related binaries - ignore these)
+BBMTLib/bin/bbmt*
+# Peer configuration files
+BBMTLib/peer*.json
 # Go build artifacts
 BBMTLib/*.exe
 BBMTLib/*.dll
@@ -114,10 +118,13 @@ BBMTLib/scripts/*.share
 **/test-nostr-keygen-output/
 **/test-nostr-keygen-3party-output/
 **/test-nostr-keysign-output/
+**/nostr-keygen-output/
+**/nostr-keysign-output/
 **/test-output/
 **/test-data/
 # Test output JSON files
 **/test-*-output/*.json
+**/nostr-*-output/*.json
 
 #
 android/signed-release.sh
@@ -136,11 +143,7 @@ build.log
 android/gradle.properties.local
 
 # IDE - VSCode
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
+.vscode/
 *.code-workspace
 
 # IDE - JetBrains
