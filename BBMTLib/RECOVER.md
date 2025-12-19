@@ -2,6 +2,41 @@
 
 This guide explains how to recover and spend Bitcoin from your keyshares using the BBMTLib CLI tools, even if the mobile app is unavailable.
 
+## ⚠️ CRITICAL SECURITY WARNING
+
+**IMPORTANT: Using these recovery tools requires loading BOTH keyshares on the same computer.**
+
+### Security Risks
+
+When using the CLI recovery tools (`bold-spend` or `spend-bitcoin.sh`), **both keyshares are loaded into memory on the same machine**. This creates a significant security risk because:
+
+1. **Both keyshares are present on one system** - This defeats the security model of multi-device threshold signatures
+2. **The computer must be fully trusted** - Any malware, keyloggers, or compromised system can access both keyshares
+3. **Memory exposure** - Both keyshares exist in memory simultaneously during the signing process
+4. **Persistence risk** - Keyshare data may be written to disk (swap files, temp files, etc.)
+
+### Required Actions After Recovery
+
+**After using these recovery tools, you MUST:**
+
+1. ✅ **Move ALL funds immediately** - Transfer your entire balance to a new, secure wallet
+2. ✅ **Do NOT reuse the keyshares** - Consider the keyshares compromised after CLI recovery
+3. ✅ **Create a new wallet** - Generate new keyshares using the mobile app for future use
+4. ✅ **Secure the recovery machine** - Ensure the computer is clean, trusted, and free from malware
+5. ✅ **Delete keyshare files** - Securely delete keyshare files from the recovery machine after use
+
+### When to Use Recovery Tools
+
+These tools should **ONLY** be used when:
+- The mobile app is permanently unavailable
+- You need emergency access to funds
+- You are prepared to move all funds to a new wallet immediately
+- You understand and accept the security risks
+
+**If the mobile app is working, always use it instead of CLI recovery tools.**
+
+---
+
 ## Available Tools
 
 You have two options for spending Bitcoin from keyshares:
@@ -632,13 +667,29 @@ When you run the spend command (without `--preview`):
 
 ## Security Notes
 
-⚠️ **Important Security Considerations:**
+⚠️ **CRITICAL: Both Keyshares Loaded on Same Machine**
+
+**When using CLI recovery tools, both keyshares are loaded on the same computer. This is a significant security risk.**
+
+### Mandatory Post-Recovery Actions
+
+**After using recovery tools, you MUST:**
+
+1. **🚨 Move ALL funds immediately** - Transfer your entire balance to a new, secure wallet address
+2. **🚨 Do NOT reuse these keyshares** - Consider them compromised after CLI recovery
+3. **🚨 Create a new wallet** - Generate fresh keyshares using the mobile app for future use
+4. **🚨 Secure the recovery machine** - Ensure the computer is trusted, clean, and free from malware
+5. **🚨 Delete keyshare files** - Securely delete keyshare files from the recovery machine after use
+
+### Additional Security Considerations
 
 1. **Passphrase Storage**: Never store passphrases in scripts or command history
 2. **Keyshare Backup**: Keep encrypted backups of keyshares in secure locations
 3. **Network**: Use testnet for testing; double-check network before mainnet transactions
 4. **Amount Verification**: Always preview transactions first to verify amounts and fees
 5. **Address Verification**: Double-check recipient addresses before sending
+6. **Trusted Environment**: Only use recovery tools on a trusted, secure computer
+7. **No Future Use**: Never use the same keyshares again after CLI recovery - create a new wallet
 
 ## Example: Complete Recovery Workflow
 
