@@ -805,8 +805,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
 
   const styles = createStyles(theme);
 
-  const canCancel =
-    !disableCancelWhenEmpty || !!psbtBase64 || !!error || isLoading;
+  const isCancelDisabled = disableCancelWhenEmpty && !psbtBase64;
 
   return (
     <View style={useOverlay ? styles.modalOverlay : undefined}>
@@ -818,13 +817,11 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
             style={styles.headerIcon}
           />
           <Text style={styles.headerTitle}>Sign • PSBT</Text>
-          {network && (
-            <View style={styles.networkBadge}>
-              <Text style={styles.networkBadgeText}>
-                {network === 'mainnet' ? 'MAINNET' : 'TESTNET'}
-              </Text>
-            </View>
-          )}
+          <View style={styles.networkBadge}>
+            <Text style={styles.networkBadgeText}>
+              {network === 'mainnet' ? 'MAINNET' : 'TESTNET'}
+            </Text>
+          </View>
         </View>
 
           {/* Description */}
@@ -844,7 +841,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                   source={require('../assets/upload-icon.png')}
                   style={styles.importButtonIcon}
                 />
-                <Text style={styles.importButtonText}>Upload PSBT File</Text>
+                <Text style={styles.importButtonText}>Load PSBT File</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -1062,22 +1059,29 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
             </ScrollView>
           )}
 
-          {/* Optional middle button (e.g., lock button on PSBT screen) */}
-          {middleButton && (
-            <View style={styles.middleButtonContainer}>{middleButton}</View>
-          )}
-
           {/* Action buttons */}
           <View style={styles.actionButtonsContainer}>
             <TouchableOpacity
               style={[
                 styles.cancelButton,
-                !canCancel && styles.cancelButtonDisabled,
+                isCancelDisabled && styles.cancelButtonDisabled,
               ]}
               onPress={handleClose}
-              disabled={!canCancel}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+              disabled={isCancelDisabled}>
+              <Text
+                style={[
+                  styles.cancelButtonText,
+                  isCancelDisabled && styles.cancelButtonTextDisabled,
+                ]}>
+                Cancel
+              </Text>
             </TouchableOpacity>
+
+            {middleButton && (
+              <View style={styles.middleButtonContainer}>
+                {middleButton}
+              </View>
+            )}
 
             <TouchableOpacity
               style={[
@@ -1160,15 +1164,18 @@ const createStyles = (theme: any) =>
       elevation: 8,
     },
     // Embedded version used on the dedicated PSBT screen (no overlay)
+    // No border/shadow here since it's inside a collapsible section that already has borders
     embeddedContent: {
-      backgroundColor: theme.colors.background,
-      borderRadius: 16,
+      backgroundColor: theme.colors.cardBackground,
+      borderRadius: 8,
       padding: 16,
       width: '100%',
+      overflow: 'hidden',
     },
     headerRow: {
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'space-between',
       marginBottom: 12,
     },
     headerIcon: {
@@ -1190,18 +1197,18 @@ const createStyles = (theme: any) =>
       marginBottom: 16,
     },
     networkBadge: {
-      marginLeft: 8,
       backgroundColor: theme.colors.background,
-      paddingHorizontal: 10,
+      paddingHorizontal: 8,
       paddingVertical: 4,
-      borderRadius: 12,
+      borderRadius: 8,
       borderWidth: 1,
-      borderColor: theme.colors.primary,
+      borderColor: theme.colors.border,
     },
     networkBadgeText: {
-      fontSize: 11,
-      fontWeight: '600',
-      color: theme.colors.primary,
+      fontSize: 10,
+      fontWeight: '700',
+      color: theme.colors.text,
+      letterSpacing: 0.5,
     },
     importButtonsContainer: {
       marginBottom: 20,
@@ -1590,8 +1597,9 @@ const createStyles = (theme: any) =>
       marginTop: 1,
     },
     middleButtonContainer: {
+      marginHorizontal: 6,
+      justifyContent: 'center',
       alignItems: 'center',
-      marginTop: 12,
     },
     actionButtonsContainer: {
       flexDirection: 'row',
@@ -1608,12 +1616,15 @@ const createStyles = (theme: any) =>
       marginRight: 6,
     },
     cancelButtonDisabled: {
-      opacity: 0.4,
+      opacity: 0.5,
     },
     cancelButtonText: {
       fontSize: 16,
       fontWeight: '600',
       color: theme.colors.text,
+    },
+    cancelButtonTextDisabled: {
+      color: theme.colors.textSecondary,
     },
     signButton: {
       flex: 1,

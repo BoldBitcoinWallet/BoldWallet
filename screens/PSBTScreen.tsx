@@ -52,6 +52,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     null,
   );
   const [isWatchWalletExpanded, setIsWatchWalletExpanded] = useState(false);
+  const [isPSBTSectionExpanded, setIsPSBTSectionExpanded] = useState(false);
   const [isXpubQrVisible, setIsXpubQrVisible] = useState(false);
   const [isOutputDescriptorQrVisible, setIsOutputDescriptorQrVisible] =
     useState(false);
@@ -68,9 +69,14 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const [isSignedPSBTModalVisible, setIsSignedPSBTModalVisible] =
     useState(false);
 
-  // Animation for collapsible section
+  // Animation for Bold Connect collapsible section
   const rotationAnim = useRef(
     new Animated.Value(isWatchWalletExpanded ? 1 : 0),
+  ).current;
+
+  // Animation for Sign PSBT collapsible section
+  const psbtRotationAnim = useRef(
+    new Animated.Value(isPSBTSectionExpanded ? 1 : 0),
   ).current;
 
   useEffect(() => {
@@ -81,7 +87,20 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     }).start();
   }, [isWatchWalletExpanded, rotationAnim]);
 
+  useEffect(() => {
+    Animated.timing(psbtRotationAnim, {
+      toValue: isPSBTSectionExpanded ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [isPSBTSectionExpanded, psbtRotationAnim]);
+
   const rotateInterpolate = rotationAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '90deg'],
+  });
+
+  const psbtRotateInterpolate = psbtRotationAnim.interpolate({
     inputRange: [0, 1],
     outputRange: ['0deg', '90deg'],
   });
@@ -94,6 +113,16 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       useNativeDriver: true,
     }).start();
     setIsWatchWalletExpanded(prev => !prev);
+  };
+
+  const handleTogglePSBTSection = () => {
+    HapticFeedback.light();
+    Animated.timing(psbtRotationAnim, {
+      toValue: isPSBTSectionExpanded ? 0 : 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+    setIsPSBTSectionExpanded(prev => !prev);
   };
 
   const loadKeyshareInfo = useCallback(async () => {
@@ -370,24 +399,33 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     loadKeyshareInfo();
   }, [loadKeyshareInfo]);
 
-  // Check if Bold Connect section should be expanded on mount (after PSBT mode toggle)
+  // Handle section expansion based on PSBT mode toggle state
   useEffect(() => {
-    const checkAndExpandBoldConnect = async () => {
+    const checkPSBTModeState = async () => {
       try {
-        const shouldExpand = await EncryptedStorage.getItem(
-          'show_bold_connect_on_next_open',
+        const isFirstVisit = await EncryptedStorage.getItem(
+          'psbt_mode_first_visit',
         );
-        if (shouldExpand === 'true') {
-          // Expand the Bold Connect section
-          setIsWatchWalletExpanded(true);
-          // Clear the flag so it doesn't expand on subsequent opens
-          await EncryptedStorage.removeItem('show_bold_connect_on_next_open');
+        
+        if (isFirstVisit === 'true') {
+          // First visit after toggle: both sections closed
+          setIsWatchWalletExpanded(false);
+          setIsPSBTSectionExpanded(false);
+          // Clear the flag so subsequent visits use default behavior
+          await EncryptedStorage.removeItem('psbt_mode_first_visit');
+        } else {
+          // Subsequent visits: Bold Connect closed, Sign PSBT open
+          setIsWatchWalletExpanded(false);
+          setIsPSBTSectionExpanded(true);
         }
       } catch (error) {
-        dbg('PSBTScreen: Error checking show_bold_connect flag:', error);
+        dbg('PSBTScreen: Error checking PSBT mode state:', error);
+        // Default behavior on error: Bold Connect closed, Sign PSBT open
+        setIsWatchWalletExpanded(false);
+        setIsPSBTSectionExpanded(true);
       }
     };
-    checkAndExpandBoldConnect();
+    checkPSBTModeState();
   }, []);
 
   return (
@@ -648,40 +686,84 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
           </View>
         )}
 
-        <View style={styles.psbtBodyContainer}>
-          <PSBTLoader
-            // We don't show fiat conversions here, so rate/symbol can be neutral
-            btcRate={0}
-            currencySymbol="$"
-            network={network}
-            onClose={() => {
-              // In PSBT screen, Cancel should only reset the loader state,
-              // not navigate away from this screen.
-            }}
-            disableCancelWhenEmpty={true}
-            useOverlay={false}
-            onSign={handlePSBTSign}
-            middleButton={
-              <TouchableOpacity
-                style={styles.lockButton}
-                onPress={() => {
-                  HapticFeedback.light();
-                  // Emit a reload event to App.tsx to trigger authentication lock
-                  DeviceEventEmitter.emit('app:reload');
-                }}
-                activeOpacity={0.7}
-                accessible={true}
-                accessibilityRole="button"
-                accessibilityLabel="Lock wallet"
-                accessibilityHint="Double tap to lock the wallet">
-                <Image
-                  source={require('../assets/locker-icon.png')}
-                  style={styles.lockButtonIcon}
-                  resizeMode="contain"
+        {/* Sign PSBT Section - Collapsible */}
+        <View
+          style={[
+            styles.psbtSectionCard,
+            isPSBTSectionExpanded && styles.psbtSectionCardExpanded,
+          ]}>
+          <TouchableOpacity
+            style={styles.psbtSectionHeaderRow}
+            onPress={handleTogglePSBTSection}
+            activeOpacity={0.7}
+            accessible={true}
+            accessibilityRole="button"
+            accessibilityLabel={`Sign PSBT section, ${
+              isPSBTSectionExpanded ? 'expanded' : 'collapsed'
+            }`}
+            accessibilityHint={`Double tap to ${
+              isPSBTSectionExpanded ? 'collapse' : 'expand'
+            } Sign PSBT section`}>
+            <View style={styles.psbtSectionHeaderContent}>
+              <Image
+                source={require('../assets/cosign-icon.png')}
+                style={styles.psbtSectionIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.psbtSectionTitle}>Bold Cosign | PSBT Signer</Text>
+            </View>
+            <Animated.Text
+              style={[
+                styles.psbtSectionExpandIcon,
+                {
+                  transform: [{rotate: psbtRotateInterpolate}],
+                  color: theme.colors.text,
+                },
+              ]}>
+              ▶
+            </Animated.Text>
+          </TouchableOpacity>
+
+          {/* Collapsible content - only rendered when expanded */}
+          {isPSBTSectionExpanded && (
+            <View style={styles.psbtSectionContent}>
+              <View style={styles.psbtBodyContainer}>
+                <PSBTLoader
+                  // We don't show fiat conversions here, so rate/symbol can be neutral
+                  btcRate={0}
+                  currencySymbol="$"
+                  network={network}
+                  onClose={() => {
+                    // In PSBT screen, Cancel should only reset the loader state,
+                    // not navigate away from this screen.
+                  }}
+                  disableCancelWhenEmpty={true}
+                  useOverlay={false}
+                  onSign={handlePSBTSign}
+                  middleButton={
+                    <TouchableOpacity
+                      style={styles.lockButton}
+                      onPress={() => {
+                        HapticFeedback.light();
+                        // Emit a reload event to App.tsx to trigger authentication lock
+                        DeviceEventEmitter.emit('app:reload');
+                      }}
+                      activeOpacity={0.7}
+                      accessible={true}
+                      accessibilityRole="button"
+                      accessibilityLabel="Lock wallet"
+                      accessibilityHint="Double tap to lock the wallet">
+                      <Image
+                        source={require('../assets/locker-icon.png')}
+                        style={styles.lockButtonIcon}
+                        resizeMode="contain"
+                      />
+                    </TouchableOpacity>
+                  }
                 />
-              </TouchableOpacity>
-            }
-          />
+              </View>
+            </View>
+          )}
         </View>
       </ScrollView>
       {/* QR Code Modals for watch-wallet import helpers */}
@@ -885,9 +967,60 @@ const createStyles = (theme: any) =>
       height: 16,
       tintColor: theme.colors.textOnPrimary,
     },
+    psbtSectionCard: {
+      marginBottom: 8,
+      backgroundColor: theme.colors.cardBackground,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      overflow: 'hidden',
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 1},
+      shadowOpacity: 0.1,
+      shadowRadius: 2,
+      elevation: 2,
+    },
+    psbtSectionCardExpanded: {
+      // Additional styles when expanded if needed
+    },
+    psbtSectionHeaderRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      padding: 12,
+      backgroundColor: theme.colors.cardBackground,
+    },
+    psbtSectionHeaderContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+    },
+    psbtSectionIcon: {
+      width: 20,
+      height: 20,
+      marginRight: 8,
+      tintColor: theme.colors.text,
+    },
+    psbtSectionTitle: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: theme.colors.text,
+    },
+    psbtSectionExpandIcon: {
+      fontSize: 14,
+      fontWeight: 'bold',
+    },
+    psbtSectionContent: {
+      paddingHorizontal: 0,
+      paddingVertical: 0,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.accent || theme.colors.primary,
+      overflow: 'hidden',
+    },
     psbtBodyContainer: {
       marginTop: 0,
       marginBottom: 8,
+      padding: 12,
     },
     lockButton: {
       width: 48,

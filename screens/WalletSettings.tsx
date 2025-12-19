@@ -2187,10 +2187,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 setWalletMode(mode);
                 try {
                   await EncryptedStorage.setItem('wallet_mode', mode);
-                  // If switching to PSBT mode, set flag to show Bold Connect section on next open
+                  // If switching to PSBT mode, set flag for first visit (both sections closed)
                   if (mode === 'psbt') {
                     await EncryptedStorage.setItem(
-                      'show_bold_connect_on_next_open',
+                      'psbt_mode_first_visit',
                       'true',
                     );
                   }
