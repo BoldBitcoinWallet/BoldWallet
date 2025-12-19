@@ -938,7 +938,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                   source={require('../assets/upload-icon.png')}
                   style={styles.importButtonIcon}
                 />
-                <Text style={styles.importButtonText}>Upload PSBT File</Text>
+                <Text style={styles.importButtonText}>Load PSBT File</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -1277,19 +1277,14 @@ const createStyles = (theme: any) =>
       shadowRadius: 8,
       elevation: 8,
     },
+    // Embedded version used on the dedicated PSBT screen (no overlay)
+    // No border/shadow here since it's inside a collapsible section that already has borders
     embeddedContent: {
       backgroundColor: theme.colors.cardBackground,
       borderRadius: 8,
       padding: 16,
       width: '100%',
-      borderWidth: 1,
-      borderColor: theme.colors.border,
       overflow: 'hidden',
-      shadowColor: '#000',
-      shadowOffset: {width: 0, height: 1},
-      shadowOpacity: 0.1,
-      shadowRadius: 2,
-      elevation: 2,
     },
     headerRow: {
       flexDirection: 'row',

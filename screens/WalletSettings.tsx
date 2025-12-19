@@ -78,7 +78,7 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
 
   const rotateInterpolate = rotationAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ['0deg', '180deg'],
+    outputRange: ['0deg', '90deg'],
   });
 
   const handlePress = () => {
@@ -2187,6 +2187,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 setWalletMode(mode);
                 try {
                   await EncryptedStorage.setItem('wallet_mode', mode);
+                  // If switching to PSBT mode, set flag for first visit (both sections closed)
+                  if (mode === 'psbt') {
+                    await EncryptedStorage.setItem(
+                      'psbt_mode_first_visit',
+                      'true',
+                    );
+                  }
                 } catch (error) {
                   dbg('Error saving wallet_mode:', error);
                 }

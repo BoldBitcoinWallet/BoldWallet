@@ -44,6 +44,22 @@ interface PSBTDetails {
 export interface PSBTLoaderProps {
   btcRate?: number; // BTC to fiat rate
   currencySymbol?: string; // e.g., "$", "€"
+  network?: 'mainnet' | 'testnet' | string;
+  /**
+   * When true, PSBTLoader renders with a full-screen overlay (modal style).
+   * When false, it renders as an embedded card without the dimmed backdrop.
+   */
+  useOverlay?: boolean;
+  /**
+   * When true, the Cancel button is disabled while no PSBT is loaded.
+   * This is used on the dedicated PSBT screen so Cancel only resets state
+   * after something has been imported.
+   */
+  disableCancelWhenEmpty?: boolean;
+  /**
+   * Optional middle floating button (used on PSBT screen for the lock button).
+   */
+  middleButton?: React.ReactNode;
   onClose: () => void;
   onSign: (psbtBase64: string) => void;
 }
@@ -55,6 +71,10 @@ export interface PSBTModalProps extends PSBTLoaderProps {
 export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
   btcRate = 0,
   currencySymbol = '$',
+  network,
+  useOverlay = true,
+  disableCancelWhenEmpty = false,
+  middleButton,
   onClose,
   onSign,
 }) => {
@@ -785,17 +805,24 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
 
   const styles = createStyles(theme);
 
+  const isCancelDisabled = disableCancelWhenEmpty && !psbtBase64;
+
   return (
-    <View style={styles.modalOverlay}>
-      <View style={styles.modalContent}>
-          {/* Header */}
-          <View style={styles.headerRow}>
-            <Image
-              source={require('../assets/key-icon.png')}
-              style={styles.headerIcon}
-            />
-            <Text style={styles.headerTitle}>Sign • PSBT</Text>
+    <View style={useOverlay ? styles.modalOverlay : undefined}>
+      <View style={useOverlay ? styles.modalContent : styles.embeddedContent}>
+        {/* Header */}
+        <View style={styles.headerRow}>
+          <Image
+            source={require('../assets/key-icon.png')}
+            style={styles.headerIcon}
+          />
+          <Text style={styles.headerTitle}>Sign • PSBT</Text>
+          <View style={styles.networkBadge}>
+            <Text style={styles.networkBadgeText}>
+              {network === 'mainnet' ? 'MAINNET' : 'TESTNET'}
+            </Text>
           </View>
+        </View>
 
           {/* Description */}
           <Text style={styles.description}>
@@ -814,7 +841,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                   source={require('../assets/upload-icon.png')}
                   style={styles.importButtonIcon}
                 />
-                <Text style={styles.importButtonText}>Upload PSBT File</Text>
+                <Text style={styles.importButtonText}>Load PSBT File</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -1034,9 +1061,27 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
 
           {/* Action buttons */}
           <View style={styles.actionButtonsContainer}>
-            <TouchableOpacity style={styles.cancelButton} onPress={handleClose}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+            <TouchableOpacity
+              style={[
+                styles.cancelButton,
+                isCancelDisabled && styles.cancelButtonDisabled,
+              ]}
+              onPress={handleClose}
+              disabled={isCancelDisabled}>
+              <Text
+                style={[
+                  styles.cancelButtonText,
+                  isCancelDisabled && styles.cancelButtonTextDisabled,
+                ]}>
+                Cancel
+              </Text>
             </TouchableOpacity>
+
+            {middleButton && (
+              <View style={styles.middleButtonContainer}>
+                {middleButton}
+              </View>
+            )}
 
             <TouchableOpacity
               style={[
@@ -1070,6 +1115,7 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
   visible,
   btcRate = 0,
   currencySymbol = '$',
+  network,
   onClose,
   onSign,
 }) => {
@@ -1086,6 +1132,7 @@ const PSBTModal: React.FC<PSBTModalProps> = ({
       <PSBTLoader
         btcRate={btcRate}
         currencySymbol={currencySymbol}
+        network={network}
         onClose={onClose}
         onSign={onSign}
       />
@@ -1116,9 +1163,19 @@ const createStyles = (theme: any) =>
       shadowRadius: 8,
       elevation: 8,
     },
+    // Embedded version used on the dedicated PSBT screen (no overlay)
+    // No border/shadow here since it's inside a collapsible section that already has borders
+    embeddedContent: {
+      backgroundColor: theme.colors.cardBackground,
+      borderRadius: 8,
+      padding: 16,
+      width: '100%',
+      overflow: 'hidden',
+    },
     headerRow: {
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'space-between',
       marginBottom: 12,
     },
     headerIcon: {
@@ -1131,6 +1188,7 @@ const createStyles = (theme: any) =>
       fontSize: 20,
       fontWeight: '700',
       color: theme.colors.text,
+      flex: 1,
     },
     description: {
       fontSize: 14,
@@ -1139,17 +1197,18 @@ const createStyles = (theme: any) =>
       marginBottom: 16,
     },
     networkBadge: {
-      alignSelf: 'flex-start',
       backgroundColor: theme.colors.background,
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-      borderRadius: 12,
-      marginBottom: 20,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
     },
-    networkText: {
-      fontSize: 12,
-      fontWeight: '600',
-      color: theme.colors.primary,
+    networkBadgeText: {
+      fontSize: 10,
+      fontWeight: '700',
+      color: theme.colors.text,
+      letterSpacing: 0.5,
     },
     importButtonsContainer: {
       marginBottom: 20,
@@ -1537,6 +1596,11 @@ const createStyles = (theme: any) =>
       color: theme.colors.textSecondary,
       marginTop: 1,
     },
+    middleButtonContainer: {
+      marginHorizontal: 6,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
     actionButtonsContainer: {
       flexDirection: 'row',
       marginTop: 20,
@@ -1551,10 +1615,16 @@ const createStyles = (theme: any) =>
       borderColor: theme.colors.border,
       marginRight: 6,
     },
+    cancelButtonDisabled: {
+      opacity: 0.5,
+    },
     cancelButtonText: {
       fontSize: 16,
       fontWeight: '600',
       color: theme.colors.text,
+    },
+    cancelButtonTextDisabled: {
+      color: theme.colors.textSecondary,
     },
     signButton: {
       flex: 1,
@@ -1587,21 +1657,5 @@ const createStyles = (theme: any) =>
       color: theme.colors.textSecondary,
     },
   });
-
-const PSBTModal: React.FC<PSBTModalProps> = props => {
-  if (!props.visible) {
-    return null;
-  }
-
-  return (
-    <Modal
-      visible={props.visible}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={() => {}}>
-      <PSBTBody {...props} />
-    </Modal>
-  );
-};
 
 export default PSBTModal;

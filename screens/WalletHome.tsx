@@ -28,7 +28,7 @@ import {CommonActions} from '@react-navigation/native';
 import Big from 'big.js';
 import ReceiveModal from './ReceiveModal';
 import SignedPSBTModal from './SignedPSBTModal';
-import PSBTModal from './PSBTModal';
+import PSBTModal from './PSBTModal.foss';
 import KeyshareModal from '../components/KeyshareModal';
 import QRCodeModal from '../components/QRCodeModal';
 import {

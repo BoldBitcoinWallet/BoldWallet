@@ -58,6 +58,7 @@ yarn-error.log
 # Ruby / CocoaPods
 **/Pods/
 /vendor/bundle/
+.bundle/
 
 # Temporary files created by Metro to check the health of the file watcher
 .metro-health-check*
@@ -81,6 +82,49 @@ BBMTLib/*.jar
 BBMTLib/Tss.xcframework/
 BBMTLib/scripts/bin/
 BBMTLib/scripts/*.json
+# Build binaries (bold-spend cross-platform binaries - ignore these)
+BBMTLib/bin/bold-spend-*
+# Build binaries (bbmt and related binaries - ignore these)
+BBMTLib/bin/bbmt*
+# Peer configuration files
+BBMTLib/peer*.json
+# Go build artifacts
+BBMTLib/*.exe
+BBMTLib/*.dll
+BBMTLib/*.so
+BBMTLib/*.dylib
+# Keyshare files (backup files from mobile app or testing)
+*.ks
+*.share
+peer*.ks
+KeyShare*.share
+peer*.share
+# Testing data and temporary files
+BBMTLib/test-data/
+BBMTLib/test-keygen-output/
+BBMTLib/test-keysign-output/
+BBMTLib/test-nostr-keygen-output/
+BBMTLib/test-nostr-keygen-3party-output/
+BBMTLib/test-nostr-keysign-output/
+BBMTLib/tmp/
+BBMTLib/temp/
+BBMTLib/*.test
+BBMTLib/*.log
+BBMTLib/scripts/peer*.ks
+BBMTLib/scripts/*.share
+# Test output directories (ignore all contents)
+**/test-keygen-output/
+**/test-keysign-output/
+**/test-nostr-keygen-output/
+**/test-nostr-keygen-3party-output/
+**/test-nostr-keysign-output/
+**/nostr-keygen-output/
+**/nostr-keysign-output/
+**/test-output/
+**/test-data/
+# Test output JSON files
+**/test-*-output/*.json
+**/nostr-*-output/*.json
 
 #
 android/signed-release.sh
@@ -99,11 +143,7 @@ build.log
 android/gradle.properties.local
 
 # IDE - VSCode
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
+.vscode/
 *.code-workspace
 
 # IDE - JetBrains
@@ -248,9 +288,9 @@ web-build/
 *.aab
 *.dex
 *.class
-bin/
-gen/
-out/
+android/bin/
+android/gen/
+android/out/
 .gradle/
 local.properties
 proguard/
@@ -336,3 +376,7 @@ vendor/bundle/
 *.der
 *.p12
 *.pfx
+
+# PR documentation (local only, not for git)
+PR_SUMMARY.md
+PR_README.md
