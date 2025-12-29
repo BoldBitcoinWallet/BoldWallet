@@ -184,16 +184,16 @@ const QRScanner: React.FC<QRScannerProps> = ({
 
   // Handle single scan
   const handleSingleScan = useCallback(() => {
-    // Try to set custom message before opening scanner (if supported)
-    if (subtitle && BarcodeZxingScan.updateProgressText) {
-      BarcodeZxingScan.updateProgressText(subtitle);
+    // Set custom status message before opening scanner (if supported)
+    if (subtitle && BarcodeZxingScan.setStatusMessage) {
+      BarcodeZxingScan.setStatusMessage(subtitle);
     }
     
     if (Platform.OS === 'android') {
       BarcodeZxingScan.showQrReader((error: any, data: any) => {
-        // Clear progress text
-        if (BarcodeZxingScan.updateProgressText) {
-          BarcodeZxingScan.updateProgressText('');
+        // Clear custom status message
+        if (BarcodeZxingScan.setStatusMessage) {
+          BarcodeZxingScan.setStatusMessage('');
         }
         if (error) {
           dbg('FOSS: Single scan error:', error);
@@ -207,9 +207,9 @@ const QRScanner: React.FC<QRScannerProps> = ({
     } else {
       // iOS - use single scan
       BarcodeZxingScan.showQrReader((error: any, data: any) => {
-        // Clear progress text
-        if (BarcodeZxingScan.updateProgressText) {
-          BarcodeZxingScan.updateProgressText('');
+        // Clear custom status message
+        if (BarcodeZxingScan.setStatusMessage) {
+          BarcodeZxingScan.setStatusMessage('');
         }
         if (error) {
           dbg('FOSS: iOS scan error:', error);
@@ -247,7 +247,7 @@ const QRScanner: React.FC<QRScannerProps> = ({
       ? isComplete
         ? 'Processing...'
         : `Keep scanning animated QR: ${progressPercent}%`
-      : 'Point your camera at the QR code to scan');
+      : 'Point camera at the QR code to scan');
 
   // For continuous mode on Android, show the scanner UI
   if (mode === 'continuous' && Platform.OS === 'android' && visible) {

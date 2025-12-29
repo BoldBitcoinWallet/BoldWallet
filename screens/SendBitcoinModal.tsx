@@ -392,9 +392,11 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                   const feeAmt = Big(feeNumber.toString());
                   setEstimatedFee(feeAmt);
                   if (Big(inBtcAmount).eq(walletBalance)) {
-                    setInBtcAmount(
-                      walletBalance.minus(feeAmt.div(1e8)).toString(),
-                    );
+                    // When MAX is clicked, adjust amount to account for fee
+                    const adjustedAmount = walletBalance.minus(feeAmt.div(1e8));
+                    setInBtcAmount(adjustedAmount.toFixed(8));
+                    setBtcAmount(adjustedAmount);
+                    setInUsdAmount(adjustedAmount.times(btcToFiatRate).toFixed(2));
                   }
                 } catch (parseError) {
                   dbg('Failed to parse fee amount:', fee, parseError);
@@ -426,7 +428,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
           setEstimatedFee(null);
         });
     },
-    [btcAmount, walletBalance, walletAddress, inBtcAmount],
+    [btcAmount, walletBalance, walletAddress, inBtcAmount, btcToFiatRate],
   );
 
   const debouncedGetFee = useMemo(() => debounce(getFee, 1000), [getFee]);
@@ -829,7 +831,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                   onScan={handleQRScan}
                   mode="single"
                   title="Scan QR Code"
-                  subtitle="Point your camera at a Bitcoin address QR code or send bitcoin transaction QR"
+                  subtitle="Point camera at the QR data"
                 />
               </SafeAreaView>
             </KeyboardAvoidingView>

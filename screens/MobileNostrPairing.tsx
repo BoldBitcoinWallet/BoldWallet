@@ -28,7 +28,7 @@ import * as Progress from 'react-native-progress';
 import {CommonActions, RouteProp, useRoute} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Big from 'big.js';
-import {dbg, HapticFeedback, getNostrRelays, getKeyshareLabel, hexToString, getDerivePathForNetwork} from '../utils';
+import {dbg, HapticFeedback, getNostrRelays, getKeyshareLabel, hexToString, getDerivePathForNetwork, isLegacyWallet} from '../utils';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import LocalCache from '../services/LocalCache';
@@ -1645,7 +1645,12 @@ const MobileNostrPairing = ({navigation}: any) => {
       const relaysCSV = relays.join(',');
 
       const network = (await LocalCache.getItem('network')) || 'mainnet';
-      const derivePath = getDerivePathForNetwork(network);
+      // Get address type from route params or cache, default to segwit-native
+      const currentAddressType = addressType || (await LocalCache.getItem('addressType')) || 'segwit-native';
+      // Check if this is a legacy wallet (created before migration timestamp)
+      const useLegacyPath = isLegacyWallet(keyshare.created_at);
+      const derivePath = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
+      dbg('Deriving path for Nostr send:', {network, currentAddressType, useLegacyPath, derivePath});
 
       // Derive the public key from the root key using the derivation path
       // This is critical - we need the DERIVED public key, not the root!
@@ -1882,9 +1887,12 @@ const MobileNostrPairing = ({navigation}: any) => {
 
       const relaysCSV = relays.join(',');
       const network = (await LocalCache.getItem('network')) || 'mainnet';
-      const derivePath = route.params?.derivePath || getDerivePathForNetwork(network);
-
-      dbg('Using derivation path for PSBT signing:', derivePath);
+      // Get address type from route params or cache, default to segwit-native
+      const currentAddressType = addressType || (await LocalCache.getItem('addressType')) || 'segwit-native';
+      // Check if this is a legacy wallet (created before migration timestamp)
+      const useLegacyPath = isLegacyWallet(keyshare.created_at);
+      const derivePath = route.params?.derivePath || getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
+      dbg('Using derivation path for PSBT signing:', {derivePath, network, currentAddressType, useLegacyPath});
 
       // Derive the public key
       const publicKey = await BBMTLibNativeModule.derivePubkey(
@@ -5794,7 +5802,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         onScan={(data: string) => handleQRScan(data, scanningForPeer)}
         mode="single"
         title="Scan Connection QR"
-        subtitle="Point your camera at the npub connection QR code from the other device"
+        subtitle="Point camera at the connection QR from the other device"
       />
 
       {/* QR Code Modal */}

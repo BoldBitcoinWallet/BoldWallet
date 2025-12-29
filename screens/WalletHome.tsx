@@ -1908,7 +1908,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         }}
         mode="single"
         title="Scan Send Bitcoin QR"
-        subtitle="Point your camera at the transaction QR code from the other device"
+        subtitle="Point camera at the QR data on the sending device"
       />
       <Modal
         visible={isAddressTypeModalVisible}

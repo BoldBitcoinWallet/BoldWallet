@@ -36,7 +36,7 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Share from 'react-native-share';
 import Big from 'big.js';
-import {dbg, getDerivePathForNetwork, getKeyshareLabel, getPinnedRemoteIPs, HapticFeedback, hexToString} from '../utils';
+import {dbg, getDerivePathForNetwork, getKeyshareLabel, getPinnedRemoteIPs, HapticFeedback, hexToString, isLegacyWallet} from '../utils';
 import {useTheme} from '../theme';
 import {waitMS} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
@@ -720,7 +720,16 @@ const MobilesPairing = ({navigation}: any) => {
       const peerShare = `${decoded[3]}`;
 
       // Derive public key and address for regular BTC sending (not needed for PSBT)
-      const path = route.params?.derivePath || getDerivePathForNetwork(net);
+      // Use the correct derivation path based on address type and legacy wallet status
+      let path = route.params?.derivePath;
+      if (!path) {
+        // Get address type from route params or cache, default to segwit-native
+        const currentAddressType = addressType || (await LocalCache.getItem('addressType')) || 'segwit-native';
+        // Check if this is a legacy wallet (created before migration timestamp)
+        const useLegacyPath = isLegacyWallet(ks.created_at);
+        path = getDerivePathForNetwork(net, currentAddressType, useLegacyPath);
+        dbg('Deriving path for send:', {net, currentAddressType, useLegacyPath, path});
+      }
       const btcPub = await BBMTLibNativeModule.derivePubkey(
         ks.pub_key,
         ks.chain_code_hex,
@@ -731,6 +740,20 @@ const MobilesPairing = ({navigation}: any) => {
         net,
         addressType,
       );
+      dbg('Derived address for send:', {
+        path,
+        btcAddress,
+        addressType,
+        network: net,
+        publicKey: btcPub.substring(0, 20) + '...',
+      });
+      
+      // Log warning if address doesn't match expected format for address type
+      if (addressType === 'segwit-native' && !btcAddress.startsWith('tb1q') && !btcAddress.startsWith('bc1q')) {
+        dbg('WARNING: Address type is segwit-native but address does not start with tb1q/bc1q:', btcAddress);
+      } else if (addressType === 'legacy' && !btcAddress.startsWith('1') && !btcAddress.startsWith('m') && !btcAddress.startsWith('n')) {
+        dbg('WARNING: Address type is legacy but address format does not match:', btcAddress);
+      }
 
       dbg('starting...', {
         peerShare,

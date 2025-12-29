@@ -1133,7 +1133,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                     urProgress.percentage ||
                       Math.round((urProgress.received / urProgress.total) * 100),
                   )}%`
-              : 'Point your camera at the PSBT QR code to scan'
+              : 'Point camera at the PSBT QR code to scan'
           }
           showProgress={!!urProgress && urProgress.total > 1}
           progress={urProgress || undefined}
