@@ -195,8 +195,8 @@ export interface Styles {
   keyshareDetailValue: TextStyle;
   keyshareBadge: ViewStyle;
   keyshareBadgeText: TextStyle;
-  keyshareBadgeFlexi: ViewStyle;
-  keyshareBadgeBasic: ViewStyle;
+  keyshareBadgeTrio: ViewStyle;
+  keyshareBadgeDuo: ViewStyle;
   keyshareStatusBadge: ViewStyle;
   keyshareStatusBadgeText: TextStyle;
   keyshareStatusBadgeSuccess: ViewStyle;
@@ -1285,10 +1285,10 @@ export const createStyles = (theme: Theme): Styles => ({
     fontWeight: '600' as const,
     color: '#FFFFFF',
   },
-  keyshareBadgeFlexi: {
+  keyshareBadgeTrio: {
     backgroundColor: theme.colors.primary,
   },
-  keyshareBadgeBasic: {
+  keyshareBadgeDuo: {
     backgroundColor: theme.colors.secondary ,
   },
   keyshareStatusBadge: {

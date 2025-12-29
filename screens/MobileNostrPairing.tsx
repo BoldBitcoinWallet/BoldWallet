@@ -23,8 +23,7 @@ import DeviceInfo from 'react-native-device-info';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import QRCode from 'react-native-qrcode-svg';
 import Clipboard from '@react-native-clipboard/clipboard';
-import BarcodeZxingScan from 'rn-barcode-zxing-scan';
-import {Camera, useCameraDevice} from 'react-native-vision-camera';
+import QRScanner from '../components/QRScanner';
 import * as Progress from 'react-native-progress';
 import {CommonActions, RouteProp, useRoute} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -38,91 +37,6 @@ import RNFS from 'react-native-fs';
 
 const {BBMTLibNativeModule} = NativeModules;
 
-// QR Scanner Component (moved outside to avoid re-render issues)
-const QRScannerComponent = ({
-  cameraDevice,
-  onScan,
-  onClose,
-  theme,
-}: {
-  cameraDevice: any;
-  onScan: (data: string) => void;
-  onClose: () => void;
-  theme: any;
-}) => {
-  const scannerStyles = StyleSheet.create({
-    scannerContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    qrFrame: {
-      width: 250,
-      height: 250,
-      borderWidth: 2,
-      borderColor: theme.colors.primary,
-      borderRadius: 12,
-    },
-    closeScannerButton: {
-      position: 'absolute',
-      bottom: 40,
-      backgroundColor: theme.colors.primary,
-      paddingHorizontal: 24,
-      paddingVertical: 12,
-      borderRadius: 12,
-    },
-    closeScannerButtonText: {
-      color: theme.colors.background,
-      fontSize: 16,
-      fontWeight: '600',
-    },
-    cameraNotFound: {
-      color: theme.colors.text,
-      fontSize: 16,
-    },
-  });
-
-  if (!cameraDevice) {
-    return (
-      <View style={scannerStyles.scannerContainer}>
-        <Text style={scannerStyles.cameraNotFound}>Camera Not Found</Text>
-        <TouchableOpacity
-          style={scannerStyles.closeScannerButton}
-          onPress={onClose}>
-          <Text style={scannerStyles.closeScannerButtonText}>Close</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  const codeScanner = {
-    codeTypes: ['qr' as const],
-    onCodeScanned: (codes: any[]) => {
-      if (codes.length > 0) {
-        onScan(codes[0].value);
-      }
-    },
-  };
-
-  return (
-    <View style={scannerStyles.scannerContainer}>
-      <Camera
-        style={StyleSheet.absoluteFill}
-        device={cameraDevice}
-        isActive={true}
-        torch="off"
-        codeScanner={codeScanner}
-      />
-      <View style={scannerStyles.qrFrame} />
-      <TouchableOpacity
-        style={scannerStyles.closeScannerButton}
-        onPress={onClose}
-        activeOpacity={0.7}>
-        <Text style={scannerStyles.closeScannerButtonText}>Close</Text>
-      </TouchableOpacity>
-    </View>
-  );
-};
 
 type RouteParams = {
   mode?: string; // 'duo' | 'trio' | 'send_btc' | 'sign_psbt'
@@ -252,12 +166,6 @@ const MobileNostrPairing = ({navigation}: any) => {
   const [showHelpModal, setShowHelpModal] = useState(false);
   const connectionQrRef = useRef<any>(null);
 
-  // Only use camera hooks on iOS - Android uses BarcodeZxingScan
-  let device: any = null;
-  if (Platform.OS === 'ios') {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    device = useCameraDevice('back');
-  }
 
   // Connection details for sharing (hex encoded)
   const connectionDetails = React.useMemo(() => {
@@ -2064,7 +1972,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       maximumFractionDigits: 2,
     }).format(Number(price));
 
-  const sat2btcStr = (sats?: string) =>
+  const sat2btcStr = (sats?: string | number) =>
     Big(sats || 0)
       .div(1e8)
       .toFixed(8);
@@ -2147,16 +2055,20 @@ const MobileNostrPairing = ({navigation}: any) => {
   async function backupShare() {
     if (!validatePassword(password)) {
       dbg('❌ [BACKUP] Password validation failed');
+      const missingRequirements = passwordErrors.join('\n• ');
       Alert.alert(
-        'Weak Password',
-        'Please use a stronger password that meets all requirements.',
+        'Password Requirements Not Met',
+        `Your password must meet all of the following requirements:\n\n• ${missingRequirements}\n\nPlease update your password and try again.`,
       );
       return;
     }
 
     if (password !== confirmPassword) {
       dbg('❌ [BACKUP] Password mismatch');
-      Alert.alert('Password Mismatch', 'Passwords do not match.');
+      Alert.alert(
+        'Passwords Do Not Match',
+        'The password and confirmation password must be identical. Please check both fields and try again.',
+      );
       return;
     }
 
@@ -2171,17 +2083,34 @@ const MobileNostrPairing = ({navigation}: any) => {
           await BBMTLibNativeModule.sha256(password),
         );
 
-        // Create friendly filename with date and time
-        const now = new Date();
-        const month = now.toLocaleDateString('en-US', {month: 'short'});
-        const day = now.getDate().toString().padStart(2, '0');
-        const year = now.getFullYear();
-        const hours = now.getHours().toString().padStart(2, '0');
-        const minutes = now.getMinutes().toString().padStart(2, '0');
-        // Use keyshare label (KeyShare1/2/3) or fallback to local_party_key
+        // Create filename based on pub_key hash and keyshare number
+        if (!json.pub_key) {
+          Alert.alert('Error', 'Keyshare missing pub_key.');
+          return;
+        }
+        
+        // Get SHA256 hash of pub_key and take first 4 characters
+        const pubKeyHash = await BBMTLibNativeModule.sha256(json.pub_key);
+        const hashPrefix = pubKeyHash.substring(0, 4).toLowerCase();
+        
+        // Extract keyshare number from label (KeyShare1 -> 1, KeyShare2 -> 2, etc.)
         const keyshareLabel = getKeyshareLabel(json);
-        const shareName = keyshareLabel || json.local_party_key || 'keyshare';
-        const friendlyFilename = `${shareName}.${month}${day}.${year}.${hours}${minutes}.share`;
+        let keyshareNumber = '1'; // default
+        if (keyshareLabel) {
+          const match = keyshareLabel.match(/KeyShare(\d+)/);
+          if (match) {
+            keyshareNumber = match[1];
+          }
+        } else if (json.keygen_committee_keys && json.local_party_key) {
+          // Fallback: compute from position in sorted keygen_committee_keys
+          const sortedKeys = [...json.keygen_committee_keys].sort();
+          const index = sortedKeys.indexOf(json.local_party_key);
+          if (index >= 0) {
+            keyshareNumber = String(index + 1);
+          }
+        }
+        
+        const friendlyFilename = `${hashPrefix}K${keyshareNumber}.share`;
 
         const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
         const filePath = `${tempDir}/${friendlyFilename}`;
@@ -2190,6 +2119,7 @@ const MobileNostrPairing = ({navigation}: any) => {
 
         await Share.open({
           title: 'Backup Your Keyshare',
+          isNewTask: true,
           message:
             'Save this encrypted file securely. It is required for wallet recovery.',
           url: `file://${filePath}`,
@@ -2198,9 +2128,12 @@ const MobileNostrPairing = ({navigation}: any) => {
           failOnCancel: false,
         });
 
+        // Cleanup temp file (best-effort)
         try {
           await RNFS.unlink(filePath);
-        } catch {}
+        } catch {
+          // ignore cleanup errors
+        }
         clearBackupModal();
       } else {
         Alert.alert('Error', 'Invalid keyshare.');
@@ -4623,17 +4556,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   const peerNum: 1 | 2 = 1;
                                   setScanningForPeer(peerNum);
                                   scanningForPeerRef.current = peerNum; // Update ref immediately
-                                  if (Platform.OS === 'android') {
-                                    BarcodeZxingScan.showQrReader(
-                                      (error: any, data: any) => {
-                                        if (!error && data) {
-                                          handleQRScan(data, peerNum);
-                                        }
-                                      },
-                                    );
-                                  } else {
-                                    setIsQRScannerVisible(true);
-                                  }
+                                  setIsQRScannerVisible(true);
                                 }}
                                 activeOpacity={0.7}>
                                 <Image
@@ -4762,17 +4685,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   const peerNum: 1 | 2 = 2;
                                   setScanningForPeer(peerNum);
                                   scanningForPeerRef.current = peerNum; // Update ref immediately
-                                  if (Platform.OS === 'android') {
-                                    BarcodeZxingScan.showQrReader(
-                                      (error: any, data: any) => {
-                                        if (!error && data) {
-                                          handleQRScan(data, peerNum);
-                                        }
-                                      },
-                                    );
-                                  } else {
-                                    setIsQRScannerVisible(true);
-                                  }
+                                  setIsQRScannerVisible(true);
                                 }}
                                 activeOpacity={0.7}>
                                 <Image
@@ -5875,20 +5788,14 @@ const MobileNostrPairing = ({navigation}: any) => {
       </KeyboardAvoidingView>
 
       {/* QR Scanner Modal */}
-      {Platform.OS === 'ios' && isQRScannerVisible && (
-        <Modal
-          visible={isQRScannerVisible}
-          transparent={false}
-          animationType="slide"
-          onRequestClose={() => setIsQRScannerVisible(false)}>
-          <QRScannerComponent
-            cameraDevice={device}
-            onScan={(data: string) => handleQRScan(data, scanningForPeer)}
-            onClose={() => setIsQRScannerVisible(false)}
-            theme={theme}
-          />
-        </Modal>
-      )}
+      <QRScanner
+        visible={isQRScannerVisible}
+        onClose={() => setIsQRScannerVisible(false)}
+        onScan={(data: string) => handleQRScan(data, scanningForPeer)}
+        mode="single"
+        title="Scan QR Code"
+        subtitle="Scan the npub QR code from the other device"
+      />
 
       {/* QR Code Modal */}
       <Modal

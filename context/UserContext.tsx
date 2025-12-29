@@ -117,7 +117,7 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({children}) 
     try {
       // Load address type
       const storedType = (await LocalCache.getItem('addressType')) as AddressType | null;
-      const currentAddressType = (storedType as AddressType) || 'legacy';
+      const currentAddressType = (storedType as AddressType) || 'segwit-native';
       setActiveAddressTypeState(currentAddressType);
 
       // Load/derive btcPub

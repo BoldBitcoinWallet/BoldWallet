@@ -1083,7 +1083,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                         styles.modeOptionTitle,
                         {color: theme.colors.primary},
                       ]}>
-                      Basic
+                      Duo
                     </Text>
                   </View>
                 </TouchableOpacity>
@@ -1168,7 +1168,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                         styles.modeOptionTitle,
                         {color: theme.colors.primary},
                       ]}>
-                      Flexi
+                      Trio
                     </Text>
                   </View>
                 </TouchableOpacity>
@@ -1185,7 +1185,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                     {selectedMode === 'duo' ? (
                       <Text style={styles.modeSelectedHintText}>
                         <Text style={styles.modeSelectedHintTextBold}>
-                          Basic (2/2)
+                          Duo (2/2)
                         </Text>
                         : two devices needed for wallet setup. both of them must
                         approve transactions when spending funds.
@@ -1193,7 +1193,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                     ) : (
                       <Text style={styles.modeSelectedHintText}>
                         <Text style={styles.modeSelectedHintTextBold}>
-                          Flexi (2/3)
+                          Trio (2/3)
                         </Text>
                         : three devices needed for wallet setup. any 2 of them
                         must approve transactions when spending funds.

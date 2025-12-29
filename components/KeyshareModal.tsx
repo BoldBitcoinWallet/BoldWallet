@@ -22,7 +22,7 @@ interface KeyshareInfo {
   label: string;
   supportsLocal: boolean;
   supportsNostr: boolean;
-  type: 'basic' | 'flexi';
+  type: 'duo' | 'trio';
   pubKey: string;
   chainCode: string;
   xpub: string;
@@ -282,14 +282,14 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                       <View
                         style={[
                           styles.keyshareBadge,
-                          keyshareInfo.type === 'flexi'
-                            ? styles.keyshareBadgeFlexi
-                            : styles.keyshareBadgeBasic,
+                          keyshareInfo.type === 'trio'
+                            ? styles.keyshareBadgeTrio
+                            : styles.keyshareBadgeDuo,
                         ]}>
                         <Text style={styles.keyshareBadgeText}>
-                          {keyshareInfo.type === 'flexi'
-                            ? 'Flexi • 3 devices'
-                            : 'Basic • 2 devices'}
+                          {keyshareInfo.type === 'trio'
+                            ? 'Trio • 3 devices'
+                            : 'Duo • 2 devices'}
                         </Text>
                       </View>
                     </View>

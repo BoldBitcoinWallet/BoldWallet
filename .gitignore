@@ -380,3 +380,6 @@ vendor/bundle/
 # PR documentation (local only, not for git)
 PR_SUMMARY.md
 PR_README.md
+
+# third_party
+third_party/

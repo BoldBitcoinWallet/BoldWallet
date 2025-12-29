@@ -36,7 +36,7 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Share from 'react-native-share';
 import Big from 'big.js';
-import {dbg, getDerivePathForNetwork, getPinnedRemoteIPs, HapticFeedback, hexToString} from '../utils';
+import {dbg, getDerivePathForNetwork, getKeyshareLabel, getPinnedRemoteIPs, HapticFeedback, hexToString} from '../utils';
 import {useTheme} from '../theme';
 import {waitMS} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
@@ -895,7 +895,7 @@ const MobilesPairing = ({navigation}: any) => {
     }
 
     try {
-      HapticFeedback.light();
+      HapticFeedback.medium();
 
       const storedKeyshare = await EncryptedStorage.getItem('keyshare');
       if (storedKeyshare) {
@@ -905,15 +905,34 @@ const MobilesPairing = ({navigation}: any) => {
           await BBMTLibNativeModule.sha256(password),
         );
 
-        // Create friendly filename with date and time (match WalletSettings)
-        const now = new Date();
-        const month = now.toLocaleDateString('en-US', {month: 'short'});
-        const day = now.getDate().toString().padStart(2, '0');
-        const year = now.getFullYear();
-        const hours = now.getHours().toString().padStart(2, '0');
-        const minutes = now.getMinutes().toString().padStart(2, '0');
-        const share = json.local_party_key;
-        const friendlyFilename = `${share}.${month}${day}.${year}.${hours}${minutes}.share`;
+        // Create filename based on pub_key hash and keyshare number
+        if (!json.pub_key) {
+          Alert.alert('Error', 'Keyshare missing pub_key.');
+          return;
+        }
+        
+        // Get SHA256 hash of pub_key and take first 4 characters
+        const pubKeyHash = await BBMTLibNativeModule.sha256(json.pub_key);
+        const hashPrefix = pubKeyHash.substring(0, 4).toLowerCase();
+        
+        // Extract keyshare number from label (KeyShare1 -> 1, KeyShare2 -> 2, etc.)
+        const keyshareLabel = getKeyshareLabel(json);
+        let keyshareNumber = '1'; // default
+        if (keyshareLabel) {
+          const match = keyshareLabel.match(/KeyShare(\d+)/);
+          if (match) {
+            keyshareNumber = match[1];
+          }
+        } else if (json.keygen_committee_keys && json.local_party_key) {
+          // Fallback: compute from position in sorted keygen_committee_keys
+          const sortedKeys = [...json.keygen_committee_keys].sort();
+          const index = sortedKeys.indexOf(json.local_party_key);
+          if (index >= 0) {
+            keyshareNumber = String(index + 1);
+          }
+        }
+        
+        const friendlyFilename = `${hashPrefix}K${keyshareNumber}.share`;
 
         const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
         const filePath = `${tempDir}/${friendlyFilename}`;
@@ -931,9 +950,12 @@ const MobilesPairing = ({navigation}: any) => {
           failOnCancel: false,
         });
 
+        // Cleanup temp file (best-effort)
         try {
           await RNFS.unlink(filePath);
-        } catch {}
+        } catch {
+          // ignore cleanup errors
+        }
         clearBackupModal();
       } else {
         Alert.alert('Error', 'Invalid keyshare.');

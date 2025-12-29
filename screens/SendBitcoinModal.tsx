@@ -17,16 +17,11 @@ import {
   ScrollView,
   Linking,
 } from 'react-native';
-import {
-  Camera,
-  useCameraDevice,
-  useCodeScanner,
-} from 'react-native-vision-camera';
-import BarcodeZxingScan from 'rn-barcode-zxing-scan';
+import QRScanner from '../components/QRScanner';
 import Clipboard from '@react-native-clipboard/clipboard';
 import debounce from 'lodash/debounce';
 import Big from 'big.js';
-import {dbg, HapticFeedback} from '../utils';
+import {dbg, HapticFeedback, decodeSendBitcoinQR} from '../utils';
 import {useTheme} from '../theme';
 import LocalCache from '../services/LocalCache';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -50,30 +45,6 @@ interface SendBitcoinModalProps {
 }
 
 const E8 = Big(10).pow(8);
-
-const QRScanner = ({styles, device, codeScanner, onClose}: any) => {
-  if (!device) {
-    return <Text style={styles.cameraNotFound}>Camera Not Found</Text>;
-  }
-  return (
-    <View style={styles.scannerContainer}>
-      <Camera
-        style={StyleSheet.absoluteFill}
-        device={device || null}
-        isActive={true}
-        torch="off"
-        codeScanner={codeScanner}
-      />
-      <View style={styles.qrFrame} />
-      <TouchableOpacity
-        style={styles.closeScannerButton}
-        onPress={onClose}
-        activeOpacity={0.7}>
-        <Text style={styles.closeScannerButtonText}>Close</Text>
-      </TouchableOpacity>
-    </View>
-  );
-};
 
 const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   visible,
@@ -322,36 +293,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     disabledButton: {
       opacity: 0.5,
     },
-    scannerContainer: {
-      flex: 1,
-      backgroundColor: 'black',
-    },
-    qrFrame: {
-      position: 'absolute',
-      borderWidth: 2,
-      borderColor: 'white',
-      width: 250,
-      height: 250,
-      alignSelf: 'center',
-      top: '25%',
-    },
-    closeScannerButton: {
-      position: 'absolute',
-      top: 50,
-      right: 20,
-      backgroundColor: theme.colors.accent,
-      padding: 10,
-      borderRadius: 50,
-    },
-    closeScannerButtonText: {
-      color: '#fff',
-      fontWeight: 'bold',
-    },
-    cameraNotFound: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
     // Setup Guide Hint Styles
     setupGuideHint: {
       marginTop: 12,
@@ -381,24 +322,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     },
   });
 
-  // Only use camera hooks on iOS - Android uses BarcodeZxingScan
-  let device;
-  let codeScanner;
-
-  if (Platform.OS === 'ios') {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    device = useCameraDevice('back');
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    codeScanner = useCodeScanner({
-      codeTypes: ['qr'],
-      onCodeScanned: codes => {
-        if (codes.length > 0) {
-          setAddress(codes[0].value!!);
-          setIsScannerVisible(false);
-        }
-      },
-    });
-  }
 
   const feeStrategies = [
     {label: 'Economy', value: 'eco'},
@@ -594,6 +517,60 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     setInUsdAmount(walletBalance.times(btcToFiatRate).toFixed(2));
   };
 
+  // Handle QR scan - supports both regular addresses and send bitcoin QR format
+  const handleQRScan = useCallback((qrData: string) => {
+    if (!qrData || !qrData.trim()) {
+      return;
+    }
+
+    // Check if it's a send bitcoin QR format (address|amount|fee|hash)
+    const decoded = decodeSendBitcoinQR(qrData) as {
+      toAddress: string;
+      amountSats: string;
+      feeSats: string;
+      spendingHash?: string;
+    } | null;
+    if (decoded && decoded.toAddress && decoded.amountSats && decoded.feeSats) {
+      // It's a send bitcoin QR format - populate all fields
+      if (!validateBitcoinAddress(decoded.toAddress)) {
+        Alert.alert('Invalid Address', 'The scanned QR code contains an invalid Bitcoin address.');
+        return;
+      }
+
+      const amountSats = Big(decoded.amountSats);
+      const feeSats = Big(decoded.feeSats);
+      const amountBTC = amountSats.div(1e8);
+
+      if (amountSats.lte(0) || feeSats.lte(0)) {
+        Alert.alert('Invalid Amount', 'The scanned QR code contains invalid amount or fee values.');
+        return;
+      }
+
+      // Populate form fields
+      setAddress(decoded.toAddress);
+      setBtcAmount(amountBTC);
+      setInBtcAmount(amountBTC.toFixed(8));
+      setInUsdAmount(amountBTC.times(btcToFiatRate).toFixed(2));
+      setSpendingHash(decoded.spendingHash || '');
+      
+      // Set the fee (will be validated when fee estimation runs)
+      // Note: The fee from QR might not match current network conditions,
+      // but we'll let the fee estimation handle that
+      
+      Alert.alert(
+        'Transaction Details Loaded',
+        `Address and amount have been filled from the QR code.\n\nAddress: ${decoded.toAddress.substring(0, 10)}...\nAmount: ${amountBTC.toFixed(8)} BTC\n\nPlease review and confirm.`,
+      );
+    } else {
+      // It's a regular Bitcoin address - just set the address
+      if (validateBitcoinAddress(qrData.trim())) {
+        setAddress(qrData.trim());
+      } else {
+        Alert.alert('Invalid QR Code', 'The scanned QR code is not a valid Bitcoin address or send bitcoin data.');
+      }
+    }
+  }, [btcToFiatRate]);
+
   const handleFeeStrategyChange = (value: string) => {
     HapticFeedback.selection();
     setFeeStrategy(value);
@@ -734,17 +711,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                   <TouchableOpacity
                     onPress={() => {
                       HapticFeedback.light();
-                      if (Platform.OS === 'android') {
-                        BarcodeZxingScan.showQrReader(
-                          (error: any, data: any) => {
-                            if (!error) {
-                              setAddress(data);
-                            }
-                          },
-                        );
-                      } else {
-                        setIsScannerVisible(true);
-                      }
+                      setIsScannerVisible(true);
                     }}
                     style={styles.qrIconContainer}>
                     <Image
@@ -856,18 +823,14 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                   </TouchableOpacity>
                 </View>
 
-                <Modal
-                  animationType="fade"
-                  transparent={false}
+                <QRScanner
                   visible={isScannerVisible}
-                  onRequestClose={() => setIsScannerVisible(false)}>
-                  <QRScanner
-                    styles={styles}
-                    device={device}
-                    codeScanner={codeScanner}
-                    onClose={() => setIsScannerVisible(false)}
-                  />
-                </Modal>
+                  onClose={() => setIsScannerVisible(false)}
+                  onScan={handleQRScan}
+                  mode="single"
+                  title="Scan QR Code"
+                  subtitle="Scan a Bitcoin address or send bitcoin QR code"
+                />
               </SafeAreaView>
             </KeyboardAvoidingView>
           </View>

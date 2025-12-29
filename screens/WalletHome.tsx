@@ -12,6 +12,7 @@ import {
   DeviceEventEmitter,
   Linking,
 } from 'react-native';
+import QRScanner from '../components/QRScanner';
 import {
   useFocusEffect,
   useNavigation,
@@ -28,7 +29,7 @@ import {CommonActions} from '@react-navigation/native';
 import Big from 'big.js';
 import ReceiveModal from './ReceiveModal';
 import SignedPSBTModal from './SignedPSBTModal';
-import PSBTModal from './PSBTModal.foss';
+import PSBTModal from './PSBTModal';
 import KeyshareModal from '../components/KeyshareModal';
 import QRCodeModal from '../components/QRCodeModal';
 import {
@@ -42,7 +43,9 @@ import {
   getDerivePathForNetwork,
   isLegacyWallet,
   generateAllOutputDescriptors,
+  decodeSendBitcoinQR,
 } from '../utils';
+import {validate as validateBitcoinAddress} from 'bitcoin-address-validation';
 import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
 import WalletSkeleton from '../components/WalletSkeleton';
@@ -61,6 +64,7 @@ import LocalCache from '../services/LocalCache';
 const {BBMTLibNativeModule} = NativeModules;
 
 const keyIcon = require('../assets/key-icon.png');
+
 
 type RouteParams = {
   txId?: string;
@@ -92,7 +96,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [balanceBTC, setBalanceBTC] = useState<string>('0.00000000');
   const [balanceFiat, setBalanceFiat] = useState<string>('0');
   const [party, setParty] = useState<string>('');
-  const [isBlurred, setIsBlurred] = useState<boolean>(true);
+  const [isBlurred, setIsBlurred] = useState<boolean>(false);
   const [isReceiveModalVisible, setIsReceiveModalVisible] = useState(false);
   const [isSignedPSBTModalVisible, setIsSignedPSBTModalVisible] =
     useState(false);
@@ -117,6 +121,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [isCurrencySelectorVisible, setIsCurrencySelectorVisible] =
     useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState('');
+  const [isQRScannerVisible, setIsQRScannerVisible] = useState(false);
+  const [scannedFromQR, setScannedFromQR] = useState(false); // Track if data came from QR scan
   const [priceData, setPriceData] = useState<{[key: string]: number}>({});
   const [segwitCompatibleAddress, setSegwitCompatibleAddress] =
     React.useState('');
@@ -393,7 +399,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           if (jks) {
             const ks = JSON.parse(jks);
             // Get current address type for derivation path
-            const currentAddressType = (await LocalCache.getItem('addressType')) || 'legacy';
+            const currentAddressType = (await LocalCache.getItem('addressType')) || 'segwit-native';
             // Check if this is a legacy wallet (created before migration timestamp)
             const useLegacyPath = isLegacyWallet(ks.created_at);
             const path = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
@@ -451,7 +457,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
         // Get the current address type from cache or state
         const currentAddressType =
-          addressType || (await LocalCache.getItem('addressType')) || 'P2WPKH';
+          addressType || (await LocalCache.getItem('addressType')) || 'segwit-native';
         dbg(
           'Using address type:',
           currentAddressType,
@@ -474,7 +480,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         const ks = JSON.parse(jks);
         // Get current address type for derivation path
         const deriveAddressType =
-          (await LocalCache.getItem('addressType')) || 'legacy';
+          (await LocalCache.getItem('addressType')) || 'segwit-native';
         // Check if this is a legacy wallet (created before migration timestamp)
         const useLegacyPath = isLegacyWallet(ks.created_at);
         const path = getDerivePathForNetwork(
@@ -619,7 +625,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
         const ks = JSON.parse(jks);
         // Get current address type for derivation path
-        const currentAddressType = (await LocalCache.getItem('addressType')) || 'legacy';
+        const currentAddressType = (await LocalCache.getItem('addressType')) || 'segwit-native';
         // Check if this is a legacy wallet (created before migration timestamp)
         const useLegacyPath = isLegacyWallet(ks.created_at);
         const path = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
@@ -641,7 +647,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('Re-initializing for network:', net);
 
         // Get current address type
-        const addrType = (await LocalCache.getItem('addressType')) || 'legacy';
+        const addrType = (await LocalCache.getItem('addressType')) || 'segwit-native';
         setAddressType(addrType);
 
         // Set up network parameters
@@ -813,7 +819,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     label: string;
     supportsLocal: boolean;
     supportsNostr: boolean;
-    type: 'basic' | 'flexi';
+    type: 'duo' | 'trio';
     pubKey: string;
     chainCode: string;
     xpub: string;
@@ -849,7 +855,38 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
 
   const {theme} = useTheme();
-  const styles = createStyles(theme);
+  const styles = {
+    ...createStyles(theme),
+    // Lock FAB
+    lockFAB: {
+      position: 'absolute' as const,
+      bottom: 24,
+      right: 20,
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: Platform.OS === 'android' 
+        ? 'rgba(40, 40, 50, 0.92)' // More visible dark blue-gray background on Android
+        : 'rgba(0, 0, 0, 0.6)',
+      justifyContent: 'center' as const,
+      alignItems: 'center' as const,
+      elevation: 12,
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 4},
+      shadowOpacity: 0.5,
+      shadowRadius: 10,
+      borderWidth: Platform.OS === 'android' ? 2 : 1,
+      borderColor: Platform.OS === 'android' 
+        ? 'rgba(255, 255, 255, 0.35)' // More visible border on Android
+        : 'rgba(255, 255, 255, 0.2)',
+      overflow: 'hidden' as const,
+    } as const,
+    lockFABIcon: {
+      width: 28,
+      height: 28,
+      tintColor: theme.colors.background,
+    } as const,
+  };
 
   const headerRight = React.useCallback(
     () => <HeaderRightButton navigation={navigation} />,
@@ -909,10 +946,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
   useEffect(() => {
     LocalCache.getItem('addressType').then(addrType => {
-      setAddressType(addrType || 'legacy');
+      setAddressType(addrType || 'segwit-native');
     });
     LocalCache.getItem('currency').then(currency => {
       setSelectedCurrency(currency || 'USD');
+    });
+    // Load balance visibility preference
+    LocalCache.getItem('balanceHidden').then(hidden => {
+      setIsBlurred(hidden === 'true');
     });
   });
 
@@ -1063,7 +1104,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         }
 
         // Get current address type for derivation path
-        const currentAddressType = (await LocalCache.getItem('addressType')) || 'legacy';
+        const currentAddressType = (await LocalCache.getItem('addressType')) || 'segwit-native';
         // Check if this is a legacy wallet (created before migration timestamp)
         const useLegacyPath = isLegacyWallet(ks.created_at);
         const path = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
@@ -1088,9 +1129,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         // Set default address type if not set
         let addrType = await LocalCache.getItem('addressType');
         if (!addrType) {
-          addrType = 'legacy';
+          addrType = 'segwit-native';
           await LocalCache.setItem('addressType', addrType);
-          dbg('WalletHome: Setting default address type to legacy');
+          dbg('WalletHome: Setting default address type to segwit-native');
         }
         // Set default currency if not set
         let currency = (await LocalCache.getItem('currency')) || 'USD';
@@ -1243,7 +1284,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const handleBlurred = () => {
     const blurr = !isBlurred;
     setIsBlurred(blurr);
-    LocalCache.setItem('mode', blurr ? 'private' : '');
+    LocalCache.setItem('balanceHidden', blurr ? 'true' : 'false');
   };
 
   const loadKeyshareInfo = useCallback(async () => {
@@ -1261,9 +1302,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       const supportsNostr = !!(nostrNpub && nostrNpub.trim() !== '');
       const supportsLocal = true; // Always supported
 
-      // Determine type: basic (2 devices) or flexi (3 devices)
+      // Determine type: duo (2 devices) or trio (3 devices)
       const committeeKeys = keyshare.keygen_committee_keys || [];
-      const type = committeeKeys.length === 3 ? 'flexi' : 'basic';
+      const type = committeeKeys.length === 3 ? 'trio' : 'duo';
 
       // Determine label: if Nostr, use sorted order; otherwise use generic
       let label = 'KeyShare1';
@@ -1292,7 +1333,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         chainCode,
         network,
         keyshare.created_at,
-        addressType || 'legacy',
+        addressType || 'segwit-native',
       );
 
       const outputDescriptors = {
@@ -1415,7 +1456,62 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       }),
     );
     setPendingSendParams(null);
+    setScannedFromQR(false); // Reset flag
   };
+
+  // Process scanned QR data
+  const processScannedQRData = useCallback((qrData: string) => {
+    dbg('Scanned QR data:', qrData.substring(0, 100));
+    
+    const decoded = decodeSendBitcoinQR(qrData) as {
+      toAddress: string;
+      amountSats: string;
+      feeSats: string;
+      spendingHash?: string;
+    } | null;
+    if (!decoded || !decoded.toAddress || !decoded.amountSats || !decoded.feeSats) {
+      Alert.alert(
+        'Invalid QR Code',
+        'The scanned QR code does not contain valid send bitcoin data. Please scan the QR code from the device that initiated the transaction.',
+      );
+      return;
+    }
+
+    // Validate Bitcoin address
+    if (!validateBitcoinAddress(decoded.toAddress)) {
+      Alert.alert('Invalid Address', 'The scanned QR code contains an invalid Bitcoin address.');
+      return;
+    }
+
+    // Convert to Big for consistency
+    const amountSats = Big(decoded.amountSats);
+    const feeSats = Big(decoded.feeSats);
+
+    if (amountSats.lte(0) || feeSats.lte(0)) {
+      Alert.alert('Invalid Amount', 'The scanned QR code contains invalid amount or fee values.');
+      return;
+    }
+
+    // Store params and mark as scanned from QR
+    setPendingSendParams({
+      to: decoded.toAddress,
+      amountSats,
+      feeSats,
+      spendingHash: decoded.spendingHash || '',
+    });
+    setScannedFromQR(true);
+    
+    // Show transport selector immediately (no QR code shown since data came from scan)
+    setTimeout(() => {
+      setIsTransportModalVisible(true);
+    }, 300);
+  }, []);
+
+  // Handle QR scan for send bitcoin data
+  const handleScanQRForSend = useCallback(() => {
+    HapticFeedback.medium();
+    setIsQRScannerVisible(true);
+  }, []);
 
   // Handle PSBT signing - similar to handleSend (kept for compatibility with PSBT flows)
   const handlePSBTSign = async (psbtBase64: string, derivePath?: string) => {
@@ -1425,13 +1521,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       const jks = await EncryptedStorage.getItem('keyshare');
       if (jks) {
         const ks = JSON.parse(jks);
-        const currentAddressType = (await LocalCache.getItem('addressType')) || 'legacy';
+        const currentAddressType = (await LocalCache.getItem('addressType')) || 'segwit-native';
         // Check if this is a legacy wallet (created before migration timestamp)
         const useLegacyPath = isLegacyWallet(ks.created_at);
         derivePath = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
       }
     }
-    const psbtDerivePath = derivePath || getDerivePathForNetwork(network, 'legacy', true);
+    const psbtDerivePath = derivePath || getDerivePathForNetwork(network, 'segwit-native', true);
 
     // Check if keyshare supports Nostr (has nostr_npub)
     try {
@@ -1502,6 +1598,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         return require('../assets/bricks-icon.png');
     }
   };
+
 
   if (loading && !isInitialized) {
     return <WalletSkeleton />;
@@ -1687,16 +1784,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               />
               <Text style={styles.sendButtonText}>Send</Text>
             </TouchableOpacity>
-            {/* Lock icon button replaces address type change button */}
+            {/* Scan QR button replaces lock button in action row */}
             <TouchableOpacity
               style={[styles.actionButton, styles.addressTypeModalButton]}
-              onPress={() => {
-                HapticFeedback.light();
-                // Emit a reload event to App.tsx to trigger authentication lock
-                DeviceEventEmitter.emit('app:reload');
-              }}>
+              onPress={handleScanQRForSend}
+              activeOpacity={0.8}>
               <Image
-                source={require('../assets/locker-icon.png')}
+                source={require('../assets/scan-icon.png')}
                 style={styles.addressTypeButtonIcon}
                 resizeMode="contain"
               />
@@ -1774,6 +1868,50 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           isBlurred={isBlurred}
         />
       </View>
+      {/* Lock FAB Button - Bottom Right */}
+      {isInitialized && address && (
+        <TouchableOpacity
+          style={styles.lockFAB}
+          onPress={() => {
+            HapticFeedback.light();
+            // Emit a reload event to App.tsx to trigger authentication lock
+            DeviceEventEmitter.emit('app:reload');
+          }}
+          activeOpacity={0.7}>
+          {Platform.OS === 'android' && (
+            <View
+              style={{
+                position: 'absolute',
+                width: '100%',
+                height: '100%',
+                borderRadius: 28,
+                // Subtle gradient overlay for depth
+                backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                borderWidth: 1,
+                borderColor: 'rgba(255, 255, 255, 0.15)',
+              }}
+            />
+          )}
+          <Image
+            source={require('../assets/locker-icon.png')}
+            style={styles.lockFABIcon}
+            resizeMode="contain"
+          />
+        </TouchableOpacity>
+      )}
+      {/* Scan QR Button - Hidden, accessible via SendBitcoinModal or other means */}
+      {/* QR Scanner Modal */}
+      <QRScanner
+        visible={isQRScannerVisible}
+        onClose={() => setIsQRScannerVisible(false)}
+        onScan={(data: string) => {
+          setIsQRScannerVisible(false);
+          processScannedQRData(data);
+        }}
+        mode="single"
+        title="Scan Send Bitcoin QR"
+        subtitle="Scan the QR code from the device that initiated the transaction"
+      />
       <Modal
         visible={isAddressTypeModalVisible}
         transparent={true}
@@ -1922,6 +2060,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           HapticFeedback.medium();
           setIsTransportModalVisible(false);
           setPendingSendParams(null);
+          setScannedFromQR(false);
         }}
         onSelect={(transport: 'local' | 'nostr') => {
           navigateToPairing(transport);
@@ -1929,6 +2068,17 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         }}
         title="Select Signing Method"
         description="Choose how to sign your transaction"
+        sendBitcoinData={
+          pendingSendParams
+            ? {
+                toAddress: pendingSendParams.to,
+                amountSats: pendingSendParams.amountSats.toString().split('.')[0],
+                feeSats: pendingSendParams.feeSats.toString().split('.')[0],
+                spendingHash: pendingSendParams.spendingHash,
+              }
+            : null
+        }
+        showQRCode={!scannedFromQR} // Don't show QR if data came from scan
       />
 
       {isReceiveModalVisible && (

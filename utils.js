@@ -539,3 +539,56 @@ export const getKeyshareLabel = keyshare => {
   // Fallback: return empty string
   return '';
 };
+
+/**
+ * Encode send bitcoin data into QR code format
+ * Format: <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>
+ * @param {string} toAddress - Bitcoin address to send to
+ * @param {string|number} amountSats - Amount in satoshis
+ * @param {string|number} feeSats - Fee in satoshis
+ * @param {string} spendingHash - Spending hash (can be empty)
+ * @returns {string} - Encoded QR data string
+ */
+export const encodeSendBitcoinQR = (toAddress, amountSats, feeSats, spendingHash = '') => {
+  const amount = typeof amountSats === 'string' ? amountSats : amountSats.toString();
+  const fee = typeof feeSats === 'string' ? feeSats : feeSats.toString();
+  return `${toAddress}|${amount}|${fee}|${spendingHash || ''}`;
+};
+
+/**
+ * Decode send bitcoin data from QR code format
+ * Format: <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>
+ * @param {string} qrData - QR code data string
+ * @returns {Object|null} - Decoded data object or null if invalid
+ */
+export const decodeSendBitcoinQR = (qrData) => {
+  if (!qrData || typeof qrData !== 'string') {
+    return null;
+  }
+
+  const parts = qrData.split('|');
+  if (parts.length < 3 || parts.length > 4) {
+    return null;
+  }
+
+  const [toAddress, amountSats, feeSats, spendingHash = ''] = parts;
+
+  // Validate address is not empty
+  if (!toAddress || toAddress.trim() === '') {
+    return null;
+  }
+
+  // Validate amounts are valid numbers
+  const amount = parseInt(amountSats, 10);
+  const fee = parseInt(feeSats, 10);
+  if (isNaN(amount) || isNaN(fee) || amount < 0 || fee < 0) {
+    return null;
+  }
+
+  return {
+    toAddress: toAddress.trim(),
+    amountSats: amount.toString(),
+    feeSats: fee.toString(),
+    spendingHash: spendingHash || '',
+  };
+};

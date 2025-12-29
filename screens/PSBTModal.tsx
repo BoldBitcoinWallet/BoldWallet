@@ -14,11 +14,7 @@ import {
 } from 'react-native';
 import DocumentPicker from 'react-native-document-picker';
 import * as RNFS from 'react-native-fs';
-import {
-  Camera,
-  useCameraDevice,
-  useCodeScanner,
-} from 'react-native-vision-camera';
+import QRScanner from '../components/QRScanner';
 import BarcodeZxingScan from 'rn-barcode-zxing-scan';
 // @ts-ignore - bc-ur types (Buffer polyfill is in polyfills.js)
 import {URDecoder} from '@ngraveio/bc-ur';
@@ -68,76 +64,6 @@ export interface PSBTModalProps extends PSBTLoaderProps {
   visible: boolean;
 }
 
-// QR Scanner component with UR progress display
-const QRScanner = ({styles, device, codeScanner, onClose, urProgress}: any) => {
-  if (!device) {
-    return (
-      <View style={styles.scannerContainer}>
-        <View style={styles.scannerHeader}>
-          <Text style={styles.scannerTitle}>Camera Not Available</Text>
-          <Text style={styles.scannerSubtitle}>
-            Please check camera permissions in Settings
-          </Text>
-        </View>
-        <TouchableOpacity
-          style={styles.closeScannerButton}
-          onPress={onClose}
-          activeOpacity={0.7}>
-          <Text style={styles.closeScannerButtonText}>Close</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  const isAnimatedQR = urProgress && urProgress.total > 1;
-  // Use percentage directly for more accurate progress display (fixes iOS progress issue)
-  const progressPercent = isAnimatedQR
-    ? Math.min(
-        100,
-        urProgress.percentage ||
-          Math.round((urProgress.received / urProgress.total) * 100),
-      )
-    : 0;
-  const isComplete = isAnimatedQR && urProgress.received >= urProgress.total;
-
-  return (
-    <View style={styles.scannerContainer}>
-      <Camera
-        style={StyleSheet.absoluteFill}
-        device={device}
-        isActive={true}
-        torch="off"
-        codeScanner={codeScanner}
-      />
-      <View style={styles.qrFrame} />
-      <View style={styles.scannerHeader}>
-        <Text style={styles.scannerTitle}>
-          {isAnimatedQR ? 'Scanning Animated QR...' : 'Scan PSBT QR Code'}
-        </Text>
-        <Text style={styles.scannerSubtitle}>
-          {isAnimatedQR
-            ? isComplete
-              ? 'Processing PSBT...'
-              : `Keep scanning animated QR: ${progressPercent}%`
-            : 'Position the QR code within the frame'}
-        </Text>
-        {isAnimatedQR && (
-          <View style={styles.progressBarContainer}>
-            <View
-              style={[styles.progressBar, {width: `${progressPercent}%`}]}
-            />
-          </View>
-        )}
-      </View>
-      <TouchableOpacity
-        style={styles.closeScannerButton}
-        onPress={onClose}
-        activeOpacity={0.7}>
-        <Text style={styles.closeScannerButtonText}>Cancel</Text>
-      </TouchableOpacity>
-    </View>
-  );
-};
 
 export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
   btcRate = 0,
@@ -873,36 +799,23 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
 
   const styles = createStyles(theme);
 
-  // Only use camera hooks on iOS - Android uses BarcodeZxingScan with continuous scanning
-  let device;
-  let codeScanner;
+  // Handler for QR scan results (wraps processScannedData for new QRScanner component)
+  const handleQRScan = useCallback((data: string) => {
+    dbg('QR Scanner: Scanned data:', data.substring(0, 50) + '...');
 
-  if (Platform.OS === 'ios') {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    device = useCameraDevice('back');
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    codeScanner = useCodeScanner({
-      codeTypes: ['qr'],
-      onCodeScanned: codes => {
-        if (codes.length > 0 && codes[0].value) {
-          dbg('Scanned QR (iOS):', codes[0].value.substring(0, 50) + '...');
+    // CRITICAL: Ensure UR decoder is initialized for this scan session
+    // This ensures progress tracking works correctly
+    if (
+      !urDecoderRef.current &&
+      data.toLowerCase().startsWith('ur:')
+    ) {
+      dbg('QR Scanner: Initializing new UR decoder for scan session');
+      urDecoderRef.current = new URDecoder();
+    }
 
-          // CRITICAL: Ensure UR decoder is initialized for this scan session
-          // This ensures progress tracking works correctly on iOS
-          if (
-            !urDecoderRef.current &&
-            codes[0].value.toLowerCase().startsWith('ur:')
-          ) {
-            dbg('iOS: Initializing new UR decoder for scan session');
-            urDecoderRef.current = new URDecoder();
-          }
-
-          // Use processScannedData to handle both plain PSBT and UR format
-          processScannedData(codes[0].value);
-        }
-      },
-    });
-  }
+    // Use processScannedData to handle both plain PSBT and UR format
+    processScannedData(data);
+  }, [processScannedData]);
 
   return (
     <View style={useOverlay ? styles.modalOverlay : undefined}>
@@ -1204,22 +1117,28 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
           </TouchableOpacity>
         </View>
 
-        {/* QR Scanner Modal (iOS only) */}
-        <Modal
-          animationType="fade"
-          transparent={false}
+        {/* QR Scanner Modal */}
+        <QRScanner
           visible={isScannerVisible}
-          onRequestClose={handleScannerClose}>
-          <QRScanner
-            styles={styles}
-            device={device}
-            codeScanner={codeScanner}
-            onClose={handleScannerClose}
-            urProgress={urProgress}
-          />
-        </Modal>
-
-        {/* Android scanner opens directly via native activity - no modal needed */}
+          onClose={handleScannerClose}
+          onScan={handleQRScan}
+          mode="continuous"
+          title="Scan PSBT QR Code"
+          subtitle={
+            urProgress && urProgress.total > 1
+              ? urProgress.received >= urProgress.total
+                ? 'Processing PSBT...'
+                : `Keep scanning animated QR: ${Math.min(
+                    100,
+                    urProgress.percentage ||
+                      Math.round((urProgress.received / urProgress.total) * 100),
+                  )}%`
+              : 'Position the QR code within the frame'
+          }
+          showProgress={!!urProgress && urProgress.total > 1}
+          progress={urProgress || undefined}
+          closeButtonText="Cancel"
+        />
       </View>
     </View>
   );

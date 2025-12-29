@@ -6,9 +6,11 @@ import {
   TouchableOpacity,
   Modal,
   Image,
+  ScrollView,
 } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 import {useTheme} from '../theme';
-import {HapticFeedback} from '../utils';
+import {HapticFeedback, encodeSendBitcoinQR} from '../utils';
 
 interface TransportModeSelectorProps {
   visible: boolean;
@@ -16,6 +18,14 @@ interface TransportModeSelectorProps {
   onSelect: (transport: 'local' | 'nostr') => void;
   title?: string;
   description?: string;
+  // Optional: Show QR code for send bitcoin data (only on device 1, not when scanned)
+  sendBitcoinData?: {
+    toAddress: string;
+    amountSats: string;
+    feeSats: string;
+    spendingHash?: string;
+  } | null;
+  showQRCode?: boolean; // Whether to show QR code (false when data came from scan)
 }
 
 const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
@@ -24,6 +34,8 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
   onSelect,
   title = 'Transport Method',
   description = 'Choose how to connect with other devices',
+  sendBitcoinData = null,
+  showQRCode = true,
 }) => {
   const {theme} = useTheme();
   const [selectedTransport, setSelectedTransport] = useState<'local' | 'nostr' | null>(null);
@@ -107,7 +119,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
     modalDescription: {
       fontSize: 13,
       color: theme.colors.textSecondary,
-      marginBottom: 16,
+      marginBottom: 12,
       textAlign: 'left',
       fontWeight: '500',
     },
@@ -118,9 +130,9 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
     },
     transportOptionCard: {
       borderRadius: 12,
-      paddingTop: 16,
-      paddingBottom: 12,
-      paddingHorizontal: 12,
+      paddingTop: 12,
+      paddingBottom: 10,
+      paddingHorizontal: 10,
       borderWidth: 1.5,
       borderColor: theme.colors.border + '40',
       backgroundColor: theme.colors.white,
@@ -141,7 +153,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       backgroundColor: 'transparent',
     },
     transportOptionIconWrapper: {
-      marginBottom: 8,
+      marginBottom: 6,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: 'transparent',
@@ -194,9 +206,9 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       color: theme.colors.textSecondary,
     },
     transportSelectedHint: {
-      marginTop: 14,
+      marginTop: 12,
       backgroundColor: theme.colors.white,
-      padding: 12,
+      padding: 10,
       borderRadius: 12,
       borderWidth: 1,
       borderColor: theme.colors.border,
@@ -225,7 +237,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       fontWeight: '700',
     },
     continueButton: {
-      marginTop: 16,
+      marginTop: 12,
       borderRadius: 12,
       paddingVertical: 14,
       alignItems: 'center',
@@ -238,6 +250,37 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       color: theme.colors.background,
       fontSize: 16,
       fontWeight: '600',
+    },
+    qrCodeSection: {
+      marginTop: 12,
+      marginBottom: 24,
+      padding: 16,
+      backgroundColor: theme.colors.white,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      alignItems: 'center',
+    },
+    qrCodeLabel: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: theme.colors.text,
+      marginBottom: 12,
+      textAlign: 'center',
+      lineHeight: 18,
+    },
+    qrCodeSubLabel: {
+      fontSize: 11,
+      fontWeight: '400',
+      color: theme.colors.textSecondary,
+      marginTop: 4,
+      textAlign: 'center',
+      lineHeight: 15,
+    },
+    qrCodeContainer: {
+      backgroundColor: 'white',
+      padding: 12,
+      borderRadius: 8,
     },
   });
 
@@ -269,10 +312,38 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
           </View>
 
           {/* Modal Body */}
-          <View style={styles.modalBody}>
+          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
             {description && (
               <Text style={styles.modalDescription}>{description}</Text>
             )}
+
+            {/* QR Code Section - Only show if sendBitcoinData exists and showQRCode is true */}
+            {sendBitcoinData && showQRCode && (() => {
+              const qrData = encodeSendBitcoinQR(
+                sendBitcoinData.toAddress,
+                sendBitcoinData.amountSats,
+                sendBitcoinData.feeSats,
+                sendBitcoinData.spendingHash || '',
+              );
+              return (
+                <View style={styles.qrCodeSection}>
+                  <Text style={styles.qrCodeLabel}>
+                    Quick Shortcut for Other Devices
+                  </Text>
+                  <Text style={styles.qrCodeSubLabel}>
+                    Scan this QR code on other devices to{'\n'}automatically enter address and amount
+                  </Text>
+                  <View style={styles.qrCodeContainer}>
+                    <QRCode
+                      value={qrData}
+                      size={180}
+                      backgroundColor="white"
+                      color="black"
+                    />
+                  </View>
+                </View>
+              );
+            })()}
 
             <View style={styles.transportOptionsContainer}>
               {/* Local WiFi/Hotspot Option */}
@@ -404,7 +475,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                 Continue →
               </Text>
             </TouchableOpacity>
-          </View>
+          </ScrollView>
         </View>
       </View>
     </Modal>

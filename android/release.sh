@@ -1,12 +1,15 @@
 #!/bin/bash
 
 # Script to automate generating a release APK for React Native
+# This script generates a DEV keystore for local development builds.
+# For production releases, use signed-release.sh with production credentials.
 
-# Keystore details (modify these with your own values)
-KEYSTORE_FILE="my-release-key.jks"
-KEY_ALIAS="my-key"
-KEYSTORE_PASSWORD="your_actual_password_here"
-KEY_PASSWORD="your_actual_password_here"
+# Dev keystore details (for local development only)
+# Note: Modern Java uses PKCS12 format which requires same password for store and key
+KEYSTORE_FILE="dev-release-key.jks"
+KEY_ALIAS="dev-key"
+KEYSTORE_PASSWORD="dev-keystore-password"
+KEY_PASSWORD="dev-keystore-password"  # Must match KEYSTORE_PASSWORD for PKCS12
 
 # Paths
 KEYSTORE_PATH="app/$KEYSTORE_FILE"
@@ -14,62 +17,78 @@ GRADLE_PROPERTIES_PATH="release.properties"
 
 echo -e "--- Starting React Native APK Release Build Automation ---"
 
-# Step 1: Generate Keystore if it doesn't exist
-if [ ! -f "$KEYSTORE_PATH" ]; then
-    echo -e "Generating new Keystore..."
-    keytool -genkey -v -keystore "$KEYSTORE_PATH" \
-        -keyalg RSA -keysize 2048 -validity 10000 -alias "$KEY_ALIAS" \
-        -dname "CN=Unknown, OU=Unknown, O=Unknown, L=Unknown, ST=Unknown, C=Unknown" \
-        -storepass "$KEY_PASSWORD" -keypass "$KEY_PASSWORD"
+# Step 1: Generate or verify Dev Keystore
+KEYSTORE_VALID=false
 
-    echo -e "Keystore generated at: $KEYSTORE_PATH"
-else
-    echo -e "Keystore already exists. Skipping generation."
+if [ -f "$KEYSTORE_PATH" ]; then
+    echo -e "Dev keystore exists. Verifying it works with current credentials..."
+    # Try to list the keystore to verify password works
+    if keytool -list -keystore "$KEYSTORE_PATH" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null 2>&1; then
+        KEYSTORE_VALID=true
+        echo -e "✅ Existing dev keystore is valid."
+    else
+        echo -e "⚠️  Existing keystore doesn't work with current credentials."
+        echo -e "🗑️  Removing old keystore to regenerate..."
+        rm -f "$KEYSTORE_PATH"
+        KEYSTORE_VALID=false
+    fi
 fi
 
-# Step 2: Update *.properties with Keystore credentials
+if [ "$KEYSTORE_VALID" = false ]; then
+    echo -e "Generating new DEV keystore for local development..."
+    echo -e "⚠️  This is a DEV keystore - NOT for production releases!"
+    keytool -genkey -v -keystore "$KEYSTORE_PATH" \
+        -keyalg RSA -keysize 2048 -validity 10000 -alias "$KEY_ALIAS" \
+        -dname "CN=Dev, OU=Dev, O=Dev, L=Dev, ST=Dev, C=US" \
+        -storepass "$KEYSTORE_PASSWORD" -keypass "$KEY_PASSWORD" 2>&1
+
+    if [ $? -eq 0 ]; then
+        echo -e "✅ Dev keystore generated at: $KEYSTORE_PATH"
+        echo -e "⚠️  This keystore is for development/testing only!"
+    else
+        echo -e "❌ Failed to generate keystore!"
+        exit 1
+    fi
+fi
+
+# Step 2: Update release.properties with Keystore credentials
 if [ ! -f "$GRADLE_PROPERTIES_PATH" ]; then
     echo -e "Creating release.properties file..."
     touch "$GRADLE_PROPERTIES_PATH"
 fi
 
-# Check if the store file path is correct, update if needed
-if grep -q "MYAPP_UPLOAD_STORE_FILE" "$GRADLE_PROPERTIES_PATH"; then
-    CURRENT_PATH=$(grep "MYAPP_UPLOAD_STORE_FILE" "$GRADLE_PROPERTIES_PATH" | cut -d'=' -f2)
-    if [ "$CURRENT_PATH" != "$KEYSTORE_PATH" ]; then
-        echo -e "Updating incorrect keystore path in release.properties..."
-        # Update the path using sed
+# Function to update or add property
+update_property() {
+    local key=$1
+    local value=$2
+    if grep -q "^${key}=" "$GRADLE_PROPERTIES_PATH"; then
+        # Update existing property
         if [[ "$OSTYPE" == "darwin"* ]]; then
             # macOS
-            sed -i '' "s|MYAPP_UPLOAD_STORE_FILE=.*|MYAPP_UPLOAD_STORE_FILE=$KEYSTORE_PATH|" "$GRADLE_PROPERTIES_PATH"
+            sed -i '' "s|^${key}=.*|${key}=${value}|" "$GRADLE_PROPERTIES_PATH"
         else
             # Linux
-            sed -i "s|MYAPP_UPLOAD_STORE_FILE=.*|MYAPP_UPLOAD_STORE_FILE=$KEYSTORE_PATH|" "$GRADLE_PROPERTIES_PATH"
+            sed -i "s|^${key}=.*|${key}=${value}|" "$GRADLE_PROPERTIES_PATH"
         fi
-        echo -e "Updated MYAPP_UPLOAD_STORE_FILE to: $KEYSTORE_PATH"
+        echo -e "Updated ${key} in release.properties"
     else
-        echo -e "Keystore path in release.properties is correct."
+        # Add new property
+        echo "${key}=${value}" >> "$GRADLE_PROPERTIES_PATH"
+        echo -e "Added ${key} to release.properties"
     fi
-    
-    # Update other properties if they don't exist or are incorrect
-    if ! grep -q "MYAPP_UPLOAD_KEY_ALIAS" "$GRADLE_PROPERTIES_PATH"; then
-        echo "MYAPP_UPLOAD_KEY_ALIAS=$KEY_ALIAS" >> "$GRADLE_PROPERTIES_PATH"
-    fi
-    if ! grep -q "MYAPP_UPLOAD_STORE_PASSWORD" "$GRADLE_PROPERTIES_PATH"; then
-        echo "MYAPP_UPLOAD_STORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GRADLE_PROPERTIES_PATH"
-    fi
-    if ! grep -q "MYAPP_UPLOAD_KEY_PASSWORD" "$GRADLE_PROPERTIES_PATH"; then
-        echo "MYAPP_UPLOAD_KEY_PASSWORD=$KEY_PASSWORD" >> "$GRADLE_PROPERTIES_PATH"
-    fi
-else
-    echo -e "Adding Keystore configuration to release.properties..."
-    cat <<EOL >> $GRADLE_PROPERTIES_PATH
-MYAPP_UPLOAD_STORE_FILE=$KEYSTORE_PATH
-MYAPP_UPLOAD_KEY_ALIAS=$KEY_ALIAS
-MYAPP_UPLOAD_STORE_PASSWORD=$KEYSTORE_PASSWORD
-MYAPP_UPLOAD_KEY_PASSWORD=$KEY_PASSWORD
-EOL
-fi
+}
+
+# Update all keystore properties
+echo -e "Updating DEV keystore configuration in release.properties..."
+update_property "MYAPP_UPLOAD_STORE_FILE" "$KEYSTORE_PATH"
+update_property "MYAPP_UPLOAD_KEY_ALIAS" "$KEY_ALIAS"
+update_property "MYAPP_UPLOAD_STORE_PASSWORD" "$KEYSTORE_PASSWORD"
+update_property "MYAPP_UPLOAD_KEY_PASSWORD" "$KEY_PASSWORD"
+
+echo -e ""
+echo -e "⚠️  NOTE: This build uses a DEV keystore for local development."
+echo -e "⚠️  For production releases, use signed-release.sh instead."
+echo -e ""
 
 # Step 3: Build the Release APK
 echo -e "Building the Release APK..."
