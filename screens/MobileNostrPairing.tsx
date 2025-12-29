@@ -5793,8 +5793,8 @@ const MobileNostrPairing = ({navigation}: any) => {
         onClose={() => setIsQRScannerVisible(false)}
         onScan={(data: string) => handleQRScan(data, scanningForPeer)}
         mode="single"
-        title="Scan QR Code"
-        subtitle="Scan the npub QR code from the other device"
+        title="Scan Connection QR"
+        subtitle="Point your camera at the npub connection QR code from the other device"
       />
 
       {/* QR Code Modal */}

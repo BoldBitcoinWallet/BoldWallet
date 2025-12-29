@@ -829,7 +829,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                   onScan={handleQRScan}
                   mode="single"
                   title="Scan QR Code"
-                  subtitle="Scan a Bitcoin address or send bitcoin QR code"
+                  subtitle="Point your camera at a Bitcoin address QR code or send bitcoin transaction QR"
                 />
               </SafeAreaView>
             </KeyboardAvoidingView>

@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef} from 'react';
+import React, {useState, useEffect, useRef, useCallback} from 'react';
 import {
   View,
   Text,
@@ -180,12 +180,21 @@ const QRScanner: React.FC<QRScannerProps> = ({
         setIsScanning(false);
       }
     };
-  }, [visible, mode, onScan, showProgress, title]);
+  }, [visible, mode, onScan, showProgress, title, isScanning]);
 
   // Handle single scan
-  const handleSingleScan = () => {
+  const handleSingleScan = useCallback(() => {
+    // Try to set custom message before opening scanner (if supported)
+    if (subtitle && BarcodeZxingScan.updateProgressText) {
+      BarcodeZxingScan.updateProgressText(subtitle);
+    }
+    
     if (Platform.OS === 'android') {
       BarcodeZxingScan.showQrReader((error: any, data: any) => {
+        // Clear progress text
+        if (BarcodeZxingScan.updateProgressText) {
+          BarcodeZxingScan.updateProgressText('');
+        }
         if (error) {
           dbg('FOSS: Single scan error:', error);
           return;
@@ -198,6 +207,10 @@ const QRScanner: React.FC<QRScannerProps> = ({
     } else {
       // iOS - use single scan
       BarcodeZxingScan.showQrReader((error: any, data: any) => {
+        // Clear progress text
+        if (BarcodeZxingScan.updateProgressText) {
+          BarcodeZxingScan.updateProgressText('');
+        }
         if (error) {
           dbg('FOSS: iOS scan error:', error);
           return;
@@ -208,14 +221,14 @@ const QRScanner: React.FC<QRScannerProps> = ({
         }
       });
     }
-  };
+  }, [subtitle, onScan, onClose]);
 
   // Auto-start single scan when modal opens
   useEffect(() => {
     if (visible && mode === 'single' && !isScanning) {
       handleSingleScan();
     }
-  }, [visible, mode]);
+  }, [visible, mode, isScanning, handleSingleScan]);
 
   const isAnimatedQR = showProgress && progress && progress.total > 1;
   const progressPercent = isAnimatedQR
@@ -234,7 +247,7 @@ const QRScanner: React.FC<QRScannerProps> = ({
       ? isComplete
         ? 'Processing...'
         : `Keep scanning animated QR: ${progressPercent}%`
-      : 'Position the QR code within the frame');
+      : 'Point your camera at the QR code to scan');
 
   // For continuous mode on Android, show the scanner UI
   if (mode === 'continuous' && Platform.OS === 'android' && visible) {

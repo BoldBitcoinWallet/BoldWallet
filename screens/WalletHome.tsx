@@ -886,6 +886,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       height: 28,
       tintColor: theme.colors.background,
     } as const,
+    lockFABOverlay: {
+      position: 'absolute' as const,
+      width: '100%',
+      height: '100%',
+      borderRadius: 28,
+      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.15)',
+    } as const,
   };
 
   const headerRight = React.useCallback(
@@ -1879,18 +1888,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           }}
           activeOpacity={0.7}>
           {Platform.OS === 'android' && (
-            <View
-              style={{
-                position: 'absolute',
-                width: '100%',
-                height: '100%',
-                borderRadius: 28,
-                // Subtle gradient overlay for depth
-                backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                borderWidth: 1,
-                borderColor: 'rgba(255, 255, 255, 0.15)',
-              }}
-            />
+            <View style={styles.lockFABOverlay} />
           )}
           <Image
             source={require('../assets/locker-icon.png')}
@@ -1910,7 +1908,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         }}
         mode="single"
         title="Scan Send Bitcoin QR"
-        subtitle="Scan the QR code from the device that initiated the transaction"
+        subtitle="Point your camera at the transaction QR code from the other device"
       />
       <Modal
         visible={isAddressTypeModalVisible}

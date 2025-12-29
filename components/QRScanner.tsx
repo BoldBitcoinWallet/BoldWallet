@@ -200,7 +200,7 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
       ? isComplete
         ? 'Processing...'
         : `Keep scanning animated QR: ${progressPercent}%`
-      : 'Position the QR code within the frame');
+      : 'Point your camera at the QR code to scan');
 
   return (
     <Modal
@@ -416,10 +416,21 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
   useEffect(() => {
     if (visible && mode === 'single' && BarcodeZxingScan && !isScanningRef.current) {
       // For single mode, native scanner opens its own activity
+      // Try to set a custom message before opening (if supported)
+      // Note: The native scanner may still show its default message, but we try
+      if (subtitle && BarcodeZxingScan.updateProgressText) {
+        // Set the subtitle as the progress text before opening scanner
+        BarcodeZxingScan.updateProgressText(subtitle);
+      }
+      
       // It handles back button itself, we just need to handle the result
       BarcodeZxingScan.showQrReader((error: any, data: any) => {
         // Scanner closed (either via back button or scan completed)
         isScanningRef.current = false;
+        // Clear any progress text
+        if (BarcodeZxingScan.updateProgressText) {
+          BarcodeZxingScan.updateProgressText('');
+        }
         if (error) {
           dbg('Android: Single scan error:', error);
           // User pressed back or cancelled - close our modal too
@@ -438,8 +449,12 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
     } else if (!visible && mode === 'single') {
       // Reset scanning state when modal closes
       isScanningRef.current = false;
+      // Clear any progress text
+      if (BarcodeZxingScan && BarcodeZxingScan.updateProgressText) {
+        BarcodeZxingScan.updateProgressText('');
+      }
     }
-  }, [visible, mode, onScan, onClose]);
+  }, [visible, mode, onScan, onClose, subtitle]);
 
   const isAnimatedQR = showProgress && progress && progress.total > 1;
   const progressPercent = isAnimatedQR
@@ -458,7 +473,7 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
       ? isComplete
         ? 'Processing...'
         : `Keep scanning animated QR: ${progressPercent}%`
-      : 'Position the QR code within the frame');
+      : 'Point your camera at the QR code to scan');
 
   // For continuous mode, show UI overlay
   if (mode === 'continuous' && visible) {
