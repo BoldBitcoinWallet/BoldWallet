@@ -28,7 +28,15 @@ import * as Progress from 'react-native-progress';
 import {CommonActions, RouteProp, useRoute} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Big from 'big.js';
-import {dbg, HapticFeedback, getNostrRelays, getKeyshareLabel, hexToString, getDerivePathForNetwork, isLegacyWallet} from '../utils';
+import {
+  dbg,
+  HapticFeedback,
+  getNostrRelays,
+  getKeyshareLabel,
+  hexToString,
+  getDerivePathForNetwork,
+  isLegacyWallet,
+} from '../utils';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import LocalCache from '../services/LocalCache';
@@ -36,7 +44,6 @@ import {WalletService} from '../services/WalletService';
 import RNFS from 'react-native-fs';
 
 const {BBMTLibNativeModule} = NativeModules;
-
 
 type RouteParams = {
   mode?: string; // 'duo' | 'trio' | 'send_btc' | 'sign_psbt'
@@ -49,7 +56,6 @@ type RouteParams = {
   selectedCurrency?: string;
   spendingHash?: string;
   psbtBase64?: string; // For PSBT signing mode
-  derivePath?: string; // BIP32 derivation path for PSBT
 };
 
 const MobileNostrPairing = ({navigation}: any) => {
@@ -114,7 +120,6 @@ const MobileNostrPairing = ({navigation}: any) => {
     fee: number;
     totalInput: number;
     totalOutput: number;
-    derivePath?: string;
     derivePaths?: string[];
   } | null>(null);
   const [isPreParamsReady, setIsPreParamsReady] = useState(false);
@@ -165,7 +170,6 @@ const MobileNostrPairing = ({navigation}: any) => {
   const [showRelayConfig, setShowRelayConfig] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
   const connectionQrRef = useRef<any>(null);
-
 
   // Connection details for sharing (hex encoded)
   const connectionDetails = React.useMemo(() => {
@@ -295,7 +299,10 @@ const MobileNostrPairing = ({navigation}: any) => {
             route.params.psbtBase64,
           );
 
-          if (detailsJson.startsWith('error') || detailsJson.includes('failed')) {
+          if (
+            detailsJson.startsWith('error') ||
+            detailsJson.includes('failed')
+          ) {
             dbg('Failed to parse PSBT details:', detailsJson);
             setPsbtDetails(null);
             return;
@@ -308,7 +315,6 @@ const MobileNostrPairing = ({navigation}: any) => {
             fee: details.fee || 0,
             totalInput: details.totalInput || 0,
             totalOutput: details.totalOutput || 0,
-            derivePath: details.derivePath,
             derivePaths: details.derivePaths || [],
           });
           dbg('PSBT details parsed:', {
@@ -1646,11 +1652,23 @@ const MobileNostrPairing = ({navigation}: any) => {
 
       const network = (await LocalCache.getItem('network')) || 'mainnet';
       // Get address type from route params or cache, default to segwit-native
-      const currentAddressType = addressType || (await LocalCache.getItem('addressType')) || 'segwit-native';
+      const currentAddressType =
+        addressType ||
+        (await LocalCache.getItem('addressType')) ||
+        'segwit-native';
       // Check if this is a legacy wallet (created before migration timestamp)
       const useLegacyPath = isLegacyWallet(keyshare.created_at);
-      const derivePath = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
-      dbg('Deriving path for Nostr send:', {network, currentAddressType, useLegacyPath, derivePath});
+      const derivePath = getDerivePathForNetwork(
+        network,
+        currentAddressType,
+        useLegacyPath,
+      );
+      dbg('Deriving path for Nostr send:', {
+        network,
+        currentAddressType,
+        useLegacyPath,
+        derivePath,
+      });
 
       // Derive the public key from the root key using the derivation path
       // This is critical - we need the DERIVED public key, not the root!
@@ -1765,7 +1783,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     }
 
     if (!isKeysignReady) {
-      Alert.alert('Not Ready', 'Please confirm that you are ready to sign the PSBT');
+      Alert.alert(
+        'Not Ready',
+        'Please confirm that you are ready to sign the PSBT',
+      );
       return;
     }
 
@@ -1842,19 +1863,33 @@ const MobileNostrPairing = ({navigation}: any) => {
 
       // Find local npub
       const localNpubFromKeyshare =
-        allNpubsFromKeyshare.find(n => n === localNpub || (localNpub && n.startsWith(localNpub.substring(0, 20)))) ||
-        localNpub;
+        allNpubsFromKeyshare.find(
+          n =>
+            n === localNpub ||
+            (localNpub && n.startsWith(localNpub.substring(0, 20))),
+        ) || localNpub;
 
       // Build parties CSV
       const allNpubs = [localNpubFromKeyshare];
       if (isTrio) {
         if (selectedPeerNpub) {
           const selectedDevice = sendModeDevices.find(
-            d => d.npub === selectedPeerNpub || (selectedPeerNpub.startsWith('npub1') && d.npub && d.npub.startsWith(selectedPeerNpub.substring(0, 20))),
+            d =>
+              d.npub === selectedPeerNpub ||
+              (selectedPeerNpub.startsWith('npub1') &&
+                d.npub &&
+                d.npub.startsWith(selectedPeerNpub.substring(0, 20))),
           );
           if (selectedDevice) {
-            const selectedIndex = parseInt(selectedDevice.keyshareLabel.replace('KeyShare', ''), 10) - 1;
-            if (selectedIndex >= 0 && selectedIndex < allNpubsFromKeyshare.length) {
+            const selectedIndex =
+              parseInt(
+                selectedDevice.keyshareLabel.replace('KeyShare', ''),
+                10,
+              ) - 1;
+            if (
+              selectedIndex >= 0 &&
+              selectedIndex < allNpubsFromKeyshare.length
+            ) {
               const fullPeerNpub = allNpubsFromKeyshare[selectedIndex];
               if (fullPeerNpub !== localNpubFromKeyshare) {
                 allNpubs.push(fullPeerNpub);
@@ -1864,7 +1899,10 @@ const MobileNostrPairing = ({navigation}: any) => {
             }
           } else {
             const fullPeerNpub = allNpubsFromKeyshare.find(
-              n => n === selectedPeerNpub || (selectedPeerNpub.startsWith('npub1') && n.startsWith(selectedPeerNpub.substring(0, 20))),
+              n =>
+                n === selectedPeerNpub ||
+                (selectedPeerNpub.startsWith('npub1') &&
+                  n.startsWith(selectedPeerNpub.substring(0, 20))),
             );
             if (fullPeerNpub && fullPeerNpub !== localNpubFromKeyshare) {
               allNpubs.push(fullPeerNpub);
@@ -1876,7 +1914,9 @@ const MobileNostrPairing = ({navigation}: any) => {
           throw new Error('Please select a peer device for trio mode');
         }
       } else {
-        const otherNpubs = allNpubsFromKeyshare.filter(n => n !== localNpubFromKeyshare);
+        const otherNpubs = allNpubsFromKeyshare.filter(
+          n => n !== localNpubFromKeyshare,
+        );
         if (otherNpubs.length > 0) {
           allNpubs.push(otherNpubs[0]);
         } else {
@@ -1886,27 +1926,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       const partiesNpubsCSV = allNpubs.sort().join(',');
 
       const relaysCSV = relays.join(',');
-      const network = (await LocalCache.getItem('network')) || 'mainnet';
-      // Get address type from route params or cache, default to segwit-native
-      const currentAddressType = addressType || (await LocalCache.getItem('addressType')) || 'segwit-native';
-      // Check if this is a legacy wallet (created before migration timestamp)
-      const useLegacyPath = isLegacyWallet(keyshare.created_at);
-      const derivePath = route.params?.derivePath || getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
-      dbg('Using derivation path for PSBT signing:', {derivePath, network, currentAddressType, useLegacyPath});
-
-      // Derive the public key
-      const publicKey = await BBMTLibNativeModule.derivePubkey(
-        keyshare.pub_key,
-        keyshare.chain_code_hex,
-        derivePath,
-      );
-
       dbg('Starting Nostr PSBT signing with:', {
         relays: relaysCSV,
         parties: partiesNpubsCSV.substring(0, 50) + '...',
         npubsSorted: npubsSorted.substring(0, 30) + '...',
-        derivePath,
-        publicKey: publicKey.substring(0, 20) + '...',
         psbtLength: route.params.psbtBase64?.length,
       });
 
@@ -1921,7 +1944,11 @@ const MobileNostrPairing = ({navigation}: any) => {
       );
 
       // Validate result
-      if (!signedPsbt || signedPsbt.includes('error') || signedPsbt.includes('failed')) {
+      if (
+        !signedPsbt ||
+        signedPsbt.includes('error') ||
+        signedPsbt.includes('failed')
+      ) {
         throw new Error(signedPsbt || 'PSBT signing failed');
       }
 
@@ -2096,11 +2123,11 @@ const MobileNostrPairing = ({navigation}: any) => {
           Alert.alert('Error', 'Keyshare missing pub_key.');
           return;
         }
-        
+
         // Get SHA256 hash of pub_key and take first 4 characters
         const pubKeyHash = await BBMTLibNativeModule.sha256(json.pub_key);
         const hashPrefix = pubKeyHash.substring(0, 4).toLowerCase();
-        
+
         // Extract keyshare number from label (KeyShare1 -> 1, KeyShare2 -> 2, etc.)
         const keyshareLabel = getKeyshareLabel(json);
         let keyshareNumber = '1'; // default
@@ -2117,7 +2144,7 @@ const MobileNostrPairing = ({navigation}: any) => {
             keyshareNumber = String(index + 1);
           }
         }
-        
+
         const friendlyFilename = `${hashPrefix}K${keyshareNumber}.share`;
 
         const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
@@ -3733,7 +3760,8 @@ const MobileNostrPairing = ({navigation}: any) => {
             (() => {
               // Check if Final Step should be shown
               const showFinalStep =
-                !isSendBitcoin && !isSignPSBT &&
+                !isSendBitcoin &&
+                !isSignPSBT &&
                 isPreParamsReady &&
                 localNpub &&
                 deviceName &&
@@ -3766,7 +3794,7 @@ const MobileNostrPairing = ({navigation}: any) => {
 
                       {/* Title in the center */}
                       <View style={styles.headerContent}>
-                        {(isSendBitcoin || isSignPSBT) ? (
+                        {isSendBitcoin || isSignPSBT ? (
                           <View
                             style={{
                               flexDirection: 'row',
@@ -3792,7 +3820,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 fontFamily:
                                   Platform.OS === 'ios' ? 'System' : 'Roboto',
                               }}>
-                              {isSignPSBT ? 'PSBT Co-Signing' : 'Transaction Co-Signing'}
+                              {isSignPSBT
+                                ? 'PSBT Co-Signing'
+                                : 'Transaction Co-Signing'}
                             </Text>
                           </View>
                         ) : (
@@ -3804,7 +3834,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                       </View>
 
                       {/* Abort Setup button on the right */}
-                          {!mpcDone && !isPairing ? (
+                      {!mpcDone && !isPairing ? (
                         <TouchableOpacity
                           style={[styles.cancelSetupButton, {marginLeft: 12}]}
                           onPress={() => {
@@ -3822,7 +3852,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           }}
                           activeOpacity={0.7}>
                           <Text style={styles.cancelLink}>
-                            {(isSendBitcoin || isSignPSBT) ? 'Cancel' : 'Abort'}
+                            {isSendBitcoin || isSignPSBT ? 'Cancel' : 'Abort'}
                           </Text>
                         </TouchableOpacity>
                       ) : (
@@ -3939,14 +3969,15 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   color: theme.colors.text,
                                   fontWeight: '600',
                                 }}>
-                                {sat2btcStr(String(psbtDetails.totalOutput))} BTC
+                                {sat2btcStr(String(psbtDetails.totalOutput))}{' '}
+                                BTC
                               </Text>
                             </View>
                             <View
                               style={{
                                 flexDirection: 'row',
                                 justifyContent: 'space-between',
-                                marginBottom: psbtDetails.derivePath ? 6 : 0,
+                                marginBottom: 0,
                               }}>
                               <Text
                                 style={{
@@ -3964,33 +3995,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 {sat2btcStr(String(psbtDetails.fee))} BTC
                               </Text>
                             </View>
-                            {psbtDetails.derivePath && (
-                              <View
-                                style={{
-                                  marginTop: 6,
-                                  paddingTop: 6,
-                                  borderTopWidth: 1,
-                                  borderTopColor: theme.colors.border,
-                                }}>
-                                <Text
-                                  style={{
-                                    fontSize: 10,
-                                    color: theme.colors.textSecondary,
-                                    marginBottom: 2,
-                                  }}>
-                                  Derivation Path:
-                                </Text>
-                                <Text
-                                  style={{
-                                    fontSize: 10,
-                                    color: theme.colors.primary,
-                                    fontFamily:
-                                      Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                                  }}>
-                                  {psbtDetails.derivePath}
-                                </Text>
-                              </View>
-                            )}
                             {psbtDetails.derivePaths &&
                               psbtDetails.derivePaths.length > 1 && (
                                 <View
@@ -4005,7 +4009,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                                       fontSize: 10,
                                       color: theme.colors.textSecondary,
                                     }}>
-                                    {psbtDetails.derivePaths.length} different paths
+                                    {psbtDetails.derivePaths.length} different
+                                    paths
                                   </Text>
                                 </View>
                               )}
@@ -4383,7 +4388,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                   {localNpub &&
                     deviceName &&
                     partialNonce &&
-                    !isSendBitcoin && !isSignPSBT && (
+                    !isSendBitcoin &&
+                    !isSignPSBT && (
                       <View style={styles.section}>
                         <Text
                           style={{
@@ -4588,136 +4594,141 @@ const MobileNostrPairing = ({navigation}: any) => {
                   )}
 
                   {/* Peer Connection 2 (Trio only) - Hide when Final Step is shown or in send/sign mode */}
-                  {isTrio && !showFinalStep && !isSendBitcoin && !isSignPSBT && (
-                    <View style={styles.section}>
-                      <Text
-                        style={{
-                          fontSize: 14,
-                          fontWeight: '600',
-                          color: theme.colors.text,
-                          marginBottom: 12,
-                        }}>
-                        Step 3: Third Device
-                      </Text>
-                      <View>
-                        <View style={styles.inputWithIcons}>
-                          {peerNpub2 && (
-                            <Image
-                              source={require('../assets/check-icon.png')}
-                              style={styles.checkIconLeft}
-                              resizeMode="contain"
-                            />
-                          )}
-                          {peerNpub2 && peerDeviceName2 ? (
-                            <Text
-                              style={[
-                                styles.input,
-                                styles.inputFlex,
-                                styles.inputCentered,
-                                styles.inputSuccess,
-                                styles.inputTextDisplay,
-                              ]}
-                              numberOfLines={1}
-                              ellipsizeMode="middle"
-                              adjustsFontSizeToFit={true}
-                              minimumFontScale={0.7}>
-                              {formatConnectionDisplay(
-                                peerNpub2,
-                                peerDeviceName2,
-                              )}
-                            </Text>
-                          ) : (
-                            <TextInput
-                              style={[
-                                styles.input,
-                                styles.inputFlex,
-                                styles.inputCentered,
-                                peerInputError2 && styles.inputError,
-                                peerInputValidating2 && styles.inputValidating,
-                              ]}
-                              value={peerConnectionDetails2}
-                              onChangeText={text => {
-                                setPeerConnectionDetails2(text);
-                                handlePeerConnectionInput(text, 2);
-                              }}
-                              placeholder="Paste or scan connection details"
-                              placeholderTextColor={
-                                theme.colors.textSecondary + '80'
-                              }
-                              autoCapitalize="none"
-                              autoCorrect={false}
-                            />
-                          )}
-                          {peerInputValidating2 && (
-                            <View style={styles.validatingIndicator}>
-                              <Text style={styles.validatingText}>...</Text>
-                            </View>
-                          )}
-                          {peerNpub2 && !peerInputValidating2 && (
-                            <TouchableOpacity
-                              style={[
-                                styles.iconButton,
-                                styles.iconButtonCentered,
-                              ]}
-                              onPress={() => clearPeerConnection(2)}
-                              activeOpacity={0.7}>
+                  {isTrio &&
+                    !showFinalStep &&
+                    !isSendBitcoin &&
+                    !isSignPSBT && (
+                      <View style={styles.section}>
+                        <Text
+                          style={{
+                            fontSize: 14,
+                            fontWeight: '600',
+                            color: theme.colors.text,
+                            marginBottom: 12,
+                          }}>
+                          Step 3: Third Device
+                        </Text>
+                        <View>
+                          <View style={styles.inputWithIcons}>
+                            {peerNpub2 && (
                               <Image
-                                source={require('../assets/delete-icon.png')}
-                                style={styles.iconImage}
+                                source={require('../assets/check-icon.png')}
+                                style={styles.checkIconLeft}
                                 resizeMode="contain"
                               />
-                            </TouchableOpacity>
-                          )}
-                          {!peerNpub2 && !peerInputValidating2 && (
-                            <>
-                              <TouchableOpacity
+                            )}
+                            {peerNpub2 && peerDeviceName2 ? (
+                              <Text
                                 style={[
-                                  styles.iconButton,
-                                  styles.iconButtonCentered,
+                                  styles.input,
+                                  styles.inputFlex,
+                                  styles.inputCentered,
+                                  styles.inputSuccess,
+                                  styles.inputTextDisplay,
                                 ]}
-                                onPress={() => handlePaste(2)}
-                                activeOpacity={0.7}>
-                                <Image
-                                  source={require('../assets/paste-icon.png')}
-                                  style={styles.iconImage}
-                                  resizeMode="contain"
-                                />
-                              </TouchableOpacity>
-                              <TouchableOpacity
+                                numberOfLines={1}
+                                ellipsizeMode="middle"
+                                adjustsFontSizeToFit={true}
+                                minimumFontScale={0.7}>
+                                {formatConnectionDisplay(
+                                  peerNpub2,
+                                  peerDeviceName2,
+                                )}
+                              </Text>
+                            ) : (
+                              <TextInput
                                 style={[
-                                  styles.iconButton,
-                                  styles.iconButtonCentered,
+                                  styles.input,
+                                  styles.inputFlex,
+                                  styles.inputCentered,
+                                  peerInputError2 && styles.inputError,
+                                  peerInputValidating2 &&
+                                    styles.inputValidating,
                                 ]}
-                                onPress={() => {
-                                  HapticFeedback.light();
-                                  const peerNum: 1 | 2 = 2;
-                                  setScanningForPeer(peerNum);
-                                  scanningForPeerRef.current = peerNum; // Update ref immediately
-                                  setIsQRScannerVisible(true);
+                                value={peerConnectionDetails2}
+                                onChangeText={text => {
+                                  setPeerConnectionDetails2(text);
+                                  handlePeerConnectionInput(text, 2);
                                 }}
+                                placeholder="Paste or scan connection details"
+                                placeholderTextColor={
+                                  theme.colors.textSecondary + '80'
+                                }
+                                autoCapitalize="none"
+                                autoCorrect={false}
+                              />
+                            )}
+                            {peerInputValidating2 && (
+                              <View style={styles.validatingIndicator}>
+                                <Text style={styles.validatingText}>...</Text>
+                              </View>
+                            )}
+                            {peerNpub2 && !peerInputValidating2 && (
+                              <TouchableOpacity
+                                style={[
+                                  styles.iconButton,
+                                  styles.iconButtonCentered,
+                                ]}
+                                onPress={() => clearPeerConnection(2)}
                                 activeOpacity={0.7}>
                                 <Image
-                                  source={require('../assets/scan-icon.png')}
+                                  source={require('../assets/delete-icon.png')}
                                   style={styles.iconImage}
                                   resizeMode="contain"
                                 />
                               </TouchableOpacity>
-                            </>
+                            )}
+                            {!peerNpub2 && !peerInputValidating2 && (
+                              <>
+                                <TouchableOpacity
+                                  style={[
+                                    styles.iconButton,
+                                    styles.iconButtonCentered,
+                                  ]}
+                                  onPress={() => handlePaste(2)}
+                                  activeOpacity={0.7}>
+                                  <Image
+                                    source={require('../assets/paste-icon.png')}
+                                    style={styles.iconImage}
+                                    resizeMode="contain"
+                                  />
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  style={[
+                                    styles.iconButton,
+                                    styles.iconButtonCentered,
+                                  ]}
+                                  onPress={() => {
+                                    HapticFeedback.light();
+                                    const peerNum: 1 | 2 = 2;
+                                    setScanningForPeer(peerNum);
+                                    scanningForPeerRef.current = peerNum; // Update ref immediately
+                                    setIsQRScannerVisible(true);
+                                  }}
+                                  activeOpacity={0.7}>
+                                  <Image
+                                    source={require('../assets/scan-icon.png')}
+                                    style={styles.iconImage}
+                                    resizeMode="contain"
+                                  />
+                                </TouchableOpacity>
+                              </>
+                            )}
+                          </View>
+                          {peerInputError2 && (
+                            <View style={styles.errorIndicator}>
+                              <Text style={styles.errorText}>
+                                ⚠ {peerInputError2}
+                              </Text>
+                            </View>
                           )}
                         </View>
-                        {peerInputError2 && (
-                          <View style={styles.errorIndicator}>
-                            <Text style={styles.errorText}>
-                              ⚠ {peerInputError2}
-                            </Text>
-                          </View>
-                        )}
                       </View>
-                    </View>
-                  )}
+                    )}
 
                   {/* Prepare Device Section - Hide in send/sign mode */}
-                  {!isSendBitcoin && !isSignPSBT &&
+                  {!isSendBitcoin &&
+                    !isSignPSBT &&
                     !isPreParamsReady &&
                     localNpub &&
                     deviceName &&
@@ -4969,7 +4980,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                   </Modal>
 
                   {/* Final Step - Check other devices are prepared */}
-                  {!isSendBitcoin && !isSignPSBT &&
+                  {!isSendBitcoin &&
+                    !isSignPSBT &&
                     isPreParamsReady &&
                     !mpcDone &&
                     localNpub &&
@@ -5402,16 +5414,22 @@ const MobileNostrPairing = ({navigation}: any) => {
                       <TouchableOpacity
                         style={[
                           styles.button,
-                          ((isSendBitcoin || isSignPSBT)
+                          (isSendBitcoin || isSignPSBT
                             ? !localNpub ||
                               sendModeDevices.length === 0 ||
                               (isTrio && !selectedPeerNpub) ||
                               (isSignPSBT && !isKeysignReady)
                             : !canStartKeygen) && styles.buttonDisabled,
                         ]}
-                        onPress={isSignPSBT ? startSignPSBT : (isSendBitcoin ? startSendBTC : startKeygen)}
+                        onPress={
+                          isSignPSBT
+                            ? startSignPSBT
+                            : isSendBitcoin
+                            ? startSendBTC
+                            : startKeygen
+                        }
                         disabled={
-                          (isSendBitcoin || isSignPSBT)
+                          isSendBitcoin || isSignPSBT
                             ? !localNpub ||
                               sendModeDevices.length === 0 ||
                               (isTrio && !selectedPeerNpub) ||
@@ -5420,10 +5438,12 @@ const MobileNostrPairing = ({navigation}: any) => {
                         }
                         activeOpacity={0.8}>
                         <View style={styles.buttonContent}>
-                          {((isSendBitcoin || isSignPSBT) || !(isSendBitcoin || isSignPSBT)) && (
+                          {(isSendBitcoin ||
+                            isSignPSBT ||
+                            !(isSendBitcoin || isSignPSBT)) && (
                             <Image
                               source={
-                                (isSendBitcoin || isSignPSBT)
+                                isSendBitcoin || isSignPSBT
                                   ? require('../assets/cosign-icon.png')
                                   : require('../assets/key-icon.png')
                               }
@@ -5432,7 +5452,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                             />
                           )}
                           <Text style={styles.buttonText}>
-                            {(isSendBitcoin || isSignPSBT)
+                            {isSendBitcoin || isSignPSBT
                               ? (() => {
                                   // Determine if local device is KeyShare1
                                   const localDevice = sendModeDevices.find(
@@ -5441,8 +5461,12 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   const isKeyShare1 =
                                     localDevice?.keyshareLabel === 'KeyShare1';
                                   return isKeyShare1
-                                    ? (isSignPSBT ? 'Start PSBT Signing' : 'Start Co-Signing')
-                                    : (isSignPSBT ? 'Join PSBT Signing' : 'Join Co-Signing');
+                                    ? isSignPSBT
+                                      ? 'Start PSBT Signing'
+                                      : 'Start Co-Signing'
+                                    : isSignPSBT
+                                    ? 'Join PSBT Signing'
+                                    : 'Join Co-Signing';
                                 })()
                               : (() => {
                                   // For keygen, determine if local npub is first in sorted order
@@ -5547,7 +5571,9 @@ const MobileNostrPairing = ({navigation}: any) => {
 
                   {/* Header Text */}
                   <Text style={styles.modalTitle}>
-                    {isSignPSBT ? 'PSBT Co-Signing' : 'Co-Signing Your Transaction'}
+                    {isSignPSBT
+                      ? 'PSBT Co-Signing'
+                      : 'Co-Signing Your Transaction'}
                   </Text>
 
                   {/* Subtext */}

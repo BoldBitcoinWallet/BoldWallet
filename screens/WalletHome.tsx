@@ -65,7 +65,6 @@ const {BBMTLibNativeModule} = NativeModules;
 
 const keyIcon = require('../assets/key-icon.png');
 
-
 type RouteParams = {
   txId?: string;
   signedPsbt?: string;
@@ -89,7 +88,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     useState<boolean>(false);
   const [pendingPSBTParams, setPendingPSBTParams] = useState<{
     psbtBase64: string;
-    derivePath: string;
   } | null>(null);
   const [btcPrice, setBtcPrice] = useState<string>('');
   const [btcRate, setBtcRate] = useState(0);
@@ -399,10 +397,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           if (jks) {
             const ks = JSON.parse(jks);
             // Get current address type for derivation path
-            const currentAddressType = (await LocalCache.getItem('addressType')) || 'segwit-native';
+            const currentAddressType =
+              (await LocalCache.getItem('addressType')) || 'segwit-native';
             // Check if this is a legacy wallet (created before migration timestamp)
             const useLegacyPath = isLegacyWallet(ks.created_at);
-            const path = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
+            const path = getDerivePathForNetwork(
+              network,
+              currentAddressType,
+              useLegacyPath,
+            );
             btcPub = await BBMTLibNativeModule.derivePubkey(
               ks.pub_key,
               ks.chain_code_hex,
@@ -457,7 +460,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
         // Get the current address type from cache or state
         const currentAddressType =
-          addressType || (await LocalCache.getItem('addressType')) || 'segwit-native';
+          addressType ||
+          (await LocalCache.getItem('addressType')) ||
+          'segwit-native';
         dbg(
           'Using address type:',
           currentAddressType,
@@ -477,17 +482,17 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             return;
           }
 
-        const ks = JSON.parse(jks);
-        // Get current address type for derivation path
-        const deriveAddressType =
-          (await LocalCache.getItem('addressType')) || 'segwit-native';
-        // Check if this is a legacy wallet (created before migration timestamp)
-        const useLegacyPath = isLegacyWallet(ks.created_at);
-        const path = getDerivePathForNetwork(
-          newNetwork,
-          deriveAddressType,
-          useLegacyPath,
-        );
+          const ks = JSON.parse(jks);
+          // Get current address type for derivation path
+          const deriveAddressType =
+            (await LocalCache.getItem('addressType')) || 'segwit-native';
+          // Check if this is a legacy wallet (created before migration timestamp)
+          const useLegacyPath = isLegacyWallet(ks.created_at);
+          const path = getDerivePathForNetwork(
+            newNetwork,
+            deriveAddressType,
+            useLegacyPath,
+          );
           btcPub = await BBMTLibNativeModule.derivePubkey(
             ks.pub_key,
             ks.chain_code_hex,
@@ -625,10 +630,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
         const ks = JSON.parse(jks);
         // Get current address type for derivation path
-        const currentAddressType = (await LocalCache.getItem('addressType')) || 'segwit-native';
+        const currentAddressType =
+          (await LocalCache.getItem('addressType')) || 'segwit-native';
         // Check if this is a legacy wallet (created before migration timestamp)
         const useLegacyPath = isLegacyWallet(ks.created_at);
-        const path = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
+        const path = getDerivePathForNetwork(
+          network,
+          currentAddressType,
+          useLegacyPath,
+        );
 
         // Always derive btcPub fresh to ensure it's current
         const btcPub = await BBMTLibNativeModule.derivePubkey(
@@ -647,7 +657,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('Re-initializing for network:', net);
 
         // Get current address type
-        const addrType = (await LocalCache.getItem('addressType')) || 'segwit-native';
+        const addrType =
+          (await LocalCache.getItem('addressType')) || 'segwit-native';
         setAddressType(addrType);
 
         // Set up network parameters
@@ -853,7 +864,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
   };
 
-
   const {theme} = useTheme();
   const styles = {
     ...createStyles(theme),
@@ -865,9 +875,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       width: 56,
       height: 56,
       borderRadius: 28,
-      backgroundColor: Platform.OS === 'android' 
-        ? 'rgba(40, 40, 50, 0.92)' // More visible dark blue-gray background on Android
-        : 'rgba(0, 0, 0, 0.6)',
+      backgroundColor:
+        Platform.OS === 'android'
+          ? 'rgba(40, 40, 50, 0.92)' // More visible dark blue-gray background on Android
+          : 'rgba(0, 0, 0, 0.6)',
       justifyContent: 'center' as const,
       alignItems: 'center' as const,
       elevation: 12,
@@ -876,9 +887,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       shadowOpacity: 0.5,
       shadowRadius: 10,
       borderWidth: Platform.OS === 'android' ? 2 : 1,
-      borderColor: Platform.OS === 'android' 
-        ? 'rgba(255, 255, 255, 0.35)' // More visible border on Android
-        : 'rgba(255, 255, 255, 0.2)',
+      borderColor:
+        Platform.OS === 'android'
+          ? 'rgba(255, 255, 255, 0.35)' // More visible border on Android
+          : 'rgba(255, 255, 255, 0.2)',
       overflow: 'hidden' as const,
     } as const,
     lockFABIcon: {
@@ -1113,10 +1125,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         }
 
         // Get current address type for derivation path
-        const currentAddressType = (await LocalCache.getItem('addressType')) || 'segwit-native';
+        const currentAddressType =
+          (await LocalCache.getItem('addressType')) || 'segwit-native';
         // Check if this is a legacy wallet (created before migration timestamp)
         const useLegacyPath = isLegacyWallet(ks.created_at);
-        const path = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
+        const path = getDerivePathForNetwork(
+          network,
+          currentAddressType,
+          useLegacyPath,
+        );
         const btcPub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,
           ks.chain_code_hex,
@@ -1471,14 +1488,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   // Process scanned QR data
   const processScannedQRData = useCallback((qrData: string) => {
     dbg('Scanned QR data:', qrData.substring(0, 100));
-    
+
     const decoded = decodeSendBitcoinQR(qrData) as {
       toAddress: string;
       amountSats: string;
       feeSats: string;
       spendingHash?: string;
     } | null;
-    if (!decoded || !decoded.toAddress || !decoded.amountSats || !decoded.feeSats) {
+    if (
+      !decoded ||
+      !decoded.toAddress ||
+      !decoded.amountSats ||
+      !decoded.feeSats
+    ) {
       Alert.alert(
         'Invalid QR Code',
         'The scanned QR code does not contain valid send bitcoin data. Please scan the QR code from the device that initiated the transaction.',
@@ -1488,7 +1510,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
     // Validate Bitcoin address
     if (!validateBitcoinAddress(decoded.toAddress)) {
-      Alert.alert('Invalid Address', 'The scanned QR code contains an invalid Bitcoin address.');
+      Alert.alert(
+        'Invalid Address',
+        'The scanned QR code contains an invalid Bitcoin address.',
+      );
       return;
     }
 
@@ -1497,7 +1522,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     const feeSats = Big(decoded.feeSats);
 
     if (amountSats.lte(0) || feeSats.lte(0)) {
-      Alert.alert('Invalid Amount', 'The scanned QR code contains invalid amount or fee values.');
+      Alert.alert(
+        'Invalid Amount',
+        'The scanned QR code contains invalid amount or fee values.',
+      );
       return;
     }
 
@@ -1509,7 +1537,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       spendingHash: decoded.spendingHash || '',
     });
     setScannedFromQR(true);
-    
+
     // Show transport selector immediately (no QR code shown since data came from scan)
     setTimeout(() => {
       setIsTransportModalVisible(true);
@@ -1530,13 +1558,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       const jks = await EncryptedStorage.getItem('keyshare');
       if (jks) {
         const ks = JSON.parse(jks);
-        const currentAddressType = (await LocalCache.getItem('addressType')) || 'segwit-native';
+        const currentAddressType =
+          (await LocalCache.getItem('addressType')) || 'segwit-native';
         // Check if this is a legacy wallet (created before migration timestamp)
         const useLegacyPath = isLegacyWallet(ks.created_at);
-        derivePath = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
+        derivePath = getDerivePathForNetwork(
+          network,
+          currentAddressType,
+          useLegacyPath,
+        );
       }
     }
-    const psbtDerivePath = derivePath || getDerivePathForNetwork(network, 'segwit-native', true);
+    const psbtDerivePath =
+      derivePath || getDerivePathForNetwork(network, 'segwit-native', true);
 
     // Check if keyshare supports Nostr (has nostr_npub)
     try {
@@ -1568,7 +1602,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
 
     // Store params and show transport selector
-    setPendingPSBTParams({psbtBase64, derivePath: psbtDerivePath});
+    setPendingPSBTParams({psbtBase64});
     setTimeout(() => {
       setIsPSBTTransportModalVisible(true);
     }, 300);
@@ -1577,7 +1611,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const navigateToPSBTSigning = (transport: 'local' | 'nostr') => {
     if (!pendingPSBTParams) return;
 
-    const {psbtBase64, derivePath} = pendingPSBTParams;
+    const {psbtBase64} = pendingPSBTParams;
 
     const routeName =
       transport === 'local' ? 'Devices Pairing' : 'Nostr Connect';
@@ -1588,7 +1622,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           mode: 'sign_psbt',
           addressType,
           psbtBase64,
-          derivePath,
         },
       }),
     );
@@ -1607,7 +1640,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         return require('../assets/bricks-icon.png');
     }
   };
-
 
   if (loading && !isInitialized) {
     return <WalletSkeleton />;
@@ -1887,9 +1919,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             DeviceEventEmitter.emit('app:reload');
           }}
           activeOpacity={0.7}>
-          {Platform.OS === 'android' && (
-            <View style={styles.lockFABOverlay} />
-          )}
+          {Platform.OS === 'android' && <View style={styles.lockFABOverlay} />}
           <Image
             source={require('../assets/locker-icon.png')}
             style={styles.lockFABIcon}
@@ -2070,7 +2100,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           pendingSendParams
             ? {
                 toAddress: pendingSendParams.to,
-                amountSats: pendingSendParams.amountSats.toString().split('.')[0],
+                amountSats: pendingSendParams.amountSats
+                  .toString()
+                  .split('.')[0],
                 feeSats: pendingSendParams.feeSats.toString().split('.')[0],
                 spendingHash: pendingSendParams.spendingHash,
               }
@@ -2152,7 +2184,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         topRightClose={true}
         nonDismissible={true}
       />
-
 
       <QRCodeModal
         visible={isNpubQrVisible}
