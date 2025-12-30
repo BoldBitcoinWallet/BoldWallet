@@ -130,10 +130,16 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) error {
 	defer queryCancel()
 
 	// Query all relays in parallel and wait for results
+	// Use all valid relays, not just initially connected ones
+	relaysToQuery := s.client.validRelays
+	if len(relaysToQuery) == 0 {
+		// Fallback to urls if validRelays not set (backward compatibility)
+		relaysToQuery = s.client.urls
+	}
 	queryDone := make(chan bool, 1)
 	go func() {
 		defer func() { queryDone <- true }()
-		for _, url := range s.client.urls {
+		for _, url := range relaysToQuery {
 			relay, err := s.client.GetPool().EnsureRelay(url)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "BBMTLog: Failed to ensure relay %s: %v\n", url, err)
@@ -205,10 +211,36 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) error {
 	}
 
 	// Now start subscription to catch new events
-	fmt.Fprintf(os.Stderr, "BBMTLog: Starting subscription for ready wraps for session %s\n", s.cfg.SessionID)
-	eventsCh, err := s.client.Subscribe(ctx, filter)
-	if err != nil {
-		return fmt.Errorf("subscribe to ready wraps: %w", err)
+	// Retry subscription if it fails or channel closes (resilient to relay failures)
+	retryTicker := time.NewTicker(1 * time.Second)
+	defer retryTicker.Stop()
+
+	var eventsCh <-chan *Event
+	subscriptionActive := false
+
+	// Retry loop for subscription
+	for !subscriptionActive {
+		select {
+		case <-ctx.Done():
+			fmt.Fprintf(os.Stderr, "BBMTLog: AwaitPeers timed out during subscription (seen: %d/%d)\n", s.countSeen(&seen), len(expected))
+			return fmt.Errorf("waiting for peers timed out: %w", ctx.Err())
+		default:
+		}
+
+		fmt.Fprintf(os.Stderr, "BBMTLog: Starting subscription for ready wraps for session %s\n", s.cfg.SessionID)
+		var err error
+		eventsCh, err = s.client.Subscribe(ctx, filter)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "BBMTLog: Subscribe failed: %v, retrying in 1 second...\n", err)
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("waiting for peers timed out: %w", ctx.Err())
+			case <-retryTicker.C:
+				continue // Retry subscription
+			}
+		}
+		subscriptionActive = true
+		fmt.Fprintf(os.Stderr, "BBMTLog: Subscription active for session %s\n", s.cfg.SessionID)
 	}
 
 	ticker := time.NewTicker(5 * time.Second)
@@ -222,7 +254,37 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) error {
 			return fmt.Errorf("waiting for peers timed out: %w", ctx.Err())
 		case evt, ok := <-eventsCh:
 			if !ok {
-				return fmt.Errorf("relay subscription closed")
+				// Channel closed (e.g., relay disconnection) - retry subscription
+				fmt.Fprintf(os.Stderr, "BBMTLog: Subscription channel closed, retrying subscription in 1 second...\n")
+				subscriptionActive = false
+				// Wait before retrying
+				select {
+				case <-ctx.Done():
+					return fmt.Errorf("waiting for peers timed out: %w", ctx.Err())
+				case <-retryTicker.C:
+					// Retry subscription
+					for !subscriptionActive {
+						select {
+						case <-ctx.Done():
+							return fmt.Errorf("waiting for peers timed out: %w", ctx.Err())
+						default:
+						}
+						var err error
+						eventsCh, err = s.client.Subscribe(ctx, filter)
+						if err != nil {
+							fmt.Fprintf(os.Stderr, "BBMTLog: Subscribe retry failed: %v, retrying in 1 second...\n", err)
+							select {
+							case <-ctx.Done():
+								return fmt.Errorf("waiting for peers timed out: %w", ctx.Err())
+							case <-retryTicker.C:
+								continue // Retry subscription
+							}
+						}
+						subscriptionActive = true
+						fmt.Fprintf(os.Stderr, "BBMTLog: Subscription re-established for session %s\n", s.cfg.SessionID)
+					}
+					continue // Continue processing events
+				}
 			}
 			if evt == nil || evt.Kind != 1059 {
 				continue

@@ -1646,7 +1646,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['left', 'right']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <View style={styles.contentContainer}>
         <View style={styles.walletHeader}>
           <View style={styles.headerTop}>
@@ -2095,7 +2095,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           setIsTransportModalVisible(false);
         }}
         title="Select Signing Method"
-        description="Choose how to sign your transaction"
+        description=""
         sendBitcoinData={
           pendingSendParams
             ? {

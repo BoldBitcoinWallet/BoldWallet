@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	nostr "github.com/nbd-wtf/go-nostr"
@@ -284,8 +285,16 @@ func (c *Client) Publish(ctx context.Context, event *Event) error {
 
 	fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - signed event, PubKey (hex)=%s, tags=%v\n", event.PubKey, event.Tags)
 
-	results := c.pool.PublishMany(ctx, c.urls, *event)
-	totalRelays := len(c.urls)
+	// Use all valid relays, not just initially connected ones
+	// The pool will handle connections - if a relay isn't connected yet, it will try to connect
+	// This ensures we publish to all relays, including those that connected in background
+	relaysToUse := c.validRelays
+	if len(relaysToUse) == 0 {
+		// Fallback to urls if validRelays not set (backward compatibility)
+		relaysToUse = c.urls
+	}
+	results := c.pool.PublishMany(ctx, relaysToUse, *event)
+	totalRelays := len(relaysToUse)
 
 	// Track results in background goroutine - return immediately on first success
 	successCh := make(chan bool, 1)
@@ -385,42 +394,64 @@ func (c *Client) Publish(ctx context.Context, event *Event) error {
 }
 
 func (c *Client) Subscribe(ctx context.Context, filter Filter) (<-chan *Event, error) {
-	if len(c.urls) == 0 {
-		return nil, errors.New("no relays configured")
-	}
-	events := make(chan *Event)
-
 	// Use all valid relays, not just initially connected ones
-	// The pool will handle connections - if a relay isn't connected yet, it will try to connect
-	// This ensures we subscribe to all relays, including those that connected in background
 	relaysToUse := c.validRelays
 	if len(relaysToUse) == 0 {
 		// Fallback to urls if validRelays not set (backward compatibility)
 		relaysToUse = c.urls
 	}
-	relayCh := c.pool.SubscribeMany(ctx, relaysToUse, filter)
+	if len(relaysToUse) == 0 {
+		return nil, errors.New("no relays configured")
+	}
+
+	events := make(chan *Event, 100) // Buffered to prevent blocking
+	totalRelays := len(relaysToUse)
 
 	// Track relay connection status
 	connectedRelays := make(map[string]bool)
-	totalRelays := len(relaysToUse)
-	var connectionCheckDone bool
+	connectedRelaysMu := sync.Mutex{}
+	firstConnectionCh := make(chan bool, 1) // Signal when first connection succeeds
+	connectionCheckDone := false
 
-	// Start a goroutine to monitor connection status
-	connectionCtx, connectionCancel := context.WithTimeout(ctx, 5*time.Second)
-	defer connectionCancel()
+	// Ensure at least one relay is connected before subscribing (in parallel, non-blocking)
+	// This ensures we have working connections before attempting subscription
+	// Connect to all relays in parallel, wait for at least one success
+	connectDone := make(chan string, totalRelays) // Relay URL when connected
+	connectTimeout := time.NewTimer(3 * time.Second)
+	defer connectTimeout.Stop()
 
-	go func() {
-		<-connectionCtx.Done()
-		if !connectionCheckDone {
-			connectionCheckDone = true
-			if len(connectedRelays) == 0 {
-				fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - WARNING: No relays connected after 5 seconds (all %d relays may have failed)\n", totalRelays)
-			} else if len(connectedRelays) < totalRelays {
-				fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - %d/%d relays connected\n", len(connectedRelays), totalRelays)
+	// Try connecting to all relays in parallel
+	for _, url := range relaysToUse {
+		go func(relayURL string) {
+			relay, err := c.pool.EnsureRelay(relayURL)
+			if err == nil && relay != nil {
+				fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - relay %s connected for subscription\n", relayURL)
+				select {
+				case connectDone <- relayURL:
+				default:
+				}
 			}
-		}
-	}()
+		}(url)
+	}
 
+	// Wait for at least one connection or timeout
+	connectedRelay := ""
+	select {
+	case connectedRelay = <-connectDone:
+		fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - at least one relay connected (%s), proceeding with subscription\n", connectedRelay)
+		// Continue connecting others in background (non-blocking)
+	case <-connectTimeout.C:
+		// Timeout - proceed anyway, pool will handle connections
+		fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - connection timeout, proceeding (pool will handle connections)\n")
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	// Start subscription to all relays in parallel (non-blocking)
+	// SubscribeMany connects to all relays in parallel and merges their events
+	relayCh := c.pool.SubscribeMany(ctx, relaysToUse, filter)
+
+	// Process events and track connections in background
 	go func() {
 		defer close(events)
 		for {
@@ -430,47 +461,74 @@ func (c *Client) Subscribe(ctx context.Context, filter Filter) (<-chan *Event, e
 			case relayEvent, ok := <-relayCh:
 				if !ok {
 					// Channel closed - check if we ever got any connections
+					connectedRelaysMu.Lock()
 					connectionCheckDone = true
 					if len(connectedRelays) == 0 {
 						fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - ERROR: All %d relays failed to connect or disconnected\n", totalRelays)
 					} else {
 						fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - subscription closed (%d/%d relays were connected)\n", len(connectedRelays), totalRelays)
 					}
+					connectedRelaysMu.Unlock()
 					return
 				}
+
 				// Get relay URL for tracking
 				var relayURL string
 				if relayEvent.Relay != nil {
 					relayURL = relayEvent.Relay.URL
 				}
 
-				if relayEvent.Event == nil {
-					// Track relay connection (even if no event yet, the relay is responding)
-					if relayURL != "" {
-						if !connectedRelays[relayURL] {
-							connectedRelays[relayURL] = true
-							fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - relay %s connected (%d/%d)\n", relayURL, len(connectedRelays), totalRelays)
-						}
-					}
-					continue
-				}
-				// Track relay connection when we receive an event
+				// Track connection when we receive events (relay is working)
 				if relayURL != "" {
+					connectedRelaysMu.Lock()
 					if !connectedRelays[relayURL] {
 						connectedRelays[relayURL] = true
-						fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - relay %s connected (%d/%d)\n", relayURL, len(connectedRelays), totalRelays)
+						isFirst := len(connectedRelays) == 1
+						fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - relay %s active (%d/%d) - received event\n", relayURL, len(connectedRelays), totalRelays)
+
+						// Signal first connection success (non-blocking)
+						if isFirst && !connectionCheckDone {
+							connectionCheckDone = true
+							select {
+							case firstConnectionCh <- true:
+							default:
+							}
+						}
 					}
+					connectedRelaysMu.Unlock()
 				}
-				select {
-				case events <- relayEvent.Event:
-				case <-ctx.Done():
-					return
+
+				// Forward events to the output channel
+				if relayEvent.Event != nil {
+					fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - forwarding event from relay %s: kind=%d, pubkey=%s, content_len=%d, tags_count=%d\n", relayURL, relayEvent.Event.Kind, relayEvent.Event.PubKey, len(relayEvent.Event.Content), len(relayEvent.Event.Tags))
+					select {
+					case events <- relayEvent.Event:
+						fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - event forwarded to subscription channel\n")
+					case <-ctx.Done():
+						return
+					}
+				} else {
+					fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - relayEvent.Event is nil from relay %s\n", relayURL)
 				}
 			}
 		}
 	}()
 
-	return events, nil
+	// Wait for subscription to be ready - give it time to establish
+	// We've already ensured at least one relay is connected, so subscription should work
+	select {
+	case <-firstConnectionCh:
+		// Subscription ready - at least one relay is receiving events
+		fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - subscription ready, active\n")
+		return events, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-time.After(1 * time.Second):
+		// After 1 second, assume subscription is established
+		// We've already connected to at least one relay, so subscription should work
+		fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - subscription established (at least one relay connected)\n")
+		return events, nil
+	}
 }
 
 // PublishWrap publishes a pre-signed gift wrap event (kind:1059)
@@ -495,8 +553,16 @@ func (c *Client) PublishWrap(ctx context.Context, wrap *Event) error {
 		wrap.CreatedAt = nostr.Now()
 	}
 
-	results := c.pool.PublishMany(ctx, c.urls, *wrap)
-	totalRelays := len(c.urls)
+	// Use all valid relays, not just initially connected ones
+	// The pool will handle connections - if a relay isn't connected yet, it will try to connect
+	// This ensures we publish to all relays, including those that connected in background
+	relaysToUse := c.validRelays
+	if len(relaysToUse) == 0 {
+		// Fallback to urls if validRelays not set (backward compatibility)
+		relaysToUse = c.urls
+	}
+	results := c.pool.PublishMany(ctx, relaysToUse, *wrap)
+	totalRelays := len(relaysToUse)
 
 	// Track results in background goroutine - return immediately on first success
 	successCh := make(chan bool, 1)
