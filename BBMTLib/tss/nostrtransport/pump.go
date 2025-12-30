@@ -87,6 +87,210 @@ func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) error
 	retryTicker := time.NewTicker(1 * time.Second)
 	defer retryTicker.Stop()
 
+	// Helper function to process an event (unwrap, verify, and call handler)
+	processEvent := func(event *nostr.Event) error {
+		if event == nil {
+			return nil
+		}
+
+		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump received event from %s (hex), kind=%d, content_len=%d, tags_count=%d\n", event.PubKey, event.Kind, len(event.Content), len(event.Tags))
+
+		// Verify it's a gift wrap (kind:1059)
+		if event.Kind != 1059 {
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump skipping non-wrap event (kind=%d)\n", event.Kind)
+			return nil
+		}
+
+		// Step 1: Unwrap the gift wrap to get the seal
+		seal, err := unwrapGift(event, p.cfg.LocalNsec)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to unwrap gift: %v\n", err)
+			return nil
+		}
+		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump unwrapped gift, got seal from %s\n", seal.PubKey)
+
+		// Verify seal is from an expected peer
+		sealSenderNpub := seal.PubKey
+		isFromExpectedPeer := false
+		for _, expectedNpub := range p.cfg.PeersNpub {
+			expectedHex, err := npubToHex(expectedNpub)
+			if err != nil {
+				continue
+			}
+			if sealSenderNpub == expectedHex {
+				isFromExpectedPeer = true
+				break
+			}
+		}
+		if !isFromExpectedPeer {
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump seal from unexpected sender (hex: %s)\n", sealSenderNpub)
+			return nil
+		}
+
+		// Step 2: Unseal to get the rumor
+		// Convert seal sender npub to bech32 format for unseal (it expects npub format)
+		sealSenderNpubBech32 := sealSenderNpub
+		for _, npub := range p.cfg.PeersNpub {
+			npubHex, err := npubToHex(npub)
+			if err == nil && npubHex == sealSenderNpub {
+				sealSenderNpubBech32 = npub
+				break
+			}
+		}
+
+		rumor, err := unseal(seal, p.cfg.LocalNsec, sealSenderNpubBech32)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to unseal: %v\n", err)
+			return nil
+		}
+		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump unsealed, got rumor\n")
+
+		// Step 3: Extract chunk data from rumor
+		var chunkMessage map[string]interface{}
+		if err := json.Unmarshal([]byte(rumor.Content), &chunkMessage); err != nil {
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to parse rumor content: %v\n", err)
+			return nil
+		}
+
+		sessionIDValue, ok := chunkMessage["session_id"].(string)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump rumor missing session_id\n")
+			return nil
+		}
+		if sessionIDValue != p.cfg.SessionID {
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump session mismatch (got %s, expected %s)\n", sessionIDValue, p.cfg.SessionID)
+			return nil
+		}
+
+		// Check if this is a ready/complete message (handled by SessionCoordinator, not MessagePump)
+		if _, ok := chunkMessage["phase"].(string); ok {
+			// This is a ready/complete message, skip it (handled by SessionCoordinator)
+			return nil
+		}
+
+		// Extract chunk metadata
+		chunkTagValue, ok := chunkMessage["chunk"].(string)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump rumor missing chunk metadata\n")
+			return nil
+		}
+
+		meta, err := ParseChunkTag(chunkTagValue)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to parse chunk tag '%s': %v\n", chunkTagValue, err)
+			return nil
+		}
+		meta.SessionID = p.cfg.SessionID
+		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump parsed chunk metadata: hash=%s, index=%d/%d\n", meta.Hash, meta.Index, meta.Total)
+
+		// Extract chunk data
+		chunkDataB64, ok := chunkMessage["data"].(string)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump rumor missing chunk data\n")
+			return nil
+		}
+
+		chunkData, err := base64.StdEncoding.DecodeString(chunkDataB64)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to decode chunk data: %v\n", err)
+			return nil
+		}
+		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump decoded chunk data: %d bytes\n", len(chunkData))
+
+		// Check if already processed
+		p.processedMu.Lock()
+		if p.processed[meta.Hash] {
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump message %s already processed, skipping\n", meta.Hash)
+			p.processedMu.Unlock()
+			return nil
+		}
+		p.processedMu.Unlock()
+
+		// Add chunk to assembler
+		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump adding chunk %d/%d to assembler\n", meta.Index+1, meta.Total)
+		reassembled, complete := p.assembler.Add(meta, chunkData)
+		if !complete {
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump chunk %d/%d added, waiting for more chunks\n", meta.Index+1, meta.Total)
+			return nil
+		}
+		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump all chunks received, reassembled %d bytes\n", len(reassembled))
+
+		hashBytes := sha256.Sum256(reassembled)
+		calculatedHash := hex.EncodeToString(hashBytes[:])
+		if !strings.EqualFold(calculatedHash, meta.Hash) {
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump chunk hash mismatch (calc=%s, expected=%s)\n", calculatedHash, meta.Hash)
+			return nil
+		}
+
+		// Reassemble the full message from chunks (chunks are plaintext now, not encrypted)
+		// The reassembled data is the full message body
+		plaintext := reassembled
+
+		// Mark as processed
+		p.processedMu.Lock()
+		p.processed[meta.Hash] = true
+		p.processedMu.Unlock()
+
+		// Call handler with plaintext payload
+		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump calling handler with %d bytes\n", len(plaintext))
+		if err := handler(plaintext); err != nil {
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump handler error: %v\n", err)
+			return fmt.Errorf("handler error: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump handler completed successfully\n")
+		return nil
+	}
+
+	// First, query for existing events BEFORE starting subscription
+	// This ensures we catch events that were published before we started listening
+	// Query in parallel to all relays (resilient - if one fails, others continue)
+	fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump querying for existing events for session %s (from last 1 minute)\n", p.cfg.SessionID)
+	queryCtx, queryCancel := context.WithTimeout(ctx, 3*time.Second)
+	defer queryCancel()
+
+	// Use all valid relays, not just initially connected ones
+	relaysToQuery := p.client.validRelays
+	if len(relaysToQuery) == 0 {
+		relaysToQuery = p.client.urls
+	}
+
+	queryDone := make(chan bool, 1)
+	go func() {
+		defer func() { queryDone <- true }()
+		// Query all relays in parallel
+		for _, url := range relaysToQuery {
+			go func(relayURL string) {
+				relay, err := p.client.GetPool().EnsureRelay(relayURL)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to ensure relay %s for query: %v\n", relayURL, err)
+					return
+				}
+				existingEvents, err := relay.QuerySync(queryCtx, filter)
+				if err == nil {
+					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump query on relay %s returned %d events for session %s\n", relayURL, len(existingEvents), p.cfg.SessionID)
+					for _, event := range existingEvents {
+						if event != nil {
+							// Process the event (this will call handler if it's a valid message)
+							processEvent(event)
+						}
+					}
+				} else {
+					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump query on relay %s failed (non-fatal): %v\n", relayURL, err)
+				}
+			}(url)
+		}
+		// Give queries time to complete
+		time.Sleep(2 * time.Second)
+	}()
+
+	// Wait for initial query to complete (with timeout) before starting subscription
+	select {
+	case <-queryDone:
+		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump initial query completed\n")
+	case <-time.After(3 * time.Second):
+		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump initial query timeout, proceeding with subscription\n")
+	}
+
 	// Retry loop: resubscribe when channel closes (e.g., network disconnection)
 	for {
 		// Check if context is cancelled before attempting subscription
@@ -132,155 +336,18 @@ func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) error
 					}
 					break
 				}
-				if event == nil {
+				// Log that we received an event from the subscription channel
+				if event != nil {
+					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump received event from subscription channel: kind=%d, pubkey=%s, content_len=%d\n", event.Kind, event.PubKey, len(event.Content))
+				} else {
+					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump received nil event from subscription channel\n")
 					continue
 				}
-
-				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump received event from %s (hex), kind=%d, content_len=%d, tags_count=%d\n", event.PubKey, event.Kind, len(event.Content), len(event.Tags))
-
-				// Verify it's a gift wrap (kind:1059)
-				if event.Kind != 1059 {
-					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump skipping non-wrap event (kind=%d)\n", event.Kind)
-					continue
+				// Process event using the helper function
+				if err := processEvent(event); err != nil {
+					// Handler error - return to stop processing
+					return err
 				}
-
-				// Step 1: Unwrap the gift wrap to get the seal
-				seal, err := unwrapGift(event, p.cfg.LocalNsec)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to unwrap gift: %v\n", err)
-					continue
-				}
-				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump unwrapped gift, got seal from %s\n", seal.PubKey)
-
-				// Verify seal is from an expected peer
-				sealSenderNpub := seal.PubKey
-				isFromExpectedPeer := false
-				for _, expectedNpub := range p.cfg.PeersNpub {
-					expectedHex, err := npubToHex(expectedNpub)
-					if err != nil {
-						continue
-					}
-					if sealSenderNpub == expectedHex {
-						isFromExpectedPeer = true
-						break
-					}
-				}
-				if !isFromExpectedPeer {
-					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump seal from unexpected sender (hex: %s)\n", sealSenderNpub)
-					continue
-				}
-
-				// Step 2: Unseal to get the rumor
-				// Convert seal sender npub to bech32 format for unseal (it expects npub format)
-				sealSenderNpubBech32 := sealSenderNpub
-				for _, npub := range p.cfg.PeersNpub {
-					npubHex, err := npubToHex(npub)
-					if err == nil && npubHex == sealSenderNpub {
-						sealSenderNpubBech32 = npub
-						break
-					}
-				}
-
-				rumor, err := unseal(seal, p.cfg.LocalNsec, sealSenderNpubBech32)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to unseal: %v\n", err)
-					continue
-				}
-				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump unsealed, got rumor\n")
-
-				// Step 3: Extract chunk data from rumor
-				var chunkMessage map[string]interface{}
-				if err := json.Unmarshal([]byte(rumor.Content), &chunkMessage); err != nil {
-					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to parse rumor content: %v\n", err)
-					continue
-				}
-
-				sessionIDValue, ok := chunkMessage["session_id"].(string)
-				if !ok {
-					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump rumor missing session_id\n")
-					continue
-				}
-				if sessionIDValue != p.cfg.SessionID {
-					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump session mismatch (got %s, expected %s)\n", sessionIDValue, p.cfg.SessionID)
-					continue
-				}
-
-				// Check if this is a ready/complete message (handled by SessionCoordinator, not MessagePump)
-				if _, ok := chunkMessage["phase"].(string); ok {
-					// This is a ready/complete message, skip it (handled by SessionCoordinator)
-					continue
-				}
-
-				// Extract chunk metadata
-				chunkTagValue, ok := chunkMessage["chunk"].(string)
-				if !ok {
-					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump rumor missing chunk metadata\n")
-					continue
-				}
-
-				meta, err := ParseChunkTag(chunkTagValue)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to parse chunk tag '%s': %v\n", chunkTagValue, err)
-					continue
-				}
-				meta.SessionID = p.cfg.SessionID
-				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump parsed chunk metadata: hash=%s, index=%d/%d\n", meta.Hash, meta.Index, meta.Total)
-
-				// Extract chunk data
-				chunkDataB64, ok := chunkMessage["data"].(string)
-				if !ok {
-					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump rumor missing chunk data\n")
-					continue
-				}
-
-				chunkData, err := base64.StdEncoding.DecodeString(chunkDataB64)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to decode chunk data: %v\n", err)
-					continue
-				}
-				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump decoded chunk data: %d bytes\n", len(chunkData))
-
-				// Check if already processed
-				p.processedMu.Lock()
-				if p.processed[meta.Hash] {
-					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump message %s already processed, skipping\n", meta.Hash)
-					p.processedMu.Unlock()
-					continue
-				}
-				p.processedMu.Unlock()
-
-				// Add chunk to assembler
-				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump adding chunk %d/%d to assembler\n", meta.Index+1, meta.Total)
-				reassembled, complete := p.assembler.Add(meta, chunkData)
-				if !complete {
-					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump chunk %d/%d added, waiting for more chunks\n", meta.Index+1, meta.Total)
-					continue
-				}
-				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump all chunks received, reassembled %d bytes\n", len(reassembled))
-
-				hashBytes := sha256.Sum256(reassembled)
-				calculatedHash := hex.EncodeToString(hashBytes[:])
-				if !strings.EqualFold(calculatedHash, meta.Hash) {
-					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump chunk hash mismatch (calc=%s, expected=%s)\n", calculatedHash, meta.Hash)
-					continue
-				}
-
-				// Reassemble the full message from chunks (chunks are plaintext now, not encrypted)
-				// The reassembled data is the full message body
-				plaintext := reassembled
-
-				// Mark as processed
-				p.processedMu.Lock()
-				p.processed[meta.Hash] = true
-				p.processedMu.Unlock()
-
-				// Call handler with plaintext payload
-				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump calling handler with %d bytes\n", len(plaintext))
-				if err := handler(plaintext); err != nil {
-					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump handler error: %v\n", err)
-					return fmt.Errorf("handler error: %w", err)
-				}
-				fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump handler completed successfully\n")
 			}
 		}
 		// If we break out of the inner loop, we'll retry subscribing in the outer loop

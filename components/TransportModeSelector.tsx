@@ -313,7 +313,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
 
           {/* Modal Body */}
           <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-            {description && (
+            {description && description.length > 0 && (
               <Text style={styles.modalDescription}>{description}</Text>
             )}
 
@@ -431,7 +431,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
             </View>
 
             {/* Selected Transport Hint */}
-            {selectedTransport && (
+            {selectedTransport && description && description.length > 0 && (
               <View style={styles.transportSelectedHint}>
                 <View style={styles.transportSelectedHintRow}>
                   <Image

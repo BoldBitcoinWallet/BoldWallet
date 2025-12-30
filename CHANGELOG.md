@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [2.1.4] - 2025-12-30
+
+### Added
+- **Resilient Nostr relay connections**: BTC sends now work reliably even if some Nostr relays are down
+  - Automatically connects to multiple relays in parallel
+  - Continues working if relays fail during the signing process
+  - Faster connection establishment and better error recovery
+
+### Changed
+- **Faster pre-agreement timeout**: Reduced from 2 minutes to 16 seconds for quicker failure detection
+
+### Fixed
+- **Android navigation bar overlap**: Fixed bottom navigation bar overlapping system navigation on Android devices (e.g., Samsung)
+- **Message delivery reliability**: Improved handling of messages sent just before subscription starts
+
+---
+
 ## [2.1.3] - 2025-12-20
 
 ### Added
