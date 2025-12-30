@@ -32,6 +32,7 @@ import SignedPSBTModal from './SignedPSBTModal';
 import PSBTModal from './PSBTModal';
 import KeyshareModal from '../components/KeyshareModal';
 import QRCodeModal from '../components/QRCodeModal';
+import LegacyWalletModal from '../components/LegacyWalletModal';
 import {
   capitalizeWords,
   dbg,
@@ -105,6 +106,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [_pendingSent, _setPendingSent] = useState(0);
   const [isAddressTypeModalVisible, setIsAddressTypeModalVisible] =
     React.useState(false);
+  const [isLegacyWalletModalVisible, setIsLegacyWalletModalVisible] =
+    React.useState(false);
   const [legacyAddress, setLegacyAddress] = React.useState('');
   const [segwitAddress, setSegwitAddress] = React.useState('');
   const [addressType, setAddressType] = React.useState('');
@@ -168,12 +171,29 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
   // Keep local state in sync with UserContext
   useEffect(() => {
-    if (userAddressType) setAddressType(userAddressType);
-  }, [userAddressType]);
+    if (userAddressType) {
+      dbg(`[WalletHome] Syncing addressType from UserContext:`, {
+        timestamp: Date.now(),
+        userAddressType,
+        currentAddressType: addressType,
+        willUpdate: userAddressType !== addressType,
+      });
+      setAddressType(userAddressType);
+    }
+  }, [userAddressType, addressType]);
 
   useEffect(() => {
-    if (userActiveAddress) setAddress(userActiveAddress);
-  }, [userActiveAddress]);
+    if (userActiveAddress) {
+      dbg(`[WalletHome] Syncing address from UserContext:`, {
+        timestamp: Date.now(),
+        userActiveAddress: userActiveAddress ? `${userActiveAddress.substring(0, 8)}...${userActiveAddress.substring(userActiveAddress.length - 8)}` : 'EMPTY',
+        currentAddress: address ? `${address.substring(0, 8)}...${address.substring(address.length - 8)}` : 'EMPTY',
+        willUpdate: userActiveAddress !== address,
+        stackTrace: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
+      });
+      setAddress(userActiveAddress);
+    }
+  }, [userActiveAddress, address]);
 
   useEffect(() => {
     if (activeNetwork === 'mainnet') {
@@ -213,10 +233,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       isFetchInProgressRef.current = true;
       dbg('=== Starting data fetch...');
 
-      // Prefer in-memory state (fresh), fallback to cache
-      const addr = address || (await LocalCache.getItem('currentAddress'));
+      // CRITICAL: Prefer userActiveAddress from UserContext (single source of truth)
+      // This prevents using stale/wrong addresses during state updates
+      const addr = userActiveAddress || address || (await LocalCache.getItem('currentAddress'));
       const baseApi = apiBase || (await LocalCache.getItem('api'));
       const currency = (await LocalCache.getItem('currency')) || 'USD';
+      
+      dbg(`[WalletHome] fetchData - Using address:`, {
+        timestamp: Date.now(),
+        userActiveAddress: userActiveAddress ? `${userActiveAddress.substring(0, 8)}...${userActiveAddress.substring(userActiveAddress.length - 8)}` : 'EMPTY',
+        localAddress: address ? `${address.substring(0, 8)}...${address.substring(address.length - 8)}` : 'EMPTY',
+        finalAddress: addr ? `${addr.substring(0, 8)}...${addr.substring(addr.length - 8)}` : 'EMPTY',
+        addressSource: userActiveAddress ? 'UserContext' : address ? 'localState' : 'cache',
+      });
 
       if (!addr || !baseApi) {
         dbg('WalletHome: Missing wallet address or baseApi', {
@@ -369,7 +398,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     btcRate,
     _pendingSent,
     showErrorToast,
-    address,
+    userActiveAddress, // Use UserContext address as primary source
+    address, // Keep for backward compatibility
     apiBase,
   ]);
 
@@ -387,46 +417,51 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           newNetwork,
         );
 
-        // Try to get btcPub from storage first
-        let btcPub = await EncryptedStorage.getItem('btcPub');
+        // Always derive btcPub fresh to ensure it matches the current address type
+        // This ensures consistency when the address type might have changed
+        let btcPub: string | null = null;
+        const jks = await EncryptedStorage.getItem('keyshare');
+        if (!jks) {
+          dbg('No keyshare found for address generation');
+          return;
+        }
 
-        // Fallback: derive btcPub if not found in storage
-        if (!btcPub) {
-          dbg('btcPub not found in storage, deriving from keyshare...');
-          const jks = await EncryptedStorage.getItem('keyshare');
-          if (jks) {
-            const ks = JSON.parse(jks);
-            // Get current address type for derivation path
-            const currentAddressType =
-              (await LocalCache.getItem('addressType')) || 'segwit-native';
-            // Check if this is a legacy wallet (created before migration timestamp)
-            const useLegacyPath = isLegacyWallet(ks.created_at);
-            const path = getDerivePathForNetwork(
-              network,
-              currentAddressType,
-              useLegacyPath,
-            );
-            btcPub = await BBMTLibNativeModule.derivePubkey(
-              ks.pub_key,
-              ks.chain_code_hex,
-              path,
-            );
-            // Store it for future use
-            await EncryptedStorage.setItem('btcPub', btcPub!);
-            dbg('btcPub derived and stored');
-          }
+        const ks = JSON.parse(jks);
+        // Get current address type for derivation path - use state or cache
+        const currentAddressType =
+          addressType ||
+          (await LocalCache.getItem('addressType')) ||
+          'segwit-native';
+        // Check if this is a legacy wallet (created before migration timestamp)
+        const useLegacyPath = isLegacyWallet(ks.created_at);
+        // Use newNetwork (not network) to ensure we're using the correct network
+        const path = getDerivePathForNetwork(
+          newNetwork,
+          currentAddressType,
+          useLegacyPath,
+        );
+        btcPub = await BBMTLibNativeModule.derivePubkey(
+          ks.pub_key,
+          ks.chain_code_hex,
+          path,
+        );
+        // Store it for future use
+        if (btcPub) {
+          await EncryptedStorage.setItem('btcPub', btcPub);
+          dbg('btcPub derived and stored for address type modal');
         }
 
         if (btcPub) {
           // Generate addresses for all types for the new network
+          // Use correct address type constants: 'legacy', 'segwit-native', 'segwit-compatible'
           const [legacyAddr, segwitAddr, segwitCompatibleAddr] =
             await Promise.all([
-              BBMTLibNativeModule.btcAddress(btcPub!, newNetwork, 'P2PKH'),
-              BBMTLibNativeModule.btcAddress(btcPub!, newNetwork, 'P2WPKH'),
+              BBMTLibNativeModule.btcAddress(btcPub!, newNetwork, 'legacy'),
+              BBMTLibNativeModule.btcAddress(btcPub!, newNetwork, 'segwit-native'),
               BBMTLibNativeModule.btcAddress(
                 btcPub!,
                 newNetwork,
-                'P2SH-P2WPKH',
+                'segwit-compatible',
               ),
             ]);
 
@@ -446,7 +481,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('updateAddressTypeModal: Error updating addresses:', error);
       }
     },
-    [network],
+    [addressType],
   );
 
   // Function to update address for the new network
@@ -458,8 +493,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           newNetwork,
         );
 
-        // Get the current address type from cache or state
+        // Get the current address type - prefer UserContext (single source of truth),
+        // then state, then cache, then default
         const currentAddressType =
+          userAddressType ||
           addressType ||
           (await LocalCache.getItem('addressType')) ||
           'segwit-native';
@@ -468,39 +505,40 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           currentAddressType,
           'for network:',
           newNetwork,
+          '(from UserContext:',
+          userAddressType,
+          ', from state:',
+          addressType,
+          ')',
         );
 
-        // Try to get btcPub from storage first
-        let btcPub = await EncryptedStorage.getItem('btcPub');
+        // Always derive btcPub fresh to ensure it matches the current address type
+        // This prevents issues where btcPub was derived with a different address type
+        let btcPub: string | null = null;
+        const jks = await EncryptedStorage.getItem('keyshare');
+        if (!jks) {
+          dbg('No keyshare found for address generation');
+          return;
+        }
 
-        // Fallback: derive btcPub if not found in storage
-        if (!btcPub) {
-          dbg('btcPub not found in storage, deriving from keyshare...');
-          const jks = await EncryptedStorage.getItem('keyshare');
-          if (!jks) {
-            dbg('No keyshare found for address generation');
-            return;
-          }
-
-          const ks = JSON.parse(jks);
-          // Get current address type for derivation path
-          const deriveAddressType =
-            (await LocalCache.getItem('addressType')) || 'segwit-native';
-          // Check if this is a legacy wallet (created before migration timestamp)
-          const useLegacyPath = isLegacyWallet(ks.created_at);
-          const path = getDerivePathForNetwork(
-            newNetwork,
-            deriveAddressType,
-            useLegacyPath,
-          );
-          btcPub = await BBMTLibNativeModule.derivePubkey(
-            ks.pub_key,
-            ks.chain_code_hex,
-            path,
-          );
-          // Store it for future use
-          await EncryptedStorage.setItem('btcPub', btcPub!);
-          dbg('btcPub derived and stored');
+        const ks = JSON.parse(jks);
+        // Check if this is a legacy wallet (created before migration timestamp)
+        const useLegacyPath = isLegacyWallet(ks.created_at);
+        // Use the same currentAddressType for derivation path to ensure consistency
+        const path = getDerivePathForNetwork(
+          newNetwork,
+          currentAddressType,
+          useLegacyPath,
+        );
+        btcPub = await BBMTLibNativeModule.derivePubkey(
+          ks.pub_key,
+          ks.chain_code_hex,
+          path,
+        );
+        // Store it for future use
+        if (btcPub) {
+          await EncryptedStorage.setItem('btcPub', btcPub);
+          dbg('btcPub derived and stored with address type:', currentAddressType);
         }
 
         if (btcPub) {
@@ -515,14 +553,27 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           );
 
           if (newAddress) {
+            const timestamp = Date.now();
             dbg(
-              'updateAddressForNetwork: Generated new address:',
-              newAddress,
-              'for network:',
-              newNetwork,
+              '[WalletHome] updateAddressForNetwork: Generated new address:',
+              {
+                timestamp,
+                address: newAddress,
+                shortAddress: `${newAddress.substring(0, 8)}...${newAddress.substring(newAddress.length - 8)}`,
+                network: newNetwork,
+                addressType: currentAddressType,
+                derivationPath: path,
+                stackTrace: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
+              },
             );
 
             // Update state and cache
+            dbg(`[WalletHome] setAddress() called with:`, {
+              timestamp: Date.now(),
+              address: newAddress,
+              shortAddress: `${newAddress.substring(0, 8)}...${newAddress.substring(newAddress.length - 8)}`,
+              previousAddress: address ? `${address.substring(0, 8)}...${address.substring(address.length - 8)}` : 'EMPTY',
+            });
             setAddress(newAddress);
             await LocalCache.setItem('currentAddress', newAddress);
             await LocalCache.setItem('currentNetwork', newNetwork);
@@ -543,7 +594,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('updateAddressForNetwork: Error updating address:', error);
       }
     },
-    [addressType],
+    [addressType, userAddressType, address],
   );
 
   // Initialize component and sync with NetworkContext
@@ -697,6 +748,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           actualNet,
           addrType,
         );
+        dbg(`[WalletHome] reinitializeWallet - Setting address:`, {
+          timestamp: Date.now(),
+          address: btcAddress ? `${btcAddress.substring(0, 8)}...${btcAddress.substring(btcAddress.length - 8)}` : 'EMPTY',
+          network: actualNet,
+          addressType: addrType,
+          previousAddress: address ? `${address.substring(0, 8)}...${address.substring(address.length - 8)}` : 'EMPTY',
+        });
         await LocalCache.setItem('currentAddress', btcAddress);
         setAddress(btcAddress);
 
@@ -774,37 +832,64 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         isReinitInProgressRef.current = false;
       }
     },
-    [network, apiBase, showErrorToast],
+    [network, apiBase, showErrorToast, address],
   );
 
   // Listen for navigation state changes to detect returning from settings
   useEffect(() => {
     const unsubscribe = nav.addListener('focus', async () => {
+      const focusTime = Date.now();
       dbg(
-        '=== Navigation focus - Screen came into focus, reinitializing wallet',
+        '[WalletHome] === Navigation focus - Screen came into focus, reinitializing wallet',
+        {
+          timestamp: focusTime,
+          network,
+          apiBase,
+          currentAddress: address ? `${address.substring(0, 8)}...${address.substring(address.length - 8)}` : 'EMPTY',
+          userActiveAddress: userActiveAddress ? `${userActiveAddress.substring(0, 8)}...${userActiveAddress.substring(userActiveAddress.length - 8)}` : 'EMPTY',
+          stackTrace: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
+        },
       );
 
       // Full re-initialization when returning from settings
       // This ensures everything is properly set up for the current network
       if (network && apiBase) {
         dbg(
-          'Focus - NetworkContext is ready, performing full re-initialization',
+          '[WalletHome] Focus - NetworkContext is ready, performing full re-initialization',
+          {
+            timestamp: Date.now(),
+            network,
+            apiBase,
+          },
         );
         await reinitializeWallet(true);
       }
     });
 
     return unsubscribe;
-  }, [nav, network, apiBase, reinitializeWallet]);
+  }, [nav, network, apiBase, reinitializeWallet, address, userActiveAddress]);
 
   // Listen for app state changes (simplified)
   useEffect(() => {
     const handleAppStateChange = async (nextAppState: string) => {
       if (nextAppState === 'active') {
-        dbg('=== App resumed, refreshing data');
+        const resumeTime = Date.now();
+        dbg('[WalletHome] === App resumed, refreshing data', {
+          timestamp: resumeTime,
+          network,
+          apiBase,
+          currentAddress: address ? `${address.substring(0, 8)}...${address.substring(address.length - 8)}` : 'EMPTY',
+          userActiveAddress: userActiveAddress ? `${userActiveAddress.substring(0, 8)}...${userActiveAddress.substring(userActiveAddress.length - 8)}` : 'EMPTY',
+          addressType,
+          userAddressType,
+        });
 
         // Simply refresh data on app resume
         if (network && apiBase) {
+          dbg('[WalletHome] App resumed - calling updateAddressForNetwork', {
+            timestamp: Date.now(),
+            network,
+          });
           updateAddressForNetwork(network);
           updateAddressTypeModal(network);
           fetchDataRef.current?.();
@@ -820,7 +905,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     return () => {
       subscription?.remove();
     };
-  }, [network, apiBase, updateAddressForNetwork, updateAddressTypeModal]);
+  }, [network, apiBase, updateAddressForNetwork, updateAddressTypeModal, address, userActiveAddress, addressType, userAddressType]);
 
   // No periodic check needed - NetworkContext is the single source of truth
 
@@ -1258,6 +1343,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         });
         setLoading(false);
         setIsInitialized(true);
+        
+        // Check if this is a legacy wallet and show migration modal if needed
+        // Modal shows by default unless user checked "do not remind" (flag = "yes")
+        if (useLegacyPath) {
+          const doNotRemind = await LocalCache.getItem('legacyWalletModalDoNotRemind');
+          if (doNotRemind !== 'yes') {
+            // Small delay to ensure UI is ready
+            setTimeout(() => {
+              setIsLegacyWalletModalVisible(true);
+            }, 500);
+          }
+        }
+        
         // Force initial balance fetch
         await fetchDataRef.current?.();
         dbg('Wallet initialization completed successfully');
@@ -1708,9 +1806,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 </Text>
               </TouchableOpacity>
             )}
-            <Text style={styles.balanceHint}>
-              {isBlurred ? 'Tap to reveal balance' : 'Tap to hide balance'}
-            </Text>
           </View>
           <View style={[styles.partyContainer, styles.rowFullWidth]}>
             <TouchableOpacity
@@ -1804,7 +1899,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           </View>
           <View style={styles.actions}>
             <TouchableOpacity
-              style={[styles.actionButton, styles.sendButton]}
+              style={[styles.actionButton, styles.sendButton, styles.flexOneMinWidthZero, styles.partyGap]}
               onPress={() => {
                 HapticFeedback.medium();
                 // Check if balance is 0 or empty
@@ -1827,7 +1922,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             </TouchableOpacity>
             {/* Scan QR button replaces lock button in action row */}
             <TouchableOpacity
-              style={[styles.actionButton, styles.addressTypeModalButton]}
+              style={[styles.actionButton, styles.addressTypeModalButton, styles.partyGap]}
               onPress={handleScanQRForSend}
               activeOpacity={0.8}>
               <Image
@@ -1837,7 +1932,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               />
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.actionButton, styles.receiveButton]}
+              style={[styles.actionButton, styles.receiveButton, styles.flexOneMinWidthZero, styles.partyGap]}
               onPress={() => {
                 HapticFeedback.medium();
                 setIsReceiveModalVisible(true);
@@ -1938,7 +2033,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         }}
         mode="single"
         title="Scan Send Bitcoin QR"
-        subtitle="Point camera at the QR data on the sending device"
+        subtitle="Point camera to Sending Device QR"
       />
       <Modal
         visible={isAddressTypeModalVisible}
@@ -2063,6 +2158,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           </View>
         </TouchableOpacity>
       </Modal>
+      <LegacyWalletModal
+        visible={isLegacyWalletModalVisible}
+        onCancel={() => setIsLegacyWalletModalVisible(false)}
+        onUnderstand={() => setIsLegacyWalletModalVisible(false)}
+      />
       <CurrencySelector
         visible={isCurrencySelectorVisible}
         onClose={() => setIsCurrencySelectorVisible(false)}

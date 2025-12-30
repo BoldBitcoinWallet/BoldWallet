@@ -349,7 +349,7 @@ export const createStyles = (theme: Theme): Styles => ({
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'transparent',
     width: '100%',
     justifyContent: 'center' as const,
     marginTop: 4,
@@ -446,10 +446,9 @@ export const createStyles = (theme: Theme): Styles => ({
   },
   actions: {
     flexDirection: 'row' as const,
-    justifyContent: 'space-between' as const,
     marginTop: 8,
     width: '100%',
-    gap: 6,
+    gap: 0,
   },
   sendButton: {
     flex: 1,

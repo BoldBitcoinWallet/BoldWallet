@@ -2,6 +2,41 @@
 
 ## [Unreleased]
 
+### Added
+- **Legacy Wallet Migration Modal**: New modal appears for users with legacy wallets, advising migration to new wallet setup for better PSBT compatibility
+  - Non-dismissible modal with friendly messaging
+  - "Do not remind me again" checkbox option
+  - Modal flag automatically resets on new wallet import (if wallet is legacy)
+  - Standalone `LegacyWalletModal` component for reusability
+
+### Changed
+- **Network Reset on Wallet Import**: Network always resets to mainnet when importing a keyshare to ensure clean state
+- **Balance Display Styling**: Balance rows (BTC and USD) now have transparent background while maintaining tap-to-hide functionality
+- **Button Alignment**: Send and Receive buttons now vertically align with Device and Address Type buttons above for consistent spacing
+- **QR Scanner Subtitle**: Updated subtitle text to "Point camera to Sending Device QR" for clarity
+
+### Fixed
+- **Address Flickering Issue**: Fixed address changing/flickering after lock/unlock by making UserContext the single source of truth for addresses
+  - UserContext now properly derives network-specific btcPub for both mainnet and testnet
+  - WalletHome prioritizes userActiveAddress from UserContext over local state
+  - Eliminated race conditions in address derivation
+- **Network State Management**: Improved network state consistency across the app
+  - Network reset on import ensures proper address derivation
+  - All contexts and providers properly synchronized with network changes
+- **Cache Clearing**: Comprehensive cache clearing on wallet setup and import screens
+  - LocalCache cleared on ShowcaseScreen (import)
+  - LocalCache cleared on MobilesPairing and MobileNostrPairing (setup mode only)
+  - Stale btcPub removed from EncryptedStorage
+  - WalletService cache cleared for fresh state
+
+### Technical Details
+- **UserContext**: Enhanced refresh() to derive separate btcPub values for mainnet and testnet
+- **WalletHome**: Updated to use UserContext as primary address source, with local state as fallback
+- **ShowcaseScreen**: Added network reset to mainnet on keyshare import using setActiveNetwork()
+- **Cache Management**: Added useEffect hooks to clear all cache on wallet setup/import screens
+- **Styles**: Updated balanceRowWithMargin to use transparent background
+- **Button Layout**: Applied flexOneMinWidthZero and partyGap styles to action buttons for consistent alignment
+
 ## [2.1.4] - 2025-12-30
 
 ### Added

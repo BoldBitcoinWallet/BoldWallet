@@ -184,6 +184,39 @@ const MobilesPairing = ({navigation}: any) => {
     setIsKeysignReady(!isKeysignReady);
   };
 
+  // Clear all cache when entering wallet setup mode (not signing mode)
+  useEffect(() => {
+    const clearCacheForSetup = async () => {
+      // Only clear cache if we're in setup mode (duo/trio), not signing mode
+      if (setupMode === 'duo' || setupMode === 'trio') {
+        try {
+          dbg('=== MobilesPairing: Clearing all cache for wallet setup');
+          // Clear LocalCache
+          await LocalCache.clear();
+          dbg('LocalCache cleared successfully');
+          
+          // Clear stale EncryptedStorage items (but keep keyshare if it exists for signing)
+          // We clear btcPub as it will be regenerated with the new keyshare
+          await EncryptedStorage.removeItem('btcPub');
+          dbg('Cleared stale btcPub from EncryptedStorage');
+          
+          // Clear WalletService cache
+          try {
+            await LocalCache.removeItem('walletCache');
+            dbg('WalletService cache cleared');
+          } catch (error) {
+            dbg('Error clearing WalletService cache:', error);
+          }
+          
+          dbg('=== MobilesPairing: Cache clearing completed');
+        } catch (error) {
+          dbg('Error clearing cache in MobilesPairing:', error);
+        }
+      }
+    };
+    clearCacheForSetup();
+  }, [setupMode]);
+
   const stringToHex = (str: string) => {
     return Array.from(str)
       .map(char => char.charCodeAt(0).toString(16).padStart(2, '0'))
@@ -567,6 +600,7 @@ const MobilesPairing = ({navigation}: any) => {
           }
 
           await EncryptedStorage.setItem('keyshare', result);
+          // New wallet setups are always non-legacy, so no need to reset flag
           setMpcDone(true);
           deletePreparams();
         })

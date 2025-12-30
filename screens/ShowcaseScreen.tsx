@@ -19,10 +19,11 @@ import DocumentPicker from 'react-native-document-picker';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import RNFS from 'react-native-fs';
 import {useTheme} from '../theme';
-import {dbg, HapticFeedback} from '../utils';
+import {dbg, HapticFeedback, isLegacyWallet} from '../utils';
 import LegalModal from '../components/LegalModal';
 import TransportModeSelector from '../components/TransportModeSelector';
 import LocalCache from '../services/LocalCache';
+import {useUser} from '../context/UserContext';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -42,16 +43,40 @@ const ShowcaseScreen = ({navigation}: any) => {
   );
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
   const {theme} = useTheme();
+  const {setActiveNetwork} = useUser();
 
   const fadeAnim = useRef(new Animated.Value(0.6)).current;
   const connectorAnim = useRef(new Animated.Value(0)).current;
   const connectorLoopRef = useRef(null as Animated.CompositeAnimation | null);
 
-  // Clear all app cache on component mount
+  // Clear all app cache on component mount (wallet import screen)
   useEffect(() => {
-    LocalCache.clear()
-      .then(() => dbg('App cache cleared successfully'))
-      .catch(err => dbg('Error clearing app cache:', err));
+    const clearAllCache = async () => {
+      try {
+        dbg('=== ShowcaseScreen: Clearing all cache for wallet import');
+        // Clear LocalCache
+        await LocalCache.clear();
+        dbg('LocalCache cleared successfully');
+        
+        // Clear stale EncryptedStorage items (but keep keyshare if it exists)
+        // We clear btcPub as it will be regenerated with the imported keyshare
+        await EncryptedStorage.removeItem('btcPub');
+        dbg('Cleared stale btcPub from EncryptedStorage');
+        
+        // Clear WalletService cache
+        try {
+          await LocalCache.removeItem('walletCache');
+          dbg('WalletService cache cleared');
+        } catch (error) {
+          dbg('Error clearing WalletService cache:', error);
+        }
+        
+        dbg('=== ShowcaseScreen: Cache clearing completed');
+      } catch (err) {
+        dbg('Error clearing app cache:', err);
+      }
+    };
+    clearAllCache();
   }, []);
 
   useEffect(() => {
@@ -165,8 +190,9 @@ const ShowcaseScreen = ({navigation}: any) => {
         Alert.alert('Wrong Password', 'Could not import keyshare');
       } else {
         // validate keyshare
+        let ks: any;
         try {
-          const ks = JSON.parse(decryptedKeyshare);
+          ks = JSON.parse(decryptedKeyshare);
           if (!ks.pub_key) {
             throw 'Error: pub_key not found in keyshare';
           }
@@ -176,6 +202,17 @@ const ShowcaseScreen = ({navigation}: any) => {
         }
 
         await EncryptedStorage.setItem('keyshare', decryptedKeyshare);
+        // Reset legacy wallet modal flag for new wallet
+        // If legacy wallet, set to "no" (show modal); if not legacy, set to "yes" (won't show anyway)
+        const isLegacy = isLegacyWallet(ks.created_at);
+        await LocalCache.setItem('legacyWalletModalDoNotRemind', isLegacy ? 'no' : 'yes');
+        
+        // CRITICAL: Always reset network to mainnet on keyshare import
+        // This ensures a clean state and proper address derivation for the new wallet
+        dbg('=== Keyshare imported: Resetting network to mainnet');
+        await setActiveNetwork('mainnet');
+        dbg('=== Network reset to mainnet, UserContext will refresh addresses');
+        
         setModalVisible(false);
         setPassword('');
         dbg('Opening Home');

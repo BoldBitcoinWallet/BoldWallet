@@ -223,6 +223,39 @@ const MobileNostrPairing = ({navigation}: any) => {
     setRelays(parsed);
   }, [relaysInput]);
 
+  // Clear all cache when entering wallet setup mode (not signing mode)
+  useEffect(() => {
+    const clearCacheForSetup = async () => {
+      // Only clear cache if we're in setup mode (duo/trio), not signing mode
+      if (setupMode === 'duo' || setupMode === 'trio') {
+        try {
+          dbg('=== MobileNostrPairing: Clearing all cache for wallet setup');
+          // Clear LocalCache
+          await LocalCache.clear();
+          dbg('LocalCache cleared successfully');
+          
+          // Clear stale EncryptedStorage items (but keep keyshare if it exists for signing)
+          // We clear btcPub as it will be regenerated with the new keyshare
+          await EncryptedStorage.removeItem('btcPub');
+          dbg('Cleared stale btcPub from EncryptedStorage');
+          
+          // Clear WalletService cache
+          try {
+            await LocalCache.removeItem('walletCache');
+            dbg('WalletService cache cleared');
+          } catch (error) {
+            dbg('Error clearing WalletService cache:', error);
+          }
+          
+          dbg('=== MobileNostrPairing: Cache clearing completed');
+        } catch (error) {
+          dbg('Error clearing cache in MobileNostrPairing:', error);
+        }
+      }
+    };
+    clearCacheForSetup();
+  }, [setupMode]);
+
   // Initialize device name and generate keypair on mount (only for keygen mode)
   useEffect(() => {
     const initialize = async () => {
@@ -1334,6 +1367,7 @@ const MobileNostrPairing = ({navigation}: any) => {
 
       // Save keyshare (keyshare_position will be calculated on-the-fly when needed)
       await EncryptedStorage.setItem('keyshare', keyshareJSON);
+      // New wallet setups are always non-legacy, so no need to reset flag
       setMpcDone(true);
       setStatus('Key generation complete!');
       // Don't navigate away, let the backup UI handle it
