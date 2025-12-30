@@ -12,6 +12,7 @@ import {
   DeviceEventEmitter,
   Linking,
 } from 'react-native';
+import QRScanner from '../components/QRScanner';
 import {
   useFocusEffect,
   useNavigation,
@@ -28,9 +29,10 @@ import {CommonActions} from '@react-navigation/native';
 import Big from 'big.js';
 import ReceiveModal from './ReceiveModal';
 import SignedPSBTModal from './SignedPSBTModal';
-import PSBTModal from './PSBTModal.foss';
+import PSBTModal from './PSBTModal';
 import KeyshareModal from '../components/KeyshareModal';
 import QRCodeModal from '../components/QRCodeModal';
+import LegacyWalletModal from '../components/LegacyWalletModal';
 import {
   capitalizeWords,
   dbg,
@@ -42,7 +44,9 @@ import {
   getDerivePathForNetwork,
   isLegacyWallet,
   generateAllOutputDescriptors,
+  decodeSendBitcoinQR,
 } from '../utils';
+import {validate as validateBitcoinAddress} from 'bitcoin-address-validation';
 import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
 import WalletSkeleton from '../components/WalletSkeleton';
@@ -85,14 +89,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     useState<boolean>(false);
   const [pendingPSBTParams, setPendingPSBTParams] = useState<{
     psbtBase64: string;
-    derivePath: string;
   } | null>(null);
   const [btcPrice, setBtcPrice] = useState<string>('');
   const [btcRate, setBtcRate] = useState(0);
   const [balanceBTC, setBalanceBTC] = useState<string>('0.00000000');
   const [balanceFiat, setBalanceFiat] = useState<string>('0');
   const [party, setParty] = useState<string>('');
-  const [isBlurred, setIsBlurred] = useState<boolean>(true);
+  const [isBlurred, setIsBlurred] = useState<boolean>(false);
   const [isReceiveModalVisible, setIsReceiveModalVisible] = useState(false);
   const [isSignedPSBTModalVisible, setIsSignedPSBTModalVisible] =
     useState(false);
@@ -102,6 +105,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   // Additional state variables needed by fetchData
   const [_pendingSent, _setPendingSent] = useState(0);
   const [isAddressTypeModalVisible, setIsAddressTypeModalVisible] =
+    React.useState(false);
+  const [isLegacyWalletModalVisible, setIsLegacyWalletModalVisible] =
     React.useState(false);
   const [legacyAddress, setLegacyAddress] = React.useState('');
   const [segwitAddress, setSegwitAddress] = React.useState('');
@@ -117,6 +122,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [isCurrencySelectorVisible, setIsCurrencySelectorVisible] =
     useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState('');
+  const [isQRScannerVisible, setIsQRScannerVisible] = useState(false);
+  const [scannedFromQR, setScannedFromQR] = useState(false); // Track if data came from QR scan
   const [priceData, setPriceData] = useState<{[key: string]: number}>({});
   const [segwitCompatibleAddress, setSegwitCompatibleAddress] =
     React.useState('');
@@ -164,12 +171,29 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
   // Keep local state in sync with UserContext
   useEffect(() => {
-    if (userAddressType) setAddressType(userAddressType);
-  }, [userAddressType]);
+    if (userAddressType) {
+      dbg(`[WalletHome] Syncing addressType from UserContext:`, {
+        timestamp: Date.now(),
+        userAddressType,
+        currentAddressType: addressType,
+        willUpdate: userAddressType !== addressType,
+      });
+      setAddressType(userAddressType);
+    }
+  }, [userAddressType, addressType]);
 
   useEffect(() => {
-    if (userActiveAddress) setAddress(userActiveAddress);
-  }, [userActiveAddress]);
+    if (userActiveAddress) {
+      dbg(`[WalletHome] Syncing address from UserContext:`, {
+        timestamp: Date.now(),
+        userActiveAddress: userActiveAddress ? `${userActiveAddress.substring(0, 8)}...${userActiveAddress.substring(userActiveAddress.length - 8)}` : 'EMPTY',
+        currentAddress: address ? `${address.substring(0, 8)}...${address.substring(address.length - 8)}` : 'EMPTY',
+        willUpdate: userActiveAddress !== address,
+        stackTrace: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
+      });
+      setAddress(userActiveAddress);
+    }
+  }, [userActiveAddress, address]);
 
   useEffect(() => {
     if (activeNetwork === 'mainnet') {
@@ -209,10 +233,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       isFetchInProgressRef.current = true;
       dbg('=== Starting data fetch...');
 
-      // Prefer in-memory state (fresh), fallback to cache
-      const addr = address || (await LocalCache.getItem('currentAddress'));
+      // CRITICAL: Prefer userActiveAddress from UserContext (single source of truth)
+      // This prevents using stale/wrong addresses during state updates
+      const addr = userActiveAddress || address || (await LocalCache.getItem('currentAddress'));
       const baseApi = apiBase || (await LocalCache.getItem('api'));
       const currency = (await LocalCache.getItem('currency')) || 'USD';
+      
+      dbg(`[WalletHome] fetchData - Using address:`, {
+        timestamp: Date.now(),
+        userActiveAddress: userActiveAddress ? `${userActiveAddress.substring(0, 8)}...${userActiveAddress.substring(userActiveAddress.length - 8)}` : 'EMPTY',
+        localAddress: address ? `${address.substring(0, 8)}...${address.substring(address.length - 8)}` : 'EMPTY',
+        finalAddress: addr ? `${addr.substring(0, 8)}...${addr.substring(addr.length - 8)}` : 'EMPTY',
+        addressSource: userActiveAddress ? 'UserContext' : address ? 'localState' : 'cache',
+      });
 
       if (!addr || !baseApi) {
         dbg('WalletHome: Missing wallet address or baseApi', {
@@ -365,7 +398,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     btcRate,
     _pendingSent,
     showErrorToast,
-    address,
+    userActiveAddress, // Use UserContext address as primary source
+    address, // Keep for backward compatibility
     apiBase,
   ]);
 
@@ -383,41 +417,51 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           newNetwork,
         );
 
-        // Try to get btcPub from storage first
-        let btcPub = await EncryptedStorage.getItem('btcPub');
+        // Always derive btcPub fresh to ensure it matches the current address type
+        // This ensures consistency when the address type might have changed
+        let btcPub: string | null = null;
+        const jks = await EncryptedStorage.getItem('keyshare');
+        if (!jks) {
+          dbg('No keyshare found for address generation');
+          return;
+        }
 
-        // Fallback: derive btcPub if not found in storage
-        if (!btcPub) {
-          dbg('btcPub not found in storage, deriving from keyshare...');
-          const jks = await EncryptedStorage.getItem('keyshare');
-          if (jks) {
-            const ks = JSON.parse(jks);
-            // Get current address type for derivation path
-            const currentAddressType = (await LocalCache.getItem('addressType')) || 'legacy';
-            // Check if this is a legacy wallet (created before migration timestamp)
-            const useLegacyPath = isLegacyWallet(ks.created_at);
-            const path = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
-            btcPub = await BBMTLibNativeModule.derivePubkey(
-              ks.pub_key,
-              ks.chain_code_hex,
-              path,
-            );
-            // Store it for future use
-            await EncryptedStorage.setItem('btcPub', btcPub!);
-            dbg('btcPub derived and stored');
-          }
+        const ks = JSON.parse(jks);
+        // Get current address type for derivation path - use state or cache
+        const currentAddressType =
+          addressType ||
+          (await LocalCache.getItem('addressType')) ||
+          'segwit-native';
+        // Check if this is a legacy wallet (created before migration timestamp)
+        const useLegacyPath = isLegacyWallet(ks.created_at);
+        // Use newNetwork (not network) to ensure we're using the correct network
+        const path = getDerivePathForNetwork(
+          newNetwork,
+          currentAddressType,
+          useLegacyPath,
+        );
+        btcPub = await BBMTLibNativeModule.derivePubkey(
+          ks.pub_key,
+          ks.chain_code_hex,
+          path,
+        );
+        // Store it for future use
+        if (btcPub) {
+          await EncryptedStorage.setItem('btcPub', btcPub);
+          dbg('btcPub derived and stored for address type modal');
         }
 
         if (btcPub) {
           // Generate addresses for all types for the new network
+          // Use correct address type constants: 'legacy', 'segwit-native', 'segwit-compatible'
           const [legacyAddr, segwitAddr, segwitCompatibleAddr] =
             await Promise.all([
-              BBMTLibNativeModule.btcAddress(btcPub!, newNetwork, 'P2PKH'),
-              BBMTLibNativeModule.btcAddress(btcPub!, newNetwork, 'P2WPKH'),
+              BBMTLibNativeModule.btcAddress(btcPub!, newNetwork, 'legacy'),
+              BBMTLibNativeModule.btcAddress(btcPub!, newNetwork, 'segwit-native'),
               BBMTLibNativeModule.btcAddress(
                 btcPub!,
                 newNetwork,
-                'P2SH-P2WPKH',
+                'segwit-compatible',
               ),
             ]);
 
@@ -437,7 +481,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('updateAddressTypeModal: Error updating addresses:', error);
       }
     },
-    [network],
+    [addressType],
   );
 
   // Function to update address for the new network
@@ -449,47 +493,52 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           newNetwork,
         );
 
-        // Get the current address type from cache or state
+        // Get the current address type - prefer UserContext (single source of truth),
+        // then state, then cache, then default
         const currentAddressType =
-          addressType || (await LocalCache.getItem('addressType')) || 'P2WPKH';
+          userAddressType ||
+          addressType ||
+          (await LocalCache.getItem('addressType')) ||
+          'segwit-native';
         dbg(
           'Using address type:',
           currentAddressType,
           'for network:',
           newNetwork,
+          '(from UserContext:',
+          userAddressType,
+          ', from state:',
+          addressType,
+          ')',
         );
 
-        // Try to get btcPub from storage first
-        let btcPub = await EncryptedStorage.getItem('btcPub');
-
-        // Fallback: derive btcPub if not found in storage
-        if (!btcPub) {
-          dbg('btcPub not found in storage, deriving from keyshare...');
-          const jks = await EncryptedStorage.getItem('keyshare');
-          if (!jks) {
-            dbg('No keyshare found for address generation');
-            return;
-          }
+        // Always derive btcPub fresh to ensure it matches the current address type
+        // This prevents issues where btcPub was derived with a different address type
+        let btcPub: string | null = null;
+        const jks = await EncryptedStorage.getItem('keyshare');
+        if (!jks) {
+          dbg('No keyshare found for address generation');
+          return;
+        }
 
         const ks = JSON.parse(jks);
-        // Get current address type for derivation path
-        const deriveAddressType =
-          (await LocalCache.getItem('addressType')) || 'legacy';
         // Check if this is a legacy wallet (created before migration timestamp)
         const useLegacyPath = isLegacyWallet(ks.created_at);
+        // Use the same currentAddressType for derivation path to ensure consistency
         const path = getDerivePathForNetwork(
           newNetwork,
-          deriveAddressType,
+          currentAddressType,
           useLegacyPath,
         );
-          btcPub = await BBMTLibNativeModule.derivePubkey(
-            ks.pub_key,
-            ks.chain_code_hex,
-            path,
-          );
-          // Store it for future use
-          await EncryptedStorage.setItem('btcPub', btcPub!);
-          dbg('btcPub derived and stored');
+        btcPub = await BBMTLibNativeModule.derivePubkey(
+          ks.pub_key,
+          ks.chain_code_hex,
+          path,
+        );
+        // Store it for future use
+        if (btcPub) {
+          await EncryptedStorage.setItem('btcPub', btcPub);
+          dbg('btcPub derived and stored with address type:', currentAddressType);
         }
 
         if (btcPub) {
@@ -504,14 +553,27 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           );
 
           if (newAddress) {
+            const timestamp = Date.now();
             dbg(
-              'updateAddressForNetwork: Generated new address:',
-              newAddress,
-              'for network:',
-              newNetwork,
+              '[WalletHome] updateAddressForNetwork: Generated new address:',
+              {
+                timestamp,
+                address: newAddress,
+                shortAddress: `${newAddress.substring(0, 8)}...${newAddress.substring(newAddress.length - 8)}`,
+                network: newNetwork,
+                addressType: currentAddressType,
+                derivationPath: path,
+                stackTrace: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
+              },
             );
 
             // Update state and cache
+            dbg(`[WalletHome] setAddress() called with:`, {
+              timestamp: Date.now(),
+              address: newAddress,
+              shortAddress: `${newAddress.substring(0, 8)}...${newAddress.substring(newAddress.length - 8)}`,
+              previousAddress: address ? `${address.substring(0, 8)}...${address.substring(address.length - 8)}` : 'EMPTY',
+            });
             setAddress(newAddress);
             await LocalCache.setItem('currentAddress', newAddress);
             await LocalCache.setItem('currentNetwork', newNetwork);
@@ -532,7 +594,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('updateAddressForNetwork: Error updating address:', error);
       }
     },
-    [addressType],
+    [addressType, userAddressType, address],
   );
 
   // Initialize component and sync with NetworkContext
@@ -619,10 +681,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
         const ks = JSON.parse(jks);
         // Get current address type for derivation path
-        const currentAddressType = (await LocalCache.getItem('addressType')) || 'legacy';
+        const currentAddressType =
+          (await LocalCache.getItem('addressType')) || 'segwit-native';
         // Check if this is a legacy wallet (created before migration timestamp)
         const useLegacyPath = isLegacyWallet(ks.created_at);
-        const path = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
+        const path = getDerivePathForNetwork(
+          network,
+          currentAddressType,
+          useLegacyPath,
+        );
 
         // Always derive btcPub fresh to ensure it's current
         const btcPub = await BBMTLibNativeModule.derivePubkey(
@@ -641,7 +708,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('Re-initializing for network:', net);
 
         // Get current address type
-        const addrType = (await LocalCache.getItem('addressType')) || 'legacy';
+        const addrType =
+          (await LocalCache.getItem('addressType')) || 'segwit-native';
         setAddressType(addrType);
 
         // Set up network parameters
@@ -680,6 +748,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           actualNet,
           addrType,
         );
+        dbg(`[WalletHome] reinitializeWallet - Setting address:`, {
+          timestamp: Date.now(),
+          address: btcAddress ? `${btcAddress.substring(0, 8)}...${btcAddress.substring(btcAddress.length - 8)}` : 'EMPTY',
+          network: actualNet,
+          addressType: addrType,
+          previousAddress: address ? `${address.substring(0, 8)}...${address.substring(address.length - 8)}` : 'EMPTY',
+        });
         await LocalCache.setItem('currentAddress', btcAddress);
         setAddress(btcAddress);
 
@@ -757,37 +832,64 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         isReinitInProgressRef.current = false;
       }
     },
-    [network, apiBase, showErrorToast],
+    [network, apiBase, showErrorToast, address],
   );
 
   // Listen for navigation state changes to detect returning from settings
   useEffect(() => {
     const unsubscribe = nav.addListener('focus', async () => {
+      const focusTime = Date.now();
       dbg(
-        '=== Navigation focus - Screen came into focus, reinitializing wallet',
+        '[WalletHome] === Navigation focus - Screen came into focus, reinitializing wallet',
+        {
+          timestamp: focusTime,
+          network,
+          apiBase,
+          currentAddress: address ? `${address.substring(0, 8)}...${address.substring(address.length - 8)}` : 'EMPTY',
+          userActiveAddress: userActiveAddress ? `${userActiveAddress.substring(0, 8)}...${userActiveAddress.substring(userActiveAddress.length - 8)}` : 'EMPTY',
+          stackTrace: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
+        },
       );
 
       // Full re-initialization when returning from settings
       // This ensures everything is properly set up for the current network
       if (network && apiBase) {
         dbg(
-          'Focus - NetworkContext is ready, performing full re-initialization',
+          '[WalletHome] Focus - NetworkContext is ready, performing full re-initialization',
+          {
+            timestamp: Date.now(),
+            network,
+            apiBase,
+          },
         );
         await reinitializeWallet(true);
       }
     });
 
     return unsubscribe;
-  }, [nav, network, apiBase, reinitializeWallet]);
+  }, [nav, network, apiBase, reinitializeWallet, address, userActiveAddress]);
 
   // Listen for app state changes (simplified)
   useEffect(() => {
     const handleAppStateChange = async (nextAppState: string) => {
       if (nextAppState === 'active') {
-        dbg('=== App resumed, refreshing data');
+        const resumeTime = Date.now();
+        dbg('[WalletHome] === App resumed, refreshing data', {
+          timestamp: resumeTime,
+          network,
+          apiBase,
+          currentAddress: address ? `${address.substring(0, 8)}...${address.substring(address.length - 8)}` : 'EMPTY',
+          userActiveAddress: userActiveAddress ? `${userActiveAddress.substring(0, 8)}...${userActiveAddress.substring(userActiveAddress.length - 8)}` : 'EMPTY',
+          addressType,
+          userAddressType,
+        });
 
         // Simply refresh data on app resume
         if (network && apiBase) {
+          dbg('[WalletHome] App resumed - calling updateAddressForNetwork', {
+            timestamp: Date.now(),
+            network,
+          });
           updateAddressForNetwork(network);
           updateAddressTypeModal(network);
           fetchDataRef.current?.();
@@ -803,7 +905,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     return () => {
       subscription?.remove();
     };
-  }, [network, apiBase, updateAddressForNetwork, updateAddressTypeModal]);
+  }, [network, apiBase, updateAddressForNetwork, updateAddressTypeModal, address, userActiveAddress, addressType, userAddressType]);
 
   // No periodic check needed - NetworkContext is the single source of truth
 
@@ -813,7 +915,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     label: string;
     supportsLocal: boolean;
     supportsNostr: boolean;
-    type: 'basic' | 'flexi';
+    type: 'duo' | 'trio';
     pubKey: string;
     chainCode: string;
     xpub: string;
@@ -847,9 +949,50 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
   };
 
-
   const {theme} = useTheme();
-  const styles = createStyles(theme);
+  const styles = {
+    ...createStyles(theme),
+    // Lock FAB
+    lockFAB: {
+      position: 'absolute' as const,
+      bottom: 24,
+      right: 20,
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor:
+        Platform.OS === 'android'
+          ? 'rgba(40, 40, 50, 0.92)' // More visible dark blue-gray background on Android
+          : 'rgba(0, 0, 0, 0.6)',
+      justifyContent: 'center' as const,
+      alignItems: 'center' as const,
+      elevation: 12,
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 4},
+      shadowOpacity: 0.5,
+      shadowRadius: 10,
+      borderWidth: Platform.OS === 'android' ? 2 : 1,
+      borderColor:
+        Platform.OS === 'android'
+          ? 'rgba(255, 255, 255, 0.35)' // More visible border on Android
+          : 'rgba(255, 255, 255, 0.2)',
+      overflow: 'hidden' as const,
+    } as const,
+    lockFABIcon: {
+      width: 28,
+      height: 28,
+      tintColor: theme.colors.background,
+    } as const,
+    lockFABOverlay: {
+      position: 'absolute' as const,
+      width: '100%',
+      height: '100%',
+      borderRadius: 28,
+      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.15)',
+    } as const,
+  };
 
   const headerRight = React.useCallback(
     () => <HeaderRightButton navigation={navigation} />,
@@ -909,10 +1052,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
   useEffect(() => {
     LocalCache.getItem('addressType').then(addrType => {
-      setAddressType(addrType || 'legacy');
+      setAddressType(addrType || 'segwit-native');
     });
     LocalCache.getItem('currency').then(currency => {
       setSelectedCurrency(currency || 'USD');
+    });
+    // Load balance visibility preference
+    LocalCache.getItem('balanceHidden').then(hidden => {
+      setIsBlurred(hidden === 'true');
     });
   });
 
@@ -1063,10 +1210,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         }
 
         // Get current address type for derivation path
-        const currentAddressType = (await LocalCache.getItem('addressType')) || 'legacy';
+        const currentAddressType =
+          (await LocalCache.getItem('addressType')) || 'segwit-native';
         // Check if this is a legacy wallet (created before migration timestamp)
         const useLegacyPath = isLegacyWallet(ks.created_at);
-        const path = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
+        const path = getDerivePathForNetwork(
+          network,
+          currentAddressType,
+          useLegacyPath,
+        );
         const btcPub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,
           ks.chain_code_hex,
@@ -1088,9 +1240,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         // Set default address type if not set
         let addrType = await LocalCache.getItem('addressType');
         if (!addrType) {
-          addrType = 'legacy';
+          addrType = 'segwit-native';
           await LocalCache.setItem('addressType', addrType);
-          dbg('WalletHome: Setting default address type to legacy');
+          dbg('WalletHome: Setting default address type to segwit-native');
         }
         // Set default currency if not set
         let currency = (await LocalCache.getItem('currency')) || 'USD';
@@ -1191,6 +1343,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         });
         setLoading(false);
         setIsInitialized(true);
+        
+        // Check if this is a legacy wallet and show migration modal if needed
+        // Modal shows by default unless user checked "do not remind" (flag = "yes")
+        if (useLegacyPath) {
+          const doNotRemind = await LocalCache.getItem('legacyWalletModalDoNotRemind');
+          if (doNotRemind !== 'yes') {
+            // Small delay to ensure UI is ready
+            setTimeout(() => {
+              setIsLegacyWalletModalVisible(true);
+            }, 500);
+          }
+        }
+        
         // Force initial balance fetch
         await fetchDataRef.current?.();
         dbg('Wallet initialization completed successfully');
@@ -1243,7 +1408,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const handleBlurred = () => {
     const blurr = !isBlurred;
     setIsBlurred(blurr);
-    LocalCache.setItem('mode', blurr ? 'private' : '');
+    LocalCache.setItem('balanceHidden', blurr ? 'true' : 'false');
   };
 
   const loadKeyshareInfo = useCallback(async () => {
@@ -1261,9 +1426,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       const supportsNostr = !!(nostrNpub && nostrNpub.trim() !== '');
       const supportsLocal = true; // Always supported
 
-      // Determine type: basic (2 devices) or flexi (3 devices)
+      // Determine type: duo (2 devices) or trio (3 devices)
       const committeeKeys = keyshare.keygen_committee_keys || [];
-      const type = committeeKeys.length === 3 ? 'flexi' : 'basic';
+      const type = committeeKeys.length === 3 ? 'trio' : 'duo';
 
       // Determine label: if Nostr, use sorted order; otherwise use generic
       let label = 'KeyShare1';
@@ -1292,7 +1457,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         chainCode,
         network,
         keyshare.created_at,
-        addressType || 'legacy',
+        addressType || 'segwit-native',
       );
 
       const outputDescriptors = {
@@ -1415,7 +1580,73 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       }),
     );
     setPendingSendParams(null);
+    setScannedFromQR(false); // Reset flag
   };
+
+  // Process scanned QR data
+  const processScannedQRData = useCallback((qrData: string) => {
+    dbg('Scanned QR data:', qrData.substring(0, 100));
+
+    const decoded = decodeSendBitcoinQR(qrData) as {
+      toAddress: string;
+      amountSats: string;
+      feeSats: string;
+      spendingHash?: string;
+    } | null;
+    if (
+      !decoded ||
+      !decoded.toAddress ||
+      !decoded.amountSats ||
+      !decoded.feeSats
+    ) {
+      Alert.alert(
+        'Invalid QR Code',
+        'The scanned QR code does not contain valid send bitcoin data. Please scan the QR code from the device that initiated the transaction.',
+      );
+      return;
+    }
+
+    // Validate Bitcoin address
+    if (!validateBitcoinAddress(decoded.toAddress)) {
+      Alert.alert(
+        'Invalid Address',
+        'The scanned QR code contains an invalid Bitcoin address.',
+      );
+      return;
+    }
+
+    // Convert to Big for consistency
+    const amountSats = Big(decoded.amountSats);
+    const feeSats = Big(decoded.feeSats);
+
+    if (amountSats.lte(0) || feeSats.lte(0)) {
+      Alert.alert(
+        'Invalid Amount',
+        'The scanned QR code contains invalid amount or fee values.',
+      );
+      return;
+    }
+
+    // Store params and mark as scanned from QR
+    setPendingSendParams({
+      to: decoded.toAddress,
+      amountSats,
+      feeSats,
+      spendingHash: decoded.spendingHash || '',
+    });
+    setScannedFromQR(true);
+
+    // Show transport selector immediately (no QR code shown since data came from scan)
+    setTimeout(() => {
+      setIsTransportModalVisible(true);
+    }, 300);
+  }, []);
+
+  // Handle QR scan for send bitcoin data
+  const handleScanQRForSend = useCallback(() => {
+    HapticFeedback.medium();
+    setIsQRScannerVisible(true);
+  }, []);
 
   // Handle PSBT signing - similar to handleSend (kept for compatibility with PSBT flows)
   const handlePSBTSign = async (psbtBase64: string, derivePath?: string) => {
@@ -1425,13 +1656,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       const jks = await EncryptedStorage.getItem('keyshare');
       if (jks) {
         const ks = JSON.parse(jks);
-        const currentAddressType = (await LocalCache.getItem('addressType')) || 'legacy';
+        const currentAddressType =
+          (await LocalCache.getItem('addressType')) || 'segwit-native';
         // Check if this is a legacy wallet (created before migration timestamp)
         const useLegacyPath = isLegacyWallet(ks.created_at);
-        derivePath = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
+        derivePath = getDerivePathForNetwork(
+          network,
+          currentAddressType,
+          useLegacyPath,
+        );
       }
     }
-    const psbtDerivePath = derivePath || getDerivePathForNetwork(network, 'legacy', true);
+    const psbtDerivePath =
+      derivePath || getDerivePathForNetwork(network, 'segwit-native', true);
 
     // Check if keyshare supports Nostr (has nostr_npub)
     try {
@@ -1463,7 +1700,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
 
     // Store params and show transport selector
-    setPendingPSBTParams({psbtBase64, derivePath: psbtDerivePath});
+    setPendingPSBTParams({psbtBase64});
     setTimeout(() => {
       setIsPSBTTransportModalVisible(true);
     }, 300);
@@ -1472,7 +1709,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const navigateToPSBTSigning = (transport: 'local' | 'nostr') => {
     if (!pendingPSBTParams) return;
 
-    const {psbtBase64, derivePath} = pendingPSBTParams;
+    const {psbtBase64} = pendingPSBTParams;
 
     const routeName =
       transport === 'local' ? 'Devices Pairing' : 'Nostr Connect';
@@ -1483,7 +1720,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           mode: 'sign_psbt',
           addressType,
           psbtBase64,
-          derivePath,
         },
       }),
     );
@@ -1508,7 +1744,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['left', 'right']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <View style={styles.contentContainer}>
         <View style={styles.walletHeader}>
           <View style={styles.headerTop}>
@@ -1570,9 +1806,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 </Text>
               </TouchableOpacity>
             )}
-            <Text style={styles.balanceHint}>
-              {isBlurred ? 'Tap to reveal balance' : 'Tap to hide balance'}
-            </Text>
           </View>
           <View style={[styles.partyContainer, styles.rowFullWidth]}>
             <TouchableOpacity
@@ -1666,7 +1899,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           </View>
           <View style={styles.actions}>
             <TouchableOpacity
-              style={[styles.actionButton, styles.sendButton]}
+              style={[styles.actionButton, styles.sendButton, styles.flexOneMinWidthZero, styles.partyGap]}
               onPress={() => {
                 HapticFeedback.medium();
                 // Check if balance is 0 or empty
@@ -1687,22 +1920,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               />
               <Text style={styles.sendButtonText}>Send</Text>
             </TouchableOpacity>
-            {/* Lock icon button replaces address type change button */}
+            {/* Scan QR button replaces lock button in action row */}
             <TouchableOpacity
-              style={[styles.actionButton, styles.addressTypeModalButton]}
-              onPress={() => {
-                HapticFeedback.light();
-                // Emit a reload event to App.tsx to trigger authentication lock
-                DeviceEventEmitter.emit('app:reload');
-              }}>
+              style={[styles.actionButton, styles.addressTypeModalButton, styles.partyGap]}
+              onPress={handleScanQRForSend}
+              activeOpacity={0.8}>
               <Image
-                source={require('../assets/locker-icon.png')}
+                source={require('../assets/scan-icon.png')}
                 style={styles.addressTypeButtonIcon}
                 resizeMode="contain"
               />
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.actionButton, styles.receiveButton]}
+              style={[styles.actionButton, styles.receiveButton, styles.flexOneMinWidthZero, styles.partyGap]}
               onPress={() => {
                 HapticFeedback.medium();
                 setIsReceiveModalVisible(true);
@@ -1774,6 +2004,37 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           isBlurred={isBlurred}
         />
       </View>
+      {/* Lock FAB Button - Bottom Right */}
+      {isInitialized && address && (
+        <TouchableOpacity
+          style={styles.lockFAB}
+          onPress={() => {
+            HapticFeedback.light();
+            // Emit a reload event to App.tsx to trigger authentication lock
+            DeviceEventEmitter.emit('app:reload');
+          }}
+          activeOpacity={0.7}>
+          {Platform.OS === 'android' && <View style={styles.lockFABOverlay} />}
+          <Image
+            source={require('../assets/locker-icon.png')}
+            style={styles.lockFABIcon}
+            resizeMode="contain"
+          />
+        </TouchableOpacity>
+      )}
+      {/* Scan QR Button - Hidden, accessible via SendBitcoinModal or other means */}
+      {/* QR Scanner Modal */}
+      <QRScanner
+        visible={isQRScannerVisible}
+        onClose={() => setIsQRScannerVisible(false)}
+        onScan={(data: string) => {
+          setIsQRScannerVisible(false);
+          processScannedQRData(data);
+        }}
+        mode="single"
+        title="Scan Send Bitcoin QR"
+        subtitle="Point camera to Sending Device QR"
+      />
       <Modal
         visible={isAddressTypeModalVisible}
         transparent={true}
@@ -1897,6 +2158,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           </View>
         </TouchableOpacity>
       </Modal>
+      <LegacyWalletModal
+        visible={isLegacyWalletModalVisible}
+        onCancel={() => setIsLegacyWalletModalVisible(false)}
+        onUnderstand={() => setIsLegacyWalletModalVisible(false)}
+      />
       <CurrencySelector
         visible={isCurrencySelectorVisible}
         onClose={() => setIsCurrencySelectorVisible(false)}
@@ -1922,13 +2188,27 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           HapticFeedback.medium();
           setIsTransportModalVisible(false);
           setPendingSendParams(null);
+          setScannedFromQR(false);
         }}
         onSelect={(transport: 'local' | 'nostr') => {
           navigateToPairing(transport);
           setIsTransportModalVisible(false);
         }}
         title="Select Signing Method"
-        description="Choose how to sign your transaction"
+        description=""
+        sendBitcoinData={
+          pendingSendParams
+            ? {
+                toAddress: pendingSendParams.to,
+                amountSats: pendingSendParams.amountSats
+                  .toString()
+                  .split('.')[0],
+                feeSats: pendingSendParams.feeSats.toString().split('.')[0],
+                spendingHash: pendingSendParams.spendingHash,
+              }
+            : null
+        }
+        showQRCode={!scannedFromQR} // Don't show QR if data came from scan
       />
 
       {isReceiveModalVisible && (
@@ -2004,7 +2284,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         topRightClose={true}
         nonDismissible={true}
       />
-
 
       <QRCodeModal
         visible={isNpubQrVisible}

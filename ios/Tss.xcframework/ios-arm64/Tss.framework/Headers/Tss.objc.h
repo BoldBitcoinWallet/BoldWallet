@@ -270,6 +270,8 @@
 // skipped field UTXO.Vout with unsupported type: uint32
 
 @property (nonatomic) int64_t value;
+// skipped field UTXO.Status with unsupported type: struct{Confirmed bool "json:\"confirmed\""; BlockHeight int64 "json:\"block_height\""}
+
 @end
 
 // skipped const MaxUint32 with unsupported type: uint32

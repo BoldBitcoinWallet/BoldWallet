@@ -27,9 +27,13 @@ import (
 
 // UTXO represents an unspent transaction output
 type UTXO struct {
-	TxID  string `json:"txid"`
-	Vout  uint32 `json:"vout"`
-	Value int64  `json:"value"` // Value in satoshis
+	TxID   string `json:"txid"`
+	Vout   uint32 `json:"vout"`
+	Value  int64  `json:"value"` // Value in satoshis
+	Status struct {
+		Confirmed   bool  `json:"confirmed"`
+		BlockHeight int64 `json:"block_height"`
+	} `json:"status,omitempty"` // Status is optional, includes both confirmed and unconfirmed UTXOs
 }
 
 var _btc_net = "testnet3" // default to testnet
@@ -79,18 +83,76 @@ func GetNetwork() (string, error) {
 }
 
 // FetchUTXOs fetches UTXOs for a given address
+// The mempool.space API returns both confirmed and unconfirmed UTXOs by default
 func FetchUTXOs(address string) ([]UTXO, error) {
 	url := fmt.Sprintf("%s/address/%s/utxo", _api_url, address)
+	Logf("Fetching UTXOs from endpoint: %s", url)
 	resp, err := http.Get(url)
 	if err != nil {
+		Logf("Error fetching UTXOs from %s: %v", url, err)
 		return nil, fmt.Errorf("failed to fetch UTXOs: %w", err)
 	}
 	defer resp.Body.Close()
 
+	// Check response status
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		Logf("Error response from %s: HTTP %d - %s", url, resp.StatusCode, string(body))
+		return nil, fmt.Errorf("failed to fetch UTXOs: HTTP %d - %s", resp.StatusCode, string(body))
+	}
+	Logf("Successfully fetched UTXOs from %s (HTTP %d)", url, resp.StatusCode)
+
+	// Read the response body to log it
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		Logf("Error reading response body from %s: %v", url, err)
+		return nil, fmt.Errorf("failed to read UTXO response: %w", err)
+	}
+
+	// Log the raw response (first 500 chars to avoid huge logs)
+	bodyStr := string(bodyBytes)
+	if len(bodyStr) > 500 {
+		Logf("Raw API response (first 500 chars): %s...", bodyStr[:500])
+	} else {
+		Logf("Raw API response: %s", bodyStr)
+	}
+
+	// Decode JSON from the body bytes
 	var utxos []UTXO
-	if err := json.NewDecoder(resp.Body).Decode(&utxos); err != nil {
+	if err := json.Unmarshal(bodyBytes, &utxos); err != nil {
+		Logf("Error parsing JSON response from %s: %v. Response was: %s", url, err, bodyStr)
 		return nil, fmt.Errorf("failed to parse UTXO response: %w", err)
 	}
+
+	// Log UTXO status for debugging
+	if len(utxos) > 0 {
+		confirmedCount := 0
+		unconfirmedCount := 0
+		totalValue := int64(0)
+		for _, utxo := range utxos {
+			totalValue += utxo.Value
+			if utxo.Status.Confirmed {
+				confirmedCount++
+			} else {
+				unconfirmedCount++
+			}
+		}
+		Logf("Fetched %d UTXOs: %d confirmed, %d unconfirmed, total value: %d satoshis", len(utxos), confirmedCount, unconfirmedCount, totalValue)
+		// Log first few UTXOs for debugging
+		for i, utxo := range utxos {
+			if i < 3 { // Log first 3 UTXOs
+				Logf("UTXO[%d]: txid=%s, vout=%d, value=%d, confirmed=%v", i, utxo.TxID, utxo.Vout, utxo.Value, utxo.Status.Confirmed)
+			}
+		}
+	} else {
+		Logf("No UTXOs found for address %s (this includes both confirmed and unconfirmed)", address)
+		Logf("API returned empty array. This could mean:")
+		Logf("  - Address has no UTXOs (all spent)")
+		Logf("  - Address format mismatch")
+		Logf("  - Network mismatch (checking testnet vs mainnet)")
+		Logf("  - API endpoint issue")
+	}
+
 	return utxos, nil
 }
 
@@ -119,8 +181,10 @@ func TotalUTXO(address string) (result string, err error) {
 
 func FetchUTXODetails(txID string, vout uint32) (*wire.TxOut, bool, error) {
 	url := fmt.Sprintf("%s/tx/%s", _api_url, txID)
+	Logf("Fetching UTXO details from endpoint: %s", url)
 	resp, err := http.Get(url)
 	if err != nil {
+		Logf("Error fetching UTXO details from %s: %v", url, err)
 		return nil, false, fmt.Errorf("failed to fetch transaction details: %w", err)
 	}
 	defer resp.Body.Close()
@@ -151,8 +215,10 @@ func RecommendedFees(feeType string) (int, error) {
 	for _, url := range _api_urls {
 		fee_url := strings.TrimSuffix(url, "/")
 		url := fmt.Sprintf("%s/v1/fees/recommended", fee_url)
+		Logf("Fetching recommended fees from endpoint: %s (fee type: %s)", url, feeType)
 		resp, err := http.Get(url)
 		if err != nil {
+			Logf("Error fetching fees from %s: %v, trying next endpoint", url, err)
 			continue
 		}
 		defer resp.Body.Close()
@@ -200,10 +266,12 @@ func PostTx(rawTxHex string) (string, error) {
 func postTxOnce(rawTxHex string) (string, error) {
 	// Define the Blockstream API endpoint for broadcasting transactions
 	url := fmt.Sprintf("%s/tx", _api_url)
+	Logf("Broadcasting transaction to endpoint: %s", url)
 
 	// Create a POST request with the raw transaction hex as the body
 	req, err := http.NewRequest("POST", url, bytes.NewBufferString(rawTxHex))
 	if err != nil {
+		Logf("Error creating POST request to %s: %v", url, err)
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -350,23 +418,55 @@ func EstimateFees(senderAddress, receiverAddress string, amountSatoshi int64) (r
 		}
 	}()
 
-	Logln("BBMTLog", "invoking SendBitcoin...")
+	Logln("BBMTLog", "invoking EstimateFees...")
 
 	utxos, err := FetchUTXOs(senderAddress)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch UTXOs: %w", err)
 	}
 
-	// select the utxos
+	// Check if we have any UTXOs
+	if len(utxos) == 0 {
+		Logf("No UTXOs found for address %s during fee estimation", senderAddress)
+		return "", fmt.Errorf("no UTXOs available for address %s. Please ensure you have confirmed transactions before sending", senderAddress)
+	}
+
+	// Use iterative approach to match MpcSendBTC behavior:
+	// MpcSendBTC selects UTXOs for amountSatoshi+estimatedFee, so we need to do the same
+	// 1. First estimate: select UTXOs for amount only, calculate fee
+	// 2. Second estimate: re-select UTXOs for amount+fee (matching actual send), re-calculate fee
+	// This ensures we select the same UTXOs that will be used in the actual send
+
+	// First iteration: select UTXOs for amount only
 	selectedUTXOs, _, err := SelectUTXOs(utxos, amountSatoshi, "smallest")
 	if err != nil {
 		return "", err
 	}
 
+	// First fee estimate with UTXOs selected for amount only
 	_fee, _err := calculateFees(senderAddress, selectedUTXOs, amountSatoshi, receiverAddress)
 	if _err != nil {
 		return "", _err
 	}
+
+	// Second iteration: re-select UTXOs for amount + fee (matching MpcSendBTC behavior)
+	// This ensures the fee estimation uses the same UTXOs that will be used in actual send
+	Logf("Re-selecting UTXOs for amount+fee (%d + %d = %d) to match MpcSendBTC behavior", amountSatoshi, _fee, amountSatoshi+_fee)
+	selectedUTXOs, _, err = SelectUTXOs(utxos, amountSatoshi+_fee, "smallest")
+	if err != nil {
+		// If we can't select enough UTXOs for amount+fee, return the original fee estimate
+		// This can happen if the wallet doesn't have enough funds
+		Logf("Could not select UTXOs for amount+fee, using original estimate: %v", err)
+		return strconv.FormatInt(_fee, 10), nil
+	}
+
+	// Re-calculate fee with the new UTXOs (which match what will be used in actual send)
+	_fee, _err = calculateFees(senderAddress, selectedUTXOs, amountSatoshi, receiverAddress)
+	if _err != nil {
+		return "", _err
+	}
+	Logf("Final fee estimate with UTXOs selected for amount+fee: %d", _fee)
+
 	return strconv.FormatInt(_fee, 10), nil
 }
 
@@ -647,11 +747,25 @@ func MpcSendBTC(
 	}
 	Logf("Fetched UTXOs: %+v", utxos)
 
+	// Check if we have any UTXOs
+	if len(utxos) == 0 {
+		Logf("No UTXOs found for address %s. This may be because:", senderAddress)
+		Logf("1. The address has no confirmed transactions")
+		Logf("2. All transactions are still pending (unconfirmed)")
+		Logf("3. The address has been fully spent")
+		return "", fmt.Errorf("no UTXOs available for address %s. Please ensure you have confirmed transactions before sending", senderAddress)
+	}
+
 	mpcHook("selecting utxos", session, "", 0, 0, false)
 	selectedUTXOs, totalAmount, err := SelectUTXOs(utxos, amountSatoshi+estimatedFee, "smallest")
 	if err != nil {
 		Logf("Error selecting UTXOs: %v", err)
-		return "", err
+		// Provide more context in the error message
+		totalAvailable := int64(0)
+		for _, utxo := range utxos {
+			totalAvailable += utxo.Value
+		}
+		return "", fmt.Errorf("insufficient funds: needed %d (amount: %d + fee: %d), available: %d. Note: Only confirmed UTXOs are available for spending", amountSatoshi+estimatedFee, amountSatoshi, estimatedFee, totalAvailable)
 	}
 	Logf("Selected UTXOs: %+v, Total Amount: %d", selectedUTXOs, totalAmount)
 
@@ -1440,6 +1554,7 @@ func ReplaceTransaction(
 
 	// Fetch the original transaction details
 	url := fmt.Sprintf("%s/tx/%s", _api_url, originalTxID)
+	Logf("Fetching transaction details from endpoint: %s", url)
 	resp, err := http.Get(url)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch original transaction: %w", err)

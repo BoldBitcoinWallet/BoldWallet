@@ -1168,28 +1168,44 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     }
 
     try {
-      // Haptic feedback
-      HapticFeedback.light();
+      HapticFeedback.medium();
 
-      const keyshare = await EncryptedStorage.getItem('keyshare');
-      if (keyshare) {
-        const json = JSON.parse(keyshare);
+      const storedKeyshare = await EncryptedStorage.getItem('keyshare');
+      if (storedKeyshare) {
+        const json = JSON.parse(storedKeyshare);
         const encryptedKeyshare = await BBMTLibNativeModule.aesEncrypt(
-          keyshare,
+          storedKeyshare,
           await BBMTLibNativeModule.sha256(password),
         );
 
-        // Create friendly filename with date and time
-        const now = new Date();
-        const month = now.toLocaleDateString('en-US', {month: 'short'});
-        const day = now.getDate().toString().padStart(2, '0');
-        const year = now.getFullYear();
-        const hours = now.getHours().toString().padStart(2, '0');
-        const minutes = now.getMinutes().toString().padStart(2, '0');
-        // Use keyshare label (KeyShare1/2/3) or fallback to local_party_key
+        // Create filename based on pub_key hash and keyshare number
+        if (!json.pub_key) {
+          Alert.alert('Error', 'Keyshare missing pub_key.');
+          return;
+        }
+        
+        // Get SHA256 hash of pub_key and take first 4 characters
+        const pubKeyHash = await BBMTLibNativeModule.sha256(json.pub_key);
+        const hashPrefix = pubKeyHash.substring(0, 4).toLowerCase();
+        
+        // Extract keyshare number from label (KeyShare1 -> 1, KeyShare2 -> 2, etc.)
         const keyshareLabel = getKeyshareLabel(json);
-        const shareName = keyshareLabel || json.local_party_key || 'keyshare';
-        const friendlyFilename = `${shareName}.${month}${day}.${year}.${hours}${minutes}.share`;
+        let keyshareNumber = '1'; // default
+        if (keyshareLabel) {
+          const match = keyshareLabel.match(/KeyShare(\d+)/);
+          if (match) {
+            keyshareNumber = match[1];
+          }
+        } else if (json.keygen_committee_keys && json.local_party_key) {
+          // Fallback: compute from position in sorted keygen_committee_keys
+          const sortedKeys = [...json.keygen_committee_keys].sort();
+          const index = sortedKeys.indexOf(json.local_party_key);
+          if (index >= 0) {
+            keyshareNumber = String(index + 1);
+          }
+        }
+        
+        const friendlyFilename = `${hashPrefix}K${keyshareNumber}.share`;
 
         const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
         const filePath = `${tempDir}/${friendlyFilename}`;
@@ -1213,11 +1229,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         } catch {
           // ignore cleanup errors
         }
+        clearBackupModal();
       } else {
         Alert.alert('Error', 'Invalid keyshare.');
       }
     } catch (error) {
-      dbg('backup error', error);
+      dbg('Error encrypting or sharing keyshare:', error);
       Alert.alert('Error', 'Failed to encrypt or share the keyshare.');
     }
   };

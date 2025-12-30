@@ -436,11 +436,9 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 	Logf("runNostrPreAgreementSendBTC: sending message: %s", localMessage)
 
 	// Context for the pre-agreement phase
-	// Timeout: 2 minutes (120 seconds) to allow for:
-	// - Network delays
-	// - Retroactive message processing (messages sent before we started listening)
-	// - Relay synchronization delays
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	// Timeout: 16 seconds - fail fast if peer doesn't respond quickly
+	// With resilient relays, messages should arrive quickly if peer is online
+	ctx, cancel := context.WithTimeout(context.Background(), 16*time.Second)
 	defer cancel()
 
 	// Channel to receive peer's message
@@ -483,8 +481,10 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 		}
 	}()
 
-	// Small delay to ensure subscription is active before sending
-	time.Sleep(1 * time.Second)
+	// Wait for subscription to be ready before sending
+	// Give the MessagePump time to establish subscriptions to all relays
+	// The subscription needs to be active to receive the peer's response
+	time.Sleep(2 * time.Second)
 
 	// Send our message to peer
 	err = messenger.SendMessage(ctx, localNpub, peerNpub, localMessage)

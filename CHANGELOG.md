@@ -2,6 +2,107 @@
 
 ## [Unreleased]
 
+### Added
+- **Legacy Wallet Migration Modal**: New modal appears for users with legacy wallets, advising migration to new wallet setup for better PSBT compatibility
+  - Non-dismissible modal with friendly messaging
+  - "Do not remind me again" checkbox option
+  - Modal flag automatically resets on new wallet import (if wallet is legacy)
+  - Standalone `LegacyWalletModal` component for reusability
+
+### Changed
+- **Network Reset on Wallet Import**: Network always resets to mainnet when importing a keyshare to ensure clean state
+- **Balance Display Styling**: Balance rows (BTC and USD) now have transparent background while maintaining tap-to-hide functionality
+- **Button Alignment**: Send and Receive buttons now vertically align with Device and Address Type buttons above for consistent spacing
+- **QR Scanner Subtitle**: Updated subtitle text to "Point camera to Sending Device QR" for clarity
+
+### Fixed
+- **Address Flickering Issue**: Fixed address changing/flickering after lock/unlock by making UserContext the single source of truth for addresses
+  - UserContext now properly derives network-specific btcPub for both mainnet and testnet
+  - WalletHome prioritizes userActiveAddress from UserContext over local state
+  - Eliminated race conditions in address derivation
+- **Network State Management**: Improved network state consistency across the app
+  - Network reset on import ensures proper address derivation
+  - All contexts and providers properly synchronized with network changes
+- **Cache Clearing**: Comprehensive cache clearing on wallet setup and import screens
+  - LocalCache cleared on ShowcaseScreen (import)
+  - LocalCache cleared on MobilesPairing and MobileNostrPairing (setup mode only)
+  - Stale btcPub removed from EncryptedStorage
+  - WalletService cache cleared for fresh state
+
+### Technical Details
+- **UserContext**: Enhanced refresh() to derive separate btcPub values for mainnet and testnet
+- **WalletHome**: Updated to use UserContext as primary address source, with local state as fallback
+- **ShowcaseScreen**: Added network reset to mainnet on keyshare import using setActiveNetwork()
+- **Cache Management**: Added useEffect hooks to clear all cache on wallet setup/import screens
+- **Styles**: Updated balanceRowWithMargin to use transparent background
+- **Button Layout**: Applied flexOneMinWidthZero and partyGap styles to action buttons for consistent alignment
+
+## [2.1.4] - 2025-12-30
+
+### Added
+- **Resilient Nostr relay connections**: BTC sends now work reliably even if some Nostr relays are down
+  - Automatically connects to multiple relays in parallel
+  - Continues working if relays fail during the signing process
+  - Faster connection establishment and better error recovery
+
+### Changed
+- **Faster pre-agreement timeout**: Reduced from 2 minutes to 16 seconds for quicker failure detection
+
+### Fixed
+- **Android navigation bar overlap**: Fixed bottom navigation bar overlapping system navigation on Android devices (e.g., Samsung)
+- **Message delivery reliability**: Improved handling of messages sent just before subscription starts
+
+---
+
+## [2.1.3] - 2025-12-20
+
+### Added
+- **Hide/show balance user preference**: Tap balance to toggle visibility, preference persists across app sessions
+- **Unified QR Scanner component** (`components/QRScanner.tsx` and `components/QRScanner.foss.tsx`):
+  - Platform-specific implementations: iOS uses `react-native-vision-camera`, Android uses `rn-barcode-zxing-scan`
+  - Support for both single and continuous scanning modes
+  - Progress indicator for animated QR codes
+  - Customizable titles, subtitles, and close button text
+- **New `useQRScanner` hook** for reusable QR scanning logic
+- **Enhanced pubkey matching logic** in `BBMTLib/tss/psbt.go`:
+  - Better validation of input ownership before signing
+  - Improved logging for debugging signature issues
+  - Skips signing inputs that don't belong to the wallet (prevents errors)
+  - More reliable pubkey derivation verification
+- **PSBT sign filter**: Automatically filters and only signs inputs that belong to the wallet, preventing errors from unrelated inputs
+- **QR Scan shortcut for Send (Second Device)**: Added QR code option in transport mode selector to share transaction details (address, amount, fee) from one phone to another for quick entry
+
+### Changed
+- **Wallet mode terminology**: Updated from "basic/flexi" to "duo/trio" for clearer wallet type indication (2/2 vs 2/3 multisig)
+- **Keyshare backup naming**: Keyshare backup files now use xpub-based naming with index (e.g., `a6tr2-1.ks`, `a6tr2-2.ks`, `a6tr2-3.ks`) for better organization and identification
+- **Default address type**: New wallets default to SegWit Native (BIP84) instead of Legacy addresses for better efficiency and lower fees
+- **Refactored screens** to use new QR scanner:
+  - `MobileNostrPairing.tsx` - Simplified QR scanning integration
+  - `SendBitcoinModal.tsx` - Improved QR code scanning UX
+  - `PSBTModal.tsx` - Enhanced QR code handling
+  - `WalletHome.tsx` - Updated QR scanning flow
+- **Code cleanup**: Removed large FOSS variant files (reduced codebase by ~8,500 lines):
+  - `screens/MobileNostrPairing.foss.tsx` (6,032 lines removed)
+  - `screens/PSBTModal.foss.tsx` (1,661 lines removed)
+  - `screens/SendBitcoinModal.foss.tsx` (782 lines removed)
+
+### Fixed
+- **Wallet Context & Address Handling**: Improved address type handling with legacy wallet detection
+- **Derive path management**: Better derive path management for different network types
+- **Address type caching**: Enhanced address type caching and retrieval
+- **Build & Dependencies**: Updated Android build configuration and TSS library binaries (iOS and Android)
+- **Release script**: Improved release script (`android/release.sh`)
+
+### Technical Details
+- **Components**: Updated `KeyshareModal.tsx`, `TransportModeSelector.tsx`, and `Styles.tsx`
+- **Screens**: Improvements to `WalletSettings.tsx`, `ShowcaseScreen.tsx`, and `PSBTScreen.tsx`
+- **Utilities**: New utility functions in `utils.js` (53 lines added) with improved error handling and logging
+- **Native Libraries**: Updated TSS framework binaries for iOS (all architectures) and TSS AAR library for Android
+- **Native headers**: Updated native headers and Info.plist files
+- **Statistics**: 32 files changed, 1,570 insertions, 9,089 deletions (net reduction of ~7,500 lines)
+
+---
+
 ## [2.1.2] - 2025-12-19
 
 ### Added

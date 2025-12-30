@@ -59,7 +59,7 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
       
       // Get current address type for path calculation
       const storedAddressType = await LocalCache.getItem('addressType');
-      const currentAddressType = (storedAddressType as string) || 'legacy';
+      const currentAddressType = (storedAddressType as string) || 'segwit-native';
       // Check if this is a legacy wallet (created before migration timestamp)
       const useLegacyPath = isLegacyWallet(ks.created_at);
       const path = getDerivePathForNetwork(net, currentAddressType, useLegacyPath);

@@ -52,9 +52,7 @@ WORKDIR /BoldWallet
 # conditional F-Droid build switch
 RUN if [ "$fdroid" = "true" ]; then \
     sed -i '/react-native-vision-camera/d' package.json; \
-    mv /BoldWallet/screens/SendBitcoinModal.foss.tsx /BoldWallet/screens/SendBitcoinModal.tsx; \
-    mv /BoldWallet/screens/MobileNostrPairing.foss.tsx /BoldWallet/screens/MobileNostrPairing.tsx; \
-    mv /BoldWallet/screens/PSBTModal.foss.tsx /BoldWallet/screens/PSBTModal.tsx; \
+    mv /BoldWallet/components/QRScanner.foss.tsx /BoldWallet/components/QRScanner.tsx; \
   fi
   
 # npm install

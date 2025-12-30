@@ -1,8 +1,15 @@
-import React, {createContext, useCallback, useContext, useEffect, useMemo, useState} from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import LocalCache from '../services/LocalCache';
 import {BBMTLibNativeModule} from '../native_modules';
-import { getDerivePathForNetwork, isLegacyWallet } from '../utils';
+import {getDerivePathForNetwork, isLegacyWallet, dbg} from '../utils';
 
 type AddressType = 'legacy' | 'segwit-native' | 'segwit-compatible';
 
@@ -28,7 +35,9 @@ interface UserContextType {
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
-export const UserProvider: React.FC<{children: React.ReactNode}> = ({children}) => {
+export const UserProvider: React.FC<{children: React.ReactNode}> = ({
+  children,
+}) => {
   // Network/API state (moved from NetworkContext)
   const [network, setNetwork] = useState<string>('mainnet');
   const [apiBase, setApiBase] = useState<string>('');
@@ -36,28 +45,71 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({children}) 
 
   // Derived addresses for both networks
   const [legacyMainnetAddress, setLegacyMainnetAddress] = useState<string>('');
-  const [segwitNativeMainnetAddress, setSegwitNativeMainnetAddress] = useState<string>('');
-  const [segwitCompatibleMainnetAddress, setSegwitCompatibleMainnetAddress] = useState<string>('');
+  const [segwitNativeMainnetAddress, setSegwitNativeMainnetAddress] =
+    useState<string>('');
+  const [segwitCompatibleMainnetAddress, setSegwitCompatibleMainnetAddress] =
+    useState<string>('');
   const [legacyTestnetAddress, setLegacyTestnetAddress] = useState<string>('');
-  const [segwitNativeTestnetAddress, setSegwitNativeTestnetAddress] = useState<string>('');
-  const [segwitCompatibleTestnetAddress, setSegwitCompatibleTestnetAddress] = useState<string>('');
+  const [segwitNativeTestnetAddress, setSegwitNativeTestnetAddress] =
+    useState<string>('');
+  const [segwitCompatibleTestnetAddress, setSegwitCompatibleTestnetAddress] =
+    useState<string>('');
 
-  const [activeAddressType, setActiveAddressTypeState] = useState<AddressType>('legacy');
+  const [activeAddressType, setActiveAddressTypeState] =
+    useState<AddressType>('legacy');
 
   // Compute the currently active address based on active network + address type
   const activeAddress = useMemo(() => {
     const isTestnet = network !== 'mainnet';
+    let computedAddress = '';
     if (activeAddressType === 'legacy') {
-      return isTestnet ? legacyTestnetAddress : legacyMainnetAddress;
+      computedAddress = isTestnet ? legacyTestnetAddress : legacyMainnetAddress;
+    } else if (activeAddressType === 'segwit-native') {
+      computedAddress = isTestnet
+        ? segwitNativeTestnetAddress
+        : segwitNativeMainnetAddress;
+    } else if (activeAddressType === 'segwit-compatible') {
+      computedAddress = isTestnet
+        ? segwitCompatibleTestnetAddress
+        : segwitCompatibleMainnetAddress;
     }
-    if (activeAddressType === 'segwit-native') {
-      return isTestnet ? segwitNativeTestnetAddress : segwitNativeMainnetAddress;
-    }
-    if (activeAddressType === 'segwit-compatible') {
-      return isTestnet ? segwitCompatibleTestnetAddress : segwitCompatibleMainnetAddress;
-    }
-    return '';
-  }, [network, activeAddressType, legacyMainnetAddress, segwitNativeMainnetAddress, segwitCompatibleMainnetAddress, legacyTestnetAddress, segwitNativeTestnetAddress, segwitCompatibleTestnetAddress]);
+
+    // Log address computation for debugging
+    dbg(`[UserContext] activeAddress computed:`, {
+      timestamp: Date.now(),
+      network,
+      activeAddressType,
+      isTestnet,
+      computedAddress: computedAddress
+        ? `${computedAddress.substring(0, 8)}...${computedAddress.substring(
+            computedAddress.length - 8,
+          )}`
+        : 'EMPTY',
+      legacyMainnet: legacyMainnetAddress
+        ? `${legacyMainnetAddress.substring(0, 8)}...`
+        : 'EMPTY',
+      segwitMainnet: segwitNativeMainnetAddress
+        ? `${segwitNativeMainnetAddress.substring(0, 8)}...`
+        : 'EMPTY',
+      legacyTestnet: legacyTestnetAddress
+        ? `${legacyTestnetAddress.substring(0, 8)}...`
+        : 'EMPTY',
+      segwitTestnet: segwitNativeTestnetAddress
+        ? `${segwitNativeTestnetAddress.substring(0, 8)}...`
+        : 'EMPTY',
+    });
+
+    return computedAddress;
+  }, [
+    network,
+    activeAddressType,
+    legacyMainnetAddress,
+    segwitNativeMainnetAddress,
+    segwitCompatibleMainnetAddress,
+    legacyTestnetAddress,
+    segwitNativeTestnetAddress,
+    segwitCompatibleTestnetAddress,
+  ]);
 
   // Ensure native module knows about network/api when they change
   useEffect(() => {
@@ -81,7 +133,11 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({children}) 
 
         let api = await LocalCache.getItem(`api_${net}`);
         if (!api) {
-          api = (await LocalCache.getItem('api')) || (net === 'testnet3' ? 'https://mempool.space/testnet/api' : 'https://mempool.space/api');
+          api =
+            (await LocalCache.getItem('api')) ||
+            (net === 'testnet3'
+              ? 'https://mempool.space/testnet/api'
+              : 'https://mempool.space/api');
           await LocalCache.setItem('api', api);
           await LocalCache.setItem(`api_${net}`, api);
         }
@@ -95,63 +151,182 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({children}) 
     initializeNetwork();
   }, []);
 
-  const deriveAllAddressesForNetwork = useCallback(async (pub: string, net: string) => {
-    const isTestnet = net !== 'mainnet';
-    const [legacy, segwitNative, segwitCompatible] = await Promise.all([
-      BBMTLibNativeModule.btcAddress(pub, net, 'legacy'),
-      BBMTLibNativeModule.btcAddress(pub, net, 'segwit-native'),
-      BBMTLibNativeModule.btcAddress(pub, net, 'segwit-compatible'),
-    ]);
-    if (isTestnet) {
-      setLegacyTestnetAddress(legacy);
-      setSegwitNativeTestnetAddress(segwitNative);
-      setSegwitCompatibleTestnetAddress(segwitCompatible);
-    } else {
-      setLegacyMainnetAddress(legacy);
-      setSegwitNativeMainnetAddress(segwitNative);
-      setSegwitCompatibleMainnetAddress(segwitCompatible);
-    }
-  }, []);
+  const deriveAllAddressesForNetwork = useCallback(
+    async (pub: string, net: string) => {
+      const isTestnet = net !== 'mainnet';
+      const startTime = Date.now();
+      dbg(`[UserContext] deriveAllAddressesForNetwork START:`, {
+        timestamp: startTime,
+        network: net,
+        isTestnet,
+        pubPrefix: pub ? `${pub.substring(0, 16)}...` : 'EMPTY',
+      });
+
+      const [legacy, segwitNative, segwitCompatible] = await Promise.all([
+        BBMTLibNativeModule.btcAddress(pub, net, 'legacy'),
+        BBMTLibNativeModule.btcAddress(pub, net, 'segwit-native'),
+        BBMTLibNativeModule.btcAddress(pub, net, 'segwit-compatible'),
+      ]);
+
+      const endTime = Date.now();
+      dbg(`[UserContext] deriveAllAddressesForNetwork COMPLETE:`, {
+        timestamp: endTime,
+        duration: endTime - startTime,
+        network: net,
+        legacy: legacy
+          ? `${legacy.substring(0, 8)}...${legacy.substring(legacy.length - 8)}`
+          : 'EMPTY',
+        segwitNative: segwitNative
+          ? `${segwitNative.substring(0, 8)}...${segwitNative.substring(
+              segwitNative.length - 8,
+            )}`
+          : 'EMPTY',
+        segwitCompatible: segwitCompatible
+          ? `${segwitCompatible.substring(0, 8)}...${segwitCompatible.substring(
+              segwitCompatible.length - 8,
+            )}`
+          : 'EMPTY',
+      });
+
+      if (isTestnet) {
+        dbg(`[UserContext] Setting TESTNET addresses:`, {
+          timestamp: Date.now(),
+          legacy: legacy ? `${legacy.substring(0, 8)}...` : 'EMPTY',
+          segwitNative: segwitNative
+            ? `${segwitNative.substring(0, 8)}...`
+            : 'EMPTY',
+        });
+        setLegacyTestnetAddress(legacy);
+        setSegwitNativeTestnetAddress(segwitNative);
+        setSegwitCompatibleTestnetAddress(segwitCompatible);
+      } else {
+        dbg(`[UserContext] Setting MAINNET addresses:`, {
+          timestamp: Date.now(),
+          legacy: legacy ? `${legacy.substring(0, 8)}...` : 'EMPTY',
+          segwitNative: segwitNative
+            ? `${segwitNative.substring(0, 8)}...`
+            : 'EMPTY',
+        });
+        setLegacyMainnetAddress(legacy);
+        setSegwitNativeMainnetAddress(segwitNative);
+        setSegwitCompatibleMainnetAddress(segwitCompatible);
+      }
+    },
+    [],
+  );
 
   const refresh = useCallback(async () => {
+    const refreshStartTime = Date.now();
+    dbg(`[UserContext] refresh() START:`, {
+      timestamp: refreshStartTime,
+      network,
+      stackTrace: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
+    });
+
     try {
       // Load address type
-      const storedType = (await LocalCache.getItem('addressType')) as AddressType | null;
-      const currentAddressType = (storedType as AddressType) || 'legacy';
+      const storedType = (await LocalCache.getItem(
+        'addressType',
+      )) as AddressType | null;
+      const currentAddressType = (storedType as AddressType) || 'segwit-native';
+      dbg(`[UserContext] refresh() - Address type loaded:`, {
+        timestamp: Date.now(),
+        storedType,
+        currentAddressType,
+        network,
+      });
       setActiveAddressTypeState(currentAddressType);
 
-      // Load/derive btcPub
-      let pub = (await EncryptedStorage.getItem('btcPub')) || '';
-      if (!pub) {
-        const jks = await EncryptedStorage.getItem('keyshare');
-        if (jks) {
-          const ks = JSON.parse(jks);
-          // Check if this is a legacy wallet (created before migration timestamp)
-          const useLegacyPath = isLegacyWallet(ks.created_at);
-          // Use derivation path that matches the address type (or legacy path for old wallets)
-          const path = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
-          pub = await BBMTLibNativeModule.derivePubkey(
-            ks.pub_key,
-            ks.chain_code_hex,
-            path,
-          );
+      // Always derive btcPub fresh to ensure it matches the current address type
+      // This prevents issues where stored btcPub was derived with a different address type
+      let pub = '';
+      let ks: any = null;
+      const jks = await EncryptedStorage.getItem('keyshare');
+      if (jks) {
+        ks = JSON.parse(jks);
+        // Check if this is a legacy wallet (created before migration timestamp)
+        const useLegacyPath = isLegacyWallet(ks.created_at);
+        // Use derivation path that matches the address type (or legacy path for old wallets)
+        const path = getDerivePathForNetwork(
+          network,
+          currentAddressType,
+          useLegacyPath,
+        );
+        dbg(`[UserContext] refresh() - Deriving btcPub:`, {
+          timestamp: Date.now(),
+          network,
+          currentAddressType,
+          useLegacyPath,
+          path,
+        });
+        pub = await BBMTLibNativeModule.derivePubkey(
+          ks.pub_key,
+          ks.chain_code_hex,
+          path,
+        );
+        // Store it for future use (though we'll always derive fresh to ensure consistency)
+        if (pub) {
           await EncryptedStorage.setItem('btcPub', pub);
+          dbg(`[UserContext] refresh() - btcPub derived and stored:`, {
+            timestamp: Date.now(),
+            pubPrefix: pub.substring(0, 16),
+          });
         }
       }
       setBtcPub(pub);
 
-      if (pub) {
+      if (pub && ks) {
         // Ensure native network is set; returns "<net>@<api>"
         const netParams = await BBMTLibNativeModule.setBtcNetwork(network);
         const actualNet = netParams.split('@')[0];
+        dbg(`[UserContext] refresh() - Network set, deriving addresses:`, {
+          timestamp: Date.now(),
+          network,
+          actualNet,
+        });
 
-        // Derive for current network and the other network for fast switching
+        // CRITICAL: btcPub is network-specific (derivation path includes coin type)
+        // Only generate addresses for the CURRENT network using the CURRENT network's btcPub
         await deriveAllAddressesForNetwork(pub, actualNet);
+
+        // For the other network, we need to derive a separate btcPub with that network's path
+        // because btcPub is network-specific (derivation path includes coin type: 0' for mainnet, 1' for testnet)
         const otherNet = actualNet === 'mainnet' ? 'testnet3' : 'mainnet';
-        await deriveAllAddressesForNetwork(pub, otherNet);
+        const useLegacyPathOther = isLegacyWallet(ks.created_at);
+        const otherPath = getDerivePathForNetwork(
+          otherNet,
+          currentAddressType,
+          useLegacyPathOther,
+        );
+        const otherPub = await BBMTLibNativeModule.derivePubkey(
+          ks.pub_key,
+          ks.chain_code_hex,
+          otherPath,
+        );
+        dbg(`[UserContext] refresh() - Derived btcPub for other network:`, {
+          timestamp: Date.now(),
+          otherNet,
+          otherPath,
+          pubPrefix: otherPub ? otherPub.substring(0, 16) : 'EMPTY',
+        });
+        if (otherPub) {
+          await deriveAllAddressesForNetwork(otherPub, otherNet);
+        }
       }
-    } catch {
-      // no-op
+
+      const refreshEndTime = Date.now();
+      dbg(`[UserContext] refresh() COMPLETE:`, {
+        timestamp: refreshEndTime,
+        duration: refreshEndTime - refreshStartTime,
+        network,
+        currentAddressType,
+      });
+    } catch (error) {
+      dbg(`[UserContext] refresh() ERROR:`, {
+        timestamp: Date.now(),
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
     }
   }, [network, deriveAllAddressesForNetwork]);
 
@@ -159,54 +334,70 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({children}) 
     refresh();
   }, [refresh]);
 
-  const handleSetActiveNetwork = useCallback(async (newNetwork: string) => {
-    try {
-      // Save current API for the current network before switching
-      const currentApi = apiBase;
-      if (currentApi) {
-        await LocalCache.setItem(`api_${network}`, currentApi);
+  const handleSetActiveNetwork = useCallback(
+    async (newNetwork: string) => {
+      try {
+        // Save current API for the current network before switching
+        const currentApi = apiBase;
+        if (currentApi) {
+          await LocalCache.setItem(`api_${network}`, currentApi);
+        }
+
+        // Cache the new network
+        await LocalCache.setItem('network', newNetwork);
+
+        // Try to get the previously selected API for this network, fallback to default
+        let nextApi = await LocalCache.getItem(`api_${newNetwork}`);
+        if (!nextApi) {
+          nextApi =
+            newNetwork === 'testnet3'
+              ? 'https://mempool.space/testnet/api'
+              : 'https://mempool.space/api';
+        }
+
+        // Cache and update state
+        await LocalCache.setItem(`api_${newNetwork}`, nextApi);
+        await LocalCache.setItem('api', nextApi);
+        setNetwork(newNetwork);
+        setApiBase(nextApi);
+
+        // Update native module
+        await BBMTLibNativeModule.setAPI(newNetwork, nextApi);
+      } catch {
+        // no-op
       }
+    },
+    [apiBase, network],
+  );
 
-      // Cache the new network
-      await LocalCache.setItem('network', newNetwork);
-
-      // Try to get the previously selected API for this network, fallback to default
-      let nextApi = await LocalCache.getItem(`api_${newNetwork}`);
-      if (!nextApi) {
-        nextApi = newNetwork === 'testnet3' ? 'https://mempool.space/testnet/api' : 'https://mempool.space/api';
+  const handleSetActiveAddressType = useCallback(
+    async (newType: AddressType) => {
+      await LocalCache.setItem('addressType', newType);
+      setActiveAddressTypeState(newType);
+      // Clear cached btcPub so it will be re-derived with the new address type
+      await EncryptedStorage.removeItem('btcPub');
+      // Refresh to derive new addresses with the new address type
+      await refresh();
+      if (activeAddress) {
+        await LocalCache.setItem('currentAddress', activeAddress);
       }
+    },
+    [activeAddress, refresh],
+  );
 
-      // Cache and update state
-      await LocalCache.setItem(`api_${newNetwork}`, nextApi);
-      await LocalCache.setItem('api', nextApi);
-      setNetwork(newNetwork);
-      setApiBase(nextApi);
-
-      // Update native module
-      await BBMTLibNativeModule.setAPI(newNetwork, nextApi);
-    } catch {
-      // no-op
-    }
-  }, [apiBase, network]);
-
-  const handleSetActiveAddressType = useCallback(async (newType: AddressType) => {
-    await LocalCache.setItem('addressType', newType);
-    setActiveAddressTypeState(newType);
-    if (activeAddress) {
-      await LocalCache.setItem('currentAddress', activeAddress);
-    }
-  }, [activeAddress]);
-
-  const handleSetActiveApiProvider = useCallback(async (newApi: string) => {
-    try {
-      await LocalCache.setItem(`api_${network}`, newApi);
-      await LocalCache.setItem('api', newApi);
-      setApiBase(newApi);
-      await BBMTLibNativeModule.setAPI(network, newApi);
-    } catch {
-      // no-op
-    }
-  }, [network]);
+  const handleSetActiveApiProvider = useCallback(
+    async (newApi: string) => {
+      try {
+        await LocalCache.setItem(`api_${network}`, newApi);
+        await LocalCache.setItem('api', newApi);
+        setApiBase(newApi);
+        await BBMTLibNativeModule.setAPI(network, newApi);
+      } catch {
+        // no-op
+      }
+    },
+    [network],
+  );
 
   const value: UserContextType = {
     btcPub,
@@ -236,5 +427,3 @@ export const useUser = (): UserContextType => {
   }
   return ctx;
 };
-
-

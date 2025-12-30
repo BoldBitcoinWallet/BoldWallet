@@ -36,7 +36,15 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Share from 'react-native-share';
 import Big from 'big.js';
-import {dbg, getDerivePathForNetwork, getPinnedRemoteIPs, HapticFeedback, hexToString} from '../utils';
+import {
+  dbg,
+  getDerivePathForNetwork,
+  getKeyshareLabel,
+  getPinnedRemoteIPs,
+  HapticFeedback,
+  hexToString,
+  isLegacyWallet,
+} from '../utils';
 import {useTheme} from '../theme';
 import {waitMS} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
@@ -89,7 +97,7 @@ const MobilesPairing = ({navigation}: any) => {
   const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
   const [passwordStrength, setPasswordStrength] = useState(0);
   const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
-  
+
   // VPN detection state
   const [isVPNConnected, setIsVPNConnected] = useState(false);
   const [psbtDetails, setPsbtDetails] = useState<{
@@ -98,7 +106,6 @@ const MobilesPairing = ({navigation}: any) => {
     fee: number;
     totalInput: number;
     totalOutput: number;
-    derivePath?: string;
     derivePaths?: string[];
   } | null>(null);
 
@@ -118,7 +125,6 @@ const MobilesPairing = ({navigation}: any) => {
     selectedCurrency?: string;
     spendingHash?: string;
     psbtBase64?: string; // For PSBT signing mode
-    derivePath?: string; // BIP32 derivation path for PSBT
   };
 
   const route = useRoute<RouteProp<{params: RouteParams}>>();
@@ -177,6 +183,39 @@ const MobilesPairing = ({navigation}: any) => {
   const toggleKeysignReady = () => {
     setIsKeysignReady(!isKeysignReady);
   };
+
+  // Clear all cache when entering wallet setup mode (not signing mode)
+  useEffect(() => {
+    const clearCacheForSetup = async () => {
+      // Only clear cache if we're in setup mode (duo/trio), not signing mode
+      if (setupMode === 'duo' || setupMode === 'trio') {
+        try {
+          dbg('=== MobilesPairing: Clearing all cache for wallet setup');
+          // Clear LocalCache
+          await LocalCache.clear();
+          dbg('LocalCache cleared successfully');
+          
+          // Clear stale EncryptedStorage items (but keep keyshare if it exists for signing)
+          // We clear btcPub as it will be regenerated with the new keyshare
+          await EncryptedStorage.removeItem('btcPub');
+          dbg('Cleared stale btcPub from EncryptedStorage');
+          
+          // Clear WalletService cache
+          try {
+            await LocalCache.removeItem('walletCache');
+            dbg('WalletService cache cleared');
+          } catch (error) {
+            dbg('Error clearing WalletService cache:', error);
+          }
+          
+          dbg('=== MobilesPairing: Cache clearing completed');
+        } catch (error) {
+          dbg('Error clearing cache in MobilesPairing:', error);
+        }
+      }
+    };
+    clearCacheForSetup();
+  }, [setupMode]);
 
   const stringToHex = (str: string) => {
     return Array.from(str)
@@ -297,7 +336,10 @@ const MobilesPairing = ({navigation}: any) => {
             route.params.psbtBase64,
           );
 
-          if (detailsJson.startsWith('error') || detailsJson.includes('failed')) {
+          if (
+            detailsJson.startsWith('error') ||
+            detailsJson.includes('failed')
+          ) {
             dbg('Failed to parse PSBT details:', detailsJson);
             setPsbtDetails(null);
             return;
@@ -310,7 +352,6 @@ const MobilesPairing = ({navigation}: any) => {
             fee: details.fee || 0,
             totalInput: details.totalInput || 0,
             totalOutput: details.totalOutput || 0,
-            derivePath: details.derivePath,
             derivePaths: details.derivePaths || [],
           });
           dbg('PSBT details parsed:', {
@@ -559,6 +600,7 @@ const MobilesPairing = ({navigation}: any) => {
           }
 
           await EncryptedStorage.setItem('keyshare', result);
+          // New wallet setups are always non-legacy, so no need to reset flag
           setMpcDone(true);
           deletePreparams();
         })
@@ -719,8 +761,25 @@ const MobilesPairing = ({navigation}: any) => {
       const satoshiFees = `${decoded[2]}`;
       const peerShare = `${decoded[3]}`;
 
-      // Derive public key and address for regular BTC sending (not needed for PSBT)
-      const path = route.params?.derivePath || getDerivePathForNetwork(net);
+      // Get address type from route params or cache, default to segwit-native
+      const currentAddressType =
+        addressType ||
+        (await LocalCache.getItem('addressType')) ||
+        'segwit-native';
+      // Check if this is a legacy wallet (created before migration timestamp)
+      const useLegacyPath = isLegacyWallet(ks.created_at);
+      const path = getDerivePathForNetwork(
+        net,
+        currentAddressType,
+        useLegacyPath,
+      );
+      dbg('Deriving path for send:', {
+        net,
+        currentAddressType,
+        useLegacyPath,
+        path,
+      });
+
       const btcPub = await BBMTLibNativeModule.derivePubkey(
         ks.pub_key,
         ks.chain_code_hex,
@@ -731,6 +790,35 @@ const MobilesPairing = ({navigation}: any) => {
         net,
         addressType,
       );
+      dbg('Derived address for send:', {
+        path,
+        btcAddress,
+        addressType,
+        network: net,
+        publicKey: btcPub.substring(0, 20) + '...',
+      });
+
+      // Log warning if address doesn't match expected format for address type
+      if (
+        addressType === 'segwit-native' &&
+        !btcAddress.startsWith('tb1q') &&
+        !btcAddress.startsWith('bc1q')
+      ) {
+        dbg(
+          'WARNING: Address type is segwit-native but address does not start with tb1q/bc1q:',
+          btcAddress,
+        );
+      } else if (
+        addressType === 'legacy' &&
+        !btcAddress.startsWith('1') &&
+        !btcAddress.startsWith('m') &&
+        !btcAddress.startsWith('n')
+      ) {
+        dbg(
+          'WARNING: Address type is legacy but address format does not match:',
+          btcAddress,
+        );
+      }
 
       dbg('starting...', {
         peerShare,
@@ -895,7 +983,7 @@ const MobilesPairing = ({navigation}: any) => {
     }
 
     try {
-      HapticFeedback.light();
+      HapticFeedback.medium();
 
       const storedKeyshare = await EncryptedStorage.getItem('keyshare');
       if (storedKeyshare) {
@@ -905,15 +993,34 @@ const MobilesPairing = ({navigation}: any) => {
           await BBMTLibNativeModule.sha256(password),
         );
 
-        // Create friendly filename with date and time (match WalletSettings)
-        const now = new Date();
-        const month = now.toLocaleDateString('en-US', {month: 'short'});
-        const day = now.getDate().toString().padStart(2, '0');
-        const year = now.getFullYear();
-        const hours = now.getHours().toString().padStart(2, '0');
-        const minutes = now.getMinutes().toString().padStart(2, '0');
-        const share = json.local_party_key;
-        const friendlyFilename = `${share}.${month}${day}.${year}.${hours}${minutes}.share`;
+        // Create filename based on pub_key hash and keyshare number
+        if (!json.pub_key) {
+          Alert.alert('Error', 'Keyshare missing pub_key.');
+          return;
+        }
+
+        // Get SHA256 hash of pub_key and take first 4 characters
+        const pubKeyHash = await BBMTLibNativeModule.sha256(json.pub_key);
+        const hashPrefix = pubKeyHash.substring(0, 4).toLowerCase();
+
+        // Extract keyshare number from label (KeyShare1 -> 1, KeyShare2 -> 2, etc.)
+        const keyshareLabel = getKeyshareLabel(json);
+        let keyshareNumber = '1'; // default
+        if (keyshareLabel) {
+          const match = keyshareLabel.match(/KeyShare(\d+)/);
+          if (match) {
+            keyshareNumber = match[1];
+          }
+        } else if (json.keygen_committee_keys && json.local_party_key) {
+          // Fallback: compute from position in sorted keygen_committee_keys
+          const sortedKeys = [...json.keygen_committee_keys].sort();
+          const index = sortedKeys.indexOf(json.local_party_key);
+          if (index >= 0) {
+            keyshareNumber = String(index + 1);
+          }
+        }
+
+        const friendlyFilename = `${hashPrefix}K${keyshareNumber}.share`;
 
         const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
         const filePath = `${tempDir}/${friendlyFilename}`;
@@ -931,9 +1038,12 @@ const MobilesPairing = ({navigation}: any) => {
           failOnCancel: false,
         });
 
+        // Cleanup temp file (best-effort)
         try {
           await RNFS.unlink(filePath);
-        } catch {}
+        } catch {
+          // ignore cleanup errors
+        }
         clearBackupModal();
       } else {
         Alert.alert('Error', 'Invalid keyshare.');
@@ -1470,21 +1580,29 @@ const MobilesPairing = ({navigation}: any) => {
         const netInfo = await NetInfo.fetch();
         // Check for VPN on both platforms
         let isVPN = false;
-        
+
         if (netInfo.type === 'vpn') {
           isVPN = true;
         } else if (Platform.OS === 'android' && netInfo.details) {
           // Android: Check details.isVPN if available
           const details = netInfo.details as any;
           isVPN = details.isVPN === true || false;
-        } else if (Platform.OS === 'ios' && netInfo.type === 'other' && netInfo.details) {
+        } else if (
+          Platform.OS === 'ios' &&
+          netInfo.type === 'other' &&
+          netInfo.details
+        ) {
           // iOS: Check details.isVPN if available
           const details = netInfo.details as any;
           isVPN = details.isVPN === true || false;
         }
-        
+
         setIsVPNConnected(isVPN);
-        dbg('VPN Status:', {isVPN, type: netInfo.type, details: netInfo.details});
+        dbg('VPN Status:', {
+          isVPN,
+          type: netInfo.type,
+          details: netInfo.details,
+        });
       } catch (error) {
         dbg('Error checking VPN status:', error);
         setIsVPNConnected(false);
@@ -1497,19 +1615,27 @@ const MobilesPairing = ({navigation}: any) => {
     // Subscribe to network state changes
     const unsubscribe = NetInfo.addEventListener(state => {
       let isVPN = false;
-      
+
       if (state.type === 'vpn') {
         isVPN = true;
       } else if (Platform.OS === 'android' && state.details) {
         const details = state.details as any;
         isVPN = details.isVPN === true || false;
-      } else if (Platform.OS === 'ios' && state.type === 'other' && state.details) {
+      } else if (
+        Platform.OS === 'ios' &&
+        state.type === 'other' &&
+        state.details
+      ) {
         const details = state.details as any;
         isVPN = details.isVPN === true || false;
       }
-      
+
       setIsVPNConnected(isVPN);
-      dbg('VPN Status Changed:', {isVPN, type: state.type, details: state.details});
+      dbg('VPN Status Changed:', {
+        isVPN,
+        type: state.type,
+        details: state.details,
+      });
     });
 
     return () => {
@@ -1523,17 +1649,21 @@ const MobilesPairing = ({navigation}: any) => {
       // Re-check VPN status when screen is focused
       NetInfo.fetch().then(state => {
         let isVPN = false;
-        
+
         if (state.type === 'vpn') {
           isVPN = true;
         } else if (Platform.OS === 'android' && state.details) {
           const details = state.details as any;
           isVPN = details.isVPN === true || false;
-        } else if (Platform.OS === 'ios' && state.type === 'other' && state.details) {
+        } else if (
+          Platform.OS === 'ios' &&
+          state.type === 'other' &&
+          state.details
+        ) {
           const details = state.details as any;
           isVPN = details.isVPN === true || false;
         }
-        
+
         setIsVPNConnected(isVPN);
       });
       return () => {
@@ -2770,11 +2900,10 @@ const MobilesPairing = ({navigation}: any) => {
                     resizeMode="contain"
                   />
                   <View style={styles.vpnWarningTextContainer}>
-                    <Text style={styles.vpnWarningTitle}>
-                      VPN Detected
-                    </Text>
+                    <Text style={styles.vpnWarningTitle}>VPN Detected</Text>
                     <Text style={styles.vpnWarningMessage}>
-                      Please turn off your VPN to ensure a secure local network connection for device pairing.
+                      Please turn off your VPN to ensure a secure local network
+                      connection for device pairing.
                     </Text>
                   </View>
                 </View>
@@ -3898,7 +4027,11 @@ const MobilesPairing = ({navigation}: any) => {
                   )}
                   {isSignPSBT && (
                     <View style={styles.transactionDetails}>
-                      <Text style={[styles.transactionLabel, {fontSize: 14, marginBottom: 8}]}>
+                      <Text
+                        style={[
+                          styles.transactionLabel,
+                          {fontSize: 14, marginBottom: 8},
+                        ]}>
                         PSBT Ready to Sign
                       </Text>
                       {psbtDetails ? (
@@ -3906,75 +4039,148 @@ const MobilesPairing = ({navigation}: any) => {
                           <View
                             style={[
                               styles.transactionItem,
-                              {flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4, paddingVertical: 2},
+                              {
+                                flexDirection: 'row',
+                                justifyContent: 'space-between',
+                                marginBottom: 4,
+                                paddingVertical: 2,
+                              },
                             ]}>
-                            <Text style={[styles.transactionItemLabel, {fontSize: 12}]}>
+                            <Text
+                              style={[
+                                styles.transactionItemLabel,
+                                {fontSize: 12},
+                              ]}>
                               Inputs:
                             </Text>
-                            <Text style={[styles.transactionItemValue, {fontSize: 12}]}>
+                            <Text
+                              style={[
+                                styles.transactionItemValue,
+                                {fontSize: 12},
+                              ]}>
                               {psbtDetails.inputs.length}
                             </Text>
                           </View>
                           <View
                             style={[
                               styles.transactionItem,
-                              {flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4, paddingVertical: 2},
+                              {
+                                flexDirection: 'row',
+                                justifyContent: 'space-between',
+                                marginBottom: 4,
+                                paddingVertical: 2,
+                              },
                             ]}>
-                            <Text style={[styles.transactionItemLabel, {fontSize: 12}]}>
+                            <Text
+                              style={[
+                                styles.transactionItemLabel,
+                                {fontSize: 12},
+                              ]}>
                               Outputs:
                             </Text>
-                            <Text style={[styles.transactionItemValue, {fontSize: 12}]}>
+                            <Text
+                              style={[
+                                styles.transactionItemValue,
+                                {fontSize: 12},
+                              ]}>
                               {psbtDetails.outputs.length}
                             </Text>
                           </View>
-                          <View style={[styles.transactionItem, {flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4, paddingVertical: 2}]}>
-                            <Text style={[styles.transactionItemLabel, {fontSize: 12}]}>
+                          <View
+                            style={[
+                              styles.transactionItem,
+                              {
+                                flexDirection: 'row',
+                                justifyContent: 'space-between',
+                                marginBottom: 4,
+                                paddingVertical: 2,
+                              },
+                            ]}>
+                            <Text
+                              style={[
+                                styles.transactionItemLabel,
+                                {fontSize: 12},
+                              ]}>
                               Total Input:
                             </Text>
-                            <Text style={[styles.transactionItemValue, {fontSize: 13, fontWeight: '600'}]}>
+                            <Text
+                              style={[
+                                styles.transactionItemValue,
+                                {fontSize: 13, fontWeight: '600'},
+                              ]}>
                               {sat2btcStr(psbtDetails.totalInput)} BTC
                             </Text>
                           </View>
-                          <View style={[styles.transactionItem, {flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4, paddingVertical: 2}]}>
-                            <Text style={[styles.transactionItemLabel, {fontSize: 12}]}>
+                          <View
+                            style={[
+                              styles.transactionItem,
+                              {
+                                flexDirection: 'row',
+                                justifyContent: 'space-between',
+                                marginBottom: 4,
+                                paddingVertical: 2,
+                              },
+                            ]}>
+                            <Text
+                              style={[
+                                styles.transactionItemLabel,
+                                {fontSize: 12},
+                              ]}>
                               Total Output:
                             </Text>
-                            <Text style={[styles.transactionItemValue, {fontSize: 13, fontWeight: '600'}]}>
+                            <Text
+                              style={[
+                                styles.transactionItemValue,
+                                {fontSize: 13, fontWeight: '600'},
+                              ]}>
                               {sat2btcStr(psbtDetails.totalOutput)} BTC
                             </Text>
                           </View>
-                          <View style={[styles.transactionItem, {flexDirection: 'row', justifyContent: 'space-between', marginBottom: psbtDetails.derivePath ? 4 : 0, paddingVertical: 2}]}>
-                            <Text style={[styles.transactionItemLabel, {fontSize: 12}]}>
+                          <View
+                            style={[
+                              styles.transactionItem,
+                              {
+                                flexDirection: 'row',
+                                justifyContent: 'space-between',
+                                marginBottom: 0,
+                                paddingVertical: 2,
+                              },
+                            ]}>
+                            <Text
+                              style={[
+                                styles.transactionItemLabel,
+                                {fontSize: 12},
+                              ]}>
                               Fee:
                             </Text>
-                            <Text style={[styles.transactionItemValue, {fontSize: 13, fontWeight: '600'}]}>
+                            <Text
+                              style={[
+                                styles.transactionItemValue,
+                                {fontSize: 13, fontWeight: '600'},
+                              ]}>
                               {sat2btcStr(psbtDetails.fee)} BTC
                             </Text>
                           </View>
-                          {psbtDetails.derivePath && (
-                            <View style={[styles.transactionItem, {marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: theme.colors.border, paddingVertical: 2}]}>
-                              <Text style={[styles.transactionItemLabel, {fontSize: 10, marginBottom: 2}]}>
-                                Derivation Path:
-                              </Text>
-                              <Text
-                                style={[
-                                  styles.transactionItemValue,
-                                  {
-                                    fontFamily:
-                                      Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                                    fontSize: 10,
-                                    textAlign: 'left',
-                                  },
-                                ]}>
-                                {psbtDetails.derivePath}
-                              </Text>
-                            </View>
-                          )}
                           {psbtDetails.derivePaths &&
                             psbtDetails.derivePaths.length > 1 && (
-                              <View style={[styles.transactionItem, {marginTop: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: theme.colors.border, paddingVertical: 2}]}>
-                                <Text style={[styles.transactionItemValue, {fontSize: 10}]}>
-                                  {psbtDetails.derivePaths.length} different paths
+                              <View
+                                style={[
+                                  styles.transactionItem,
+                                  {
+                                    marginTop: 4,
+                                    paddingTop: 4,
+                                    borderTopWidth: 1,
+                                    borderTopColor: theme.colors.border,
+                                    paddingVertical: 2,
+                                  },
+                                ]}>
+                                <Text
+                                  style={[
+                                    styles.transactionItemValue,
+                                    {fontSize: 10},
+                                  ]}>
+                                  {psbtDetails.derivePaths.length} different
+                                  paths
                                 </Text>
                               </View>
                             )}
@@ -4030,7 +4236,9 @@ const MobilesPairing = ({navigation}: any) => {
 
                           {/* Header Text */}
                           <Text style={styles.modalTitle}>
-                            {isSignPSBT ? 'PSBT Co-Signing' : 'Co-Signing Your Transaction'}
+                            {isSignPSBT
+                              ? 'PSBT Co-Signing'
+                              : 'Co-Signing Your Transaction'}
                           </Text>
 
                           {/* Subtext */}

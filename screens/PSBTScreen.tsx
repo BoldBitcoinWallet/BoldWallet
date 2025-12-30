@@ -16,8 +16,8 @@ import {NativeModules} from 'react-native';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {HeaderRightButton, HeaderTitle} from '../components/Header';
-import {PSBTLoader} from './PSBTModal.foss';
-import {dbg, HapticFeedback, getDerivePathForNetwork, isLegacyWallet, generateAllOutputDescriptors} from '../utils';
+import {PSBTLoader} from './PSBTModal';
+import {dbg, HapticFeedback, generateAllOutputDescriptors} from '../utils';
 import {CommonActions, useRoute, RouteProp} from '@react-navigation/native';
 import TransportModeSelector from '../components/TransportModeSelector';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -63,7 +63,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     useState<boolean>(false);
   const [pendingPSBTParams, setPendingPSBTParams] = useState<{
     psbtBase64: string;
-    derivePath: string;
   } | null>(null);
   const [signedPsbt, setSignedPsbt] = useState<string | null>(null);
   const [isSignedPSBTModalVisible, setIsSignedPSBTModalVisible] =
@@ -304,20 +303,11 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   );
 
   // Handle PSBT signing - same logic as WalletHome
+  // Note: The actual signing functions extract derivation paths from PSBT's Bip32Derivation internally
   const handlePSBTSign = useCallback(
-    async (psbtBase64: string, derivePath?: string) => {
-      // Use provided derivation path or default to current address type
-      if (!derivePath) {
-        const keyshareJSON = await EncryptedStorage.getItem('keyshare');
-        if (keyshareJSON) {
-          const keyshare = JSON.parse(keyshareJSON);
-          const currentAddressType = addressType || 'legacy';
-          // Check if this is a legacy wallet (created before migration timestamp)
-          const useLegacyPath = isLegacyWallet(keyshare.created_at);
-          derivePath = getDerivePathForNetwork(network, currentAddressType, useLegacyPath);
-        }
-      }
-      const psbtDerivePath = derivePath || getDerivePathForNetwork(network, 'legacy', true);
+    async (psbtBase64: string, _derivePath?: string) => {
+      // The actual PSBT signing will extract paths from PSBT's Bip32Derivation field
+      // derivePath parameter is kept for API compatibility but not used
 
       // Check if keyshare supports Nostr (has nostr_npub)
       try {
@@ -336,7 +326,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   mode: 'sign_psbt',
                   addressType,
                   psbtBase64,
-                  derivePath: psbtDerivePath,
                 },
               }),
             );
@@ -349,19 +338,19 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       }
 
       // Store params and show transport selector
-      setPendingPSBTParams({psbtBase64, derivePath: psbtDerivePath});
+      setPendingPSBTParams({psbtBase64});
       setTimeout(() => {
         setIsPSBTTransportModalVisible(true);
       }, 300);
     },
-    [network, addressType, navigation],
+    [addressType, navigation],
   );
 
   const navigateToPSBTSigning = useCallback(
     (transport: 'local' | 'nostr') => {
       if (!pendingPSBTParams) return;
 
-      const {psbtBase64, derivePath} = pendingPSBTParams;
+      const {psbtBase64} = pendingPSBTParams;
 
       const routeName =
         transport === 'local' ? 'Devices Pairing' : 'Nostr Connect';
@@ -372,7 +361,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
             mode: 'sign_psbt',
             addressType,
             psbtBase64,
-            derivePath,
           },
         }),
       );

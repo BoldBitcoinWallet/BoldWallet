@@ -197,6 +197,10 @@ func MpcSignPSBT(
 		inputDerivePath = extractedPath
 		Logf("Input %d: Using derivation path from PSBT Bip32Derivation: %s", i, inputDerivePath)
 
+		// Get the pubkey from PSBT's Bip32Derivation (this is what the PSBT expects)
+		psbtPubKeyBytes := input.Bip32Derivation[0].PubKey
+		Logf("Input %d: PSBT Bip32Derivation pubkey: %x", i, psbtPubKeyBytes)
+
 		// Derive the public key from keyshare using GetDerivedPubKey with the path from PSBT
 		// Use the keyshare's pub_key and chaincode to derive the corresponding public key
 		Logf("Input %d: Deriving public key from keyshare - xpub: %s, chaincode: %s, path: %s", i, truncateHex(keyshareData.PubKey), truncateHex(keyshareData.ChainCodeHex), inputDerivePath)
@@ -210,7 +214,15 @@ func MpcSignPSBT(
 		}
 		Logf("Input %d: Derived public key (hex): %s, bytes: %x (length: %d)", i, truncateHex(derivedPubKeyHex), derivedPubKeyBytes, len(derivedPubKeyBytes))
 
-		// Use the derived key for signing
+		// Check if this input belongs to us by comparing derived pubkey with PSBT's pubkey
+		if !bytes.Equal(derivedPubKeyBytes, psbtPubKeyBytes) {
+			Logf("Input %d: ⚠️  SKIPPING SIGNATURE - Pubkey mismatch: derived %x != PSBT %x (path: %s)", i, derivedPubKeyBytes[:min(8, len(derivedPubKeyBytes))], psbtPubKeyBytes[:min(8, len(psbtPubKeyBytes))], inputDerivePath)
+			Logf("Input %d: This input does not belong to our wallet, skipping signature", i)
+			continue // Skip signing this input, but continue with other inputs
+		}
+
+		Logf("Input %d: ✅ Pubkey matches - this input belongs to our wallet, will sign", i)
+		// Use the derived key for signing (which matches PSBT's key)
 		inputPubKeyBytes = derivedPubKeyBytes
 
 		// Create session for this input
@@ -246,17 +258,7 @@ func MpcSignPSBT(
 				Logf("Input %d: Derived pubkey hash: %x", i, pubKeyHash)
 				Logf("Input %d: Derived pubkey: %x", i, inputPubKeyBytes)
 
-				// Check PSBT's Bip32Derivation key if available
-				if len(input.Bip32Derivation) > 0 {
-					psbtPubKeyBytes := input.Bip32Derivation[0].PubKey
-					psbtPubKeyHash := btcutil.Hash160(psbtPubKeyBytes)
-					Logf("Input %d: PSBT Bip32Derivation pubkey: %x", i, psbtPubKeyBytes)
-					Logf("Input %d: PSBT Bip32Derivation pubkey hash: %x", i, psbtPubKeyHash)
-					if bytes.Equal(scriptPubKeyHash, psbtPubKeyHash) {
-						Logf("Input %d: PSBT key matches script, but derived key doesn't - keyshare mismatch?", i)
-					}
-				}
-
+				// Verify the public key hash matches the script (we already verified pubkey ownership above)
 				if !bytes.Equal(scriptPubKeyHash, pubKeyHash) {
 					return "", fmt.Errorf("public key hash mismatch for input %d: script expects %x but got %x (derived from path: %s)", i, scriptPubKeyHash, pubKeyHash, inputDerivePath)
 				}
@@ -321,37 +323,7 @@ func MpcSignPSBT(
 			Logf("Input %d: Derived pubkey hash: %x", i, pubKeyHash)
 			Logf("Input %d: Derived pubkey: %x", i, inputPubKeyBytes)
 
-			// Check PSBT's Bip32Derivation key if available
-			if len(input.Bip32Derivation) > 0 {
-				psbtPubKeyBytes := input.Bip32Derivation[0].PubKey
-				psbtPubKeyHash := btcutil.Hash160(psbtPubKeyBytes)
-				Logf("Input %d: PSBT Bip32Derivation pubkey: %x", i, psbtPubKeyBytes)
-				Logf("Input %d: PSBT Bip32Derivation pubkey hash: %x", i, psbtPubKeyHash)
-
-				// If derived key doesn't match script, but PSBT key does, verify we can derive PSBT key
-				if !bytes.Equal(scriptPubKeyHash, pubKeyHash) && bytes.Equal(scriptPubKeyHash, psbtPubKeyHash) {
-					Logf("Input %d: PSBT key matches script, but derived key doesn't - verifying if PSBT key can be derived from keyshare", i)
-					// Try to derive the PSBT key from our keyshare
-					verifyPubKeyHex, err := GetDerivedPubKey(keyshareData.PubKey, keyshareData.ChainCodeHex, inputDerivePath, false)
-					if err != nil {
-						return "", fmt.Errorf("input %d: failed to verify PSBT key derivation: %w", i, err)
-					}
-					verifyPubKeyBytes, err := hex.DecodeString(verifyPubKeyHex)
-					if err != nil {
-						return "", fmt.Errorf("input %d: failed to decode verified public key: %w", i, err)
-					}
-					if bytes.Equal(verifyPubKeyBytes, psbtPubKeyBytes) {
-						// We can derive it - use the PSBT key
-						Logf("Input %d: Verified PSBT key can be derived from keyshare - using PSBT key", i)
-						inputPubKeyBytes = psbtPubKeyBytes
-						pubKeyHash = psbtPubKeyHash
-					} else {
-						// Cannot derive PSBT key - keyshare mismatch
-						return "", fmt.Errorf("input %d: keyshare mismatch - PSBT key matches script but cannot be derived from keyshare (PSBT key: %x, derived key: %x, path: %s)", i, psbtPubKeyBytes[:min(8, len(psbtPubKeyBytes))], verifyPubKeyBytes[:min(8, len(verifyPubKeyBytes))], inputDerivePath)
-					}
-				}
-			}
-
+			// Verify the public key hash matches the script (we already verified pubkey ownership above)
 			if !bytes.Equal(scriptPubKeyHash, pubKeyHash) {
 				return "", fmt.Errorf("public key hash mismatch for input %d: script expects %x but got %x (derived from path: %s)", i, scriptPubKeyHash, pubKeyHash, inputDerivePath)
 			}
@@ -900,6 +872,10 @@ func runNostrMpcSignPSBTInternal(
 		inputDerivePath = extractedPath
 		Logf("Input %d: Using derivation path from PSBT Bip32Derivation: %s", i, inputDerivePath)
 
+		// Get the pubkey from PSBT's Bip32Derivation (this is what the PSBT expects)
+		psbtPubKeyBytes := input.Bip32Derivation[0].PubKey
+		Logf("Input %d: PSBT Bip32Derivation pubkey: %x", i, psbtPubKeyBytes)
+
 		// Derive the public key from keyshare using GetDerivedPubKey with the path from PSBT
 		// Use the keyshare's pub_key and chaincode to derive the corresponding public key
 		Logf("Input %d: Deriving public key from keyshare - xpub: %s, chaincode: %s, path: %s", i, truncateHex(keyshareData.PubKey), truncateHex(keyshareData.ChainCodeHex), inputDerivePath)
@@ -913,7 +889,15 @@ func runNostrMpcSignPSBTInternal(
 		}
 		Logf("Input %d: Derived public key (hex): %s, bytes: %x (length: %d)", i, truncateHex(derivedPubKeyHex), derivedPubKeyBytes, len(derivedPubKeyBytes))
 
-		// Use the derived key for signing
+		// Check if this input belongs to us by comparing derived pubkey with PSBT's pubkey
+		if !bytes.Equal(derivedPubKeyBytes, psbtPubKeyBytes) {
+			Logf("Input %d: ⚠️  SKIPPING SIGNATURE - Pubkey mismatch: derived %x != PSBT %x (path: %s)", i, derivedPubKeyBytes[:min(8, len(derivedPubKeyBytes))], psbtPubKeyBytes[:min(8, len(psbtPubKeyBytes))], inputDerivePath)
+			Logf("Input %d: This input does not belong to our wallet, skipping signature", i)
+			continue // Skip signing this input, but continue with other inputs
+		}
+
+		Logf("Input %d: ✅ Pubkey matches - this input belongs to our wallet, will sign", i)
+		// Use the derived key for signing (which matches PSBT's key)
 		inputPubKeyBytes = derivedPubKeyBytes
 
 		// Create session for this input
@@ -949,17 +933,7 @@ func runNostrMpcSignPSBTInternal(
 				Logf("Input %d: Derived pubkey hash: %x", i, pubKeyHash)
 				Logf("Input %d: Derived pubkey: %x", i, inputPubKeyBytes)
 
-				// Check PSBT's Bip32Derivation key if available
-				if len(input.Bip32Derivation) > 0 {
-					psbtPubKeyBytes := input.Bip32Derivation[0].PubKey
-					psbtPubKeyHash := btcutil.Hash160(psbtPubKeyBytes)
-					Logf("Input %d: PSBT Bip32Derivation pubkey: %x", i, psbtPubKeyBytes)
-					Logf("Input %d: PSBT Bip32Derivation pubkey hash: %x", i, psbtPubKeyHash)
-					if bytes.Equal(scriptPubKeyHash, psbtPubKeyHash) {
-						Logf("Input %d: PSBT key matches script, but derived key doesn't - keyshare mismatch?", i)
-					}
-				}
-
+				// Verify the public key hash matches the script (we already verified pubkey ownership above)
 				if !bytes.Equal(scriptPubKeyHash, pubKeyHash) {
 					return "", fmt.Errorf("public key hash mismatch for input %d: script expects %x but got %x (derived from path: %s)", i, scriptPubKeyHash, pubKeyHash, inputDerivePath)
 				}
@@ -1024,37 +998,7 @@ func runNostrMpcSignPSBTInternal(
 			Logf("Input %d: Derived pubkey hash: %x", i, pubKeyHash)
 			Logf("Input %d: Derived pubkey: %x", i, inputPubKeyBytes)
 
-			// Check PSBT's Bip32Derivation key if available
-			if len(input.Bip32Derivation) > 0 {
-				psbtPubKeyBytes := input.Bip32Derivation[0].PubKey
-				psbtPubKeyHash := btcutil.Hash160(psbtPubKeyBytes)
-				Logf("Input %d: PSBT Bip32Derivation pubkey: %x", i, psbtPubKeyBytes)
-				Logf("Input %d: PSBT Bip32Derivation pubkey hash: %x", i, psbtPubKeyHash)
-
-				// If derived key doesn't match script, but PSBT key does, verify we can derive PSBT key
-				if !bytes.Equal(scriptPubKeyHash, pubKeyHash) && bytes.Equal(scriptPubKeyHash, psbtPubKeyHash) {
-					Logf("Input %d: PSBT key matches script, but derived key doesn't - verifying if PSBT key can be derived from keyshare", i)
-					// Try to derive the PSBT key from our keyshare
-					verifyPubKeyHex, err := GetDerivedPubKey(keyshareData.PubKey, keyshareData.ChainCodeHex, inputDerivePath, false)
-					if err != nil {
-						return "", fmt.Errorf("input %d: failed to verify PSBT key derivation: %w", i, err)
-					}
-					verifyPubKeyBytes, err := hex.DecodeString(verifyPubKeyHex)
-					if err != nil {
-						return "", fmt.Errorf("input %d: failed to decode verified public key: %w", i, err)
-					}
-					if bytes.Equal(verifyPubKeyBytes, psbtPubKeyBytes) {
-						// We can derive it - use the PSBT key
-						Logf("Input %d: Verified PSBT key can be derived from keyshare - using PSBT key", i)
-						inputPubKeyBytes = psbtPubKeyBytes
-						pubKeyHash = psbtPubKeyHash
-					} else {
-						// Cannot derive PSBT key - keyshare mismatch
-						return "", fmt.Errorf("input %d: keyshare mismatch - PSBT key matches script but cannot be derived from keyshare (PSBT key: %x, derived key: %x, path: %s)", i, psbtPubKeyBytes[:min(8, len(psbtPubKeyBytes))], verifyPubKeyBytes[:min(8, len(verifyPubKeyBytes))], inputDerivePath)
-					}
-				}
-			}
-
+			// Verify the public key hash matches the script (we already verified pubkey ownership above)
 			if !bytes.Equal(scriptPubKeyHash, pubKeyHash) {
 				return "", fmt.Errorf("public key hash mismatch for input %d: script expects %x but got %x (derived from path: %s)", i, scriptPubKeyHash, pubKeyHash, inputDerivePath)
 			}
