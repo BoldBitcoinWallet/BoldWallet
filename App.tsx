@@ -23,6 +23,8 @@ import {
   NativeEventEmitter,
   Platform,
   DeviceEventEmitter,
+  View,
+  StyleSheet,
 } from 'react-native';
 import WalletSettings from './screens/WalletSettings';
 import {NativeModules} from 'react-native';
@@ -313,58 +315,67 @@ const App = () => {
         <ThemeProvider>
           <UserProvider>
             <WalletProvider>
-              <NavigationContainer>
-                <Stack.Navigator
-                  initialRouteName={initialRoute}
-                  screenOptions={{
-                    headerShown: false,
-                  }}>
-                  <Stack.Screen
-                    name="PSBT"
-                    component={PSBTScreen}
-                    options={{
-                      headerShown: true,
-                      headerLeft: () => null,
-                    }}
-                  />
-                  <Stack.Screen
-                    name="Home"
-                    component={WalletHome}
-                    options={{
-                      headerShown: true,
-                      headerLeft: () => null,
-                    }}
-                  />
-                  <Stack.Screen
-                    name="Welcome"
-                    component={ShowcaseScreen}
-                    options={{
-                      headerShown: true,
-                    }}
-                  />
-                  <Stack.Screen
-                    name="Settings"
-                    component={WalletSettings}
-                    options={{
-                      headerShown: true,
-                    }}
-                  />
-                  <Stack.Screen
-                    name="Devices Pairing"
-                    component={MobilesPairing}
-                    options={{
-                      headerShown: true,
-                    }}
-                  />
-                  <Stack.Screen
-                    name="Nostr Connect"
-                    component={MobileNostrPairing}
-                    options={{
-                      headerShown: true,
-                    }}
-                  />
-                </Stack.Navigator>
-              </NavigationContainer>
+              <View style={styles.navigationContainer}>
+                <NavigationContainer>
+                  <Stack.Navigator
+                    initialRouteName={initialRoute}
+                    screenOptions={{
+                      headerShown: false,
+                      contentStyle: {backgroundColor: '#ffffff'},
+                    }}>
+                    <Stack.Screen
+                      name="PSBT"
+                      component={PSBTScreen}
+                      options={{
+                        headerShown: true,
+                        headerLeft: () => null,
+                        contentStyle: {backgroundColor: '#ffffff'},
+                      }}
+                    />
+                    <Stack.Screen
+                      name="Home"
+                      component={WalletHome}
+                      options={{
+                        headerShown: true,
+                        headerLeft: () => null,
+                        contentStyle: {backgroundColor: '#ffffff'},
+                      }}
+                    />
+                    <Stack.Screen
+                      name="Welcome"
+                      component={ShowcaseScreen}
+                      options={{
+                        headerShown: true,
+                        contentStyle: {backgroundColor: '#ffffff'},
+                      }}
+                    />
+                    <Stack.Screen
+                      name="Settings"
+                      component={WalletSettings}
+                      options={{
+                        headerShown: true,
+                        contentStyle: {backgroundColor: '#ffffff'},
+                      }}
+                    />
+                    <Stack.Screen
+                      name="Devices Pairing"
+                      component={MobilesPairing}
+                      options={{
+                        headerShown: true,
+                        contentStyle: {backgroundColor: '#ffffff'},
+                      }}
+                    />
+                    <Stack.Screen
+                      name="Nostr Connect"
+                      component={MobileNostrPairing}
+                      options={{
+                        headerShown: true,
+                        contentStyle: {backgroundColor: '#ffffff'},
+                      }}
+                    />
+                  </Stack.Navigator>
+                </NavigationContainer>
+              </View>
             </WalletProvider>
           </UserProvider>
         </ThemeProvider>
@@ -372,5 +383,12 @@ const App = () => {
     </ErrorBoundary>
   );
 };
+
+const styles = StyleSheet.create({
+  navigationContainer: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+  },
+});
 
 export default App;
