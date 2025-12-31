@@ -6,7 +6,10 @@ react {
     autolinkLibrariesWithApp()
 }
 
-def enableProguardInReleaseBuilds = false
+// Enable R8/ProGuard for release builds
+// Set to false if you encounter runtime issues after enabling
+// Note: Disabling this will prevent generating mapping.txt for Play Console
+def enableProguardInReleaseBuilds = true
 
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
@@ -83,7 +86,7 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            shrinkResources false
+            shrinkResources enableProguardInReleaseBuilds
             signingConfig signingConfigs.release
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
