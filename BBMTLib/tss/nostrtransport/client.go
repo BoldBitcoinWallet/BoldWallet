@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -285,13 +286,17 @@ func (c *Client) Publish(ctx context.Context, event *Event) error {
 
 	fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - signed event, PubKey (hex)=%s, tags=%v\n", event.PubKey, event.Tags)
 
-	// Use all valid relays, not just initially connected ones
+	// Resiliency: Use ALL valid relays (not just initially connected ones)
 	// The pool will handle connections - if a relay isn't connected yet, it will try to connect
 	// This ensures we publish to all relays, including those that connected in background
+	// This is critical for resiliency across multiple relays
 	relaysToUse := c.validRelays
 	if len(relaysToUse) == 0 {
 		// Fallback to urls if validRelays not set (backward compatibility)
 		relaysToUse = c.urls
+	}
+	if len(relaysToUse) == 0 {
+		return errors.New("no relays configured for publishing")
 	}
 	results := c.pool.PublishMany(ctx, relaysToUse, *event)
 	totalRelays := len(relaysToUse)
@@ -301,6 +306,18 @@ func (c *Client) Publish(ctx context.Context, event *Event) error {
 	errorCh := make(chan error, 1)
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				errMsg := fmt.Sprintf("PANIC in Client.Publish goroutine: %v", r)
+				fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+				fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+				select {
+				case errorCh <- fmt.Errorf("internal error (panic): %v", r):
+				default:
+				}
+			}
+		}()
+
 		var successCount int
 		var failureCount int
 		var allErrors []error
@@ -353,13 +370,20 @@ func (c *Client) Publish(ctx context.Context, event *Event) error {
 					}
 					return
 				}
+				// Safely extract relay URL to avoid nil pointer dereference
+				var relayURL string
+				if res.Relay != nil {
+					relayURL = res.Relay.URL
+				} else {
+					relayURL = "<unknown>"
+				}
 				if res.Error != nil {
 					failureCount++
 					allErrors = append(allErrors, res.Error)
-					fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - relay %s error: %v (%d/%d failed)\n", res.Relay, res.Error, failureCount, totalRelays)
+					fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - relay %s error: %v (%d/%d failed)\n", relayURL, res.Error, failureCount, totalRelays)
 				} else {
 					successCount++
-					fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - relay %s success (%d/%d succeeded)\n", res.Relay, successCount, totalRelays)
+					fmt.Fprintf(os.Stderr, "BBMTLog: Client.Publish - relay %s success (%d/%d succeeded)\n", relayURL, successCount, totalRelays)
 					// Return immediately on first success (non-blocking)
 					if successCount == 1 {
 						select {
@@ -532,6 +556,9 @@ func (c *Client) Subscribe(ctx context.Context, filter Filter) (<-chan *Event, e
 }
 
 // PublishWrap publishes a pre-signed gift wrap event (kind:1059)
+// Resiliency policy: Publishes to ALL valid relays in parallel, returns immediately on first success,
+// continues publishing to other relays in background. Only fails if ALL relays fail.
+// This ensures co-signing messages are delivered even if some relays are down or slow.
 func (c *Client) PublishWrap(ctx context.Context, wrap *Event) error {
 	if wrap == nil {
 		return errors.New("nil wrap event")
@@ -553,22 +580,40 @@ func (c *Client) PublishWrap(ctx context.Context, wrap *Event) error {
 		wrap.CreatedAt = nostr.Now()
 	}
 
-	// Use all valid relays, not just initially connected ones
+	// Resiliency: Use ALL valid relays (not just initially connected ones)
 	// The pool will handle connections - if a relay isn't connected yet, it will try to connect
 	// This ensures we publish to all relays, including those that connected in background
+	// This is critical for co-signing resiliency across multiple relays
 	relaysToUse := c.validRelays
 	if len(relaysToUse) == 0 {
 		// Fallback to urls if validRelays not set (backward compatibility)
 		relaysToUse = c.urls
 	}
+	if len(relaysToUse) == 0 {
+		return errors.New("no relays configured for publishing")
+	}
 	results := c.pool.PublishMany(ctx, relaysToUse, *wrap)
 	totalRelays := len(relaysToUse)
 
-	// Track results in background goroutine - return immediately on first success
+	// Resiliency: Track results in background goroutine - return immediately on first success
+	// This allows co-signing to proceed quickly while other relays continue publishing in background
+	// Only fails if ALL relays fail, ensuring maximum resiliency
 	successCh := make(chan bool, 1)
 	errorCh := make(chan error, 1)
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				errMsg := fmt.Sprintf("PANIC in Client.PublishWrap goroutine: %v", r)
+				fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+				fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+				select {
+				case errorCh <- fmt.Errorf("internal error (panic): %v", r):
+				default:
+				}
+			}
+		}()
+
 		var successCount int
 		var failureCount int
 		var allErrors []error
@@ -576,9 +621,9 @@ func (c *Client) PublishWrap(ctx context.Context, wrap *Event) error {
 		for {
 			select {
 			case <-ctx.Done():
-				// Context cancelled - check if we had any successes
+				// Context cancelled - check if we had any successes (resilient: partial success is still success)
 				if successCount > 0 {
-					fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - context cancelled but %d/%d relays succeeded\n", successCount, totalRelays)
+					fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - context cancelled but %d/%d relays succeeded (resilient)\n", successCount, totalRelays)
 					select {
 					case successCh <- true:
 					default:
@@ -601,6 +646,7 @@ func (c *Client) PublishWrap(ctx context.Context, wrap *Event) error {
 				if !ok {
 					// All relays have responded
 					if successCount > 0 {
+						// Resilient: At least one relay succeeded, operation is successful
 						if failureCount > 0 {
 							fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - %d/%d relays succeeded, %d failed (resilient)\n", successCount, totalRelays, failureCount)
 						} else {
@@ -612,7 +658,7 @@ func (c *Client) PublishWrap(ctx context.Context, wrap *Event) error {
 						default:
 						}
 					} else {
-						// All relays failed
+						// All relays failed - this is the only failure case
 						if len(allErrors) > 0 {
 							fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - all %d relays failed\n", totalRelays)
 							select {
@@ -628,14 +674,22 @@ func (c *Client) PublishWrap(ctx context.Context, wrap *Event) error {
 					}
 					return
 				}
+				// Safely extract relay URL to avoid nil pointer dereference
+				var relayURL string
+				if res.Relay != nil {
+					relayURL = res.Relay.URL
+				} else {
+					relayURL = "<unknown>"
+				}
 				if res.Error != nil {
 					failureCount++
 					allErrors = append(allErrors, res.Error)
-					fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - relay %s error: %v (%d/%d failed)\n", res.Relay, res.Error, failureCount, totalRelays)
+					fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - relay %s error: %v (%d/%d failed)\n", relayURL, res.Error, failureCount, totalRelays)
 				} else {
 					successCount++
-					fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - relay %s success (%d/%d succeeded)\n", res.Relay, successCount, totalRelays)
-					// Return immediately on first success (non-blocking)
+					fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - relay %s success (%d/%d succeeded)\n", relayURL, successCount, totalRelays)
+					// Resilient: Return immediately on first success (non-blocking)
+					// Other relays continue publishing in background for redundancy
 					if successCount == 1 {
 						select {
 						case successCh <- true:
@@ -648,17 +702,17 @@ func (c *Client) PublishWrap(ctx context.Context, wrap *Event) error {
 		}
 	}()
 
-	// Wait for first success or all failures
+	// Wait for first success or all failures (resiliency: succeed if ANY relay succeeds)
 	select {
 	case <-successCh:
-		// At least one relay succeeded - return immediately
-		// Other relays continue publishing in background
+		// Resilient: At least one relay succeeded - return immediately
+		// Other relays continue publishing in background for redundancy
 		return nil
 	case err := <-errorCh:
-		// All relays failed
+		// Only fails if ALL relays failed
 		return err
 	case <-ctx.Done():
-		// Context cancelled - check if we got any success
+		// Context cancelled - check if we got any success (resilient: partial success is still success)
 		select {
 		case <-successCh:
 			return nil

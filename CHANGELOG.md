@@ -1,5 +1,41 @@
 # Changelog
 
+## [2.1.6] - 2025-01-XX
+
+### Added
+- **Balance Card in Send Modal**: New prominent balance card displayed above amount input in Send Bitcoin modal
+  - Shows available balance in BTC and fiat currency
+  - Integrated "Max" button for quick balance selection
+  - Clean, professional UI with card styling
+- **Smart Balance Check for Send Button**: Automatic balance refresh when clicking Send with zero balance
+  - Prevents modal from opening prematurely when balance hasn't loaded
+  - Shows loading spinner on Send button during balance check
+  - Automatically opens modal if balance is found, or shows alert if truly zero
+  - Prevents multiple rapid clicks with button disable state
+  - 5-second timeout with graceful error handling
+
+### Fixed
+- **Co-signing Go Panic Recovery**: Fixed potential panic crashes in Nostr transport layer during co-signing
+  - Added panic recovery with stack trace logging in `Client.Publish` goroutine
+  - Improved nil pointer safety when extracting relay URLs
+  - Better error messages for debugging relay connection issues
+  - Enhanced resiliency for co-signing message delivery across multiple relays
+- **Send Button Balance Race Condition**: Fixed issue where Send button would show "Insufficient Balance" alert even when balance was still loading
+  - Eliminates flickering and need to click Send button multiple times
+  - Better UX with immediate feedback during balance check
+
+### Changed
+- **Send Modal UI Enhancement**: Improved balance visibility and Max button placement
+  - Balance card replaces inline "Max" text link
+  - More prominent balance display with better visual hierarchy
+  - Updated QR scanner icon to use scan-icon.png for consistency
+
+### Technical Details
+- **WalletHome.tsx**: Added `checkBalanceForSend()` function for dedicated balance fetching
+- **SendBitcoinModal.tsx**: New balance card component with integrated Max button
+- **client.go**: Enhanced panic recovery and error handling in Nostr publish operations
+- **Error Handling**: Improved timeout and error recovery for balance checks
+
 ## [Unreleased]
 
 ### Added

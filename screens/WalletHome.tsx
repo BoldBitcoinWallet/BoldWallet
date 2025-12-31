@@ -11,6 +11,7 @@ import {
   Modal,
   DeviceEventEmitter,
   Linking,
+  ActivityIndicator,
 } from 'react-native';
 import QRScanner from '../components/QRScanner';
 import {
@@ -119,6 +120,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     balance: 0,
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isCheckingBalanceForSend, setIsCheckingBalanceForSend] = useState(false);
   const [isCurrencySelectorVisible, setIsCurrencySelectorVisible] =
     useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState('');
@@ -407,6 +409,67 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   useEffect(() => {
     fetchDataRef.current = fetchData;
   }, [fetchData]);
+
+  // Function to check balance specifically for send button
+  const checkBalanceForSend = useCallback(async (): Promise<number> => {
+    try {
+      dbg('checkBalanceForSend: Starting balance check...');
+      
+      const addr = userActiveAddress || address || (await LocalCache.getItem('currentAddress'));
+      const baseApi = apiBase || (await LocalCache.getItem('api'));
+      
+      if (!addr || !baseApi) {
+        dbg('checkBalanceForSend: Missing wallet address or baseApi');
+        return 0;
+      }
+
+      // Set up API URL
+      const cleanBaseApi = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
+      const apiUrl = `${cleanBaseApi}/api`;
+
+      // Ensure native module has correct settings
+      await BBMTLibNativeModule.setAPI(network, apiUrl);
+
+      // Set up timeout (5 seconds)
+      const timeoutPromise = new Promise<number>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error('Balance check timed out'));
+        }, 5000);
+      });
+
+      // Fetch balance only (force fresh fetch)
+      const balancePromise = WalletService.getInstance().getWalletBalance(
+        addr,
+        btcRate,
+        _pendingSent,
+        true, // force fresh fetch
+      );
+
+      const balanceResult = await Promise.race([
+        balancePromise,
+        timeoutPromise,
+      ]);
+
+      if (balanceResult && typeof balanceResult === 'object' && 'btc' in balanceResult) {
+        const newBalance = parseFloat((balanceResult as any).btc || '0');
+        dbg('checkBalanceForSend: Balance fetched:', newBalance);
+        
+        // Update balance state
+        setBalanceBTC((balanceResult as any).btc || '0.00000000');
+        if (btcRate > 0) {
+          const fiatBalance = Number((balanceResult as any).btc) * btcRate;
+          setBalanceFiat(fiatBalance.toFixed(2));
+        }
+        
+        return newBalance;
+      }
+      
+      return 0;
+    } catch (error: any) {
+      dbg('checkBalanceForSend: Error checking balance:', error);
+      return 0;
+    }
+  }, [userActiveAddress, address, apiBase, network, btcRate, _pendingSent]);
 
   // Function to update address type modal with new network addresses
   const updateAddressTypeModal = useCallback(
@@ -1899,26 +1962,56 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           </View>
           <View style={styles.actions}>
             <TouchableOpacity
-              style={[styles.actionButton, styles.sendButton, styles.flexOneMinWidthZero, styles.partyGap]}
-              onPress={() => {
+              style={[
+                styles.actionButton,
+                styles.sendButton,
+                styles.flexOneMinWidthZero,
+                styles.partyGap,
+                isCheckingBalanceForSend && {opacity: 0.6},
+              ]}
+              onPress={async () => {
                 HapticFeedback.medium();
                 // Check if balance is 0 or empty
                 const balance = parseFloat(balanceBTC || '0');
                 if (balance <= 0) {
-                  Alert.alert(
-                    'Insufficient Balance',
-                    "You don't have any satoshis to send.",
-                  );
+                  // Balance might not be loaded yet, check it
+                  setIsCheckingBalanceForSend(true);
+                  try {
+                    const newBalance = await checkBalanceForSend();
+                    if (newBalance > 0) {
+                      // Balance found, open modal
+                      setIsSendModalVisible(true);
+                    } else {
+                      // Still zero, show alert
+                      Alert.alert(
+                        'Insufficient Balance',
+                        "You don't have any satoshis to send.",
+                      );
+                    }
+                  } catch (error) {
+                    dbg('Error checking balance for send:', error);
+                    // On error, just re-enable button and let user retry
+                  } finally {
+                    setIsCheckingBalanceForSend(false);
+                  }
                   return;
                 }
                 setIsSendModalVisible(true);
-              }}>
-              <Image
-                source={require('../assets/send-icon.png')}
-                style={styles.actionButtonIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.sendButtonText}>Send</Text>
+              }}
+              disabled={isCheckingBalanceForSend}
+              activeOpacity={0.7}>
+              {isCheckingBalanceForSend ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Image
+                    source={require('../assets/send-icon.png')}
+                    style={styles.actionButtonIcon}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.sendButtonText}>Send</Text>
+                </>
+              )}
             </TouchableOpacity>
             {/* Scan QR button replaces lock button in action row */}
             <TouchableOpacity
