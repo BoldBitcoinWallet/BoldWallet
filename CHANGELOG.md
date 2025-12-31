@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.1.6] - 2025-01-XX
+## [2.1.6] - 2025-12-31
 
 ### Added
 - **Balance Card in Send Modal**: New prominent balance card displayed above amount input in Send Bitcoin modal
