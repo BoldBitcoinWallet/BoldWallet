@@ -204,6 +204,53 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       marginBottom: 10,
       textDecorationLine: 'underline',
     },
+    balanceCard: {
+      backgroundColor: '#f8f9fa',
+      borderRadius: 10,
+      padding: 14,
+      marginBottom: 16,
+      borderWidth: 1,
+      borderColor: theme.colors.secondary || '#e0e0e0',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    balanceCardLeft: {
+      flex: 1,
+    },
+    balanceCardLabel: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: '#7f8c8d',
+      marginBottom: 4,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    balanceCardBtc: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: theme.colors.text,
+      marginBottom: 2,
+    },
+    balanceCardFiat: {
+      fontSize: 13,
+      color: '#7f8c8d',
+      fontWeight: '500',
+    },
+    balanceCardMaxButton: {
+      backgroundColor: theme.colors.accent,
+      paddingVertical: 8,
+      paddingHorizontal: 16,
+      borderRadius: 8,
+      minWidth: 70,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    balanceCardMaxButtonText: {
+      color: '#fff',
+      fontSize: 14,
+      fontWeight: 'bold',
+    },
     inputContainer: {
       marginBottom: 0,
     },
@@ -717,22 +764,35 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     }}
                     style={styles.qrIconContainer}>
                     <Image
-                      source={require('../assets/qr-icon.png')}
+                      source={require('../assets/scan-icon.png')}
                       style={styles.iconImage}
                       resizeMode="contain"
                     />
                   </TouchableOpacity>
                 </View>
 
-                <View style={styles.inputContainer}>
-                  <View style={styles.labelContainer}>
-                    <Text style={styles.inputLabel}>Amount in BTC (₿)</Text>
-                    <TouchableOpacity
-                      onPress={handleMaxClick}
-                      activeOpacity={0.7}>
-                      <Text style={styles.maxText}>Max</Text>
-                    </TouchableOpacity>
+                {/* Balance Card */}
+                <View style={styles.balanceCard}>
+                  <View style={styles.balanceCardLeft}>
+                    <Text style={styles.balanceCardLabel}>Available Balance</Text>
+                    <Text style={styles.balanceCardBtc}>
+                      {walletBalance.toFixed(8)} BTC
+                    </Text>
+                    <Text style={styles.balanceCardFiat}>
+                      ~{selectedCurrency}{' '}
+                      {formatUSD(walletBalance.times(btcToFiatRate).toNumber())}
+                    </Text>
                   </View>
+                  <TouchableOpacity
+                    onPress={handleMaxClick}
+                    style={styles.balanceCardMaxButton}
+                    activeOpacity={0.8}>
+                    <Text style={styles.balanceCardMaxButtonText}>Max</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputLabel}>Amount in BTC (₿)</Text>
                   <TextInput
                     style={[
                       styles.input,
