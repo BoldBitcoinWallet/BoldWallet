@@ -26,6 +26,7 @@ RUN curl -LO https://go.dev/dl/go1.24.2.linux-amd64.tar.gz \
 ENV PATH="/usr/local/go/bin:/usr/local/bin:${PATH}"
 ENV GOROOT="/usr/local/go"
 ENV GOPATH="/root/go"
+ENV PATH="/root/go/bin:${PATH}"
 
 # Install Android SDK (cached unless SDK version changes)
 RUN curl -LO https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip \
@@ -42,8 +43,10 @@ RUN yes | /android-sdk/cmdline-tools/bin/sdkmanager --sdk_root=$ANDROID_HOME \
     && rm -rf $ANDROID_HOME/.android
 
 # Install gomobile (cached unless version changes)
-RUN go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20250408133729-978277e7eaf7 \
-    && gomobile init
+# Ensure GOPATH/bin directory exists and add to PATH for this RUN
+RUN mkdir -p /root/go/bin \
+    && go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20250408133729-978277e7eaf7 \
+    && /root/go/bin/gomobile init
 
 # Build stage
 FROM base AS builder
