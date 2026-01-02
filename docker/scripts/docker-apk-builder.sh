@@ -2,6 +2,13 @@
 # Linux - Ubuntu Tested
 set -e
 
+# Get the project root directory (parent of docker/scripts/)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# Change to project root for docker build context
+cd "$PROJECT_ROOT"
+
 GIT_REF=""
 FDROID_BUILD=false
 VERBOSE=false
@@ -69,8 +76,9 @@ IMAGE_NAME=boldwallet-apk-exporter
 CONTAINER_NAME=temp-boldwallet
 APK_NAME=app-release.apk
 # Use absolute path to avoid issues with sudo and working directory
-OUTPUT_PATH=$(pwd)/$APK_NAME
-MAPPING_OUTPUT=$(pwd)/mapping.txt
+OUTPUT_PATH="$PROJECT_ROOT/$APK_NAME"
+MAPPING_OUTPUT="$PROJECT_ROOT/mapping.txt"
+BUILD_LOG="$PROJECT_ROOT/build.log"
 
 # Show build configuration
 echo "=== Docker APK Builder ==="
@@ -138,12 +146,12 @@ if [ "$FDROID_BUILD" = true ]; then
   echo "[*] Building fdroid-patched Docker image (with BuildKit cache)..."
   if [ "$VERBOSE" = true ]; then
     echo "[*] Verbose mode: showing build output on CLI and saving to build.log"
-    if docker build --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee build.log; then
+    if docker build --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee "$BUILD_LOG"; then
       BUILD_SUCCESS=true
     fi
   else
     echo "[*] Build logs are being saved to build.log (use --verbose to see output)"
-    if docker build --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > build.log 2>&1; then
+    if docker build --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > "$BUILD_LOG" 2>&1; then
       BUILD_SUCCESS=true
     fi
   fi
@@ -151,12 +159,12 @@ else
   echo "[*] Building Docker image (with BuildKit cache)..."
   if [ "$VERBOSE" = true ]; then
     echo "[*] Verbose mode: showing build output on CLI and saving to build.log"
-    if docker build --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee build.log; then
+    if docker build --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee "$BUILD_LOG"; then
       BUILD_SUCCESS=true
     fi
   else
     echo "[*] Build logs are being saved to build.log (use --verbose to see output)"
-    if docker build --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > build.log 2>&1; then
+    if docker build --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > "$BUILD_LOG" 2>&1; then
       BUILD_SUCCESS=true
     fi
   fi
@@ -167,7 +175,7 @@ if [ "$BUILD_SUCCESS" = false ]; then
   echo ""
   echo "[*] ❌ Build failed!"
   if [ "$VERBOSE" = false ]; then
-    echo "[*] Check build.log for details: tail -f build.log"
+    echo "[*] Check build.log for details: tail -f $BUILD_LOG"
   fi
   exit 1
 fi

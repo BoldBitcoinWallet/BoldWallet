@@ -10,11 +10,15 @@ run_diagnostic() {
   docker run --rm --entrypoint sh $IMAGE_NAME -c "$2" 2>&1 || echo "  (Command failed or no output)"
 }
 
+# Get the project root directory (parent of docker/scripts/)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
 IMAGE_NAME=boldwallet-apk-exporter
 CONTAINER_NAME=temp-boldwallet-extract
 APK_NAME=app-release.apk
 # Use absolute path to avoid issues with sudo and working directory
-OUTPUT_PATH=$(pwd)/$APK_NAME
+OUTPUT_PATH="$PROJECT_ROOT/$APK_NAME"
 
 echo "[*] Extracting APK from Docker image: $IMAGE_NAME"
 
@@ -129,7 +133,7 @@ fi
 
 # Copy mapping file if it exists
 MAPPING_SOURCE="/BoldWallet/android/app/build/outputs/mapping/release/mapping.txt"
-MAPPING_OUTPUT="$(pwd)/mapping.txt"
+MAPPING_OUTPUT="$PROJECT_ROOT/mapping.txt"
 if docker cp $CONTAINER_NAME:$MAPPING_SOURCE $MAPPING_OUTPUT 2>/dev/null; then
   chmod 644 "$MAPPING_OUTPUT"
   echo "[*] ✅ Mapping file extracted: $MAPPING_OUTPUT"
