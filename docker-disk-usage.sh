@@ -15,41 +15,6 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# Function to format bytes to human readable
-format_size() {
-  local bytes=$1
-  if [ -z "$bytes" ] || [ "$bytes" -eq 0 ]; then
-    echo "0 B"
-    return
-  fi
-  
-  local kb=$((bytes / 1024))
-  local mb=$((kb / 1024))
-  local gb=$((mb / 1024))
-  
-  if [ $gb -gt 0 ]; then
-    printf "%.2f GB" $(echo "scale=2; $bytes / 1073741824" | bc)
-  elif [ $mb -gt 0 ]; then
-    printf "%.2f MB" $(echo "scale=2; $bytes / 1048576" | bc)
-  elif [ $kb -gt 0 ]; then
-    printf "%.2f KB" $(echo "scale=2; $bytes / 1024" | bc)
-  else
-    echo "${bytes} B"
-  fi
-}
-
-# Function to get size in bytes (for calculations)
-get_size_bytes() {
-  local size_str="$1"
-  # Remove spaces and convert to bytes
-  echo "$size_str" | awk '{
-    if ($0 ~ /GB/) { print $1 * 1073741824 }
-    else if ($0 ~ /MB/) { print $1 * 1048576 }
-    else if ($0 ~ /KB/) { print $1 * 1024 }
-    else { print $1 }
-  }'
-}
-
 echo -e "${BLUE}=== Docker Disk Usage for BoldWallet Builds ===${NC}"
 echo ""
 
@@ -66,33 +31,14 @@ echo ""
 
 # BoldWallet Images
 echo -e "${CYAN}--- BoldWallet Images ---${NC}"
-images=$(docker images --format "{{.ID}} {{.Repository}}:{{.Tag}} {{.Size}}" | grep "$IMAGE_NAME" || true)
+images=$(docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.Size}}\t{{.CreatedAt}}" | grep -E "(REPOSITORY|$IMAGE_NAME)" || true)
 
 if [ -n "$images" ]; then
-  total_size=0
-  image_count=0
-  
-  while IFS= read -r line; do
-    if [ -n "$line" ]; then
-      image_id=$(echo "$line" | awk '{print $1}')
-      image_name=$(echo "$line" | awk '{print $2}')
-      image_size=$(echo "$line" | awk '{for(i=3;i<=NF;i++) printf "%s ", $i; print ""}' | sed 's/ $//')
-      
-      echo -e "  ${GREEN}$image_name${NC}"
-      echo "    ID: $image_id"
-      echo "    Size: $image_size"
-      echo ""
-      
-      image_count=$((image_count + 1))
-      # Add to total (approximate)
-      size_bytes=$(get_size_bytes "$image_size")
-      total_size=$((total_size + size_bytes))
-    fi
-  done <<< "$images"
-  
-  if [ $image_count -gt 0 ]; then
-    total_formatted=$(format_size $total_size)
-    echo -e "  ${YELLOW}Total: $image_count image(s), ~$total_formatted${NC}"
+  echo "$images" | sed 's/^/  /'
+  image_count=$(docker images --format "{{.Repository}}" | grep -c "^${IMAGE_NAME}$" || echo "0")
+  if [ "$image_count" -gt 0 ]; then
+    echo ""
+    echo -e "  ${YELLOW}Found $image_count image(s)${NC}"
   fi
 else
   echo "  No images found matching: $IMAGE_NAME"
@@ -101,32 +47,14 @@ echo ""
 
 # BoldWallet Containers
 echo -e "${CYAN}--- BoldWallet Containers ---${NC}"
-containers=$(docker ps -a --filter "name=$CONTAINER_NAME_PATTERN" --format "{{.ID}} {{.Names}} {{.Size}}" 2>/dev/null || true)
+containers=$(docker ps -a --filter "name=$CONTAINER_NAME_PATTERN" --format "table {{.Names}}\t{{.ID}}\t{{.Status}}\t{{.Size}}" 2>/dev/null || true)
 
 if [ -n "$containers" ]; then
-  container_count=0
-  total_container_size=0
-  
-  while IFS= read -r line; do
-    if [ -n "$line" ]; then
-      container_id=$(echo "$line" | awk '{print $1}')
-      container_name=$(echo "$line" | awk '{print $2}')
-      container_size=$(echo "$line" | awk '{for(i=3;i<=NF;i++) printf "%s ", $i; print ""}' | sed 's/ $//')
-      
-      echo -e "  ${GREEN}$container_name${NC}"
-      echo "    ID: $container_id"
-      echo "    Size: $container_size"
-      echo ""
-      
-      container_count=$((container_count + 1))
-      size_bytes=$(get_size_bytes "$container_size")
-      total_container_size=$((total_container_size + size_bytes))
-    fi
-  done <<< "$containers"
-  
-  if [ $container_count -gt 0 ]; then
-    total_formatted=$(format_size $total_container_size)
-    echo -e "  ${YELLOW}Total: $container_count container(s), ~$total_formatted${NC}"
+  echo "$containers" | sed 's/^/  /'
+  container_count=$(docker ps -a --filter "name=$CONTAINER_NAME_PATTERN" --format "{{.Names}}" 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$container_count" -gt 0 ]; then
+    echo ""
+    echo -e "  ${YELLOW}Found $container_count container(s)${NC}"
   fi
 else
   echo "  No containers found matching pattern: $CONTAINER_NAME_PATTERN"
