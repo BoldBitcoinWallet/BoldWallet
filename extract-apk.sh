@@ -4,6 +4,12 @@
 
 set -e
 
+# Function to run diagnostic commands (don't fail on error)
+run_diagnostic() {
+  echo "[*] $1"
+  docker run --rm --entrypoint sh $IMAGE_NAME -c "$2" 2>&1 || echo "  (Command failed or no output)"
+}
+
 IMAGE_NAME=boldwallet-apk-exporter
 CONTAINER_NAME=temp-boldwallet-extract
 APK_NAME=app-release.apk
@@ -28,17 +34,59 @@ fi
 echo "[*] Creating temporary container..."
 docker create --name $CONTAINER_NAME $IMAGE_NAME
 
-echo "[*] Copying APK to host..."
-# Copy APK from container
-if docker cp $CONTAINER_NAME:/BoldWallet/android/app/build/outputs/apk/release/$APK_NAME $OUTPUT_PATH 2>/dev/null; then
-  chmod 644 "$OUTPUT_PATH"
-  echo "[*] ✅ APK extracted successfully: $OUTPUT_PATH"
-  ls -lh "$OUTPUT_PATH"
-else
-  echo "[*] ❌ Error: Failed to copy APK from container"
-  echo "[*] Checking container contents..."
-  docker cp $CONTAINER_NAME:/BoldWallet/android/app/build/outputs/apk/release/ ./apk-check/ 2>/dev/null || true
-  ls -la ./apk-check/ 2>/dev/null || echo "  (Could not list APK directory)"
+echo "[*] Checking container contents..."
+# First, let's see what's actually in the container
+echo "[*] Searching for APK files in container..."
+docker cp $CONTAINER_NAME:/BoldWallet/ ./container-contents/ 2>/dev/null || true
+
+# Try to find APK in various possible locations
+APK_PATHS=(
+  "/BoldWallet/android/app/build/outputs/apk/release/$APK_NAME"
+  "/BoldWallet/android/app/build/outputs/apk/release/app-release-unsigned.apk"
+  "/BoldWallet/android/app/build/outputs/apk/release/app-release.apk"
+  "/app-release.apk"
+)
+
+APK_FOUND=false
+for APK_PATH in "${APK_PATHS[@]}"; do
+  echo "[*] Trying: $APK_PATH"
+  if docker cp $CONTAINER_NAME:$APK_PATH $OUTPUT_PATH 2>/dev/null; then
+    if [ -f "$OUTPUT_PATH" ] && [ -s "$OUTPUT_PATH" ]; then
+      chmod 644 "$OUTPUT_PATH"
+      echo "[*] ✅ APK extracted successfully from: $APK_PATH"
+      ls -lh "$OUTPUT_PATH"
+      APK_FOUND=true
+      break
+    else
+      rm -f "$OUTPUT_PATH"
+    fi
+  fi
+done
+
+if [ "$APK_FOUND" = false ]; then
+  echo ""
+  echo "[*] ❌ Error: APK not found in container"
+  echo "[*] Running diagnostics..."
+  echo ""
+  
+  run_diagnostic "Searching for all APK files:" "find /BoldWallet -name '*.apk' -type f 2>/dev/null | head -20"
+  
+  run_diagnostic "Checking build outputs directory:" "ls -laR /BoldWallet/android/app/build/outputs/ 2>/dev/null | head -30"
+  
+  run_diagnostic "Checking if android directory exists:" "ls -la /BoldWallet/android/ 2>/dev/null | head -20"
+  
+  run_diagnostic "Checking working directory structure:" "ls -la /BoldWallet/ | head -20"
+  
+  echo ""
+  echo "[*] Possible issues:"
+  echo "  1. The build may have failed silently"
+  echo "  2. The APK might be in a different location"
+  echo "  3. Check the build logs for errors"
+  echo ""
+  echo "[*] You can also manually inspect the container:"
+  echo "  docker run --rm -it --entrypoint sh $IMAGE_NAME"
+  echo ""
+  
   docker rm $CONTAINER_NAME
   exit 1
 fi
@@ -53,8 +101,9 @@ else
   echo "[*] Note: Mapping file not found (this is OK if R8/ProGuard is disabled)"
 fi
 
-echo "[*] Cleaning up..."
+echo "[*] Cleaning up container and temp files..."
 docker rm $CONTAINER_NAME
+rm -rf ./container-contents 2>/dev/null || true
 
 echo ""
 echo "[ok] ✅ Extraction complete!"
