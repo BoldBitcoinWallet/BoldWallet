@@ -63,13 +63,21 @@ echo ""
 
 # BuildKit Build Cache
 echo -e "${CYAN}--- BuildKit Build Cache ---${NC}"
-cache_info=$(docker system df --format "{{.Type}}\t{{.TotalCount}}\t{{.Size}}" | grep "Build Cache" || echo "")
+# Parse the docker system df output more carefully
+cache_line=$(docker system df | grep -i "build cache" || echo "")
 
-if [ -n "$cache_info" ]; then
-  cache_size=$(echo "$cache_info" | awk '{print $3}')
-  cache_count=$(echo "$cache_info" | awk '{print $2}')
+if [ -n "$cache_line" ]; then
+  # Extract cache info from the line
+  # Format: "Build Cache     100       0         19.7GB    19.7GB"
+  cache_count=$(echo "$cache_line" | awk '{print $2}')
+  cache_size=$(echo "$cache_line" | awk '{print $4}')
+  cache_reclaimable=$(echo "$cache_line" | awk '{print $5}')
+  
   echo "  Cache entries: $cache_count"
   echo "  Total size: $cache_size"
+  if [ -n "$cache_reclaimable" ] && [ "$cache_reclaimable" != "0B" ]; then
+    echo "  Reclaimable: $cache_reclaimable"
+  fi
   echo ""
   echo "  ${YELLOW}Note: Build cache includes:${NC}"
   echo "    - npm cache (~/.npm)"
