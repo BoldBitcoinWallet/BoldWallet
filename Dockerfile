@@ -124,7 +124,7 @@ fi
 WORKDIR /BoldWallet/BBMTLib
 RUN --mount=type=cache,target=/root/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    sh build.sh
+    bash build.sh
 
 # Build Android APK (uses cached npm and Gradle dependencies)
 WORKDIR /BoldWallet/android
@@ -133,7 +133,7 @@ WORKDIR /BoldWallet/android
 RUN --mount=type=cache,target=/root/.gradle/caches \
     --mount=type=cache,target=/root/.gradle/wrapper \
     --mount=type=cache,target=/BoldWallet/android/.gradle \
-    sh release.sh
+    bash release.sh
 
 # Keep builder as final stage for file extraction
 # APK location: /BoldWallet/android/app/build/outputs/apk/release/app-release.apk
