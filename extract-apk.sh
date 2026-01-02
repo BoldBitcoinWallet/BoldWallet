@@ -138,13 +138,32 @@ else
 fi
 
 echo "[*] Cleaning up container and temp files..."
-docker rm $CONTAINER_NAME
+docker rm $CONTAINER_NAME 2>/dev/null || true
 rm -rf ./container-contents ./apk-temp 2>/dev/null || true
+
+# Fix ownership if run with sudo
+if [ -f "$OUTPUT_PATH" ] && [ "$(id -u)" = "0" ]; then
+  # If running as root, try to change ownership to the original user
+  if [ -n "$SUDO_USER" ]; then
+    echo "[*] Fixing file ownership..."
+    chown $SUDO_USER:$SUDO_USER "$OUTPUT_PATH" 2>/dev/null || true
+    if [ -f "$MAPPING_OUTPUT" ]; then
+      chown $SUDO_USER:$SUDO_USER "$MAPPING_OUTPUT" 2>/dev/null || true
+    fi
+  fi
+fi
 
 echo ""
 echo "[ok] ✅ Extraction complete!"
 echo "  APK: $OUTPUT_PATH"
 if [ -f "$MAPPING_OUTPUT" ]; then
   echo "  Mapping: $MAPPING_OUTPUT"
+fi
+
+# Show file info
+if [ -f "$OUTPUT_PATH" ]; then
+  echo ""
+  echo "[*] File information:"
+  ls -lh "$OUTPUT_PATH"
 fi
 
