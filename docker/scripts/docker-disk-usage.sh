@@ -68,14 +68,17 @@ cache_line=$(docker system df | grep -i "build cache" || echo "")
 
 if [ -n "$cache_line" ]; then
   # Extract cache info from the line
-  # Format: "Build Cache     100       0         19.7GB    19.7GB"
-  cache_count=$(echo "$cache_line" | awk '{print $2}')
-  cache_size=$(echo "$cache_line" | awk '{print $4}')
-  cache_reclaimable=$(echo "$cache_line" | awk '{print $5}')
+  # Format: "Build Cache     83        0         21.4GB    21.4GB"
+  # Fields:  TYPE1  TYPE2    COUNT     ACTIVE    SIZE      RECLAIMABLE
+  cache_count=$(echo "$cache_line" | awk '{print $3}')
+  cache_active=$(echo "$cache_line" | awk '{print $4}')
+  cache_size=$(echo "$cache_line" | awk '{print $5}')
+  cache_reclaimable=$(echo "$cache_line" | awk '{print $6}')
   
   echo "  Cache entries: $cache_count"
+  echo "  Active entries: $cache_active"
   echo "  Total size: $cache_size"
-  if [ -n "$cache_reclaimable" ] && [ "$cache_reclaimable" != "0B" ]; then
+  if [ -n "$cache_reclaimable" ] && [ "$cache_reclaimable" != "0B" ] && [ "$cache_reclaimable" != "0" ]; then
     echo "  Reclaimable: $cache_reclaimable"
   fi
   echo ""
@@ -94,7 +97,17 @@ echo ""
 # Detailed breakdown by cache type (if available)
 echo -e "${CYAN}--- Cache Breakdown (if available) ---${NC}"
 if command -v docker &> /dev/null && docker builder du &> /dev/null 2>&1; then
-  docker builder du 2>/dev/null | head -20 || echo "  Detailed cache breakdown not available"
+  cache_breakdown=$(docker builder du 2>/dev/null | head -20)
+  if [ -n "$cache_breakdown" ]; then
+    echo "$cache_breakdown" | sed 's/^/  /'
+    echo ""
+    echo -e "  ${YELLOW}Note:${NC} Individual entries may show 0B* because:"
+    echo "    - (*) indicates shared/referenced cache entries"
+    echo "    - Actual size is included in the total above"
+    echo "    - Cache entries are deduplicated and shared across builds"
+  else
+    echo "  Detailed cache breakdown not available"
+  fi
 else
   echo "  Use 'docker system df -v' for detailed breakdown"
 fi
