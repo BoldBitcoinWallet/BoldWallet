@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1.4
-FROM debian:bookworm AS base
+# Explicitly specify platform: works on Linux (native) and macOS (emulation)
+FROM --platform=linux/amd64 debian:bookworm AS base
 
 # Install system dependencies (this layer rarely changes)
 RUN apt update && apt install -y --no-install-recommends \
@@ -47,8 +48,9 @@ RUN --mount=type=cache,target=/root/.android \
 
 # Install gomobile (cached unless version changes)
 # Ensure GOPATH/bin directory exists and add to PATH for this RUN
+# Note: gomobile install may compile C code, but we disable CGO to avoid architecture issues
 RUN mkdir -p /root/go/bin \
-    && go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20250408133729-978277e7eaf7 \
+    && CGO_ENABLED=0 go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20250408133729-978277e7eaf7 \
     && /root/go/bin/gomobile init
 
 # Build stage

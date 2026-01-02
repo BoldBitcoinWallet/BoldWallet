@@ -159,41 +159,62 @@ export DOCKER_BUILDKIT=1
 
 # Build Docker image with optional verbose output
 BUILD_SUCCESS=false
+BUILD_EXIT_CODE=1
+
+# Android builds require linux/amd64 platform
+# This flag works on both Linux (native) and macOS (emulation via QEMU)
+# No auto-detection needed - Docker handles it automatically
+PLATFORM_FLAG="--platform linux/amd64"
 
 if [ "$FDROID_BUILD" = true ]; then
   echo "[*] Building fdroid-patched Docker image (with BuildKit cache)..."
   if [ "$VERBOSE" = true ]; then
     echo "[*] Verbose mode: showing build output on CLI and saving to build.log"
-    if docker build --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee "$BUILD_LOG"; then
-      BUILD_SUCCESS=true
-    fi
+    docker build $PLATFORM_FLAG --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee "$BUILD_LOG"
+    BUILD_EXIT_CODE=${PIPESTATUS[0]}
   else
     echo "[*] Build logs are being saved to build.log (use --verbose to see output)"
-    if docker build --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > "$BUILD_LOG" 2>&1; then
-      BUILD_SUCCESS=true
-    fi
+    docker build $PLATFORM_FLAG --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > "$BUILD_LOG" 2>&1
+    BUILD_EXIT_CODE=$?
   fi
 else
   echo "[*] Building Docker image (with BuildKit cache)..."
   if [ "$VERBOSE" = true ]; then
     echo "[*] Verbose mode: showing build output on CLI and saving to build.log"
-    if docker build --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee "$BUILD_LOG"; then
-      BUILD_SUCCESS=true
-    fi
+    docker build $PLATFORM_FLAG --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee "$BUILD_LOG"
+    BUILD_EXIT_CODE=${PIPESTATUS[0]}
   else
     echo "[*] Build logs are being saved to build.log (use --verbose to see output)"
-    if docker build --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > "$BUILD_LOG" 2>&1; then
-      BUILD_SUCCESS=true
-    fi
+    docker build $PLATFORM_FLAG --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > "$BUILD_LOG" 2>&1
+    BUILD_EXIT_CODE=$?
   fi
 fi
 
 # Check if build was successful
+# Check both exit code and build log for error indicators
+if [ "$BUILD_EXIT_CODE" -eq 0 ]; then
+  # Also check build log for error messages (BuildKit sometimes returns 0 even on failure)
+  if grep -qiE "(ERROR|failed to solve|error:)" "$BUILD_LOG" 2>/dev/null; then
+    BUILD_SUCCESS=false
+  else
+    # Verify image actually exists
+    if docker images --format "{{.Repository}}" | grep -q "^${IMAGE_NAME}$"; then
+      BUILD_SUCCESS=true
+    else
+      BUILD_SUCCESS=false
+    fi
+  fi
+else
+  BUILD_SUCCESS=false
+fi
+
 if [ "$BUILD_SUCCESS" = false ]; then
   echo ""
   echo "[*] ❌ Build failed!"
   if [ "$VERBOSE" = false ]; then
-    echo "[*] Check build.log for details: tail -f $BUILD_LOG"
+    echo "[*] Check build.log for details: tail -20 $BUILD_LOG"
+    echo "[*] Last few lines of build log:"
+    tail -10 "$BUILD_LOG" 2>/dev/null | sed 's/^/  /' || true
   fi
   exit 1
 fi
