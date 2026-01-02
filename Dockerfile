@@ -65,8 +65,9 @@ COPY patches/ ./patches/
 
 # Install npm dependencies with cache mount (BuildKit feature)
 # Cache persists across builds, only downloads new/changed packages
+# Using npm install instead of npm ci for better compatibility
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --build-from-source --prefer-offline --no-audit
+    npm install --build-from-source --prefer-offline --no-audit --legacy-peer-deps
 
 # Copy Go dependency files
 COPY BBMTLib/go.mod BBMTLib/go.sum ./BBMTLib/
@@ -90,7 +91,7 @@ RUN if [ -n "$git_ref" ]; then \
     cp -r /tmp/BoldWallet/.[!.]* /BoldWallet/ 2>/dev/null || true; \
     rm -rf /tmp/BoldWallet; \
     # Reinstall dependencies after git clone \
-    npm ci --build-from-source --prefer-offline --no-audit; \
+    npm install --build-from-source --prefer-offline --no-audit --legacy-peer-deps; \
     cd BBMTLib && go mod download; \
 fi
 
@@ -99,7 +100,7 @@ RUN if [ "$fdroid" = "true" ]; then \
     sed -i '/react-native-vision-camera/d' package.json; \
     mv components/QRScanner.foss.tsx components/QRScanner.tsx 2>/dev/null || true; \
     # Reinstall after package.json change \
-    npm ci --build-from-source --prefer-offline --no-audit; \
+    npm install --build-from-source --prefer-offline --no-audit --legacy-peer-deps; \
     # Apply F-Droid patches \
     sed -i -e '/installReferrerVersion/,+12d' node_modules/react-native-device-info/android/build.gradle 2>/dev/null || true; \
 fi
