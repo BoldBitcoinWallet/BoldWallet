@@ -77,11 +77,14 @@ COPY BBMTLib/go.mod BBMTLib/go.sum ./BBMTLib/
 
 # Download Go modules with cache mount
 # Run go mod tidy first to ensure all dependencies are resolved
-# Then download all modules - cache persists across builds
+# Download all modules including transitive dependencies - cache persists across builds
 RUN --mount=type=cache,target=/root/go/pkg/mod \
     cd BBMTLib && \
     go mod tidy && \
-    go mod download
+    go mod download && \
+    # Pre-download all transitive dependencies by building (without actually building)
+    # This ensures gomobile and all its dependencies are cached
+    go list -deps -f '{{.Module.Path}}' ./tss/... 2>/dev/null | xargs -r go mod download || true
 
 # Now copy the rest of the codebase
 # This layer invalidates on code changes, but dependencies are already cached

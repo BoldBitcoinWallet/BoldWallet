@@ -4,6 +4,42 @@ set -e
 
 GIT_REF=""
 FDROID_BUILD=false
+VERBOSE=false
+
+# Help function
+show_help() {
+  cat << EOF
+Usage: $0 [OPTIONS]
+
+Build a React Native Android APK using Docker.
+
+OPTIONS:
+    --fdroid              Build F-Droid compatible version (removes proprietary dependencies)
+    --git=REF            Build from specific git reference (commit, tag, or branch)
+                          If not specified, uses local code
+    --verbose, -v      Show build logs on CLI in addition to saving to build.log
+    --help, -h           Show this help message
+
+EXAMPLES:
+    $0                                    # Build from local code
+    $0 --fdroid                           # Build F-Droid version from local code
+    $0 --git=main                          # Build from main branch
+    $0 --git=v2.1.6 --verbose             # Build from tag v2.1.6 with verbose output
+    $0 --fdroid --git=abc123 --verbose    # Build F-Droid version from commit abc123
+
+OUTPUT:
+    - APK: ./app-release.apk
+    - Mapping: ./mapping.txt (if R8/ProGuard enabled)
+    - Build logs: ./build.log
+
+NOTES:
+    - Requires Docker and Docker BuildKit
+    - First build will download all dependencies (takes longer)
+    - Subsequent builds use cached dependencies for faster builds
+    - Use --verbose to monitor build progress in real-time
+
+EOF
+}
 
 # Parse arguments
 for ((i=1; i<=$#; i++)); do
@@ -14,6 +50,18 @@ for ((i=1; i<=$#; i++)); do
     --git=*)
       GIT_REF="${!i#--git=}"
       ;;
+    --verbose|-v)
+      VERBOSE=true
+      ;;
+    --help|-h)
+      show_help
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: ${!i}"
+      echo "Use --help for usage information"
+      exit 1
+      ;;
   esac
 done
 
@@ -23,6 +71,20 @@ APK_NAME=app-release.apk
 # Use absolute path to avoid issues with sudo and working directory
 OUTPUT_PATH=$(pwd)/$APK_NAME
 MAPPING_OUTPUT=$(pwd)/mapping.txt
+
+# Show build configuration
+echo "=== Docker APK Builder ==="
+echo "Configuration:"
+echo "  Image name: $IMAGE_NAME"
+echo "  F-Droid build: $FDROID_BUILD"
+if [ -n "$GIT_REF" ]; then
+  echo "  Git reference: $GIT_REF"
+else
+  echo "  Git reference: (using local code)"
+fi
+echo "  Verbose mode: $VERBOSE"
+echo "  Output APK: $OUTPUT_PATH"
+echo ""
 
 # Check if Docker is installed. Linux - Ubuntu Tested
 if ! command -v docker &> /dev/null; then
@@ -69,13 +131,48 @@ fi
 # Enable BuildKit for better caching and performance
 export DOCKER_BUILDKIT=1
 
+# Build Docker image with optional verbose output
+BUILD_SUCCESS=false
+
 if [ "$FDROID_BUILD" = true ]; then
   echo "[*] Building fdroid-patched Docker image (with BuildKit cache)..."
-  docker build --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > build.log 2>&1
+  if [ "$VERBOSE" = true ]; then
+    echo "[*] Verbose mode: showing build output on CLI and saving to build.log"
+    if docker build --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee build.log; then
+      BUILD_SUCCESS=true
+    fi
+  else
+    echo "[*] Build logs are being saved to build.log (use --verbose to see output)"
+    if docker build --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > build.log 2>&1; then
+      BUILD_SUCCESS=true
+    fi
+  fi
 else
   echo "[*] Building Docker image (with BuildKit cache)..."
-  docker build --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > build.log 2>&1
+  if [ "$VERBOSE" = true ]; then
+    echo "[*] Verbose mode: showing build output on CLI and saving to build.log"
+    if docker build --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee build.log; then
+      BUILD_SUCCESS=true
+    fi
+  else
+    echo "[*] Build logs are being saved to build.log (use --verbose to see output)"
+    if docker build --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > build.log 2>&1; then
+      BUILD_SUCCESS=true
+    fi
+  fi
 fi
+
+# Check if build was successful
+if [ "$BUILD_SUCCESS" = false ]; then
+  echo ""
+  echo "[*] ❌ Build failed!"
+  if [ "$VERBOSE" = false ]; then
+    echo "[*] Check build.log for details: tail -f build.log"
+  fi
+  exit 1
+fi
+
+echo "[*] ✅ Docker image built successfully!"
 
 # Remove existing container if it exists
 if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
