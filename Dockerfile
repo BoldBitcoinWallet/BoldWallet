@@ -27,6 +27,8 @@ ENV PATH="/usr/local/go/bin:/usr/local/bin:${PATH}"
 ENV GOROOT="/usr/local/go"
 ENV GOPATH="/root/go"
 ENV PATH="/root/go/bin:${PATH}"
+# Set GOMODCACHE to use the cache mount location
+ENV GOMODCACHE="/root/go/pkg/mod"
 
 # Install Android SDK (cached unless SDK version changes)
 RUN curl -LO https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip \
@@ -38,9 +40,10 @@ ENV ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.1.12297006"
 ENV PATH="$ANDROID_HOME/cmdline-tools/bin:${PATH}"
 
 # Install Android SDK components (cached unless versions change)
-RUN yes | /android-sdk/cmdline-tools/bin/sdkmanager --sdk_root=$ANDROID_HOME \
-    "platforms;android-21" "build-tools;33.0.0" "ndk;27.1.12297006" \
-    && rm -rf $ANDROID_HOME/.android
+# Cache Android SDK downloads - sdkmanager stores cache in ~/.android
+RUN --mount=type=cache,target=/root/.android \
+    yes | /android-sdk/cmdline-tools/bin/sdkmanager --sdk_root=$ANDROID_HOME \
+    "platforms;android-21" "build-tools;33.0.0" "ndk;27.1.12297006"
 
 # Install gomobile (cached unless version changes)
 # Ensure GOPATH/bin directory exists and add to PATH for this RUN
@@ -73,16 +76,21 @@ RUN --mount=type=cache,target=/root/.npm \
 COPY BBMTLib/go.mod BBMTLib/go.sum ./BBMTLib/
 
 # Download Go modules with cache mount
-# Go module cache persists across builds
+# Run go mod tidy first to ensure all dependencies are resolved
+# Then download all modules - cache persists across builds
 RUN --mount=type=cache,target=/root/go/pkg/mod \
-    cd BBMTLib && go mod download
+    cd BBMTLib && \
+    go mod tidy && \
+    go mod download
 
 # Now copy the rest of the codebase
 # This layer invalidates on code changes, but dependencies are already cached
 COPY . .
 
 # Handle git_ref if provided (clone from GitHub instead of using local code)
-RUN if [ -n "$git_ref" ]; then \
+RUN --mount=type=cache,target=/root/.npm \
+    --mount=type=cache,target=/root/go/pkg/mod \
+    if [ -n "$git_ref" ]; then \
     echo "Replacing from GitHub"; \
     rm -rf /BoldWallet/* /BoldWallet/.[!.]*; \
     git clone https://github.com/BoldBitcoinWallet/BoldWallet.git /tmp/BoldWallet; \
@@ -90,29 +98,35 @@ RUN if [ -n "$git_ref" ]; then \
     cp -r /tmp/BoldWallet/* /BoldWallet/; \
     cp -r /tmp/BoldWallet/.[!.]* /BoldWallet/ 2>/dev/null || true; \
     rm -rf /tmp/BoldWallet; \
-    # Reinstall dependencies after git clone \
+    # Reinstall dependencies after git clone (uses cache) \
     npm install --build-from-source --prefer-offline --no-audit --legacy-peer-deps; \
     cd BBMTLib && go mod download; \
 fi
 
 # Conditional F-Droid build modifications
-RUN if [ "$fdroid" = "true" ]; then \
+RUN --mount=type=cache,target=/root/.npm \
+    if [ "$fdroid" = "true" ]; then \
     sed -i '/react-native-vision-camera/d' package.json; \
     mv components/QRScanner.foss.tsx components/QRScanner.tsx 2>/dev/null || true; \
-    # Reinstall after package.json change \
+    # Reinstall after package.json change (uses cache) \
     npm install --build-from-source --prefer-offline --no-audit --legacy-peer-deps; \
     # Apply F-Droid patches \
     sed -i -e '/installReferrerVersion/,+12d' node_modules/react-native-device-info/android/build.gradle 2>/dev/null || true; \
 fi
 
 # Build Go library (uses cached Go modules)
+# Add cache mount so build.sh can use cached modules
 WORKDIR /BoldWallet/BBMTLib
-RUN sh build.sh
+RUN --mount=type=cache,target=/root/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    sh build.sh
 
 # Build Android APK (uses cached npm and Gradle dependencies)
 WORKDIR /BoldWallet/android
-# Use Gradle build cache
+# Cache Gradle wrapper downloads, build cache, and dependencies
+# GRADLE_USER_HOME defaults to ~/.gradle
 RUN --mount=type=cache,target=/root/.gradle/caches \
+    --mount=type=cache,target=/root/.gradle/wrapper \
     --mount=type=cache,target=/BoldWallet/android/.gradle \
     sh release.sh
 
