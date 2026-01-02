@@ -1,5 +1,6 @@
 #!/bin/bash
-# Linux - Ubuntu Tested
+# Cross-platform Docker build script
+# Tested on: Linux (Ubuntu), macOS
 set -e
 
 # Get the project root directory (parent of docker/scripts/)
@@ -94,46 +95,63 @@ echo "  Verbose mode: $VERBOSE"
 echo "  Output APK: $OUTPUT_PATH"
 echo ""
 
-# Check if Docker is installed. Linux - Ubuntu Tested
+# Check if Docker is installed
 if ! command -v docker &> /dev/null; then
-  echo "[*] Docker not found. Installing Docker..."
+  echo "[*] Docker not found."
+  
+  # Detect OS
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS
+    echo "[*] Please install Docker Desktop for macOS:"
+    echo "    1. Download from: https://www.docker.com/products/docker-desktop"
+    echo "    2. Or install via Homebrew: brew install --cask docker"
+    echo "    3. Start Docker Desktop and ensure it's running"
+    exit 1
+  elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    # Linux - Ubuntu/Debian
+    echo "[*] Installing Docker on Linux..."
+    
+    # Remove broken PPAs that might break apt
+    echo "[*] Cleaning up invalid PPAs (if any)..."
+    sudo grep -lr 'ppa.launchpadcontent.net' /etc/apt/sources.list.d/ 2>/dev/null | while read -r ppa_file; do
+      if ! apt-cache policy 2>/dev/null | grep -q "$(basename "$ppa_file" .list)"; then
+        echo "  - Removing broken PPA: $ppa_file"
+        sudo rm -f "$ppa_file"
+      fi
+    done || true
 
-  # Remove broken PPAs that might break apt
-  echo "[*] Cleaning up invalid PPAs (if any)..."
-  sudo grep -lr 'ppa.launchpadcontent.net' /etc/apt/sources.list.d/ | while read -r ppa_file; do
-    if ! apt-cache policy | grep -q "$(basename "$ppa_file" .list)"; then
-      echo "  - Removing broken PPA: $ppa_file"
-      sudo rm -f "$ppa_file"
-    fi
-  done
+    # Update package info and install dependencies
+    sudo apt update
+    sudo apt install -y \
+      ca-certificates \
+      curl \
+      gnupg \
+      lsb-release
 
-  # Update package info and install dependencies
-  sudo apt update
-  sudo apt install -y \
-    ca-certificates \
-    curl \
-    gnupg \
-    lsb-release
+    # Add Docker's official GPG key
+    sudo install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
+      sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    sudo chmod a+r /etc/apt/keyrings/docker.gpg
 
-  # Add Docker's official GPG key
-  sudo install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
-    sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-  sudo chmod a+r /etc/apt/keyrings/docker.gpg
+    # Set up the stable repository
+    echo \
+      "deb [arch=$(dpkg --print-architecture) \
+      signed-by=/etc/apt/keyrings/docker.gpg] \
+      https://download.docker.com/linux/ubuntu \
+      $(lsb_release -cs) stable" | \
+      sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-  # Set up the stable repository
-  echo \
-    "deb [arch=$(dpkg --print-architecture) \
-    signed-by=/etc/apt/keyrings/docker.gpg] \
-    https://download.docker.com/linux/ubuntu \
-    $(lsb_release -cs) stable" | \
-    sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    # Install Docker Engine
+    sudo apt update
+    sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-  # Install Docker Engine
-  sudo apt update
-  sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-  echo "[ok] Docker installed."
+    echo "[ok] Docker installed."
+  else
+    echo "[*] Unsupported OS: $OSTYPE"
+    echo "[*] Please install Docker manually for your operating system"
+    exit 1
+  fi
 fi
 
 # Enable BuildKit for better caching and performance

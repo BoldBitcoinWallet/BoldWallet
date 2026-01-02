@@ -2,6 +2,8 @@
 
 This directory contains all Docker-related files and scripts for building the BoldWallet Android APK.
 
+**Cross-platform**: Works on macOS and Linux (Ubuntu/Debian tested)
+
 ## Structure
 
 ```
@@ -147,7 +149,8 @@ See the build logs or run with `--verbose` to see cache usage.
 ## Requirements
 
 - Docker 18.09+ (with BuildKit support)
-- Linux (tested on Ubuntu)
+- **macOS**: Docker Desktop (install from [docker.com](https://www.docker.com/products/docker-desktop) or `brew install --cask docker`)
+- **Linux**: Docker Engine (tested on Ubuntu - script can auto-install)
 - Sufficient disk space (~20GB for build cache, ~15GB per image)
 
 ## Notes
