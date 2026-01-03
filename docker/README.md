@@ -32,6 +32,9 @@ docker/
 
 # Build from specific git reference
 ./docker/scripts/docker-apk-builder.sh --git=main --verbose
+
+# Build on remote Linux server (recommended for macOS users)
+./docker/scripts/docker-apk-builder.sh --remote=ssh://user@linux-server
 ```
 
 ### Extract APK from Existing Image
@@ -117,9 +120,11 @@ The `Dockerfile` and `.dockerignore` remain in the project root because:
 The Docker build system includes several optimizations:
 
 1. **Layer Caching** - Dependencies are cached separately from code
-2. **BuildKit Cache Mounts** - npm, Go modules, Android SDK, and Gradle caches persist across builds
-3. **Multi-stage Build** - Optimized layer structure
-4. **.dockerignore** - Excludes unnecessary files from build context
+2. **BuildKit Inline Cache** - Persistent layer cache stored in `.docker-cache/` (works at Docker level, independent of Dockerfile)
+3. **BuildKit Cache Mounts** - npm, Go modules, Android SDK, and Gradle caches persist across builds
+4. **Image-based Cache** - Previous image used as additional cache source
+5. **Multi-stage Build** - Optimized layer structure
+6. **.dockerignore** - Excludes unnecessary files from build context
 
 See the build logs or run with `--verbose` to see cache usage.
 
@@ -128,6 +133,8 @@ See the build logs or run with `--verbose` to see cache usage.
 - **First build**: ~30-60 minutes (downloads all dependencies)
 - **Subsequent builds** (code changes only): ~5-10 minutes (uses cached dependencies)
 - **Dependency updates**: ~15-20 minutes (only new dependencies downloaded)
+
+**Note on macOS/QEMU**: BuildKit cache mounts may not persist perfectly on macOS when using `--platform linux/amd64` with QEMU emulation. The NDK and Android SDK components may need to re-download on the first build after Docker restart. npm and Go module caches typically work better.
 
 ## Troubleshooting
 
@@ -146,10 +153,21 @@ See the build logs or run with `--verbose` to see cache usage.
 - Check container exists: `docker ps -a | grep temp-boldwallet`
 - Run `./docker/scripts/extract-apk.sh` for diagnostics
 
+### Build fails with "cannot allocate memory" (macOS)
+- **Increase Docker Desktop memory**: Docker Desktop → Settings → Resources → Memory
+  - Set to **8GB minimum** (12GB+ recommended for QEMU emulation)
+  - QEMU emulation on Apple Silicon requires more memory than native builds
+  - Restart Docker Desktop after changing memory settings
+- The build uses ~3GB for Gradle (reduced from 4GB for compatibility)
+- If still failing, try reducing `org.gradle.jvmargs` in `android/gradle.properties` further
+
 ## Requirements
 
 - Docker 18.09+ (with BuildKit support)
 - **macOS**: Docker Desktop (install from [docker.com](https://www.docker.com/products/docker-desktop) or `brew install --cask docker`)
+  - **Important for macOS**: Increase Docker Desktop memory to at least **8GB** (preferably 12GB+)
+    - Docker Desktop → Settings → Resources → Memory → Set to 8GB or more
+    - QEMU emulation requires more memory than native builds
 - **Linux**: Docker Engine (tested on Ubuntu - script can auto-install)
 - Sufficient disk space (~20GB for build cache, ~15GB per image)
 

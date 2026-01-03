@@ -59,6 +59,9 @@ __tests__/
 *.log
 build.log
 
+# Docker inline cache directory (should not be in build context)
+.docker-cache/
+
 # Already built artifacts
 *.apk
 *.aab

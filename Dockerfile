@@ -1,6 +1,11 @@
 # syntax=docker/dockerfile:1.4
-# Explicitly specify platform: works on Linux (native) and macOS (emulation)
-FROM --platform=linux/amd64 debian:bookworm AS base
+# Platform specification: linux/amd64 required for Android builds
+# On native Linux x86_64, this is a no-op (native build)
+# On macOS/ARM, this enables QEMU emulation
+# Base image can be customized via BUILD_BASE_IMAGE arg
+# Options: debian:bookworm (default, stable), ubuntu:22.04 (better QEMU support), debian:slim (smaller)
+ARG BUILD_BASE_IMAGE=debian:bookworm
+FROM --platform=linux/amd64 ${BUILD_BASE_IMAGE} AS base
 
 # Install system dependencies (this layer rarely changes)
 RUN apt update && apt install -y --no-install-recommends \
@@ -42,7 +47,10 @@ ENV PATH="$ANDROID_HOME/cmdline-tools/bin:${PATH}"
 
 # Install Android SDK components (cached unless versions change)
 # Cache Android SDK downloads - sdkmanager stores cache in ~/.android
-RUN --mount=type=cache,target=/root/.android \
+# Note: On macOS with QEMU emulation, cache mounts may not persist perfectly
+# Using explicit cache ID to improve persistence across builds
+RUN --mount=type=cache,target=/root/.android,id=android-sdk-cache,sharing=shared \
+    ANDROID_SDK_ROOT=$ANDROID_HOME \
     yes | /android-sdk/cmdline-tools/bin/sdkmanager --sdk_root=$ANDROID_HOME \
     "platforms;android-21" "build-tools;33.0.0" "ndk;27.1.12297006"
 
@@ -71,7 +79,7 @@ COPY patches/ ./patches/
 # Install npm dependencies with cache mount (BuildKit feature)
 # Cache persists across builds, only downloads new/changed packages
 # Using npm install instead of npm ci for better compatibility
-RUN --mount=type=cache,target=/root/.npm \
+RUN --mount=type=cache,target=/root/.npm,id=npm-cache,sharing=shared \
     npm install --build-from-source --prefer-offline --no-audit --legacy-peer-deps
 
 # Copy Go dependency files
@@ -80,7 +88,7 @@ COPY BBMTLib/go.mod BBMTLib/go.sum ./BBMTLib/
 # Download Go modules with cache mount
 # Run go mod tidy first to ensure all dependencies are resolved
 # Download all modules including transitive dependencies - cache persists across builds
-RUN --mount=type=cache,target=/root/go/pkg/mod \
+RUN --mount=type=cache,target=/root/go/pkg/mod,id=go-modules-cache,sharing=shared \
     cd BBMTLib && \
     go mod tidy && \
     go mod download && \
@@ -93,8 +101,8 @@ RUN --mount=type=cache,target=/root/go/pkg/mod \
 COPY . .
 
 # Handle git_ref if provided (clone from GitHub instead of using local code)
-RUN --mount=type=cache,target=/root/.npm \
-    --mount=type=cache,target=/root/go/pkg/mod \
+RUN --mount=type=cache,target=/root/.npm,id=npm-cache,sharing=shared \
+    --mount=type=cache,target=/root/go/pkg/mod,id=go-modules-cache,sharing=shared \
     if [ -n "$git_ref" ]; then \
     echo "Replacing from GitHub"; \
     rm -rf /BoldWallet/* /BoldWallet/.[!.]*; \
@@ -109,7 +117,7 @@ RUN --mount=type=cache,target=/root/.npm \
 fi
 
 # Conditional F-Droid build modifications
-RUN --mount=type=cache,target=/root/.npm \
+RUN --mount=type=cache,target=/root/.npm,id=npm-cache,sharing=shared \
     if [ "$fdroid" = "true" ]; then \
     sed -i '/react-native-vision-camera/d' package.json; \
     mv components/QRScanner.foss.tsx components/QRScanner.tsx 2>/dev/null || true; \
@@ -120,19 +128,33 @@ RUN --mount=type=cache,target=/root/.npm \
 fi
 
 # Build Go library (uses cached Go modules)
-# Add cache mount so build.sh can use cached modules
+# Inlined from build.sh - optimized for Docker with cache mounts
+# Removed redundant go mod tidy/download (already done above with cache mounts)
 WORKDIR /BoldWallet/BBMTLib
-RUN --mount=type=cache,target=/root/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
-    bash build.sh
+RUN --mount=type=cache,target=/root/go/pkg/mod,id=go-modules-cache,sharing=shared \
+    --mount=type=cache,target=/root/.cache/go-build,id=go-build-cache,sharing=shared \
+    echo "building gomobile tss lib" && \
+    # gomobile is already installed and initialized in base stage, skip redundant steps \
+    export GOFLAGS="-mod=mod" && \
+    # Build Android AAR (iOS build not needed for Android APK) \
+    /root/go/bin/gomobile bind -v -target=android -androidapi 21 github.com/BoldBitcoinWallet/BBMTLib/tss && \
+    # Copy Android artifacts to android/app/libs \
+    cp tss.aar ../android/app/libs/tss.aar && \
+    cp tss-sources.jar ../android/app/libs/tss-sources.jar
 
 # Build Android APK (uses cached npm and Gradle dependencies)
 WORKDIR /BoldWallet/android
-# Cache Gradle wrapper downloads, build cache, and dependencies
-# GRADLE_USER_HOME defaults to ~/.gradle
-RUN --mount=type=cache,target=/root/.gradle/caches \
-    --mount=type=cache,target=/root/.gradle/wrapper \
-    --mount=type=cache,target=/BoldWallet/android/.gradle \
+
+# Pre-download Gradle wrapper (cached separately from build)
+# This layer only invalidates if gradle wrapper version changes, not when source code changes
+RUN --mount=type=cache,target=/root/.gradle/wrapper,id=gradle-wrapper,sharing=shared \
+    ./gradlew --version || true
+
+# Build the APK (this layer invalidates when source code changes)
+# Gradle wrapper is already downloaded, so this step is faster
+RUN --mount=type=cache,target=/root/.gradle/caches,id=gradle-caches,sharing=shared \
+    --mount=type=cache,target=/root/.gradle/wrapper,id=gradle-wrapper,sharing=shared \
+    --mount=type=cache,target=/BoldWallet/android/.gradle,id=gradle-project-cache,sharing=shared \
     bash release.sh
 
 # Keep builder as final stage for file extraction

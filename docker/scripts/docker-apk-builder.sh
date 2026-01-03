@@ -13,6 +13,7 @@ cd "$PROJECT_ROOT"
 GIT_REF=""
 FDROID_BUILD=false
 VERBOSE=false
+REMOTE_DOCKER=""
 
 # Help function
 show_help() {
@@ -26,6 +27,8 @@ OPTIONS:
     --git=REF            Build from specific git reference (commit, tag, or branch)
                           If not specified, uses local code
     --verbose, -v      Show build logs on CLI in addition to saving to build.log
+    --remote=HOST       Use remote Docker daemon (e.g., ssh://user@host)
+                          Best for macOS: build on Linux server for faster builds
     --help, -h           Show this help message
 
 EXAMPLES:
@@ -60,6 +63,9 @@ for ((i=1; i<=$#; i++)); do
       ;;
     --verbose|-v)
       VERBOSE=true
+      ;;
+    --remote=*)
+      REMOTE_DOCKER="${!i#--remote=}"
       ;;
     --help|-h)
       show_help
@@ -157,35 +163,95 @@ fi
 # Enable BuildKit for better caching and performance
 export DOCKER_BUILDKIT=1
 
+# Set up inline cache for persistent layer caching (works at Docker level, independent of Dockerfile)
+# This cache persists even when cache mounts don't (especially useful for macOS/QEMU)
+CACHE_DIR="$PROJECT_ROOT/.docker-cache"
+mkdir -p "$CACHE_DIR"
+CACHE_FROM_ARG="--cache-from type=local,src=$CACHE_DIR"
+CACHE_TO_ARG="--cache-to type=local,dest=$CACHE_DIR,mode=max"
+
+# Detect platform and optimize build settings
+IS_MACOS=false
+IS_LINUX=false
+NEEDS_EMULATION=false
+
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  IS_MACOS=true
+  NEEDS_EMULATION=true
+  echo "[*] Detected macOS - will use QEMU emulation for linux/amd64"
+  echo "[*] Note: Builds will be slower and may have cache persistence issues"
+  echo "[*] Consider using a Linux build server or CI/CD for production builds"
+elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+  IS_LINUX=true
+  # Check if we're on native amd64 or need emulation
+  ARCH=$(uname -m)
+  if [ "$ARCH" = "x86_64" ]; then
+    NEEDS_EMULATION=false
+    echo "[*] Detected Linux x86_64 - using native build (fastest)"
+  else
+    NEEDS_EMULATION=true
+    echo "[*] Detected Linux $ARCH - will use emulation for linux/amd64"
+  fi
+fi
+
 # Build Docker image with optional verbose output
 BUILD_SUCCESS=false
 BUILD_EXIT_CODE=1
 
-# Android builds require linux/amd64 platform
-# This flag works on both Linux (native) and macOS (emulation via QEMU)
-# No auto-detection needed - Docker handles it automatically
-PLATFORM_FLAG="--platform linux/amd64"
+# Handle remote Docker daemon (better alternative for macOS)
+if [ -n "$REMOTE_DOCKER" ]; then
+  echo "[*] Using remote Docker daemon: $REMOTE_DOCKER"
+  echo "[*] This is recommended for macOS users - builds run on Linux server (faster, better caching)"
+  export DOCKER_HOST="$REMOTE_DOCKER"
+  PLATFORM_FLAG=""  # Remote server handles platform
+  IS_MACOS=false  # Treat as Linux for messaging
+  NEEDS_EMULATION=false
+  BASE_IMAGE_ARG=""  # Use default on remote
+elif [ "$NEEDS_EMULATION" = true ]; then
+  PLATFORM_FLAG="--platform linux/amd64"
+  echo "[*] Using platform flag: $PLATFORM_FLAG (emulation required)"
+  # Use Ubuntu for better QEMU compatibility on macOS (optional optimization)
+  # Ubuntu tends to work better with QEMU emulation than Debian
+  BASE_IMAGE_ARG="--build-arg BUILD_BASE_IMAGE=ubuntu:22.04"
+  echo "[*] Using Ubuntu 22.04 base image (better QEMU compatibility on macOS)"
+  if [ "$IS_MACOS" = true ]; then
+    echo "[*] 💡 Tip: Use --remote=ssh://user@linux-server for faster builds on macOS"
+  fi
+else
+  # On native Linux x86_64, we can build natively (faster, better caching)
+  PLATFORM_FLAG=""
+  BASE_IMAGE_ARG=""  # Use default Debian on native Linux
+  echo "[*] Building natively (no platform flag needed - fastest option)"
+fi
+
+# Also try to use the previous image as cache source (if it exists)
+if docker images --format "{{.Repository}}" | grep -q "^${IMAGE_NAME}$"; then
+  CACHE_FROM_IMAGE="--cache-from $IMAGE_NAME"
+  echo "[*] Using previous image as additional cache source"
+else
+  CACHE_FROM_IMAGE=""
+fi
 
 if [ "$FDROID_BUILD" = true ]; then
-  echo "[*] Building fdroid-patched Docker image (with BuildKit cache)..."
+  echo "[*] Building fdroid-patched Docker image (with BuildKit inline cache)..."
   if [ "$VERBOSE" = true ]; then
     echo "[*] Verbose mode: showing build output on CLI and saving to build.log"
-    docker build $PLATFORM_FLAG --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee "$BUILD_LOG"
+    docker build $PLATFORM_FLAG $BASE_IMAGE_ARG $CACHE_FROM_ARG $CACHE_FROM_IMAGE $CACHE_TO_ARG --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee "$BUILD_LOG"
     BUILD_EXIT_CODE=${PIPESTATUS[0]}
   else
     echo "[*] Build logs are being saved to build.log (use --verbose to see output)"
-    docker build $PLATFORM_FLAG --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > "$BUILD_LOG" 2>&1
+    docker build $PLATFORM_FLAG $BASE_IMAGE_ARG $CACHE_FROM_ARG $CACHE_FROM_IMAGE $CACHE_TO_ARG --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > "$BUILD_LOG" 2>&1
     BUILD_EXIT_CODE=$?
   fi
 else
-  echo "[*] Building Docker image (with BuildKit cache)..."
+  echo "[*] Building Docker image (with BuildKit inline cache)..."
   if [ "$VERBOSE" = true ]; then
     echo "[*] Verbose mode: showing build output on CLI and saving to build.log"
-    docker build $PLATFORM_FLAG --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee "$BUILD_LOG"
+    docker build $PLATFORM_FLAG $BASE_IMAGE_ARG $CACHE_FROM_ARG $CACHE_FROM_IMAGE $CACHE_TO_ARG --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee "$BUILD_LOG"
     BUILD_EXIT_CODE=${PIPESTATUS[0]}
   else
     echo "[*] Build logs are being saved to build.log (use --verbose to see output)"
-    docker build $PLATFORM_FLAG --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > "$BUILD_LOG" 2>&1
+    docker build $PLATFORM_FLAG $BASE_IMAGE_ARG $CACHE_FROM_ARG $CACHE_FROM_IMAGE $CACHE_TO_ARG --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > "$BUILD_LOG" 2>&1
     BUILD_EXIT_CODE=$?
   fi
 fi
