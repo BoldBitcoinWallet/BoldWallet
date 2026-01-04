@@ -172,30 +172,54 @@ mkdir -p "$CACHE_DIR"
 
 # Check if cache export is supported (requires buildx or Docker Desktop)
 # On macOS with Docker Desktop, cache export works with default driver
-# On Linux, cache export requires buildx driver
+# On Linux, cache export requires buildx driver and using `docker buildx build` command
 USE_CACHE_EXPORT=false
+USE_BUILDX=false
 CACHE_FROM_ARG=""
 CACHE_TO_ARG=""
+DOCKER_BUILD_CMD="docker build"
 
-# Check if we're on macOS (Docker Desktop supports cache export)
+# Check if we're on macOS (Docker Desktop supports cache export with regular docker build)
 if [[ "$OSTYPE" == "darwin"* ]]; then
-  # Docker Desktop on macOS supports cache export
+  # Docker Desktop on macOS supports cache export with regular docker build
   USE_CACHE_EXPORT=true
   CACHE_FROM_ARG="--cache-from type=local,src=$CACHE_DIR"
   CACHE_TO_ARG="--cache-to type=local,dest=$CACHE_DIR,mode=max"
   echo "[*] Using BuildKit inline cache (Docker Desktop supports cache export)"
 elif docker buildx version &>/dev/null && docker buildx ls &>/dev/null; then
-  # Check if buildx builder exists and supports cache export
-  # Try to create a test builder to see if cache export works
-  if docker buildx inspect --builder default &>/dev/null || docker buildx create --name temp-cache-test --use &>/dev/null; then
+  # On Linux, we need to use buildx for cache export
+  # The default docker driver doesn't support cache export, so we must use buildx
+  # Check if a buildx builder exists and supports cache export
+  CURRENT_BUILDER=$(docker buildx ls | grep -E '\*|default' | head -1 | awk '{print $1}')
+  
+  if [ -n "$CURRENT_BUILDER" ] && [ "$CURRENT_BUILDER" != "default" ]; then
+    # Use existing builder
     USE_CACHE_EXPORT=true
+    USE_BUILDX=true
+    DOCKER_BUILD_CMD="docker buildx build --builder $CURRENT_BUILDER"
     CACHE_FROM_ARG="--cache-from type=local,src=$CACHE_DIR"
     CACHE_TO_ARG="--cache-to type=local,dest=$CACHE_DIR,mode=max"
-    echo "[*] Using BuildKit inline cache (buildx driver supports cache export)"
-    # Clean up test builder if we created one
-    docker buildx rm temp-cache-test &>/dev/null || true
+    echo "[*] Using BuildKit inline cache with buildx (using builder: $CURRENT_BUILDER)"
+  elif docker buildx inspect default &>/dev/null 2>&1 && docker buildx inspect default 2>&1 | grep -q "driver.*docker-container\|driver.*kubernetes"; then
+    # Default builder exists and uses a driver that supports cache export
+    USE_CACHE_EXPORT=true
+    USE_BUILDX=true
+    DOCKER_BUILD_CMD="docker buildx build"
+    CACHE_FROM_ARG="--cache-from type=local,src=$CACHE_DIR"
+    CACHE_TO_ARG="--cache-to type=local,dest=$CACHE_DIR,mode=max"
+    echo "[*] Using BuildKit inline cache with buildx (default builder supports cache export)"
+  elif docker buildx create --name boldwallet-builder --use --driver docker-container &>/dev/null; then
+    # Create a new buildx builder with docker-container driver (supports cache export)
+    USE_CACHE_EXPORT=true
+    USE_BUILDX=true
+    DOCKER_BUILD_CMD="docker buildx build"
+    CACHE_FROM_ARG="--cache-from type=local,src=$CACHE_DIR"
+    CACHE_TO_ARG="--cache-to type=local,dest=$CACHE_DIR,mode=max"
+    echo "[*] Using BuildKit inline cache with buildx (created new buildx builder with docker-container driver)"
   else
-    echo "[*] BuildKit inline cache export not available (buildx not properly configured)"
+    # buildx is installed but no suitable builder exists
+    echo "[*] BuildKit inline cache export not available (buildx installed but no suitable builder - using cache mounts only)"
+    echo "[*] Tip: Run 'docker buildx create --use --driver docker-container' to enable cache export"
   fi
 else
   echo "[*] BuildKit inline cache export not available (using default docker driver - cache mounts still work)"
@@ -280,12 +304,12 @@ if [ "$FDROID_BUILD" = true ]; then
     echo "[*] Verbose mode: showing build output on CLI and saving to build.log"
     # Capture exit code properly when using pipe (bash-specific PIPESTATUS)
     set +e  # Temporarily disable exit on error to capture exit code
-    docker build $PLATFORM_FLAG $BASE_IMAGE_ARG $HOST_OS_ARG $CACHE_FROM_ARG $CACHE_FROM_IMAGE $CACHE_TO_ARG --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee "$BUILD_LOG"
+    $DOCKER_BUILD_CMD $PLATFORM_FLAG $BASE_IMAGE_ARG $HOST_OS_ARG $CACHE_FROM_ARG $CACHE_FROM_IMAGE $CACHE_TO_ARG --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee "$BUILD_LOG"
     BUILD_EXIT_CODE=${PIPESTATUS[0]}
     set -e  # Re-enable exit on error
   else
     echo "[*] Build logs are being saved to build.log (use --verbose to see output)"
-    docker build $PLATFORM_FLAG $BASE_IMAGE_ARG $HOST_OS_ARG $CACHE_FROM_ARG $CACHE_FROM_IMAGE $CACHE_TO_ARG --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > "$BUILD_LOG" 2>&1
+    $DOCKER_BUILD_CMD $PLATFORM_FLAG $BASE_IMAGE_ARG $HOST_OS_ARG $CACHE_FROM_ARG $CACHE_FROM_IMAGE $CACHE_TO_ARG --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > "$BUILD_LOG" 2>&1
     BUILD_EXIT_CODE=$?
   fi
 else
@@ -298,12 +322,12 @@ else
     echo "[*] Verbose mode: showing build output on CLI and saving to build.log"
     # Capture exit code properly when using pipe (bash-specific PIPESTATUS)
     set +e  # Temporarily disable exit on error to capture exit code
-    docker build $PLATFORM_FLAG $BASE_IMAGE_ARG $HOST_OS_ARG $CACHE_FROM_ARG $CACHE_FROM_IMAGE $CACHE_TO_ARG --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee "$BUILD_LOG"
+    $DOCKER_BUILD_CMD $PLATFORM_FLAG $BASE_IMAGE_ARG $HOST_OS_ARG $CACHE_FROM_ARG $CACHE_FROM_IMAGE $CACHE_TO_ARG --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee "$BUILD_LOG"
     BUILD_EXIT_CODE=${PIPESTATUS[0]}
     set -e  # Re-enable exit on error
   else
     echo "[*] Build logs are being saved to build.log (use --verbose to see output)"
-    docker build $PLATFORM_FLAG $BASE_IMAGE_ARG $HOST_OS_ARG $CACHE_FROM_ARG $CACHE_FROM_IMAGE $CACHE_TO_ARG --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > "$BUILD_LOG" 2>&1
+    $DOCKER_BUILD_CMD $PLATFORM_FLAG $BASE_IMAGE_ARG $HOST_OS_ARG $CACHE_FROM_ARG $CACHE_FROM_IMAGE $CACHE_TO_ARG --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > "$BUILD_LOG" 2>&1
     BUILD_EXIT_CODE=$?
   fi
 fi
