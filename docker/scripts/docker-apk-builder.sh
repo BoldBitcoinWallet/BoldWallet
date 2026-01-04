@@ -190,16 +190,30 @@ elif docker buildx version &>/dev/null && docker buildx ls &>/dev/null; then
   # On Linux, we need to use buildx for cache export
   # The default docker driver doesn't support cache export, so we must use buildx
   # Check if a buildx builder exists and supports cache export
-  CURRENT_BUILDER=$(docker buildx ls | grep -E '\*|default' | head -1 | awk '{print $1}')
+  # Get the current builder (marked with *) or default
+  # Extract builder name (first column) and remove asterisk if present
+  # The asterisk appears in the first column, so we need to strip it
+  CURRENT_BUILDER=$(docker buildx ls 2>/dev/null | grep -E '\*' | head -1 | awk '{print $1}' | sed 's/\*//g')
+  
+  # If no current builder with *, check for default
+  if [ -z "$CURRENT_BUILDER" ]; then
+    CURRENT_BUILDER=$(docker buildx ls 2>/dev/null | grep -E '^default' | head -1 | awk '{print $1}' | sed 's/\*//g')
+  fi
   
   if [ -n "$CURRENT_BUILDER" ] && [ "$CURRENT_BUILDER" != "default" ]; then
-    # Use existing builder
-    USE_CACHE_EXPORT=true
-    USE_BUILDX=true
-    DOCKER_BUILD_CMD="docker buildx build --builder $CURRENT_BUILDER"
-    CACHE_FROM_ARG="--cache-from type=local,src=$CACHE_DIR"
-    CACHE_TO_ARG="--cache-to type=local,dest=$CACHE_DIR,mode=max"
-    echo "[*] Using BuildKit inline cache with buildx (using builder: $CURRENT_BUILDER)"
+    # Check if this builder supports cache export (docker-container or kubernetes driver)
+    BUILDER_DRIVER=$(docker buildx inspect "$CURRENT_BUILDER" 2>/dev/null | grep -i "driver:" | awk '{print $2}' || echo "")
+    if [ "$BUILDER_DRIVER" = "docker-container" ] || [ "$BUILDER_DRIVER" = "kubernetes" ]; then
+      # Use existing builder
+      USE_CACHE_EXPORT=true
+      USE_BUILDX=true
+      DOCKER_BUILD_CMD="docker buildx build --builder $CURRENT_BUILDER"
+      CACHE_FROM_ARG="--cache-from type=local,src=$CACHE_DIR"
+      CACHE_TO_ARG="--cache-to type=local,dest=$CACHE_DIR,mode=max"
+      echo "[*] Using BuildKit inline cache with buildx (using builder: $CURRENT_BUILDER)"
+    else
+      echo "[*] BuildKit inline cache export not available (builder '$CURRENT_BUILDER' uses '$BUILDER_DRIVER' driver - cache mounts only)"
+    fi
   elif docker buildx inspect default &>/dev/null 2>&1 && docker buildx inspect default 2>&1 | grep -q "driver.*docker-container\|driver.*kubernetes"; then
     # Default builder exists and uses a driver that supports cache export
     USE_CACHE_EXPORT=true
