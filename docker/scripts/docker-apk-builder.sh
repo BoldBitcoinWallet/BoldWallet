@@ -166,10 +166,40 @@ export DOCKER_BUILDKIT=1
 
 # Set up inline cache for persistent layer caching (works at Docker level, independent of Dockerfile)
 # This cache persists even when cache mounts don't (especially useful for macOS/QEMU)
+# Note: Cache export requires buildx driver (not available with default docker driver on Linux)
 CACHE_DIR="$PROJECT_ROOT/.docker-cache"
 mkdir -p "$CACHE_DIR"
-CACHE_FROM_ARG="--cache-from type=local,src=$CACHE_DIR"
-CACHE_TO_ARG="--cache-to type=local,dest=$CACHE_DIR,mode=max"
+
+# Check if cache export is supported (requires buildx or Docker Desktop)
+# On macOS with Docker Desktop, cache export works with default driver
+# On Linux, cache export requires buildx driver
+USE_CACHE_EXPORT=false
+CACHE_FROM_ARG=""
+CACHE_TO_ARG=""
+
+# Check if we're on macOS (Docker Desktop supports cache export)
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  # Docker Desktop on macOS supports cache export
+  USE_CACHE_EXPORT=true
+  CACHE_FROM_ARG="--cache-from type=local,src=$CACHE_DIR"
+  CACHE_TO_ARG="--cache-to type=local,dest=$CACHE_DIR,mode=max"
+  echo "[*] Using BuildKit inline cache (Docker Desktop supports cache export)"
+elif docker buildx version &>/dev/null && docker buildx ls &>/dev/null; then
+  # Check if buildx builder exists and supports cache export
+  # Try to create a test builder to see if cache export works
+  if docker buildx inspect --builder default &>/dev/null || docker buildx create --name temp-cache-test --use &>/dev/null; then
+    USE_CACHE_EXPORT=true
+    CACHE_FROM_ARG="--cache-from type=local,src=$CACHE_DIR"
+    CACHE_TO_ARG="--cache-to type=local,dest=$CACHE_DIR,mode=max"
+    echo "[*] Using BuildKit inline cache (buildx driver supports cache export)"
+    # Clean up test builder if we created one
+    docker buildx rm temp-cache-test &>/dev/null || true
+  else
+    echo "[*] BuildKit inline cache export not available (buildx not properly configured)"
+  fi
+else
+  echo "[*] BuildKit inline cache export not available (using default docker driver - cache mounts still work)"
+fi
 
 # Detect platform and optimize build settings
 IS_MACOS=false
@@ -241,7 +271,11 @@ if [ -n "$DOCKER_HOST_OS" ]; then
 fi
 
 if [ "$FDROID_BUILD" = true ]; then
-  echo "[*] Building fdroid-patched Docker image (with BuildKit inline cache)..."
+  if [ "$USE_CACHE_EXPORT" = true ]; then
+    echo "[*] Building fdroid-patched Docker image (with BuildKit inline cache)..."
+  else
+    echo "[*] Building fdroid-patched Docker image (using cache mounts only)..."
+  fi
   if [ "$VERBOSE" = true ]; then
     echo "[*] Verbose mode: showing build output on CLI and saving to build.log"
     # Capture exit code properly when using pipe (bash-specific PIPESTATUS)
@@ -255,7 +289,11 @@ if [ "$FDROID_BUILD" = true ]; then
     BUILD_EXIT_CODE=$?
   fi
 else
-  echo "[*] Building Docker image (with BuildKit inline cache)..."
+  if [ "$USE_CACHE_EXPORT" = true ]; then
+    echo "[*] Building Docker image (with BuildKit inline cache)..."
+  else
+    echo "[*] Building Docker image (using cache mounts only)..."
+  fi
   if [ "$VERBOSE" = true ]; then
     echo "[*] Verbose mode: showing build output on CLI and saving to build.log"
     # Capture exit code properly when using pipe (bash-specific PIPESTATUS)
