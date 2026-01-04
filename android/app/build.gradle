@@ -41,6 +41,8 @@ android {
             cmake {
                 cppFlags "-O2"
                 arguments "-DANDROID_ARM_NEON=TRUE", "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=0x4000", "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
+                // Reduce parallel jobs for C++ builds to avoid QEMU linker crashes
+                arguments "-DCMAKE_BUILD_PARALLEL_LEVEL=2"
             }
         }
     }

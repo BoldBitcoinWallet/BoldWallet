@@ -68,6 +68,8 @@ ARG fdroid=false
 ENV fdroid=${fdroid}
 ARG git_ref=""
 ENV git_ref=${git_ref}
+ARG DOCKER_HOST_OS=""
+ENV DOCKER_HOST_OS=${DOCKER_HOST_OS}
 
 WORKDIR /BoldWallet
 
@@ -152,10 +154,11 @@ RUN --mount=type=cache,target=/root/.gradle/wrapper,id=gradle-wrapper,sharing=sh
 
 # Build the APK (this layer invalidates when source code changes)
 # Gradle wrapper is already downloaded, so this step is faster
+# Set DOCKER_BUILD=1 and DOCKER_HOST_OS to ensure appropriate gradle.properties are used
 RUN --mount=type=cache,target=/root/.gradle/caches,id=gradle-caches,sharing=shared \
     --mount=type=cache,target=/root/.gradle/wrapper,id=gradle-wrapper,sharing=shared \
     --mount=type=cache,target=/BoldWallet/android/.gradle,id=gradle-project-cache,sharing=shared \
-    bash release.sh
+    DOCKER_BUILD=1 DOCKER_HOST_OS=${DOCKER_HOST_OS} bash release.sh
 
 # Keep builder as final stage for file extraction
 # APK location: /BoldWallet/android/app/build/outputs/apk/release/app-release.apk

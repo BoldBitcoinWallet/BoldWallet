@@ -1,6 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Cross-platform Docker build script
 # Tested on: Linux (Ubuntu), macOS
+# Note: This script requires bash (not sh) due to use of PIPESTATUS and other bash features
 set -e
 
 # Get the project root directory (parent of docker/scripts/)
@@ -198,7 +199,8 @@ fi
 BUILD_SUCCESS=false
 BUILD_EXIT_CODE=1
 
-# Handle remote Docker daemon (better alternative for macOS)
+# Detect host OS for Gradle property selection
+DOCKER_HOST_OS=""
 if [ -n "$REMOTE_DOCKER" ]; then
   echo "[*] Using remote Docker daemon: $REMOTE_DOCKER"
   echo "[*] This is recommended for macOS users - builds run on Linux server (faster, better caching)"
@@ -207,12 +209,14 @@ if [ -n "$REMOTE_DOCKER" ]; then
   IS_MACOS=false  # Treat as Linux for messaging
   NEEDS_EMULATION=false
   BASE_IMAGE_ARG=""  # Use default on remote
+  DOCKER_HOST_OS="linux"  # Remote is always Linux
 elif [ "$NEEDS_EMULATION" = true ]; then
   PLATFORM_FLAG="--platform linux/amd64"
   echo "[*] Using platform flag: $PLATFORM_FLAG (emulation required)"
   # Use Ubuntu for better QEMU compatibility on macOS (optional optimization)
   # Ubuntu tends to work better with QEMU emulation than Debian
   BASE_IMAGE_ARG="--build-arg BUILD_BASE_IMAGE=ubuntu:22.04"
+  DOCKER_HOST_OS="macos"  # QEMU emulation = macOS host
   echo "[*] Using Ubuntu 22.04 base image (better QEMU compatibility on macOS)"
   if [ "$IS_MACOS" = true ]; then
     echo "[*] 💡 Tip: Use --remote=ssh://user@linux-server for faster builds on macOS"
@@ -221,49 +225,67 @@ else
   # On native Linux x86_64, we can build natively (faster, better caching)
   PLATFORM_FLAG=""
   BASE_IMAGE_ARG=""  # Use default Debian on native Linux
+  DOCKER_HOST_OS="linux"  # Native Linux = Linux host
   echo "[*] Building natively (no platform flag needed - fastest option)"
 fi
 
-# Also try to use the previous image as cache source (if it exists)
-if docker images --format "{{.Repository}}" | grep -q "^${IMAGE_NAME}$"; then
-  CACHE_FROM_IMAGE="--cache-from $IMAGE_NAME"
-  echo "[*] Using previous image as additional cache source"
-else
-  CACHE_FROM_IMAGE=""
+# Note: We only use local cache directory (.docker-cache) for caching
+# Using previous image as cache source causes registry pull attempts (even for local images)
+# The local cache directory is sufficient and more reliable, especially on macOS/QEMU
+CACHE_FROM_IMAGE=""
+
+# Pass host OS to Dockerfile for Gradle property selection
+HOST_OS_ARG=""
+if [ -n "$DOCKER_HOST_OS" ]; then
+  HOST_OS_ARG="--build-arg DOCKER_HOST_OS=$DOCKER_HOST_OS"
 fi
 
 if [ "$FDROID_BUILD" = true ]; then
   echo "[*] Building fdroid-patched Docker image (with BuildKit inline cache)..."
   if [ "$VERBOSE" = true ]; then
     echo "[*] Verbose mode: showing build output on CLI and saving to build.log"
-    docker build $PLATFORM_FLAG $BASE_IMAGE_ARG $CACHE_FROM_ARG $CACHE_FROM_IMAGE $CACHE_TO_ARG --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee "$BUILD_LOG"
+    # Capture exit code properly when using pipe (bash-specific PIPESTATUS)
+    set +e  # Temporarily disable exit on error to capture exit code
+    docker build $PLATFORM_FLAG $BASE_IMAGE_ARG $HOST_OS_ARG $CACHE_FROM_ARG $CACHE_FROM_IMAGE $CACHE_TO_ARG --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee "$BUILD_LOG"
     BUILD_EXIT_CODE=${PIPESTATUS[0]}
+    set -e  # Re-enable exit on error
   else
     echo "[*] Build logs are being saved to build.log (use --verbose to see output)"
-    docker build $PLATFORM_FLAG $BASE_IMAGE_ARG $CACHE_FROM_ARG $CACHE_FROM_IMAGE $CACHE_TO_ARG --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > "$BUILD_LOG" 2>&1
+    docker build $PLATFORM_FLAG $BASE_IMAGE_ARG $HOST_OS_ARG $CACHE_FROM_ARG $CACHE_FROM_IMAGE $CACHE_TO_ARG --build-arg fdroid=true --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > "$BUILD_LOG" 2>&1
     BUILD_EXIT_CODE=$?
   fi
 else
   echo "[*] Building Docker image (with BuildKit inline cache)..."
   if [ "$VERBOSE" = true ]; then
     echo "[*] Verbose mode: showing build output on CLI and saving to build.log"
-    docker build $PLATFORM_FLAG $BASE_IMAGE_ARG $CACHE_FROM_ARG $CACHE_FROM_IMAGE $CACHE_TO_ARG --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee "$BUILD_LOG"
+    # Capture exit code properly when using pipe (bash-specific PIPESTATUS)
+    set +e  # Temporarily disable exit on error to capture exit code
+    docker build $PLATFORM_FLAG $BASE_IMAGE_ARG $HOST_OS_ARG $CACHE_FROM_ARG $CACHE_FROM_IMAGE $CACHE_TO_ARG --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . 2>&1 | tee "$BUILD_LOG"
     BUILD_EXIT_CODE=${PIPESTATUS[0]}
+    set -e  # Re-enable exit on error
   else
     echo "[*] Build logs are being saved to build.log (use --verbose to see output)"
-    docker build $PLATFORM_FLAG $BASE_IMAGE_ARG $CACHE_FROM_ARG $CACHE_FROM_IMAGE $CACHE_TO_ARG --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > "$BUILD_LOG" 2>&1
+    docker build $PLATFORM_FLAG $BASE_IMAGE_ARG $HOST_OS_ARG $CACHE_FROM_ARG $CACHE_FROM_IMAGE $CACHE_TO_ARG --build-arg git_ref="$GIT_REF" -t $IMAGE_NAME . > "$BUILD_LOG" 2>&1
     BUILD_EXIT_CODE=$?
   fi
 fi
 
 # Check if build was successful
-# Check both exit code and build log for error indicators
+# Check both exit code and build log for success/failure indicators
 if [ "$BUILD_EXIT_CODE" -eq 0 ]; then
-  # Also check build log for error messages (BuildKit sometimes returns 0 even on failure)
-  if grep -qiE "(ERROR|failed to solve|error:)" "$BUILD_LOG" 2>/dev/null; then
+  # Check for explicit build failure messages first
+  if grep -qiE "BUILD FAILED|failed to solve|ERROR.*failed" "$BUILD_LOG" 2>/dev/null; then
     BUILD_SUCCESS=false
-  else
+  # Check for explicit build success messages
+  elif grep -qiE "BUILD SUCCESSFUL|Build successful" "$BUILD_LOG" 2>/dev/null; then
     # Verify image actually exists
+    if docker images --format "{{.Repository}}" | grep -q "^${IMAGE_NAME}$"; then
+      BUILD_SUCCESS=true
+    else
+      BUILD_SUCCESS=false
+    fi
+  else
+    # No explicit success/failure message, check if image exists
     if docker images --format "{{.Repository}}" | grep -q "^${IMAGE_NAME}$"; then
       BUILD_SUCCESS=true
     else

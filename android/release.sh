@@ -17,6 +17,30 @@ GRADLE_PROPERTIES_PATH="release.properties"
 
 echo -e "--- Starting React Native APK Release Build Automation ---"
 
+# Detect build environment and use appropriate Gradle properties
+# Priority: local > docker-linux > docker-macos (default)
+if [ -f "gradle.properties.local" ] && [ ! -f "/.dockerenv" ] && [ -z "${DOCKER_BUILD:-}" ]; then
+    # Local build - use most aggressive settings
+    echo -e "📦 Detected local build - using gradle.properties.local (optimized for native performance)"
+    if [ -f "gradle.properties" ]; then
+        cp gradle.properties gradle.properties.docker.backup 2>/dev/null || true
+    fi
+    cp gradle.properties.local gradle.properties
+    RESTORE_PROPERTIES=true
+elif [ -f "gradle.properties.docker-linux" ] && [ -n "${DOCKER_BUILD:-}" ] && [ "${DOCKER_HOST_OS:-}" = "linux" ]; then
+    # Docker on Linux host - use aggressive settings (no QEMU)
+    echo -e "🐳🐧 Detected Docker on Linux host - using gradle.properties.docker-linux (native build, no QEMU)"
+    if [ -f "gradle.properties" ]; then
+        cp gradle.properties gradle.properties.docker.backup 2>/dev/null || true
+    fi
+    cp gradle.properties.docker-linux gradle.properties
+    RESTORE_PROPERTIES=true
+else
+    # Docker on macOS host (QEMU) or default - use conservative settings
+    echo -e "🐳🍎 Using Docker build settings (gradle.properties - optimized for QEMU/macOS)"
+    RESTORE_PROPERTIES=false
+fi
+
 # Step 1: Generate or verify Dev Keystore
 KEYSTORE_VALID=false
 
@@ -100,7 +124,17 @@ if [ -f "$APK_PATH" ]; then
     echo -e "Build successful! APK located at: $APK_PATH"
 else
     echo -e "Build failed! Check the logs for errors."
+    # Restore original gradle.properties if we used local one
+    if [ "$RESTORE_PROPERTIES" = true ] && [ -f "gradle.properties.docker.backup" ]; then
+        mv gradle.properties.docker.backup gradle.properties
+    fi
     exit 1
+fi
+
+# Restore original gradle.properties if we used local one
+if [ "$RESTORE_PROPERTIES" = true ] && [ -f "gradle.properties.docker.backup" ]; then
+    mv gradle.properties.docker.backup gradle.properties
+    echo -e "📦 Restored gradle.properties (Docker settings)"
 fi
 
 echo -e "--- Done! ---"
