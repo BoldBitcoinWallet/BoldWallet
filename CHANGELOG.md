@@ -1,5 +1,30 @@
 # Changelog
 
+## [2.1.7] - 2026-01-05
+
+### Added
+- **Docker Build System**: Complete Docker-based build infrastructure for Android APK compilation with cross-platform support
+- **Enhanced QR Code for Send Bitcoin**: QR codes now include address type, derivation path, and network to prevent session timeouts between devices
+- **From Address Display**: Transaction details now show the source (from) address in pairing screens
+- **Watch-Only Wallet Export**: Streamlined to output descriptors only (removed xpub/tpub export)
+- **Multiple Address Display in Transactions**: Transaction details now show all recipient addresses for sent transactions and all sender addresses for received transactions
+  - Sent transactions with multiple outputs (e.g., PSBT transactions) display all recipient addresses with individual amounts
+  - Received transactions with multiple inputs display all sender addresses with the received output amount
+  - Each address shows its BTC amount and fiat equivalent
+  - Transaction list shows count indicator for multiple recipients: "To: address... (+2 more)"
+
+### Changed
+- **Docker Build System**: Moved Docker scripts to organized `docker/scripts/` directory
+- **Android Build Configuration**: Enhanced build system with Docker-specific Gradle settings and improved ProGuard rules
+
+### Fixed
+- **Nostr Transport Panic Recovery**: Enhanced panic recovery in co-signing operations with better error handling
+- **Legacy Wallet Migration Modal**: New modal appears for users with legacy wallets, advising migration to new wallet setup
+- **Network Reset on Wallet Import**: Network always resets to mainnet when importing a keyshare to ensure clean state
+- **Address Flickering Issue**: Fixed address changing/flickering after lock/unlock by making UserContext the single source of truth
+- **Session Timeout Fix for QR Code Scanning**: Fixed session timeouts when scanning send Bitcoin QR codes from second device
+- **TransactionList Loading State**: Fixed infinite "Loading..." state and network errors when restoring wallet for the first time
+
 ## [2.1.6] - 2025-12-31
 
 ### Added
@@ -36,105 +61,6 @@
 - **client.go**: Enhanced panic recovery and error handling in Nostr publish operations
 - **Error Handling**: Improved timeout and error recovery for balance checks
 
-## [2.1.7] - 2026-01-05
-
-### Added
-- **Docker Build System**: Complete Docker-based build infrastructure for Android APK compilation
-  - New `docker/scripts/` directory with comprehensive build automation
-  - `docker-apk-builder.sh`: Main build script with F-Droid support, git reference selection, and verbose logging
-  - `extract-apk.sh`: Extract APK from built Docker images
-  - `docker-cleanup.sh`: Clean up old Docker images, containers, and build cache
-  - `docker-disk-usage.sh`: Monitor Docker disk usage statistics
-  - Cross-platform support (macOS and Linux) with QEMU emulation for macOS/ARM
-  - Comprehensive documentation in `docker/README.md`
-  - BuildKit optimizations with layer caching, cache mounts, and inline cache
-  - `.dockerignore` for optimized build context
-- **Enhanced QR Code for Send Bitcoin**: QR codes now include address type, derivation path, and network
-  - Enables second device to use exact same source address and network as first device
-  - Prevents address mismatches and session timeouts when scanning QR codes between devices
-  - Format: `address|amount|fee|hash|addressType|derivationPath|network`
-  - Automatically extracts and uses scanned address type, derivation path, and network
-  - Backward compatible with older QR code formats
-- **From Address Display**: Transaction details now show the source (from) address in pairing screens
-  - Displays derived address that will be used for the transaction
-  - Helps users verify both devices are using the same source address
-  - Shown in both Nostr and Local WiFi pairing screens
-- **Watch-Only Wallet Export Improvements**: Streamlined export process focused on output descriptors
-  - Removed extended pubkey (xpub/tpub) export option
-  - Focus on output descriptors (Legacy, SegWit Native, SegWit Compatible) for better compatibility
-  - Added Taproot support warning in export UI
-  - Clearer messaging about supported address types
-
-### Changed
-- **Watch-Only Wallet Export**: Simplified to output descriptors only
-  - Removed xpub/tpub generation and display from KeyshareModal and PSBTScreen
-  - Output descriptors are the recommended method for watch-only wallet import
-  - Updated UI text to reflect descriptor-only approach
-- **Docker Build System**: Moved Docker scripts to organized `docker/scripts/` directory
-  - Better project structure and maintainability
-  - Updated README.md with Docker build instructions
-  - Removed old `docker-apk-builder.sh` from project root
-- **Android Build Configuration**: Enhanced build system
-  - New `android/gradle.properties.docker-linux` for Docker-specific Gradle settings
-  - Updated ProGuard rules for better code obfuscation
-  - Added `android/mapping.txt` for R8/ProGuard mapping
-  - Improved release script with better error handling
-
-### Fixed
-- **Nostr Transport Panic Recovery**: Enhanced panic recovery in co-signing operations
-  - Added panic recovery with stack trace logging in `Client.PublishWrap` goroutine
-  - Improved nil pointer safety when extracting relay URLs
-  - Better error messages for debugging relay connection issues
-  - Enhanced resiliency documentation in code comments
-- **Legacy Wallet Migration Modal**: New modal appears for users with legacy wallets, advising migration to new wallet setup for better PSBT compatibility
-  - Non-dismissible modal with friendly messaging
-  - "Do not remind me again" checkbox option
-  - Modal flag automatically resets on new wallet import (if wallet is legacy)
-  - Standalone `LegacyWalletModal` component for reusability
-- **Network Reset on Wallet Import**: Network always resets to mainnet when importing a keyshare to ensure clean state
-- **Address Flickering Issue**: Fixed address changing/flickering after lock/unlock by making UserContext the single source of truth for addresses
-  - UserContext now properly derives network-specific btcPub for both mainnet and testnet
-  - WalletHome prioritizes userActiveAddress from UserContext over local state
-  - Eliminated race conditions in address derivation
-- **Network State Management**: Improved network state consistency across the app
-  - Network reset on import ensures proper address derivation
-  - All contexts and providers properly synchronized with network changes
-- **Session Timeout Fix for QR Code Scanning**: Fixed session timeouts when scanning send Bitcoin QR codes from second device
-  - Both devices now use the same network, derivation path, and address type from QR code
-  - Balance is fetched from the correct derived address (not activeAddress)
-  - Explicit empty string checks prevent fallback to computed values when QR code provides empty strings
-  - Ensures session IDs match between devices by using identical parameters
-- **Cache Clearing**: Comprehensive cache clearing on wallet setup and import screens
-  - LocalCache cleared on ShowcaseScreen (import)
-  - LocalCache cleared on MobilesPairing and MobileNostrPairing (setup mode only)
-  - Stale btcPub removed from EncryptedStorage
-  - WalletService cache cleared for fresh state
-
-### Technical Details
-- **Dockerfile**: Major optimizations with multi-stage builds, BuildKit cache mounts, and layer caching
-- **Native Libraries**: Updated TSS framework binaries for iOS (all architectures) and TSS AAR library for Android
-- **TransportModeSelector**: Enhanced to include address type, derivation path, and network in QR code generation
-- **WalletHome**: Added derivation path and network computation, QR code scanning support for address type/derivation path/network
-- **MobileNostrPairing & MobilesPairing**: 
-  - Use network, derivation path, and address type from route params (QR code) with proper fallbacks
-  - Display from address in transaction details
-  - Fetch balance from derived address (not activeAddress) to ensure session ID matching
-  - Explicit empty string checks for all QR code parameters
-- **KeyshareModal & PSBTScreen**: Removed xpub-related code, simplified to output descriptors only
-- **utils.js**: Updated `encodeSendBitcoinQR` and `decodeSendBitcoinQR` to support network parameter
-- **UserContext**: Enhanced refresh() to derive separate btcPub values for mainnet and testnet
-- **WalletHome**: Updated to use UserContext as primary address source, with local state as fallback
-- **ShowcaseScreen**: Added network reset to mainnet on keyshare import using setActiveNetwork()
-- **Cache Management**: Added useEffect hooks to clear all cache on wallet setup/import screens
-- **Styles**: Added `watchWalletWarning` style for Taproot support warnings
-- **Button Layout**: Applied flexOneMinWidthZero and partyGap styles to action buttons for consistent alignment
-- **WalletHome**: Added `sendButtonDisabled` style to replace inline styles (lint fix)
-
-## [Unreleased]
-
-### Added
-- Future features and improvements will be documented here
-
 ## [2.1.4] - 2025-12-30
 
 ### Added
@@ -149,8 +75,6 @@
 ### Fixed
 - **Android navigation bar overlap**: Fixed bottom navigation bar overlapping system navigation on Android devices (e.g., Samsung)
 - **Message delivery reliability**: Improved handling of messages sent just before subscription starts
-
----
 
 ## [2.1.3] - 2025-12-20
 

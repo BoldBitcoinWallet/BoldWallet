@@ -867,14 +867,27 @@ const TransactionList = React.forwardRef<
         const shortTxId = `${item.txid.slice(0, 4)}...${item.txid.slice(-4)}`;
         const baseUrl = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
 
-        // Get the relevant address based on transaction type
-        const relevantAddress = status.includes('Sen')
-          ? item?.vout?.find(
-              (output: any) => output.scriptpubkey_address !== address,
-            )?.scriptpubkey_address
-          : item?.vin?.find(
-              (input: any) => input.prevout.scriptpubkey_address !== address,
-            )?.prevout?.scriptpubkey_address;
+        // Get the relevant address(es) based on transaction type
+        let relevantAddresses: string[] = [];
+        let relevantAddress: string | null = null;
+        
+        if (status.includes('Sen')) {
+          // For sent transactions: collect ALL recipient addresses (outputs that aren't the sender's address)
+          relevantAddresses = item?.vout
+            ?.filter((output: any) => output.scriptpubkey_address !== address)
+            .map((output: any) => output.scriptpubkey_address)
+            .filter((addr: string) => addr) || [];
+          // Remove duplicates
+          relevantAddresses = [...new Set(relevantAddresses)];
+          relevantAddress = relevantAddresses[0] || null;
+        } else {
+          // For received transactions: show the first input address that's not the receiver's address
+          relevantAddress = item?.vin?.find(
+            (input: any) => input.prevout.scriptpubkey_address !== address,
+          )?.prevout?.scriptpubkey_address || null;
+          // Set empty array for received transactions (not used in display)
+          relevantAddresses = [];
+        }
 
         const addressExplorerLink = relevantAddress
           ? `${baseUrl}/address/${relevantAddress}`
@@ -945,6 +958,11 @@ const TransactionList = React.forwardRef<
                     {status.includes('Sen') ? 'To: ' : 'From: '}
                     <Text style={styles.addressText}>
                       {relevantAddress.slice(0, 6)}...{relevantAddress.slice(-4)}
+                      {status.includes('Sen') && relevantAddresses.length > 1 && (
+                        <Text style={styles.addressText}>
+                          {' '}(+{relevantAddresses.length - 1} more)
+                        </Text>
+                      )}
                     </Text>
                   </Text>
                 </View>

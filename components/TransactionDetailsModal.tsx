@@ -81,33 +81,66 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   const hasValidReceived =
     typeof amounts.received === 'number' && Number.isFinite(amounts.received);
 
-  // Get the relevant address(es) based on transaction type
-  // For sent: show the recipient address (first output that's not the sender)
+  // Get the relevant address(es) with amounts based on transaction type
+  // For sent: show ALL recipient addresses with their amounts (all outputs that aren't the sender's address)
   // For received: show ALL input addresses (excluding the receiver's own address if it appears)
-  let relevantAddresses: string[] = [];
+  interface AddressWithAmount {
+    address: string;
+    amount: number; // in BTC
+  }
+  
+  let relevantAddresses: AddressWithAmount[] = [];
   let addressLabel = '';
   
   if (isSent) {
-    // Sent transaction: show recipient address
-    const recipientAddress = transaction.vout?.find(
-      (output: any) =>
-        output.scriptpubkey_address !==
-        transaction.vin[0]?.prevout?.scriptpubkey_address,
-    )?.scriptpubkey_address;
-    if (recipientAddress) {
-      relevantAddresses = [recipientAddress];
-    }
-    addressLabel = 'To Address';
+    // Sent transaction: show ALL recipient addresses with their amounts
+    const recipientOutputs = transaction.vout
+      ?.filter((output: any) => {
+        // Exclude outputs that match the sender's address (change outputs)
+        return output.scriptpubkey_address && output.scriptpubkey_address !== address;
+      }) || [];
+    
+    // Group by address and sum amounts (in case same address appears multiple times)
+    const addressAmountMap = new Map<string, number>();
+    recipientOutputs.forEach((output: any) => {
+      const addr = output.scriptpubkey_address;
+      const amountSats = output.value || 0;
+      const currentAmount = addressAmountMap.get(addr) || 0;
+      addressAmountMap.set(addr, currentAmount + amountSats);
+    });
+    
+    // Convert to array with amounts in BTC
+    relevantAddresses = Array.from(addressAmountMap.entries()).map(([addr, amountSats]) => ({
+      address: addr,
+      amount: amountSats / 1e8, // Convert satoshis to BTC
+    }));
+    
+    addressLabel = relevantAddresses.length > 1 ? 'To Addresses' : 'To Address';
   } else {
     // Received transaction: collect ALL unique input addresses (these are the senders)
     // Exclude the user's own address (change) from the list since it's not a "from" address
-    // Inputs are the addresses that sent to us, outputs contain our receiving address
+    // For received transactions, show the output amount that went to user's address, not input amounts
     const inputAddresses = transaction.vin
       ?.map((input: any) => input.prevout?.scriptpubkey_address)
       .filter((addr: string) => addr && addr !== address) || []; // Exclude user's own address (change)
     
     // Remove duplicates
-    relevantAddresses = [...new Set(inputAddresses)];
+    const uniqueAddresses = [...new Set(inputAddresses)];
+    
+    // Calculate total received amount from outputs to user's address
+    const totalReceivedSats = transaction.vout
+      ?.filter((output: any) => output.scriptpubkey_address === address)
+      .reduce((total: number, output: any) => total + (output.value || 0), 0) || 0;
+    
+    const totalReceivedBTC = totalReceivedSats / 1e8;
+    
+    // Show all sender addresses with the total received amount
+    // (We can't attribute portions to individual senders since Bitcoin doesn't work that way)
+    relevantAddresses = uniqueAddresses.map(addr => ({
+      address: addr,
+      amount: totalReceivedBTC, // Show the received output amount, not input amounts
+    }));
+    
     addressLabel = relevantAddresses.length > 1 ? 'From Addresses' : 'From Address';
   }
 
@@ -192,8 +225,9 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
             {relevantAddresses.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>{addressLabel}</Text>
-                {relevantAddresses.map((addr, index) => {
-                  const addressExplorerLink = `${baseUrl}/address/${addr}`;
+                {relevantAddresses.map((addrWithAmount, index) => {
+                  const addressExplorerLink = `${baseUrl}/address/${addrWithAmount.address}`;
+                  const showAmount = addrWithAmount.amount > 0;
                   return (
                     <View key={index} style={styles.addressItem}>
                       {relevantAddresses.length > 1 && (
@@ -206,10 +240,22 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                             Linking.openURL(addressExplorerLink);
                           }}>
                           <Text style={[styles.txId, styles.clickableText]}>
-                            {addr}
+                            {addrWithAmount.address}
                           </Text>
                         </TouchableOpacity>
                       </View>
+                      {showAmount && (
+                        <View style={styles.addressAmountContainer}>
+                          <Text style={styles.addressAmount}>
+                            {isBlurred ? '***' : formatBtcAmount(addrWithAmount.amount)} BTC
+                          </Text>
+                          {!isBlurred && btcRate > 0 && (
+                            <Text style={styles.addressAmountFiat}>
+                              {getCurrencySymbol(selectedCurrency)}{getFiatAmount(addrWithAmount.amount)}
+                            </Text>
+                          )}
+                        </View>
+                      )}
                     </View>
                   );
                 })}
@@ -335,8 +381,8 @@ const styles = StyleSheet.create({
   },
   addressItem: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
+    alignItems: 'flex-start',
+    marginBottom: 12,
   },
   addressIndex: {
     fontSize: 13,
@@ -353,6 +399,25 @@ const styles = StyleSheet.create({
     flex: 1,
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.06)',
+    marginRight: 12,
+  },
+  addressAmountContainer: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    minWidth: 100,
+  },
+  addressAmount: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: themes.lightPolished.colors.text,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    marginBottom: 2,
+  },
+  addressAmountFiat: {
+    fontSize: 12,
+    color: themes.lightPolished.colors.text,
+    opacity: 0.6,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   txId: {
     fontSize: 13,
