@@ -70,34 +70,34 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
 
   const styles = StyleSheet.create({
     feeStrategyContainer: {
-      marginBottom: 10,
+      marginBottom: 8,
     },
     feeStrategyButton: {
-      backgroundColor: '#e9ecef',
-      paddingVertical: 8,
-      paddingHorizontal: 12,
-      borderRadius: 16,
-      marginRight: 8,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.cardBackground || '#e9ecef',
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      borderRadius: 12,
+      marginRight: 6,
+      borderWidth: 1.5,
+      borderColor: theme.colors.border || '#e0e0e0',
     },
     feeStrategyButtonSelected: {
       backgroundColor: theme.colors.primary,
       borderColor: theme.colors.primary,
     },
     feeStrategyText: {
-      fontSize: 14,
-      color: '#495057',
+      fontSize: 12,
+      color: theme.colors.textSecondary || '#495057',
       fontWeight: '600',
     },
     feeStrategyTextSelected: {
       color: '#fff',
     },
     label: {
-      fontSize: 14,
+      fontSize: 13,
       fontWeight: '600',
-      marginBottom: 8,
-      color: '#7f8c8d',
+      marginBottom: 6,
+      color: theme.colors.textSecondary || '#7f8c8d',
     },
     modalBackdrop: {
       flex: 1,
@@ -107,32 +107,33 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     },
     modalContainer: {
       width: '90%',
+      maxHeight: '90%',
       backgroundColor: theme.colors.background,
-      borderRadius: 10,
-      padding: 20,
+      borderRadius: 16,
+      padding: 16,
     },
     header: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
       width: '100%',
-      marginBottom: 20,
-      paddingHorizontal: 4,
+      marginBottom: 12,
+      paddingHorizontal: 0,
     },
     titleContainer: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
+      gap: 6,
       flex: 1,
     },
     bitcoinLogo: {
-      width: 24,
-      height: 24,
+      width: 20,
+      height: 20,
       resizeMode: 'contain',
     },
     title: {
-      fontSize: 20,
-      fontWeight: 'bold',
+      fontSize: 18,
+      fontWeight: '700',
       color: theme.colors.text,
       flex: 1,
     },
@@ -149,33 +150,37 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       lineHeight: 30,
     },
     input: {
-      borderWidth: 1,
-      borderColor: theme.colors.secondary,
-      borderRadius: 8,
-      padding: 12,
-      fontSize: 16,
-      maxHeight: 50,
-      backgroundColor: '#FFF',
-      marginBottom: 10,
+      borderWidth: 1.5,
+      borderColor: theme.colors.border || theme.colors.secondary,
+      borderRadius: 10,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      fontSize: 15,
+      maxHeight: 48,
+      backgroundColor: theme.colors.cardBackground || '#FFF',
+      marginBottom: 8,
+      color: theme.colors.text,
     },
     inputWithIcons: {
       position: 'relative',
-      marginBottom: 20,
-      marginTop: 20,
+      marginBottom: 12,
+      marginTop: 0,
     },
     inputAddressWithIcons: {
-      borderWidth: 1,
-      borderColor: theme.colors.secondary,
-      borderRadius: 8,
-      padding: 12,
+      borderWidth: 1.5,
+      borderColor: theme.colors.border || theme.colors.secondary,
+      borderRadius: 10,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
       paddingRight: 80,
-      minHeight: 48,
-      maxHeight: 60,
-      fontSize: 14,
-      lineHeight: 18,
-      backgroundColor: '#FFF',
+      minHeight: 56,
+      maxHeight: 64,
+      fontSize: 13,
+      lineHeight: 16,
+      backgroundColor: theme.colors.cardBackground || '#FFF',
       textAlignVertical: 'top',
       fontFamily: Platform.select({ios: 'Menlo', android: 'monospace'}) as any,
+      color: theme.colors.text,
     },
     iconImage: {
       width: 24,
@@ -183,13 +188,15 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     },
     pasteIconContainer: {
       position: 'absolute',
-      top: 12,
+      top: 10,
       right: 40,
+      padding: 4,
     },
     qrIconContainer: {
       position: 'absolute',
-      top: 12,
-      right: 10,
+      top: 10,
+      right: 8,
+      padding: 4,
     },
     labelContainer: {
       flexDirection: 'row',
@@ -205,12 +212,12 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       textDecorationLine: 'underline',
     },
     balanceCard: {
-      backgroundColor: '#f8f9fa',
-      borderRadius: 10,
-      padding: 14,
-      marginBottom: 16,
-      borderWidth: 1,
-      borderColor: theme.colors.secondary || '#e0e0e0',
+      backgroundColor: theme.colors.cardBackground || '#f8f9fa',
+      borderRadius: 12,
+      padding: 12,
+      marginBottom: 12,
+      borderWidth: 1.5,
+      borderColor: theme.colors.border || theme.colors.secondary || '#e0e0e0',
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
@@ -219,46 +226,46 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       flex: 1,
     },
     balanceCardLabel: {
-      fontSize: 12,
+      fontSize: 11,
       fontWeight: '600',
-      color: '#7f8c8d',
-      marginBottom: 4,
+      color: theme.colors.textSecondary || '#7f8c8d',
+      marginBottom: 3,
       textTransform: 'uppercase',
       letterSpacing: 0.5,
     },
     balanceCardBtc: {
-      fontSize: 18,
-      fontWeight: 'bold',
+      fontSize: 16,
+      fontWeight: '700',
       color: theme.colors.text,
       marginBottom: 2,
     },
     balanceCardFiat: {
-      fontSize: 13,
-      color: '#7f8c8d',
+      fontSize: 12,
+      color: theme.colors.textSecondary || '#7f8c8d',
       fontWeight: '500',
     },
     balanceCardMaxButton: {
-      backgroundColor: theme.colors.accent,
-      paddingVertical: 8,
-      paddingHorizontal: 16,
+      backgroundColor: theme.colors.accent || theme.colors.primary,
+      paddingVertical: 7,
+      paddingHorizontal: 14,
       borderRadius: 8,
-      minWidth: 70,
+      minWidth: 60,
       alignItems: 'center',
       justifyContent: 'center',
     },
     balanceCardMaxButtonText: {
       color: '#fff',
-      fontSize: 14,
-      fontWeight: 'bold',
+      fontSize: 13,
+      fontWeight: '700',
     },
     inputContainer: {
       marginBottom: 0,
     },
     inputLabel: {
-      fontSize: 14,
+      fontSize: 13,
       fontWeight: '600',
-      marginBottom: 8,
-      color: '#7f8c8d',
+      marginBottom: 6,
+      color: theme.colors.textSecondary || '#7f8c8d',
     },
     inputError: {
       borderColor: theme.colors.danger || '#DC3545',
@@ -271,24 +278,25 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       marginLeft: 4,
     },
     feeContainer: {
-      marginTop: 15,
-      padding: 10,
-      backgroundColor: '#f8f9fa',
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: theme.colors.secondary,
+      marginTop: 10,
+      padding: 12,
+      backgroundColor: theme.colors.cardBackground || '#f8f9fa',
+      borderRadius: 12,
+      borderWidth: 1.5,
+      borderColor: theme.colors.border || theme.colors.secondary,
     },
     feeLabel: {
-      fontSize: 14,
+      fontSize: 13,
       fontWeight: '600',
-      color: '#7f8c8d',
+      color: theme.colors.textSecondary || '#7f8c8d',
+      marginBottom: 8,
     },
     feeInfoContainer: {
-      marginTop: 5,
+      marginTop: 0,
     },
     feeAmount: {
-      fontSize: 16,
-      fontWeight: 'bold',
+      fontSize: 15,
+      fontWeight: '700',
       color: theme.colors.text,
     },
     feeCalculating: {
@@ -308,46 +316,49 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       marginTop: 5,
     },
     feeAmountUsd: {
-      fontSize: 14,
-      color: '#7f8c8d',
+      fontSize: 12,
+      color: theme.colors.textSecondary || '#7f8c8d',
     },
     sendCancelButtons: {
       flexDirection: 'row',
       justifyContent: 'space-between',
-      marginTop: 20,
+      marginTop: 14,
+      gap: 10,
     },
     sendButton: {
       flex: 1,
       backgroundColor: theme.colors.primary,
-      padding: 15,
-      borderRadius: 8,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: 12,
       alignItems: 'center',
-      marginRight: 10,
+      justifyContent: 'center',
     },
     cancelButton: {
       flex: 1,
-      backgroundColor: theme.colors.secondary,
-      padding: 15,
-      borderRadius: 8,
+      backgroundColor: theme.colors.secondary || theme.colors.border,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: 12,
       alignItems: 'center',
-      marginLeft: 10,
+      justifyContent: 'center',
     },
     buttonText: {
       color: '#fff',
-      fontSize: 16,
-      fontWeight: 'bold',
+      fontSize: 15,
+      fontWeight: '700',
     },
     disabledButton: {
       opacity: 0.5,
     },
     // Setup Guide Hint Styles
     setupGuideHint: {
-      marginTop: 12,
+      marginTop: 8,
       alignItems: 'center',
     },
     setupGuideHintTouchable: {
-      paddingVertical: 8,
-      paddingHorizontal: 12,
+      paddingVertical: 6,
+      paddingHorizontal: 10,
       borderRadius: 8,
     },
     setupGuideHintRow: {
@@ -361,7 +372,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       tintColor: theme.colors.primary,
     },
     setupGuideHintText: {
-      fontSize: 13,
+      fontSize: 12,
       color: theme.colors.primary,
       fontWeight: '500',
       textDecorationLine: 'underline',
@@ -663,16 +674,16 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       return null;
     }
     return (
-      <View style={styles.feeContainer}>
+            <View style={styles.feeContainer}>
         {isCalculatingFee ? (
           <View style={styles.feeLoadingContainer}>
-            <ActivityIndicator size="small" />
+            <ActivityIndicator size="small" color={theme.colors.primary} />
             <Text style={styles.feeCalculating}>Calculating...</Text>
           </View>
         ) : estimatedFee ? (
           <View style={styles.feeInfoContainer}>
             <View style={styles.feeStrategyContainer}>
-              <Text style={styles.label}>Network Fee:</Text>
+              <Text style={styles.feeLabel}>Network Fee:</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 {feeStrategies.map(strategy => (
                   <TouchableOpacity
@@ -741,7 +752,10 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     <Text style={styles.closeButtonText}>✖️</Text>
                   </TouchableOpacity>
                 </View>
-                <View style={styles.inputWithIcons}>
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled">
+                  <View style={styles.inputWithIcons}>
                   <TextInput
                     style={styles.inputAddressWithIcons}
                     placeholder="Recipient Bitcoin Address"
@@ -860,36 +874,37 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                   </TouchableOpacity>
                 </View>
 
-                <View style={styles.sendCancelButtons}>
-                  <TouchableOpacity
-                    style={[
-                      styles.sendButton,
-                      (!address ||
+                  <View style={styles.sendCancelButtons}>
+                    <TouchableOpacity
+                      style={[
+                        styles.sendButton,
+                        (!address ||
+                          !btcAmount ||
+                          isCalculatingFee ||
+                          !estimatedFee) &&
+                          styles.disabledButton,
+                      ]}
+                      onPress={handleSendClick}
+                      disabled={
+                        !address ||
                         !btcAmount ||
                         isCalculatingFee ||
-                        !estimatedFee) &&
-                        styles.disabledButton,
-                    ]}
-                    onPress={handleSendClick}
-                    disabled={
-                      !address ||
-                      !btcAmount ||
-                      isCalculatingFee ||
-                      !estimatedFee
-                    }
-                    activeOpacity={0.7}>
-                    <Text style={styles.buttonText}>Send</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.cancelButton}
-                    onPress={() => {
-                      HapticFeedback.light();
-                      onClose();
-                    }}
-                    activeOpacity={0.7}>
-                    <Text style={styles.buttonText}>Cancel</Text>
-                  </TouchableOpacity>
-                </View>
+                        !estimatedFee
+                      }
+                      activeOpacity={0.7}>
+                      <Text style={styles.buttonText}>Send</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.cancelButton}
+                      onPress={() => {
+                        HapticFeedback.light();
+                        onClose();
+                      }}
+                      activeOpacity={0.7}>
+                      <Text style={styles.buttonText}>Cancel</Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
 
                 <QRScanner
                   visible={isScannerVisible}

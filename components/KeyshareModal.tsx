@@ -389,6 +389,9 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                       Import the output descriptor into Sparrow or another
                       PSBT-capable wallet to create a watch-only wallet.
                     </Text>
+                    <Text style={styles.watchWalletWarning}>
+                      ⚠️ Note: Taproot is not supported. Only Legacy, SegWit Native, and SegWit Compatible address types are supported.
+                    </Text>
                     <View>
                       {/* Output Descriptors - One row per address type */}
                       {keyshareInfo.outputDescriptors?.legacy && (

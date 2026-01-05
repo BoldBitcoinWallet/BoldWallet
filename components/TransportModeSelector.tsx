@@ -26,6 +26,11 @@ interface TransportModeSelectorProps {
     spendingHash?: string;
     addressType?: string;
     derivationPath?: string;
+    network?: string;
+    fromAddress?: string; // From address for display
+    fiatAmount?: string; // Fiat amount for display
+    fiatFees?: string; // Fiat fees for display
+    selectedCurrency?: string; // Currency symbol for display
   } | null;
   showQRCode?: boolean; // Whether to show QR code (false when data came from scan)
 }
@@ -40,7 +45,9 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
   showQRCode = true,
 }) => {
   const {theme} = useTheme();
-  const [selectedTransport, setSelectedTransport] = useState<'local' | 'nostr' | null>(null);
+  const [selectedTransport, setSelectedTransport] = useState<
+    'local' | 'nostr' | null
+  >(null);
 
   const handleSelect = (transport: 'local' | 'nostr') => {
     HapticFeedback.medium();
@@ -259,8 +266,9 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       padding: 16,
       backgroundColor: theme.colors.white,
       borderRadius: 12,
-      borderWidth: 1,
+      borderWidth: 1.5,
       borderColor: theme.colors.border,
+      borderStyle: 'dashed',
       alignItems: 'center',
     },
     qrCodeLabel: {
@@ -314,40 +322,46 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
           </View>
 
           {/* Modal Body */}
-          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            style={styles.modalBody}
+            showsVerticalScrollIndicator={false}>
             {description && description.length > 0 && (
               <Text style={styles.modalDescription}>{description}</Text>
             )}
 
             {/* QR Code Section - Only show if sendBitcoinData exists and showQRCode is true */}
-            {sendBitcoinData && showQRCode && (() => {
-              const qrData = encodeSendBitcoinQR(
-                sendBitcoinData.toAddress,
-                sendBitcoinData.amountSats,
-                sendBitcoinData.feeSats,
-                sendBitcoinData.spendingHash || '',
-                sendBitcoinData.addressType || '',
-                sendBitcoinData.derivationPath || '',
-              );
-              return (
-                <View style={styles.qrCodeSection}>
-                  <Text style={styles.qrCodeLabel}>
-                    Quick Shortcut for Other Devices
-                  </Text>
-                  <Text style={styles.qrCodeSubLabel}>
-                    Scan this QR code on other devices to{'\n'}automatically enter address and amount
-                  </Text>
-                  <View style={styles.qrCodeContainer}>
-                    <QRCode
-                      value={qrData}
-                      size={180}
-                      backgroundColor="white"
-                      color="black"
-                    />
+            {sendBitcoinData &&
+              showQRCode &&
+              (() => {
+                const qrData = encodeSendBitcoinQR(
+                  sendBitcoinData.toAddress,
+                  sendBitcoinData.amountSats,
+                  sendBitcoinData.feeSats,
+                  sendBitcoinData.spendingHash || '',
+                  sendBitcoinData.addressType || '',
+                  sendBitcoinData.derivationPath || '',
+                  sendBitcoinData.network || '',
+                );
+                return (
+                  <View style={styles.qrCodeSection}>
+                    <Text style={styles.qrCodeLabel}>
+                      Quick Shortcut for Other Devices
+                    </Text>
+                    <Text style={styles.qrCodeSubLabel}>
+                      Scan this QR code on other devices to{'\n'}automatically
+                      enter address and amount
+                    </Text>
+                    <View style={styles.qrCodeContainer}>
+                      <QRCode
+                        value={qrData}
+                        size={180}
+                        backgroundColor="white"
+                        color="black"
+                      />
+                    </View>
                   </View>
-                </View>
-              );
-            })()}
+                );
+              })()}
 
             <View style={styles.transportOptionsContainer}>
               {/* Local WiFi/Hotspot Option */}
@@ -475,9 +489,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
               onPress={handleContinue}
               disabled={!selectedTransport}
               activeOpacity={0.8}>
-              <Text style={styles.continueButtonText}>
-                Continue →
-              </Text>
+              <Text style={styles.continueButtonText}>Continue →</Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
@@ -487,4 +499,3 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
 };
 
 export default TransportModeSelector;
-

@@ -44,6 +44,10 @@ export interface Styles {
   balanceIcon: ImageStyle;
   blurredText: TextStyle;
   balanceHint: TextStyle;
+  balanceTouchable: ViewStyle;
+  balanceLoadingIndicator: ViewStyle;
+  balanceErrorContainer: ViewStyle;
+  balanceErrorText: TextStyle;
   qrContainer: ViewStyle;
   address: TextStyle;
   partyContainer: ViewStyle;
@@ -57,6 +61,7 @@ export interface Styles {
   actions: ViewStyle;
   sendButton: ViewStyle;
   sendButtonText: TextStyle;
+  sendButtonDisabled: ViewStyle;
   addressTypeModalButton: ViewStyle;
   addressTypeButtonText: TextStyle;
   addressTypeButtonIcon: ImageStyle;
@@ -209,6 +214,7 @@ export interface Styles {
   keyshareInfoHeader: TextStyle;
   watchWalletTitle: TextStyle;
   watchWalletDescription: TextStyle;
+  watchWalletWarning: TextStyle;
   watchWalletItem: ViewStyle;
   watchWalletItemLabel: TextStyle;
   watchWalletItemValue: TextStyle;
@@ -282,11 +288,11 @@ export const createStyles = (theme: Theme): Styles => ({
     borderRadius: 12,
     alignItems: 'center' as const,
     marginBottom: 0,
-    elevation: 2,
+    elevation: 3,
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOffset: {width: 0, height: 3},
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
   },
   headerTop: {
     flexDirection: 'row' as const,
@@ -326,8 +332,38 @@ export const createStyles = (theme: Theme): Styles => ({
   balanceContainer: {
     alignItems: 'center' as const,
     width: '100%',
-    paddingVertical: 4,
+    paddingVertical: 10,
     marginBottom: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 10,
+    marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  balanceTouchable: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    width: '100%',
+  },
+  balanceLoadingIndicator: {
+    marginRight: 8,
+  },
+  balanceErrorContainer: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: 'center' as const,
+  },
+  balanceErrorText: {
+    fontSize: 12,
+    color: '#ff6b6b',
+    fontWeight: '500' as const,
+    textAlign: 'center' as const,
   },
   balanceRow: {
     flexDirection: 'row' as const,
@@ -359,11 +395,17 @@ export const createStyles = (theme: Theme): Styles => ({
     fontWeight: 'bold',
     color: theme.colors.white,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: {width: 0, height: 1},
+    textShadowRadius: 2,
   },
   balanceFiat: {
     fontSize: 16,
     color: theme.colors.white,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    textShadowColor: 'rgba(0, 0, 0, 0.15)',
+    textShadowOffset: {width: 0, height: 1},
+    textShadowRadius: 1,
   },
   balanceIcon: {
     width: 18,
@@ -404,8 +446,9 @@ export const createStyles = (theme: Theme): Styles => ({
     flexDirection: 'row' as const,
     width: '100%',
     marginTop: 4,
-    marginBottom: 6,
+    marginBottom: 12,
     borderRadius: 8,
+    flexWrap: 'wrap' as const,
   },
   partyLeft: {
     flex: 1,
@@ -446,7 +489,7 @@ export const createStyles = (theme: Theme): Styles => ({
   },
   actions: {
     flexDirection: 'row' as const,
-    marginTop: 8,
+    marginTop: 12,
     width: '100%',
     gap: 0,
   },
@@ -733,10 +776,16 @@ export const createStyles = (theme: Theme): Styles => ({
     shadowRadius: 6,
     // Add elevation for Android
     elevation: 2,
+    minWidth: 80,
+    flex: 1,
+    flexBasis: '30%',
   },
   addressTypeClickable: {
     // For extra visual feedback if needed
     opacity: 0.96,
+  },
+  sendButtonDisabled: {
+    opacity: 0.6,
   },
   networkRow: {
     flexDirection: 'row',
@@ -1407,6 +1456,14 @@ export const createStyles = (theme: Theme): Styles => ({
     color: theme.colors.text,
     marginTop: 4,
     marginBottom: 12,
+  },
+  watchWalletWarning: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: theme.colors.textSecondary,
+    marginTop: 8,
+    marginBottom: 12,
+    fontStyle: 'italic' as const,
   },
   watchWalletItem: {
     marginTop: 12,

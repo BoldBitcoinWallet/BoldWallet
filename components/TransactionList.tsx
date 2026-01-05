@@ -775,15 +775,13 @@ const TransactionList = React.forwardRef<
         fontSize: 13,
         color: colors.text,
         opacity: 0.6,
-        flex: 1,
-        marginRight: 8,
+        marginRight: 4,
         fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
       },
-      addressLink: {
-        color: colors.primary,
-        textDecorationLine: 'none',
+      addressText: {
+        color: colors.text,
         fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-        opacity: 0.9,
+        opacity: 0.8,
       },
       txId: {
         fontSize: 12,
@@ -796,11 +794,10 @@ const TransactionList = React.forwardRef<
         color: colors.text,
         opacity: 0.5,
       },
-      txLink: {
-        color: colors.primary,
-        textDecorationLine: 'none',
+      txText: {
+        color: colors.text,
         fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-        opacity: 0.9,
+        opacity: 0.7,
       },
       emptyContainer: {
         flex: 1,
@@ -819,6 +816,11 @@ const TransactionList = React.forwardRef<
         justifyContent: 'space-between',
         alignItems: 'center',
         marginVertical: 2,
+      },
+      addressContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
       },
       statusContainer: {
         flexDirection: 'row',
@@ -938,18 +940,14 @@ const TransactionList = React.forwardRef<
             </View>
             {relevantAddress && (
               <View style={styles.addressRow}>
-                <Text style={styles.address}>
-                  {status.includes('Sen') ? 'To: ' : 'From: '}
-                  <Text
-                    style={styles.addressLink}
-                    onPress={() => {
-                      HapticFeedback.light();
-                      dbg('Opening address explorer:', addressExplorerLink);
-                      Linking.openURL(addressExplorerLink);
-                    }}>
-                    {relevantAddress.slice(0, 6)}...{relevantAddress.slice(-4)}
+                <View style={styles.addressContainer}>
+                  <Text style={styles.address}>
+                    {status.includes('Sen') ? 'To: ' : 'From: '}
+                    <Text style={styles.addressText}>
+                      {relevantAddress.slice(0, 6)}...{relevantAddress.slice(-4)}
+                    </Text>
                   </Text>
-                </Text>
+                </View>
                 <Text style={styles.fiatAmount}>
                   {isBlurred
                     ? '***'
@@ -961,7 +959,7 @@ const TransactionList = React.forwardRef<
               <View style={styles.txIdContainer}>
                 <Image source={linkIcon} style={styles.linkIcon} />
                 <Text style={styles.txId}>
-                  <Text style={styles.txLink}>0x{shortTxId}</Text>
+                  <Text style={styles.txText}>0x{shortTxId}</Text>
                 </Text>
               </View>
               <Text style={styles.timestamp}>{timestamp}</Text>

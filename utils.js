@@ -230,8 +230,11 @@ export const presentFiat = (amount, decimals = 2) => {
     return '0.00';
   }
 
+  // Ensure non-negative (handle -0 case)
+  const positiveNum = num < 0 ? 0 : num;
+
   // Format with thousand separators and fixed decimal places
-  return num.toLocaleString(undefined, {
+  return positiveNum.toLocaleString(undefined, {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   });
@@ -551,14 +554,15 @@ export const getKeyshareLabel = keyshare => {
  * @param {string} derivationPath - Derivation path (e.g., "m/84'/0'/0'/0/0")
  * @returns {string} - Encoded QR data string
  */
-export const encodeSendBitcoinQR = (toAddress, amountSats, feeSats, spendingHash = '', addressType = '', derivationPath = '') => {
+export const encodeSendBitcoinQR = (toAddress, amountSats, feeSats, spendingHash = '', addressType = '', derivationPath = '', network = '') => {
   const amount = typeof amountSats === 'string' ? amountSats : amountSats.toString();
   const fee = typeof feeSats === 'string' ? feeSats : feeSats.toString();
-  return `${toAddress}|${amount}|${fee}|${spendingHash || ''}|${addressType || ''}|${derivationPath || ''}`;
+  return `${toAddress}|${amount}|${fee}|${spendingHash || ''}|${addressType || ''}|${derivationPath || ''}|${network || ''}`;
 };
 
 /**
  * Decode send bitcoin data from QR code format
+ * Format (newest): <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>|<network>
  * Format (new): <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>
  * Format (old): <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>
  * @param {string} qrData - QR code data string
@@ -570,14 +574,15 @@ export const decodeSendBitcoinQR = (qrData) => {
   }
 
   const parts = qrData.split('|');
-  // Support both old format (3-4 parts) and new format (6 parts)
-  if (parts.length < 3 || parts.length > 6) {
+  // Support old format (3-4 parts), new format (6 parts), and newest format (7 parts)
+  if (parts.length < 3 || parts.length > 7) {
     return null;
   }
 
   // Old format: <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>
   // New format: <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>
-  const [toAddress, amountSats, feeSats, spendingHash = '', addressType = '', derivationPath = ''] = parts;
+  // Newest format: <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>|<network>
+  const [toAddress, amountSats, feeSats, spendingHash = '', addressType = '', derivationPath = '', network = ''] = parts;
 
   // Validate address is not empty
   if (!toAddress || toAddress.trim() === '') {
@@ -598,5 +603,6 @@ export const decodeSendBitcoinQR = (qrData) => {
     spendingHash: spendingHash || '',
     addressType: addressType || '',
     derivationPath: derivationPath || '',
+    network: network || '',
   };
 };

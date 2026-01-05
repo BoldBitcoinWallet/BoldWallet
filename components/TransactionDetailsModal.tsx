@@ -42,6 +42,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   selectedCurrency,
   btcRate,
   getCurrencySymbol,
+  address,
   status,
   amounts,
   isBlurred = false,
@@ -80,23 +81,35 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   const hasValidReceived =
     typeof amounts.received === 'number' && Number.isFinite(amounts.received);
 
-  // Get the relevant address based on transaction type
-  const relevantAddress = isSent
-    ? transaction.vout?.find(
-        (output: any) =>
-          output.scriptpubkey_address !==
-          transaction.vin[0]?.prevout?.scriptpubkey_address,
-      )?.scriptpubkey_address
-    : transaction.vin?.find(
-        (input: any) =>
-          input.prevout.scriptpubkey_address !==
-          transaction.vout[0]?.scriptpubkey_address,
-      )?.prevout?.scriptpubkey_address;
-
-  const addressLabel = isSent ? 'To Address' : 'From Address';
-  const addressExplorerLink = relevantAddress
-    ? `${baseUrl}/address/${relevantAddress}`
-    : '';
+  // Get the relevant address(es) based on transaction type
+  // For sent: show the recipient address (first output that's not the sender)
+  // For received: show ALL input addresses (excluding the receiver's own address if it appears)
+  let relevantAddresses: string[] = [];
+  let addressLabel = '';
+  
+  if (isSent) {
+    // Sent transaction: show recipient address
+    const recipientAddress = transaction.vout?.find(
+      (output: any) =>
+        output.scriptpubkey_address !==
+        transaction.vin[0]?.prevout?.scriptpubkey_address,
+    )?.scriptpubkey_address;
+    if (recipientAddress) {
+      relevantAddresses = [recipientAddress];
+    }
+    addressLabel = 'To Address';
+  } else {
+    // Received transaction: collect ALL unique input addresses (these are the senders)
+    // Exclude the user's own address (change) from the list since it's not a "from" address
+    // Inputs are the addresses that sent to us, outputs contain our receiving address
+    const inputAddresses = transaction.vin
+      ?.map((input: any) => input.prevout?.scriptpubkey_address)
+      .filter((addr: string) => addr && addr !== address) || []; // Exclude user's own address (change)
+    
+    // Remove duplicates
+    relevantAddresses = [...new Set(inputAddresses)];
+    addressLabel = relevantAddresses.length > 1 ? 'From Addresses' : 'From Address';
+  }
 
   const renderDetailRow = (label: string, value: string | React.ReactNode) => (
     <View style={styles.detailRow}>
@@ -176,20 +189,30 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                 )}
             </View>
 
-            {relevantAddress && (
+            {relevantAddresses.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>{addressLabel}</Text>
-                <View style={styles.txIdContainer}>
-                  <TouchableOpacity
-                    onPress={() => {
-                      HapticFeedback.light();
-                      Linking.openURL(addressExplorerLink);
-                    }}>
-                    <Text style={[styles.txId, styles.clickableText]}>
-                      {relevantAddress}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                {relevantAddresses.map((addr, index) => {
+                  const addressExplorerLink = `${baseUrl}/address/${addr}`;
+                  return (
+                    <View key={index} style={styles.addressItem}>
+                      {relevantAddresses.length > 1 && (
+                        <Text style={styles.addressIndex}>{index + 1}.</Text>
+                      )}
+                      <View style={styles.txIdContainer}>
+                        <TouchableOpacity
+                          onPress={() => {
+                            HapticFeedback.light();
+                            Linking.openURL(addressExplorerLink);
+                          }}>
+                          <Text style={[styles.txId, styles.clickableText]}>
+                            {addr}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })}
               </View>
             )}
 
@@ -310,11 +333,24 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     flexShrink: 1,
   },
+  addressItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  addressIndex: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: themes.lightPolished.colors.text,
+    opacity: 0.5,
+    marginRight: 8,
+    minWidth: 20,
+  },
   txIdContainer: {
     backgroundColor: 'rgba(0, 0, 0, 0.03)',
     padding: 12,
     borderRadius: 8,
-    marginBottom: 12,
+    flex: 1,
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.06)',
   },

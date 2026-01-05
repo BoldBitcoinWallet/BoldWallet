@@ -34,11 +34,8 @@ import {
   getNostrRelays,
   getKeyshareLabel,
   hexToString,
-  getDerivePathForNetwork,
-  isLegacyWallet,
 } from '../utils';
 import {useTheme} from '../theme';
-import {useUser} from '../context/UserContext';
 import LocalCache from '../services/LocalCache';
 import {WalletService} from '../services/WalletService';
 import RNFS from 'react-native-fs';
@@ -57,6 +54,7 @@ type RouteParams = {
   spendingHash?: string;
   psbtBase64?: string; // For PSBT signing mode
   derivationPath?: string; // Derivation path from QR code (ensures same source address)
+  network?: string; // Network from QR code (ensures same network)
 };
 
 const MobileNostrPairing = ({navigation}: any) => {
@@ -64,12 +62,10 @@ const MobileNostrPairing = ({navigation}: any) => {
   const isSendBitcoin = route.params?.mode === 'send_btc';
   const isSignPSBT = route.params?.mode === 'sign_psbt';
   const setupMode = route.params?.mode;
-  const addressType = route.params?.addressType;
   // In send mode, determine isTrio from keyshare (3 devices = trio, 2 devices = duo)
   // In keygen mode, use setupMode
   const [isTrio, setIsTrio] = useState<boolean>(setupMode === 'trio');
   const {theme} = useTheme();
-  const {activeAddress} = useUser();
   const ppmFile = `${RNFS.DocumentDirectoryPath}/ppm.json`;
 
   // Nostr Identity
@@ -123,6 +119,9 @@ const MobileNostrPairing = ({navigation}: any) => {
     totalOutput: number;
     derivePaths?: string[];
   } | null>(null);
+  const [fromAddress, setFromAddress] = useState<string>(''); // Derived address for send transaction
+  const [currentDerivationPath, setCurrentDerivationPath] = useState<string>(''); // Derivation path for display
+  const [currentNetwork, setCurrentNetwork] = useState<string>('mainnet'); // Network for display
   const [isPreParamsReady, setIsPreParamsReady] = useState(false);
   const [isPreparing, setIsPreparing] = useState(false);
   const [isPrepared, setIsPrepared] = useState(false);
@@ -234,12 +233,12 @@ const MobileNostrPairing = ({navigation}: any) => {
           // Clear LocalCache
           await LocalCache.clear();
           dbg('LocalCache cleared successfully');
-          
+
           // Clear stale EncryptedStorage items (but keep keyshare if it exists for signing)
           // We clear btcPub as it will be regenerated with the new keyshare
           await EncryptedStorage.removeItem('btcPub');
           dbg('Cleared stale btcPub from EncryptedStorage');
-          
+
           // Clear WalletService cache
           try {
             await LocalCache.removeItem('walletCache');
@@ -247,7 +246,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           } catch (error) {
             dbg('Error clearing WalletService cache:', error);
           }
-          
+
           dbg('=== MobileNostrPairing: Cache clearing completed');
         } catch (error) {
           dbg('Error clearing cache in MobileNostrPairing:', error);
@@ -739,6 +738,134 @@ const MobileNostrPairing = ({navigation}: any) => {
       }
     }
   }, [isSendBitcoin, isSignPSBT, isTrio, sendModeDevices, selectedPeerNpub]);
+
+  // Initialize network immediately when component loads (for send Bitcoin mode)
+  useEffect(() => {
+    const initializeNetwork = async () => {
+      if (!isSendBitcoin || !route.params) {
+        // For non-send modes, use cached network
+        const cachedNetwork =
+          (await LocalCache.getItem('network')) || 'mainnet';
+        setCurrentNetwork(cachedNetwork);
+        return;
+      }
+
+      dbg('=== MobileNostrPairing: Received route params ===', {
+        network: route.params?.network,
+        derivationPath: route.params?.derivationPath,
+        addressType: route.params?.addressType,
+        toAddress: route.params?.toAddress,
+        satoshiAmount: route.params?.satoshiAmount,
+        allParams: route.params,
+      });
+
+      // CRITICAL: In send mode, ALL parameters MUST come from route params (no fallbacks)
+      if (!route.params.network || route.params.network.trim() === '') {
+        dbg('ERROR: Network missing from route params in send mode');
+        return;
+      }
+
+      // ALWAYS use route params - no fallbacks
+      const netForNative = route.params.network.trim();
+      const netForDisplay = netForNative === 'testnet3' ? 'testnet' : netForNative;
+
+      setCurrentNetwork(netForDisplay);
+      
+      // Also set derivation path immediately if available from route params
+      if (route.params.derivationPath && route.params.derivationPath.trim() !== '') {
+        setCurrentDerivationPath(route.params.derivationPath.trim());
+        dbg('MobileNostrPairing: Initialized derivation path from route params:', route.params.derivationPath);
+      }
+      
+      dbg('MobileNostrPairing: Initialized network for display:', netForDisplay, '(native format:', netForNative, ')');
+    };
+
+    initializeNetwork();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSendBitcoin, route.params?.network, route.params?.derivationPath]);
+
+  // Compute from address for send transactions
+  useEffect(() => {
+    const computeFromAddress = async () => {
+      if (!isSendBitcoin || !route.params) return;
+
+      try {
+        // CRITICAL: In send mode, ALL parameters MUST come from route params (no fallbacks)
+        // This ensures consistency between devices and prevents mismatches
+        if (!route.params.network || route.params.network.trim() === '') {
+          dbg('ERROR: Network missing from route params in send mode');
+          setFromAddress('');
+          return;
+        }
+        if (!route.params.addressType || route.params.addressType.trim() === '') {
+          dbg('ERROR: Address type missing from route params in send mode');
+          setFromAddress('');
+          return;
+        }
+        if (!route.params.derivationPath || route.params.derivationPath.trim() === '') {
+          dbg('ERROR: Derivation path missing from route params in send mode');
+          setFromAddress('');
+          return;
+        }
+
+        const keyshareJSON = await EncryptedStorage.getItem('keyshare');
+        if (!keyshareJSON) return;
+
+        const keyshare = JSON.parse(keyshareJSON);
+        
+        // ALWAYS use route params - no fallbacks
+        const netForNative = route.params.network.trim();
+        const addressTypeToUse = route.params.addressType.trim();
+        const path = route.params.derivationPath.trim();
+        
+        // Normalize for display only: 'testnet3' -> 'testnet'
+        const netForDisplay = netForNative === 'testnet3' ? 'testnet' : netForNative;
+
+        dbg('=== MobileNostrPairing: Using route params ONLY (no fallbacks) ===', {
+          network: netForNative,
+          addressType: addressTypeToUse,
+          derivationPath: path,
+        });
+
+        // Derive the public key and address
+        const publicKey = await BBMTLibNativeModule.derivePubkey(
+          keyshare.pub_key,
+          keyshare.chain_code_hex,
+          path,
+        );
+
+        // Use original network format for native module (requires 'testnet3' not 'testnet')
+        const derivedAddress = await BBMTLibNativeModule.btcAddress(
+          publicKey,
+          netForNative,
+          addressTypeToUse,
+        );
+
+        setFromAddress(derivedAddress);
+        setCurrentDerivationPath(path);
+        setCurrentNetwork(netForDisplay);
+        dbg('=== MobileNostrPairing: Computed from address ===', {
+          derivationPath: path,
+          addressType: addressTypeToUse,
+          fromAddress: derivedAddress,
+          network: netForNative,
+          networkForDisplay: netForDisplay,
+        });
+      } catch (error) {
+        dbg('Error computing from address:', error);
+        setFromAddress('');
+      }
+    };
+
+    computeFromAddress();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isSendBitcoin,
+    route.params?.derivationPath,
+    route.params?.mode,
+    route.params?.network,
+    route.params?.addressType,
+  ]);
 
   const generateLocalKeypair = async () => {
     try {
@@ -1398,127 +1525,144 @@ const MobileNostrPairing = ({navigation}: any) => {
     setProgress(0);
     setStatus('Starting transaction signing...');
 
+    // Store original network/API to restore after transaction
+    let originalNetwork = '';
+    let originalApiUrl = '';
+
     try {
-      // Get wallet balance in satoshis
+      // Read ALL parameters from route params ONLY (no fallbacks)
+      if (!route.params?.network || route.params.network.trim() === '') {
+        throw new Error('Network is required in route params');
+      }
+      if (!route.params?.addressType || route.params.addressType.trim() === '') {
+        throw new Error('Address type is required in route params');
+      }
+      if (!route.params?.derivationPath || route.params.derivationPath.trim() === '') {
+        throw new Error('Derivation path is required in route params');
+      }
+      if (!route.params?.toAddress || route.params.toAddress.trim() === '') {
+        throw new Error('Destination address is required in route params');
+      }
+      if (!route.params?.satoshiAmount || route.params.satoshiAmount.trim() === '') {
+        throw new Error('Amount is required in route params');
+      }
+      if (!route.params?.satoshiFees || route.params.satoshiFees.trim() === '') {
+        throw new Error('Fees are required in route params');
+      }
+
+      // Extract all params from route
+      const net = route.params.network.trim();
+      const addressTypeToUse = route.params.addressType.trim();
+      const path = route.params.derivationPath.trim();
+      const toAddress = route.params.toAddress.trim();
+      const satoshiAmount = route.params.satoshiAmount.trim();
+      const satoshiFees = route.params.satoshiFees.trim();
+
+      dbg('MobileNostrPairing: Using route params ONLY:', {
+        network: net,
+        addressType: addressTypeToUse,
+        derivationPath: path,
+        toAddress,
+        satoshiAmount,
+        satoshiFees,
+      });
+
+      // Store original network/API
+      originalNetwork = (await LocalCache.getItem('network')) || 'mainnet';
+      const cachedApi = await LocalCache.getItem(`api_${originalNetwork}`);
+      originalApiUrl = cachedApi || '';
+      if (!originalApiUrl) {
+        originalApiUrl = originalNetwork === 'testnet3' || originalNetwork === 'testnet'
+          ? 'https://mempool.space/testnet/api'
+          : 'https://mempool.space/api';
+      }
+
+      // Set network and API in BBMTLib for this transaction
+      let apiUrl = await LocalCache.getItem(`api_${net}`);
+      if (!apiUrl) {
+        apiUrl = net === 'testnet3' || net === 'testnet'
+          ? 'https://mempool.space/testnet/api'
+          : 'https://mempool.space/api';
+      }
+      await BBMTLibNativeModule.setBtcNetwork(net);
+      await BBMTLibNativeModule.setAPI(net, apiUrl);
+      dbg('MobileNostrPairing: Set network and API in BBMTLib:', net, apiUrl);
+
+      // Get keyshare and nsec
       const keyshareJSON = await EncryptedStorage.getItem('keyshare');
       if (!keyshareJSON) {
         throw new Error('Keyshare not found');
       }
-
       const keyshare = JSON.parse(keyshareJSON);
 
-      // Get nsec from keyshare (use local variable, not state)
       let nsecToUse = localNsec;
       if (!nsecToUse || !nsecToUse.startsWith('nsec1')) {
         const nsecFromKeyshare = keyshare.nsec || '';
         if (nsecFromKeyshare) {
-          try {
-            let decodedNsec = '';
-
-            // Check if it's already in bech32 format
-            if (nsecFromKeyshare.startsWith('nsec1')) {
-              decodedNsec = nsecFromKeyshare;
-            } else {
-              decodedNsec = hexToString(nsecFromKeyshare);
-            }
-
-            if (decodedNsec.startsWith('nsec1')) {
-              nsecToUse = decodedNsec;
-              setLocalNsec(decodedNsec); // Update state for UI
-              dbg(
-                'Loaded nsec from keyshare in startSendBTC:',
-                decodedNsec.substring(0, 20) + '...',
-              );
-            } else {
-              throw new Error(
-                `Invalid nsec format in keyshare: ${decodedNsec.substring(
-                  0,
-                  50,
-                )}`,
-              );
-            }
-          } catch (error) {
-            dbg('Error loading nsec from keyshare in startSendBTC:', error);
-            throw new Error(`Failed to load nsec from keyshare: ${error}`);
+          if (nsecFromKeyshare.startsWith('nsec1')) {
+            nsecToUse = nsecFromKeyshare;
+          } else {
+            nsecToUse = hexToString(nsecFromKeyshare);
+          }
+          if (nsecToUse.startsWith('nsec1')) {
+            setLocalNsec(nsecToUse);
+          } else {
+            throw new Error('Invalid nsec format in keyshare');
           }
         } else {
           throw new Error('nsec not found in keyshare');
         }
       }
 
-      // Verify nsec is valid
-      if (!nsecToUse || !nsecToUse.startsWith('nsec1')) {
-        throw new Error(
-          'Invalid nsec: nsec must be in bech32 format (nsec1...)',
-        );
-      }
+      // Derive from address using route params
+      const publicKey = await BBMTLibNativeModule.derivePubkey(
+        keyshare.pub_key,
+        keyshare.chain_code_hex,
+        path,
+      );
+      const senderAddress = await BBMTLibNativeModule.btcAddress(
+        publicKey,
+        net,
+        addressTypeToUse,
+      );
 
-      if (!activeAddress) {
-        throw new Error('Active address not found');
-      }
-
+      // Get balance for sessionFlag calculation
       const balance = await WalletService.getInstance().getWalletBalance(
-        activeAddress,
+        senderAddress,
         0,
         0,
         false,
       );
-      const balanceSats = Big(balance.btc).times(1e8).toString();
+      const balanceSats = Big(balance.btc).times(1e8).toFixed(0);
 
-      // IMPORTANT: For session ID, we need ALL npubs from the keyshare (all participants)
-      // Get all hex keys from keygen_committee_keys and convert them ALL to npubs
+      // Get all npubs from keyshare for sessionFlag calculation
       const allNpubsFromKeyshare: string[] = [];
-
-      // Get all keys from keygen_committee_keys and convert them ALL to npubs
       const sortedKeys = [...keyshare.keygen_committee_keys].sort();
       for (const key of sortedKeys) {
         try {
-          // Check if it's already an npub (shouldn't happen, but handle it)
           if (key && typeof key === 'string' && key.startsWith('npub1')) {
             allNpubsFromKeyshare.push(key);
-            dbg('Key already npub format:', key.substring(0, 20) + '...');
             continue;
           }
-
-          // Validate hex key format
           const hexPattern = /^[0-9a-fA-F]+$/;
           if (!hexPattern.test(key)) {
-            dbg(
-              'Invalid key format (not hex, not npub), skipping:',
-              key.substring(0, 20) + '...',
-            );
             continue;
           }
-
-          // Convert hex to npub (convert ALL keys, including local)
           const npub = await BBMTLibNativeModule.hexToNpub(key);
           if (npub && typeof npub === 'string' && npub.startsWith('npub1')) {
             allNpubsFromKeyshare.push(npub);
-            dbg(
-              'Converted hex to npub for session ID:',
-              npub.substring(0, 20) + '...',
-            );
-          } else {
-            dbg('Failed to convert hex to npub, result:', npub);
           }
         } catch (error) {
-          dbg('Error converting hex to npub for session ID:', error);
+          dbg('Error converting hex to npub:', error);
         }
       }
 
-      // Sort all npubs - this must match on all devices
       const npubsSorted = [...allNpubsFromKeyshare].sort().join(',');
-
       if (npubsSorted.length === 0 || allNpubsFromKeyshare.length < 2) {
         throw new Error(
-          `Failed to get all npubs from keyshare. Got ${allNpubsFromKeyshare.length} npubs. Please ensure all devices are loaded.`,
+          `Failed to get all npubs from keyshare. Got ${allNpubsFromKeyshare.length} npubs.`,
         );
       }
-
-      dbg(
-        'All npubs for session ID:',
-        allNpubsFromKeyshare.map(n => n.substring(0, 20) + '...'),
-      );
 
       // Prepare parties npubs CSV for the actual signing (only participating devices)
       // IMPORTANT: Use the full npubs from allNpubsFromKeyshare (already converted from hex)
@@ -1656,108 +1800,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       }
       const partiesNpubsCSV = allNpubs.sort().join(',');
 
-      dbg(
-        'partiesNpubsCSV for signing (full npubs, length=',
-        partiesNpubsCSV.length,
-        '):',
-        partiesNpubsCSV.substring(0, 100) + '...',
-      );
-      const satoshiAmount = route.params.satoshiAmount || '0';
-      const satoshiFees = route.params.satoshiFees || '0';
-
-      // Generate session ID (includes all transaction details that must match)
-      // Format: sha256(npubsSorted,balance,amount,rounded)
-      const rounded = Math.floor(Date.now() / 90000);
-
-      dbg(
-        'session id params:',
-        `${npubsSorted},${balanceSats},${satoshiAmount},${rounded}`,
-      );
-      dbg(
-        'session_params',
-        JSON.stringify(
-          {npubsSorted, balanceSats, satoshiAmount, rounded},
-          null,
-          4,
-        ),
-      );
-
       // Prepare relays CSV
       const relaysCSV = relays.join(',');
 
-      const network = (await LocalCache.getItem('network')) || 'mainnet';
-      // Use derivation path from route params if provided (from QR code scan),
-      // otherwise compute it from address type
-      // This ensures both devices use the exact same source address
-      let derivePath = route.params?.derivationPath;
-      if (!derivePath) {
-        // Get address type from route params or cache, default to segwit-native
-        const currentAddressType =
-          addressType ||
-          (await LocalCache.getItem('addressType')) ||
-          'segwit-native';
-        // Check if this is a legacy wallet (created before migration timestamp)
-        const useLegacyPath = isLegacyWallet(keyshare.created_at);
-        derivePath = getDerivePathForNetwork(
-          network,
-          currentAddressType,
-          useLegacyPath,
-        );
-        dbg('Computed derivation path for Nostr send:', {
-          network,
-          currentAddressType,
-          useLegacyPath,
-          derivePath,
-        });
-      } else {
-        dbg('Using derivation path from QR code/route params:', derivePath);
-      }
-
-      // Derive the public key from the root key using the derivation path
-      // This is critical - we need the DERIVED public key, not the root!
-      const publicKey = await BBMTLibNativeModule.derivePubkey(
-        keyshare.pub_key,
-        keyshare.chain_code_hex,
-        derivePath,
-      );
-
-      dbg(
-        'Derived public key for path:',
-        derivePath,
-        'pubKey:',
-        publicKey.substring(0, 20) + '...',
-      );
-
-      // Generate BTC address using addressType (same as MobilesPairing.tsx)
-      const net = (await LocalCache.getItem('network')) || 'mainnet';
-      const btcAddress = await BBMTLibNativeModule.btcAddress(
-        publicKey,
-        net,
-        addressType,
-      );
-
-      dbg('Starting Nostr send BTC with:', {
-        relays: relaysCSV,
-        parties: partiesNpubsCSV,
-        npubsSorted: npubsSorted.substring(0, 30) + '...',
-        balance: balanceSats,
-        amount: route.params?.satoshiAmount,
-        localNsec: nsecToUse ? nsecToUse.substring(0, 20) + '...' : 'MISSING',
-        derivePath: derivePath,
-        derivedPublicKey: publicKey.substring(0, 20) + '...',
-        btcAddress: btcAddress,
-        addressType: addressType,
-        estimatedFees: satoshiFees,
-      });
-
-      dbg(
-        'Calling nostrMpcSendBTC (pre-agreement handled internally):',
-        nsecToUse.substring(0, 20) + '...',
-      );
-
-      // Call native module - pre-agreement is now handled internally in Go
-      // The function will calculate sessionFlag, do pre-agreement, update sessionID and fees
-      // Use btcAddress generated from addressType (same as MobilesPairing.tsx)
+      // Call MPC send BTC
       const txId = await BBMTLibNativeModule.nostrMpcSendBTC(
         relaysCSV,
         nsecToUse,
@@ -1765,12 +1811,12 @@ const MobileNostrPairing = ({navigation}: any) => {
         npubsSorted,
         balanceSats,
         keyshareJSON,
-        derivePath,
+        path,
         publicKey,
-        btcAddress,
-        route.params.toAddress || '',
-        route.params.satoshiAmount || '0',
-        route.params.satoshiFees || '0',
+        senderAddress,
+        toAddress,
+        satoshiAmount,
+        satoshiFees,
       );
 
       // Validate txId
@@ -1781,15 +1827,15 @@ const MobileNostrPairing = ({navigation}: any) => {
 
       // Save pending transaction
       const pendingTxs = JSON.parse(
-        (await LocalCache.getItem(`${activeAddress}-pendingTxs`)) || '{}',
+        (await LocalCache.getItem(`${senderAddress}-pendingTxs`)) || '{}',
       );
       pendingTxs[txId] = {
         txid: txId,
-        from: activeAddress,
-        to: route.params.toAddress,
-        amount: route.params.satoshiAmount,
-        satoshiAmount: route.params.satoshiAmount,
-        satoshiFees: route.params.satoshiFees,
+        from: senderAddress,
+        to: toAddress,
+        amount: satoshiAmount,
+        satoshiAmount: satoshiAmount,
+        satoshiFees: satoshiFees,
         sentAt: Date.now(),
         status: {
           confirmed: false,
@@ -1797,7 +1843,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         },
       };
       await LocalCache.setItem(
-        `${activeAddress}-pendingTxs`,
+        `${senderAddress}-pendingTxs`,
         JSON.stringify(pendingTxs),
       );
 
@@ -1815,6 +1861,21 @@ const MobileNostrPairing = ({navigation}: any) => {
       Alert.alert('Error', error?.message || 'Transaction signing failed');
       setStatus('Transaction signing failed');
     } finally {
+      // CRITICAL: Restore original network after transaction completes (success or failure)
+      // This ensures the device's active network remains unchanged
+      if (originalNetwork && originalApiUrl) {
+        try {
+          await BBMTLibNativeModule.setBtcNetwork(originalNetwork);
+          await BBMTLibNativeModule.setAPI(originalNetwork, originalApiUrl);
+          // Restore WalletService internal state
+          const walletService = WalletService.getInstance();
+          (walletService as any).currentNetwork = originalNetwork;
+          (walletService as any).currentApiUrl = originalApiUrl;
+          dbg('MobileNostrPairing: Restored original network:', originalNetwork, 'API:', originalApiUrl);
+        } catch (restoreError) {
+          dbg('MobileNostrPairing: Error restoring original network:', restoreError);
+        }
+      }
       setIsPairing(false);
     }
   };
@@ -3787,6 +3848,73 @@ const MobileNostrPairing = ({navigation}: any) => {
       textAlign: 'center',
       fontSize: 14,
     },
+    transactionItem: {
+      borderBottomWidth: 0,
+      paddingVertical: 4,
+      marginBottom: 4,
+    },
+    transactionLabel: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.colors.text,
+      marginBottom: 2,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'left',
+      lineHeight: 16,
+    },
+    transactionItemLabel: {
+      fontSize: 13,
+      fontWeight: '500',
+      color: theme.colors.textSecondary,
+      marginBottom: 4,
+    },
+    transactionItemValue: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.colors.text,
+      textAlign: 'right',
+    },
+    addressContainer: {
+      backgroundColor: theme.colors.background,
+      paddingVertical: 4,
+      paddingHorizontal: 6,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    addressValue: {
+      fontSize: 14,
+      color: theme.colors.text,
+      textAlign: 'left',
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      lineHeight: 14,
+    },
+    amountContainer: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      backgroundColor: theme.colors.background,
+      paddingVertical: 4,
+      paddingHorizontal: 6,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    amountValue: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: theme.colors.text,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'left',
+      lineHeight: 14,
+    },
+    fiatValue: {
+      fontSize: 14,
+      color: theme.colors.textSecondary,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'right',
+      lineHeight: 14,
+    },
   });
 
   return (
@@ -3856,7 +3984,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                             />
                             <Text
                               style={{
-                                fontSize: 18,
+                                fontSize: 15,
                                 fontWeight: '700',
                                 color: theme.colors.text,
                                 textAlign: 'center',
@@ -3903,6 +4031,60 @@ const MobileNostrPairing = ({navigation}: any) => {
                       )}
                     </View>
                   </View>
+
+                  {/* Relay Configuration - Show in send Bitcoin/PSBT mode, right after title */}
+                  {(isSendBitcoin || isSignPSBT) && !showFinalStep && (
+                    <View style={styles.section}>
+                      <TouchableOpacity
+                        style={styles.collapsibleHeader}
+                        onPress={() => {
+                          HapticFeedback.light();
+                          setShowRelayConfig(!showRelayConfig);
+                        }}
+                        activeOpacity={0.7}>
+                        <Text style={styles.collapsibleHeaderText}>
+                          {showRelayConfig ? '▼' : '▶'} Advanced: Nostr Relays
+                          Settings
+                        </Text>
+                      </TouchableOpacity>
+                      {showRelayConfig && (
+                        <View style={styles.collapsibleContent}>
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              color: theme.colors.textSecondary,
+                              marginBottom: 8,
+                            }}>
+                            Configure Nostr relays (defaults work for most
+                            users). Enter relay URLs, one per line or
+                            comma-separated (wss://...).
+                          </Text>
+                          <TextInput
+                            style={[
+                              styles.input,
+                              {
+                                minHeight: 120,
+                                textAlignVertical: 'top',
+                                paddingTop: 12,
+                              },
+                            ]}
+                            value={relaysInput}
+                            onChangeText={setRelaysInput}
+                            placeholder={
+                              'wss://relay1.com\nwss://relay2.com\nwss://relay3.com'
+                            }
+                            placeholderTextColor={
+                              theme.colors.textSecondary + '80'
+                            }
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            multiline
+                            numberOfLines={6}
+                          />
+                        </View>
+                      )}
+                    </View>
+                  )}
 
                   {/* PSBT Info Section */}
                   {isSignPSBT && route.params?.psbtBase64 && (
@@ -4079,15 +4261,23 @@ const MobileNostrPairing = ({navigation}: any) => {
                   {/* Send Mode: Device Selection - Show current device and allow selecting one other */}
                   {(isSendBitcoin || isSignPSBT) && (
                     <View style={styles.section}>
-                      <Text
+                      <View
                         style={{
-                          fontSize: 16,
-                          fontWeight: '700',
-                          color: theme.colors.text,
-                          marginBottom: 8,
+                          backgroundColor: theme.colors.cardBackground,
+                          borderRadius: 12,
+                          padding: 12,
+                          borderWidth: 1.5,
+                          borderColor: theme.colors.border,
                         }}>
-                        This Device
-                      </Text>
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontWeight: '700',
+                            color: theme.colors.text,
+                            marginBottom: 8,
+                          }}>
+                          This Device
+                        </Text>
                       {sendModeDevices.length === 0 ? (
                         <Text style={{color: theme.colors.text, opacity: 0.6}}>
                           Loading...
@@ -4110,7 +4300,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   key={localDevice.keyshareLabel}
                                   style={[
                                     styles.sendModeDeviceItem,
-                                    {marginBottom: 24},
+                                    {marginBottom: 12},
                                   ]}>
                                   <Image
                                     source={require('../assets/phone-icon.png')}
@@ -4142,18 +4332,18 @@ const MobileNostrPairing = ({navigation}: any) => {
                               {/* Select One Other Device */}
                               {otherDevices.length > 0 && (
                                 <>
-                                  <Text
-                                    style={{
-                                      fontSize: 16,
-                                      fontWeight: '700',
-                                      color: theme.colors.text,
-                                      marginBottom: 12,
-                                      marginTop: 8,
-                                    }}>
-                                    {isTrio
-                                      ? 'Select one device to co-sign:'
-                                      : 'Co-signing device:'}
-                                  </Text>
+                                  <View>
+                                    <Text
+                                      style={{
+                                        fontSize: 13,
+                                        fontWeight: '700',
+                                        color: theme.colors.text,
+                                        marginBottom: 8,
+                                      }}>
+                                      {isTrio
+                                        ? 'Select one device to co-sign:'
+                                        : 'Co-signing device:'}
+                                    </Text>
                                   {otherDevices.map(dev => {
                                     // In duo mode, use View (not selectable)
                                     // In trio mode, use TouchableOpacity (selectable)
@@ -4266,66 +4456,14 @@ const MobileNostrPairing = ({navigation}: any) => {
                                       </TouchableOpacity>
                                     );
                                   })}
+                                  </View>
                                 </>
                               )}
                             </>
                           );
                         })()
                       )}
-                    </View>
-                  )}
-
-                  {/* Relay Configuration - Collapsible - Hide when Final Step is shown */}
-                  {!showFinalStep && (
-                    <View style={styles.section}>
-                      <TouchableOpacity
-                        style={styles.collapsibleHeader}
-                        onPress={() => {
-                          HapticFeedback.light();
-                          setShowRelayConfig(!showRelayConfig);
-                        }}
-                        activeOpacity={0.7}>
-                        <Text style={styles.collapsibleHeaderText}>
-                          {showRelayConfig ? '▼' : '▶'} Advanced: Nostr Relays
-                          Settings
-                        </Text>
-                      </TouchableOpacity>
-                      {showRelayConfig && (
-                        <View style={styles.collapsibleContent}>
-                          <Text
-                            style={{
-                              fontSize: 12,
-                              color: theme.colors.textSecondary,
-                              marginBottom: 8,
-                            }}>
-                            Configure Nostr relays (defaults work for most
-                            users). Enter relay URLs, one per line or
-                            comma-separated (wss://...).
-                          </Text>
-                          <TextInput
-                            style={[
-                              styles.input,
-                              {
-                                minHeight: 120,
-                                textAlignVertical: 'top',
-                                paddingTop: 12,
-                              },
-                            ]}
-                            value={relaysInput}
-                            onChangeText={setRelaysInput}
-                            placeholder={
-                              'wss://relay1.com\nwss://relay2.com\nwss://relay3.com'
-                            }
-                            placeholderTextColor={
-                              theme.colors.textSecondary + '80'
-                            }
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                            multiline
-                            numberOfLines={6}
-                          />
-                        </View>
-                      )}
+                      </View>
                     </View>
                   )}
 
@@ -5281,48 +5419,92 @@ const MobileNostrPairing = ({navigation}: any) => {
                     <View style={styles.section}>
                       <View
                         style={{
-                          padding: 8,
-                          paddingTop: 0,
-                          width: '100%',
+                          backgroundColor: theme.colors.cardBackground,
+                          borderRadius: 12,
+                          padding: 12,
+                          borderWidth: 1.5,
+                          borderColor: theme.colors.border,
                         }}>
+                        {/* Network Badge */}
                         <View
                           style={{
-                            borderBottomWidth: 0,
-                            paddingVertical: 6,
+                            flexDirection: 'row',
+                            alignItems: 'center',
                             marginBottom: 6,
+                            paddingVertical: 2,
                           }}>
-                          <Text
-                            style={{
-                              fontSize: 16,
-                              fontWeight: '600',
-                              color: theme.colors.text,
-                              marginTop: 1,
-                              marginBottom: 2,
-                              fontFamily:
-                                Platform.OS === 'ios' ? 'System' : 'Roboto',
-                              textAlign: 'left',
-                              lineHeight: 18,
-                            }}>
-                            To Address
-                          </Text>
                           <View
                             style={{
-                              backgroundColor: theme.colors.background,
-                              paddingVertical: 6,
-                              paddingHorizontal: 8,
-                              borderRadius: 8,
-                              borderWidth: 1,
-                              borderColor: theme.colors.border,
+                              backgroundColor: theme.colors.primary + '20',
+                              paddingHorizontal: 6,
+                              paddingVertical: 2,
+                              borderRadius: 4,
                             }}>
                             <Text
                               style={{
-                                fontSize: 16,
-                                color: theme.colors.text,
-                                textAlign: 'left',
-                                fontFamily:
-                                  Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                                lineHeight: 16,
-                              }}
+                                fontSize: 10,
+                                fontWeight: '700',
+                                color: theme.colors.primary,
+                                textTransform: 'uppercase',
+                                letterSpacing: 0.5,
+                                marginTop: 4,
+                              }}>
+                              {(() => {
+                                const net =
+                                  route.params?.network || currentNetwork;
+                                const normalizedNet =
+                                  net === 'testnet3' ? 'testnet' : net;
+                                return normalizedNet === 'testnet'
+                                  ? 'Testnet'
+                                  : 'Mainnet';
+                              })()}
+                            </Text>
+                          </View>
+                        </View>
+                        {fromAddress && (
+                          <View style={[styles.transactionItem, {paddingVertical: 2, marginBottom: 3}]}>
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                marginBottom: 2,
+                              }}>
+                              <Text style={[styles.transactionLabel, {fontSize: 12, lineHeight: 14}]}>From Address</Text>
+                              {currentDerivationPath && (
+                                <Text
+                                  style={{
+                                    fontSize: 10,
+                                    fontStyle: 'italic',
+                                    color: theme.colors.textSecondary,
+                                    marginLeft: 6,
+                                    fontFamily:
+                                      Platform.OS === 'ios'
+                                        ? 'Menlo'
+                                        : 'monospace',
+                                    textAlign: 'right',
+                                    flex: 1,
+                                    flexShrink: 1,
+                                  }}>
+                                  {currentDerivationPath}
+                                </Text>
+                              )}
+                            </View>
+                            <View style={styles.addressContainer}>
+                              <Text
+                                style={styles.addressValue}
+                                numberOfLines={1}
+                                ellipsizeMode="middle">
+                                {fromAddress}
+                              </Text>
+                            </View>
+                          </View>
+                        )}
+                        <View style={[styles.transactionItem, {paddingVertical: 2, marginBottom: 3}]}>
+                          <Text style={[styles.transactionLabel, {fontSize: 12, lineHeight: 14}]}>To Address</Text>
+                          <View style={styles.addressContainer}>
+                            <Text
+                              style={styles.addressValue}
                               numberOfLines={1}
                               ellipsizeMode="middle">
                               {route.params?.toAddress || ''}
@@ -5330,118 +5512,30 @@ const MobileNostrPairing = ({navigation}: any) => {
                           </View>
                         </View>
 
-                        <View
-                          style={{
-                            borderBottomWidth: 0,
-                            paddingVertical: 6,
-                            marginBottom: 6,
-                          }}>
-                          <Text
-                            style={{
-                              fontSize: 16,
-                              fontWeight: '600',
-                              color: theme.colors.text,
-                              marginTop: 1,
-                              marginBottom: 2,
-                              fontFamily:
-                                Platform.OS === 'ios' ? 'System' : 'Roboto',
-                              textAlign: 'left',
-                              lineHeight: 18,
-                            }}>
+                        <View style={[styles.transactionItem, {paddingVertical: 2, marginBottom: 3}]}>
+                          <Text style={[styles.transactionLabel, {fontSize: 12, lineHeight: 14}]}>
                             Transaction Amount
                           </Text>
-                          <View
-                            style={{
-                              flexDirection: 'row',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              backgroundColor: theme.colors.background,
-                              paddingVertical: 6,
-                              paddingHorizontal: 8,
-                              borderRadius: 8,
-                              borderWidth: 1,
-                              borderColor: theme.colors.border,
-                            }}>
-                            <Text
-                              style={{
-                                fontSize: 17,
-                                fontWeight: '600',
-                                color: theme.colors.text,
-                                fontFamily:
-                                  Platform.OS === 'ios' ? 'System' : 'Roboto',
-                                textAlign: 'left',
-                                lineHeight: 16,
-                              }}>
+                          <View style={styles.amountContainer}>
+                            <Text style={[styles.amountValue, {fontSize: 13}]}>
                               {sat2btcStr(route.params?.satoshiAmount)} BTC
                             </Text>
-                            <Text
-                              style={{
-                                fontSize: 16,
-                                color: theme.colors.textSecondary,
-                                fontFamily:
-                                  Platform.OS === 'ios' ? 'System' : 'Roboto',
-                                textAlign: 'right',
-                                lineHeight: 16,
-                              }}>
+                            <Text style={[styles.fiatValue, {fontSize: 12}]}>
                               {route.params?.selectedCurrency || ''}{' '}
                               {formatFiat(route.params?.fiatAmount)}
                             </Text>
                           </View>
                         </View>
 
-                        <View
-                          style={{
-                            borderBottomWidth: 0,
-                            paddingVertical: 6,
-                            marginBottom: 6,
-                          }}>
-                          <Text
-                            style={{
-                              fontSize: 16,
-                              fontWeight: '600',
-                              color: theme.colors.text,
-                              marginTop: 1,
-                              marginBottom: 2,
-                              fontFamily:
-                                Platform.OS === 'ios' ? 'System' : 'Roboto',
-                              textAlign: 'left',
-                              lineHeight: 18,
-                            }}>
+                        <View style={[styles.transactionItem, {paddingVertical: 2, marginBottom: 0}]}>
+                          <Text style={[styles.transactionLabel, {fontSize: 12, lineHeight: 14}]}>
                             Transaction Fee
                           </Text>
-                          <View
-                            style={{
-                              flexDirection: 'row',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              backgroundColor: theme.colors.background,
-                              paddingVertical: 6,
-                              paddingHorizontal: 8,
-                              borderRadius: 8,
-                              borderWidth: 1,
-                              borderColor: theme.colors.border,
-                            }}>
-                            <Text
-                              style={{
-                                fontSize: 17,
-                                fontWeight: '600',
-                                color: theme.colors.text,
-                                fontFamily:
-                                  Platform.OS === 'ios' ? 'System' : 'Roboto',
-                                textAlign: 'left',
-                                lineHeight: 16,
-                              }}>
+                          <View style={styles.amountContainer}>
+                            <Text style={[styles.amountValue, {fontSize: 13}]}>
                               {sat2btcStr(route.params?.satoshiFees)} BTC
                             </Text>
-                            <Text
-                              style={{
-                                fontSize: 16,
-                                color: theme.colors.textSecondary,
-                                fontFamily:
-                                  Platform.OS === 'ios' ? 'System' : 'Roboto',
-                                textAlign: 'right',
-                                lineHeight: 16,
-                              }}>
+                            <Text style={[styles.fiatValue, {fontSize: 12}]}>
                               {route.params?.selectedCurrency || ''}{' '}
                               {formatFiat(route.params?.fiatFees)}
                             </Text>

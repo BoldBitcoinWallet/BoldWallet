@@ -432,6 +432,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   transactions in a watch-only compatible wallet like Sparrow or Electrum and sign them securely via
                   PSBT.
                 </Text>
+                <Text style={styles.watchWalletWarning}>
+                  ⚠️ Note: Taproot is not supported. Only Legacy, SegWit Native, and SegWit Compatible address types are supported.
+                </Text>
                 <Text style={styles.watchWalletHint}>
                   Import using one of the details below:
                 </Text>
@@ -780,6 +783,14 @@ const createStyles = (theme: any) =>
       lineHeight: 18,
       color: theme.colors.textSecondary,
       marginBottom: 8,
+    },
+    watchWalletWarning: {
+      fontSize: 11,
+      lineHeight: 16,
+      color: theme.colors.textSecondary,
+      marginTop: 8,
+      marginBottom: 8,
+      fontStyle: 'italic',
     },
     watchWalletHint: {
       fontSize: 12,

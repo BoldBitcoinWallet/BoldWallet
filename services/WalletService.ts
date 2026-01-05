@@ -590,7 +590,10 @@ export class WalletService {
       const balance = new Big(totalUTXO);
       dbg('WalletService: Raw balance in satoshis:', balance.toString());
 
-      const newBalance = balance.sub(pendingSent).div(1e8).toFixed(8);
+      // Calculate balance after pending sent, ensuring it's never negative
+      const balanceAfterPending = balance.sub(pendingSent);
+      const finalBalance = balanceAfterPending.gte(0) ? balanceAfterPending : new Big(0);
+      const newBalance = finalBalance.div(1e8).toFixed(8);
       dbg('WalletService: Balance after pending subtraction:', newBalance);
 
       const hasNonZeroBalance = Number(newBalance) > 0;
