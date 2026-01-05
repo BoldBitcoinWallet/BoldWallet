@@ -1121,6 +1121,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     type: 'duo' | 'trio';
     pubKey: string;
     chainCode: string;
+    fingerprint: string;
     outputDescriptors?: {
       legacy: string;
       segwitNative: string;
@@ -1617,6 +1618,18 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       const supportsNostr = !!(nostrNpub && nostrNpub.trim() !== '');
       const supportsLocal = true; // Always supported
 
+      // Calculate fingerprint (SHA256 hash of pub_key)
+      let fingerprint = 'N/A';
+      if (pubKey) {
+        try {
+          const pubKeyHash = await BBMTLibNativeModule.sha256(pubKey);
+          // Use first 8 characters as fingerprint (like filename hash prefix)
+          fingerprint = pubKeyHash.substring(0, 8).toLowerCase();
+        } catch (error) {
+          dbg('Error calculating fingerprint:', error);
+        }
+      }
+
       // Determine type: duo (2 devices) or trio (3 devices)
       const committeeKeys = keyshare.keygen_committee_keys || [];
       const type = committeeKeys.length === 3 ? 'trio' : 'duo';
@@ -1661,6 +1674,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         type,
         pubKey,
         chainCode,
+        fingerprint,
         outputDescriptors,
         npub: nostrNpub,
         createdAt: keyshare.created_at || null,

@@ -25,6 +25,7 @@ interface KeyshareInfo {
   type: 'duo' | 'trio';
   pubKey: string;
   chainCode: string;
+  fingerprint: string;
   npub: string | null;
   createdAt?: number | null;
   outputDescriptors?: {
@@ -165,23 +166,6 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
     });
   }, [keyshareInfo]);
 
-  const handleCopyPubKey = useCallback(() => {
-    if (!keyshareInfo?.pubKey) return;
-    HapticFeedback.light();
-    Clipboard.setString(keyshareInfo.pubKey);
-    Toast.show({
-      type: 'success',
-      text1: 'Copied',
-      text2: 'Public key copied to clipboard',
-    });
-  }, [keyshareInfo]);
-
-  const handleShowPubKeyQR = useCallback(() => {
-    if (!keyshareInfo?.pubKey) return;
-    HapticFeedback.light();
-    onClose();
-  }, [keyshareInfo, onClose]);
-
   const handleShowNpubQR = useCallback(() => {
     HapticFeedback.light();
     onClose();
@@ -233,17 +217,20 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                 <>
                   {/* Compact keyshare summary card */}
                   <View style={styles.keyshareInfoCard}>
-                    <View style={styles.keyshareDetailRow}>
-                      <Text style={styles.keyshareDetailLabel}>
-                        Keyshare ID
-                      </Text>
-                      <Text style={styles.keyshareDetailValue}>
-                        {keyshareInfo.label}
-                      </Text>
+                    <View style={styles.keyshareKeyItem}>
+                      <Text style={styles.keyshareKeyLabel}>Wallet ID</Text>
+                      <View style={styles.keyshareKeyContainer}>
+                        <Text
+                          style={styles.keyshareKeyText}
+                          numberOfLines={1}
+                          ellipsizeMode="middle">
+                          {keyshareInfo.fingerprint || 'N/A'}
+                        </Text>
+                      </View>
                     </View>
                     <View style={styles.keyshareDetailRow}>
                       <Text style={styles.keyshareDetailLabel}>
-                        Keyshare Type
+                        Wallet Type
                       </Text>
                       <View
                         style={[
@@ -259,46 +246,26 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                         </Text>
                       </View>
                     </View>
+
+                    <View style={styles.keyshareDetailRow}>
+                      <Text style={styles.keyshareDetailLabel}>
+                        Keyshare ID
+                      </Text>
+                      <Text style={styles.keyshareDetailValue}>
+                        {keyshareInfo.label}
+                      </Text>
+                    </View>
                     {typeof keyshareInfo.createdAt === 'number' &&
                       keyshareInfo.createdAt > 0 && (
                         <View style={styles.keyshareDetailRow}>
                           <Text style={styles.keyshareDetailLabel}>
-                            Created
+                            Created At
                           </Text>
                           <Text style={styles.keyshareDetailValue}>
                             {new Date(keyshareInfo.createdAt).toLocaleString()}
                           </Text>
                         </View>
                       )}
-                    <View style={styles.keyshareKeyItem}>
-                      <Text style={styles.keyshareKeyLabel}>Public Key</Text>
-                      <View style={styles.keyshareKeyContainer}>
-                        <Text
-                          style={styles.keyshareKeyText}
-                          numberOfLines={1}
-                          ellipsizeMode="middle">
-                          {keyshareInfo.pubKey || 'N/A'}
-                        </Text>
-                        <View style={styles.keyshareButtonsRow}>
-                          <TouchableOpacity
-                            onPress={handleCopyPubKey}
-                            style={styles.keyshareCopyButton}>
-                            <Image
-                              source={require('../assets/copy-icon.png')}
-                              style={styles.keyshareCopyIcon}
-                            />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={handleShowPubKeyQR}
-                            style={styles.keyshareCopyButton}>
-                            <Image
-                              source={require('../assets/qr-icon.png')}
-                              style={styles.keyshareCopyIcon}
-                            />
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </View>
                   </View>
 
                   {/* Capabilities / connectivity summary */}
@@ -347,9 +314,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
 
                     {keyshareInfo.supportsNostr && keyshareInfo.npub && (
                       <View style={styles.keyshareKeyItem}>
-                        <Text style={styles.keyshareKeyLabel}>
-                          Nostr Pubkey
-                        </Text>
+                        <Text style={styles.keyshareKeyLabel}>NPub</Text>
                         <View style={styles.keyshareKeyContainer}>
                           <Text
                             style={styles.keyshareKeyText}
@@ -390,7 +355,8 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                       PSBT-capable wallet to create a watch-only wallet.
                     </Text>
                     <Text style={styles.watchWalletWarning}>
-                      ⚠️ Note: Taproot is not supported. Only Legacy, SegWit Native, and SegWit Compatible address types are supported.
+                      ⚠️ Note: Taproot is not supported. Only Legacy, SegWit
+                      Native, and SegWit Compatible address types are supported.
                     </Text>
                     <View>
                       {/* Output Descriptors - One row per address type */}

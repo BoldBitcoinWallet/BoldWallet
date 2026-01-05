@@ -1196,6 +1196,7 @@ export const createStyles = (theme: Theme): Styles => ({
     fontSize: 11,
     color: theme.colors.text,
     minWidth: 0,
+    textAlign: 'right' as const,
   },
   keyshareCopyButton: {
     padding: 8,
