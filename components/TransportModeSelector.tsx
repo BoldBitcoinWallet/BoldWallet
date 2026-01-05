@@ -24,6 +24,8 @@ interface TransportModeSelectorProps {
     amountSats: string;
     feeSats: string;
     spendingHash?: string;
+    addressType?: string;
+    derivationPath?: string;
   } | null;
   showQRCode?: boolean; // Whether to show QR code (false when data came from scan)
 }
@@ -324,6 +326,8 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                 sendBitcoinData.amountSats,
                 sendBitcoinData.feeSats,
                 sendBitcoinData.spendingHash || '',
+                sendBitcoinData.addressType || '',
+                sendBitcoinData.derivationPath || '',
               );
               return (
                 <View style={styles.qrCodeSection}>

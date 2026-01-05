@@ -56,6 +56,7 @@ type RouteParams = {
   selectedCurrency?: string;
   spendingHash?: string;
   psbtBase64?: string; // For PSBT signing mode
+  derivationPath?: string; // Derivation path from QR code (ensures same source address)
 };
 
 const MobileNostrPairing = ({navigation}: any) => {
@@ -1685,24 +1686,32 @@ const MobileNostrPairing = ({navigation}: any) => {
       const relaysCSV = relays.join(',');
 
       const network = (await LocalCache.getItem('network')) || 'mainnet';
-      // Get address type from route params or cache, default to segwit-native
-      const currentAddressType =
-        addressType ||
-        (await LocalCache.getItem('addressType')) ||
-        'segwit-native';
-      // Check if this is a legacy wallet (created before migration timestamp)
-      const useLegacyPath = isLegacyWallet(keyshare.created_at);
-      const derivePath = getDerivePathForNetwork(
-        network,
-        currentAddressType,
-        useLegacyPath,
-      );
-      dbg('Deriving path for Nostr send:', {
-        network,
-        currentAddressType,
-        useLegacyPath,
-        derivePath,
-      });
+      // Use derivation path from route params if provided (from QR code scan),
+      // otherwise compute it from address type
+      // This ensures both devices use the exact same source address
+      let derivePath = route.params?.derivationPath;
+      if (!derivePath) {
+        // Get address type from route params or cache, default to segwit-native
+        const currentAddressType =
+          addressType ||
+          (await LocalCache.getItem('addressType')) ||
+          'segwit-native';
+        // Check if this is a legacy wallet (created before migration timestamp)
+        const useLegacyPath = isLegacyWallet(keyshare.created_at);
+        derivePath = getDerivePathForNetwork(
+          network,
+          currentAddressType,
+          useLegacyPath,
+        );
+        dbg('Computed derivation path for Nostr send:', {
+          network,
+          currentAddressType,
+          useLegacyPath,
+          derivePath,
+        });
+      } else {
+        dbg('Using derivation path from QR code/route params:', derivePath);
+      }
 
       // Derive the public key from the root key using the derivation path
       // This is critical - we need the DERIVED public key, not the root!

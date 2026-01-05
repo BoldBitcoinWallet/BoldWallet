@@ -438,6 +438,8 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                   dbg('got fees:', fee);
                   const feeAmt = Big(feeNumber.toString());
                   setEstimatedFee(feeAmt);
+                  // Dismiss keyboard when fee is updated
+                  Keyboard.dismiss();
                   if (Big(inBtcAmount).eq(walletBalance)) {
                     // When MAX is clicked, adjust amount to account for fee
                     const adjustedAmount = walletBalance.minus(feeAmt.div(1e8));
@@ -572,12 +574,14 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       return;
     }
 
-    // Check if it's a send bitcoin QR format (address|amount|fee|hash)
+    // Check if it's a send bitcoin QR format (address|amount|fee|hash|addressType|derivationPath)
     const decoded = decodeSendBitcoinQR(qrData) as {
       toAddress: string;
       amountSats: string;
       feeSats: string;
       spendingHash?: string;
+      addressType?: string;
+      derivationPath?: string;
     } | null;
     if (decoded && decoded.toAddress && decoded.amountSats && decoded.feeSats) {
       // It's a send bitcoin QR format - populate all fields
@@ -626,6 +630,8 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     dbg('setting fee strategy to', value);
     BBMTLibNativeModule.setFeePolicy(value);
     LocalCache.setItem('feeStrategy', value);
+    // Dismiss keyboard when fee strategy changes (triggers new fee estimation)
+    Keyboard.dismiss();
   };
 
   const handleSendClick = () => {

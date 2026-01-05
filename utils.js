@@ -542,22 +542,25 @@ export const getKeyshareLabel = keyshare => {
 
 /**
  * Encode send bitcoin data into QR code format
- * Format: <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>
+ * Format: <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>
  * @param {string} toAddress - Bitcoin address to send to
  * @param {string|number} amountSats - Amount in satoshis
  * @param {string|number} feeSats - Fee in satoshis
  * @param {string} spendingHash - Spending hash (can be empty)
+ * @param {string} addressType - Address type (e.g., 'segwit-native', 'legacy', 'segwit-compatible')
+ * @param {string} derivationPath - Derivation path (e.g., "m/84'/0'/0'/0/0")
  * @returns {string} - Encoded QR data string
  */
-export const encodeSendBitcoinQR = (toAddress, amountSats, feeSats, spendingHash = '') => {
+export const encodeSendBitcoinQR = (toAddress, amountSats, feeSats, spendingHash = '', addressType = '', derivationPath = '') => {
   const amount = typeof amountSats === 'string' ? amountSats : amountSats.toString();
   const fee = typeof feeSats === 'string' ? feeSats : feeSats.toString();
-  return `${toAddress}|${amount}|${fee}|${spendingHash || ''}`;
+  return `${toAddress}|${amount}|${fee}|${spendingHash || ''}|${addressType || ''}|${derivationPath || ''}`;
 };
 
 /**
  * Decode send bitcoin data from QR code format
- * Format: <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>
+ * Format (new): <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>
+ * Format (old): <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>
  * @param {string} qrData - QR code data string
  * @returns {Object|null} - Decoded data object or null if invalid
  */
@@ -567,11 +570,14 @@ export const decodeSendBitcoinQR = (qrData) => {
   }
 
   const parts = qrData.split('|');
-  if (parts.length < 3 || parts.length > 4) {
+  // Support both old format (3-4 parts) and new format (6 parts)
+  if (parts.length < 3 || parts.length > 6) {
     return null;
   }
 
-  const [toAddress, amountSats, feeSats, spendingHash = ''] = parts;
+  // Old format: <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>
+  // New format: <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>
+  const [toAddress, amountSats, feeSats, spendingHash = '', addressType = '', derivationPath = ''] = parts;
 
   // Validate address is not empty
   if (!toAddress || toAddress.trim() === '') {
@@ -590,5 +596,7 @@ export const decodeSendBitcoinQR = (qrData) => {
     amountSats: amount.toString(),
     feeSats: fee.toString(),
     spendingHash: spendingHash || '',
+    addressType: addressType || '',
+    derivationPath: derivationPath || '',
   };
 };

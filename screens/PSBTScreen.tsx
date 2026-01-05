@@ -30,7 +30,6 @@ import SignedPSBTModal from './SignedPSBTModal';
 const {BBMTLibNativeModule} = NativeModules;
 
 interface KeyshareInfoForPsbt {
-  xpub: string;
   outputDescriptors: {
     legacy: string;
     segwitNative: string;
@@ -53,7 +52,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   );
   const [isWatchWalletExpanded, setIsWatchWalletExpanded] = useState(false);
   const [isPSBTSectionExpanded, setIsPSBTSectionExpanded] = useState(false);
-  const [isXpubQrVisible, setIsXpubQrVisible] = useState(false);
   const [isOutputDescriptorQrVisible, setIsOutputDescriptorQrVisible] =
     useState(false);
   const [selectedDescriptorType, setSelectedDescriptorType] = useState<
@@ -136,11 +134,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       const pubKey = keyshare.pub_key || '';
       const chainCode = keyshare.chain_code_hex || '';
 
-      // Generate xpub/tpub for watch-only wallet compatibility (Sparrow, etc.)
-      const xpub =
-        (await BBMTLibNativeModule.encodeXpub(pubKey, chainCode, network)) ||
-        '';
-
       // Generate output descriptors for all address types using utility function
       const descriptors = await generateAllOutputDescriptors(
         BBMTLibNativeModule,
@@ -157,7 +150,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       };
 
       setKeyshareInfo({
-        xpub,
         outputDescriptors,
       });
     } catch (error) {
@@ -177,7 +169,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     }
   }, [route.params?.signedPsbt, navigation]);
 
-  // Share helper for exporting text as a small file (xpub / descriptor)
+  // Share helper for exporting text as a small file (descriptor)
   const shareTextAsFile = useCallback(
     async (text: string, filename: string, title: string) => {
       HapticFeedback.medium();
@@ -213,37 +205,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     },
     [],
   );
-
-  const handleCopyXpub = useCallback(() => {
-    if (!keyshareInfo?.xpub) return;
-    HapticFeedback.light();
-    Clipboard.setString(keyshareInfo.xpub);
-    Toast.show({
-      type: 'success',
-      text1: 'Copied',
-      text2: 'Extended pubkey copied to clipboard',
-    });
-  }, [keyshareInfo]);
-
-  const handleShareXpub = useCallback(() => {
-    if (!keyshareInfo?.xpub) return;
-    const now = new Date();
-    const month = now.toLocaleDateString('en-US', {month: 'short'});
-    const day = now.getDate().toString().padStart(2, '0');
-    const year = now.getFullYear();
-    const hours = now.getHours().toString().padStart(2, '0');
-    const minutes = now.getMinutes().toString().padStart(2, '0');
-    const filename = `${
-      network === 'mainnet' ? 'xpub' : 'tpub'
-    }.${month}${day}.${year}.${hours}${minutes}.txt`;
-    shareTextAsFile(keyshareInfo.xpub, filename, 'Share Extended Pubkey');
-  }, [keyshareInfo, network, shareTextAsFile]);
-
-  const handleShowXpubQR = useCallback(() => {
-    if (!keyshareInfo?.xpub) return;
-    HapticFeedback.light();
-    setIsXpubQrVisible(true);
-  }, [keyshareInfo]);
 
   const handleCopyOutputDescriptor = useCallback(
     (type: 'legacy' | 'segwitNative' | 'segwitCompatible') => {
@@ -474,52 +435,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 <Text style={styles.watchWalletHint}>
                   Import using one of the details below:
                 </Text>
-
-                {/* Extended Pubkey - Single Row Layout */}
-                <View style={styles.watchWalletDetailRow}>
-                  <Text style={styles.watchWalletDetailLabel}>
-                    Extended Pubkey
-                  </Text>
-                  <View style={styles.watchWalletValueContainer}>
-                    <Text
-                      style={styles.watchWalletValueText}
-                      numberOfLines={1}
-                      ellipsizeMode="tail">
-                      {keyshareInfo.xpub || 'N/A'}
-                    </Text>
-                    {keyshareInfo.xpub && (
-                      <View style={styles.watchWalletButtonsRow}>
-                        <TouchableOpacity
-                          onPress={handleCopyXpub}
-                          style={styles.watchWalletIconButton}
-                          activeOpacity={0.7}>
-                          <Image
-                            source={require('../assets/copy-icon.png')}
-                            style={styles.watchWalletIconButtonIcon}
-                          />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={handleShareXpub}
-                          style={styles.watchWalletIconButton}
-                          activeOpacity={0.7}>
-                          <Image
-                            source={require('../assets/share-icon.png')}
-                            style={styles.watchWalletIconButtonIcon}
-                          />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={handleShowXpubQR}
-                          style={styles.watchWalletIconButton}
-                          activeOpacity={0.7}>
-                          <Image
-                            source={require('../assets/qr-icon.png')}
-                            style={styles.watchWalletIconButtonIcon}
-                          />
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
-                </View>
 
                 {/* Output Descriptors - One row per address type */}
                 {keyshareInfo.outputDescriptors.legacy && (
@@ -755,16 +670,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
         </View>
       </ScrollView>
       {/* QR Code Modals for watch-wallet import helpers */}
-      <QRCodeModal
-        visible={isXpubQrVisible}
-        onClose={() => setIsXpubQrVisible(false)}
-        title={`Wallet • ${network === 'mainnet' ? 'xpub' : 'tpub'}`}
-        value={keyshareInfo?.xpub || ''}
-        network={network as 'mainnet' | 'testnet'}
-        showShareButton={true}
-        topRightClose={true}
-        nonDismissible={false}
-      />
       <QRCodeModal
         visible={isOutputDescriptorQrVisible}
         onClose={() => {

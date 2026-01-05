@@ -125,6 +125,7 @@ const MobilesPairing = ({navigation}: any) => {
     selectedCurrency?: string;
     spendingHash?: string;
     psbtBase64?: string; // For PSBT signing mode
+    derivationPath?: string; // Derivation path from QR code (ensures same source address)
   };
 
   const route = useRoute<RouteProp<{params: RouteParams}>>();
@@ -761,24 +762,32 @@ const MobilesPairing = ({navigation}: any) => {
       const satoshiFees = `${decoded[2]}`;
       const peerShare = `${decoded[3]}`;
 
-      // Get address type from route params or cache, default to segwit-native
-      const currentAddressType =
-        addressType ||
-        (await LocalCache.getItem('addressType')) ||
-        'segwit-native';
-      // Check if this is a legacy wallet (created before migration timestamp)
-      const useLegacyPath = isLegacyWallet(ks.created_at);
-      const path = getDerivePathForNetwork(
-        net,
-        currentAddressType,
-        useLegacyPath,
-      );
-      dbg('Deriving path for send:', {
-        net,
-        currentAddressType,
-        useLegacyPath,
-        path,
-      });
+      // Use derivation path from route params if provided (from QR code scan),
+      // otherwise compute it from address type
+      // This ensures both devices use the exact same source address
+      let path = route.params?.derivationPath;
+      if (!path) {
+        // Get address type from route params or cache, default to segwit-native
+        const currentAddressType =
+          addressType ||
+          (await LocalCache.getItem('addressType')) ||
+          'segwit-native';
+        // Check if this is a legacy wallet (created before migration timestamp)
+        const useLegacyPath = isLegacyWallet(ks.created_at);
+        path = getDerivePathForNetwork(
+          net,
+          currentAddressType,
+          useLegacyPath,
+        );
+        dbg('Computed derivation path for send:', {
+          net,
+          currentAddressType,
+          useLegacyPath,
+          path,
+        });
+      } else {
+        dbg('Using derivation path from QR code/route params:', path);
+      }
 
       const btcPub = await BBMTLibNativeModule.derivePubkey(
         ks.pub_key,

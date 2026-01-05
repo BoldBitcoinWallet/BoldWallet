@@ -1,4 +1,4 @@
-import React, {useEffect, useState, useCallback, useRef} from 'react';
+import React, {useEffect, useState, useCallback, useRef, useMemo} from 'react';
 import {
   View,
   Text,
@@ -85,6 +85,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     feeSats: Big;
     spendingHash: string;
   } | null>(null);
+  const [currentDerivationPath, setCurrentDerivationPath] = useState<string>('');
+  const [scannedAddressType, setScannedAddressType] = useState<string>(''); // Address type from scanned QR code
   // PSBT signing state
   const [isPSBTTransportModalVisible, setIsPSBTTransportModalVisible] =
     useState<boolean>(false);
@@ -981,7 +983,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     type: 'duo' | 'trio';
     pubKey: string;
     chainCode: string;
-    xpub: string;
     outputDescriptors?: {
       legacy: string;
       segwitNative: string;
@@ -990,27 +991,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     npub: string | null;
     createdAt?: number | null;
   } | null>(null);
-  const [isXpubQrVisible, setIsXpubQrVisible] = useState(false);
   const [isNpubQrVisible, setIsNpubQrVisible] = useState(false);
-
-  // Helper function to get xpub from native module
-  const getXpubFromNative = async (
-    pubKeyHex: string,
-    chainCodeHex: string,
-    net: string,
-  ): Promise<string> => {
-    try {
-      const xpub = await BBMTLibNativeModule.encodeXpub(
-        pubKeyHex,
-        chainCodeHex,
-        net,
-      );
-      return xpub || '';
-    } catch (error) {
-      dbg('Error getting xpub from native:', error);
-      return '';
-    }
-  };
 
   const {theme} = useTheme();
   const styles = {
@@ -1510,9 +1491,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         }
       }
 
-      // Generate xpub/tpub for watch-only wallet compatibility (Sparrow, etc.)
-      const xpub = await getXpubFromNative(pubKey, chainCode, network);
-
       // Generate output descriptors for Sparrow and other wallets using utility function
       const descriptors = await generateAllOutputDescriptors(
         BBMTLibNativeModule,
@@ -1536,7 +1514,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         type,
         pubKey,
         chainCode,
-        xpub,
         outputDescriptors,
         npub: nostrNpub,
         createdAt: keyshare.created_at || null,
@@ -1605,6 +1582,25 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         // Continue to show transport selector if check fails
       }
 
+      // Compute derivation path for the current network and address type
+      let derivationPath = '';
+      try {
+        const keyshareJSON = await EncryptedStorage.getItem('keyshare');
+        if (keyshareJSON) {
+          const keyshare = JSON.parse(keyshareJSON);
+          const useLegacyPath = isLegacyWallet(keyshare.created_at);
+          const currentAddressType = addressType || 'segwit-native';
+          derivationPath = getDerivePathForNetwork(
+            network,
+            currentAddressType,
+            useLegacyPath,
+          );
+        }
+      } catch (error) {
+        dbg('Error computing derivation path for send:', error);
+      }
+      setCurrentDerivationPath(derivationPath);
+
       // Store params and show transport selector after a brief delay to ensure send modal is closed
       setPendingSendParams({to, amountSats, feeSats, spendingHash});
       setTimeout(() => {
@@ -1624,6 +1620,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     const satoshiFees = feeSats.toString().split('.')[0];
     const fiatFees = feeSats.times(btcRate).div(1e8).toFixed(2);
 
+    // Use address type and derivation path from QR code if scanned, otherwise use current wallet settings
+    // This ensures the second device uses the exact same source address as the first device
+    const addressTypeToUse = scannedFromQR && scannedAddressType 
+      ? scannedAddressType 
+      : addressType;
+    const derivationPathToUse = scannedFromQR && currentDerivationPath 
+      ? currentDerivationPath 
+      : '';
+
     const routeName =
       transport === 'local' ? 'Devices Pairing' : 'Nostr Connect';
     navigation.dispatch(
@@ -1631,7 +1636,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         name: routeName,
         params: {
           mode: 'send_btc',
-          addressType,
+          addressType: addressTypeToUse,
           toAddress,
           satoshiAmount,
           fiatAmount,
@@ -1639,11 +1644,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           fiatFees,
           selectedCurrency,
           spendingHash,
+          derivationPath: derivationPathToUse, // Pass derivation path so pairing screens can use it directly
         },
       }),
     );
     setPendingSendParams(null);
     setScannedFromQR(false); // Reset flag
+    setScannedAddressType(''); // Reset scanned address type
+    setCurrentDerivationPath(''); // Reset derivation path
   };
 
   // Process scanned QR data
@@ -1655,6 +1663,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       amountSats: string;
       feeSats: string;
       spendingHash?: string;
+      addressType?: string;
+      derivationPath?: string;
     } | null;
     if (
       !decoded ||
@@ -1688,6 +1698,17 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         'The scanned QR code contains invalid amount or fee values.',
       );
       return;
+    }
+
+    // Store address type and derivation path from QR code if available
+    // These are critical to ensure the second device uses the same source address
+    if (decoded.addressType) {
+      setScannedAddressType(decoded.addressType);
+      dbg('Address type from QR code:', decoded.addressType);
+    }
+    if (decoded.derivationPath) {
+      setCurrentDerivationPath(decoded.derivationPath);
+      dbg('Derivation path from QR code:', decoded.derivationPath);
     }
 
     // Store params and mark as scanned from QR
@@ -2282,6 +2303,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           setIsTransportModalVisible(false);
           setPendingSendParams(null);
           setScannedFromQR(false);
+          setScannedAddressType(''); // Reset scanned address type
+          setCurrentDerivationPath(''); // Reset derivation path
         }}
         onSelect={(transport: 'local' | 'nostr') => {
           navigateToPairing(transport);
@@ -2298,6 +2321,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   .split('.')[0],
                 feeSats: pendingSendParams.feeSats.toString().split('.')[0],
                 spendingHash: pendingSendParams.spendingHash,
+                addressType: addressType || '',
+                derivationPath: currentDerivationPath,
               }
             : null
         }
@@ -2358,26 +2383,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             navigation.navigate('Settings');
           }
         }}
-        onShowXpubQR={() => setIsXpubQrVisible(true)}
         onShowOutputDescriptorQR={() => {}}
         onShowNpubQR={() => setIsNpubQrVisible(true)}
       />
 
       {/* QR Code Modals */}
-      <QRCodeModal
-        visible={isXpubQrVisible}
-        onClose={() => {
-          setIsXpubQrVisible(false);
-          setTimeout(() => setIsPartyModalVisible(true), 300);
-        }}
-        title={`Wallet • ${network === 'mainnet' ? 'xpub' : 'tpub'}`}
-        value={keyshareInfo?.xpub || ''}
-        network={network as 'mainnet' | 'testnet'}
-        showShareButton={true}
-        topRightClose={true}
-        nonDismissible={true}
-      />
-
       <QRCodeModal
         visible={isNpubQrVisible}
         onClose={() => {
