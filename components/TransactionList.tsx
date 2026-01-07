@@ -12,7 +12,6 @@ import {
   View,
   ActivityIndicator,
   RefreshControl,
-  Linking,
   Platform,
   TouchableOpacity,
   Image,
@@ -23,7 +22,7 @@ import Toast from 'react-native-toast-message';
 import moment from 'moment';
 import {dbg, presentFiat, HapticFeedback, isCanceledError} from '../utils';
 import {useTheme} from '@react-navigation/native';
-import {themes} from '../theme';
+import {themes, useTheme as useAppTheme} from '../theme';
 import TransactionListSkeleton from './TransactionListSkeleton';
 import {WalletService} from '../services/WalletService';
 import TransactionDetailsModal from './TransactionDetailsModal';
@@ -81,6 +80,7 @@ const TransactionList = React.forwardRef<
     const [isDetailsModalVisible, setIsDetailsModalVisible] = useState(false);
 
     const {colors} = useTheme();
+    const {theme: appTheme} = useAppTheme();
     const insets = useSafeAreaInsets();
 
     // Add refs to track mounting state and prevent memory leaks
@@ -720,7 +720,7 @@ const TransactionList = React.forwardRef<
       },
       list: {
         flex: 1,
-        backgroundColor: colors.card,
+        backgroundColor: appTheme.colors.background, // White in light mode, dark in dark mode
         marginTop: Platform.OS === 'ios' ? -insets.top : 0,
       },
       listContent: {
@@ -730,15 +730,19 @@ const TransactionList = React.forwardRef<
       transactionItem: {
         padding: 12,
         marginVertical: 4,
-        backgroundColor: colors.card,
+        backgroundColor: appTheme.colors.background === '#ffffff' 
+          ? '#ffffff' // White in light mode
+          : appTheme.colors.cardBackground, // Dark card in dark mode
         borderRadius: 10,
         elevation: 1,
-        shadowColor: '#000',
+        shadowColor: appTheme.colors.shadowColor,
         shadowOffset: {width: 0, height: 1},
         shadowOpacity: 0.05,
         shadowRadius: 1,
         borderWidth: 1,
-        borderColor: 'rgba(0, 0, 0, 0.05)',
+        borderColor: appTheme.colors.background === '#ffffff'
+          ? 'rgba(0, 0, 0, 0.05)' // Original light mode border
+          : appTheme.colors.border + '40', // Dark border in dark mode
       },
       transactionRow: {
         flexDirection: 'row',
@@ -748,55 +752,67 @@ const TransactionList = React.forwardRef<
       },
       endOfListText: {
         textAlign: 'center',
-        fontSize: 16,
-        color: colors.text,
+        fontSize: appTheme.fontSizes?.lg || 16,
+        fontWeight: (appTheme.fontWeights?.normal || '400') as any,
+        fontFamily: appTheme.fontFamilies?.regular,
+        color: appTheme.colors.text,
         padding: 10,
       },
       status: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: colors.text,
+        fontSize: appTheme.fontSizes?.md || 15,
+        fontWeight: (appTheme.fontWeights?.semibold || '600') as any,
+        fontFamily: appTheme.fontFamilies?.regular,
+        color: appTheme.colors.text,
         opacity: 0.9,
       },
       amount: {
-        fontSize: 17,
-        fontWeight: '700',
-        color: colors.text,
-        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+        fontSize: appTheme.fontSizes?.lg || 17,
+        fontWeight: (appTheme.fontWeights?.bold || '700') as any,
+        fontFamily: appTheme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+        color: appTheme.colors.text,
         opacity: 0.95,
       },
       fiatAmount: {
-        fontSize: 13,
-        color: colors.text,
+        fontSize: appTheme.fontSizes?.base || 13,
+        fontWeight: (appTheme.fontWeights?.normal || '400') as any,
+        fontFamily: appTheme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+        color: appTheme.colors.text,
         opacity: 0.6,
-        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
       },
       address: {
-        fontSize: 13,
-        color: colors.text,
+        fontSize: appTheme.fontSizes?.base || 13,
+        fontWeight: (appTheme.fontWeights?.normal || '400') as any,
+        fontFamily: appTheme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+        color: appTheme.colors.text,
         opacity: 0.6,
         marginRight: 4,
-        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
       },
       addressText: {
-        color: colors.text,
-        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+        fontSize: appTheme.fontSizes?.base || 13,
+        fontWeight: (appTheme.fontWeights?.normal || '400') as any,
+        fontFamily: appTheme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+        color: appTheme.colors.text,
         opacity: 0.8,
       },
       txId: {
-        fontSize: 12,
-        color: colors.text,
+        fontSize: appTheme.fontSizes?.sm || 12,
+        fontWeight: (appTheme.fontWeights?.normal || '400') as any,
+        fontFamily: appTheme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+        color: appTheme.colors.text,
         opacity: 0.5,
-        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
       },
       timestamp: {
-        fontSize: 12,
-        color: colors.text,
+        fontSize: appTheme.fontSizes?.sm || 12,
+        fontWeight: (appTheme.fontWeights?.normal || '400') as any,
+        fontFamily: appTheme.fontFamilies?.regular,
+        color: appTheme.colors.text,
         opacity: 0.5,
       },
       txText: {
-        color: colors.text,
-        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+        fontSize: appTheme.fontSizes?.base || 13,
+        fontWeight: (appTheme.fontWeights?.normal || '400') as any,
+        fontFamily: appTheme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+        color: appTheme.colors.text,
         opacity: 0.7,
       },
       emptyContainer: {
@@ -806,8 +822,10 @@ const TransactionList = React.forwardRef<
         padding: 20,
       },
       emptyText: {
-        fontSize: 15,
-        color: colors.text,
+        fontSize: appTheme.fontSizes?.md || 15,
+        fontWeight: (appTheme.fontWeights?.normal || '400') as any,
+        fontFamily: appTheme.fontFamilies?.regular,
+        color: appTheme.colors.text,
         textAlign: 'center',
         opacity: 0.7,
       },
@@ -830,6 +848,7 @@ const TransactionList = React.forwardRef<
         width: 20,
         height: 20,
         marginRight: 8,
+        tintColor: appTheme.colors.text, // Use theme text color for icons in dark mode
       },
       txIdContainer: {
         flexDirection: 'row',
@@ -839,6 +858,7 @@ const TransactionList = React.forwardRef<
         width: 16,
         height: 16,
         marginRight: 4,
+        tintColor: appTheme.colors.textSecondary, // Use theme secondary text color for link icon
       },
     });
 
@@ -865,7 +885,6 @@ const TransactionList = React.forwardRef<
           : 'Pending confirmation';
 
         const shortTxId = `${item.txid.slice(0, 4)}...${item.txid.slice(-4)}`;
-        const baseUrl = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
 
         // Get the relevant address(es) based on transaction type
         let relevantAddresses: string[] = [];
@@ -888,10 +907,6 @@ const TransactionList = React.forwardRef<
           // Set empty array for received transactions (not used in display)
           relevantAddresses = [];
         }
-
-        const addressExplorerLink = relevantAddress
-          ? `${baseUrl}/address/${relevantAddress}`
-          : '';
 
         // Format BTC amount with proper precision and grouping
         const formatBtcAmount = (amount: number) => {
@@ -945,8 +960,8 @@ const TransactionList = React.forwardRef<
                 style={[
                   styles.amount,
                   status.includes('Sen')
-                    ? {color: themes.cryptoVibrant.colors.accent}
-                    : {color: themes.cryptoVibrant.colors.secondary},
+                    ? {color: themes.cryptoVibrant.colors.accent} // Original: #F5A623
+                    : {color: themes.cryptoVibrant.colors.secondary}, // Original: #00D2B8
                 ]}>
                 {isBlurred ? '***' : info}
               </Text>
@@ -975,9 +990,8 @@ const TransactionList = React.forwardRef<
             )}
             <View style={styles.transactionRow}>
               <View style={styles.txIdContainer}>
-                <Image source={linkIcon} style={styles.linkIcon} />
                 <Text style={styles.txId}>
-                  <Text style={styles.txText}>0x{shortTxId}</Text>
+                  <Text style={styles.txText}>Tx: {shortTxId}</Text>
                 </Text>
               </View>
               <Text style={styles.timestamp}>{timestamp}</Text>
@@ -989,7 +1003,6 @@ const TransactionList = React.forwardRef<
         getTransactionStatus,
         getTransactionAmounts,
         address,
-        baseApi,
         styles,
         selectedCurrency,
         btcRate,

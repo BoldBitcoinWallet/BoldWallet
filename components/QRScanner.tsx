@@ -70,7 +70,7 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
   const device = useCameraDevice('back');
   const codeScanner = useCodeScanner({
     codeTypes: ['qr'],
-    onCodeScanned: codes => {
+    onCodeScanned: (codes: any) => {
       if (codes.length > 0 && codes[0].value) {
         onScan(codes[0].value);
         if (mode === 'single') {
@@ -137,9 +137,10 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
       borderRadius: 12,
     },
     closeScannerButtonText: {
-      color: theme.colors.background,
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textOnPrimary || theme.colors.white,
     },
     cameraNotFoundContainer: {
       flex: 1,
@@ -148,13 +149,17 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
       backgroundColor: 'black',
     },
     cameraNotFoundText: {
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: '#FFFFFF',
-      fontSize: 16,
       marginBottom: 8,
     },
     cameraNotFoundSubtext: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: 'rgba(255, 255, 255, 0.7)',
-      fontSize: 14,
       textAlign: 'center',
       paddingHorizontal: 20,
     },
@@ -254,7 +259,7 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
   closeButtonText = 'Close',
 }) => {
   const {theme} = useTheme();
-  const [isScanning, setIsScanning] = useState(false);
+  const [_isScanning, setIsScanning] = useState(false);
   const scanSubscriptionRef = useRef<any>(null);
   const isScanningRef = useRef(false);
 
@@ -317,9 +322,10 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
       borderRadius: 12,
     },
     closeScannerButtonText: {
-      color: theme.colors.background,
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textOnPrimary || theme.colors.white,
     },
   });
 

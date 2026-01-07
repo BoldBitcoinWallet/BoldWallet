@@ -73,13 +73,16 @@ const QRScanner: React.FC<QRScannerProps> = ({
       alignItems: 'center',
     },
     scannerTitle: {
-      fontSize: 20,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: '#FFFFFF',
       marginBottom: 8,
     },
     scannerSubtitle: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: 'rgba(255, 255, 255, 0.7)',
       textAlign: 'center',
       paddingHorizontal: 20,
@@ -107,9 +110,10 @@ const QRScanner: React.FC<QRScannerProps> = ({
       borderRadius: 12,
     },
     closeScannerButtonText: {
-      color: theme.colors.background,
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textOnPrimary || '#FFFFFF', // Use textOnPrimary for readability on primary button
     },
     cameraNotFoundContainer: {
       flex: 1,
@@ -118,13 +122,17 @@ const QRScanner: React.FC<QRScannerProps> = ({
       backgroundColor: 'black',
     },
     cameraNotFoundText: {
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: '#FFFFFF',
-      fontSize: 16,
       marginBottom: 8,
     },
     cameraNotFoundSubtext: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: 'rgba(255, 255, 255, 0.7)',
-      fontSize: 14,
       textAlign: 'center',
       paddingHorizontal: 20,
     },

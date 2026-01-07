@@ -113,9 +113,11 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache,sharing=shared \
     cp -r /tmp/BoldWallet/* /BoldWallet/; \
     cp -r /tmp/BoldWallet/.[!.]* /BoldWallet/ 2>/dev/null || true; \
     rm -rf /tmp/BoldWallet; \
+    # Explicitly cd to /BoldWallet to restore working directory context \
+    cd /BoldWallet; \
     # Reinstall dependencies after git clone (uses cache) \
     npm install --build-from-source --prefer-offline --no-audit --legacy-peer-deps; \
-    cd BBMTLib && go mod download; \
+    cd /BoldWallet/BBMTLib && go mod download; \
 fi
 
 # Conditional F-Droid build modifications

@@ -73,37 +73,39 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       marginBottom: 8,
     },
     feeStrategyButton: {
-      backgroundColor: theme.colors.cardBackground || '#e9ecef',
+      backgroundColor: theme.colors.cardBackground,
       paddingVertical: 6,
       paddingHorizontal: 10,
       borderRadius: 12,
       marginRight: 6,
       borderWidth: 1.5,
-      borderColor: theme.colors.border || '#e0e0e0',
+      borderColor: theme.colors.border,
     },
     feeStrategyButtonSelected: {
       backgroundColor: theme.colors.primary,
       borderColor: theme.colors.primary,
     },
     feeStrategyText: {
-      fontSize: 12,
-      color: theme.colors.textSecondary || '#495057',
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textSecondary, // Remove fallback for better dark mode readability
     },
     feeStrategyTextSelected: {
-      color: '#fff',
+      color: theme.colors.white,
     },
     label: {
-      fontSize: 13,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       marginBottom: 6,
-      color: theme.colors.textSecondary || '#7f8c8d',
+      color: theme.colors.textSecondary, // Remove fallback for better dark mode readability
     },
     modalBackdrop: {
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
-      backgroundColor: 'rgba(0, 0, 0, 0.8)',
+      backgroundColor: theme.colors.modalBackdrop,
     },
     modalContainer: {
       width: '90%',
@@ -111,6 +113,8 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       backgroundColor: theme.colors.background,
       borderRadius: 16,
       padding: 16,
+      borderWidth: 1,
+      borderColor: theme.colors.border + '40', // Add border to match other modals
     },
     header: {
       flexDirection: 'row',
@@ -130,10 +134,12 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       width: 20,
       height: 20,
       resizeMode: 'contain',
+      // Keep Bitcoin logo intact (no tint)
     },
     title: {
-      fontSize: 18,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       flex: 1,
     },
@@ -142,9 +148,10 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       height: 30,
     },
     closeButtonText: {
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontWeight: '600',
       textAlign: 'center',
       verticalAlign: 'middle',
       lineHeight: 30,
@@ -155,7 +162,9 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       borderRadius: 10,
       paddingVertical: 10,
       paddingHorizontal: 12,
-      fontSize: 15,
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       maxHeight: 48,
       backgroundColor: theme.colors.cardBackground || '#FFF',
       marginBottom: 8,
@@ -175,16 +184,18 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       paddingRight: 80,
       minHeight: 56,
       maxHeight: 64,
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.monospace || (Platform.select({ios: 'Menlo', android: 'monospace'}) as any),
       lineHeight: 16,
       backgroundColor: theme.colors.cardBackground || '#FFF',
       textAlignVertical: 'top',
-      fontFamily: Platform.select({ios: 'Menlo', android: 'monospace'}) as any,
       color: theme.colors.text,
     },
     iconImage: {
       width: 24,
       height: 24,
+      tintColor: theme.colors.text, // Fix dark mode visibility
     },
     pasteIconContainer: {
       position: 'absolute',
@@ -205,9 +216,10 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       marginBottom: 5,
     },
     maxText: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.accent,
-      fontSize: 14,
-      fontWeight: 'bold',
       marginBottom: 10,
       textDecorationLine: 'underline',
     },
@@ -226,23 +238,26 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       flex: 1,
     },
     balanceCardLabel: {
-      fontSize: 11,
-      fontWeight: '600',
-      color: theme.colors.textSecondary || '#7f8c8d',
+      fontSize: theme.fontSizes?.sm || 11,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textSecondary, // Remove fallback for better dark mode readability
       marginBottom: 3,
       textTransform: 'uppercase',
       letterSpacing: 0.5,
     },
     balanceCardBtc: {
-      fontSize: 16,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 2,
     },
     balanceCardFiat: {
-      fontSize: 12,
-      color: theme.colors.textSecondary || '#7f8c8d',
-      fontWeight: '500',
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textSecondary, // Remove fallback for better dark mode readability
     },
     balanceCardMaxButton: {
       backgroundColor: theme.colors.accent || theme.colors.primary,
@@ -254,24 +269,28 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       justifyContent: 'center',
     },
     balanceCardMaxButtonText: {
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: '#fff',
-      fontSize: 13,
-      fontWeight: '700',
     },
     inputContainer: {
       marginBottom: 0,
     },
     inputLabel: {
-      fontSize: 13,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       marginBottom: 6,
-      color: theme.colors.textSecondary || '#7f8c8d',
+      color: theme.colors.textSecondary, // Remove fallback for better dark mode readability
     },
     inputError: {
       borderColor: theme.colors.danger || '#DC3545',
     },
     errorText: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.danger || '#DC3545',
       marginTop: -8,
       marginBottom: 8,
@@ -288,7 +307,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     feeLabel: {
       fontSize: 13,
       fontWeight: '600',
-      color: theme.colors.textSecondary || '#7f8c8d',
+      color: theme.colors.textSecondary, // Remove fallback for better dark mode readability
       marginBottom: 8,
     },
     feeInfoContainer: {
@@ -301,7 +320,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     },
     feeCalculating: {
       marginLeft: 10,
-      color: '#7f8c8d',
+      color: theme.colors.textSecondary, // Use theme color for dark mode readability
       fontSize: 14,
     },
     feeAmountContainer: {
@@ -317,7 +336,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     },
     feeAmountUsd: {
       fontSize: 12,
-      color: theme.colors.textSecondary || '#7f8c8d',
+      color: theme.colors.textSecondary, // Remove fallback for better dark mode readability
     },
     sendCancelButtons: {
       flexDirection: 'row',
@@ -369,14 +388,14 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     setupGuideHintIcon: {
       width: 16,
       height: 16,
-      tintColor: theme.colors.primary,
+      tintColor: theme.colors.text, // Use text color for better dark mode visibility
     },
     setupGuideHintText: {
       fontSize: 12,
-      color: theme.colors.primary,
+      color: theme.colors.text, // Use text color for better dark mode readability
       fontWeight: '500',
       textDecorationLine: 'underline',
-      textDecorationColor: theme.colors.primary + '80',
+      textDecorationColor: theme.colors.text + '80',
     },
   });
 
@@ -759,6 +778,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                   <TextInput
                     style={styles.inputAddressWithIcons}
                     placeholder="Recipient Bitcoin Address"
+                    placeholderTextColor={theme.colors.textSecondary + '80'}
                     value={address}
                     onChangeText={setAddress}
                     autoCapitalize="none"
@@ -819,6 +839,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                       amountExceedsBalance && styles.inputError,
                     ]}
                     placeholder="Enter BTC amount"
+                    placeholderTextColor={theme.colors.textSecondary + '80'}
                     value={inBtcAmount}
                     onChangeText={handleBtcChange}
                     onFocus={() => setActiveInput('btc')}
@@ -838,6 +859,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                   <TextInput
                     style={styles.input}
                     placeholder={`Or ${selectedCurrency} amount`}
+                    placeholderTextColor={theme.colors.textSecondary + '80'}
                     value={inUsdAmount}
                     onFocus={() => setActiveInput('usd')}
                     onChangeText={handleUsdChange}

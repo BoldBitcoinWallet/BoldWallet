@@ -220,7 +220,10 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
                 ? `Cached • ${timeAgo}`
                 : timeAgo}
             </Text>
-            <Image source={clockIcon} style={styles.clockIcon} />
+            <Image
+              source={clockIcon}
+              style={[styles.clockIcon, {tintColor: theme.colors.textSecondary}]}
+            />
           </View>
         )}
       </TouchableOpacity>

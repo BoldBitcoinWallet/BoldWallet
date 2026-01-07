@@ -8,7 +8,7 @@ import {
   FlatList,
   useWindowDimensions,
 } from 'react-native';
-import {themes} from '../theme';
+import {useTheme} from '../theme';
 import {HapticFeedback} from '../utils';
 
 interface Currency {
@@ -58,6 +58,7 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
   currentCurrency,
   availableCurrencies,
 }) => {
+  const {theme} = useTheme();
   const {height} = useWindowDimensions();
 
   // Convert available currencies object to array of Currency objects
@@ -85,6 +86,83 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
       <Text style={styles.currencySymbol}>{item.symbol}</Text>
     </TouchableOpacity>
   );
+
+  const styles = StyleSheet.create({
+    modalContainer: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      justifyContent: 'flex-end',
+    },
+    modalContent: {
+      backgroundColor: theme.colors.background,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border + '40', // Add border for dark mode visibility
+      paddingBottom: 20,
+    },
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      padding: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border + '40', // Use theme border color
+    },
+    title: {
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text,
+    },
+    closeButton: {
+      padding: 8,
+    },
+    closeButtonText: {
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text,
+    },
+    listContent: {
+      padding: 16,
+    },
+    currencyItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: 16,
+      borderRadius: 12,
+      marginBottom: 8,
+      backgroundColor: theme.colors.cardBackground,
+      borderWidth: 1,
+      borderColor: theme.colors.border + '40', // Add border for dark mode visibility
+    },
+    selectedCurrency: {
+      backgroundColor: theme.colors.accent,
+      borderColor: theme.colors.accent, // Match border to accent when selected
+    },
+    currencyCode: {
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text,
+      width: 60,
+    },
+    currencyName: {
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      flex: 1,
+      color: theme.colors.text,
+    },
+    currencySymbol: {
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textSecondary,
+      marginLeft: 8,
+    },
+  });
 
   return (
     <Modal
@@ -117,69 +195,5 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
     </Modal>
   );
 };
-
-const styles = StyleSheet.create({
-  modalContainer: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: themes.lightPolished.colors.background,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: 20,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: themes.lightPolished.colors.border,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: themes.lightPolished.colors.text,
-  },
-  closeButton: {
-    padding: 8,
-  },
-  closeButtonText: {
-    fontSize: 20,
-    color: themes.lightPolished.colors.text,
-  },
-  listContent: {
-    padding: 16,
-  },
-  currencyItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 8,
-    backgroundColor: themes.lightPolished.colors.cardBackground,
-  },
-  selectedCurrency: {
-    backgroundColor: themes.lightPolished.colors.accent,
-  },
-  currencyCode: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: themes.lightPolished.colors.text,
-    width: 60,
-  },
-  currencyName: {
-    flex: 1,
-    fontSize: 16,
-    color: themes.lightPolished.colors.text,
-  },
-  currencySymbol: {
-    fontSize: 16,
-    color: themes.lightPolished.colors.textSecondary,
-    marginLeft: 8,
-  },
-});
 
 export default CurrencySelector;

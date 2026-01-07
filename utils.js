@@ -221,23 +221,156 @@ export const capitalizeWords = str => {
 
 export const presentFiat = (amount, decimals = 2) => {
   if (amount === undefined || amount === null) {
-    return '0.00';
+    return '0';
   }
 
   // Convert to number and handle invalid inputs
   const num = Number(amount);
   if (isNaN(num)) {
-    return '0.00';
+    return '0';
   }
 
   // Ensure non-negative (handle -0 case)
   const positiveNum = num < 0 ? 0 : num;
 
   // Format with thousand separators and fixed decimal places
-  return positiveNum.toLocaleString(undefined, {
+  const formatted = positiveNum.toLocaleString(undefined, {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   });
+  
+  // Remove .00 if it's a whole number
+  if (formatted.endsWith('.00')) {
+    return formatted.slice(0, -3);
+  }
+  
+  return formatted;
+};
+
+/**
+ * Formats BTC balance with custom formatting:
+ * - Left of decimal: standard thousand separators (every 3 digits)
+ * - Right of decimal: first comma after 2 digits, then every 3 digits
+ * Example: 54324.54620005 -> 54,324.54,630,006
+ */
+/**
+ * Smart Bitcoin balance formatter with conditional precision based on amount size
+ * @param {string|number} btcAmount - The Bitcoin amount to format
+ * @param {object} options - Formatting options
+ * @param {boolean} options.compact - Use compact mode (fewer decimals for large amounts)
+ * @param {number} options.maxDecimals - Maximum decimal places to show (overrides smart precision)
+ * @param {boolean} options.showTrailingZeros - Whether to show trailing zeros
+ * @returns {string} Formatted Bitcoin amount
+ */
+export const formatBTC = (btcAmount, options = {}) => {
+  const {
+    compact = false,
+    maxDecimals = null,
+    showTrailingZeros = false,
+  } = options;
+
+  if (btcAmount === undefined || btcAmount === null || btcAmount === '') {
+    return '0.00000000';
+  }
+
+  // Convert to string and handle invalid inputs
+  const amountStr = String(btcAmount);
+  if (amountStr === '0' || amountStr === '0.0' || amountStr === '0.00') {
+    return '0.00000000';
+  }
+
+  const amount = parseFloat(amountStr);
+  if (isNaN(amount) || amount < 0) {
+    return '0.00000000';
+  }
+
+  // Split into whole and decimal parts
+  const [wholePart, decimalPart = ''] = amountStr.split('.');
+
+  // Format whole part: standard thousand separators (every 3 digits from right)
+  const formattedWhole = Number(wholePart).toLocaleString();
+
+  // Determine smart precision based on amount size
+  let targetDecimals = 8; // Default to full precision
+  if (maxDecimals !== null) {
+    targetDecimals = maxDecimals;
+  } else if (compact) {
+    // Compact mode: fewer decimals for larger amounts
+    if (amount >= 1000) {
+      targetDecimals = 2;
+    } else if (amount >= 1) {
+      targetDecimals = 4;
+    } else if (amount >= 0.01) {
+      targetDecimals = 6;
+    } else if (amount >= 0.0001) {
+      targetDecimals = 8;
+    } else {
+      targetDecimals = 8; // Very small amounts: show full precision
+    }
+  } else {
+    // Smart precision mode: balance readability with precision
+    if (amount >= 1000) {
+      targetDecimals = 2; // Large amounts: 2 decimals (e.g., 1,234.56)
+    } else if (amount >= 1) {
+      targetDecimals = 4; // Medium-large: 4 decimals (e.g., 123.4567)
+    } else if (amount >= 0.01) {
+      targetDecimals = 6; // Small-medium: 6 decimals (e.g., 0.123456)
+    } else if (amount >= 0.0001) {
+      targetDecimals = 8; // Very small: full precision (e.g., 0.00012345)
+    } else {
+      targetDecimals = 8; // Extremely small: full precision
+    }
+  }
+
+  // Format decimal part with custom comma formatting
+  let formattedDecimal = '';
+  if (decimalPart) {
+    // Pad to target decimals (or 8 if more precision needed)
+    const paddedDecimal = decimalPart.padEnd(Math.max(targetDecimals, 8), '0').slice(0, Math.max(targetDecimals, 8));
+    
+    // Truncate to target decimals
+    const truncatedDecimal = paddedDecimal.slice(0, targetDecimals);
+    
+    // Apply custom comma formatting: first comma after 2 digits, then every 3 digits
+    if (truncatedDecimal.length > 2) {
+      const firstTwo = truncatedDecimal.slice(0, 2);
+      const remaining = truncatedDecimal.slice(2);
+      
+      // Group remaining digits in groups of 3
+      const groups = [];
+      for (let i = 0; i < remaining.length; i += 3) {
+        groups.push(remaining.slice(i, i + 3));
+      }
+      
+      // Combine: first 2 digits, then comma, then groups of 3 separated by commas
+      formattedDecimal = firstTwo + (groups.length > 0 ? ',' + groups.join(',') : '');
+    } else {
+      formattedDecimal = truncatedDecimal;
+    }
+
+    // Remove trailing zeros if not requested
+    if (!showTrailingZeros) {
+      formattedDecimal = formattedDecimal.replace(/0+$/, '').replace(/,$/, '');
+      // If all decimals removed, ensure we have at least the first two digits for consistency
+      if (formattedDecimal === '' && truncatedDecimal.length > 0) {
+        formattedDecimal = truncatedDecimal.slice(0, Math.min(2, truncatedDecimal.length));
+      }
+    }
+  } else if (targetDecimals > 0 && showTrailingZeros) {
+    // If no decimal part but we want to show decimals, pad with zeros
+    formattedDecimal = '00';
+    if (targetDecimals > 2) {
+      const remainingZeros = '0'.repeat(Math.min(targetDecimals - 2, 6));
+      formattedDecimal += ',' + remainingZeros.match(/.{1,3}/g)?.join(',') || '';
+    }
+  }
+
+  // If formattedDecimal is empty and we have a whole number, don't show decimal point
+  if (formattedDecimal === '' && !showTrailingZeros) {
+    return formattedWhole;
+  }
+
+  return `${formattedWhole}.${formattedDecimal}`;
 };
 
 // Add currency symbol mapping

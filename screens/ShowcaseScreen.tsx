@@ -42,6 +42,7 @@ const ShowcaseScreen = ({navigation}: any) => {
     'terms',
   );
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const {theme} = useTheme();
   const {setActiveNetwork} = useUser();
 
@@ -57,12 +58,12 @@ const ShowcaseScreen = ({navigation}: any) => {
         // Clear LocalCache
         await LocalCache.clear();
         dbg('LocalCache cleared successfully');
-        
+
         // Clear stale EncryptedStorage items (but keep keyshare if it exists)
         // We clear btcPub as it will be regenerated with the imported keyshare
         await EncryptedStorage.removeItem('btcPub');
         dbg('Cleared stale btcPub from EncryptedStorage');
-        
+
         // Clear WalletService cache
         try {
           await LocalCache.removeItem('walletCache');
@@ -70,7 +71,7 @@ const ShowcaseScreen = ({navigation}: any) => {
         } catch (error) {
           dbg('Error clearing WalletService cache:', error);
         }
-        
+
         dbg('=== ShowcaseScreen: Cache clearing completed');
       } catch (err) {
         dbg('Error clearing app cache:', err);
@@ -205,14 +206,17 @@ const ShowcaseScreen = ({navigation}: any) => {
         // Reset legacy wallet modal flag for new wallet
         // If legacy wallet, set to "no" (show modal); if not legacy, set to "yes" (won't show anyway)
         const isLegacy = isLegacyWallet(ks.created_at);
-        await LocalCache.setItem('legacyWalletModalDoNotRemind', isLegacy ? 'no' : 'yes');
-        
+        await LocalCache.setItem(
+          'legacyWalletModalDoNotRemind',
+          isLegacy ? 'no' : 'yes',
+        );
+
         // CRITICAL: Always reset network to mainnet on keyshare import
         // This ensures a clean state and proper address derivation for the new wallet
         dbg('=== Keyshare imported: Resetting network to mainnet');
         await setActiveNetwork('mainnet');
         dbg('=== Network reset to mainnet, UserContext will refresh addresses');
-        
+
         setModalVisible(false);
         setPassword('');
         dbg('Opening Home');
@@ -266,7 +270,10 @@ const ShowcaseScreen = ({navigation}: any) => {
     },
     heroSubtitle: {
       fontSize: 20,
-      color: theme.colors.primary,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.text,
       fontWeight: '700',
       textAlign: 'center',
       lineHeight: 28,
@@ -306,7 +313,10 @@ const ShowcaseScreen = ({navigation}: any) => {
       paddingHorizontal: 8,
     },
     ctaButtonPrimary: {
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       borderRadius: 12,
       paddingVertical: 16,
       paddingHorizontal: 24,
@@ -331,7 +341,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       width: '100%',
     },
     ctaButtonText: {
-      color: theme.colors.background,
+      color: theme.colors.white,
       fontWeight: '600',
       fontSize: 16,
     },
@@ -400,14 +410,17 @@ const ShowcaseScreen = ({navigation}: any) => {
       width: 28,
       height: 28,
       borderWidth: 2,
-      borderColor: theme.colors.border,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.text
+          : theme.colors.border,
       borderRadius: 8,
       alignItems: 'center',
       justifyContent: 'center',
     },
     checkboxChecked: {
-      backgroundColor: theme.colors.primary,
-      borderColor: theme.colors.primary,
+      backgroundColor: theme.colors.background === '#ffffff' ? theme.colors.primary : theme.colors.accent,
+      borderColor: theme.colors.background === '#ffffff' ? theme.colors.primary : theme.colors.accent,
     },
     checkmark: {
       color: theme.colors.background,
@@ -488,20 +501,37 @@ const ShowcaseScreen = ({navigation}: any) => {
       marginBottom: 10,
       paddingHorizontal: 4,
     },
+    passwordInputWrapper: {
+      position: 'relative',
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
     passwordInput: {
       borderWidth: 1.5,
       borderColor: theme.colors.accent,
       borderRadius: 12,
       paddingHorizontal: 16,
+      paddingRight: 50,
       paddingVertical: 14,
       fontSize: 16,
       color: theme.colors.text,
       backgroundColor: 'rgba(0,0,0,0.02)',
       fontWeight: '500',
+      flex: 1,
     },
     passwordInputFocused: {
       borderColor: theme.colors.primary,
       backgroundColor: 'rgba(0,0,0,0.03)',
+    },
+    eyeButton: {
+      position: 'absolute',
+      right: 12,
+      padding: 4,
+    },
+    eyeIcon: {
+      width: 20,
+      height: 20,
+      tintColor: theme.colors.text,
     },
     modalActions: {
       flexDirection: 'row',
@@ -526,7 +556,10 @@ const ShowcaseScreen = ({navigation}: any) => {
       borderColor: 'rgba(0,0,0,0.1)',
     },
     modalSubmitButton: {
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     modalActionButtonText: {
       fontSize: 14,
@@ -546,12 +579,18 @@ const ShowcaseScreen = ({navigation}: any) => {
     modalHeaderIconImage: {
       width: 20,
       height: 20,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     buttonIcon: {
       width: 16,
       height: 16,
-      tintColor: theme.colors.background,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.background,
     },
     modeOptionsContainer: {
       paddingVertical: 8,
@@ -593,14 +632,26 @@ const ShowcaseScreen = ({navigation}: any) => {
       position: 'relative',
     },
     modeOptionCardPrimary: {
-      backgroundColor: theme.colors.white,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.cardBackground,
       borderWidth: 1,
-      borderColor: theme.colors.border + '40',
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.border + '40'
+          : theme.colors.border + '60',
     },
     modeOptionCardSelected: {
-      backgroundColor: theme.colors.subPrimary + '10',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.subPrimary + '10'
+          : theme.colors.accent + '20',
       borderWidth: 1.5,
-      borderColor: theme.colors.subPrimary,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.subPrimary
+          : theme.colors.accent,
     },
     modeOptionHeader: {
       flexDirection: 'row',
@@ -643,8 +694,11 @@ const ShowcaseScreen = ({navigation}: any) => {
       top: 30,
       height: 2,
       borderRadius: 1,
-      backgroundColor: theme.colors.border,
-      opacity: 0.4,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.border
+          : theme.colors.accent,
+      opacity: theme.colors.background === '#ffffff' ? 0.4 : 0.6,
       zIndex: 0,
     },
     modeConnectorLineTrio: {
@@ -665,7 +719,10 @@ const ShowcaseScreen = ({navigation}: any) => {
       marginLeft: -28,
     },
     modeOptionTitle: {
-      color: theme.colors.background,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.background
+          : theme.colors.text,
       fontSize: 16,
       fontWeight: 'bold',
       textAlign: 'center',
@@ -676,7 +733,10 @@ const ShowcaseScreen = ({navigation}: any) => {
       right: 10,
       width: 18,
       height: 18,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.white,
     },
     modeSelectedCheckHidden: {
       opacity: 0,
@@ -691,13 +751,15 @@ const ShowcaseScreen = ({navigation}: any) => {
       opacity: 0.5,
     },
     modeContinueButtonText: {
-      ...StyleSheet.flatten({}),
-      color: theme.colors.background,
+      color: theme.colors.white,
       fontSize: 15,
       fontWeight: '600',
     },
     modeOptionDesc: {
-      color: theme.colors.background,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.background
+          : theme.colors.textSecondary,
       opacity: 0.9,
       textAlign: 'center',
       fontSize: 13,
@@ -707,7 +769,10 @@ const ShowcaseScreen = ({navigation}: any) => {
     modeSelectedHint: {
       opacity: 0.5,
       marginTop: 14,
-      backgroundColor: theme.colors.white,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.cardBackground,
       padding: 12,
       borderRadius: 12,
       borderWidth: 1,
@@ -722,10 +787,10 @@ const ShowcaseScreen = ({navigation}: any) => {
     modeSelectedHintIcon: {
       width: 20,
       height: 20,
-      tintColor: theme.colors.primary,
+      tintColor: theme.colors.background === '#ffffff' ? theme.colors.primary : theme.colors.text,
     },
     modeSelectedHintText: {
-      color: theme.colors.primary,
+      color: theme.colors.background === '#ffffff' ? theme.colors.primary : theme.colors.text,
       fontSize: 14,
       textAlign: 'left',
       flex: 1,
@@ -754,14 +819,23 @@ const ShowcaseScreen = ({navigation}: any) => {
     setupGuideHintIcon: {
       width: 16,
       height: 16,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     setupGuideHintText: {
       fontSize: 13,
-      color: theme.colors.primary,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       fontWeight: '500',
       textDecorationLine: 'underline',
-      textDecorationColor: theme.colors.primary + '80',
+      textDecorationColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '80'
+          : theme.colors.accent + '80',
     },
   });
 
@@ -860,7 +934,9 @@ const ShowcaseScreen = ({navigation}: any) => {
                 source={require('../assets/new-icon.png')}
                 style={[
                   styles.ctaButtonIconLeft,
-                  {tintColor: theme.colors.background},
+                  {
+                    tintColor: theme.colors.white,
+                  },
                 ]}
                 resizeMode="contain"
               />
@@ -922,19 +998,37 @@ const ShowcaseScreen = ({navigation}: any) => {
               {/* Password Input */}
               <View style={styles.passwordInputContainer}>
                 <Text style={styles.passwordInputLabel}>Keyshare Password</Text>
-                <TextInput
-                  style={[
-                    styles.passwordInput,
-                    isPasswordFocused && styles.passwordInputFocused,
-                  ]}
-                  secureTextEntry
-                  placeholder="Enter the password"
-                  placeholderTextColor={`${theme.colors.text}40`}
-                  value={password}
-                  onChangeText={setPassword}
-                  onFocus={() => setIsPasswordFocused(true)}
-                  onBlur={() => setIsPasswordFocused(false)}
-                />
+                <View style={styles.passwordInputWrapper}>
+                  <TextInput
+                    style={[
+                      styles.passwordInput,
+                      isPasswordFocused && styles.passwordInputFocused,
+                    ]}
+                    secureTextEntry={!passwordVisible}
+                    placeholder="Enter the password"
+                    placeholderTextColor={`${theme.colors.text}40`}
+                    value={password}
+                    onChangeText={setPassword}
+                    onFocus={() => setIsPasswordFocused(true)}
+                    onBlur={() => setIsPasswordFocused(false)}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeButton}
+                    onPress={() => {
+                      HapticFeedback.light();
+                      setPasswordVisible(!passwordVisible);
+                    }}>
+                    <Image
+                      source={
+                        passwordVisible
+                          ? require('../assets/eye-off-icon.png')
+                          : require('../assets/eye-on-icon.png')
+                      }
+                      style={styles.eyeIcon}
+                      resizeMode="contain"
+                    />
+                  </TouchableOpacity>
+                </View>
               </View>
 
               {/* Action Buttons */}
@@ -1005,10 +1099,10 @@ const ShowcaseScreen = ({navigation}: any) => {
                 routes: [
                   {
                     name: 'Devices Pairing',
-                    params: { mode: pendingMode },
+                    params: {mode: pendingMode},
                   },
                 ],
-              })
+              }),
             );
           } else {
             navigation.dispatch(
@@ -1017,10 +1111,10 @@ const ShowcaseScreen = ({navigation}: any) => {
                 routes: [
                   {
                     name: 'Nostr Connect',
-                    params: { mode: pendingMode },
+                    params: {mode: pendingMode},
                   },
                 ],
-              })
+              }),
             );
           }
         }}
@@ -1066,13 +1160,6 @@ const ShowcaseScreen = ({navigation}: any) => {
                     setSelectedMode('duo');
                   }}
                   activeOpacity={0.8}>
-                  {selectedMode === 'duo' && (
-                    <Image
-                      source={require('../assets/check-icon.png')}
-                      style={styles.modeSelectedCheck}
-                      resizeMode="contain"
-                    />
-                  )}
                   <View style={styles.modeOptionContent}>
                     <View style={styles.modeIconWrapper}>
                       {selectedMode === 'duo' && (
@@ -1083,7 +1170,10 @@ const ShowcaseScreen = ({navigation}: any) => {
                           style={[
                             styles.modeConnectorDot,
                             {
-                              backgroundColor: theme.colors.primary,
+                              backgroundColor:
+                                theme.colors.background === '#ffffff'
+                                  ? theme.colors.primary
+                                  : theme.colors.accent,
                               transform: [
                                 {
                                   translateX: connectorAnim.interpolate({
@@ -1101,7 +1191,12 @@ const ShowcaseScreen = ({navigation}: any) => {
                           source={require('../assets/phone-icon.png')}
                           style={[
                             styles.modeOptionIcon,
-                            {tintColor: theme.colors.primary},
+                            {
+                              tintColor:
+                                theme.colors.background === '#ffffff'
+                                  ? theme.colors.primary
+                                  : theme.colors.accent,
+                            },
                           ]}
                           resizeMode="contain"
                         />
@@ -1109,7 +1204,12 @@ const ShowcaseScreen = ({navigation}: any) => {
                           source={require('../assets/phone-icon.png')}
                           style={[
                             styles.modeOptionIcon,
-                            {tintColor: theme.colors.primary},
+                            {
+                              tintColor:
+                                theme.colors.background === '#ffffff'
+                                  ? theme.colors.primary
+                                  : theme.colors.accent,
+                            },
                           ]}
                           resizeMode="contain"
                         />
@@ -1118,7 +1218,12 @@ const ShowcaseScreen = ({navigation}: any) => {
                     <Text
                       style={[
                         styles.modeOptionTitle,
-                        {color: theme.colors.primary},
+                        {
+                          color:
+                            theme.colors.background === '#ffffff'
+                              ? theme.colors.primary
+                              : theme.colors.text,
+                        },
                       ]}>
                       Duo
                     </Text>
@@ -1135,14 +1240,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                     HapticFeedback.medium();
                     setSelectedMode('trio');
                   }}
-                  activeOpacity={0.9}>
-                  {selectedMode === 'trio' && (
-                    <Image
-                      source={require('../assets/check-icon.png')}
-                      style={styles.modeSelectedCheck}
-                      resizeMode="contain"
-                    />
-                  )}
+                  activeOpacity={0.8}>
                   <View style={styles.modeOptionContent}>
                     <View style={styles.modeIconWrapper}>
                       {selectedMode === 'trio' && (
@@ -1159,7 +1257,10 @@ const ShowcaseScreen = ({navigation}: any) => {
                             styles.modeConnectorDot,
                             styles.modeConnectorDotTrio,
                             {
-                              backgroundColor: theme.colors.primary,
+                              backgroundColor:
+                                theme.colors.background === '#ffffff'
+                                  ? theme.colors.primary
+                                  : theme.colors.accent,
                               transform: [
                                 {
                                   translateX: connectorAnim.interpolate({
@@ -1178,7 +1279,12 @@ const ShowcaseScreen = ({navigation}: any) => {
                           source={require('../assets/phone-icon.png')}
                           style={[
                             styles.modeOptionIcon,
-                            {tintColor: theme.colors.primary},
+                            {
+                              tintColor:
+                                theme.colors.background === '#ffffff'
+                                  ? theme.colors.primary
+                                  : theme.colors.accent,
+                            },
                           ]}
                           resizeMode="contain"
                         />
@@ -1186,7 +1292,12 @@ const ShowcaseScreen = ({navigation}: any) => {
                           source={require('../assets/phone-icon.png')}
                           style={[
                             styles.modeOptionIcon,
-                            {tintColor: theme.colors.primary},
+                            {
+                              tintColor:
+                                theme.colors.background === '#ffffff'
+                                  ? theme.colors.primary
+                                  : theme.colors.accent,
+                            },
                           ]}
                           resizeMode="contain"
                         />
@@ -1194,7 +1305,12 @@ const ShowcaseScreen = ({navigation}: any) => {
                           source={require('../assets/phone-icon.png')}
                           style={[
                             styles.modeOptionIcon,
-                            {tintColor: theme.colors.border},
+                            {
+                              tintColor:
+                                theme.colors.background === '#ffffff'
+                                  ? theme.colors.border
+                                  : theme.colors.textSecondary,
+                            },
                           ]}
                           resizeMode="contain"
                         />
@@ -1203,7 +1319,12 @@ const ShowcaseScreen = ({navigation}: any) => {
                     <Text
                       style={[
                         styles.modeOptionTitle,
-                        {color: theme.colors.primary},
+                        {
+                          color:
+                            theme.colors.background === '#ffffff'
+                              ? theme.colors.primary
+                              : theme.colors.text,
+                        },
                       ]}>
                       Trio
                     </Text>
@@ -1250,10 +1371,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                       const url =
                         'https://x.com/boldbtcwallet/status/1988322162386854108';
                       Linking.openURL(url).catch(err => {
-                        Alert.alert(
-                          'Error',
-                          'Unable to open the video link',
-                        );
+                        Alert.alert('Error', 'Unable to open the video link');
                         dbg('Error opening URL:', err);
                       });
                     }}
@@ -1265,7 +1383,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                         resizeMode="contain"
                       />
                       <Text style={styles.setupGuideHintText}>
-                      🎥 Watch setup guide →
+                        🎥 Watch setup guide →
                       </Text>
                     </View>
                   </TouchableOpacity>

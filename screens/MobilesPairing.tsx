@@ -1800,7 +1800,7 @@ const MobilesPairing = ({navigation}: any) => {
   const styles = StyleSheet.create({
     root: {
       flex: 1,
-      backgroundColor: theme.colors.primary,
+      backgroundColor: theme.colors.background,
     },
     flexContainer: {
       flex: 1,
@@ -1879,6 +1879,37 @@ const MobilesPairing = ({navigation}: any) => {
       fontSize: 14,
       marginTop: 12,
     },
+    exitButton: {
+      marginTop: 12,
+      marginBottom: 4,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? 'rgba(0, 0, 0, 0.04)'
+          : theme.colors.cardBackground,
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.border + '60'
+          : theme.colors.border + '80',
+      borderRadius: 12,
+      paddingVertical: 8,
+      paddingHorizontal: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: 36,
+      shadowColor: theme.colors.shadowColor,
+      shadowOffset: {width: 0, height: 1},
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+      elevation: 1,
+    },
+    exitButtonText: {
+      color: theme.colors.textSecondary,
+      fontWeight: '600',
+      fontSize: 14,
+      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      textAlign: 'center',
+    },
     header: {
       fontSize: 16,
       fontWeight: '600',
@@ -1949,7 +1980,10 @@ const MobilesPairing = ({navigation}: any) => {
       width: 24,
       height: 24,
       borderRadius: 12,
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: 8,
@@ -1984,7 +2018,10 @@ const MobilesPairing = ({navigation}: any) => {
       backgroundColor: 'transparent',
     },
     enhancedCheckboxContainerChecked: {
-      backgroundColor: theme.colors.primary + '10',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '10'
+          : theme.colors.accent + '20',
     },
     enhancedCheckbox: {
       width: 20,
@@ -1997,8 +2034,14 @@ const MobilesPairing = ({navigation}: any) => {
       marginRight: 12,
     },
     enhancedCheckboxChecked: {
-      backgroundColor: theme.colors.primary,
-      borderColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     checkmark: {
       color: theme.colors.background,
@@ -2079,7 +2122,10 @@ const MobilesPairing = ({navigation}: any) => {
     finalStepPhoneIcon: {
       width: 24,
       height: 24,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     finalStepTextContainer: {
       flex: 1,
@@ -2228,7 +2274,10 @@ const MobilesPairing = ({navigation}: any) => {
       height: 24,
       borderRadius: 6,
       borderWidth: 2,
-      borderColor: theme.colors.primary,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       justifyContent: 'center',
       alignItems: 'center',
       marginRight: 12,
@@ -2240,8 +2289,14 @@ const MobilesPairing = ({navigation}: any) => {
       elevation: 1,
     },
     checked: {
-      backgroundColor: theme.colors.primary,
-      borderColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     checkboxLabel: {
       fontSize: 14,
@@ -2281,10 +2336,16 @@ const MobilesPairing = ({navigation}: any) => {
       elevation: 2,
     },
     deviceActive: {
-      tintColor: theme.colors.primary + '95',
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '95'
+          : theme.colors.accent + '95',
     },
     deviceSelfActive: {
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     deviceInactive: {
       tintColor: theme.colors.textSecondary,
@@ -2292,7 +2353,10 @@ const MobilesPairing = ({navigation}: any) => {
     deviceSelf: {
       width: 32,
       height: 32,
-      tintColor: theme.colors.primary + '80',
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '80'
+          : theme.colors.accent + '80',
       shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 2},
       shadowOpacity: 0.1,
@@ -2321,7 +2385,10 @@ const MobilesPairing = ({navigation}: any) => {
       top: -20,
       fontSize: 12,
       fontWeight: '600',
-      color: theme.colors.primary,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       textAlign: 'center',
       width: 120,
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
@@ -2354,7 +2421,10 @@ const MobilesPairing = ({navigation}: any) => {
       position: 'absolute',
       top: 0,
       bottom: 0,
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       borderRadius: 2,
     },
     statusText: {
@@ -2384,7 +2454,10 @@ const MobilesPairing = ({navigation}: any) => {
     pairButtonOn: {
       marginTop: 12,
       marginBottom: 8,
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       borderRadius: 12,
       paddingVertical: 14,
       paddingHorizontal: 20,
@@ -2413,7 +2486,10 @@ const MobilesPairing = ({navigation}: any) => {
     },
     proceedButtonOn: {
       marginTop: 12,
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       borderRadius: 12,
       paddingVertical: 14,
       paddingHorizontal: 20,
@@ -2440,7 +2516,7 @@ const MobilesPairing = ({navigation}: any) => {
       alignSelf: 'center',
     },
     pairButtonText: {
-      color: theme.colors.background,
+      color: theme.colors.background === '#ffffff' ? theme.colors.white : theme.colors.text,
       fontSize: 18,
       fontWeight: '700',
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
@@ -2476,7 +2552,10 @@ const MobilesPairing = ({navigation}: any) => {
       width: 24,
       height: 24,
       marginRight: 8,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     modalTitle: {
       fontSize: 20,
@@ -2535,7 +2614,7 @@ const MobilesPairing = ({navigation}: any) => {
     eyeIcon: {
       width: 20,
       height: 20,
-      tintColor: theme.colors.textSecondary,
+      tintColor: theme.colors.text,
     },
     strengthContainer: {
       flexDirection: 'row',
@@ -2607,7 +2686,10 @@ const MobilesPairing = ({navigation}: any) => {
       backgroundColor: theme.colors.textSecondary,
     },
     confirmButton: {
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     buttonText: {
       fontSize: 16,
@@ -2625,13 +2707,19 @@ const MobilesPairing = ({navigation}: any) => {
       width: 18,
       height: 18,
       marginRight: 6,
-      tintColor: theme.colors.white,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.text,
     },
     disabledButton: {
       backgroundColor: theme.colors.disabled,
     },
     informationCard: {
-      backgroundColor: theme.colors.white,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.cardBackground,
       borderRadius: 16,
       padding: 20,
       marginVertical: 8,
@@ -2659,7 +2747,10 @@ const MobilesPairing = ({navigation}: any) => {
     clickPrepare: {
       marginTop: 12,
       marginBottom: 12,
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       borderRadius: 12,
       paddingVertical: 12,
       paddingHorizontal: 20,
@@ -2683,7 +2774,7 @@ const MobilesPairing = ({navigation}: any) => {
       justifyContent: 'center',
     },
     clickButtonText: {
-      color: theme.colors.background,
+      color: theme.colors.background === '#ffffff' ? theme.colors.white : theme.colors.text,
       fontWeight: '600',
       fontSize: 16,
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
@@ -2700,7 +2791,10 @@ const MobilesPairing = ({navigation}: any) => {
     },
     backupButton: {
       marginTop: 12,
-      backgroundColor: theme.colors.subPrimary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.subPrimary
+          : theme.colors.accent,
       width: '100%',
       borderRadius: 12,
       paddingVertical: 14,
@@ -2715,7 +2809,10 @@ const MobilesPairing = ({navigation}: any) => {
       elevation: 4,
     },
     backupButtonText: {
-      color: theme.colors.background,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.background
+          : theme.colors.text,
       fontSize: 16,
       fontWeight: '600',
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
@@ -2724,7 +2821,10 @@ const MobilesPairing = ({navigation}: any) => {
     },
     clickButton: {
       marginTop: 8,
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       borderRadius: 12,
       paddingVertical: 14,
       paddingHorizontal: 20,
@@ -2795,14 +2895,20 @@ const MobilesPairing = ({navigation}: any) => {
       width: 50,
       height: 50,
       borderRadius: 25,
-      backgroundColor: theme.colors.primary + '20',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '20'
+          : theme.colors.accent + '20',
       alignItems: 'center',
       justifyContent: 'center',
     },
     finalizingModalIcon: {
       width: 24,
       height: 24,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     progressContainer: {
       marginVertical: 8,
@@ -2841,7 +2947,10 @@ const MobilesPairing = ({navigation}: any) => {
       width: 8,
       height: 8,
       borderRadius: 4,
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       marginRight: 8,
     },
     finalizingStatusText: {
@@ -2919,7 +3028,10 @@ const MobilesPairing = ({navigation}: any) => {
     },
     derivePathValue: {
       fontSize: 11,
-      color: theme.colors.primary,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
       fontWeight: '600',
     },
@@ -3045,7 +3157,7 @@ const MobilesPairing = ({navigation}: any) => {
                 </Text>
                 <TouchableOpacity
                   onPress={() => {
-                    HapticFeedback.light();
+                    HapticFeedback.medium();
                     navigation.dispatch(
                       CommonActions.reset({
                         index: 0,
@@ -3054,26 +3166,14 @@ const MobilesPairing = ({navigation}: any) => {
                     );
                   }}
                   activeOpacity={0.7}
-                  style={{marginTop: 8, marginBottom: 4, alignItems: 'center'}}>
-                  <Text style={styles.abortLink}>Exit Pairing</Text>
+                  style={styles.exitButton}>
+                  <Text style={styles.exitButtonText}>Exit Pairing</Text>
                 </TouchableOpacity>
               </View>
             )}
             {/* Checklist Section */}
             {!isPairing && !peerIP && (
               <View style={styles.informationCard}>
-                <View
-                  style={{
-                    backgroundColor: '#fff',
-                    padding: 12,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                  <Image
-                    style={{width: 64, height: 64}}
-                    source={require('../assets/logo.png')}
-                  />
-                </View>
                 <Text
                   style={[
                     styles.securityText,
@@ -3085,7 +3185,7 @@ const MobilesPairing = ({navigation}: any) => {
                   <>
                     <TouchableOpacity
                       onPress={() => {
-                        HapticFeedback.light();
+                        HapticFeedback.medium();
                         navigation.dispatch(
                           CommonActions.reset({
                             index: 0,
@@ -3094,12 +3194,8 @@ const MobilesPairing = ({navigation}: any) => {
                         );
                       }}
                       activeOpacity={0.7}
-                      style={{
-                        marginTop: 8,
-                        marginBottom: 4,
-                        alignItems: 'center',
-                      }}>
-                      <Text style={styles.abortLink}>Exit Pairing</Text>
+                      style={styles.exitButton}>
+                      <Text style={styles.exitButtonText}>Exit Pairing</Text>
                     </TouchableOpacity>
                   </>
                 )}
@@ -3504,7 +3600,10 @@ const MobilesPairing = ({navigation}: any) => {
                             width: 22,
                             height: 22,
                             marginRight: 8,
-                            tintColor: theme.colors.primary,
+                            tintColor:
+                              theme.colors.background === '#ffffff'
+                                ? theme.colors.primary
+                                : theme.colors.accent,
                           }}
                           resizeMode="contain"
                         />
@@ -3534,7 +3633,15 @@ const MobilesPairing = ({navigation}: any) => {
                               }}>
                               <Image
                                 source={require('../assets/security-icon.png')}
-                                style={{width: 24, height: 24, marginRight: 8}}
+                                style={{
+                                  width: 24,
+                                  height: 24,
+                                  marginRight: 8,
+                                  tintColor:
+                                    theme.colors.background === '#ffffff'
+                                      ? theme.colors.primary
+                                      : theme.colors.accent,
+                                }}
                                 resizeMode="contain"
                               />
                               <Text
@@ -3548,7 +3655,10 @@ const MobilesPairing = ({navigation}: any) => {
                               </Text>
                               <View
                                 style={{
-                                  backgroundColor: theme.colors.primary + '20',
+                                  backgroundColor:
+                                    theme.colors.background === '#ffffff'
+                                      ? theme.colors.primary + '20'
+                                      : theme.colors.accent + '20',
                                   paddingHorizontal: 8,
                                   paddingVertical: 2,
                                   borderRadius: 8,
@@ -3557,7 +3667,10 @@ const MobilesPairing = ({navigation}: any) => {
                                   style={{
                                     fontSize: 9,
                                     fontWeight: '700',
-                                    color: theme.colors.primary,
+                                    color:
+                                      theme.colors.background === '#ffffff'
+                                        ? theme.colors.primary
+                                        : theme.colors.accent,
                                     letterSpacing: 1,
                                   }}>
                                   ENTERPRISE-GRADE
@@ -3573,7 +3686,10 @@ const MobilesPairing = ({navigation}: any) => {
                               <Text
                                 style={{
                                   fontWeight: '600',
-                                  color: theme.colors.primary,
+                                  color:
+                                    theme.colors.background === '#ffffff'
+                                      ? theme.colors.primary
+                                      : theme.colors.accent,
                                   fontStyle: 'italic',
                                 }}>
                                 Institutional-grade security in the palm of your
@@ -3682,7 +3798,10 @@ const MobilesPairing = ({navigation}: any) => {
                                           styles.horizontalProgressBar,
                                           {
                                             backgroundColor:
-                                              theme.colors.primary,
+                                              theme.colors.background ===
+                                              '#ffffff'
+                                                ? theme.colors.primary
+                                                : theme.colors.accent,
                                             width:
                                               progressAnimation.interpolate({
                                                 inputRange: [0, 1],
@@ -3831,7 +3950,11 @@ const MobilesPairing = ({navigation}: any) => {
                                   thickness={6}
                                   borderWidth={0}
                                   showsText={false}
-                                  color={theme.colors.primary}
+                                  color={
+                                    theme.colors.background === '#ffffff'
+                                      ? theme.colors.primary
+                                      : theme.colors.accent
+                                  }
                                   style={styles.progressCircle}
                                 />
 
@@ -3910,7 +4033,10 @@ const MobilesPairing = ({navigation}: any) => {
                             width: 28,
                             height: 28,
                             marginRight: 10,
-                            tintColor: theme.colors.secondary,
+                            tintColor:
+                              theme.colors.background === '#ffffff'
+                                ? theme.colors.secondary
+                                : theme.colors.accent,
                           }}
                           resizeMode="contain"
                         />
@@ -4090,7 +4216,10 @@ const MobilesPairing = ({navigation}: any) => {
                         width: 28,
                         height: 28,
                         marginRight: 8,
-                        tintColor: theme.colors.primary,
+                        tintColor:
+                          theme.colors.background === '#ffffff'
+                            ? theme.colors.primary
+                            : theme.colors.accent,
                         marginBottom: 8,
                       }}
                       resizeMode="contain"
@@ -4123,7 +4252,10 @@ const MobilesPairing = ({navigation}: any) => {
                         }}>
                         <View
                           style={{
-                            backgroundColor: theme.colors.primary + '20',
+                            backgroundColor:
+                              theme.colors.background === '#ffffff'
+                                ? theme.colors.primary + '20'
+                                : theme.colors.accent + '20',
                             paddingHorizontal: 6,
                             paddingVertical: 2,
                             borderRadius: 4,
@@ -4132,7 +4264,10 @@ const MobilesPairing = ({navigation}: any) => {
                             style={{
                               fontSize: 10,
                               fontWeight: '700',
-                              color: theme.colors.primary,
+                              color:
+                                theme.colors.background === '#ffffff'
+                                  ? theme.colors.primary
+                                  : theme.colors.accent,
                               textTransform: 'uppercase',
                               letterSpacing: 0.5,
                             }}>
@@ -4457,7 +4592,11 @@ const MobilesPairing = ({navigation}: any) => {
                               thickness={6}
                               borderWidth={0}
                               showsText={false}
-                              color={theme.colors.primary}
+                              color={
+                                theme.colors.background === '#ffffff'
+                                  ? theme.colors.primary
+                                  : theme.colors.accent
+                              }
                               style={styles.progressCircle}
                             />
 
@@ -4562,6 +4701,7 @@ const MobilesPairing = ({navigation}: any) => {
                   <TextInput
                     style={styles.passwordInput}
                     placeholder="Enter a strong password"
+                    placeholderTextColor={theme.colors.textSecondary + '80'}
                     secureTextEntry={!passwordVisible}
                     value={password}
                     onChangeText={handlePasswordChange}
@@ -4633,6 +4773,7 @@ const MobilesPairing = ({navigation}: any) => {
                         styles.errorInput,
                     ]}
                     placeholder="Confirm your password"
+                    placeholderTextColor={theme.colors.textSecondary + '80'}
                     secureTextEntry={!confirmPasswordVisible}
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}

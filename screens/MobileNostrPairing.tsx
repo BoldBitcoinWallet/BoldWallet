@@ -2544,9 +2544,15 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderColor: theme.colors.border + '40',
     },
     cardSelected: {
-      borderColor: theme.colors.primary,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       borderWidth: 2,
-      backgroundColor: theme.colors.primary + '10',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '10'
+          : theme.colors.accent + '20',
     },
     deviceInfoRowWithCheckbox: {
       flexDirection: 'row',
@@ -2567,8 +2573,14 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginLeft: 12,
     },
     peerCheckboxChecked: {
-      borderColor: theme.colors.primary,
-      backgroundColor: theme.colors.primary,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     peerCheckmark: {
       color: theme.colors.white,
@@ -2583,11 +2595,20 @@ const MobileNostrPairing = ({navigation}: any) => {
       paddingVertical: 14,
       fontSize: 16,
       color: theme.colors.text,
-      backgroundColor: 'rgba(0,0,0,0.02)',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? 'rgba(0,0,0,0.02)'
+          : theme.colors.cardBackground,
     },
     inputFocused: {
-      borderColor: theme.colors.primary,
-      backgroundColor: 'rgba(0,0,0,0.03)',
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? 'rgba(0,0,0,0.03)'
+          : theme.colors.cardBackground,
     },
     inputWithIcons: {
       flexDirection: 'row',
@@ -2608,7 +2629,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       width: 48,
       height: 48,
       borderRadius: 12,
-      backgroundColor: theme.colors.primary + '20',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '20'
+          : theme.colors.accent + '20',
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -2634,11 +2658,17 @@ const MobileNostrPairing = ({navigation}: any) => {
       flex: 1,
     },
     hintBox: {
-      backgroundColor: theme.colors.primary + '10',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '10'
+          : theme.colors.accent + '20',
       borderRadius: 8,
       padding: 6,
       borderLeftWidth: 3,
-      borderLeftColor: theme.colors.primary,
+      borderLeftColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     hintText: {
       fontSize: 13,
@@ -2657,14 +2687,23 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderColor: theme.colors.border + '30',
     },
     sendModeDeviceItemSelected: {
-      borderColor: theme.colors.primary,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       borderWidth: 1.5,
-      backgroundColor: theme.colors.primary + '08',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '08'
+          : theme.colors.accent + '20',
     },
     sendModeDeviceIcon: {
       width: 20,
       height: 20,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       marginRight: 10,
     },
     sendModeDeviceContent: {
@@ -2687,7 +2726,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     sendModeDeviceBadge: {
       fontSize: 11,
-      color: theme.colors.primary,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       marginTop: 2,
       fontWeight: '500',
     },
@@ -2703,8 +2745,14 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginLeft: 8,
     },
     sendModeCheckboxChecked: {
-      borderColor: theme.colors.primary,
-      backgroundColor: theme.colors.primary,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     sendModeCheckmark: {
       color: theme.colors.background,
@@ -2734,12 +2782,18 @@ const MobileNostrPairing = ({navigation}: any) => {
     iconImageCompact: {
       width: 18,
       height: 18,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     iconImage: {
       width: 24,
       height: 24,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     iconPrepare: {
       width: 24,
@@ -2758,7 +2812,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginRight: 8,
     },
     qrContainer: {
-      backgroundColor: 'white',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? 'white'
+          : theme.colors.cardBackground,
       padding: 16,
       borderRadius: 12,
       alignItems: 'center',
@@ -2778,7 +2835,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     button: {
       flex: 1,
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       borderRadius: 12,
       paddingVertical: 14,
       alignItems: 'center',
@@ -2792,7 +2852,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderColor: theme.colors.border,
     },
     buttonText: {
-      color: theme.colors.background,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.text,
       fontSize: 16,
       fontWeight: '600',
     },
@@ -2806,7 +2869,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       width: 8,
       height: 8,
       borderRadius: 4,
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       marginRight: 8,
     },
     modalSubtitle: {
@@ -2845,14 +2911,20 @@ const MobileNostrPairing = ({navigation}: any) => {
       width: 50,
       height: 50,
       borderRadius: 25,
-      backgroundColor: theme.colors.primary + '20',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '20'
+          : theme.colors.accent + '20',
       alignItems: 'center',
       justifyContent: 'center',
     },
     finalizingModalIcon: {
       width: 24,
       height: 24,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     statusContainer: {
       width: '100%',
@@ -2879,7 +2951,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     statusCheck: {
       width: 20,
       height: 20,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     statusText: {
       fontSize: 14,
@@ -2907,19 +2982,28 @@ const MobileNostrPairing = ({navigation}: any) => {
       width: 250,
       height: 250,
       borderWidth: 2,
-      borderColor: theme.colors.primary,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       borderRadius: 12,
     },
     closeScannerButton: {
       position: 'absolute',
       bottom: 40,
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       paddingHorizontal: 24,
       paddingVertical: 12,
       borderRadius: 12,
     },
     closeScannerButtonText: {
-      color: theme.colors.background,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.text,
       fontSize: 16,
       fontWeight: '600',
     },
@@ -2930,7 +3014,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     sessionInfo: {
       marginTop: 12,
       padding: 12,
-      backgroundColor: 'rgba(0,0,0,0.02)',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? 'rgba(0,0,0,0.02)'
+          : theme.colors.cardBackground,
       borderRadius: 8,
     },
     sessionInfoText: {
@@ -3016,7 +3103,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       width: 36,
       height: 36,
       borderRadius: 18,
-      backgroundColor: theme.colors.primary + '20',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '20'
+          : theme.colors.accent + '20',
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: 12,
@@ -3024,7 +3114,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     helpIcon: {
       width: 20,
       height: 20,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     stepIndicatorContainer: {
       marginBottom: 8,
@@ -3047,8 +3140,14 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderColor: theme.colors.border,
     },
     stepCircleCompleted: {
-      backgroundColor: theme.colors.primary,
-      borderColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     stepNumber: {
       fontSize: 14,
@@ -3106,7 +3205,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     primaryActionButton: {
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       paddingHorizontal: 16,
       paddingVertical: 10,
       borderRadius: 8,
@@ -3131,8 +3233,14 @@ const MobileNostrPairing = ({navigation}: any) => {
       lineHeight: 18,
     },
     readyCard: {
-      backgroundColor: theme.colors.primary + '10',
-      borderColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '10'
+          : theme.colors.accent + '20',
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       borderWidth: 2,
     },
     helpModalBody: {
@@ -3158,8 +3266,14 @@ const MobileNostrPairing = ({navigation}: any) => {
       backgroundColor: (theme.colors.danger || '#FF3B30') + '10',
     },
     inputSuccess: {
-      borderColor: theme.colors.primary,
-      backgroundColor: theme.colors.primary + '10',
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '10'
+          : theme.colors.accent + '20',
     },
     inputValidating: {
       borderColor: theme.colors.textSecondary,
@@ -3207,8 +3321,14 @@ const MobileNostrPairing = ({navigation}: any) => {
       justifyContent: 'center',
     },
     checkboxChecked: {
-      backgroundColor: theme.colors.primary,
-      borderColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     checkboxCheckmark: {
       color: theme.colors.background,
@@ -3241,14 +3361,20 @@ const MobileNostrPairing = ({navigation}: any) => {
       width: 64,
       height: 64,
       borderRadius: 32,
-      backgroundColor: theme.colors.primary + '20',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '20'
+          : theme.colors.accent + '20',
       alignItems: 'center',
       justifyContent: 'center',
     },
     preparingModalIcon: {
       width: 32,
       height: 32,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     preparingModalTitle: {
       fontSize: 20,
@@ -3293,7 +3419,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       width: 8,
       height: 8,
       borderRadius: 4,
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       marginRight: 8,
     },
     preparingStatusText: {
@@ -3321,7 +3450,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     backupButton: {
       marginTop: 12,
-      backgroundColor: theme.colors.subPrimary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.subPrimary
+          : theme.colors.accent,
       width: '100%',
       borderRadius: 12,
       paddingVertical: 14,
@@ -3336,7 +3468,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       elevation: 4,
     },
     backupButtonText: {
-      color: theme.colors.background,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.background
+          : theme.colors.text,
       fontSize: 16,
       fontWeight: '600',
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
@@ -3417,15 +3552,24 @@ const MobileNostrPairing = ({navigation}: any) => {
       height: 24,
       borderRadius: 6,
       borderWidth: 2,
-      borderColor: theme.colors.primary,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       justifyContent: 'center',
       alignItems: 'center',
       backgroundColor: 'transparent',
       marginRight: 12,
     },
     enhancedCheckboxChecked: {
-      backgroundColor: theme.colors.primary,
-      borderColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     checkmark: {
       color: theme.colors.background,
@@ -3443,7 +3587,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       backgroundColor: 'transparent',
     },
     enhancedCheckboxContainerChecked: {
-      backgroundColor: theme.colors.primary + '10',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '10'
+          : theme.colors.accent + '20',
     },
     checkboxTextContainer: {
       flex: 1,
@@ -3480,7 +3627,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     finalStepPhoneIcon: {
       width: 24,
       height: 24,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     finalStepTextContainer: {
       flex: 1,
@@ -3581,7 +3731,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     participantDeviceIcon: {
       width: 18,
       height: 18,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       marginRight: 10,
     },
     participantDeviceLabel: {
@@ -3622,7 +3775,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     proceedButtonOn: {
       marginTop: 16,
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
       borderRadius: 12,
       paddingVertical: 16,
       paddingHorizontal: 24,
@@ -3649,7 +3805,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       opacity: 0.6,
     },
     pairButtonText: {
-      color: theme.colors.textOnPrimary,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.text,
       fontSize: 16,
       fontWeight: '600',
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
@@ -3663,7 +3822,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     buttonIcon: {
       width: 20,
       height: 20,
-      tintColor: theme.colors.background,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.text,
     },
     modalContent: {
       backgroundColor: theme.colors.cardBackground,
@@ -3686,7 +3848,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       width: 32,
       height: 32,
       marginRight: 12,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     modalTitle: {
       fontSize: 20,
@@ -3733,7 +3898,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     eyeIcon: {
       width: 20,
       height: 20,
-      tintColor: theme.colors.textSecondary,
+      tintColor: theme.colors.text,
     },
     strengthContainer: {
       marginTop: 8,
@@ -3784,7 +3949,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       backgroundColor: theme.colors.border,
     },
     confirmButton: {
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.accent,
     },
     disabledButton: {
       opacity: 0.5,
@@ -3978,7 +4146,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 width: 20,
                                 height: 20,
                                 marginRight: 8,
-                                tintColor: theme.colors.primary,
+                                tintColor:
+                                  theme.colors.background === '#ffffff'
+                                    ? theme.colors.primary
+                                    : theme.colors.accent,
                               }}
                               resizeMode="contain"
                             />
@@ -4607,7 +4778,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                               activeOpacity={0.7}
                               style={{
                                 padding: 8,
-                                backgroundColor: theme.colors.primary + '10',
+                                backgroundColor:
+                                  theme.colors.background === '#ffffff'
+                                    ? theme.colors.primary + '10'
+                                    : theme.colors.accent + '20',
                                 borderRadius: 8,
                               }}>
                               <Image
@@ -4625,7 +4799,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                               activeOpacity={0.7}
                               style={{
                                 padding: 8,
-                                backgroundColor: theme.colors.primary + '10',
+                                backgroundColor:
+                                  theme.colors.background === '#ffffff'
+                                    ? theme.colors.primary + '10'
+                                    : theme.colors.accent + '20',
                                 borderRadius: 8,
                               }}>
                               <Image
@@ -4997,7 +5174,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 style={[
                                   styles.preparingProgressBar,
                                   {
-                                    backgroundColor: theme.colors.primary,
+                                    backgroundColor:
+                                      theme.colors.background === '#ffffff'
+                                        ? theme.colors.primary
+                                        : theme.colors.accent,
                                     width: progressAnimation.interpolate({
                                       inputRange: [0, 1],
                                       outputRange: ['0%', '100%'],
@@ -5061,7 +5241,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   width: 18,
                                   height: 18,
                                   marginRight: 8,
-                                  tintColor: theme.colors.primary,
+                                  tintColor:
+                                    theme.colors.background === '#ffffff'
+                                      ? theme.colors.primary
+                                      : theme.colors.accent,
                                 }}
                                 resizeMode="contain"
                               />
@@ -5088,7 +5271,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   width: 18,
                                   height: 18,
                                   marginRight: 8,
-                                  tintColor: theme.colors.primary,
+                                  tintColor:
+                                    theme.colors.background === '#ffffff'
+                                      ? theme.colors.primary
+                                      : theme.colors.accent,
                                 }}
                                 resizeMode="contain"
                               />
@@ -5115,7 +5301,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   width: 18,
                                   height: 18,
                                   marginRight: 8,
-                                  tintColor: theme.colors.primary,
+                                  tintColor:
+                                    theme.colors.background === '#ffffff'
+                                      ? theme.colors.primary
+                                      : theme.colors.accent,
                                 }}
                                 resizeMode="contain"
                               />
@@ -5142,7 +5331,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   width: 18,
                                   height: 18,
                                   marginRight: 8,
-                                  tintColor: theme.colors.primary,
+                                  tintColor:
+                                    theme.colors.background === '#ffffff'
+                                      ? theme.colors.primary
+                                      : theme.colors.accent,
                                 }}
                                 resizeMode="contain"
                               />
@@ -5435,7 +5627,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                           }}>
                           <View
                             style={{
-                              backgroundColor: theme.colors.primary + '20',
+                              backgroundColor:
+                                theme.colors.background === '#ffffff'
+                                  ? theme.colors.primary + '20'
+                                  : theme.colors.accent + '20',
                               paddingHorizontal: 6,
                               paddingVertical: 2,
                               borderRadius: 4,
@@ -5444,7 +5639,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                               style={{
                                 fontSize: 10,
                                 fontWeight: '700',
-                                color: theme.colors.primary,
+                                color: theme.colors.background === '#ffffff'
+                                  ? theme.colors.primary
+                                  : theme.colors.text, // Use text color for better visibility in dark mode
                                 textTransform: 'uppercase',
                                 letterSpacing: 0.5,
                                 marginTop: 4,
@@ -6003,7 +6200,10 @@ const MobileNostrPairing = ({navigation}: any) => {
               </Text>
               <TouchableOpacity
                 style={{
-                  backgroundColor: theme.colors.primary,
+                  backgroundColor:
+                    theme.colors.background === '#ffffff'
+                      ? theme.colors.primary
+                      : theme.colors.accent,
                   borderRadius: 12,
                   paddingVertical: 14,
                   paddingHorizontal: 20,
@@ -6021,7 +6221,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                 />
                 <Text
                   style={{
-                    color: theme.colors.textOnPrimary,
+                    color:
+                      theme.colors.background === '#ffffff'
+                        ? theme.colors.white
+                        : theme.colors.text,
                     fontWeight: '600',
                     fontSize: 16,
                   }}>
@@ -6075,6 +6278,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                   <TextInput
                     style={styles.passwordInput}
                     placeholder="Enter a strong password"
+                    placeholderTextColor={theme.colors.textSecondary + '80'}
                     secureTextEntry={!passwordVisible}
                     value={password}
                     onChangeText={handlePasswordChange}
@@ -6146,6 +6350,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                         styles.errorInput,
                     ]}
                     placeholder="Confirm your password"
+                    placeholderTextColor={theme.colors.textSecondary + '80'}
                     secureTextEntry={!confirmPasswordVisible}
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}

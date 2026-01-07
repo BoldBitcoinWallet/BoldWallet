@@ -11,13 +11,48 @@ export interface Theme {
     background: string;
     cardBackground: string;
     primary: string;
+    subPrimary: string;
     secondary: string;
     accent: string;
+    danger: string;
     text: string;
     textSecondary: string;
     textOnPrimary: string;
     white: string;
     border: string;
+    disabled: string;
+    sent: string;
+    received: string;
+    buttonText: string;
+    disabledText: string;
+    modalBackdrop: string;
+    lightGray: string;
+    mediumGray: string;
+    shadowColor: string;
+  };
+  fontSizes?: {
+    xs: number;
+    sm: number;
+    base: number;
+    md: number;
+    lg: number;
+    xl: number;
+    '2xl': number;
+    '3xl': number;
+    small?: number;
+    medium?: number;
+    large?: number;
+    extraLarge?: number;
+  };
+  fontWeights?: {
+    normal: string;
+    medium: string;
+    semibold: string;
+    bold: string;
+  };
+  fontFamilies?: {
+    regular: string;
+    monospace: string;
   };
 }
 
@@ -37,6 +72,7 @@ export interface Styles {
   btcPrice: TextStyle;
   currencyBadge: TextStyle;
   balanceContainer: ViewStyle;
+  balanceHeaderRow: ViewStyle;
   balanceRow: ViewStyle;
   balanceRowWithMargin: ViewStyle;
   balanceBTC: TextStyle;
@@ -48,6 +84,7 @@ export interface Styles {
   balanceLoadingIndicator: ViewStyle;
   balanceErrorContainer: ViewStyle;
   balanceErrorText: TextStyle;
+  providerValueCompact: TextStyle;
   qrContainer: ViewStyle;
   address: TextStyle;
   partyContainer: ViewStyle;
@@ -238,29 +275,47 @@ export const createStyles = (theme: Theme): Styles => ({
   actionButton: {
     paddingVertical: 12,
     marginBottom: 4,
-    marginHorizontal: 6,
     borderRadius: 8,
     alignItems: 'center' as const,
+    justifyContent: 'center' as const,
   },
   settingsButton: {
-    marginBottom: 4,
-    marginHorizontal: 8,
-    borderRadius: 8,
+    marginBottom: 0,
+    marginHorizontal: 0,
+    borderRadius: 10,
     alignItems: 'center' as const,
-    width: 30,
-    height: 30,
-    backgroundColor: theme.colors.cardBackground,
+    justifyContent: 'center' as const,
+    width: 36,
+    height: 36,
+    backgroundColor: theme.colors.background === '#ffffff'
+      ? 'rgba(0, 0, 0, 0.06)'
+      : theme.colors.cardBackground,
+    borderWidth: 1,
+    borderColor: theme.colors.background === '#ffffff'
+      ? 'rgba(0, 0, 0, 0.1)'
+      : theme.colors.border + '80',
     padding: 0,
+    shadowColor: theme.colors.shadowColor,
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: Platform.OS === 'android' ? 0 : 1,
   },
   settingsLogo: {
-    marginTop: 3,
-    height: 24,
-    width: 24,
+    marginTop: 0,
+    height: 20,
+    width: 20,
+    tintColor: theme.colors.text,
+    opacity: 0.8,
     resizeMode: 'contain',
   },
   headerTitleContainer: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
+    justifyContent: 'flex-start' as const,
+    marginLeft: 0,
+    paddingLeft: 8,
+    minWidth: 0,
   },
   headerLogo: {
     width: 40,
@@ -269,8 +324,10 @@ export const createStyles = (theme: Theme): Styles => ({
     marginRight: 8,
   },
   headerTitleText: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: theme.fontSizes?.xl || 18,
+    fontWeight: (theme.fontWeights?.bold || '700') as any,
+    fontFamily: theme.fontFamilies?.regular,
+    color: theme.colors.text, // Use theme text color for both light and dark mode
   },
   container: {
     flex: 1,
@@ -281,19 +338,31 @@ export const createStyles = (theme: Theme): Styles => ({
     paddingLeft: 16,
     paddingRight: 16,
     paddingBottom: 0,
+    // Keep header above siblings (CacheIndicator/TransactionList)
+    position: 'relative' as const,
+    zIndex: 2,
   },
   walletHeader: {
     padding: 12,
-    backgroundColor: theme.colors.primary,
+    backgroundColor: theme.colors.background === '#ffffff'
+      ? 'rgba(26, 43, 60, 0.95)' // Increased opacity for better contrast in light mode
+      : 'rgba(255, 255, 255, 0.15)', // Brighter glassy overlay for better contrast in dark mode
     borderRadius: 12,
     alignItems: 'stretch' as const, // Changed from 'center' to allow marginHorizontal to work
     marginBottom: 0,
-    elevation: 3,
-    shadowColor: '#000',
+    borderWidth: 1,
+    borderColor: theme.colors.background === '#ffffff'
+      ? 'rgba(255, 255, 255, 0.3)' // More visible border for better contrast in light mode
+      : 'rgba(255, 255, 255, 0.3)', // More visible border for better contrast in dark mode
+    // Explicit stacking context so action buttons stay on top on Android
+    position: 'relative',
+    zIndex: 3,
+    elevation: 6,
+    shadowColor: theme.colors.shadowColor,
     shadowOffset: {width: 0, height: 3},
     shadowOpacity: 0.15,
     shadowRadius: 6,
-    overflow: 'hidden' as const, // Ensure clean edges
+    overflow: 'visible' as const, // Changed from 'hidden' to allow proper touch handling
   },
   headerTop: {
     flexDirection: 'row' as const,
@@ -310,37 +379,69 @@ export const createStyles = (theme: Theme): Styles => ({
   priceContainer: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: theme.colors.background === '#ffffff'
+      ? 'rgba(255, 255, 255, 0.2)' // Increased opacity for better contrast in light mode
+      : 'rgba(255, 255, 255, 0.2)', // Increased opacity for better contrast in dark mode
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
   },
   btcPrice: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: theme.fontSizes?.base || 14,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.white,
     marginRight: 6,
   },
   currencyBadge: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: theme.fontSizes?.sm || 12,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.white,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: theme.colors.background === '#ffffff'
+      ? 'rgba(255, 255, 255, 0.25)' // Increased opacity for better contrast in light mode
+      : 'rgba(255, 255, 255, 0.25)', // Increased opacity for better contrast in dark mode
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
   balanceContainer: {
     alignItems: 'center' as const,
-    paddingVertical: 6,
-    marginTop: 8,
-    marginBottom: 8,
-    marginHorizontal: 4, // Match actionButton marginHorizontal to align with send/receive buttons
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    marginTop: 4,
+    marginBottom: 6,
+    marginHorizontal: 0, // Match actionButton marginHorizontal to align with send/receive buttons
+    backgroundColor: theme.colors.background === '#ffffff'
+      ? 'rgba(255, 255, 255, 0.12)' // Increased opacity for better contrast in light mode
+      : 'rgba(255, 255, 255, 0.18)', // Increased opacity for better contrast in dark mode
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)', // Simple, subtle border
+    borderColor: theme.colors.background === '#ffffff'
+      ? 'rgba(255, 255, 255, 0.25)' // More visible border for better contrast in light mode
+      : 'rgba(255, 255, 255, 0.3)', // More visible border for better contrast in dark mode
     overflow: 'hidden' as const,
+  },
+  balanceHeaderRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    width: '100%',
+    marginBottom: 6,
+    paddingBottom: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.background === '#ffffff'
+      ? 'rgba(255, 255, 255, 0.2)' // More visible divider in light mode
+      : 'rgba(255, 255, 255, 0.2)', // More visible divider in dark mode
+  },
+  providerValueCompact: {
+    fontSize: theme.fontSizes?.xs || 10,
+    fontWeight: (theme.fontWeights?.medium || '500') as any,
+    fontFamily: theme.fontFamilies?.regular,
+    color: theme.colors.white,
+    flex: 1,
+    textAlign: 'right' as const,
+    marginLeft: 8,
   },
   balanceTouchable: {
     flexDirection: 'row' as const,
@@ -357,9 +458,10 @@ export const createStyles = (theme: Theme): Styles => ({
     alignItems: 'center' as const,
   },
   balanceErrorText: {
-    fontSize: 12,
-    color: '#ff6b6b',
-    fontWeight: '500' as const,
+    fontSize: theme.fontSizes?.sm || 12,
+    fontWeight: (theme.fontWeights?.medium || '500') as any,
+    fontFamily: theme.fontFamilies?.regular,
+    color: theme.colors.danger,
     textAlign: 'center' as const,
   },
   balanceRow: {
@@ -370,7 +472,9 @@ export const createStyles = (theme: Theme): Styles => ({
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: theme.colors.background === '#ffffff'
+      ? 'rgba(255, 255, 255, 0.12)' // Original glassy white overlay from commit abc07a5e
+      : 'rgba(255, 255, 255, 0.08)', // Glassy white overlay in dark mode
     width: '100%',
     justifyContent: 'center' as const,
   },
@@ -378,30 +482,30 @@ export const createStyles = (theme: Theme): Styles => ({
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 6,
-    minHeight: 32,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    height: 32,
     borderRadius: 8,
     backgroundColor: 'transparent',
     width: '100%',
     justifyContent: 'center' as const,
     marginTop: 0,
-    marginBottom: 4,
+    // Ensure Animated.View doesn't block touches
+    pointerEvents: 'box-none' as const,
   },
   balanceBTC: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: theme.fontSizes?.['3xl'] || 24,
+    fontWeight: (theme.fontWeights?.bold || '700') as any,
+    fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
     color: theme.colors.white,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowColor: theme.colors.shadowColor + '33', // 20% opacity
     textShadowOffset: {width: 0, height: 1},
     textShadowRadius: 2,
   },
   balanceFiat: {
-    fontSize: 16,
+    fontSize: theme.fontSizes?.lg || 16,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
     color: theme.colors.white,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    textShadowColor: 'rgba(0, 0, 0, 0.15)',
+    textShadowColor: theme.colors.shadowColor + '26', // 15% opacity
     textShadowOffset: {width: 0, height: 1},
     textShadowRadius: 1,
   },
@@ -409,6 +513,7 @@ export const createStyles = (theme: Theme): Styles => ({
     width: 18,
     height: 18,
     tintColor: theme.colors.white,
+    marginLeft: 12,
     opacity: 0.9,
   },
   blurredText: {
@@ -416,7 +521,9 @@ export const createStyles = (theme: Theme): Styles => ({
     letterSpacing: 2,
   },
   balanceHint: {
-    fontSize: 10,
+    fontSize: theme.fontSizes?.xs || 10,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textOnPrimary,
     opacity: 0.7,
     marginTop: 4,
@@ -425,20 +532,21 @@ export const createStyles = (theme: Theme): Styles => ({
   },
   qrContainer: {
     padding: 8,
-    backgroundColor: '#fff',
+    backgroundColor: theme.colors.white,
     borderRadius: 4,
     elevation: 4,
-    shadowColor: '#000',
+    shadowColor: theme.colors.shadowColor,
     shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.2,
     shadowRadius: 4,
   },
   address: {
-    fontSize: 14,
+    fontSize: theme.fontSizes?.base || 14,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textOnPrimary,
     marginTop: 8,
     textAlign: 'center' as const,
-    fontWeight: '600',
   },
   partyContainer: {
     flexDirection: 'row' as const,
@@ -446,7 +554,8 @@ export const createStyles = (theme: Theme): Styles => ({
     marginTop: 0,
     marginBottom: 8,
     borderRadius: 8,
-    flexWrap: 'wrap' as const,
+    flexWrap: 'nowrap' as const,
+    gap: 8,
   },
   partyLeft: {
     flex: 1,
@@ -461,18 +570,22 @@ export const createStyles = (theme: Theme): Styles => ({
     alignItems: 'flex-end' as const,
   },
   party: {
-    fontSize: 12,
+    fontSize: theme.fontSizes?.sm || 12,
+    fontWeight: (theme.fontWeights?.medium || '500') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textOnPrimary,
-    fontWeight: '500',
   },
   partyText: {
-    fontSize: 12,
+    fontSize: theme.fontSizes?.sm || 12,
+    fontWeight: (theme.fontWeights?.medium || '500') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textOnPrimary,
-    fontWeight: '500',
     opacity: 0.9,
   },
   partyLabel: {
-    fontSize: 10,
+    fontSize: theme.fontSizes?.xs || 10,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textOnPrimary,
     opacity: 0.7,
     marginBottom: 1,
@@ -480,16 +593,22 @@ export const createStyles = (theme: Theme): Styles => ({
     letterSpacing: 0.2,
   },
   partyValue: {
-    fontSize: 12,
+    fontSize: theme.fontSizes?.sm || 12,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textOnPrimary,
-    fontWeight: '600',
     paddingHorizontal: 6,
   },
   actions: {
     flexDirection: 'row' as const,
     marginTop: 8,
     width: '100%',
-    gap: 0,
+    gap: 8,
+    alignItems: 'stretch' as const,
+    // Ensure buttons are above everything else
+    zIndex: 100,
+    elevation: Platform.OS === 'android' ? 10 : 0,
+    position: 'relative',
   },
   sendButton: {
     flex: 1,
@@ -498,19 +617,35 @@ export const createStyles = (theme: Theme): Styles => ({
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
     gap: 8,
+    minHeight: 48,
+    // Ensure button is clickable on both platforms
+    zIndex: 101,
+    elevation: Platform.OS === 'android' ? 11 : 0,
   },
   addressTypeModalButton: {
-    width: 50,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    width: 56,
+    minHeight: 48,
+    backgroundColor: theme.colors.background === '#ffffff'
+      ? 'rgba(255, 255, 255, 0.15)' // Glassy white overlay in light mode
+      : 'rgba(255, 255, 255, 0.1)', // Glassy white overlay in dark mode
+    borderWidth: 1,
+    borderColor: theme.colors.background === '#ffffff'
+      ? 'rgba(255, 255, 255, 0.25)'
+      : 'rgba(255, 255, 255, 0.15)', // Glassy border in dark mode
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
     gap: 4,
+    borderRadius: 10,
+    // Ensure button is clickable on both platforms
+    zIndex: 101,
+    elevation: Platform.OS === 'android' ? 0 : 11,
   },
   addressTypeButtonText: {
+    fontSize: theme.fontSizes?.sm || 12,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textOnPrimary,
-    fontSize: 12,
-    fontWeight: '600',
   },
   addressTypeButtonIcon: {
     width: 20,
@@ -525,10 +660,14 @@ export const createStyles = (theme: Theme): Styles => ({
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
     gap: 8,
+    minHeight: 48,
+    // Ensure button is clickable on both platforms
+    zIndex: 101,
+    elevation: Platform.OS === 'android' ? 11 : 0,
   },
   modalOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.8)',
+    backgroundColor: theme.colors.modalBackdrop,
     justifyContent: 'center' as const,
     alignItems: 'center' as const,
     zIndex: 100,
@@ -539,27 +678,34 @@ export const createStyles = (theme: Theme): Styles => ({
     padding: 20,
     width: '80%',
     alignItems: 'center' as const,
+    borderWidth: 1,
+    borderColor: theme.colors.border + '40', // Add border to match other modals
   },
   modalText: {
-    fontSize: 18,
+    fontSize: theme.fontSizes?.xl || 18,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.regular,
     marginBottom: 10,
     textAlign: 'center' as const,
     color: theme.colors.text,
   },
   receiveButtonText: {
+    fontSize: theme.fontSizes?.lg || 16,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.white,
-    fontSize: 16,
-    fontWeight: '600',
   },
   sendButtonText: {
+    fontSize: theme.fontSizes?.lg || 16,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.white,
-    fontSize: 16,
-    fontWeight: '600',
   },
   actionButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: theme.fontSizes?.base || 14,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
+    color: theme.colors.buttonText || theme.colors.white,
   },
   addressTypeButton: {
     backgroundColor: theme.colors.cardBackground,
@@ -580,25 +726,27 @@ export const createStyles = (theme: Theme): Styles => ({
     borderWidth: 2,
   },
   addressTypeLabel: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: theme.fontSizes?.md || 15,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.text,
     marginBottom: 4,
     flexShrink: 1,
     marginRight: 6,
   },
   addressTypeValue: {
-    marginTop: 4,
-    fontSize: 12,
+    fontSize: theme.fontSizes?.sm || 12,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
     color: theme.colors.textSecondary,
     textAlign: 'left' as const,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    marginTop: 4,
     flexShrink: 1,
     marginRight: 6,
   },
   recommendBadge: {
-    backgroundColor: 'rgba(76, 175, 80, 0.12)',
-    borderColor: 'rgba(76, 175, 80, 0.35)',
+    backgroundColor: theme.colors.received + '1F', // 12% opacity
+    borderColor: theme.colors.received + '59', // 35% opacity
     borderWidth: 1,
     borderRadius: 10,
     padding: 4,
@@ -606,14 +754,16 @@ export const createStyles = (theme: Theme): Styles => ({
     alignSelf: 'auto',
   },
   recommendBadgeText: {
-    color: '#4CAF50',
-    fontSize: 9,
-    fontWeight: '600' as const,
+    fontSize: theme.fontSizes?.xs || 9,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
+    color: theme.colors.received,
     letterSpacing: 0.2,
   },
   addressTypeIcon: {
     width: 16,
     height: 16,
+    marginLeft: 8,
     tintColor: theme.colors.white,
     opacity: 0.9,
   },
@@ -641,8 +791,9 @@ export const createStyles = (theme: Theme): Styles => ({
     flexWrap: 'nowrap',
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: theme.fontSizes?.['2xl'] || 20,
+    fontWeight: (theme.fontWeights?.bold || '700') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.text,
     marginBottom: 16,
   },
@@ -658,17 +809,23 @@ export const createStyles = (theme: Theme): Styles => ({
     flexDirection: 'row' as const,
     justifyContent: 'space-between' as const,
     alignItems: 'center' as const,
-    elevation: 1,
-    shadowColor: '#000',
+    backgroundColor: theme.colors.background === '#ffffff'
+      ? theme.colors.background // Transparent/background in light mode
+      : 'rgba(255, 255, 255, 0.08)', // Glassy white overlay in dark mode
+    elevation: Platform.OS === 'android' ? 0 : 1,
+    shadowColor: theme.colors.shadowColor,
     shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.1,
     shadowRadius: 1,
     borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.05)',
+    borderColor: theme.colors.background === '#121212' || theme.colors.background.includes('12')
+      ? 'rgba(255, 255, 255, 0.15)' // Glassy border in dark mode
+      : 'rgba(0, 0, 0, 0.05)', // Original light mode border
   },
   refreshText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: theme.fontSizes?.base || 14,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     textAlign: 'left' as const,
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
@@ -681,7 +838,9 @@ export const createStyles = (theme: Theme): Styles => ({
     opacity: 0.9,
   },
   cacheText: {
-    fontSize: 13,
+    fontSize: theme.fontSizes?.base || 13,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.regular,
     marginBottom: 0,
     marginTop: 0,
     textAlign: 'right' as const,
@@ -693,7 +852,9 @@ export const createStyles = (theme: Theme): Styles => ({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.02)',
+    backgroundColor: theme.colors.background === '#ffffff'
+      ? 'rgba(0, 0, 0, 0.02)'
+      : theme.colors.shadowColor + '05',
     borderRadius: 8,
     overflow: 'hidden',
   },
@@ -703,7 +864,9 @@ export const createStyles = (theme: Theme): Styles => ({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.04)',
+    backgroundColor: theme.colors.background === '#ffffff'
+      ? 'rgba(0, 0, 0, 0.04)'
+      : theme.colors.shadowColor + '0A',
     transform: [{translateX: -100}],
   },
   disabled: {
@@ -715,6 +878,8 @@ export const createStyles = (theme: Theme): Styles => ({
     padding: 16,
     paddingTop: 0,
     backgroundColor: theme.colors.background,
+    position: 'relative',
+    zIndex: 1,
   },
   sectionHeader: {
     flexDirection: 'row' as const,
@@ -725,13 +890,16 @@ export const createStyles = (theme: Theme): Styles => ({
     marginBottom: 4,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: theme.fontSizes?.lg || 16,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.text,
     opacity: 0.9,
   },
   sectionSubtitle: {
-    fontSize: 13,
+    fontSize: theme.fontSizes?.base || 13,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textSecondary,
   },
   emptyStateContainer: {
@@ -742,7 +910,9 @@ export const createStyles = (theme: Theme): Styles => ({
     marginTop: 20,
   },
   emptyStateText: {
-    fontSize: 16,
+    fontSize: theme.fontSizes?.lg || 16,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textSecondary,
     textAlign: 'center' as const,
     marginTop: 8,
@@ -756,27 +926,31 @@ export const createStyles = (theme: Theme): Styles => ({
   actionButtonIcon: {
     width: 18,
     height: 18,
-    tintColor: '#fff',
+    tintColor: theme.colors.white,
   },
   addressTypeContainer: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 4,
-    backgroundColor: 'rgba(255,255,255,0.18)', // glassy
+    backgroundColor: theme.colors.background === '#ffffff'
+      ? 'rgba(255,255,255,0.18)' // glassy
+      : 'rgba(255, 255, 255, 0.12)', // Glassy white overlay in dark mode
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
-    shadowColor: '#000',
+    borderColor: theme.colors.background === '#ffffff'
+      ? 'rgba(255,255,255,0.25)'
+      : 'rgba(255, 255, 255, 0.2)', // Glassy border in dark mode
+    shadowColor: theme.colors.shadowColor,
     shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.08,
     shadowRadius: 6,
     // Add elevation for Android
     elevation: 2,
-    minWidth: 80,
+    minWidth: 0,
     flex: 1,
-    flexBasis: '30%',
+    flexShrink: 1,
   },
   addressTypeClickable: {
     // For extra visual feedback if needed
@@ -792,7 +966,7 @@ export const createStyles = (theme: Theme): Styles => ({
   networkIcon: {
     width: 16,
     height: 16,
-    tintColor: '#FFFFFF',
+    tintColor: theme.colors.white,
   },
   rowCenter: {
     flexDirection: 'row' as const,
@@ -831,18 +1005,22 @@ export const createStyles = (theme: Theme): Styles => ({
     borderWidth: 0,
   },
   modalCloseButtonText: {
+    fontSize: theme.fontSizes?.lg || 16,
+    fontWeight: (theme.fontWeights?.bold || '700') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.accent,
-    fontWeight: 'bold' as const,
-    fontSize: 16,
   },
   modalBoldText: {
-    fontSize: 15,
-    fontWeight: 'bold' as const,
+    fontSize: theme.fontSizes?.md || 15,
+    fontWeight: (theme.fontWeights?.bold || '700') as any,
+    fontFamily: theme.fontFamilies?.regular,
   },
   modalTextLeft: {
+    fontSize: theme.fontSizes?.md || 15,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.regular,
     textAlign: 'left' as const,
     color: theme.colors.text,
-    fontSize: 15,
     marginBottom: 12,
   },
   modalInfoIcon: {
@@ -853,8 +1031,9 @@ export const createStyles = (theme: Theme): Styles => ({
     alignSelf: 'center' as const,
   },
   modalActionButtonText: {
-    fontSize: 16,
-    fontWeight: 'bold' as const,
+    fontSize: theme.fontSizes?.lg || 16,
+    fontWeight: (theme.fontWeights?.bold || '700') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.primary,
     letterSpacing: 0.2,
   },
@@ -873,8 +1052,9 @@ export const createStyles = (theme: Theme): Styles => ({
     marginRight: 10,
   },
   modalHeaderTitle: {
-    fontSize: 20,
-    fontWeight: 'bold' as const,
+    fontSize: theme.fontSizes?.['2xl'] || 20,
+    fontWeight: (theme.fontWeights?.bold || '700') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.text,
     flex: 1,
     textAlign: 'left' as const,
@@ -896,8 +1076,10 @@ export const createStyles = (theme: Theme): Styles => ({
     alignItems: 'flex-end' as const,
   },
   linkText: {
+    fontSize: theme.fontSizes?.base || 14,
+    fontWeight: (theme.fontWeights?.bold || '700') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.accent,
-    fontWeight: 'bold' as const,
   },
   apiDisplayContainer: {
     paddingHorizontal: 16,
@@ -925,14 +1107,16 @@ export const createStyles = (theme: Theme): Styles => ({
     opacity: 0.7,
   },
   apiDisplayLabel: {
-    fontSize: 11,
-    fontWeight: '500' as const,
+    fontSize: theme.fontSizes?.sm || 11,
+    fontWeight: (theme.fontWeights?.medium || '500') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textSecondary,
     marginRight: 4,
   },
   apiDisplayValue: {
-    fontSize: 11,
-    fontWeight: '400' as const,
+    fontSize: theme.fontSizes?.sm || 11,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textSecondary,
     flex: 1,
     textAlign: 'right' as const,
@@ -961,14 +1145,16 @@ export const createStyles = (theme: Theme): Styles => ({
     opacity: 0.8,
   },
   providerLabel: {
-    fontSize: 11,
-    fontWeight: '400' as const,
+    fontSize: theme.fontSizes?.sm || 11,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textSecondary,
     letterSpacing: 0.2,
   },
   providerValue: {
-    fontSize: 11,
-    fontWeight: '400' as const,
+    fontSize: theme.fontSizes?.sm || 11,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textSecondary,
     letterSpacing: 0.1,
     flex: 1,
@@ -976,30 +1162,36 @@ export const createStyles = (theme: Theme): Styles => ({
     opacity: 0.8,
   },
   networkBadge: {
-    backgroundColor: theme.colors.primary + '20',
+    backgroundColor: theme.colors.background === '#ffffff'
+      ? theme.colors.primary + '40' // Increased opacity for better contrast in light mode
+      : 'rgba(255, 255, 255, 0.15)', // Glassy background in dark mode
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
-    marginRight: 8,
+    marginRight: 0, // No margin needed in compact layout
   },
   networkBadgeText: {
-    fontSize: 9,
-    fontWeight: '700' as const,
-    color: theme.colors.primary,
+    fontSize: theme.fontSizes?.xs || 9,
+    fontWeight: (theme.fontWeights?.bold || '700') as any,
+    fontFamily: theme.fontFamilies?.regular,
+    color: theme.colors.background === '#ffffff'
+      ? theme.colors.white // White text for better contrast on dark badge in light mode
+      : theme.colors.text, // Use theme text color in dark mode
     letterSpacing: 0.5,
   },
   warningBox: {
-    backgroundColor: 'rgba(255, 193, 7, 0.1)',
+    backgroundColor: theme.colors.accent + '1A', // 10% opacity
     borderRadius: 8,
     padding: 12,
     marginVertical: 8,
     borderLeftWidth: 4,
-    borderLeftColor: '#FFC107',
+    borderLeftColor: theme.colors.accent,
   },
   warningText: {
-    fontSize: 14,
-    fontWeight: '500' as const,
-    color: '#FF6B35',
+    fontSize: theme.fontSizes?.base || 14,
+    fontWeight: (theme.fontWeights?.medium || '500') as any,
+    fontFamily: theme.fontFamilies?.regular,
+    color: theme.colors.danger,
     lineHeight: 20,
   },
   backupButton: {
@@ -1011,21 +1203,24 @@ export const createStyles = (theme: Theme): Styles => ({
     alignItems: 'center' as const,
   },
   backupButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600' as const,
+    fontSize: theme.fontSizes?.lg || 16,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
+    color: theme.colors.white,
   },
   warningBoxWithMargin: {
-    backgroundColor: 'rgba(255, 193, 7, 0.1)',
+    backgroundColor: theme.colors.accent + '1A', // 10% opacity
     borderRadius: 8,
     padding: 12,
     marginVertical: 8,
     marginTop: 10,
     borderLeftWidth: 4,
-    borderLeftColor: '#FFC107',
+    borderLeftColor: theme.colors.accent,
   },
   modalTipText: {
-    fontSize: 13,
+    fontSize: theme.fontSizes?.base || 13,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textSecondary,
     marginTop: 12,
     textAlign: 'left' as const,
@@ -1046,12 +1241,11 @@ export const createStyles = (theme: Theme): Styles => ({
     maxHeight: '100%',
     alignSelf: 'center' as const,
     elevation: 8,
-    shadowColor: '#000',
+    shadowColor: theme.colors.shadowColor,
     shadowOffset: {width: 0, height: 4},
     shadowOpacity: 0.15,
     shadowRadius: 10,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderWidth: 0, // Remove border to match other modals
     flexDirection: 'column' as const,
     justifyContent: 'flex-start' as const,
     overflow: 'hidden' as const,
@@ -1070,17 +1264,20 @@ export const createStyles = (theme: Theme): Styles => ({
   modalHeaderIconCompact: {
     width: 24,
     height: 24,
-    tintColor: theme.colors.primary,
+    tintColor: theme.colors.text,
     marginRight: 10,
   },
   modalHeaderTitleCompact: {
-    fontSize: 20,
-    fontWeight: 'bold' as const,
+    fontSize: theme.fontSizes?.['2xl'] || 20,
+    fontWeight: (theme.fontWeights?.bold || '700') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.text,
     flex: 1,
   },
   modalTextCompact: {
-    fontSize: 14,
+    fontSize: theme.fontSizes?.base || 14,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.regular,
     lineHeight: 20,
     color: theme.colors.text,
     marginBottom: 12,
@@ -1088,28 +1285,32 @@ export const createStyles = (theme: Theme): Styles => ({
     includeFontPadding: false,
   },
   modalBoldTextCompact: {
-    fontSize: 14,
-    fontWeight: '600' as const,
+    fontSize: theme.fontSizes?.base || 14,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.text,
     includeFontPadding: false,
     lineHeight: 20,
   },
   warningBoxCompact: {
-    backgroundColor: 'rgba(255, 193, 7, 0.08)',
+    backgroundColor: theme.colors.accent + '14', // 8% opacity
     borderRadius: 6,
     padding: 10,
     marginBottom: 10,
     borderLeftWidth: 3,
-    borderLeftColor: '#FFC107',
+    borderLeftColor: theme.colors.accent,
   },
   warningTextCompact: {
-    fontSize: 13,
-    fontWeight: '500' as const,
-    color: '#FF6B35',
+    fontSize: theme.fontSizes?.base || 13,
+    fontWeight: (theme.fontWeights?.medium || '500') as any,
+    fontFamily: theme.fontFamilies?.regular,
+    color: theme.colors.danger,
     lineHeight: 18,
   },
   modalTipTextCompact: {
-    fontSize: 12,
+    fontSize: theme.fontSizes?.sm || 12,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textSecondary,
     marginBottom: 14,
     textAlign: 'left' as const,
@@ -1123,9 +1324,10 @@ export const createStyles = (theme: Theme): Styles => ({
     alignItems: 'center' as const,
   },
   backupButtonTextCompact: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600' as const,
+    fontSize: theme.fontSizes?.base || 14,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
+    color: theme.colors.white,
   },
   keyshareModalCloseButton: {
     marginLeft: 'auto' as const,
@@ -1137,8 +1339,9 @@ export const createStyles = (theme: Theme): Styles => ({
     marginTop: 4,
   },
   keyshareModalCloseText: {
-    fontSize: 22,
-    fontWeight: '700' as const,
+    fontSize: theme.fontSizes?.['2xl'] || 22,
+    fontWeight: (theme.fontWeights?.bold || '700') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.text,
     lineHeight: 22,
   },
@@ -1156,7 +1359,9 @@ export const createStyles = (theme: Theme): Styles => ({
     minHeight: 24,
   },
   keyshareInfoLabel: {
-    fontWeight: '600' as const,
+    fontSize: theme.fontSizes?.base || 14,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     flexShrink: 0,
     minWidth: 150,
     textAlign: 'left' as const,
@@ -1164,6 +1369,9 @@ export const createStyles = (theme: Theme): Styles => ({
     textAlignVertical: 'center' as const,
   },
   keyshareInfoValue: {
+    fontSize: theme.fontSizes?.base || 14,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.regular,
     flex: 1,
     flexShrink: 1,
     textAlign: 'right' as const,
@@ -1171,10 +1379,10 @@ export const createStyles = (theme: Theme): Styles => ({
     textAlignVertical: 'center' as const,
   },
   keyshareInfoValueSuccess: {
-    color: '#4CAF50',
+    color: theme.colors.received,
   },
   keyshareInfoValueDisabled: {
-    color: '#757575',
+    color: theme.colors.disabledText,
   },
   keyshareKeySection: {
     gap: 8,
@@ -1188,10 +1396,11 @@ export const createStyles = (theme: Theme): Styles => ({
     minWidth: 0,
   },
   keyshareKeyText: {
+    fontSize: theme.fontSizes?.sm || 11,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.monospace || 'monospace',
     flex: 1,
     flexShrink: 1,
-    fontFamily: 'monospace',
-    fontSize: 11,
     color: theme.colors.text,
     minWidth: 0,
     textAlign: 'right' as const,
@@ -1204,14 +1413,18 @@ export const createStyles = (theme: Theme): Styles => ({
     justifyContent: 'center' as const,
   },
   keyshareCopyButtonText: {
-    fontSize: 11,
-    fontWeight: '600' as const,
+    fontSize: theme.fontSizes?.sm || 11,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textOnPrimary,
   },
   keyshareCopyIcon: {
     width: 16,
     height: 16,
-    tintColor: theme.colors.textOnPrimary,
+    tintColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.white
+        : theme.colors.text,
   },
   keyshareButtonsRow: {
     flexDirection: 'row' as const,
@@ -1227,13 +1440,16 @@ export const createStyles = (theme: Theme): Styles => ({
     maxWidth: 320,
   },
   qrModalTitle: {
-    fontSize: 18,
-    fontWeight: '700' as const,
+    fontSize: theme.fontSizes?.xl || 18,
+    fontWeight: (theme.fontWeights?.bold || '700') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.text,
     marginBottom: 4,
   },
   qrModalSubtitle: {
-    fontSize: 13,
+    fontSize: theme.fontSizes?.base || 13,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textSecondary,
     marginBottom: 20,
   },
@@ -1244,7 +1460,9 @@ export const createStyles = (theme: Theme): Styles => ({
     marginBottom: 16,
   },
   qrModalHint: {
-    fontSize: 12,
+    fontSize: theme.fontSizes?.sm || 12,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textSecondary,
     marginBottom: 16,
     fontStyle: 'italic' as const,
@@ -1256,8 +1474,9 @@ export const createStyles = (theme: Theme): Styles => ({
     borderRadius: 8,
   },
   qrModalCloseButtonText: {
-    fontSize: 14,
-    fontWeight: '600' as const,
+    fontSize: theme.fontSizes?.base || 14,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textOnPrimary,
   },
   keyshareLoadingContainer: {
@@ -1294,8 +1513,9 @@ export const createStyles = (theme: Theme): Styles => ({
     borderColor: theme.colors.border + '50',
   },
   keyshareSectionTitle: {
-    fontSize: 14,
-    fontWeight: '700' as const,
+    fontSize: theme.fontSizes?.base || 14,
+    fontWeight: (theme.fontWeights?.bold || '700') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.text,
     marginBottom: 10,
     letterSpacing: 0.2,
@@ -1309,15 +1529,17 @@ export const createStyles = (theme: Theme): Styles => ({
     borderBottomColor: theme.colors.border + '30',
   },
   keyshareDetailLabel: {
-    fontSize: 13,
+    fontSize: theme.fontSizes?.base || 13,
+    fontWeight: (theme.fontWeights?.medium || '500') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textSecondary,
-    fontWeight: '500' as const,
     flex: 1,
   },
   keyshareDetailValue: {
-    fontSize: 13,
+    fontSize: theme.fontSizes?.base || 13,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.text,
-    fontWeight: '600' as const,
     flex: 1,
     textAlign: 'right' as const,
   },
@@ -1328,9 +1550,10 @@ export const createStyles = (theme: Theme): Styles => ({
     alignSelf: 'flex-end' as const,
   },
   keyshareBadgeText: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: '#FFFFFF',
+    fontSize: theme.fontSizes?.sm || 12,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
+    color: theme.colors.white,
   },
   keyshareBadgeTrio: {
     backgroundColor: theme.colors.primary,
@@ -1345,20 +1568,21 @@ export const createStyles = (theme: Theme): Styles => ({
     alignSelf: 'flex-end' as const,
   },
   keyshareStatusBadgeText: {
-    fontSize: 12,
-    fontWeight: '600' as const,
+    fontSize: theme.fontSizes?.sm || 12,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
   },
   keyshareStatusBadgeSuccess: {
-    backgroundColor: '#4CAF50' + '20',
+    backgroundColor: theme.colors.received + '33', // 20% opacity
   },
   keyshareStatusBadgeDisabled: {
-    backgroundColor: '#757575' + '20',
+    backgroundColor: theme.colors.disabledText + '33', // 20% opacity
   },
   keyshareStatusBadgeTextSuccess: {
-    color: '#4CAF50',
+    color: theme.colors.received,
   },
   keyshareStatusBadgeTextDisabled: {
-    color: '#757575',
+    color: theme.colors.disabledText,
   },
   keyshareKeyItem: {
     flexDirection: 'row' as const,
@@ -1370,9 +1594,10 @@ export const createStyles = (theme: Theme): Styles => ({
     width: '100%',
   },
   keyshareKeyLabel: {
-    fontSize: 13,
+    fontSize: theme.fontSizes?.base || 13,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textSecondary,
-    fontWeight: '600' as const,
     width: 130,
     flexShrink: 0,
     marginRight: 12,
@@ -1391,17 +1616,19 @@ export const createStyles = (theme: Theme): Styles => ({
     width: '100%',
   },
   keyshareTableKey: {
-    fontSize: 13,
+    fontSize: theme.fontSizes?.base || 13,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textSecondary,
-    fontWeight: '600' as const,
     width: 130,
     flexShrink: 0,
     marginRight: 12,
   },
   keyshareTableValue: {
-    fontSize: 13,
+    fontSize: theme.fontSizes?.base || 13,
+    fontWeight: (theme.fontWeights?.medium || '500') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.text,
-    fontWeight: '500' as const,
     flex: 1,
     flexShrink: 1,
     textAlign: 'left' as const,
@@ -1416,24 +1643,28 @@ export const createStyles = (theme: Theme): Styles => ({
     minWidth: 0,
   },
   keyshareTableValueKey: {
+    fontSize: theme.fontSizes?.sm || 11,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.monospace || 'monospace',
     flex: 1,
     flexShrink: 1,
-    fontSize: 11,
-    fontFamily: 'monospace',
     color: theme.colors.text,
     textAlign: 'left' as const,
     minWidth: 0,
   },
   keyshareTableValueSuccess: {
-    color: '#4CAF50',
-    fontWeight: '600' as const,
+    fontSize: theme.fontSizes?.base || 13,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
+    color: theme.colors.received,
   },
   keyshareTableValueDisabled: {
-    color: '#757575',
+    color: theme.colors.disabledText,
   },
   keyshareInfoHeader: {
-    fontSize: 14,
-    fontWeight: '700' as const,
+    fontSize: theme.fontSizes?.base || 14,
+    fontWeight: (theme.fontWeights?.bold || '700') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.text,
   },
   watchWalletHeader: {
@@ -1445,19 +1676,24 @@ export const createStyles = (theme: Theme): Styles => ({
     borderColor: theme.colors.border + '40',
   },
   watchWalletTitle: {
-    fontSize: 14,
-    fontWeight: '700' as const,
+    fontSize: theme.fontSizes?.base || 14,
+    fontWeight: (theme.fontWeights?.bold || '700') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.text,
   },
   watchWalletDescription: {
-    fontSize: 12,
+    fontSize: theme.fontSizes?.sm || 12,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.regular,
     lineHeight: 18,
     color: theme.colors.text,
     marginTop: 4,
     marginBottom: 12,
   },
   watchWalletWarning: {
-    fontSize: 11,
+    fontSize: theme.fontSizes?.sm || 11,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.regular,
     lineHeight: 16,
     color: theme.colors.textSecondary,
     marginTop: 8,
@@ -1471,18 +1707,21 @@ export const createStyles = (theme: Theme): Styles => ({
     borderTopColor: theme.colors.border + '40',
   },
   watchWalletItemLabel: {
-    fontSize: 13,
+    fontSize: theme.fontSizes?.base || 13,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textSecondary,
-    fontWeight: '600' as const,
     marginBottom: 8,
   },
   watchWalletItemValue: {
+    fontSize: theme.fontSizes?.sm || 11,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.monospace || 'monospace',
     flex: 1,
     flexShrink: 1,
-    fontSize: 11,
-    fontFamily: 'monospace',
     textAlign: 'left' as const,
     minWidth: 0,
+    color: theme.colors.text, // Fix dark mode readability
   },
   watchWalletItemValueContainer: {
     flexDirection: 'row' as const,
@@ -1496,6 +1735,9 @@ export const createStyles = (theme: Theme): Styles => ({
     minWidth: 0,
   },
   clickableText: {
+    fontSize: theme.fontSizes?.base || 14,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.primary,
     textDecorationLine: 'underline' as const,
   },
@@ -1530,7 +1772,7 @@ export const createStyles = (theme: Theme): Styles => ({
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 1000,
+    zIndex: 9999,
     pointerEvents: 'box-none' as const,
   },
   qrModalHeader: {
@@ -1541,8 +1783,9 @@ export const createStyles = (theme: Theme): Styles => ({
     marginBottom: 16,
   },
   qrModalHeaderTitle: {
-    fontSize: 18,
-    fontWeight: '700' as const,
+    fontSize: theme.fontSizes?.xl || 18,
+    fontWeight: (theme.fontWeights?.bold || '700') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.text,
     flex: 1,
   },
@@ -1556,8 +1799,9 @@ export const createStyles = (theme: Theme): Styles => ({
     borderRadius: 18,
   },
   qrModalTopRightCloseText: {
-    fontSize: 22,
-    fontWeight: '700' as const,
+    fontSize: theme.fontSizes?.['2xl'] || 22,
+    fontWeight: (theme.fontWeights?.bold || '700') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.text,
     lineHeight: 22,
   },

@@ -457,7 +457,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
               onFocus={handleFocus}
               onBlur={handleBlur}
               placeholder="Your Mempool Endpoint"
-              placeholderTextColor={theme.colors.textSecondary}
+              placeholderTextColor={theme.colors.textSecondary + '80'}
               autoCapitalize="none"
               autoCorrect={false}
               editable={!isTestnet}
@@ -529,7 +529,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                         source={require('../assets/api-icon.png')}
                         style={[
                           styles.apiModalHeaderIcon,
-                          {tintColor: theme.colors.primary},
+                          {tintColor: theme.colors.text}, // Use text color for better visibility in dark mode
                         ]}
                         resizeMode="contain"
                       />
@@ -614,7 +614,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                         {color: theme.colors.text},
                       ]}
                       placeholder="Search endpoints..."
-                      placeholderTextColor={theme.colors.textSecondary}
+                      placeholderTextColor={theme.colors.textSecondary + '80'}
                       value={searchQuery}
                       onChangeText={setSearchQuery}
                       autoCapitalize="none"
@@ -730,7 +730,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     walletMode: false,
   });
 
-  const {theme} = useTheme();
+  const {theme, themeMode, setThemeMode} = useTheme();
   const [appVersion, setAppVersion] = useState('');
   const [buildNumber, setBuildNumber] = useState('');
   const [usageSize, setUsageSize] = useState<{fileCount: number; mb: string}>({
@@ -791,12 +791,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       return theme.colors.danger;
     }
     if (passwordStrength <= 2) {
-      return '#FFA500';
+      return theme.colors.accent;
     }
     if (passwordStrength <= 3) {
-      return '#FFD700';
+      return theme.colors.accent;
     }
-    return '#4CAF50';
+    return theme.colors.received;
   };
 
   const clearBackupModal = () => {
@@ -1039,6 +1039,27 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     }, 300);
   };
 
+  const normalizeAPIUrl = (url: string): string => {
+    if (!url || url.trim() === '') {
+      return url;
+    }
+    
+    // Trim whitespace
+    let normalized = url.trim();
+    
+    // Remove trailing slashes
+    normalized = normalized.replace(/\/+$/, '');
+    
+    // Check if it ends with /api (case-insensitive)
+    const apiPattern = /\/api$/i;
+    if (!apiPattern.test(normalized)) {
+      // If it doesn't end with /api, append it
+      normalized = normalized + '/api';
+    }
+    
+    return normalized;
+  };
+
   const validateAPIEndpoint = async (api: string): Promise<boolean> => {
     try {
       const testUrl = `${api.replace(/\/$/, '')}/blocks/tip/hash`;
@@ -1086,10 +1107,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       return;
     }
 
+    // Normalize the URL to ensure it ends with /api
+    const normalizedApi = normalizeAPIUrl(api);
+    dbg('Original API URL:', api);
+    dbg('Normalized API URL:', normalizedApi);
+
     setIsAPISaving(true);
     try {
-      // Validate the API endpoint first
-      const isValid = await validateAPIEndpoint(api);
+      // Validate the API endpoint first (using normalized URL)
+      const isValid = await validateAPIEndpoint(normalizedApi);
       if (!isValid) {
         Alert.alert(
           'Invalid API Endpoint',
@@ -1098,15 +1124,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         return;
       }
 
-      // Update API via UserContext
-      await setActiveApiProvider(api);
-      // Update local state
-      setBaseAPI(api);
-      // Reset pending API to the saved API
-      setPendingAPI(api);
-      dbg('Local state updated with API:', api);
+      // Update API via UserContext (using normalized URL)
+      await setActiveApiProvider(normalizedApi);
+      // Update local state (using normalized URL)
+      setBaseAPI(normalizedApi);
+      // Reset pending API to the saved API (using normalized URL)
+      setPendingAPI(normalizedApi);
+      dbg('Local state updated with API:', normalizedApi);
       Alert.alert('Success', 'API endpoint updated successfully!');
-      dbg('=== API saved and propagated successfully:', api);
+      dbg('=== API saved and propagated successfully:', normalizedApi);
       // Navigate to home after successful save
       navigation.reset({index: 0, routes: [{name: 'Home'}]});
     } catch (error) {
@@ -1280,13 +1306,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       textAlign: 'center',
     },
     collapsibleSection: {
-      marginBottom: 8,
+      marginBottom: 10,
       backgroundColor: theme.colors.cardBackground,
       borderRadius: 8,
       borderWidth: 1,
       borderColor: theme.colors.border,
       overflow: 'hidden',
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 1},
       shadowOpacity: 0.1,
       shadowRadius: 2,
@@ -1387,7 +1413,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderRadius: 8,
       backgroundColor: theme.colors.background,
       minHeight: 44,
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 1},
       shadowOpacity: 0.05,
       shadowRadius: 2,
@@ -1437,7 +1463,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       minHeight: 44,
       justifyContent: 'center',
       alignItems: 'center',
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 1},
       shadowOpacity: 0.1,
       shadowRadius: 2,
@@ -1504,10 +1530,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       letterSpacing: 0.2,
     },
     apiNetworkModeTextTestnet: {
-      color: '#FFA500',
+      color: theme.colors.accent,
     },
     apiNetworkModeTextMainnet: {
-      color: '#4CAF50',
+      color: theme.colors.received,
     },
     apiInfoButton: {
       flex: 1,
@@ -1526,7 +1552,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     apiInfoButtonIcon: {
       width: 14,
       height: 14,
-      tintColor: theme.colors.primary,
+      tintColor: theme.colors.text, // Use text color for better visibility in dark mode
     },
     apiInfoButtonText: {
       fontSize: 12,
@@ -1553,6 +1579,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     apiActionButton: {
       flex: 1,
       minHeight: 44,
+      height: 44,
     },
     apiModalContainer: {
       flex: 1,
@@ -1573,7 +1600,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderTopRightRadius: 10,
       paddingBottom: Platform.OS === 'ios' ? 17 : 10,
       paddingTop: 5,
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: -4},
       shadowOpacity: 0.2,
       shadowRadius: 12,
@@ -1704,7 +1731,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     apiModalItemCheck: {
       fontSize: 14,
       fontWeight: 'bold',
-      color: '#FFFFFF',
+      color: theme.colors.white,
     },
     apiModalLoading: {
       padding: 48,
@@ -1733,6 +1760,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     },
     backupButton: {
       backgroundColor: theme.colors.primary,
+      marginBottom: 16, // Add spacing after backup button before delete section
     },
     resetButton: {
       backgroundColor: theme.colors.accent,
@@ -1743,12 +1771,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       fontWeight: '600',
     },
     apiItem: {
-      marginTop: 12,
+      marginTop: 0, // Section padding handles first element spacing
+      marginBottom: 0, // Consistent spacing
     },
     apiName: {
       fontSize: 14,
       fontWeight: 'bold',
-      color: theme.colors.primary,
+      color: theme.colors.text, // Use text color for better readability in dark mode
       marginBottom: 4,
     },
     apiDescription: {
@@ -1758,9 +1787,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginBottom: 6,
     },
     linkText: {
-      color: theme.colors.primary,
+      color: theme.colors.text, // Use text color for better readability in dark mode
       fontWeight: 'bold',
       textDecorationLine: 'underline',
+      textDecorationColor: theme.colors.text, // Match underline color
     },
     aboutInfoRow: {
       flexDirection: 'row',
@@ -1815,14 +1845,16 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       letterSpacing: -0.1,
     },
     aboutLinkText: {
-      color: theme.colors.primary,
+      color: theme.colors.text, // Use text color for better readability in dark mode
       fontWeight: '600',
       textDecorationLine: 'underline',
+      textDecorationColor: theme.colors.text, // Match underline color
     },
     termsLink: {
-      color: theme.colors.primary,
+      color: theme.colors.text, // Use text color for better readability in dark mode
       fontWeight: 'bold',
       textDecorationLine: 'underline',
+      textDecorationColor: theme.colors.text, // Match underline color
       marginTop: 8,
     },
     modalOverlay: {
@@ -1847,7 +1879,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       width: 24,
       height: 24,
       marginRight: 10,
-      tintColor: theme.colors.primary,
+      tintColor: theme.colors.text, // Use text color for better visibility in dark mode
     },
     modalTitle: {
       fontSize: 20,
@@ -1888,6 +1920,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     eyeIcon: {
       width: 20,
       height: 20,
+      tintColor: theme.colors.text,
     },
     passwordHint: {
       fontSize: 12,
@@ -1919,7 +1952,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderRadius: 16,
       width: '85%',
       maxWidth: 400,
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 4},
       shadowOpacity: 0.3,
       shadowRadius: 12,
@@ -2016,6 +2049,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       width: 20,
       height: 20,
       marginRight: 8,
+      tintColor: theme.colors.text, // Use text color for visibility in dark mode
     },
     input: {
       borderWidth: 1,
@@ -2067,6 +2101,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     nostrRelaysInput: {
       minHeight: 120,
       textAlignVertical: 'top',
+      textAlign: 'left', // Align text entries to the left
       paddingTop: 12,
       backgroundColor: theme.colors.cardBackground,
     },
@@ -2092,7 +2127,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       flex: 1,
     },
     whiteTint: {
-      tintColor: '#ffffff',
+      tintColor: theme.colors.white,
     },
     networkStatusContainer: {
       marginBottom: 8,
@@ -2125,6 +2160,42 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       color: theme.colors.textSecondary,
       marginBottom: 12,
     },
+    themeOptionContainer: {
+      gap: 8,
+      marginBottom: 8,
+    },
+    themeOption: {
+      backgroundColor: theme.colors.background,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      padding: 12,
+      marginBottom: 4,
+    },
+    themeOptionSelected: {
+      borderColor: theme.colors.accent,
+      borderWidth: 2,
+      backgroundColor: theme.colors.cardBackground,
+    },
+    themeOptionContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    themeOptionLabel: {
+      fontSize: 15,
+      fontWeight: '500',
+      color: theme.colors.text,
+    },
+    themeOptionLabelSelected: {
+      fontWeight: '600',
+      color: theme.colors.accent,
+    },
+    themeOptionCheck: {
+      width: 18,
+      height: 18,
+      tintColor: theme.colors.accent,
+    },
   });
 
   return (
@@ -2138,7 +2209,252 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         bounces={true}
         scrollEventThrottle={16}
         overScrollMode="auto">
-        {/* Backup & Reset Section */}
+        {/* Theme Section - First for better UX */}
+        <CollapsibleSection
+          title="Theme"
+          isExpanded={expandedSections.theme}
+          onToggle={() => toggleSection('theme')}
+          styles={styles}
+          theme={theme}>
+          <Text style={styles.toggleDescription}>
+            Choose your preferred color theme. OS Default follows your system settings.
+          </Text>
+          <View style={styles.themeOptionContainer}>
+            <TouchableOpacity
+              style={[
+                styles.themeOption,
+                themeMode === 'os' && styles.themeOptionSelected,
+              ]}
+              onPress={() => {
+                HapticFeedback.light();
+                setThemeMode('os');
+              }}
+              activeOpacity={0.7}>
+              <View style={styles.themeOptionContent}>
+                <Text
+                  style={[
+                    styles.themeOptionLabel,
+                    themeMode === 'os' && styles.themeOptionLabelSelected,
+                  ]}>
+                  OS Default
+                </Text>
+                {themeMode === 'os' && (
+                  <Image
+                    source={require('../assets/check-icon.png')}
+                    style={styles.themeOptionCheck}
+                    resizeMode="contain"
+                  />
+                )}
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.themeOption,
+                themeMode === 'light' && styles.themeOptionSelected,
+              ]}
+              onPress={() => {
+                HapticFeedback.light();
+                setThemeMode('light');
+              }}
+              activeOpacity={0.7}>
+              <View style={styles.themeOptionContent}>
+                <Text
+                  style={[
+                    styles.themeOptionLabel,
+                    themeMode === 'light' && styles.themeOptionLabelSelected,
+                  ]}>
+                  Light
+                </Text>
+                {themeMode === 'light' && (
+                  <Image
+                    source={require('../assets/check-icon.png')}
+                    style={styles.themeOptionCheck}
+                    resizeMode="contain"
+                  />
+                )}
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.themeOption,
+                themeMode === 'dark' && styles.themeOptionSelected,
+              ]}
+              onPress={() => {
+                HapticFeedback.light();
+                setThemeMode('dark');
+              }}
+              activeOpacity={0.7}>
+              <View style={styles.themeOptionContent}>
+                <Text
+                  style={[
+                    styles.themeOptionLabel,
+                    themeMode === 'dark' && styles.themeOptionLabelSelected,
+                  ]}>
+                  Dark
+                </Text>
+                {themeMode === 'dark' && (
+                  <Image
+                    source={require('../assets/check-icon.png')}
+                    style={styles.themeOptionCheck}
+                    resizeMode="contain"
+                  />
+                )}
+              </View>
+            </TouchableOpacity>
+          </View>
+        </CollapsibleSection>
+
+        {/* Haptics Section */}
+        <CollapsibleSection
+          title="Haptics"
+          isExpanded={expandedSections.haptics}
+          onToggle={() => toggleSection('haptics')}
+          styles={styles}
+          theme={theme}>
+          <Text style={styles.toggleDescription}>
+            Enable vibration feedback. OS settings may override this.
+          </Text>
+          <View style={styles.toggleContainer}>
+            <Text style={styles.toggleLabel}>Haptics Off</Text>
+            <Switch
+              onValueChange={handleToggleHaptics}
+              value={hapticsEnabled}
+            />
+            <Text style={styles.toggleLabel}>Haptics On</Text>
+          </View>
+        </CollapsibleSection>
+
+        {/* App Icon Section - Android Only */}
+        {Platform.OS === 'android' && (
+          <CollapsibleSection
+            title="App Icon"
+            isExpanded={expandedSections.appIcon}
+            onToggle={() => toggleSection('appIcon')}
+            styles={styles}
+            theme={theme}>
+            <View style={styles.appIconHintRow}>
+              <View style={styles.appIconHintTextContainer}>
+                <Text style={styles.appIconHintTitle}>
+                  Blend in when you need to.
+                </Text>
+                <Text style={styles.appIconHintSubtitle}>
+                  Switch to the calculator icon when you want your wallet to
+                  look like just another app on your home screen.
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.toggleDescription}>
+              Change the app's launcher icon on your device.
+            </Text>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Bold Wallet</Text>
+              <Switch
+                trackColor={{
+                  true: theme.colors.primary,
+                  false: theme.colors.secondary,
+                }}
+                thumbColor={theme.colors.accent}
+                onValueChange={async value => {
+                  try {
+                    HapticFeedback.light();
+                    const newIcon = value ? 'alternative' : 'default';
+
+                    // Check if IconChanger module is available
+                    if (!IconChanger || !IconChanger.changeIcon) {
+                      Alert.alert(
+                        'Error',
+                        'Icon switching is not available on this device.',
+                        [{text: 'OK'}],
+                      );
+                      return;
+                    }
+
+                    // Update UI state
+                    setSelectedIcon(newIcon);
+
+                    // Save preference
+                    await EncryptedStorage.setItem(
+                      'app_icon_preference',
+                      newIcon,
+                    );
+
+                    // Change the icon
+                    await IconChanger.changeIcon(newIcon);
+
+                    // Show success message
+                    const iconName =
+                      newIcon === 'alternative' ? 'QuickCalc' : 'Bold Wallet';
+                    Alert.alert(
+                      'Icon Changed',
+                      `App icon switched to ${iconName}.\n\nYou may need to refresh your launcher to see the change.`,
+                      [{text: 'OK'}],
+                    );
+                  } catch (error: any) {
+                    console.error('Error changing icon:', error);
+
+                    // Revert UI state on error
+                    setSelectedIcon(value ? 'default' : 'alternative');
+
+                    Alert.alert(
+                      'Error',
+                      error?.message ||
+                        'Failed to change app icon. Please try again.',
+                      [{text: 'OK'}],
+                    );
+                  }
+                }}
+                value={selectedIcon === 'alternative'}
+                disabled={selectedIcon === 'loading'}
+              />
+              <Text style={styles.toggleLabel}>QuickCalc</Text>
+            </View>
+          </CollapsibleSection>
+        )}
+
+        {/* Wallet Mode Section */}
+        <CollapsibleSection
+          title="Wallet Mode"
+          isExpanded={expandedSections.walletMode}
+          onToggle={() => toggleSection('walletMode')}
+          styles={styles}
+          theme={theme}>
+          <Text style={styles.walletModeDescription}>
+            Choose the default wallet experience when opening the app. PSBT Mode
+            jumps directly into PSBT signing workflows, while Full Mode opens
+            the main wallet home screen.
+          </Text>
+          <View style={styles.walletModeRow}>
+            <Text style={styles.walletModeLabel}>Full Mode</Text>
+            <Switch
+              onValueChange={async value => {
+                HapticFeedback.light();
+                const mode = value ? 'psbt' : 'full';
+                setWalletMode(mode);
+                try {
+                  await EncryptedStorage.setItem('wallet_mode', mode);
+                  // If switching to PSBT mode, set flag for first visit (both sections closed)
+                  if (mode === 'psbt') {
+                    await EncryptedStorage.setItem(
+                      'psbt_mode_first_visit',
+                      'true',
+                    );
+                  }
+                } catch (error) {
+                  dbg('Error saving wallet_mode:', error);
+                }
+                // Immediately navigate to the selected default screen
+                navigation.reset({
+                  index: 0,
+                  routes: [{name: mode === 'psbt' ? 'PSBT' : 'Home'}],
+                });
+              }}
+              value={walletMode === 'psbt'}
+            />
+            <Text style={styles.walletModeLabel}>PSBT Only</Text>
+          </View>
+        </CollapsibleSection>
+
+        {/* Security Section */}
         <CollapsibleSection
           title="Security"
           isExpanded={expandedSections.backup}
@@ -2183,49 +2499,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </TouchableOpacity>
         </CollapsibleSection>
-        {/* Wallet Mode Section */}
-        <CollapsibleSection
-          title="Wallet Mode"
-          isExpanded={expandedSections.walletMode}
-          onToggle={() => toggleSection('walletMode')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.walletModeDescription}>
-            Choose the default wallet experience when opening the app. PSBT Mode
-            jumps directly into PSBT signing workflows, while Full Mode opens
-            the main wallet home screen.
-          </Text>
-          <View style={styles.walletModeRow}>
-            <Text style={styles.walletModeLabel}>Full Mode</Text>
-            <Switch
-              onValueChange={async value => {
-                HapticFeedback.light();
-                const mode = value ? 'psbt' : 'full';
-                setWalletMode(mode);
-                try {
-                  await EncryptedStorage.setItem('wallet_mode', mode);
-                  // If switching to PSBT mode, set flag for first visit (both sections closed)
-                  if (mode === 'psbt') {
-                    await EncryptedStorage.setItem(
-                      'psbt_mode_first_visit',
-                      'true',
-                    );
-                  }
-                } catch (error) {
-                  dbg('Error saving wallet_mode:', error);
-                }
-                // Immediately navigate to the selected default screen
-                navigation.reset({
-                  index: 0,
-                  routes: [{name: mode === 'psbt' ? 'PSBT' : 'Home'}],
-                });
-              }}
-              value={walletMode === 'psbt'}
-            />
-            <Text style={styles.walletModeLabel}>PSBT Only</Text>
-          </View>
-        </CollapsibleSection>
-        {/* Advanced Section */}
+        {/* Network Providers Section */}
         <CollapsibleSection
           title="Network Providers"
           isExpanded={expandedSections.advanced}
@@ -2481,14 +2755,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 </View>
               </TouchableOpacity>
             </View>
-            {nostrRelays && (
-              <View style={styles.apiItem}>
-                <Text style={styles.apiDescription}>
-                  Current:{'\n'}
-                  {nostrRelays.split(',').join('\n')}
-                </Text>
-              </View>
-            )}
           </CollapsibleSection>
         )}
         {/* Storage Section */}
@@ -2534,113 +2800,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </TouchableOpacity>
         </CollapsibleSection>
-
-        {/* Haptics Section */}
-        <CollapsibleSection
-          title="Haptics"
-          isExpanded={expandedSections.haptics}
-          onToggle={() => toggleSection('haptics')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.toggleDescription}>
-            Enable vibration feedback. OS settings may override this.
-          </Text>
-          <View style={styles.toggleContainer}>
-            <Text style={styles.toggleLabel}>Haptics Off</Text>
-            <Switch
-              onValueChange={handleToggleHaptics}
-              value={hapticsEnabled}
-            />
-            <Text style={styles.toggleLabel}>Haptics On</Text>
-          </View>
-        </CollapsibleSection>
-
-        {/* App Icon Section - Android Only */}
-        {Platform.OS === 'android' && (
-          <CollapsibleSection
-            title="App Icon"
-            isExpanded={expandedSections.appIcon}
-            onToggle={() => toggleSection('appIcon')}
-            styles={styles}
-            theme={theme}>
-            <View style={styles.appIconHintRow}>
-              <View style={styles.appIconHintTextContainer}>
-                <Text style={styles.appIconHintTitle}>
-                  Blend in when you need to.
-                </Text>
-                <Text style={styles.appIconHintSubtitle}>
-                  Switch to the calculator icon when you want your wallet to
-                  look like just another app on your home screen.
-                </Text>
-              </View>
-            </View>
-            <Text style={styles.toggleDescription}>
-              Change the app's launcher icon on your device.
-            </Text>
-            <View style={styles.toggleContainer}>
-              <Text style={styles.toggleLabel}>Bold Wallet</Text>
-              <Switch
-                trackColor={{
-                  true: theme.colors.primary,
-                  false: theme.colors.secondary,
-                }}
-                thumbColor={theme.colors.accent}
-                onValueChange={async value => {
-                  try {
-                    HapticFeedback.light();
-                    const newIcon = value ? 'alternative' : 'default';
-
-                    // Check if IconChanger module is available
-                    if (!IconChanger || !IconChanger.changeIcon) {
-                      Alert.alert(
-                        'Error',
-                        'Icon switching is not available on this device.',
-                        [{text: 'OK'}],
-                      );
-                      return;
-                    }
-
-                    // Update UI state
-                    setSelectedIcon(newIcon);
-
-                    // Save preference
-                    await EncryptedStorage.setItem(
-                      'app_icon_preference',
-                      newIcon,
-                    );
-
-                    // Change the icon
-                    await IconChanger.changeIcon(newIcon);
-
-                    // Show success message
-                    const iconName =
-                      newIcon === 'alternative' ? 'QuickCalc' : 'Bold Wallet';
-                    Alert.alert(
-                      'Icon Changed',
-                      `App icon switched to ${iconName}.\n\nYou may need to refresh your launcher to see the change.`,
-                      [{text: 'OK'}],
-                    );
-                  } catch (error: any) {
-                    console.error('Error changing icon:', error);
-
-                    // Revert UI state on error
-                    setSelectedIcon(value ? 'default' : 'alternative');
-
-                    Alert.alert(
-                      'Error',
-                      error?.message ||
-                        'Failed to change app icon. Please try again.',
-                      [{text: 'OK'}],
-                    );
-                  }
-                }}
-                value={selectedIcon === 'alternative'}
-                disabled={selectedIcon === 'loading'}
-              />
-              <Text style={styles.toggleLabel}>QuickCalc</Text>
-            </View>
-          </CollapsibleSection>
-        )}
 
         {/* Legal Section */}
         <CollapsibleSection
@@ -2776,6 +2935,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   <TextInput
                     style={styles.passwordInput}
                     placeholder="Enter a strong password"
+                    placeholderTextColor={theme.colors.textSecondary + '80'}
                     secureTextEntry={!passwordVisible}
                     value={password}
                     onChangeText={handlePasswordChange}
@@ -2847,6 +3007,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                         styles.errorInput,
                     ]}
                     placeholder="Confirm your password"
+                    placeholderTextColor={theme.colors.textSecondary + '80'}
                     secureTextEntry={!confirmPasswordVisible}
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
@@ -2942,6 +3103,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             <TextInput
               style={styles.input}
               placeholder='"delete my wallet"'
+              placeholderTextColor={theme.colors.textSecondary + '80'}
               value={deleteInput}
               onChangeText={setDeleteInput}
             />

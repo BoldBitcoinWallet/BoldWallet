@@ -11,7 +11,7 @@ import LoadingScreen from './screens/LoadingScreen';
 import Zeroconf, {ImplType} from 'react-native-zeroconf';
 import ReactNativeBiometrics, {BiometryTypes} from 'react-native-biometrics';
 import DeviceInfo from 'react-native-device-info';
-import {ThemeProvider} from './theme';
+import {ThemeProvider, useTheme} from './theme';
 import {WalletProvider} from './context/WalletContext';
 import {UserProvider} from './context/UserContext';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
@@ -31,6 +31,7 @@ import {NativeModules} from 'react-native';
 import {dbg, pinRemoteIP, getPinnedRemoteIPs} from './utils';
 import MobilesPairing from './screens/MobilesPairing';
 import MobileNostrPairing from './screens/MobileNostrPairing';
+import {CustomHeader} from './components/Header';
 
 // Initialize react-native-screens for Fabric compatibility
 enableScreens(true);
@@ -40,6 +41,14 @@ const Stack = createNativeStackNavigator();
 const rnBiometrics = new ReactNativeBiometrics({allowDeviceCredentials: true});
 const zeroconf = new Zeroconf();
 const zeroOut = new Zeroconf();
+
+// Custom header components with configurable height
+const HomeHeader = (props: any) => <CustomHeader {...props} height={60} />;
+const PSBTHeader = (props: any) => <CustomHeader {...props} height={60} />;
+const SettingsHeader = (props: any) => <CustomHeader {...props} height={60} />;
+const WelcomeHeader = (props: any) => <CustomHeader {...props} height={60} />;
+const DevicesPairingHeader = (props: any) => <CustomHeader {...props} height={60} />;
+const NostrConnectHeader = (props: any) => <CustomHeader {...props} height={60} />;
 
 const App = () => {
   const [initialRoute, setInitialRoute] = useState<string | null>(null);
@@ -301,9 +310,13 @@ const App = () => {
       isAuthenticated,
     );
     return (
-      <ThemeProvider>
-        <LoadingScreen onRetry={handleRetryAuthentication} />
-      </ThemeProvider>
+      <ErrorBoundary>
+        <SafeAreaProvider>
+          <ThemeProvider>
+            <LoadingScreen onRetry={handleRetryAuthentication} />
+          </ThemeProvider>
+        </SafeAreaProvider>
+      </ErrorBoundary>
     );
   }
 
@@ -313,15 +326,33 @@ const App = () => {
     <ErrorBoundary>
       <SafeAreaProvider>
         <ThemeProvider>
-          <UserProvider>
-            <WalletProvider>
-              <View style={styles.navigationContainer}>
+          <AppContent initialRoute={initialRoute} />
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </ErrorBoundary>
+  );
+};
+
+const AppContent = ({initialRoute}: {initialRoute: string | null}) => {
+  const {theme} = useTheme();
+
+  const dynamicStyles = {
+    navigationContainer: {
+      ...styles.navigationContainer,
+      backgroundColor: theme.colors.background,
+    },
+  };
+
+  return (
+    <UserProvider>
+      <WalletProvider>
+        <View style={dynamicStyles.navigationContainer}>
                 <NavigationContainer>
                   <Stack.Navigator
-                    initialRouteName={initialRoute}
+                    initialRouteName={initialRoute || undefined}
                     screenOptions={{
                       headerShown: false,
-                      contentStyle: {backgroundColor: '#ffffff'},
+                      headerTitleAlign: 'left',
                     }}>
                     <Stack.Screen
                       name="PSBT"
@@ -329,7 +360,9 @@ const App = () => {
                       options={{
                         headerShown: true,
                         headerLeft: () => null,
-                        contentStyle: {backgroundColor: '#ffffff'},
+                        headerTitle: '',
+                        headerTitleAlign: 'left',
+                        header: PSBTHeader,
                       }}
                     />
                     <Stack.Screen
@@ -338,15 +371,17 @@ const App = () => {
                       options={{
                         headerShown: true,
                         headerLeft: () => null,
-                        contentStyle: {backgroundColor: '#ffffff'},
+                        headerTitle: '',
+                        headerTitleAlign: 'left',
+                        header: HomeHeader,
                       }}
                     />
                     <Stack.Screen
                       name="Welcome"
                       component={ShowcaseScreen}
                       options={{
-                        headerShown: true,
-                        contentStyle: {backgroundColor: '#ffffff'},
+                        header: WelcomeHeader,
+                        title: 'Welcome',
                       }}
                     />
                     <Stack.Screen
@@ -354,7 +389,8 @@ const App = () => {
                       component={WalletSettings}
                       options={{
                         headerShown: true,
-                        contentStyle: {backgroundColor: '#ffffff'},
+                        header: SettingsHeader,
+                        title: 'Settings',
                       }}
                     />
                     <Stack.Screen
@@ -362,7 +398,8 @@ const App = () => {
                       component={MobilesPairing}
                       options={{
                         headerShown: true,
-                        contentStyle: {backgroundColor: '#ffffff'},
+                        header: DevicesPairingHeader,
+                        title: 'Devices Pairing',
                       }}
                     />
                     <Stack.Screen
@@ -370,7 +407,8 @@ const App = () => {
                       component={MobileNostrPairing}
                       options={{
                         headerShown: true,
-                        contentStyle: {backgroundColor: '#ffffff'},
+                        header: NostrConnectHeader,
+                        title: 'Nostr Connect',
                       }}
                     />
                   </Stack.Navigator>
@@ -378,16 +416,13 @@ const App = () => {
               </View>
             </WalletProvider>
           </UserProvider>
-        </ThemeProvider>
-      </SafeAreaProvider>
-    </ErrorBoundary>
   );
 };
 
 const styles = StyleSheet.create({
   navigationContainer: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    // backgroundColor will be set dynamically based on theme
   },
 });
 

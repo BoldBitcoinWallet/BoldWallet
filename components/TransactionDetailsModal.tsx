@@ -9,9 +9,9 @@ import {
   Platform,
   Linking,
 } from 'react-native';
-import {themes} from '../theme';
+import {useTheme} from '../theme';
 import moment from 'moment';
-import {HapticFeedback} from '../utils';
+import {HapticFeedback, dbg} from '../utils';
 
 interface TransactionDetailsModalProps {
   visible: boolean;
@@ -47,12 +47,51 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   amounts,
   isBlurred = false,
 }) => {
+  const {theme} = useTheme();
+  const [currentBlockHeight, setCurrentBlockHeight] = React.useState<number | null>(null);
+  
+  const baseUrl = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
+  const explorerLink = transaction ? `${baseUrl}/tx/${transaction.txid}` : '';
+
+  // Fetch current block height to calculate confirmations
+  React.useEffect(() => {
+    if (visible && transaction?.status?.block_height) {
+      const fetchCurrentBlockHeight = async () => {
+        try {
+          // Use /api/blocks/tip/height endpoint (e.g., https://mempool.space/api/blocks/tip/height)
+          const apiUrl = baseApi.replace(/\/+$/, ''); // Remove trailing slashes
+          const response = await fetch(`${apiUrl}/blocks/tip/height`);
+          if (response.ok) {
+            const height = await response.text();
+            const blockHeight = parseInt(height.trim(), 10);
+            if (!isNaN(blockHeight) && blockHeight > 0) {
+              setCurrentBlockHeight(blockHeight);
+            }
+          }
+        } catch (error) {
+          // Silently fail - confirmations will just not be shown
+          dbg('Failed to fetch current block height:', error);
+        }
+      };
+      fetchCurrentBlockHeight();
+    }
+  }, [visible, transaction?.status?.block_height, baseApi]);
+
+  // Calculate confirmations if we have both block heights
+  const confirmations = React.useMemo(() => {
+    if (
+      transaction?.status?.block_height &&
+      currentBlockHeight &&
+      currentBlockHeight >= transaction.status.block_height
+    ) {
+      return currentBlockHeight - transaction.status.block_height + 1;
+    }
+    return null;
+  }, [transaction?.status?.block_height, currentBlockHeight]);
+
   if (!transaction || !status || !amounts) {
     return null;
   }
-
-  const baseUrl = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
-  const explorerLink = `${baseUrl}/tx/${transaction.txid}`;
 
   const formatBtcAmount = (amount: number) => {
     if (typeof amount !== 'number' || !Number.isFinite(amount)) {
@@ -120,12 +159,12 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     // Received transaction: collect ALL unique input addresses (these are the senders)
     // Exclude the user's own address (change) from the list since it's not a "from" address
     // For received transactions, show the output amount that went to user's address, not input amounts
-    const inputAddresses = transaction.vin
+    const inputAddresses: string[] = (transaction.vin
       ?.map((input: any) => input.prevout?.scriptpubkey_address)
-      .filter((addr: string) => addr && addr !== address) || []; // Exclude user's own address (change)
+      .filter((addr: any): addr is string => typeof addr === 'string' && addr !== address) || []) as string[]; // Exclude user's own address (change)
     
     // Remove duplicates
-    const uniqueAddresses = [...new Set(inputAddresses)];
+    const uniqueAddresses: string[] = [...new Set(inputAddresses)];
     
     // Calculate total received amount from outputs to user's address
     const totalReceivedSats = transaction.vout
@@ -136,7 +175,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     
     // Show all sender addresses with the total received amount
     // (We can't attribute portions to individual senders since Bitcoin doesn't work that way)
-    relevantAddresses = uniqueAddresses.map(addr => ({
+    relevantAddresses = uniqueAddresses.map((addr: string) => ({
       address: addr,
       amount: totalReceivedBTC, // Show the received output amount, not input amounts
     }));
@@ -150,6 +189,178 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       <Text style={styles.detailValue}>{value}</Text>
     </View>
   );
+
+  const styles = StyleSheet.create({
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    modalContent: {
+      backgroundColor: theme.colors.background,
+      borderRadius: 16,
+      width: '92%',
+      maxHeight: '85%',
+      elevation: 5,
+      shadowColor: theme.colors.shadowColor,
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: 0.2,
+      shadowRadius: 6,
+      borderWidth: 1,
+      borderColor: theme.colors.border + '40', // Add border for dark mode visibility
+    },
+    modalHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      padding: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border + '40', // Use theme border color
+    },
+    modalTitle: {
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text,
+    },
+    closeButton: {
+      padding: 8,
+    },
+    closeButtonText: {
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text,
+      opacity: 0.7,
+    },
+    scrollContent: {
+      padding: 16,
+    },
+    section: {
+      marginBottom: 24,
+    },
+    sectionTitle: {
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text,
+      marginBottom: 12,
+      letterSpacing: 0.2,
+    },
+    detailRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.background === '#121212' || theme.colors.background.includes('12')
+        ? theme.colors.border + '40' // More visible border in dark mode
+        : 'rgba(0, 0, 0, 0.04)', // Light mode border
+      gap: 12,
+    },
+    detailLabel: {
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textSecondary, // Use textSecondary for better readability
+      minWidth: 108,
+    },
+    detailValue: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+      color: theme.colors.text,
+      flexShrink: 1,
+    },
+    addressItem: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      marginBottom: 12,
+    },
+    addressIndex: {
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textSecondary, // Use textSecondary for better readability
+      marginRight: 8,
+      minWidth: 20,
+    },
+    txIdContainer: {
+      backgroundColor: theme.colors.background === '#121212' || theme.colors.background.includes('12')
+        ? theme.colors.cardBackground // Use cardBackground in dark mode
+        : 'rgba(0, 0, 0, 0.03)', // Light mode background
+      padding: 12,
+      borderRadius: 8,
+      flex: 1,
+      borderWidth: 1,
+      borderColor: theme.colors.background === '#121212' || theme.colors.background.includes('12')
+        ? theme.colors.border + '40' // More visible border in dark mode
+        : 'rgba(0,0,0,0.06)', // Light mode border
+      marginRight: 12,
+    },
+    addressAmountContainer: {
+      alignItems: 'flex-end',
+      justifyContent: 'center',
+      minWidth: 100,
+    },
+    addressAmount: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+      color: theme.colors.text,
+      marginBottom: 2,
+    },
+    addressAmountFiat: {
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+      color: theme.colors.textSecondary, // Use textSecondary for better readability
+    },
+    txId: {
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+      color: theme.colors.text,
+      marginBottom: 8,
+      flexWrap: 'wrap',
+    },
+    clickableText: {
+      color: theme.colors.text, // Use text color for better readability in dark mode
+      textDecorationLine: 'underline',
+      textDecorationColor: theme.colors.text, // Match underline color
+    },
+    statusText: {
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+    },
+    statusBadge: {
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+      borderWidth: 1,
+      alignSelf: 'flex-start',
+    },
+    statusBadgeConfirmed: {
+      backgroundColor: theme.colors.background === '#121212' || theme.colors.background.includes('12')
+        ? (theme.colors.received || '#66BB6A') + '26' // Dark mode with opacity
+        : 'rgba(46, 204, 113, 0.15)', // Light mode
+      borderColor: theme.colors.background === '#121212' || theme.colors.background.includes('12')
+        ? (theme.colors.received || '#66BB6A') + '80' // More visible border in dark mode
+        : 'rgba(46, 204, 113, 0.4)', // Light mode
+    },
+    statusBadgePending: {
+      backgroundColor: theme.colors.background === '#121212' || theme.colors.background.includes('12')
+        ? theme.colors.accent + '26' // Dark mode with opacity
+        : 'rgba(231, 76, 60, 0.15)', // Light mode
+      borderColor: theme.colors.background === '#121212' || theme.colors.background.includes('12')
+        ? theme.colors.accent + '80' // More visible border in dark mode
+        : 'rgba(231, 76, 60, 0.4)', // Light mode
+    },
+  });
 
   return (
     <Modal
@@ -186,8 +397,8 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                       styles.statusText,
                       {
                         color: status.confirmed
-                          ? themes.lightPolished.colors.primary
-                          : themes.lightPolished.colors.accent,
+                          ? theme.colors.received || theme.colors.secondary
+                          : theme.colors.accent,
                       },
                     ]}>
                     {status.text}
@@ -283,6 +494,12 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                 'Block Height',
                 transaction.status?.block_height || 'Pending',
               )}
+              {confirmations !== null && (
+                renderDetailRow(
+                  'Confirmations',
+                  confirmations.toString(),
+                )
+              )}
               {typeof transaction.fee === 'number' &&
                 Number.isFinite(transaction.fee) &&
                 renderDetailRow(
@@ -303,154 +520,5 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     </Modal>
   );
 };
-
-const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: themes.lightPolished.colors.background,
-    borderRadius: 16,
-    width: '92%',
-    maxHeight: '85%',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.06)',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: themes.lightPolished.colors.text,
-  },
-  closeButton: {
-    padding: 8,
-  },
-  closeButtonText: {
-    fontSize: 20,
-    color: themes.lightPolished.colors.text,
-    opacity: 0.7,
-  },
-  scrollContent: {
-    padding: 16,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: themes.lightPolished.colors.text,
-    marginBottom: 12,
-    letterSpacing: 0.2,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.04)',
-    gap: 12,
-  },
-  detailLabel: {
-    fontSize: 13,
-    color: themes.lightPolished.colors.text,
-    opacity: 0.6,
-    minWidth: 108,
-  },
-  detailValue: {
-    fontSize: 14,
-    color: themes.lightPolished.colors.text,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    flexShrink: 1,
-  },
-  addressItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  addressIndex: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: themes.lightPolished.colors.text,
-    opacity: 0.5,
-    marginRight: 8,
-    minWidth: 20,
-  },
-  txIdContainer: {
-    backgroundColor: 'rgba(0, 0, 0, 0.03)',
-    padding: 12,
-    borderRadius: 8,
-    flex: 1,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.06)',
-    marginRight: 12,
-  },
-  addressAmountContainer: {
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-    minWidth: 100,
-  },
-  addressAmount: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: themes.lightPolished.colors.text,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    marginBottom: 2,
-  },
-  addressAmountFiat: {
-    fontSize: 12,
-    color: themes.lightPolished.colors.text,
-    opacity: 0.6,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-  },
-  txId: {
-    fontSize: 13,
-    color: themes.lightPolished.colors.text,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    marginBottom: 8,
-    flexWrap: 'wrap',
-  },
-  clickableText: {
-    color: themes.lightPolished.colors.primary,
-    textDecorationLine: 'underline',
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    alignSelf: 'flex-start',
-  },
-  statusBadgeConfirmed: {
-    backgroundColor: 'rgba(46, 204, 113, 0.15)',
-    borderColor: 'rgba(46, 204, 113, 0.4)',
-  },
-  statusBadgePending: {
-    backgroundColor: 'rgba(231, 76, 60, 0.15)',
-    borderColor: 'rgba(231, 76, 60, 0.4)',
-  },
-});
 
 export default TransactionDetailsModal;

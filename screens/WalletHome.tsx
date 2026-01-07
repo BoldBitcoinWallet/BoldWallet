@@ -9,7 +9,6 @@ import {
   Platform,
   PermissionsAndroid,
   Modal,
-  DeviceEventEmitter,
   Linking,
   ActivityIndicator,
   Animated,
@@ -40,6 +39,7 @@ import {
   dbg,
   shorten,
   presentFiat,
+  formatBTC,
   getCurrencySymbol,
   HapticFeedback,
   getKeyshareLabel,
@@ -1133,72 +1133,45 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [isNpubQrVisible, setIsNpubQrVisible] = useState(false);
 
   const {theme} = useTheme();
+  const isDarkMode = theme.colors.background === '#121212' || theme.colors.background.includes('12');
   const styles = {
     ...createStyles(theme),
-    // Lock FAB
-    lockFAB: {
-      position: 'absolute' as const,
-      bottom: 24,
-      right: 20,
-      width: 56,
-      height: 56,
-      borderRadius: 28,
-      backgroundColor:
-        Platform.OS === 'android'
-          ? 'rgba(40, 40, 50, 0.92)' // More visible dark blue-gray background on Android
-          : 'rgba(0, 0, 0, 0.6)',
-      justifyContent: 'center' as const,
-      alignItems: 'center' as const,
-      elevation: 12,
-      shadowColor: '#000',
-      shadowOffset: {width: 0, height: 4},
-      shadowOpacity: 0.5,
-      shadowRadius: 10,
-      borderWidth: Platform.OS === 'android' ? 2 : 1,
-      borderColor:
-        Platform.OS === 'android'
-          ? 'rgba(255, 255, 255, 0.35)' // More visible border on Android
-          : 'rgba(255, 255, 255, 0.2)',
-      overflow: 'hidden' as const,
-    } as const,
-    lockFABIcon: {
-      width: 28,
-      height: 28,
-      tintColor: theme.colors.background,
-    } as const,
-    lockFABOverlay: {
-      position: 'absolute' as const,
-      width: '100%',
-      height: '100%',
-      borderRadius: 28,
-      backgroundColor: 'rgba(255, 255, 255, 0.08)',
-      borderWidth: 1,
-      borderColor: 'rgba(255, 255, 255, 0.15)',
-    } as const,
     sendButtonDisabled: {
       opacity: 0.6,
     } as const,
+    balanceContainer: {
+      ...createStyles(theme).balanceContainer,
+      backgroundColor: isDarkMode
+        ? 'rgba(0, 0, 0, 0.3)' // Darker background in dark mode
+        : 'rgba(255, 255, 255, 0.08)', // Original light mode background
+      borderColor: isDarkMode
+        ? theme.colors.border + '40' // Darker border in dark mode
+        : 'rgba(255, 255, 255, 0.15)', // Original light mode border
+    },
   };
 
   const headerRight = React.useCallback(
-    () => <HeaderRightButton navigation={navigation} />,
-    [navigation],
+    () => (
+      <HeaderRightButton
+        navigation={navigation}
+        btcPrice={btcPrice}
+        selectedCurrency={selectedCurrency}
+        onCurrencyPress={() => setIsCurrencySelectorVisible(true)}
+      />
+    ),
+    [navigation, btcPrice, selectedCurrency],
   );
 
-  const headerTitle = React.useCallback(() => <HeaderTitle />, []);
+  const headerLeft = React.useCallback(() => <HeaderTitle />, []);
 
   useEffect(() => {
     navigation.setOptions({
       headerRight,
-      headerTitle,
+      headerLeft,
+      headerTitle: '',
+      headerTitleAlign: 'left',
     });
-  }, [navigation, headerRight, headerTitle]);
-
-  useEffect(() => {
-    navigation.setOptions({
-      headerRight,
-    });
-  }, [navigation, headerRight]);
+  }, [navigation, headerRight, headerLeft]);
 
   const requestCameraPermission = async () => {
     if (Platform.OS === 'android') {
@@ -2196,33 +2169,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <View style={styles.contentContainer}>
         <View style={styles.walletHeader}>
-          <View style={styles.headerTop}>
-            <Image
-              source={require('../assets/bitcoin-logo.png')}
-              style={styles.btcLogo}
-            />
-            <TouchableOpacity
-              style={styles.priceContainer}
-              onPress={() => {
-                HapticFeedback.light();
-                setIsCurrencySelectorVisible(true);
-              }}
-              accessibilityLabel="Bitcoin price"
-              accessibilityHint="Double tap to change currency"
-              accessibilityRole="button">
-              <Text style={styles.btcPrice}>
-                {btcPrice ? presentFiat(btcPrice) : '-'}
-              </Text>
-              <Text style={styles.currencyBadge}>{selectedCurrency}</Text>
-            </TouchableOpacity>
-          </View>
           <View style={[styles.partyContainer, styles.rowFullWidth]}>
             <TouchableOpacity
               style={[
                 styles.addressTypeContainer,
                 styles.addressTypeClickable,
                 styles.flexOneMinWidthZero,
-                styles.partyGap,
               ]}
               onPress={async () => {
                 HapticFeedback.light();
@@ -2252,7 +2204,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 styles.addressTypeContainer,
                 styles.addressTypeClickable,
                 styles.flexOneMinWidthZero,
-                styles.partyGap,
               ]}
               onPress={() => {
                 HapticFeedback.light();
@@ -2263,7 +2214,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               accessibilityHint="Double tap to sign a Partially Signed Bitcoin Transaction"
               accessibilityRole="button">
               <View style={styles.columnCenter}>
-                <Text style={styles.partyLabel}>Sign • PSBT</Text>
+                <Text
+                  style={styles.partyLabel}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit>
+                  Sign • PSBT
+                </Text>
                 <View style={styles.rowCenterMarginTop2}>
                   <Image
                     source={require('../assets/cosign-icon.png')}
@@ -2283,7 +2239,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 styles.addressTypeContainer,
                 styles.addressTypeClickable,
                 styles.flexOneMinWidthZero,
-                styles.partyGap,
               ]}
               onPress={() => {
                 HapticFeedback.light();
@@ -2300,7 +2255,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               accessibilityHint="Double tap to change address format"
               accessibilityRole="button">
               <View style={styles.columnCenter}>
-                <Text style={styles.partyLabel}>Address Type</Text>
+                <Text
+                  style={styles.partyLabel}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit>
+                  Address Type
+                </Text>
                 <View style={styles.rowCenterMarginTop2}>
                   <Image
                     source={getAddressTypeIcon()}
@@ -2322,6 +2282,24 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             </TouchableOpacity>
           </View>
           <View style={styles.balanceContainer}>
+            {/* Network Badge and Provider Info */}
+            <View style={styles.balanceHeaderRow}>
+              <View style={styles.networkBadge}>
+                <Text style={styles.networkBadgeText}>
+                  {network === 'mainnet' ? 'MAINNET' : 'TESTNET'}
+                </Text>
+              </View>
+              <Text style={styles.providerValueCompact} numberOfLines={1}>
+                {apiBase
+                  ? (() => {
+                      const cleanUrl = apiBase
+                        .replace('https://', '')
+                        .replace('/api', '');
+                      return cleanUrl;
+                    })()
+                  : 'Loading...'}
+              </Text>
+            </View>
             {balanceError && !isBlurred ? (
               <View style={styles.balanceErrorContainer}>
                 <Text style={styles.balanceErrorText}>{balanceError}</Text>
@@ -2334,7 +2312,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                     {
                       opacity: balanceUpdateAnimation,
                     },
-                  ]}>
+                  ]}
+                  pointerEvents="box-none">
                   <TouchableOpacity
                     style={styles.balanceTouchable}
                     onPress={() => {
@@ -2345,10 +2324,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                     accessibilityLabel={`Bitcoin balance: ${isBlurred ? 'hidden' : `${balanceBTC || '0.00000000'} BTC`}`}
                     accessibilityHint="Double tap to toggle balance visibility"
                     accessibilityRole="button">
-                    {isBalanceLoading && !isBlurred ? (
+                    {isBalanceLoading && !isBlurred && !isRefreshing ? (
                       <ActivityIndicator
                         size="small"
-                        color="#fff"
+                        color={theme.colors.white}
                         style={styles.balanceLoadingIndicator}
                       />
                     ) : (
@@ -2356,7 +2335,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                         style={[styles.balanceBTC, isBlurred && styles.blurredText]}>
                         {isBlurred
                           ? '* * * * * *'
-                          : `${balanceBTC || '0.00000000'} BTC`}
+                          : `${formatBTC(balanceBTC)} BTC`}
                       </Text>
                     )}
                     <Image
@@ -2378,7 +2357,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                       {
                         opacity: balanceUpdateAnimation,
                       },
-                    ]}>
+                    ]}
+                    pointerEvents="box-none">
                     <TouchableOpacity
                       style={styles.balanceTouchable}
                       onPress={() => {
@@ -2389,10 +2369,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                       accessibilityLabel={`Fiat balance: ${isBlurred ? 'hidden' : `${getCurrencySymbol(selectedCurrency)}${presentFiat(balanceFiat)}`}`}
                       accessibilityHint="Double tap to toggle balance visibility"
                       accessibilityRole="button">
-                      {isBalanceLoading && !isBlurred ? (
+                      {isBalanceLoading && !isBlurred && !isRefreshing ? (
                         <ActivityIndicator
                           size="small"
-                          color="#fff"
+                          color={theme.colors.white}
                           style={styles.balanceLoadingIndicator}
                         />
                       ) : (
@@ -2417,7 +2397,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 styles.actionButton,
                 styles.sendButton,
                 styles.flexOneMinWidthZero,
-                styles.partyGap,
                 isCheckingBalanceForSend && styles.sendButtonDisabled,
               ]}
               onPress={async () => {
@@ -2451,6 +2430,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               }}
               disabled={isCheckingBalanceForSend}
               activeOpacity={0.7}
+              delayPressIn={0}
+              delayPressOut={0}
+              hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
               accessibilityLabel={isCheckingBalanceForSend ? 'Checking balance' : 'Send Bitcoin'}
               accessibilityHint="Double tap to send Bitcoin. Checking balance if needed."
               accessibilityRole="button"
@@ -2474,10 +2456,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               style={[
                 styles.actionButton,
                 styles.addressTypeModalButton,
-                styles.partyGap,
               ]}
               onPress={handleScanQRForSend}
               activeOpacity={0.8}
+              delayPressIn={0}
+              delayPressOut={0}
+              hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
               accessibilityLabel="Scan QR code"
               accessibilityHint="Double tap to scan QR code for sending Bitcoin"
               accessibilityRole="button">
@@ -2493,12 +2477,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 styles.actionButton,
                 styles.receiveButton,
                 styles.flexOneMinWidthZero,
-                styles.partyGap,
               ]}
               onPress={() => {
                 HapticFeedback.medium();
                 setIsReceiveModalVisible(true);
               }}
+              activeOpacity={0.7}
+              delayPressIn={0}
+              delayPressOut={0}
+              hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
               accessibilityLabel="Receive Bitcoin"
               accessibilityHint="Double tap to view your Bitcoin address and QR code"
               accessibilityRole="button">
@@ -2533,28 +2520,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         }
       />
 
-      {/* Provider Information Row */}
-      <View style={styles.providerRow}>
-        <View style={styles.providerItem}>
-          <View style={styles.providerLeft}>
-            <View style={styles.networkBadge}>
-              <Text style={styles.networkBadgeText}>
-                {network === 'mainnet' ? 'MAINNET' : 'TESTNET'}
-              </Text>
-            </View>
-          </View>
-          <Text style={styles.providerValue} numberOfLines={1}>
-            {apiBase
-              ? (() => {
-                  const cleanUrl = apiBase
-                    .replace('https://', '')
-                    .replace('/api', '');
-                  return cleanUrl;
-                })()
-              : 'Loading...'}
-          </Text>
-        </View>
-      </View>
 
       <View style={styles.transactionListContainer}>
         <TransactionList
@@ -2570,24 +2535,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           isBlurred={isBlurred}
         />
       </View>
-      {/* Lock FAB Button - Bottom Right */}
-      {isInitialized && address && (
-        <TouchableOpacity
-          style={styles.lockFAB}
-          onPress={() => {
-            HapticFeedback.light();
-            // Emit a reload event to App.tsx to trigger authentication lock
-            DeviceEventEmitter.emit('app:reload');
-          }}
-          activeOpacity={0.7}>
-          {Platform.OS === 'android' && <View style={styles.lockFABOverlay} />}
-          <Image
-            source={require('../assets/locker-icon.png')}
-            style={styles.lockFABIcon}
-            resizeMode="contain"
-          />
-        </TouchableOpacity>
-      )}
       {/* Scan QR Button - Hidden, accessible via SendBitcoinModal or other means */}
       {/* QR Scanner Modal */}
       <QRScanner
@@ -2670,7 +2617,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               />
               <View style={styles.addressTypeContent}>
                 <Text style={styles.addressTypeLabel} numberOfLines={1}>
-                  Native Segwit (Bech32)
+                  Segwit Native (Bech32)
                 </Text>
                 <View style={styles.addressTypeLabelRow}>
                   <Text style={styles.addressTypeValue} numberOfLines={1}>
@@ -2736,7 +2683,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         currentCurrency={selectedCurrency}
         availableCurrencies={priceData}
       />
-      <Toast />
+      <View style={styles.toastContainer}>
+        <Toast />
+      </View>
       {isSendModalVisible && (
         <SendBitcoinModal
           visible={isSendModalVisible}

@@ -1,5 +1,76 @@
 # Changelog
 
+## [2.1.8] - 2026-01-07
+
+### Added
+- **Dark Mode Support**: Complete dark mode implementation with system theme detection
+  - New theme system with light and dark themes (`theme/themes.ts`)
+  - Theme context provider with OS-based, light, and dark mode options (`theme/context.tsx`)
+  - Automatic system theme detection and persistence of user preference
+  - Dark mode optimized color palette with improved contrast and readability
+  - Support for theme mode switching in wallet settings
+- **Wallet Home UI Revamp**: Redesigned wallet home screen with enhanced visual hierarchy
+  - Improved balance container styling with dark mode support
+  - Enhanced glassmorphism effects for better visual depth
+  - Updated wallet header with better contrast and visibility
+  - Refined action button styling and positioning
+- **Enhanced Header Component**: New header system with integrated features
+  - BTC price display in header with currency selector integration
+  - Custom header components with configurable height
+  - Improved header button styling with dark mode support
+  - Better visual integration of price and currency information
+- **iOS Framework dSYM Generation**: Automated dSYM generation for crash reporting
+  - New script (`ios/scripts/generate_framework_dsyms.sh`) for generating dSYM files
+  - Automatic dSYM generation for Tss.framework and hermesvm.framework
+  - Integrated into Xcode build process for release builds
+  - Improved crash symbolication support for embedded frameworks
+- **Dark Mode Assets**: New inverted icon assets for dark mode compatibility
+  - `bold-icon-inverted.png` for dark mode header display
+  - `icon-inverted.png` for dark mode app icon variants
+
+### Changed
+- **Theme System Refactoring**: Complete theme architecture overhaul
+  - Migrated from single `theme.js` to modular theme system (`theme/` directory)
+  - Separated theme types, definitions, context, and utilities
+  - Improved type safety with TypeScript theme definitions
+  - Better theme mode management with OS default support
+- **UI Components Dark Mode Support**: All major components updated for dark mode
+  - `TransactionList` and `TransactionListSkeleton` with dark mode styling
+  - `TransactionDetailsModal` with improved dark mode contrast
+  - `TransportModeSelector` with theme-aware styling
+  - `WalletSkeleton` with dark mode loading states
+  - `QRScanner` components with dark mode support
+  - `CurrencySelector` with theme-aware UI
+  - `LegalModal` and `LegacyWalletModal` with dark mode styling
+- **Wallet Settings Theme Integration**: Theme selector in wallet settings
+  - New theme mode selector (OS Default, Light, Dark)
+  - Theme preference persistence across app sessions
+  - Legacy theme migration support
+- **Docker Build Optimizations**: Improved Docker build process
+  - Fixed working directory context in Dockerfile
+  - Better path handling for Go module downloads
+  - Improved build reliability and consistency
+
+### Fixed
+- **Loading Screen Theme Support**: Fixed loading screen background for dark mode
+- **Error Boundary Theme Integration**: Updated error boundary with theme support
+- **Cache Indicator Dark Mode**: Improved cache indicator visibility in dark mode
+- **Showcase Screen Theme Support**: Updated showcase screen with dark mode styling
+- **PSBT Screen Theme Integration**: Enhanced PSBT screen with theme-aware components
+- **Receive Modal Dark Mode**: Improved receive modal styling for dark mode
+- **Send Bitcoin Modal Theme Support**: Enhanced send modal with dark mode styling
+
+### Technical Details
+- **Theme Architecture**: New `theme/` directory structure
+  - `types.ts`: TypeScript type definitions for themes
+  - `themes.ts`: Light and dark theme definitions
+  - `context.tsx`: React context for theme management
+  - `utils.ts`: Theme utility functions
+  - `index.ts`: Theme module exports
+- **Component Updates**: 39 files changed with 2,967 insertions and 1,522 deletions
+- **Build System**: iOS Xcode project updated with dSYM generation build phase
+- **Asset Management**: New inverted icon assets for dark mode compatibility
+
 ## [2.1.7] - 2026-01-05
 
 ### Added

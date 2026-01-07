@@ -1215,7 +1215,7 @@ const createStyles = (theme: any) =>
       width: 24,
       height: 24,
       marginRight: 10,
-      tintColor: theme.colors.primary,
+      tintColor: theme.colors.text, // Use text color for better visibility in dark mode
     },
     headerTitle: {
       fontSize: 20,
@@ -1262,7 +1262,7 @@ const createStyles = (theme: any) =>
       width: 24,
       height: 24,
       marginRight: 12,
-      tintColor: theme.colors.primary,
+      tintColor: theme.colors.text, // Use text color for better visibility in dark mode
     },
     importButtonText: {
       fontSize: 16,
@@ -1454,7 +1454,7 @@ const createStyles = (theme: any) =>
       width: 20,
       height: 20,
       marginRight: 8,
-      tintColor: theme.colors.primary,
+      tintColor: theme.colors.text, // Use text color for better visibility in dark mode
     },
     flowItemInfo: {
       flex: 1,

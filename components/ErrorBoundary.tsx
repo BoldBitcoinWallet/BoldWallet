@@ -29,25 +29,29 @@ const ErrorFallback: React.FC<{error?: Error; resetError: () => void}> = ({
       padding: 20,
     },
     title: {
-      fontSize: 24,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.['3xl'] || 24,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 16,
       textAlign: 'center',
     },
     message: {
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 20,
       textAlign: 'center',
       opacity: 0.8,
     },
     errorDetails: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.monospace || 'monospace',
       color: '#ff6b6b',
       marginBottom: 20,
       textAlign: 'center',
-      fontFamily: 'monospace',
     },
     button: {
       backgroundColor: theme.colors.primary,
@@ -57,9 +61,10 @@ const ErrorFallback: React.FC<{error?: Error; resetError: () => void}> = ({
       marginTop: 10,
     },
     buttonText: {
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: '#fff',
-      fontSize: 16,
-      fontWeight: '600',
     },
   });
 
