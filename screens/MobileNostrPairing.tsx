@@ -2160,12 +2160,12 @@ const MobileNostrPairing = ({navigation}: any) => {
       return theme.colors.danger;
     }
     if (passwordStrength <= 2) {
-      return '#FFA500';
+      return theme.colors.warning;
     }
     if (passwordStrength <= 3) {
-      return '#FFD700';
+      return theme.colors.warningLight;
     }
-    return '#4CAF50';
+    return theme.colors.received;
   };
 
   const getPasswordStrengthText = () => {
@@ -2597,7 +2597,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       color: theme.colors.text,
       backgroundColor:
         theme.colors.background === '#ffffff'
-          ? 'rgba(0,0,0,0.02)'
+          ? theme.colors.shadowColor + '05' // ~2% opacity
           : theme.colors.cardBackground,
     },
     inputFocused: {
@@ -2607,7 +2607,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           : theme.colors.accent,
       backgroundColor:
         theme.colors.background === '#ffffff'
-          ? 'rgba(0,0,0,0.03)'
+          ? theme.colors.shadowColor + '08' // ~3% opacity
           : theme.colors.cardBackground,
     },
     inputWithIcons: {
@@ -2808,7 +2808,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     checkIconLeft: {
       width: 20,
       height: 20,
-      tintColor: '#4CAF50',
+      tintColor: theme.colors.received,
       marginRight: 8,
     },
     qrContainer: {
@@ -3016,7 +3016,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       padding: 12,
       backgroundColor:
         theme.colors.background === '#ffffff'
-          ? 'rgba(0,0,0,0.02)'
+          ? theme.colors.shadowColor + '05' // ~2% opacity
           : theme.colors.cardBackground,
       borderRadius: 8,
     },
@@ -3028,7 +3028,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.75)',
+      backgroundColor: theme.colors.modalBackdrop,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -3037,7 +3037,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderRadius: 16,
       width: '85%',
       maxWidth: 400,
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 10},
       shadowOpacity: 0.3,
       shadowRadius: 20,
@@ -3262,8 +3262,8 @@ const MobileNostrPairing = ({navigation}: any) => {
       lineHeight: 20,
     },
     inputError: {
-      borderColor: theme.colors.danger || '#FF3B30',
-      backgroundColor: (theme.colors.danger || '#FF3B30') + '10',
+      borderColor: theme.colors.danger,
+      backgroundColor: theme.colors.danger + '1A', // ~10% opacity
     },
     inputSuccess: {
       borderColor:
@@ -3282,14 +3282,14 @@ const MobileNostrPairing = ({navigation}: any) => {
     errorIndicator: {
       marginTop: 8,
       padding: 8,
-      backgroundColor: (theme.colors.danger || '#FF3B30') + '10',
+      backgroundColor: theme.colors.danger + '1A', // ~10% opacity
       borderRadius: 6,
       borderLeftWidth: 3,
-      borderLeftColor: theme.colors.danger || '#FF3B30',
+      borderLeftColor: theme.colors.danger,
     },
     errorText: {
       fontSize: 12,
-      color: theme.colors.danger || '#FF3B30',
+      color: theme.colors.danger,
       fontWeight: '500',
     },
     validatingIndicator: {
@@ -3347,7 +3347,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       width: '90%',
       maxWidth: 400,
       alignItems: 'center',
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 8},
       shadowOpacity: 0.25,
       shadowRadius: 16,
@@ -3833,7 +3833,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       padding: 24,
       width: '90%',
       maxWidth: 400,
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 10},
       shadowOpacity: 0.3,
       shadowRadius: 20,
@@ -3930,7 +3930,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     errorInput: {
-      borderColor: theme.colors.danger || '#FF3B30',
+      borderColor: theme.colors.danger,
     },
     modalActions: {
       flexDirection: 'row',
@@ -6141,7 +6141,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           width: 20,
                           height: 20,
                           marginRight: 8,
-                          tintColor: '#fff',
+                          tintColor: theme.colors.white,
                         }}
                         resizeMode="contain"
                       />

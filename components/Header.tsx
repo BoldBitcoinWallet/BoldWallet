@@ -33,39 +33,65 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
 }) => {
   const {theme} = useTheme();
 
-  const networkBadgeStyle: any = {
-    backgroundColor: theme.colors.background,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
+  const isDarkMode =
+    theme.colors.background === '#121212' ||
+    theme.colors.background.includes('12');
+
+  // Single bordered container for both network and provider - 2 lines layout
+  const containerStyle: any = {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 0,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderColor: isDarkMode
+      ? theme.colors.border + '80'
+      : theme.colors.blackOverlay10,
+    backgroundColor: isDarkMode
+      ? theme.colors.cardBackground
+      : theme.colors.blackOverlay06,
+    height: 36, // Match price button and lock button height
+    maxWidth: 140, // Reduced to prevent overlap with left/right buttons
+    flexShrink: 1, // Allow shrinking if needed
+    flexGrow: 0, // Don't grow beyond maxWidth
+    alignSelf: 'center', // Center within parent
+  };
+
+  const networkBadgeStyle: any = {
+    backgroundColor: theme.colors.background === '#ffffff'
+      ? theme.colors.primary + '40'
+      : theme.colors.whiteOverlay15,
+    paddingHorizontal: 6,
+    borderRadius: 4,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
     height: 16,
+    marginTop: -4,
     justifyContent: 'center',
     alignItems: 'center',
+    flexShrink: 0, // Don't shrink the badge
   };
 
   const networkBadgeTextStyle: any = {
     fontSize: 8,
     fontWeight: '700',
-    color: theme.colors.text,
-    letterSpacing: 0.3,
+    color: theme.colors.background === '#ffffff'
+      ? theme.colors.white
+      : theme.colors.text,
+    letterSpacing: 0.2,
     lineHeight: 10,
   };
 
   const providerTextStyle: any = {
     fontSize: 9,
     color: theme.colors.textSecondary,
-    lineHeight: 11,
-    maxWidth: 200,
-  };
-
-  const networkProviderContainerStyle: any = {
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
-    height: 36,
+    lineHeight: 14,
+    flexShrink: 1, // Allow text to shrink
+    textAlign: 'center',
+    maxWidth: 120, // Limit provider text width to prevent overflow
   };
 
   const cleanProviderUrl = apiBase
@@ -77,7 +103,7 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
   }
 
   return (
-    <View style={networkProviderContainerStyle}>
+    <View style={containerStyle}>
       {network && (
         <View style={networkBadgeStyle}>
           <Text style={networkBadgeTextStyle}>
@@ -114,13 +140,13 @@ export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
       theme.colors.background === '#121212' ||
       theme.colors.background.includes('12')
         ? theme.colors.cardBackground
-        : 'rgba(0, 0, 0, 0.06)',
+        : theme.colors.blackOverlay06, // Light mode background
     borderWidth: 1,
     borderColor:
       theme.colors.background === '#121212' ||
       theme.colors.background.includes('12')
         ? theme.colors.border + '80'
-        : 'rgba(0, 0, 0, 0.1)',
+        : theme.colors.blackOverlay10, // Light mode border
     paddingHorizontal: 14,
     paddingVertical: 0,
     borderRadius: 10,
@@ -238,13 +264,13 @@ export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
       theme.colors.background === '#121212' ||
       theme.colors.background.includes('12')
         ? theme.colors.cardBackground // Use cardBackground in dark mode
-        : 'rgba(0, 0, 0, 0.06)', // Light mode background
+        : theme.colors.blackOverlay06, // Light mode background
     borderWidth: 1,
     borderColor:
       theme.colors.background === '#121212' ||
       theme.colors.background.includes('12')
         ? theme.colors.border + '80' // More visible border in dark mode
-        : 'rgba(0, 0, 0, 0.1)', // Light mode border
+        : theme.colors.blackOverlay10, // Light mode border
     paddingHorizontal: 14,
     paddingVertical: 0,
     borderRadius: 10,
@@ -291,9 +317,9 @@ export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
     ...styles.settingsButton,
     backgroundColor: isDarkMode
       ? theme.colors.cardBackground
-      : 'rgba(0, 0, 0, 0.06)',
+      : theme.colors.blackOverlay06,
     borderWidth: 1,
-    borderColor: isDarkMode ? theme.colors.border + '80' : 'rgba(0, 0, 0, 0.1)',
+    borderColor: isDarkMode ? theme.colors.border + '80' : theme.colors.blackOverlay10,
   };
 
   return (
@@ -381,8 +407,7 @@ export const HeaderTitle: React.FC<{title?: string}> = ({title}) => {
 
   // Use inverted icon in dark mode
   const isDarkMode =
-    theme.colors.background === '#121212' ||
-    theme.colors.background.includes('12');
+    theme.colors.background !== '#ffffff';
   const iconSource = isDarkMode
     ? require('../assets/icon-inverted.png') // Use inverted icon in dark mode
     : require('../assets/icon.png'); // Original icon in light mode

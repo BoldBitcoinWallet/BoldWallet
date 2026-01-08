@@ -66,7 +66,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
   const styles = StyleSheet.create({
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.75)',
+      backgroundColor: theme.colors.modalBackdrop,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -75,7 +75,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       borderRadius: 16,
       width: '85%',
       maxWidth: 420,
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 10},
       shadowOpacity: 0.3,
       shadowRadius: 20,
@@ -92,7 +92,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       borderBottomWidth: 1,
       borderBottomColor:
         theme.colors.background === '#ffffff'
-          ? 'rgba(0,0,0,0.05)'
+          ? theme.colors.shadowColor + '0D' // ~5% opacity
           : theme.colors.border + '40',
     },
     modalHeaderIconImage: {

@@ -41,7 +41,7 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
       marginBottom: 16,
       lineHeight: 20,
       textAlign: 'left' as const,
-      color: theme.colors.danger || '#ff6b6b',
+      color: theme.colors.danger,
     } as const,
     legacyModalNoteText: {
       fontSize: theme.fontSizes?.base || 13,

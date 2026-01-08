@@ -79,6 +79,36 @@ export const lightTheme: Theme = {
     mediumGray: '#666',
     white: '#fff',
     shadowColor: '#000',
+    bitcoinOrange: '#F7931A',
+    warning: '#FFA500',
+    warningLight: '#FFD700',
+    warningAccent: '#FF6B35',
+    success: '#34C759',
+    successLight: '#66BB6A',
+    skeletonGray: '#e9ecef',
+    // Overlay colors for glassmorphism effects
+    blackOverlay05: 'rgba(0, 0, 0, 0.05)',
+    blackOverlay06: 'rgba(0, 0, 0, 0.06)',
+    blackOverlay10: 'rgba(0, 0, 0, 0.1)',
+    blackOverlay30: 'rgba(0, 0, 0, 0.3)',
+    whiteOverlay08: 'rgba(255, 255, 255, 0.08)',
+    whiteOverlay10: 'rgba(255, 255, 255, 0.1)',
+    whiteOverlay12: 'rgba(255, 255, 255, 0.12)',
+    whiteOverlay15: 'rgba(255, 255, 255, 0.15)',
+    whiteOverlay18: 'rgba(255, 255, 255, 0.18)',
+    whiteOverlay20: 'rgba(255, 255, 255, 0.2)',
+    whiteOverlay25: 'rgba(255, 255, 255, 0.25)',
+    whiteOverlay30: 'rgba(255, 255, 255, 0.3)',
+    primaryOverlay95: 'rgba(26, 43, 60, 0.95)',
+    blackOverlay02: 'rgba(0, 0, 0, 0.02)',
+    blackOverlay03: 'rgba(0, 0, 0, 0.03)',
+    blackOverlay04: 'rgba(0, 0, 0, 0.04)',
+    blackOverlay50: 'rgba(0, 0, 0, 0.5)', // For modal overlays
+    // Status color overlays
+    receivedOverlay15: 'rgba(46, 204, 113, 0.15)',
+    receivedOverlay40: 'rgba(46, 204, 113, 0.4)',
+    dangerOverlay15: 'rgba(231, 76, 60, 0.15)',
+    dangerOverlay40: 'rgba(231, 76, 60, 0.4)',
   },
   fontSizes,
   fontWeights,
@@ -129,6 +159,36 @@ export const darkTheme: Theme = {
     mediumGray: '#9E9E9E', // Medium gray
     white: '#FFFFFF', // White
     shadowColor: '#000', // Black shadow
+    bitcoinOrange: '#F7931A', // Bitcoin orange (same in both themes)
+    warning: '#FFA500', // Orange for warnings
+    warningLight: '#FFD700', // Lighter orange
+    warningAccent: '#FF6B35', // Accent orange
+    success: '#34C759', // iOS success green
+    successLight: '#66BB6A', // Lighter success green
+    skeletonGray: '#2a2a2a', // Dark gray for skeleton loaders in dark mode
+    // Overlay colors for glassmorphism effects (same values for dark mode)
+    blackOverlay05: 'rgba(0, 0, 0, 0.05)',
+    blackOverlay06: 'rgba(0, 0, 0, 0.06)',
+    blackOverlay10: 'rgba(0, 0, 0, 0.1)',
+    blackOverlay30: 'rgba(0, 0, 0, 0.3)',
+    whiteOverlay08: 'rgba(255, 255, 255, 0.08)',
+    whiteOverlay10: 'rgba(255, 255, 255, 0.1)',
+    whiteOverlay12: 'rgba(255, 255, 255, 0.12)',
+    whiteOverlay15: 'rgba(255, 255, 255, 0.15)',
+    whiteOverlay18: 'rgba(255, 255, 255, 0.18)',
+    whiteOverlay20: 'rgba(255, 255, 255, 0.2)',
+    whiteOverlay25: 'rgba(255, 255, 255, 0.25)',
+    whiteOverlay30: 'rgba(255, 255, 255, 0.3)',
+    primaryOverlay95: 'rgba(26, 43, 60, 0.95)',
+    blackOverlay02: 'rgba(0, 0, 0, 0.02)',
+    blackOverlay03: 'rgba(0, 0, 0, 0.03)',
+    blackOverlay04: 'rgba(0, 0, 0, 0.04)',
+    blackOverlay50: 'rgba(0, 0, 0, 0.5)', // For modal overlays
+    // Status color overlays
+    receivedOverlay15: 'rgba(46, 204, 113, 0.15)',
+    receivedOverlay40: 'rgba(46, 204, 113, 0.4)',
+    dangerOverlay15: 'rgba(231, 76, 60, 0.15)',
+    dangerOverlay40: 'rgba(231, 76, 60, 0.4)',
   },
   fontSizes,
   fontWeights,
@@ -181,6 +241,27 @@ export const themes = {
       mediumGray: '#666',
       white: '#fff',
       shadowColor: '#000',
+      bitcoinOrange: '#F7931A',
+      warning: '#FFA500',
+      warningLight: '#FFD700',
+      warningAccent: '#FF6B35',
+      success: '#34C759',
+      successLight: '#66BB6A',
+      skeletonGray: '#e9ecef',
+      // Overlay colors for glassmorphism effects
+      blackOverlay05: 'rgba(0, 0, 0, 0.05)',
+      blackOverlay06: 'rgba(0, 0, 0, 0.06)',
+      blackOverlay10: 'rgba(0, 0, 0, 0.1)',
+      blackOverlay30: 'rgba(0, 0, 0, 0.3)',
+      whiteOverlay08: 'rgba(255, 255, 255, 0.08)',
+      whiteOverlay10: 'rgba(255, 255, 255, 0.1)',
+      whiteOverlay12: 'rgba(255, 255, 255, 0.12)',
+      whiteOverlay15: 'rgba(255, 255, 255, 0.15)',
+      whiteOverlay18: 'rgba(255, 255, 255, 0.18)',
+      whiteOverlay20: 'rgba(255, 255, 255, 0.2)',
+      whiteOverlay25: 'rgba(255, 255, 255, 0.25)',
+      whiteOverlay30: 'rgba(255, 255, 255, 0.3)',
+      primaryOverlay95: 'rgba(26, 43, 60, 0.95)',
     },
     fontSizes,
     fontWeights,

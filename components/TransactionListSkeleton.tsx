@@ -148,7 +148,7 @@ const TransactionListSkeleton: React.FC = () => {
   const itemBg = isDarkMode ? theme.colors.cardBackground : '#ffffff';
   const borderColor = isDarkMode
     ? theme.colors.border + '40'
-    : 'rgba(0,0,0,0.03)';
+    : theme.colors.blackOverlay03;
   const shimmerColor = isDarkMode
     ? theme.colors.disabled + '60'
     : '#e9ecef';

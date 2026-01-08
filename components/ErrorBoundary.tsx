@@ -49,7 +49,7 @@ const ErrorFallback: React.FC<{error?: Error; resetError: () => void}> = ({
       fontSize: theme.fontSizes?.sm || 12,
       fontWeight: (theme.fontWeights?.normal || '400') as any,
       fontFamily: theme.fontFamilies?.monospace || 'monospace',
-      color: '#ff6b6b',
+      color: theme.colors.danger,
       marginBottom: 20,
       textAlign: 'center',
     },
@@ -64,7 +64,7 @@ const ErrorFallback: React.FC<{error?: Error; resetError: () => void}> = ({
       fontSize: theme.fontSizes?.lg || 16,
       fontWeight: (theme.fontWeights?.semibold || '600') as any,
       fontFamily: theme.fontFamilies?.regular,
-      color: '#fff',
+      color: theme.colors.white,
     },
   });
 

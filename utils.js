@@ -293,7 +293,7 @@ export const formatBTC = (btcAmount, options = {}) => {
   const [wholePart, decimalPart = ''] = amountStr.split('.');
 
   // Use thin space (U+2009) as thousand separator - narrower than regular space
-  const thinSpace = ' \u200A';
+  const thinSpace = '\u200A';
 
   // Format whole part: standard thousand separators (every 3 digits from right) using thin space
   const formattedWhole = Number(wholePart).toLocaleString('en-US').replace(/,/g, thinSpace);
@@ -379,6 +379,28 @@ export const formatBTC = (btcAmount, options = {}) => {
   }
 
   return `${formattedWhole}.${formattedDecimal}`;
+};
+
+/**
+ * Formats satoshis with thousand separators
+ * @param {string|number} satsAmount - The satoshi amount to format
+ * @returns {string} Formatted satoshi amount
+ */
+export const formatSats = (satsAmount) => {
+  if (satsAmount === undefined || satsAmount === null || satsAmount === '') {
+    return '0';
+  }
+
+  const amountStr = String(satsAmount);
+  const amount = parseFloat(amountStr);
+  
+  if (isNaN(amount) || amount < 0) {
+    return '0';
+  }
+
+  // Use thin space (U+2009) as thousand separator
+  const thinSpace = ' \u200A';
+  return Math.floor(amount).toLocaleString('en-US').replace(/,/g, thinSpace);
 };
 
 // Add currency symbol mapping

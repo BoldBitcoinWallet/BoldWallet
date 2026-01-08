@@ -572,7 +572,9 @@ const ShowcaseScreen = ({navigation}: any) => {
       fontWeight: '500',
     },
     modalSubmitButtonText: {
-      color: theme.colors.background,
+      color: theme.colors.background === '#ffffff'
+        ? theme.colors.background
+        : theme.colors.white,
       fontSize: 14,
       fontWeight: '600',
     },
@@ -590,7 +592,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       tintColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.white
-          : theme.colors.background,
+          : theme.colors.white,
     },
     modeOptionsContainer: {
       paddingVertical: 8,

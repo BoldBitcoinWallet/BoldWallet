@@ -396,12 +396,12 @@ const MobilesPairing = ({navigation}: any) => {
       return theme.colors.danger;
     }
     if (passwordStrength <= 2) {
-      return '#FFA500';
+      return theme.colors.warning;
     }
     if (passwordStrength <= 3) {
-      return '#FFD700';
+      return theme.colors.warningLight;
     }
-    return '#4CAF50';
+    return theme.colors.received;
   };
 
   const getPasswordStrengthText = () => {
@@ -1884,7 +1884,7 @@ const MobilesPairing = ({navigation}: any) => {
       marginBottom: 4,
       backgroundColor:
         theme.colors.background === '#ffffff'
-          ? 'rgba(0, 0, 0, 0.04)'
+          ? theme.colors.shadowColor + '0A' // ~4% opacity
           : theme.colors.cardBackground,
       borderWidth: 1,
       borderColor:
@@ -2527,7 +2527,7 @@ const MobilesPairing = ({navigation}: any) => {
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
-      backgroundColor: 'rgba(0, 0, 0, 0.85)',
+      backgroundColor: theme.colors.modalBackdrop,
     },
     modalContent: {
       backgroundColor: theme.colors.cardBackground,
@@ -2647,7 +2647,7 @@ const MobilesPairing = ({navigation}: any) => {
     },
     requirementText: {
       fontSize: 12,
-      color: '#FF6B35',
+      color: theme.colors.warningAccent,
       marginBottom: 2,
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'left',
@@ -2694,7 +2694,7 @@ const MobilesPairing = ({navigation}: any) => {
     buttonText: {
       fontSize: 16,
       fontWeight: '600',
-      color: '#ffffff',
+      color: theme.colors.white,
       fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'center',
       lineHeight: 22,
@@ -3077,14 +3077,14 @@ const MobilesPairing = ({navigation}: any) => {
       backgroundColor: theme.colors.background,
     },
     vpnWarningBanner: {
-      backgroundColor: '#FF6B6B',
+      backgroundColor: theme.colors.danger,
       marginBottom: 16,
       marginHorizontal: 16,
       borderRadius: 12,
       padding: 16,
       borderWidth: 2,
-      borderColor: '#FF5252',
-      shadowColor: '#000',
+      borderColor: theme.colors.danger,
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 2},
       shadowOpacity: 0.2,
       shadowRadius: 4,
@@ -3098,7 +3098,7 @@ const MobilesPairing = ({navigation}: any) => {
       width: 24,
       height: 24,
       marginRight: 12,
-      tintColor: '#FFFFFF',
+      tintColor: theme.colors.white,
     },
     vpnWarningTextContainer: {
       flex: 1,
@@ -3362,7 +3362,7 @@ const MobilesPairing = ({navigation}: any) => {
                           width: 22,
                           height: 22,
                           marginRight: 8,
-                          tintColor: '#fff',
+                          tintColor: theme.colors.white,
                         }}
                         resizeMode="contain"
                       />
@@ -3752,7 +3752,7 @@ const MobilesPairing = ({navigation}: any) => {
                                 width: 20,
                                 height: 20,
                                 marginRight: 8,
-                                tintColor: '#fff',
+                                tintColor: theme.colors.white,
                               }}
                               resizeMode="contain"
                             />
@@ -4005,7 +4005,7 @@ const MobilesPairing = ({navigation}: any) => {
                               width: 20,
                               height: 20,
                               marginRight: 8,
-                              tintColor: '#fff',
+                              tintColor: theme.colors.white,
                             }}
                             resizeMode="contain"
                           />
@@ -4188,7 +4188,7 @@ const MobilesPairing = ({navigation}: any) => {
                               width: 20,
                               height: 20,
                               marginRight: 8,
-                              tintColor: '#fff',
+                              tintColor: theme.colors.white,
                             }}
                             resizeMode="contain"
                           />
@@ -4642,7 +4642,7 @@ const MobilesPairing = ({navigation}: any) => {
                           width: 20,
                           height: 20,
                           marginRight: 8,
-                          tintColor: '#fff',
+                          tintColor: theme.colors.white,
                         }}
                         resizeMode="contain"
                       />

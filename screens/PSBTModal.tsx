@@ -1209,7 +1209,7 @@ const createStyles = (theme: any) =>
   StyleSheet.create({
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0, 0, 0, 0.85)',
+      backgroundColor: theme.colors.modalBackdrop,
       justifyContent: 'center',
       alignItems: 'center',
       padding: 20,
@@ -1222,7 +1222,7 @@ const createStyles = (theme: any) =>
       maxWidth: 400,
       maxHeight: '85%',
       // Add shadow for better visibility
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 4},
       shadowOpacity: 0.3,
       shadowRadius: 8,
@@ -1266,13 +1266,13 @@ const createStyles = (theme: any) =>
         theme.colors.background === '#121212' ||
         theme.colors.background.includes('12')
           ? theme.colors.cardBackground
-          : 'rgba(0, 0, 0, 0.06)',
+          : theme.colors.shadowColor + '0F', // ~6% opacity
       borderWidth: 1,
       borderColor:
         theme.colors.background === '#121212' ||
         theme.colors.background.includes('12')
           ? theme.colors.border + '80'
-          : 'rgba(0, 0, 0, 0.1)',
+          : theme.colors.shadowColor + '1A', // ~10% opacity
       paddingHorizontal: 14,
       paddingVertical: 0,
       borderRadius: 10,
@@ -1346,7 +1346,7 @@ const createStyles = (theme: any) =>
       color: theme.colors.textSecondary,
     },
     errorContainer: {
-      backgroundColor: 'rgba(255, 59, 48, 0.1)',
+      backgroundColor: theme.colors.danger + '1A', // ~10% opacity
       borderRadius: 12,
       padding: 16,
       marginBottom: 20,
@@ -1354,7 +1354,7 @@ const createStyles = (theme: any) =>
     },
     errorText: {
       fontSize: 14,
-      color: '#FF3B30',
+      color: theme.colors.danger,
       textAlign: 'center',
       marginBottom: 12,
     },
@@ -1367,7 +1367,7 @@ const createStyles = (theme: any) =>
     retryButtonText: {
       fontSize: 14,
       fontWeight: '600',
-      color: '#FFFFFF',
+      color: theme.colors.white,
     },
     detailsContainer: {
       maxHeight: 400,
@@ -1384,7 +1384,7 @@ const createStyles = (theme: any) =>
       color: theme.colors.textSecondary,
     },
     psbtSizeBadge: {
-      backgroundColor: 'rgba(52, 199, 89, 0.15)',
+      backgroundColor: theme.colors.success + '26', // ~15% opacity
       paddingHorizontal: 8,
       paddingVertical: 3,
       borderRadius: 6,
@@ -1392,7 +1392,7 @@ const createStyles = (theme: any) =>
     psbtSizeText: {
       fontSize: 11,
       fontWeight: '600',
-      color: '#34C759',
+      color: theme.colors.success,
     },
     detailsSection: {
       marginBottom: 12,
@@ -1744,7 +1744,7 @@ const createStyles = (theme: any) =>
       width: 20,
       height: 20,
       marginRight: 8,
-      tintColor: '#FFFFFF',
+      tintColor: theme.colors.white,
     },
     signButtonIconDisabled: {
       tintColor: theme.colors.textSecondary,
@@ -1752,7 +1752,7 @@ const createStyles = (theme: any) =>
     signButtonText: {
       fontSize: 16,
       fontWeight: '600',
-      color: '#FFFFFF',
+      color: theme.colors.white,
     },
     signButtonTextDisabled: {
       color: theme.colors.textSecondary,
@@ -1783,12 +1783,12 @@ const createStyles = (theme: any) =>
     scannerTitle: {
       fontSize: 20,
       fontWeight: '700',
-      color: '#FFFFFF',
+      color: theme.colors.white,
       marginBottom: 8,
     },
     scannerSubtitle: {
       fontSize: 14,
-      color: 'rgba(255, 255, 255, 0.7)',
+      color: theme.colors.white + 'B3', // ~70% opacity
       textAlign: 'center',
       paddingHorizontal: 20,
     },
@@ -1796,20 +1796,20 @@ const createStyles = (theme: any) =>
       marginTop: 16,
       width: 200,
       height: 6,
-      backgroundColor: 'rgba(255, 255, 255, 0.2)',
+      backgroundColor: theme.colors.white + '33', // ~20% opacity
       borderRadius: 3,
       overflow: 'hidden',
     },
     progressBar: {
       height: '100%',
-      backgroundColor: '#F7931A', // Bitcoin orange
+      backgroundColor: theme.colors.bitcoinOrange,
       borderRadius: 3,
     },
     closeScannerButton: {
       position: 'absolute',
       bottom: 60,
       alignSelf: 'center',
-      backgroundColor: 'rgba(255, 255, 255, 0.2)',
+      backgroundColor: theme.colors.white + '33', // ~20% opacity
       paddingVertical: 14,
       paddingHorizontal: 40,
       borderRadius: 12,
@@ -1817,19 +1817,19 @@ const createStyles = (theme: any) =>
     closeScannerButtonText: {
       fontSize: 16,
       fontWeight: '600',
-      color: '#FFFFFF',
+      color: theme.colors.white,
     },
     cameraNotFound: {
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
-      color: '#FFFFFF',
+      color: theme.colors.white,
       fontSize: 16,
     },
     // Android scanning progress modal styles
     androidScanModalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0, 0, 0, 0.85)',
+      backgroundColor: theme.colors.modalBackdrop,
       justifyContent: 'center',
       alignItems: 'center',
       padding: 20,
@@ -1866,7 +1866,7 @@ const createStyles = (theme: any) =>
     androidScanCancelButtonText: {
       fontSize: 16,
       fontWeight: '600',
-      color: '#FFFFFF',
+      color: theme.colors.white,
     },
   });
 

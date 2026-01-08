@@ -1512,14 +1512,14 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       minHeight: 36,
     },
     apiNetworkModeBadgeTestnet: {
-      backgroundColor: 'rgba(255, 165, 0, 0.15)',
+      backgroundColor: theme.colors.warning + '26', // ~15% opacity
       borderWidth: 1,
-      borderColor: 'rgba(255, 165, 0, 0.3)',
+      borderColor: theme.colors.warning + '4D', // ~30% opacity
     },
     apiNetworkModeBadgeMainnet: {
-      backgroundColor: 'rgba(76, 175, 80, 0.15)',
+      backgroundColor: theme.colors.received + '26', // ~15% opacity
       borderWidth: 1,
-      borderColor: 'rgba(76, 175, 80, 0.3)',
+      borderColor: theme.colors.received + '4D', // ~30% opacity
     },
     apiNetworkModeIcon: {
       fontSize: 16,
@@ -1591,7 +1591,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     },
     apiModalBackdrop: {
       flex: 1,
-      backgroundColor: 'rgba(0, 0, 0, 0.6)',
+      backgroundColor: theme.colors.modalBackdrop,
       justifyContent: 'flex-end',
     },
     apiModalContent: {
@@ -1859,7 +1859,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     },
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.8)',
+      backgroundColor: theme.colors.modalBackdrop,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -2095,7 +2095,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     },
     requirementText: {
       fontSize: 12,
-      color: '#FF6B35',
+      color: theme.colors.warningAccent,
       fontWeight: '500',
     },
     nostrRelaysInput: {
@@ -2317,6 +2317,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <View style={styles.toggleContainer}>
             <Text style={styles.toggleLabel}>Haptics Off</Text>
             <Switch
+              trackColor={{
+                true: theme.colors.primary,
+                false: theme.colors.secondary,
+              }}
+              thumbColor={theme.colors.accent}
               onValueChange={handleToggleHaptics}
               value={hapticsEnabled}
             />
@@ -2426,6 +2431,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <View style={styles.walletModeRow}>
             <Text style={styles.walletModeLabel}>Full Mode</Text>
             <Switch
+              trackColor={{
+                true: theme.colors.primary,
+                false: theme.colors.secondary,
+              }}
+              thumbColor={theme.colors.accent}
               onValueChange={async value => {
                 HapticFeedback.light();
                 const mode = value ? 'psbt' : 'full';
@@ -2516,7 +2526,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               />
               <Text style={styles.toggleLabel}>Mainnet</Text>
             </View>
-            <Switch onValueChange={toggleNetwork} value={isTestnet} />
+            <Switch
+              trackColor={{
+                true: theme.colors.primary,
+                false: theme.colors.secondary,
+              }}
+              thumbColor={theme.colors.accent}
+              onValueChange={toggleNetwork}
+              value={isTestnet}
+            />
             <View style={styles.networkOption}>
               <Image
                 source={require('../assets/testnet-icon.png')}

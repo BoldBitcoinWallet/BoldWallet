@@ -40,6 +40,7 @@ import {
   shorten,
   presentFiat,
   formatBTC,
+  formatSats,
   getCurrencySymbol,
   HapticFeedback,
   getKeyshareLabel,
@@ -107,6 +108,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [balanceFiat, setBalanceFiat] = useState<string>('0');
   const [party, setParty] = useState<string>('');
   const [isBlurred, setIsBlurred] = useState<boolean>(false);
+  const [showSats, setShowSats] = useState<boolean>(false); // Toggle between BTC and Satoshis
   const [isReceiveModalVisible, setIsReceiveModalVisible] = useState(false);
   const [isSignedPSBTModalVisible, setIsSignedPSBTModalVisible] =
     useState(false);
@@ -1146,11 +1148,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     balanceContainer: {
       ...createStyles(theme).balanceContainer,
       backgroundColor: isDarkMode
-        ? 'rgba(0, 0, 0, 0.3)' // Darker background in dark mode
-        : 'rgba(255, 255, 255, 0.08)', // Original light mode background
+        ? theme.colors.blackOverlay30 // Darker background in dark mode
+        : theme.colors.whiteOverlay08, // Original light mode background
       borderColor: isDarkMode
         ? theme.colors.border + '40' // Darker border in dark mode
-        : 'rgba(255, 255, 255, 0.15)', // Original light mode border
+        : theme.colors.whiteOverlay15, // Original light mode border
     },
   };
 
@@ -2293,6 +2295,44 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             </TouchableOpacity>
           </View>
           <View style={styles.balanceContainer}>
+            {/* Eye icon on left, unit toggle on right */}
+            <TouchableOpacity
+              onPress={() => {
+                HapticFeedback.light();
+                handleBlurred();
+              }}
+              style={styles.balanceEyeIcon}
+              activeOpacity={0.7}
+              accessibilityLabel={isBlurred ? 'Show balance' : 'Hide balance'}
+              accessibilityRole="button">
+              <Image
+                source={
+                  isBlurred
+                    ? require('../assets/eye-off-icon.png')
+                    : require('../assets/eye-on-icon.png')
+                }
+                style={styles.balanceIcon}
+                resizeMode="contain"
+                accessibilityLabel={isBlurred ? 'Balance hidden' : 'Balance visible'}
+              />
+            </TouchableOpacity>
+            {!isBlurred && (
+              <View style={styles.balanceUnitToggleContainer}>
+                <TouchableOpacity
+                  onPress={() => {
+                    HapticFeedback.light();
+                    setShowSats(!showSats);
+                  }}
+                  style={styles.balanceUnitToggle}
+                  activeOpacity={0.7}
+                  accessibilityLabel={`Switch to ${showSats ? 'BTC' : 'Satoshis'}`}
+                  accessibilityRole="button">
+                  <Text style={styles.balanceUnitToggleText}>
+                    {showSats ? '₿' : 'sats'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
             {balanceError && !isBlurred ? (
               <View style={styles.balanceErrorContainer}>
                 <Text style={styles.balanceErrorText}>{balanceError}</Text>
@@ -2314,7 +2354,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                       handleBlurred();
                     }}
                     activeOpacity={0.7}
-                    accessibilityLabel={`Bitcoin balance: ${isBlurred ? 'hidden' : `${balanceBTC || '0.00000000'} BTC`}`}
+                    accessibilityLabel={`Bitcoin balance: ${isBlurred ? 'hidden' : showSats ? `${formatSats(parseFloat(balanceBTC || '0') * 1e8)} sats` : `${formatBTC(balanceBTC)} ₿`}`}
                     accessibilityHint="Double tap to toggle balance visibility"
                     accessibilityRole="button">
                     {isBalanceLoading && !isBlurred && !isRefreshing ? (
@@ -2328,19 +2368,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                         style={[styles.balanceBTC, isBlurred && styles.blurredText]}>
                         {isBlurred
                           ? '* * * * * *'
-                          : `${formatBTC(balanceBTC)} BTC`}
+                          : showSats
+                          ? `${formatSats(parseFloat(balanceBTC || '0') * 1e8)} sats`
+                          : `${formatBTC(balanceBTC)} ₿`}
                       </Text>
                     )}
-                    <Image
-                      source={
-                        isBlurred
-                          ? require('../assets/eye-off-icon.png')
-                          : require('../assets/eye-on-icon.png')
-                      }
-                      style={styles.balanceIcon}
-                      resizeMode="contain"
-                      accessibilityLabel={isBlurred ? 'Balance hidden' : 'Balance visible'}
-                    />
                   </TouchableOpacity>
                 </Animated.View>
                 {btcRate > 0 && (
@@ -2431,7 +2463,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               accessibilityRole="button"
               accessibilityState={{disabled: isCheckingBalanceForSend}}>
               {isCheckingBalanceForSend ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <ActivityIndicator size="small" color={theme.colors.white} />
               ) : (
                 <>
                   <Image

@@ -27,6 +27,37 @@ export interface ThemeColors {
   mediumGray: string;
   white: string;
   shadowColor: string;
+  // Additional colors for consistency
+  bitcoinOrange: string;
+  warning: string;
+  warningLight: string;
+  warningAccent: string;
+  success: string;
+  successLight: string;
+  skeletonGray: string;
+  // Overlay colors for glassmorphism effects
+  blackOverlay05: string; // rgba(0, 0, 0, 0.05)
+  blackOverlay06: string; // rgba(0, 0, 0, 0.06)
+  blackOverlay10: string; // rgba(0, 0, 0, 0.1)
+  blackOverlay30: string; // rgba(0, 0, 0, 0.3)
+  whiteOverlay08: string; // rgba(255, 255, 255, 0.08)
+  whiteOverlay10: string; // rgba(255, 255, 255, 0.1)
+  whiteOverlay12: string; // rgba(255, 255, 255, 0.12)
+  whiteOverlay15: string; // rgba(255, 255, 255, 0.15)
+  whiteOverlay18: string; // rgba(255, 255, 255, 0.18)
+  whiteOverlay20: string; // rgba(255, 255, 255, 0.2)
+  whiteOverlay25: string; // rgba(255, 255, 255, 0.25)
+  whiteOverlay30: string; // rgba(255, 255, 255, 0.3)
+  primaryOverlay95: string; // rgba(26, 43, 60, 0.95) - primary color at 95% opacity
+  blackOverlay02: string; // rgba(0, 0, 0, 0.02)
+  blackOverlay03: string; // rgba(0, 0, 0, 0.03)
+  blackOverlay04: string; // rgba(0, 0, 0, 0.04)
+  blackOverlay50: string; // rgba(0, 0, 0, 0.5) - for modal overlays
+  // Status color overlays
+  receivedOverlay15: string; // rgba(46, 204, 113, 0.15) - success/received at 15% opacity
+  receivedOverlay40: string; // rgba(46, 204, 113, 0.4) - success/received at 40% opacity
+  dangerOverlay15: string; // rgba(231, 76, 60, 0.15) - danger at 15% opacity
+  dangerOverlay40: string; // rgba(231, 76, 60, 0.4) - danger at 40% opacity
 }
 
 export interface ThemeFontSizes {

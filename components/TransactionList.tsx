@@ -21,7 +21,6 @@ import axios from 'axios';
 import Toast from 'react-native-toast-message';
 import moment from 'moment';
 import {dbg, presentFiat, HapticFeedback, isCanceledError} from '../utils';
-import {useTheme} from '@react-navigation/native';
 import {themes, useTheme as useAppTheme} from '../theme';
 import TransactionListSkeleton from './TransactionListSkeleton';
 import {WalletService} from '../services/WalletService';
@@ -32,7 +31,6 @@ import LocalCache from '../services/LocalCache';
 const inIcon = require('../assets/in-icon.png');
 const outIcon = require('../assets/out-icon.png');
 const consolidateIcon = require('../assets/consolidate-icon.png');
-const linkIcon = require('../assets/link-icon.png');
 const pendingIcon = require('../assets/pending-icon.png');
 
 interface TransactionListProps {
@@ -79,7 +77,6 @@ const TransactionList = React.forwardRef<
     const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
     const [isDetailsModalVisible, setIsDetailsModalVisible] = useState(false);
 
-    const {colors} = useTheme();
     const {theme: appTheme} = useAppTheme();
     const insets = useSafeAreaInsets();
 
@@ -741,7 +738,7 @@ const TransactionList = React.forwardRef<
         shadowRadius: 1,
         borderWidth: 1,
         borderColor: appTheme.colors.background === '#ffffff'
-          ? 'rgba(0, 0, 0, 0.05)' // Original light mode border
+          ? appTheme.colors.blackOverlay05 // Original light mode border
           : appTheme.colors.border + '40', // Dark border in dark mode
       },
       transactionRow: {
@@ -970,9 +967,9 @@ const TransactionList = React.forwardRef<
               <View style={styles.addressRow}>
                 <View style={styles.addressContainer}>
                   <Text style={styles.address}>
-                    {status.includes('Sen') ? 'To: ' : 'From: '}
+                    {status.includes('Sen') ? 'To  : ' : 'From: '}
                     <Text style={styles.addressText}>
-                      {relevantAddress.slice(0, 6)}...{relevantAddress.slice(-4)}
+                      {relevantAddress.slice(0, 4)}...{relevantAddress.slice(-4)}
                       {status.includes('Sen') && relevantAddresses.length > 1 && (
                         <Text style={styles.addressText}>
                           {' '}(+{relevantAddresses.length - 1} more)
@@ -991,7 +988,7 @@ const TransactionList = React.forwardRef<
             <View style={styles.transactionRow}>
               <View style={styles.txIdContainer}>
                 <Text style={styles.txId}>
-                  <Text style={styles.txText}>Tx: {shortTxId}</Text>
+                  <Text style={styles.txText}>Tx  : {shortTxId}</Text>
                 </Text>
               </View>
               <Text style={styles.timestamp}>{timestamp}</Text>

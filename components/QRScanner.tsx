@@ -105,12 +105,12 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
     scannerTitle: {
       fontSize: 20,
       fontWeight: '700',
-      color: '#FFFFFF',
+      color: theme.colors.white,
       marginBottom: 8,
     },
     scannerSubtitle: {
       fontSize: 14,
-      color: 'rgba(255, 255, 255, 0.7)',
+      color: theme.colors.white + 'B3', // ~70% opacity
       textAlign: 'center',
       paddingHorizontal: 20,
     },
@@ -118,13 +118,13 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
       marginTop: 16,
       width: 200,
       height: 6,
-      backgroundColor: 'rgba(255, 255, 255, 0.2)',
+      backgroundColor: theme.colors.white + '33', // ~20% opacity
       borderRadius: 3,
       overflow: 'hidden',
     },
     progressBar: {
       height: '100%',
-      backgroundColor: '#F7931A',
+      backgroundColor: theme.colors.bitcoinOrange,
       borderRadius: 3,
     },
     closeScannerButton: {
@@ -152,14 +152,14 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
       fontSize: theme.fontSizes?.lg || 16,
       fontWeight: (theme.fontWeights?.normal || '400') as any,
       fontFamily: theme.fontFamilies?.regular,
-      color: '#FFFFFF',
+      color: theme.colors.white,
       marginBottom: 8,
     },
     cameraNotFoundSubtext: {
       fontSize: theme.fontSizes?.base || 14,
       fontWeight: (theme.fontWeights?.normal || '400') as any,
       fontFamily: theme.fontFamilies?.regular,
-      color: 'rgba(255, 255, 255, 0.7)',
+      color: theme.colors.white + 'B3', // ~70% opacity
       textAlign: 'center',
       paddingHorizontal: 20,
     },
@@ -290,12 +290,12 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
     scannerTitle: {
       fontSize: 20,
       fontWeight: '700',
-      color: '#FFFFFF',
+      color: theme.colors.white,
       marginBottom: 8,
     },
     scannerSubtitle: {
       fontSize: 14,
-      color: 'rgba(255, 255, 255, 0.7)',
+      color: theme.colors.white + 'B3', // ~70% opacity
       textAlign: 'center',
       paddingHorizontal: 20,
     },
@@ -303,13 +303,13 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
       marginTop: 16,
       width: 200,
       height: 6,
-      backgroundColor: 'rgba(255, 255, 255, 0.2)',
+      backgroundColor: theme.colors.white + '33', // ~20% opacity
       borderRadius: 3,
       overflow: 'hidden',
     },
     progressBar: {
       height: '100%',
-      backgroundColor: '#F7931A',
+      backgroundColor: theme.colors.bitcoinOrange,
       borderRadius: 3,
     },
     closeScannerButton: {

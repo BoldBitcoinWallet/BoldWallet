@@ -28,6 +28,36 @@ export interface Theme {
     modalBackdrop: string;
     lightGray: string;
     mediumGray: string;
+    bitcoinOrange: string;
+    warning: string;
+    warningLight: string;
+    warningAccent: string;
+    success: string;
+    successLight: string;
+    skeletonGray: string;
+    // Overlay colors for glassmorphism effects
+    blackOverlay02: string;
+    blackOverlay03: string;
+    blackOverlay04: string;
+    blackOverlay05: string;
+    blackOverlay06: string;
+    blackOverlay10: string;
+    blackOverlay30: string;
+    blackOverlay50: string;
+    whiteOverlay08: string;
+    whiteOverlay10: string;
+    whiteOverlay12: string;
+    whiteOverlay15: string;
+    whiteOverlay18: string;
+    whiteOverlay20: string;
+    whiteOverlay25: string;
+    whiteOverlay30: string;
+    primaryOverlay95: string;
+    // Status color overlays
+    receivedOverlay15: string;
+    receivedOverlay40: string;
+    dangerOverlay15: string;
+    dangerOverlay40: string;
     shadowColor: string;
   };
   fontSizes?: {
@@ -78,6 +108,11 @@ export interface Styles {
   balanceBTC: TextStyle;
   balanceFiat: TextStyle;
   balanceIcon: ImageStyle;
+  balanceHeaderControls: ViewStyle;
+  balanceEyeIcon: ViewStyle;
+  balanceUnitToggleContainer: ViewStyle;
+  balanceUnitToggle: ViewStyle;
+  balanceUnitToggleText: TextStyle;
   blurredText: TextStyle;
   balanceHint: TextStyle;
   balanceTouchable: ViewStyle;
@@ -287,13 +322,15 @@ export const createStyles = (theme: Theme): Styles => ({
     justifyContent: 'center' as const,
     width: 36,
     height: 36,
-    backgroundColor: theme.colors.background === '#ffffff'
-      ? 'rgba(0, 0, 0, 0.06)'
-      : theme.colors.cardBackground,
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.blackOverlay06
+        : theme.colors.cardBackground,
     borderWidth: 1,
-    borderColor: theme.colors.background === '#ffffff'
-      ? 'rgba(0, 0, 0, 0.1)'
-      : theme.colors.border + '80',
+    borderColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.blackOverlay10
+        : theme.colors.border + '80',
     padding: 0,
     shadowColor: theme.colors.shadowColor,
     shadowOffset: {width: 0, height: 1},
@@ -344,16 +381,15 @@ export const createStyles = (theme: Theme): Styles => ({
   },
   walletHeader: {
     padding: 12,
-    backgroundColor: theme.colors.background === '#ffffff'
-      ? 'rgba(26, 43, 60, 0.95)' // Increased opacity for better contrast in light mode
-      : 'rgba(255, 255, 255, 0.15)', // Brighter glassy overlay for better contrast in dark mode
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.primaryOverlay95 // Increased opacity for better contrast in light mode
+        : theme.colors.whiteOverlay15, // Brighter glassy overlay for better contrast in dark mode
     borderRadius: 12,
     alignItems: 'stretch' as const, // Changed from 'center' to allow marginHorizontal to work
     marginBottom: 0,
     borderWidth: 1,
-    borderColor: theme.colors.background === '#ffffff'
-      ? 'rgba(255, 255, 255, 0.3)' // More visible border for better contrast in light mode
-      : 'rgba(255, 255, 255, 0.3)', // More visible border for better contrast in dark mode
+    borderColor: theme.colors.whiteOverlay30, // More visible border for better contrast
     // Explicit stacking context so action buttons stay on top on Android
     position: 'relative',
     zIndex: 3,
@@ -379,9 +415,7 @@ export const createStyles = (theme: Theme): Styles => ({
   priceContainer: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    backgroundColor: theme.colors.background === '#ffffff'
-      ? 'rgba(255, 255, 255, 0.2)' // Increased opacity for better contrast in light mode
-      : 'rgba(255, 255, 255, 0.2)', // Increased opacity for better contrast in dark mode
+    backgroundColor: theme.colors.whiteOverlay20, // Increased opacity for better contrast
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
@@ -398,29 +432,80 @@ export const createStyles = (theme: Theme): Styles => ({
     fontWeight: (theme.fontWeights?.semibold || '600') as any,
     fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.white,
-    backgroundColor: theme.colors.background === '#ffffff'
-      ? 'rgba(255, 255, 255, 0.25)' // Increased opacity for better contrast in light mode
-      : 'rgba(255, 255, 255, 0.25)', // Increased opacity for better contrast in dark mode
+    backgroundColor: theme.colors.whiteOverlay25, // Increased opacity for better contrast
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
   balanceContainer: {
     alignItems: 'center' as const,
-    paddingVertical: 8,
+    paddingVertical: 12,
     paddingHorizontal: 8,
+    minHeight: 80,
     marginTop: 4,
-    marginBottom: 6,
+    marginBottom: 4,
     marginHorizontal: 0, // Match actionButton marginHorizontal to align with send/receive buttons
-    backgroundColor: theme.colors.background === '#ffffff'
-      ? 'rgba(255, 255, 255, 0.12)' // Increased opacity for better contrast in light mode
-      : 'rgba(255, 255, 255, 0.18)', // Increased opacity for better contrast in dark mode
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.whiteOverlay12 // Increased opacity for better contrast in light mode
+        : theme.colors.whiteOverlay18, // Increased opacity for better contrast in dark mode
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: theme.colors.background === '#ffffff'
-      ? 'rgba(255, 255, 255, 0.25)' // More visible border for better contrast in light mode
-      : 'rgba(255, 255, 255, 0.3)', // More visible border for better contrast in dark mode
+    borderColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.whiteOverlay25 // More visible border for better contrast in light mode
+        : theme.colors.whiteOverlay30, // More visible border for better contrast in dark mode
     overflow: 'hidden' as const,
+    position: 'relative' as const, // For absolute positioning of eye icon
+  },
+  balanceHeaderControls: {
+    position: 'absolute' as const,
+    top: 8,
+    left: 8,
+    right: 8,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    zIndex: 10,
+  },
+  balanceEyeIcon: {
+    position: 'absolute' as const,
+    left: 20,
+    top: '50%',
+    marginTop: -8,
+    width: 40,
+    height: 40,
+    borderRadius: 20, // Perfect circle (half of width/height)
+    backgroundColor: theme.colors.whiteOverlay15,
+    borderWidth: 1,
+    borderColor: theme.colors.whiteOverlay25,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+    zIndex: 10,
+  },
+  balanceUnitToggleContainer: {
+    position: 'absolute' as const,
+    right: 20,
+    top: '50%',
+    marginTop: -8,
+    zIndex: 10,
+  },
+  balanceUnitToggle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.colors.whiteOverlay15,
+    borderWidth: 1,
+    borderColor: theme.colors.whiteOverlay25,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+  },
+  balanceUnitToggleText: {
+    fontSize: theme.fontSizes?.sm || 12,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
+    color: theme.colors.white,
+    opacity: 0.9,
   },
   balanceHeaderRow: {
     flexDirection: 'row' as const,
@@ -430,9 +515,7 @@ export const createStyles = (theme: Theme): Styles => ({
     marginBottom: 6,
     paddingBottom: 6,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.colors.background === '#ffffff'
-      ? 'rgba(255, 255, 255, 0.2)' // More visible divider in light mode
-      : 'rgba(255, 255, 255, 0.2)', // More visible divider in dark mode
+    borderBottomColor: theme.colors.whiteOverlay20, // More visible divider
   },
   providerValueCompact: {
     fontSize: theme.fontSizes?.xs || 10,
@@ -468,13 +551,13 @@ export const createStyles = (theme: Theme): Styles => ({
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 6,
-    minHeight: 32,
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 8,
-    backgroundColor: theme.colors.background === '#ffffff'
-      ? 'rgba(255, 255, 255, 0.12)' // Original glassy white overlay from commit abc07a5e
-      : 'rgba(255, 255, 255, 0.08)', // Glassy white overlay in dark mode
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.whiteOverlay12 // Original glassy white overlay from commit abc07a5e
+        : theme.colors.whiteOverlay08, // Glassy white overlay in dark mode
     width: '100%',
     justifyContent: 'center' as const,
   },
@@ -482,14 +565,15 @@ export const createStyles = (theme: Theme): Styles => ({
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 6,
-    height: 32,
     borderRadius: 8,
     backgroundColor: 'transparent',
     width: '100%',
     justifyContent: 'center' as const,
     marginTop: 0,
-    // Ensure Animated.View doesn't block touches
+    marginBottom: 4,
+    paddingTop: 2,
     pointerEvents: 'box-none' as const,
+    height: 28,
   },
   balanceBTC: {
     fontSize: theme.fontSizes?.['3xl'] || 24,
@@ -498,6 +582,8 @@ export const createStyles = (theme: Theme): Styles => ({
     textShadowColor: theme.colors.shadowColor + '33', // 20% opacity
     textShadowOffset: {width: 0, height: 1},
     textShadowRadius: 2,
+    lineHeight: theme.fontSizes?.['3xl'] ? theme.fontSizes['3xl'] * 1.2 : 29,
+    textAlign: 'center' as const,
   },
   balanceFiat: {
     fontSize: theme.fontSizes?.lg || 16,
@@ -506,12 +592,13 @@ export const createStyles = (theme: Theme): Styles => ({
     textShadowColor: theme.colors.shadowColor + '26', // 15% opacity
     textShadowOffset: {width: 0, height: 1},
     textShadowRadius: 1,
+    lineHeight: theme.fontSizes?.lg ? theme.fontSizes.lg * 1.2 : 19,
+    textAlign: 'center' as const,
   },
   balanceIcon: {
-    width: 18,
-    height: 18,
+    width: 20,
+    height: 20,
     tintColor: theme.colors.white,
-    marginLeft: 12,
     opacity: 0.9,
   },
   blurredText: {
@@ -610,7 +697,10 @@ export const createStyles = (theme: Theme): Styles => ({
   },
   sendButton: {
     flex: 1,
-    backgroundColor: theme.colors.accent,
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
@@ -623,13 +713,15 @@ export const createStyles = (theme: Theme): Styles => ({
   addressTypeModalButton: {
     width: 56,
     minHeight: 48,
-    backgroundColor: theme.colors.background === '#ffffff'
-      ? 'rgba(255, 255, 255, 0.15)' // Glassy white overlay in light mode
-      : 'rgba(255, 255, 255, 0.1)', // Glassy white overlay in dark mode
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.whiteOverlay15 // Glassy white overlay in light mode
+        : theme.colors.whiteOverlay10, // Glassy white overlay in dark mode
     borderWidth: 1,
-    borderColor: theme.colors.background === '#ffffff'
-      ? 'rgba(255, 255, 255, 0.25)'
-      : 'rgba(255, 255, 255, 0.15)', // Glassy border in dark mode
+    borderColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.whiteOverlay25
+        : theme.colors.whiteOverlay15, // Glassy border in dark mode
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
@@ -735,7 +827,9 @@ export const createStyles = (theme: Theme): Styles => ({
   addressTypeValue: {
     fontSize: theme.fontSizes?.sm || 12,
     fontWeight: (theme.fontWeights?.normal || '400') as any,
-    fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+    fontFamily:
+      theme.fontFamilies?.monospace ||
+      (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
     color: theme.colors.textSecondary,
     textAlign: 'left' as const,
     marginTop: 4,
@@ -807,18 +901,21 @@ export const createStyles = (theme: Theme): Styles => ({
     flexDirection: 'row' as const,
     justifyContent: 'space-between' as const,
     alignItems: 'center' as const,
-    backgroundColor: theme.colors.background === '#ffffff'
-      ? theme.colors.background // Transparent/background in light mode
-      : 'rgba(255, 255, 255, 0.08)', // Glassy white overlay in dark mode
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.background // Transparent/background in light mode
+        : theme.colors.whiteOverlay08, // Glassy white overlay in dark mode
     elevation: Platform.OS === 'android' ? 0 : 1,
     shadowColor: theme.colors.shadowColor,
     shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.1,
     shadowRadius: 1,
     borderWidth: 1,
-    borderColor: theme.colors.background === '#121212' || theme.colors.background.includes('12')
-      ? 'rgba(255, 255, 255, 0.15)' // Glassy border in dark mode
-      : 'rgba(0, 0, 0, 0.05)', // Original light mode border
+    borderColor:
+      theme.colors.background === '#121212' ||
+      theme.colors.background.includes('12')
+        ? theme.colors.whiteOverlay15 // Glassy border in dark mode
+        : theme.colors.blackOverlay05, // Original light mode border
   },
   refreshText: {
     fontSize: theme.fontSizes?.base || 14,
@@ -850,9 +947,10 @@ export const createStyles = (theme: Theme): Styles => ({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: theme.colors.background === '#ffffff'
-      ? 'rgba(0, 0, 0, 0.02)'
-      : theme.colors.shadowColor + '05',
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.blackOverlay02
+        : theme.colors.shadowColor + '05',
     borderRadius: 8,
     overflow: 'hidden',
   },
@@ -862,9 +960,10 @@ export const createStyles = (theme: Theme): Styles => ({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: theme.colors.background === '#ffffff'
-      ? 'rgba(0, 0, 0, 0.04)'
-      : theme.colors.shadowColor + '0A',
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.blackOverlay04
+        : theme.colors.shadowColor + '0A',
     transform: [{translateX: -100}],
   },
   disabled: {
@@ -930,16 +1029,18 @@ export const createStyles = (theme: Theme): Styles => ({
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 4,
-    backgroundColor: theme.colors.background === '#ffffff'
-      ? 'rgba(255,255,255,0.18)' // glassy
-      : 'rgba(255, 255, 255, 0.12)', // Glassy white overlay in dark mode
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.whiteOverlay18 // glassy
+        : theme.colors.whiteOverlay12, // Glassy white overlay in dark mode
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderWidth: 1,
-    borderColor: theme.colors.background === '#ffffff'
-      ? 'rgba(255,255,255,0.25)'
-      : 'rgba(255, 255, 255, 0.2)', // Glassy border in dark mode
+    borderColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.whiteOverlay25
+        : theme.colors.whiteOverlay20, // Glassy border in dark mode
     shadowColor: theme.colors.shadowColor,
     shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.08,
@@ -1160,9 +1261,10 @@ export const createStyles = (theme: Theme): Styles => ({
     opacity: 0.8,
   },
   networkBadge: {
-    backgroundColor: theme.colors.background === '#ffffff'
-      ? theme.colors.primary + '40' // Increased opacity for better contrast in light mode
-      : 'rgba(255, 255, 255, 0.15)', // Glassy background in dark mode
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.primary + '40' // Increased opacity for better contrast in light mode
+        : theme.colors.whiteOverlay15, // Glassy background in dark mode
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -1172,9 +1274,10 @@ export const createStyles = (theme: Theme): Styles => ({
     fontSize: theme.fontSizes?.xs || 9,
     fontWeight: (theme.fontWeights?.bold || '700') as any,
     fontFamily: theme.fontFamilies?.regular,
-    color: theme.colors.background === '#ffffff'
-      ? theme.colors.white // White text for better contrast on dark badge in light mode
-      : theme.colors.text, // Use theme text color in dark mode
+    color:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.white // White text for better contrast on dark badge in light mode
+        : theme.colors.text, // Use theme text color in dark mode
     letterSpacing: 0.5,
   },
   warningBox: {
@@ -1419,10 +1522,7 @@ export const createStyles = (theme: Theme): Styles => ({
   keyshareCopyIcon: {
     width: 16,
     height: 16,
-    tintColor:
-      theme.colors.background === '#ffffff'
-        ? theme.colors.white
-        : theme.colors.text,
+    tintColor: theme.colors.white,
   },
   keyshareButtonsRow: {
     flexDirection: 'row' as const,
@@ -1557,7 +1657,7 @@ export const createStyles = (theme: Theme): Styles => ({
     backgroundColor: theme.colors.primary,
   },
   keyshareBadgeDuo: {
-    backgroundColor: theme.colors.secondary ,
+    backgroundColor: theme.colors.secondary,
   },
   keyshareStatusBadge: {
     paddingHorizontal: 10,

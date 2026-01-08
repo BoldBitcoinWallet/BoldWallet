@@ -101,7 +101,7 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
   const styles = StyleSheet.create({
     modalContainer: {
       flex: 1,
-      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      backgroundColor: theme.colors.modalBackdrop,
       justifyContent: 'flex-end',
     },
     modalContent: {

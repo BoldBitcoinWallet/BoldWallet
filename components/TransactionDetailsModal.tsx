@@ -193,7 +193,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   const styles = StyleSheet.create({
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      backgroundColor: theme.colors.blackOverlay50,
       justifyContent: 'center',
       alignItems: 'center',
     },
@@ -256,7 +256,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       borderBottomWidth: 1,
       borderBottomColor: theme.colors.background === '#121212' || theme.colors.background.includes('12')
         ? theme.colors.border + '40' // More visible border in dark mode
-        : 'rgba(0, 0, 0, 0.04)', // Light mode border
+        : theme.colors.blackOverlay04, // Light mode border
       gap: 12,
     },
     detailLabel: {
@@ -289,14 +289,14 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     txIdContainer: {
       backgroundColor: theme.colors.background === '#121212' || theme.colors.background.includes('12')
         ? theme.colors.cardBackground // Use cardBackground in dark mode
-        : 'rgba(0, 0, 0, 0.03)', // Light mode background
+        : theme.colors.blackOverlay03, // Light mode background
       padding: 12,
       borderRadius: 8,
       flex: 1,
       borderWidth: 1,
       borderColor: theme.colors.background === '#121212' || theme.colors.background.includes('12')
         ? theme.colors.border + '40' // More visible border in dark mode
-        : 'rgba(0,0,0,0.06)', // Light mode border
+        : theme.colors.blackOverlay06, // Light mode border
       marginRight: 12,
     },
     addressAmountContainer: {
@@ -347,18 +347,18 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     statusBadgeConfirmed: {
       backgroundColor: theme.colors.background === '#121212' || theme.colors.background.includes('12')
         ? (theme.colors.received || '#66BB6A') + '26' // Dark mode with opacity
-        : 'rgba(46, 204, 113, 0.15)', // Light mode
+        : theme.colors.receivedOverlay15, // Light mode
       borderColor: theme.colors.background === '#121212' || theme.colors.background.includes('12')
         ? (theme.colors.received || '#66BB6A') + '80' // More visible border in dark mode
-        : 'rgba(46, 204, 113, 0.4)', // Light mode
+        : theme.colors.receivedOverlay40, // Light mode
     },
     statusBadgePending: {
       backgroundColor: theme.colors.background === '#121212' || theme.colors.background.includes('12')
         ? theme.colors.accent + '26' // Dark mode with opacity
-        : 'rgba(231, 76, 60, 0.15)', // Light mode
+        : theme.colors.dangerOverlay15, // Light mode
       borderColor: theme.colors.background === '#121212' || theme.colors.background.includes('12')
         ? theme.colors.accent + '80' // More visible border in dark mode
-        : 'rgba(231, 76, 60, 0.4)', // Light mode
+        : theme.colors.dangerOverlay40, // Light mode
     },
   });
 
