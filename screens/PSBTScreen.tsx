@@ -14,7 +14,11 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 import {NativeModules} from 'react-native';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
-import {HeaderRightButton, HeaderTitle} from '../components/Header';
+import {
+  HeaderRightButton,
+  HeaderPriceButton,
+  HeaderNetworkProvider,
+} from '../components/Header';
 import {PSBTLoader} from './PSBTModal';
 import {dbg, HapticFeedback, generateAllOutputDescriptors} from '../utils';
 import {CommonActions, useRoute, RouteProp} from '@react-navigation/native';
@@ -25,6 +29,9 @@ import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
 import QRCodeModal from '../components/QRCodeModal';
 import SignedPSBTModal from './SignedPSBTModal';
+import {WalletService} from '../services/WalletService';
+import LocalCache from '../services/LocalCache';
+import CurrencySelector from '../components/CurrencySelector';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -44,7 +51,11 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
   const {theme} = useTheme();
   const styles = createStyles(theme);
-  const {activeNetwork: network, activeAddressType: addressType} = useUser();
+  const {
+    activeNetwork: network,
+    activeAddressType: addressType,
+    activeApiProvider: apiBase,
+  } = useUser();
 
   const [keyshareInfo, setKeyshareInfo] = useState<KeyshareInfoForPsbt | null>(
     null,
@@ -63,6 +74,11 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   } | null>(null);
   const [signedPsbt, setSignedPsbt] = useState<string | null>(null);
   const [isSignedPSBTModalVisible, setIsSignedPSBTModalVisible] =
+    useState(false);
+  const [btcPrice, setBtcPrice] = useState<string>('');
+  const [selectedCurrency, setSelectedCurrency] = useState('');
+  const [priceData, setPriceData] = useState<{[key: string]: number}>({});
+  const [isCurrencySelectorVisible, setIsCurrencySelectorVisible] =
     useState(false);
 
   // Animation for Bold Connect collapsible section
@@ -329,25 +345,71 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     [pendingPSBTParams, addressType, navigation],
   );
 
+  const headerLeft = React.useCallback(
+    () => (
+      <HeaderPriceButton
+        btcPrice={btcPrice}
+        selectedCurrency={selectedCurrency}
+        onCurrencyPress={() => setIsCurrencySelectorVisible(true)}
+      />
+    ),
+    [btcPrice, selectedCurrency],
+  );
+
+  const headerTitle = React.useCallback(
+    () => <HeaderNetworkProvider network={network} apiBase={apiBase} />,
+    [network, apiBase],
+  );
+
   const headerRight = React.useCallback(
     () => <HeaderRightButton navigation={navigation} />,
     [navigation],
   );
 
-  const headerLeft = React.useCallback(() => <HeaderTitle />, []);
-
   useEffect(() => {
     navigation.setOptions({
       headerRight,
       headerLeft,
-      headerTitle: '',
-      headerTitleAlign: 'left',
+      headerTitle,
+      headerTitleAlign: 'center',
     });
-  }, [navigation, headerRight, headerLeft]);
+  }, [navigation, headerRight, headerLeft, headerTitle]);
 
   useEffect(() => {
     loadKeyshareInfo();
   }, [loadKeyshareInfo]);
+
+  // Fetch bitcoin price and initialize currency
+  useEffect(() => {
+    const fetchPrice = async () => {
+      try {
+        const currency = (await LocalCache.getItem('currency')) || 'USD';
+        setSelectedCurrency(currency);
+        const walletService = WalletService.getInstance();
+        await walletService.initialize();
+        const priceResponse = await walletService.getBitcoinPrice();
+        if (priceResponse && priceResponse.rates) {
+          setPriceData(priceResponse.rates);
+          const r = priceResponse.rates[currency] || priceResponse.rate || 0;
+          if (r && r > 0) {
+            setBtcPrice(r.toString());
+          }
+        }
+      } catch (error) {
+        dbg('PSBTScreen: Error fetching price:', error);
+      }
+    };
+    fetchPrice();
+  }, []);
+
+  const handleCurrencySelect = async (currency: {code: string}) => {
+    setSelectedCurrency(currency.code);
+    await LocalCache.setItem('currency', currency.code);
+    if (priceData[currency.code]) {
+      const formattedPrice = priceData[currency.code].toFixed(2);
+      setBtcPrice(formattedPrice);
+    }
+  };
 
   // Handle section expansion based on PSBT mode toggle state
   useEffect(() => {
@@ -647,12 +709,22 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   disableCancelWhenEmpty={true}
                   useOverlay={false}
                   onSign={handlePSBTSign}
+                  btcPrice={btcPrice}
+                  selectedCurrency={selectedCurrency}
+                  onCurrencyPress={() => setIsCurrencySelectorVisible(true)}
                 />
               </View>
             </View>
           )}
         </View>
       </ScrollView>
+      <CurrencySelector
+        visible={isCurrencySelectorVisible}
+        onClose={() => setIsCurrencySelectorVisible(false)}
+        onSelect={handleCurrencySelect}
+        currentCurrency={selectedCurrency}
+        availableCurrencies={priceData}
+      />
       {/* QR Code Modals for watch-wallet import helpers */}
       <QRCodeModal
         visible={isOutputDescriptorQrVisible}

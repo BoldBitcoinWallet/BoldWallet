@@ -270,25 +270,33 @@ export const formatBTC = (btcAmount, options = {}) => {
   } = options;
 
   if (btcAmount === undefined || btcAmount === null || btcAmount === '') {
-    return '0.00000000';
+    return '0';
   }
 
   // Convert to string and handle invalid inputs
   const amountStr = String(btcAmount);
   if (amountStr === '0' || amountStr === '0.0' || amountStr === '0.00') {
-    return '0.00000000';
+    return '0';
   }
 
   const amount = parseFloat(amountStr);
   if (isNaN(amount) || amount < 0) {
-    return '0.00000000';
+    return '0';
+  }
+  
+  // Handle zero amount
+  if (amount === 0) {
+    return '0';
   }
 
   // Split into whole and decimal parts
   const [wholePart, decimalPart = ''] = amountStr.split('.');
 
-  // Format whole part: standard thousand separators (every 3 digits from right)
-  const formattedWhole = Number(wholePart).toLocaleString();
+  // Use thin space (U+2009) as thousand separator - narrower than regular space
+  const thinSpace = ' \u200A';
+
+  // Format whole part: standard thousand separators (every 3 digits from right) using thin space
+  const formattedWhole = Number(wholePart).toLocaleString('en-US').replace(/,/g, thinSpace);
 
   // Determine smart precision based on amount size
   let targetDecimals = 8; // Default to full precision
@@ -342,15 +350,15 @@ export const formatBTC = (btcAmount, options = {}) => {
         groups.push(remaining.slice(i, i + 3));
       }
       
-      // Combine: first 2 digits, then comma, then groups of 3 separated by commas
-      formattedDecimal = firstTwo + (groups.length > 0 ? ',' + groups.join(',') : '');
+      // Combine: first 2 digits, then thin space, then groups of 3 separated by thin spaces
+      formattedDecimal = firstTwo + (groups.length > 0 ? thinSpace + groups.join(thinSpace) : '');
     } else {
       formattedDecimal = truncatedDecimal;
     }
 
     // Remove trailing zeros if not requested
     if (!showTrailingZeros) {
-      formattedDecimal = formattedDecimal.replace(/0+$/, '').replace(/,$/, '');
+      formattedDecimal = formattedDecimal.replace(/0+$/, '').replace(new RegExp(thinSpace + '$'), '');
       // If all decimals removed, ensure we have at least the first two digits for consistency
       if (formattedDecimal === '' && truncatedDecimal.length > 0) {
         formattedDecimal = truncatedDecimal.slice(0, Math.min(2, truncatedDecimal.length));
@@ -361,7 +369,7 @@ export const formatBTC = (btcAmount, options = {}) => {
     formattedDecimal = '00';
     if (targetDecimals > 2) {
       const remainingZeros = '0'.repeat(Math.min(targetDecimals - 2, 6));
-      formattedDecimal += ',' + remainingZeros.match(/.{1,3}/g)?.join(',') || '';
+      formattedDecimal += thinSpace + remainingZeros.match(/.{1,3}/g)?.join(thinSpace) || '';
     }
   }
 

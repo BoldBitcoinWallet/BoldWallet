@@ -494,7 +494,6 @@ export const createStyles = (theme: Theme): Styles => ({
   balanceBTC: {
     fontSize: theme.fontSizes?.['3xl'] || 24,
     fontWeight: (theme.fontWeights?.bold || '700') as any,
-    fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
     color: theme.colors.white,
     textShadowColor: theme.colors.shadowColor + '33', // 20% opacity
     textShadowOffset: {width: 0, height: 1},
@@ -503,7 +502,6 @@ export const createStyles = (theme: Theme): Styles => ({
   balanceFiat: {
     fontSize: theme.fontSizes?.lg || 16,
     fontWeight: (theme.fontWeights?.normal || '400') as any,
-    fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
     color: theme.colors.white,
     textShadowColor: theme.colors.shadowColor + '26', // 15% opacity
     textShadowOffset: {width: 0, height: 1},

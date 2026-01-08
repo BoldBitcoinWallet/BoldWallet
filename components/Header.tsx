@@ -16,6 +16,190 @@ import {createStyles} from './Styles';
 import {HapticFeedback, presentFiat} from '../utils';
 import type {NativeStackHeaderProps} from '@react-navigation/native-stack';
 
+interface HeaderPriceButtonProps {
+  btcPrice?: string;
+  selectedCurrency?: string;
+  onCurrencyPress?: () => void;
+}
+
+interface HeaderNetworkProviderProps {
+  network?: string;
+  apiBase?: string;
+}
+
+export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
+  network,
+  apiBase,
+}) => {
+  const {theme} = useTheme();
+
+  const networkBadgeStyle: any = {
+    backgroundColor: theme.colors.background,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  };
+
+  const networkBadgeTextStyle: any = {
+    fontSize: 8,
+    fontWeight: '700',
+    color: theme.colors.text,
+    letterSpacing: 0.3,
+    lineHeight: 10,
+  };
+
+  const providerTextStyle: any = {
+    fontSize: 9,
+    color: theme.colors.textSecondary,
+    lineHeight: 11,
+    maxWidth: 200,
+  };
+
+  const networkProviderContainerStyle: any = {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    height: 36,
+  };
+
+  const cleanProviderUrl = apiBase
+    ? apiBase.replace('https://', '').replace('/api', '').replace(/\/+$/, '')
+    : 'Loading...';
+
+  if (!network && !apiBase) {
+    return null;
+  }
+
+  return (
+    <View style={networkProviderContainerStyle}>
+      {network && (
+        <View style={networkBadgeStyle}>
+          <Text style={networkBadgeTextStyle}>
+            {network === 'mainnet' ? 'MAINNET' : 'TESTNET'}
+          </Text>
+        </View>
+      )}
+      {apiBase && (
+        <Text
+          style={providerTextStyle}
+          adjustsFontSizeToFit={true}
+          numberOfLines={1}
+          minimumFontScale={0.7}>
+          {cleanProviderUrl}
+        </Text>
+      )}
+    </View>
+  );
+};
+
+export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
+  btcPrice,
+  selectedCurrency,
+  onCurrencyPress,
+}) => {
+  const {theme} = useTheme();
+
+  const priceButtonStyle: any = {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor:
+      theme.colors.background === '#121212' ||
+      theme.colors.background.includes('12')
+        ? theme.colors.cardBackground
+        : 'rgba(0, 0, 0, 0.06)',
+    borderWidth: 1,
+    borderColor:
+      theme.colors.background === '#121212' ||
+      theme.colors.background.includes('12')
+        ? theme.colors.border + '80'
+        : 'rgba(0, 0, 0, 0.1)',
+    paddingHorizontal: 14,
+    paddingVertical: 0,
+    borderRadius: 10,
+    height: 36,
+    minWidth: 90,
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: Platform.OS === 'android' ? 0 : 1,
+  };
+
+  const headerBtcLogoStyle: any = {
+    width: 20,
+    height: 20,
+    resizeMode: 'contain',
+  };
+
+  const headerBtcPriceStyle: any = {
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.colors.text,
+    lineHeight: 14,
+  };
+
+  const headerCurrencyBadgeStyle: any = {
+    fontSize: 10,
+    fontWeight: '600',
+    color: theme.colors.textSecondary,
+    lineHeight: 12,
+  };
+
+  const priceTextContainerStyle: any = {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+  };
+
+  if (btcPrice === undefined || !onCurrencyPress) {
+    return null;
+  }
+
+  const containerStyle: any = {
+    paddingLeft: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+  };
+
+  return (
+    <RNView style={containerStyle}>
+      <TouchableOpacity
+        style={priceButtonStyle}
+        onPress={() => {
+          HapticFeedback.light();
+          onCurrencyPress();
+        }}
+        activeOpacity={0.7}
+        accessible={true}
+        accessibilityRole="button"
+        accessibilityLabel={`Bitcoin price: ${
+          btcPrice ? presentFiat(btcPrice) : '-'
+        } ${selectedCurrency || ''}`}
+        accessibilityHint="Double tap to change currency">
+        <Image
+          source={require('../assets/bitcoin-logo.png')}
+          style={headerBtcLogoStyle}
+        />
+        <View style={priceTextContainerStyle}>
+          <Text style={headerBtcPriceStyle}>
+            {btcPrice ? presentFiat(btcPrice) : '-'}
+          </Text>
+          {selectedCurrency && (
+            <Text style={headerCurrencyBadgeStyle}>{selectedCurrency}</Text>
+          )}
+        </View>
+      </TouchableOpacity>
+    </RNView>
+  );
+};
+
 interface HeaderRightButtonProps {
   navigation: any;
   btcPrice?: string;

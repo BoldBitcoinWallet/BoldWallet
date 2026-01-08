@@ -61,7 +61,11 @@ import {
   CacheTimestamp,
   CacheIndicatorHandle,
 } from '../components/CacheIndicator';
-import {HeaderRightButton, HeaderTitle} from '../components/Header';
+import {
+  HeaderRightButton,
+  HeaderPriceButton,
+  HeaderNetworkProvider,
+} from '../components/Header';
 import LocalCache from '../services/LocalCache';
 
 const {BBMTLibNativeModule} = NativeModules;
@@ -1150,28 +1154,35 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     },
   };
 
-  const headerRight = React.useCallback(
+  const headerLeft = React.useCallback(
     () => (
-      <HeaderRightButton
-        navigation={navigation}
+      <HeaderPriceButton
         btcPrice={btcPrice}
         selectedCurrency={selectedCurrency}
         onCurrencyPress={() => setIsCurrencySelectorVisible(true)}
       />
     ),
-    [navigation, btcPrice, selectedCurrency],
+    [btcPrice, selectedCurrency],
   );
 
-  const headerLeft = React.useCallback(() => <HeaderTitle />, []);
+  const headerTitle = React.useCallback(
+    () => <HeaderNetworkProvider network={network} apiBase={apiBase} />,
+    [network, apiBase],
+  );
+
+  const headerRight = React.useCallback(
+    () => <HeaderRightButton navigation={navigation} />,
+    [navigation],
+  );
 
   useEffect(() => {
     navigation.setOptions({
       headerRight,
       headerLeft,
-      headerTitle: '',
-      headerTitleAlign: 'left',
+      headerTitle,
+      headerTitleAlign: 'center',
     });
-  }, [navigation, headerRight, headerLeft]);
+  }, [navigation, headerRight, headerLeft, headerTitle]);
 
   const requestCameraPermission = async () => {
     if (Platform.OS === 'android') {
@@ -2282,24 +2293,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             </TouchableOpacity>
           </View>
           <View style={styles.balanceContainer}>
-            {/* Network Badge and Provider Info */}
-            <View style={styles.balanceHeaderRow}>
-              <View style={styles.networkBadge}>
-                <Text style={styles.networkBadgeText}>
-                  {network === 'mainnet' ? 'MAINNET' : 'TESTNET'}
-                </Text>
-              </View>
-              <Text style={styles.providerValueCompact} numberOfLines={1}>
-                {apiBase
-                  ? (() => {
-                      const cleanUrl = apiBase
-                        .replace('https://', '')
-                        .replace('/api', '');
-                      return cleanUrl;
-                    })()
-                  : 'Loading...'}
-              </Text>
-            </View>
             {balanceError && !isBlurred ? (
               <View style={styles.balanceErrorContainer}>
                 <Text style={styles.balanceErrorText}>{balanceError}</Text>
@@ -2759,6 +2752,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         network={network}
         onClose={() => setIsPSBTModalVisible(false)}
         onSign={handlePSBTSign}
+        btcPrice={btcPrice}
+        selectedCurrency={selectedCurrency}
+        onCurrencyPress={() => setIsCurrencySelectorVisible(true)}
       />
       {/* PSBT Transport Mode Selector */}
       <TransportModeSelector

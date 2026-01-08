@@ -18,7 +18,7 @@ import QRScanner from '../components/QRScanner';
 import BarcodeZxingScan from 'rn-barcode-zxing-scan';
 // @ts-ignore - bc-ur types (Buffer polyfill is in polyfills.js)
 import {URDecoder} from '@ngraveio/bc-ur';
-import {dbg, HapticFeedback} from '../utils';
+import {dbg, HapticFeedback, presentFiat} from '../utils';
 import {useTheme} from '../theme';
 
 const {BBMTLibNativeModule} = NativeModules;
@@ -58,6 +58,10 @@ export interface PSBTLoaderProps {
   useOverlay?: boolean;
   // Optional middle button to render between Cancel and Co-Sign buttons
   middleButton?: React.ReactNode;
+  // Bitcoin price button props
+  btcPrice?: string;
+  selectedCurrency?: string;
+  onCurrencyPress?: () => void;
 }
 
 export interface PSBTModalProps extends PSBTLoaderProps {
@@ -74,6 +78,9 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
   disableCancelWhenEmpty = false,
   useOverlay = true,
   middleButton,
+  btcPrice,
+  selectedCurrency,
+  onCurrencyPress,
 }) => {
   const {theme} = useTheme();
   const [psbtBase64, setPsbtBase64] = useState<string | null>(null);
@@ -822,11 +829,36 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
       <View style={useOverlay ? styles.modalContent : styles.embeddedContent}>
           {/* Header */}
           <View style={styles.headerRow}>
-            <Image
-              source={require('../assets/key-icon.png')}
-              style={styles.headerIcon}
-            />
-            <Text style={styles.headerTitle}>Sign • PSBT</Text>
+            {btcPrice !== undefined && onCurrencyPress && (
+              <TouchableOpacity
+                style={styles.priceButton}
+                onPress={() => {
+                  HapticFeedback.light();
+                  onCurrencyPress();
+                }}
+                activeOpacity={0.7}
+                accessible={true}
+                accessibilityRole="button"
+                accessibilityLabel={`Bitcoin price: ${
+                  btcPrice ? presentFiat(btcPrice) : '-'
+                } ${selectedCurrency || ''}`}
+                accessibilityHint="Double tap to change currency">
+                <Image
+                  source={require('../assets/bitcoin-logo.png')}
+                  style={styles.priceButtonIcon}
+                />
+                <View style={styles.priceTextContainer}>
+                  <Text style={styles.priceText}>
+                    {btcPrice ? presentFiat(btcPrice) : '-'}
+                  </Text>
+                  {selectedCurrency && (
+                    <Text style={styles.priceCurrencyBadge}>
+                      {selectedCurrency}
+                    </Text>
+                  )}
+                </View>
+              </TouchableOpacity>
+            )}
             <View style={styles.networkBadge}>
               <Text style={styles.networkBadgeText}>
                 {network === 'mainnet' ? 'MAINNET' : 'TESTNET'}
@@ -1211,18 +1243,6 @@ const createStyles = (theme: any) =>
       justifyContent: 'space-between',
       marginBottom: 12,
     },
-    headerIcon: {
-      width: 24,
-      height: 24,
-      marginRight: 10,
-      tintColor: theme.colors.text, // Use text color for better visibility in dark mode
-    },
-    headerTitle: {
-      fontSize: 20,
-      fontWeight: '700',
-      color: theme.colors.text,
-      flex: 1,
-    },
     networkBadge: {
       backgroundColor: theme.colors.background,
       paddingHorizontal: 8,
@@ -1236,6 +1256,54 @@ const createStyles = (theme: any) =>
       fontWeight: '700',
       color: theme.colors.text,
       letterSpacing: 0.5,
+    },
+    priceButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      backgroundColor:
+        theme.colors.background === '#121212' ||
+        theme.colors.background.includes('12')
+          ? theme.colors.cardBackground
+          : 'rgba(0, 0, 0, 0.06)',
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#121212' ||
+        theme.colors.background.includes('12')
+          ? theme.colors.border + '80'
+          : 'rgba(0, 0, 0, 0.1)',
+      paddingHorizontal: 14,
+      paddingVertical: 0,
+      borderRadius: 10,
+      height: 36,
+      minWidth: 90,
+      shadowOffset: {width: 0, height: 1},
+      shadowOpacity: 0.05,
+      shadowRadius: 3,
+      elevation: Platform.OS === 'android' ? 0 : 1,
+    },
+    priceButtonIcon: {
+      width: 20,
+      height: 20,
+      resizeMode: 'contain',
+    },
+    priceTextContainer: {
+      flexDirection: 'column',
+      alignItems: 'flex-start',
+      justifyContent: 'center',
+    },
+    priceText: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: theme.colors.text,
+      lineHeight: 14,
+    },
+    priceCurrencyBadge: {
+      fontSize: 10,
+      fontWeight: '600',
+      color: theme.colors.textSecondary,
+      lineHeight: 12,
     },
     description: {
       fontSize: 14,
