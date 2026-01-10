@@ -470,14 +470,20 @@ export const createStyles = (theme: Theme): Styles => ({
   },
   balanceEyeIcon: {
     position: 'absolute' as const,
-    left: 20,
+    left: 0,
     top: '50%',
-    marginTop: -8,
+    marginTop: -7, // Half of height (40/2) to center vertically
     width: 40,
     height: 40,
-    borderRadius: 20, // Perfect circle (half of width/height)
+    borderTopLeftRadius: 0,
+    borderBottomLeftRadius: 0,
+    borderTopRightRadius: 10,
+    borderBottomRightRadius: 10,
     backgroundColor: theme.colors.whiteOverlay15,
-    borderWidth: 1,
+    borderTopWidth: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderLeftWidth: 0, // No border on left side
     borderColor: theme.colors.whiteOverlay25,
     justifyContent: 'center' as const,
     alignItems: 'center' as const,
@@ -485,17 +491,23 @@ export const createStyles = (theme: Theme): Styles => ({
   },
   balanceUnitToggleContainer: {
     position: 'absolute' as const,
-    right: 20,
+    right: 0,
     top: '50%',
-    marginTop: -8,
+    marginTop: -7, // Half of height (40/2) to center vertically
     zIndex: 10,
   },
   balanceUnitToggle: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderTopLeftRadius: 10,
+    borderBottomLeftRadius: 10,
+    borderTopRightRadius: 0,
+    borderBottomRightRadius: 0,
     backgroundColor: theme.colors.whiteOverlay15,
-    borderWidth: 1,
+    borderTopWidth: 1,
+    borderRightWidth: 0, // No border on right side
+    borderBottomWidth: 1,
+    borderLeftWidth: 1,
     borderColor: theme.colors.whiteOverlay25,
     justifyContent: 'center' as const,
     alignItems: 'center' as const,

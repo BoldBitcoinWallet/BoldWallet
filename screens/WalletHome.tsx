@@ -1151,7 +1151,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         ? theme.colors.blackOverlay30 // Darker background in dark mode
         : theme.colors.whiteOverlay08, // Original light mode background
       borderColor: isDarkMode
-        ? theme.colors.border + '40' // Darker border in dark mode
+        ? theme.colors.whiteOverlay25 // Match eye and sats button border color in dark mode
         : theme.colors.whiteOverlay15, // Original light mode border
     },
   };

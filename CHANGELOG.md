@@ -1,5 +1,65 @@
 # Changelog
 
+## [2.1.9] - 2026-01-10
+
+### Added
+- **Modular Header Components**: New reusable header components for better code organization
+  - `HeaderPriceButton`: Standalone BTC price display component with currency selector integration
+  - `HeaderNetworkProvider`: Network and API provider information display component
+  - Improved component modularity and reusability across the app
+- **Extended Theme Color System**: Enhanced theme palette with comprehensive overlay colors
+  - New color constants: `bitcoinOrange`, `warning`, `success`, and their variants
+  - Glassmorphism overlay colors: `blackOverlay02-50`, `whiteOverlay08-30`, `primaryOverlay95`
+  - Status color overlays: `receivedOverlay15/40`, `dangerOverlay15/40`
+  - Skeleton loading colors: `skeletonGray`
+  - Better support for layered UI effects and visual depth
+- **Balance Header Controls**: New style properties for balance visibility and unit toggling
+  - `balanceHeaderControls`, `balanceEyeIcon`, `balanceUnitToggleContainer` styles
+  - Foundation for enhanced balance display controls
+
+### Changed
+- **Theme Color Consistency**: Replaced hardcoded color values with theme color constants
+  - Modal backdrops now use `theme.colors.modalBackdrop` instead of hardcoded rgba values
+  - Error boundary colors use `theme.colors.danger` and `theme.colors.white`
+  - QR Scanner components use theme colors for text, progress bars, and backgrounds
+  - Currency selector and legal modals use theme-aware backdrop colors
+- **Dark Mode Detection**: Simplified dark mode detection logic
+  - Changed from checking background color strings to simple `!== '#ffffff'` comparison
+  - More reliable and performant dark mode detection
+  - Consistent dark mode behavior across all header components
+- **Header Component Styling**: Enhanced header button and container styling
+  - Consistent use of `theme.colors.blackOverlay06` and `theme.colors.blackOverlay10` for light mode
+  - Better border and background color consistency across header elements
+  - Improved visual hierarchy with theme-aware styling
+- **Glassmorphism Effects**: Enhanced glassmorphism with new overlay color system
+  - Wallet header uses `primaryOverlay95` in light mode and `whiteOverlay15` in dark mode
+  - Consistent border colors using `whiteOverlay30` for better contrast
+  - More refined visual depth and layering effects
+
+### Fixed
+- **Color Consistency Issues**: Fixed hardcoded color values throughout components
+  - Replaced `rgba(0, 0, 0, 0.5)` with `theme.colors.modalBackdrop` in modals
+  - Replaced `#ff6b6b` with `theme.colors.danger` in error boundaries
+  - Replaced `#FFFFFF` and rgba white values with `theme.colors.white` and opacity variants
+  - Replaced `#F7931A` with `theme.colors.bitcoinOrange` in QR scanners
+- **QR Scanner Theme Support**: Improved QR scanner color consistency
+  - All text colors now use theme color constants with proper opacity
+  - Progress bars use theme colors for better visual consistency
+  - Better dark mode support across all QR scanner variants
+
+### Technical Details
+- **Component Refactoring**: Header component split into modular sub-components
+  - `HeaderPriceButton`: 216 lines of new component code
+  - `HeaderNetworkProvider`: 216 lines of new component code
+  - Better separation of concerns and component reusability
+- **Theme System**: Extended `Styles.tsx` with 30+ new color constants
+  - New overlay color system for glassmorphism effects
+  - Better type safety with TypeScript theme definitions
+- **Version Update**: Android version code bumped to 42, version name to 2.1.9
+- **Files Changed**: Multiple components updated for theme color consistency
+  - `Header.tsx`, `Styles.tsx`, `ErrorBoundary.tsx`, `CurrencySelector.tsx`
+  - `LegalModal.tsx`, `LegacyWalletModal.tsx`, `QRScanner.tsx`, `QRScanner.foss.tsx`
+
 ## [2.1.8] - 2026-01-07
 
 ### Added

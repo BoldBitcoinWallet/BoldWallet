@@ -33,15 +33,13 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
 }) => {
   const {theme} = useTheme();
 
-  const isDarkMode =
-    theme.colors.background === '#121212' ||
-    theme.colors.background.includes('12');
+  const isDarkMode = theme.colors.background !== '#ffffff';
 
   // Single bordered container for both network and provider - 2 lines layout
   const containerStyle: any = {
     flexDirection: 'column',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     gap: 1,
     paddingHorizontal: 8,
     paddingVertical: 0,
@@ -58,29 +56,32 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
     flexShrink: 1, // Allow shrinking if needed
     flexGrow: 0, // Don't grow beyond maxWidth
     alignSelf: 'center', // Center within parent
+    position: 'relative', // Enable absolute positioning for children
+    overflow: 'hidden', // Clip badge to container border radius
   };
 
   const networkBadgeStyle: any = {
-    backgroundColor: theme.colors.background === '#ffffff'
-      ? theme.colors.primary + '40'
-      : theme.colors.whiteOverlay15,
+    position: 'absolute',
+    top: -1, // Extend 1px above to cover the container's top border
+    left: -1, // Extend 1px left to cover the container's left border
+    right: -1, // Extend 1px right to cover the container's right border
+    backgroundColor: isDarkMode
+      ? theme.colors.border + '80'
+      : theme.colors.blackOverlay10,
     paddingHorizontal: 6,
-    borderRadius: 4,
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
     height: 16,
-    marginTop: -4,
     justifyContent: 'center',
     alignItems: 'center',
-    flexShrink: 0, // Don't shrink the badge
+    flexShrink: 0,
   };
 
   const networkBadgeTextStyle: any = {
     fontSize: 8,
     fontWeight: '700',
-    color: theme.colors.background === '#ffffff'
-      ? theme.colors.white
-      : theme.colors.text,
+    color:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.secondary
+        : theme.colors.text,
     letterSpacing: 0.2,
     lineHeight: 10,
   };
@@ -92,6 +93,7 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
     flexShrink: 1, // Allow text to shrink
     textAlign: 'center',
     maxWidth: 120, // Limit provider text width to prevent overflow
+    marginTop: 16, // Space for the absolutely positioned network badge
   };
 
   const cleanProviderUrl = apiBase
@@ -319,7 +321,9 @@ export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
       ? theme.colors.cardBackground
       : theme.colors.blackOverlay06,
     borderWidth: 1,
-    borderColor: isDarkMode ? theme.colors.border + '80' : theme.colors.blackOverlay10,
+    borderColor: isDarkMode
+      ? theme.colors.border + '80'
+      : theme.colors.blackOverlay10,
   };
 
   return (
@@ -383,39 +387,49 @@ export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
   );
 };
 
-export const HeaderTitle: React.FC<{title?: string}> = ({title}) => {
+export const HeaderTitle: React.FC<{title?: string}> = () => {
   const {theme} = useTheme();
   const styles = createStyles(theme);
   const route = useRoute();
 
   // Map route names to display titles
   const getTitle = () => {
-    if (title) return title;
-
     const routeName = route.name;
     const titleMap: Record<string, string> = {
       Home: 'Home',
       PSBT: 'PSBT',
-      Settings: 'Settings',
+      Settings: '',
       Welcome: 'Welcome',
       'Devices Pairing': 'Devices Pairing',
       'Nostr Connect': 'Nostr Connect',
     };
 
-    return titleMap[routeName] || routeName;
+    return titleMap[routeName] || '';
   };
 
+  const displayTitle = getTitle();
+  const isEmpty = !displayTitle || displayTitle.trim().length === 0;
+
   // Use inverted icon in dark mode
-  const isDarkMode =
-    theme.colors.background !== '#ffffff';
+  const isDarkMode = theme.colors.background !== '#ffffff';
   const iconSource = isDarkMode
     ? require('../assets/icon-inverted.png') // Use inverted icon in dark mode
     : require('../assets/icon.png'); // Original icon in light mode
 
+  // Center the container when title is empty
+  const containerStyle = isEmpty
+    ? [styles.headerTitleContainer, {justifyContent: 'center' as const, paddingLeft: 0}]
+    : styles.headerTitleContainer;
+
+  // Remove marginRight from logo when title is empty
+  const logoStyle = isEmpty
+    ? [styles.headerLogo, {marginRight: 0}]
+    : styles.headerLogo;
+
   return (
-    <View style={styles.headerTitleContainer}>
-      <Image source={iconSource} style={styles.headerLogo} />
-      <Text style={styles.headerTitleText}>{getTitle()}</Text>
+    <View style={containerStyle}>
+      <Image source={iconSource} style={logoStyle} />
+      {!isEmpty && <Text style={styles.headerTitleText}>{displayTitle}</Text>}
     </View>
   );
 };
