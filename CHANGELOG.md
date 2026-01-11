@@ -1,5 +1,66 @@
 # Changelog
 
+## [2.1.10] - 2026-01-12
+
+### Added
+- **Comprehensive Panic Recovery in Nostr Transport**: Enhanced error handling and crash prevention throughout the Nostr transport layer
+  - Panic recovery added to chunk assembler operations (`ChunkAssembler.Add`, `ChunkPayload`, `ParseChunkTag`)
+  - Panic recovery in message pump operations (`MessagePump.Run`, `processEvent`, query goroutines)
+  - Panic recovery in session coordinator (`SessionCoordinator.AwaitPeers`, `PublishReady`, `PublishComplete`)
+  - Stack trace logging for all panic recoveries to aid debugging
+  - Improved reliability and stability of Nostr-based device pairing and transaction signing
+- **Theme-Aware Typography System**: Font system now uses theme constants for consistency
+  - Font sizes now use `theme.fontSizes` (xl, lg, base) instead of hardcoded values
+  - Font weights use `theme.fontWeights` (bold, semibold, normal) with proper type casting
+  - Font families use `theme.fontFamilies` (regular, monospace) for better theming support
+  - Enhanced typography consistency across all screens and components
+
+### Changed
+- **Nostr Transport Layer Refactoring**: Improved code organization and error handling
+  - Enhanced chunk handling with better metadata parsing and validation
+  - Improved message processing with better error recovery
+  - Enhanced session management with better peer coordination
+  - Improved client connection handling and relay communication
+  - Better error messages and logging throughout the transport layer
+- **Screen Component Refactoring**: Major refactoring across multiple screens for better code organization
+  - `MobileNostrPairing.tsx`: Significant refactoring (1102 lines changed) with improved error handling and code formatting
+  - `MobilesPairing.tsx`: Refactored with better code structure (474 lines changed)
+  - `PSBTModal.tsx`: Enhanced with improved UI and error handling (217 lines changed)
+  - `WalletSettings.tsx`: Updated with better organization (251 lines changed)
+  - `ShowcaseScreen.tsx`: Improved layout and functionality (118 lines changed)
+  - `WalletHome.tsx`: Refactored for better maintainability (168 lines changed)
+  - `PSBTScreen.tsx`, `SendBitcoinModal.tsx`, `SignedPSBTModal.tsx`: Enhanced with improvements
+- **Component Theme Integration**: Enhanced components with better theme support
+  - `Header.tsx`: Updated with theme-aware typography (47 lines changed)
+  - `TransactionList.tsx`: Improved theme integration (47 lines changed)
+  - `QRScanner.tsx`: Enhanced with theme constants (18 lines changed)
+  - `KeyshareModal.tsx`: Updated with improvements (14 lines changed)
+  - `Styles.tsx`: Refactored for better organization (153 lines changed)
+- **TSS Library Updates**: Updated native libraries with improvements
+  - Updated TSS framework binaries for iOS (all architectures)
+  - Updated TSS AAR library for Android
+  - Enhanced Go library with improved error handling and panic recovery
+
+### Fixed
+- **Nostr Transport Stability**: Fixed potential crashes from unhandled panics in transport operations
+  - All critical operations now have panic recovery with proper error handling
+  - Better error messages for debugging transport issues
+  - Improved reliability of chunk assembly and message processing
+- **Code Formatting and Consistency**: Improved code formatting across multiple files
+  - Better indentation and line breaks for improved readability
+  - Consistent code style across screens and components
+  - Removed unused code (LoadingScreen.tsx cleanup)
+
+### Technical Details
+- **Nostr Transport Layer**: Enhanced with comprehensive panic recovery
+  - `chunker.go`: Added panic recovery to chunk operations
+  - `pump.go`: Enhanced message pump with panic recovery in all goroutines
+  - `session.go`: Added panic recovery to session operations
+  - `client.go`, `messenger.go`, `relay.go`: Improved error handling
+- **Version Update**: Android version code bumped to 43, version name to 2.1.10
+- **Files Changed**: 39 files changed with 2,213 insertions and 1,152 deletions
+- **Build System**: Updated iOS Xcode project and Android build configuration
+
 ## [2.1.9] - 2026-01-10
 
 ### Added
