@@ -102,6 +102,7 @@ export interface Styles {
   btcPrice: TextStyle;
   currencyBadge: TextStyle;
   balanceContainer: ViewStyle;
+  balanceContentContainer: ViewStyle;
   balanceHeaderRow: ViewStyle;
   balanceRow: ViewStyle;
   balanceRowWithMargin: ViewStyle;
@@ -114,6 +115,8 @@ export interface Styles {
   balanceUnitToggle: ViewStyle;
   balanceUnitToggleText: TextStyle;
   blurredText: TextStyle;
+  balancePrivacyPlaceholder: TextStyle;
+  balancePrivacyContainer: ViewStyle;
   balanceHint: TextStyle;
   balanceTouchable: ViewStyle;
   balanceLoadingIndicator: ViewStyle;
@@ -308,8 +311,10 @@ export interface Styles {
 
 export const createStyles = (theme: Theme): Styles => ({
   actionButton: {
-    paddingVertical: 12,
-    marginBottom: 4,
+    paddingVertical: 12, // Consistent vertical padding for all action buttons
+    paddingHorizontal: 0, // Gap handles spacing, no horizontal padding needed
+    marginTop: 0,
+    marginBottom: 0, // Gap handles spacing
     borderRadius: 8,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
@@ -371,23 +376,22 @@ export const createStyles = (theme: Theme): Styles => ({
     backgroundColor: theme.colors.background,
   },
   contentContainer: {
-    paddingTop: 12,
     paddingLeft: 16,
+    paddingTop: 12,
     paddingRight: 16,
     paddingBottom: 0,
-    // Keep header above siblings (CacheIndicator/TransactionList)
     position: 'relative' as const,
     zIndex: 2,
   },
   walletHeader: {
-    padding: 12,
+    padding: 8,
     backgroundColor:
       theme.colors.background === '#ffffff'
         ? theme.colors.primaryOverlay95 // Increased opacity for better contrast in light mode
         : theme.colors.whiteOverlay15, // Brighter glassy overlay for better contrast in dark mode
     borderRadius: 12,
     alignItems: 'stretch' as const, // Changed from 'center' to allow marginHorizontal to work
-    marginBottom: 0,
+    marginBottom: 12, // Normalized spacing to CacheIndicator
     borderWidth: 1,
     borderColor: theme.colors.whiteOverlay30, // More visible border for better contrast
     // Explicit stacking context so action buttons stay on top on Android
@@ -405,7 +409,7 @@ export const createStyles = (theme: Theme): Styles => ({
     justifyContent: 'space-between' as const,
     alignItems: 'center' as const,
     width: '100%',
-    marginBottom: 12,
+    marginBottom: 16, // Normalized spacing to party container
   },
   btcLogo: {
     width: 32,
@@ -438,12 +442,15 @@ export const createStyles = (theme: Theme): Styles => ({
     borderRadius: 4,
   },
   balanceContainer: {
+    flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
+    justifyContent: 'space-between' as const,
+    paddingTop: 16,
+    paddingBottom: 12, // Reduced to create smaller gap with action buttons
+    paddingHorizontal: 16,
     minHeight: 80,
-    marginTop: 4,
-    marginBottom: 4,
+    marginTop: 8, // Reduced gap from party container (partyContainer marginBottom: 8 + this: 8 = 16px total)
+    marginBottom: 0, // Actions container has marginTop instead
     marginHorizontal: 0, // Match actionButton marginHorizontal to align with send/receive buttons
     backgroundColor:
       theme.colors.background === '#ffffff'
@@ -456,7 +463,15 @@ export const createStyles = (theme: Theme): Styles => ({
         ? theme.colors.whiteOverlay25 // More visible border for better contrast in light mode
         : theme.colors.whiteOverlay30, // More visible border for better contrast in dark mode
     overflow: 'hidden' as const,
-    position: 'relative' as const, // For absolute positioning of eye icon
+    position: 'relative' as const,
+  },
+  balanceContentContainer: {
+    flex: 1,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    paddingHorizontal: 12,
+    minWidth: 0, // Allow flex shrinking
+    maxWidth: '100%', // Constrain to container width
   },
   balanceHeaderControls: {
     position: 'absolute' as const,
@@ -469,45 +484,27 @@ export const createStyles = (theme: Theme): Styles => ({
     zIndex: 10,
   },
   balanceEyeIcon: {
-    position: 'absolute' as const,
-    left: 0,
-    top: '50%',
-    marginTop: -7, // Half of height (40/2) to center vertically
-    width: 40,
-    height: 40,
-    borderTopLeftRadius: 0,
-    borderBottomLeftRadius: 0,
-    borderTopRightRadius: 10,
-    borderBottomRightRadius: 10,
+    width: 44,
+    height: 44,
+    borderRadius: 10,
     backgroundColor: theme.colors.whiteOverlay15,
-    borderTopWidth: 1,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderLeftWidth: 0, // No border on left side
+    borderWidth: 1,
     borderColor: theme.colors.whiteOverlay25,
     justifyContent: 'center' as const,
     alignItems: 'center' as const,
-    zIndex: 10,
+    marginRight: 12,
+    flexShrink: 0,
   },
   balanceUnitToggleContainer: {
-    position: 'absolute' as const,
-    right: 0,
-    top: '50%',
-    marginTop: -7, // Half of height (40/2) to center vertically
-    zIndex: 10,
+    marginLeft: 12,
+    flexShrink: 0,
   },
   balanceUnitToggle: {
-    width: 40,
-    height: 40,
-    borderTopLeftRadius: 10,
-    borderBottomLeftRadius: 10,
-    borderTopRightRadius: 0,
-    borderBottomRightRadius: 0,
+    width: 44, // Same square size as eye icon
+    height: 44, // Same square size as eye icon
+    borderRadius: 10,
     backgroundColor: theme.colors.whiteOverlay15,
-    borderTopWidth: 1,
-    borderRightWidth: 0, // No border on right side
-    borderBottomWidth: 1,
-    borderLeftWidth: 1,
+    borderWidth: 1,
     borderColor: theme.colors.whiteOverlay25,
     justifyContent: 'center' as const,
     alignItems: 'center' as const,
@@ -524,8 +521,8 @@ export const createStyles = (theme: Theme): Styles => ({
     alignItems: 'center' as const,
     justifyContent: 'space-between' as const,
     width: '100%',
-    marginBottom: 6,
-    paddingBottom: 6,
+    marginBottom: 8, // Normalized internal spacing
+    paddingBottom: 8, // Normalized internal spacing
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: theme.colors.whiteOverlay20, // More visible divider
   },
@@ -543,6 +540,8 @@ export const createStyles = (theme: Theme): Styles => ({
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
     width: '100%',
+    maxWidth: '100%', // Ensure it respects container width
+    minWidth: 0, // Allow flex shrinking
   },
   balanceLoadingIndicator: {
     marginRight: 8,
@@ -580,12 +579,14 @@ export const createStyles = (theme: Theme): Styles => ({
     borderRadius: 8,
     backgroundColor: 'transparent',
     width: '100%',
+    maxWidth: '100%', // Ensure it respects container width
     justifyContent: 'center' as const,
     marginTop: 0,
-    marginBottom: 4,
-    paddingTop: 2,
+    marginBottom: 4, // Normalized spacing between BTC and fiat amounts
+    paddingTop: 0,
     pointerEvents: 'box-none' as const,
-    height: 28,
+    minHeight: 24,
+    minWidth: 0, // Allow flex shrinking
   },
   balanceBTC: {
     fontSize: theme.fontSizes?.['3xl'] || 24,
@@ -596,6 +597,8 @@ export const createStyles = (theme: Theme): Styles => ({
     textShadowRadius: 2,
     lineHeight: theme.fontSizes?.['3xl'] ? theme.fontSizes['3xl'] * 1.2 : 29,
     textAlign: 'center' as const,
+    includeFontPadding: false,
+    flexShrink: 1, // Allow text to shrink
   },
   balanceFiat: {
     fontSize: theme.fontSizes?.lg || 16,
@@ -606,16 +609,34 @@ export const createStyles = (theme: Theme): Styles => ({
     textShadowRadius: 1,
     lineHeight: theme.fontSizes?.lg ? theme.fontSizes.lg * 1.2 : 19,
     textAlign: 'center' as const,
+    includeFontPadding: false,
+    flexShrink: 1, // Allow text to shrink
   },
   balanceIcon: {
-    width: 20,
-    height: 20,
+    width: 22,
+    height: 22,
     tintColor: theme.colors.white,
     opacity: 0.9,
   },
   blurredText: {
     opacity: 0.7,
     letterSpacing: 2,
+  },
+  balancePrivacyContainer: {
+    width: '100%',
+    height: 58,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  balancePrivacyPlaceholder: {
+    fontSize: theme.fontSizes?.['3xl'] || 24,
+    fontWeight: (theme.fontWeights?.bold || '700') as any,
+    color: theme.colors.white,
+    textAlign: 'center' as const,
+    letterSpacing: 4,
+    opacity: 0.8,
+    includeFontPadding: false,
+    lineHeight: theme.fontSizes?.['3xl'] ? theme.fontSizes['3xl'] * 1.2 : 29,
   },
   balanceHint: {
     fontSize: theme.fontSizes?.xs || 10,
@@ -649,7 +670,6 @@ export const createStyles = (theme: Theme): Styles => ({
     flexDirection: 'row' as const,
     width: '100%',
     marginTop: 0,
-    marginBottom: 8,
     borderRadius: 8,
     flexWrap: 'nowrap' as const,
     gap: 8,
@@ -680,7 +700,7 @@ export const createStyles = (theme: Theme): Styles => ({
     opacity: 0.9,
   },
   partyLabel: {
-    fontSize: theme.fontSizes?.xs || 10,
+    fontSize: theme.fontSizes?.xs || 9,
     fontWeight: (theme.fontWeights?.normal || '400') as any,
     fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textOnPrimary,
@@ -690,17 +710,18 @@ export const createStyles = (theme: Theme): Styles => ({
     letterSpacing: 0.2,
   },
   partyValue: {
-    fontSize: theme.fontSizes?.sm || 12,
+    fontSize: theme.fontSizes?.xs || 11,
     fontWeight: (theme.fontWeights?.semibold || '600') as any,
     fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textOnPrimary,
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
+    flexShrink: 1,
   },
   actions: {
     flexDirection: 'row' as const,
-    marginTop: 8,
+    marginTop: 8, // Reduced gap from balance container (balanceContainer paddingBottom: 12 + this: 8 = 20px total)
     width: '100%',
-    gap: 8,
+    gap: 8, // Consistent gap between buttons
     alignItems: 'stretch' as const,
     // Ensure buttons are above everything else
     zIndex: 100,
@@ -716,7 +737,7 @@ export const createStyles = (theme: Theme): Styles => ({
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
-    gap: 8,
+    gap: 8, // Internal gap for icon and text
     minHeight: 48,
     // Ensure button is clickable on both platforms
     zIndex: 101,
@@ -737,7 +758,7 @@ export const createStyles = (theme: Theme): Styles => ({
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
-    gap: 4,
+    gap: 0, // No internal gap needed for icon-only button
     borderRadius: 10,
     // Ensure button is clickable on both platforms
     zIndex: 101,
@@ -750,8 +771,8 @@ export const createStyles = (theme: Theme): Styles => ({
     color: theme.colors.textOnPrimary,
   },
   addressTypeButtonIcon: {
-    width: 20,
-    height: 20,
+    width: 28,
+    height: 28,
     tintColor: theme.colors.textOnPrimary,
     opacity: 0.9,
   },
@@ -761,7 +782,7 @@ export const createStyles = (theme: Theme): Styles => ({
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
-    gap: 8,
+    gap: 8, // Internal gap for icon and text
     minHeight: 48,
     // Ensure button is clickable on both platforms
     zIndex: 101,
@@ -905,9 +926,9 @@ export const createStyles = (theme: Theme): Styles => ({
     flex: 1,
   },
   cacheIndicator: {
-    padding: 12,
+    padding: 8,
     marginHorizontal: 16,
-    marginTop: 8,
+    marginTop: 0, // walletHeader already has marginBottom: 16
     marginBottom: 8,
     borderRadius: 8,
     flexDirection: 'row' as const,
@@ -985,7 +1006,7 @@ export const createStyles = (theme: Theme): Styles => ({
     flex: 1,
     marginBottom: 0,
     padding: 16,
-    paddingTop: 0,
+    paddingTop: 0, // CacheIndicator already has marginBottom: 16
     backgroundColor: theme.colors.background,
     position: 'relative',
     zIndex: 1,
@@ -1046,8 +1067,8 @@ export const createStyles = (theme: Theme): Styles => ({
         ? theme.colors.whiteOverlay18 // glassy
         : theme.colors.whiteOverlay12, // Glassy white overlay in dark mode
     borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
     borderWidth: 1,
     borderColor:
       theme.colors.background === '#ffffff'
@@ -1159,7 +1180,7 @@ export const createStyles = (theme: Theme): Styles => ({
   modalHeaderIcon: {
     width: 24,
     height: 24,
-    tintColor: theme.colors.primary,
+    tintColor: theme.colors.background === '#ffffff' ? theme.colors.primary : theme.colors.white,
     marginRight: 10,
   },
   modalHeaderTitle: {

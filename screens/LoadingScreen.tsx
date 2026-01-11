@@ -10,7 +10,6 @@ import {
   Easing,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import LinearGradient from 'react-native-linear-gradient';
 import {useTheme} from '../theme';
 import {HapticFeedback} from '../utils';
 

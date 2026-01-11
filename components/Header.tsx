@@ -62,22 +62,25 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
 
   const networkBadgeStyle: any = {
     position: 'absolute',
-    top: -1, // Extend 1px above to cover the container's top border
-    left: -1, // Extend 1px left to cover the container's left border
-    right: -1, // Extend 1px right to cover the container's right border
+    top: 0, // Align with container top
+    left: 0, // Align with container left
+    right: 0, // Align with container right
     backgroundColor: isDarkMode
       ? theme.colors.border + '80'
       : theme.colors.blackOverlay10,
     paddingHorizontal: 6,
-    height: 16,
+    height: 17, // Slightly taller for better visibility
     justifyContent: 'center',
     alignItems: 'center',
     flexShrink: 0,
+    borderTopLeftRadius: 10,
+    borderTopRightRadius: 10,
   };
 
   const networkBadgeTextStyle: any = {
-    fontSize: 8,
-    fontWeight: '700',
+    fontSize: theme.fontSizes?.xs || 8,
+    fontWeight: (theme.fontWeights?.bold || '700') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color:
       theme.colors.background === '#ffffff'
         ? theme.colors.secondary
@@ -87,7 +90,9 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
   };
 
   const providerTextStyle: any = {
-    fontSize: 9,
+    fontSize: theme.fontSizes?.xs || 9,
+    fontWeight: (theme.fontWeights?.normal || '400') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textSecondary,
     lineHeight: 14,
     flexShrink: 1, // Allow text to shrink
@@ -167,15 +172,17 @@ export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
   };
 
   const headerBtcPriceStyle: any = {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: theme.fontSizes?.sm || 12,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.text,
     lineHeight: 14,
   };
 
   const headerCurrencyBadgeStyle: any = {
-    fontSize: 10,
-    fontWeight: '600',
+    fontSize: theme.fontSizes?.xs || 10,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textSecondary,
     lineHeight: 12,
   };
@@ -248,8 +255,7 @@ export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: 8,
-    height: 36,
+    gap: 24,
     paddingTop: 12,
     paddingBottom: 12,
     paddingRight: 16,
@@ -261,7 +267,6 @@ export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
     backgroundColor:
       theme.colors.background === '#121212' ||
       theme.colors.background.includes('12')
@@ -292,15 +297,17 @@ export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
   };
 
   const headerBtcPriceStyle: any = {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: theme.fontSizes?.sm || 12,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.text,
     lineHeight: 14,
   };
 
   const headerCurrencyBadgeStyle: any = {
-    fontSize: 10,
-    fontWeight: '600',
+    fontSize: theme.fontSizes?.xs || 10,
+    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textSecondary,
     lineHeight: 12,
   };
@@ -587,7 +594,9 @@ const createCustomHeaderStyles = (theme: any) =>
       marginLeft: 8,
     },
     backButtonText: {
-      fontSize: 24,
+      fontSize: theme.fontSizes?.['3xl'] || 24,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
   });

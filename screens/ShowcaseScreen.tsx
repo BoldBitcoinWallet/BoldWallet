@@ -260,8 +260,9 @@ const ShowcaseScreen = ({navigation}: any) => {
       paddingVertical: 20,
     },
     heroTitle: {
-      fontSize: 28,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.['3xl'] || 28,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginTop: 16,
       textAlign: 'center',
@@ -269,21 +270,23 @@ const ShowcaseScreen = ({navigation}: any) => {
       marginBottom: 16,
     },
     heroSubtitle: {
-      fontSize: 20,
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
           : theme.colors.text,
-      fontWeight: '700',
       textAlign: 'center',
       lineHeight: 28,
       paddingHorizontal: 20,
       marginBottom: 8,
     },
     heroTagline: {
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
-      fontWeight: '500',
       textAlign: 'center',
       lineHeight: 22,
       paddingHorizontal: 20,
@@ -342,13 +345,15 @@ const ShowcaseScreen = ({navigation}: any) => {
     },
     ctaButtonText: {
       color: theme.colors.white,
-      fontWeight: '600',
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     ctaButtonSecondaryText: {
       color: theme.colors.text,
-      fontWeight: '600',
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     ctaButtonIconContainer: {
       flexDirection: 'row',
@@ -385,7 +390,9 @@ const ShowcaseScreen = ({navigation}: any) => {
       paddingHorizontal: 10,
     },
     termsText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       textAlign: 'left',
       color: theme.colors.textSecondary,
       marginLeft: 8,
@@ -395,9 +402,11 @@ const ShowcaseScreen = ({navigation}: any) => {
       alignSelf: 'center',
     },
     termsLink: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.accent,
       textDecorationLine: 'underline',
-      fontWeight: '600',
     },
     checkboxContainer: {
       alignItems: 'center',
@@ -424,8 +433,9 @@ const ShowcaseScreen = ({navigation}: any) => {
     },
     checkmark: {
       color: theme.colors.background,
-      fontSize: 16,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     // Enhanced Modal Styles
     modalOverlay: {
@@ -457,8 +467,9 @@ const ShowcaseScreen = ({navigation}: any) => {
       borderBottomColor: 'rgba(0,0,0,0.05)',
     },
     modalTitle: {
-      fontSize: 18,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       marginLeft: 12,
       color: theme.colors.text,
       flex: 1,
@@ -476,27 +487,30 @@ const ShowcaseScreen = ({navigation}: any) => {
       borderColor: theme.colors.border + '10',
     },
     closeButtonText: {
-      fontSize: 20,
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontWeight: '600',
     },
     modalBody: {
       paddingHorizontal: 24,
       paddingVertical: 20,
     },
     modalSubtitle: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.secondary,
       marginBottom: 20,
       textAlign: 'left',
-      fontWeight: '500',
     },
     passwordInputContainer: {
       marginBottom: 24,
     },
     passwordInputLabel: {
-      fontSize: 13,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 10,
       paddingHorizontal: 4,
@@ -513,10 +527,11 @@ const ShowcaseScreen = ({navigation}: any) => {
       paddingHorizontal: 16,
       paddingRight: 50,
       paddingVertical: 14,
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       backgroundColor: 'rgba(0,0,0,0.02)',
-      fontWeight: '500',
       flex: 1,
     },
     passwordInputFocused: {
@@ -544,7 +559,6 @@ const ShowcaseScreen = ({navigation}: any) => {
       borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
-      fontWeight: '600',
       flexDirection: 'row',
       gap: 8,
       paddingVertical: 14,
@@ -562,21 +576,24 @@ const ShowcaseScreen = ({navigation}: any) => {
           : theme.colors.accent,
     },
     modalActionButtonText: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       letterSpacing: 0.3,
     },
     modalCancelButtonText: {
       color: theme.colors.text,
-      fontSize: 14,
-      fontWeight: '500',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     modalSubmitButtonText: {
       color: theme.colors.background === '#ffffff'
         ? theme.colors.background
         : theme.colors.white,
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     modalHeaderIconImage: {
       width: 20,
@@ -605,21 +622,26 @@ const ShowcaseScreen = ({navigation}: any) => {
       marginBottom: 20,
     },
     modeHintTitle: {
-      fontSize: 15,
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       textAlign: 'left',
       alignSelf: 'flex-start',
-      fontWeight: '500',
     },
     modeHintLine: {
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginTop: 6,
       textAlign: 'left',
       alignSelf: 'flex-start',
     },
     modeHintLineCentered: {
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginTop: 6,
       textAlign: 'center',
@@ -725,8 +747,9 @@ const ShowcaseScreen = ({navigation}: any) => {
         theme.colors.background === '#ffffff'
           ? theme.colors.background
           : theme.colors.text,
-      fontSize: 16,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       textAlign: 'center',
     },
     modeSelectedCheck: {
@@ -754,8 +777,9 @@ const ShowcaseScreen = ({navigation}: any) => {
     },
     modeContinueButtonText: {
       color: theme.colors.white,
-      fontSize: 15,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     modeOptionDesc: {
       color:
@@ -764,7 +788,9 @@ const ShowcaseScreen = ({navigation}: any) => {
           : theme.colors.textSecondary,
       opacity: 0.9,
       textAlign: 'center',
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       marginTop: 6,
       lineHeight: 18,
     },
@@ -793,15 +819,16 @@ const ShowcaseScreen = ({navigation}: any) => {
     },
     modeSelectedHintText: {
       color: theme.colors.background === '#ffffff' ? theme.colors.primary : theme.colors.text,
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       textAlign: 'left',
       flex: 1,
       flexWrap: 'wrap',
       maxWidth: '100%',
-      fontWeight: 'normal',
     },
     modeSelectedHintTextBold: {
-      fontWeight: 'bold',
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
     },
     // Setup Guide Hint Styles - Subtle
     setupGuideHint: {
@@ -827,12 +854,13 @@ const ShowcaseScreen = ({navigation}: any) => {
           : theme.colors.accent,
     },
     setupGuideHintText: {
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
           : theme.colors.accent,
-      fontWeight: '500',
       textDecorationLine: 'underline',
       textDecorationColor:
         theme.colors.background === '#ffffff'

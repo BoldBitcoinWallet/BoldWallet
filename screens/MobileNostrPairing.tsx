@@ -120,7 +120,8 @@ const MobileNostrPairing = ({navigation}: any) => {
     derivePaths?: string[];
   } | null>(null);
   const [fromAddress, setFromAddress] = useState<string>(''); // Derived address for send transaction
-  const [currentDerivationPath, setCurrentDerivationPath] = useState<string>(''); // Derivation path for display
+  const [currentDerivationPath, setCurrentDerivationPath] =
+    useState<string>(''); // Derivation path for display
   const [currentNetwork, setCurrentNetwork] = useState<string>('mainnet'); // Network for display
   const [isPreParamsReady, setIsPreParamsReady] = useState(false);
   const [isPreparing, setIsPreparing] = useState(false);
@@ -767,17 +768,30 @@ const MobileNostrPairing = ({navigation}: any) => {
 
       // ALWAYS use route params - no fallbacks
       const netForNative = route.params.network.trim();
-      const netForDisplay = netForNative === 'testnet3' ? 'testnet' : netForNative;
+      const netForDisplay =
+        netForNative === 'testnet3' ? 'testnet' : netForNative;
 
       setCurrentNetwork(netForDisplay);
-      
+
       // Also set derivation path immediately if available from route params
-      if (route.params.derivationPath && route.params.derivationPath.trim() !== '') {
+      if (
+        route.params.derivationPath &&
+        route.params.derivationPath.trim() !== ''
+      ) {
         setCurrentDerivationPath(route.params.derivationPath.trim());
-        dbg('MobileNostrPairing: Initialized derivation path from route params:', route.params.derivationPath);
+        dbg(
+          'MobileNostrPairing: Initialized derivation path from route params:',
+          route.params.derivationPath,
+        );
       }
-      
-      dbg('MobileNostrPairing: Initialized network for display:', netForDisplay, '(native format:', netForNative, ')');
+
+      dbg(
+        'MobileNostrPairing: Initialized network for display:',
+        netForDisplay,
+        '(native format:',
+        netForNative,
+        ')',
+      );
     };
 
     initializeNetwork();
@@ -797,12 +811,18 @@ const MobileNostrPairing = ({navigation}: any) => {
           setFromAddress('');
           return;
         }
-        if (!route.params.addressType || route.params.addressType.trim() === '') {
+        if (
+          !route.params.addressType ||
+          route.params.addressType.trim() === ''
+        ) {
           dbg('ERROR: Address type missing from route params in send mode');
           setFromAddress('');
           return;
         }
-        if (!route.params.derivationPath || route.params.derivationPath.trim() === '') {
+        if (
+          !route.params.derivationPath ||
+          route.params.derivationPath.trim() === ''
+        ) {
           dbg('ERROR: Derivation path missing from route params in send mode');
           setFromAddress('');
           return;
@@ -812,20 +832,24 @@ const MobileNostrPairing = ({navigation}: any) => {
         if (!keyshareJSON) return;
 
         const keyshare = JSON.parse(keyshareJSON);
-        
+
         // ALWAYS use route params - no fallbacks
         const netForNative = route.params.network.trim();
         const addressTypeToUse = route.params.addressType.trim();
         const path = route.params.derivationPath.trim();
-        
-        // Normalize for display only: 'testnet3' -> 'testnet'
-        const netForDisplay = netForNative === 'testnet3' ? 'testnet' : netForNative;
 
-        dbg('=== MobileNostrPairing: Using route params ONLY (no fallbacks) ===', {
-          network: netForNative,
-          addressType: addressTypeToUse,
-          derivationPath: path,
-        });
+        // Normalize for display only: 'testnet3' -> 'testnet'
+        const netForDisplay =
+          netForNative === 'testnet3' ? 'testnet' : netForNative;
+
+        dbg(
+          '=== MobileNostrPairing: Using route params ONLY (no fallbacks) ===',
+          {
+            network: netForNative,
+            addressType: addressTypeToUse,
+            derivationPath: path,
+          },
+        );
 
         // Derive the public key and address
         const publicKey = await BBMTLibNativeModule.derivePubkey(
@@ -1534,19 +1558,31 @@ const MobileNostrPairing = ({navigation}: any) => {
       if (!route.params?.network || route.params.network.trim() === '') {
         throw new Error('Network is required in route params');
       }
-      if (!route.params?.addressType || route.params.addressType.trim() === '') {
+      if (
+        !route.params?.addressType ||
+        route.params.addressType.trim() === ''
+      ) {
         throw new Error('Address type is required in route params');
       }
-      if (!route.params?.derivationPath || route.params.derivationPath.trim() === '') {
+      if (
+        !route.params?.derivationPath ||
+        route.params.derivationPath.trim() === ''
+      ) {
         throw new Error('Derivation path is required in route params');
       }
       if (!route.params?.toAddress || route.params.toAddress.trim() === '') {
         throw new Error('Destination address is required in route params');
       }
-      if (!route.params?.satoshiAmount || route.params.satoshiAmount.trim() === '') {
+      if (
+        !route.params?.satoshiAmount ||
+        route.params.satoshiAmount.trim() === ''
+      ) {
         throw new Error('Amount is required in route params');
       }
-      if (!route.params?.satoshiFees || route.params.satoshiFees.trim() === '') {
+      if (
+        !route.params?.satoshiFees ||
+        route.params.satoshiFees.trim() === ''
+      ) {
         throw new Error('Fees are required in route params');
       }
 
@@ -1572,17 +1608,19 @@ const MobileNostrPairing = ({navigation}: any) => {
       const cachedApi = await LocalCache.getItem(`api_${originalNetwork}`);
       originalApiUrl = cachedApi || '';
       if (!originalApiUrl) {
-        originalApiUrl = originalNetwork === 'testnet3' || originalNetwork === 'testnet'
-          ? 'https://mempool.space/testnet/api'
-          : 'https://mempool.space/api';
+        originalApiUrl =
+          originalNetwork === 'testnet3' || originalNetwork === 'testnet'
+            ? 'https://mempool.space/testnet/api'
+            : 'https://mempool.space/api';
       }
 
       // Set network and API in BBMTLib for this transaction
       let apiUrl = await LocalCache.getItem(`api_${net}`);
       if (!apiUrl) {
-        apiUrl = net === 'testnet3' || net === 'testnet'
-          ? 'https://mempool.space/testnet/api'
-          : 'https://mempool.space/api';
+        apiUrl =
+          net === 'testnet3' || net === 'testnet'
+            ? 'https://mempool.space/testnet/api'
+            : 'https://mempool.space/api';
       }
       await BBMTLibNativeModule.setBtcNetwork(net);
       await BBMTLibNativeModule.setAPI(net, apiUrl);
@@ -1871,9 +1909,17 @@ const MobileNostrPairing = ({navigation}: any) => {
           const walletService = WalletService.getInstance();
           (walletService as any).currentNetwork = originalNetwork;
           (walletService as any).currentApiUrl = originalApiUrl;
-          dbg('MobileNostrPairing: Restored original network:', originalNetwork, 'API:', originalApiUrl);
+          dbg(
+            'MobileNostrPairing: Restored original network:',
+            originalNetwork,
+            'API:',
+            originalApiUrl,
+          );
         } catch (restoreError) {
-          dbg('MobileNostrPairing: Error restoring original network:', restoreError);
+          dbg(
+            'MobileNostrPairing: Error restoring original network:',
+            restoreError,
+          );
         }
       }
       setIsPairing(false);
@@ -2531,8 +2577,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginBottom: 8,
     },
     sectionTitle: {
-      fontSize: 18,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 12,
     },
@@ -2584,8 +2631,9 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     peerCheckmark: {
       color: theme.colors.white,
-      fontSize: 16,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     input: {
       borderWidth: 1.5,
@@ -2593,7 +2641,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderRadius: 12,
       paddingHorizontal: 16,
       paddingVertical: 14,
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       backgroundColor:
         theme.colors.background === '#ffffff'
@@ -2646,9 +2696,11 @@ const MobileNostrPairing = ({navigation}: any) => {
       paddingVertical: 4,
     },
     deviceInfoSingleLine: {
-      fontSize: 14,
-      fontWeight: '600',
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily:
+        theme.fontFamilies?.monospace ||
+        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.text,
       flex: 1,
       textAlign: 'center',
@@ -2671,7 +2723,9 @@ const MobileNostrPairing = ({navigation}: any) => {
           : theme.colors.accent,
     },
     hintText: {
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       lineHeight: 18,
     },
@@ -2713,25 +2767,31 @@ const MobileNostrPairing = ({navigation}: any) => {
       justifyContent: 'space-between',
     },
     sendModeDeviceLabel: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily:
+        theme.fontFamilies?.monospace ||
+        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.text,
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     },
     sendModeDeviceNpub: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily:
+        theme.fontFamilies?.monospace ||
+        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.textSecondary,
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
       marginLeft: 8,
     },
     sendModeDeviceBadge: {
-      fontSize: 11,
+      fontSize: theme.fontSizes?.xs || 11,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
           : theme.colors.accent,
       marginTop: 2,
-      fontWeight: '500',
     },
     sendModeCheckbox: {
       width: 22,
@@ -2756,8 +2816,9 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     sendModeCheckmark: {
       color: theme.colors.background,
-      fontSize: 14,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     buttonHalf: {
       flex: 0.48,
@@ -2776,8 +2837,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderColor: theme.colors.border,
     },
     buttonTextCompact: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     iconImageCompact: {
       width: 18,
@@ -2822,8 +2884,11 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginBottom: 16,
     },
     connectionDetailsText: {
-      fontSize: 12,
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily:
+        theme.fontFamilies?.monospace ||
+        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.textSecondary,
       marginBottom: 12,
       textAlign: 'center',
@@ -2856,8 +2921,9 @@ const MobileNostrPairing = ({navigation}: any) => {
         theme.colors.background === '#ffffff'
           ? theme.colors.white
           : theme.colors.text,
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     buttonTextSecondary: {
       color: theme.colors.secondary,
@@ -2876,10 +2942,11 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginRight: 8,
     },
     modalSubtitle: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 16,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'center',
       lineHeight: 20,
     },
@@ -2896,10 +2963,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       alignItems: 'center',
     },
     progressPercentage: {
-      fontSize: 14,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'center',
       marginBottom: 16,
     },
@@ -2936,16 +3003,17 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginBottom: 8,
     },
     finalizingStatusText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontWeight: '500',
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       flex: 1,
     },
     finalizingCountdownText: {
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'center',
     },
     statusCheck: {
@@ -2957,9 +3025,10 @@ const MobileNostrPairing = ({navigation}: any) => {
           : theme.colors.accent,
     },
     statusText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontWeight: '500',
     },
     statusTextSecondary: {
       color: theme.colors.textSecondary,
@@ -2969,7 +3038,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       alignItems: 'center',
     },
     progressText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginTop: 8,
     },
@@ -3004,12 +3075,15 @@ const MobileNostrPairing = ({navigation}: any) => {
         theme.colors.background === '#ffffff'
           ? theme.colors.white
           : theme.colors.text,
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     cameraNotFound: {
       color: theme.colors.text,
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     sessionInfo: {
       marginTop: 12,
@@ -3021,8 +3095,11 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderRadius: 8,
     },
     sessionInfoText: {
-      fontSize: 11,
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      fontSize: theme.fontSizes?.xs || 11,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily:
+        theme.fontFamilies?.monospace ||
+        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.textSecondary,
       marginBottom: 4,
     },
@@ -3055,12 +3132,15 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderBottomColor: theme.colors.border + '40',
     },
     qrModalTitle: {
-      fontSize: 18,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     qrModalDescription: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
       marginTop: 12,
@@ -3077,9 +3157,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderColor: theme.colors.border + '10',
     },
     qrModalCloseText: {
-      fontSize: 18,
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontWeight: '600',
     },
     qrModalBody: {
       padding: 24,
@@ -3095,7 +3176,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       alignItems: 'center',
     },
     sectionSubtitle: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginTop: 4,
     },
@@ -3150,8 +3233,9 @@ const MobileNostrPairing = ({navigation}: any) => {
           : theme.colors.accent,
     },
     stepNumber: {
-      fontSize: 14,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
     },
     stepNumberCompleted: {
@@ -3170,7 +3254,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginTop: 4,
     },
     stepLabel: {
-      fontSize: 11,
+      fontSize: theme.fontSizes?.xs || 11,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
       flex: 1,
@@ -3184,8 +3270,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderColor: theme.colors.border + '40',
     },
     collapsibleHeaderText: {
-      fontSize: 13,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
     },
     collapsibleContent: {
@@ -3226,7 +3313,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       opacity: 0.5,
     },
     emptyStateText: {
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
       paddingHorizontal: 20,
@@ -3251,13 +3340,16 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginBottom: 24,
     },
     helpTitle: {
-      fontSize: 16,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 8,
     },
     helpText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       lineHeight: 20,
     },
@@ -3288,9 +3380,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderLeftColor: theme.colors.danger,
     },
     errorText: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.danger,
-      fontWeight: '500',
     },
     validatingIndicator: {
       width: 48,
@@ -3299,9 +3392,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       justifyContent: 'center',
     },
     validatingText: {
-      fontSize: 18,
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
-      fontWeight: '600',
     },
     checkboxContainer: {
       flexDirection: 'row',
@@ -3332,11 +3426,14 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     checkboxCheckmark: {
       color: theme.colors.background,
-      fontSize: 16,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     checkboxLabel: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       flex: 1,
     },
@@ -3377,14 +3474,17 @@ const MobileNostrPairing = ({navigation}: any) => {
           : theme.colors.accent,
     },
     preparingModalTitle: {
-      fontSize: 20,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       textAlign: 'center',
       marginBottom: 8,
     },
     preparingModalSubtitle: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
       marginBottom: 24,
@@ -3426,12 +3526,15 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginRight: 8,
     },
     preparingStatusText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontWeight: '500',
     },
     preparingCountdownText: {
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
     },
@@ -3472,9 +3575,9 @@ const MobileNostrPairing = ({navigation}: any) => {
         theme.colors.background === '#ffffff'
           ? theme.colors.background
           : theme.colors.text,
-      fontSize: 16,
-      fontWeight: '600',
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       textAlign: 'center',
       lineHeight: 22,
     },
@@ -3494,19 +3597,21 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     backupConfirmationIconText: {
       color: theme.colors.background,
-      fontSize: 14,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     backupConfirmationTitle: {
-      fontSize: 18,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     backupConfirmationDescription: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       lineHeight: 20,
       marginBottom: 10,
     },
@@ -3530,16 +3635,17 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginLeft: 12,
     },
     backupCheckboxLabel: {
-      fontSize: 15,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       marginBottom: 2,
     },
     backupCheckboxHint: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       fontStyle: 'italic',
     },
     backupCheckIcon: {
@@ -3573,8 +3679,9 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     checkmark: {
       color: theme.colors.background,
-      fontSize: 16,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     enhancedCheckboxContainer: {
       flexDirection: 'row',
@@ -3597,20 +3704,22 @@ const MobileNostrPairing = ({navigation}: any) => {
       padding: 8,
     },
     enhancedCheckboxLabel: {
-      fontSize: 15,
-      fontWeight: '500',
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     warningHint: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       marginTop: 2,
       fontStyle: 'italic',
     },
     warningIcon: {
-      fontSize: 18,
+      fontSize: theme.fontSizes?.xl || 18,
+      fontFamily: theme.fontFamilies?.regular,
       marginLeft: 8,
     },
     finalStepHeader: {
@@ -3636,18 +3745,19 @@ const MobileNostrPairing = ({navigation}: any) => {
       flex: 1,
     },
     finalStepTitle: {
-      fontSize: 18,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       marginBottom: 4,
     },
     finalStepDescription: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 12,
       lineHeight: 20,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     participantsList: {
       marginTop: 8,
@@ -3660,8 +3770,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderColor: theme.colors.border + '30',
     },
     participantsListTitle: {
-      fontSize: 13,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 8,
     },
@@ -3671,32 +3782,41 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginBottom: 8,
     },
     bulletPoint: {
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.primary,
       marginRight: 8,
       marginTop: 2,
-      fontWeight: 'bold',
     },
     participantText: {
       flex: 1,
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       lineHeight: 18,
     },
     participantLabel: {
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     localDeviceBadge: {
-      fontSize: 12,
-      fontWeight: '500',
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.primary,
       fontStyle: 'italic',
     },
     participantNpub: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily:
+        theme.fontFamilies?.monospace ||
+        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.textSecondary,
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
       marginTop: 2,
     },
     participantDevicesInfo: {
@@ -3706,8 +3826,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderTopColor: theme.colors.border + '40',
     },
     participantDevicesInfoTitle: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 10,
     },
@@ -3738,14 +3859,18 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginRight: 10,
     },
     participantDeviceLabel: {
-      fontSize: 13,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     participantDeviceNpub: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily:
+        theme.fontFamilies?.monospace ||
+        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.textSecondary,
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
       textAlign: 'right',
     },
     twoPhonesContainer: {
@@ -3809,9 +3934,9 @@ const MobileNostrPairing = ({navigation}: any) => {
         theme.colors.background === '#ffffff'
           ? theme.colors.white
           : theme.colors.text,
-      fontSize: 16,
-      fontWeight: '600',
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     buttonContent: {
       flexDirection: 'row',
@@ -3854,27 +3979,28 @@ const MobileNostrPairing = ({navigation}: any) => {
           : theme.colors.accent,
     },
     modalTitle: {
-      fontSize: 20,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     modalDescription: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 20,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       lineHeight: 20,
     },
     passwordContainer: {
       marginBottom: 16,
     },
     passwordLabel: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 8,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     passwordInputContainer: {
       flexDirection: 'row',
@@ -3888,9 +4014,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     passwordInput: {
       flex: 1,
       paddingVertical: 12,
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     eyeButton: {
       padding: 8,
@@ -3915,19 +4042,20 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderRadius: 2,
     },
     strengthText: {
-      fontSize: 12,
-      fontWeight: '600',
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     requirementsContainer: {
       marginTop: 8,
       paddingLeft: 4,
     },
     requirementText: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 4,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     errorInput: {
       borderColor: theme.colors.danger,
@@ -3964,11 +4092,11 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     cancelLinkText: {
       color: theme.colors.textSecondary,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       textDecorationLine: 'underline',
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'center',
-      fontSize: 14,
       marginTop: 12,
     },
     retryButton: {
@@ -3988,10 +4116,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     retryLink: {
       color: theme.colors.background,
-      fontWeight: '600',
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       textAlign: 'center',
-      fontSize: 14,
       marginLeft: 6,
     },
     buttonFlex: {
@@ -4011,10 +4139,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     cancelLink: {
       color: theme.colors.secondary,
-      fontWeight: '600',
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       textAlign: 'center',
-      fontSize: 14,
     },
     transactionItem: {
       borderBottomWidth: 0,
@@ -4022,23 +4150,25 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginBottom: 4,
     },
     transactionLabel: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 2,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'left',
       lineHeight: 16,
     },
     transactionItemLabel: {
-      fontSize: 13,
-      fontWeight: '500',
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 4,
     },
     transactionItemValue: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       textAlign: 'right',
     },
@@ -4051,10 +4181,13 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderColor: theme.colors.border,
     },
     addressValue: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily:
+        theme.fontFamilies?.monospace ||
+        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.text,
       textAlign: 'left',
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
       lineHeight: 14,
     },
     amountContainer: {
@@ -4069,17 +4202,18 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderColor: theme.colors.border,
     },
     amountValue: {
-      fontSize: 15,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'left',
       lineHeight: 14,
     },
     fiatValue: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'right',
       lineHeight: 14,
     },
@@ -4155,12 +4289,12 @@ const MobileNostrPairing = ({navigation}: any) => {
                             />
                             <Text
                               style={{
-                                fontSize: 15,
-                                fontWeight: '700',
+                                fontSize: theme.fontSizes?.md || 15,
+                                fontWeight: (theme.fontWeights?.bold ||
+                                  '700') as any,
+                                fontFamily: theme.fontFamilies?.regular,
                                 color: theme.colors.text,
                                 textAlign: 'center',
-                                fontFamily:
-                                  Platform.OS === 'ios' ? 'System' : 'Roboto',
                               }}>
                               {isSignPSBT
                                 ? 'PSBT Co-Signing'
@@ -4222,7 +4356,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                         <View style={styles.collapsibleContent}>
                           <Text
                             style={{
-                              fontSize: 12,
+                              fontSize: theme.fontSizes?.sm || 12,
+                              fontWeight: (theme.fontWeights?.normal ||
+                                '400') as any,
+                              fontFamily: theme.fontFamilies?.regular,
                               color: theme.colors.textSecondary,
                               marginBottom: 8,
                             }}>
@@ -4270,8 +4407,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                         }}>
                         <Text
                           style={{
-                            fontSize: 14,
-                            fontWeight: '700',
+                            fontSize: theme.fontSizes?.base || 14,
+                            fontWeight: (theme.fontWeights?.bold ||
+                              '700') as any,
+                            fontFamily: theme.fontFamilies?.regular,
                             color: theme.colors.text,
                             marginBottom: 8,
                             textAlign: 'center',
@@ -4288,16 +4427,21 @@ const MobileNostrPairing = ({navigation}: any) => {
                               }}>
                               <Text
                                 style={{
-                                  fontSize: 12,
+                                  fontSize: theme.fontSizes?.sm || 12,
+                                  fontWeight: (theme.fontWeights?.normal ||
+                                    '400') as any,
+                                  fontFamily: theme.fontFamilies?.regular,
                                   color: theme.colors.textSecondary,
                                 }}>
                                 Inputs:
                               </Text>
                               <Text
                                 style={{
-                                  fontSize: 12,
+                                  fontSize: theme.fontSizes?.sm || 12,
+                                  fontWeight: (theme.fontWeights?.semibold ||
+                                    '600') as any,
+                                  fontFamily: theme.fontFamilies?.regular,
                                   color: theme.colors.text,
-                                  fontWeight: '600',
                                 }}>
                                 {psbtDetails.inputs.length}
                               </Text>
@@ -4310,16 +4454,21 @@ const MobileNostrPairing = ({navigation}: any) => {
                               }}>
                               <Text
                                 style={{
-                                  fontSize: 12,
+                                  fontSize: theme.fontSizes?.sm || 12,
+                                  fontWeight: (theme.fontWeights?.normal ||
+                                    '400') as any,
+                                  fontFamily: theme.fontFamilies?.regular,
                                   color: theme.colors.textSecondary,
                                 }}>
                                 Outputs:
                               </Text>
                               <Text
                                 style={{
-                                  fontSize: 12,
+                                  fontSize: theme.fontSizes?.sm || 12,
+                                  fontWeight: (theme.fontWeights?.semibold ||
+                                    '600') as any,
+                                  fontFamily: theme.fontFamilies?.regular,
                                   color: theme.colors.text,
-                                  fontWeight: '600',
                                 }}>
                                 {psbtDetails.outputs.length}
                               </Text>
@@ -4332,16 +4481,21 @@ const MobileNostrPairing = ({navigation}: any) => {
                               }}>
                               <Text
                                 style={{
-                                  fontSize: 12,
+                                  fontSize: theme.fontSizes?.sm || 12,
+                                  fontWeight: (theme.fontWeights?.normal ||
+                                    '400') as any,
+                                  fontFamily: theme.fontFamilies?.regular,
                                   color: theme.colors.textSecondary,
                                 }}>
                                 Total Input:
                               </Text>
                               <Text
                                 style={{
-                                  fontSize: 13,
+                                  fontSize: theme.fontSizes?.base || 13,
+                                  fontWeight: (theme.fontWeights?.semibold ||
+                                    '600') as any,
+                                  fontFamily: theme.fontFamilies?.regular,
                                   color: theme.colors.text,
-                                  fontWeight: '600',
                                 }}>
                                 {sat2btcStr(String(psbtDetails.totalInput))} BTC
                               </Text>
@@ -4354,16 +4508,21 @@ const MobileNostrPairing = ({navigation}: any) => {
                               }}>
                               <Text
                                 style={{
-                                  fontSize: 12,
+                                  fontSize: theme.fontSizes?.sm || 12,
+                                  fontWeight: (theme.fontWeights?.normal ||
+                                    '400') as any,
+                                  fontFamily: theme.fontFamilies?.regular,
                                   color: theme.colors.textSecondary,
                                 }}>
                                 Total Output:
                               </Text>
                               <Text
                                 style={{
-                                  fontSize: 13,
+                                  fontSize: theme.fontSizes?.base || 13,
+                                  fontWeight: (theme.fontWeights?.semibold ||
+                                    '600') as any,
+                                  fontFamily: theme.fontFamilies?.regular,
                                   color: theme.colors.text,
-                                  fontWeight: '600',
                                 }}>
                                 {sat2btcStr(String(psbtDetails.totalOutput))}{' '}
                                 BTC
@@ -4377,16 +4536,21 @@ const MobileNostrPairing = ({navigation}: any) => {
                               }}>
                               <Text
                                 style={{
-                                  fontSize: 12,
+                                  fontSize: theme.fontSizes?.sm || 12,
+                                  fontWeight: (theme.fontWeights?.normal ||
+                                    '400') as any,
+                                  fontFamily: theme.fontFamilies?.regular,
                                   color: theme.colors.textSecondary,
                                 }}>
                                 Fee:
                               </Text>
                               <Text
                                 style={{
-                                  fontSize: 13,
+                                  fontSize: theme.fontSizes?.base || 13,
+                                  fontWeight: (theme.fontWeights?.semibold ||
+                                    '600') as any,
+                                  fontFamily: theme.fontFamilies?.regular,
                                   color: theme.colors.text,
-                                  fontWeight: '600',
                                 }}>
                                 {sat2btcStr(String(psbtDetails.fee))} BTC
                               </Text>
@@ -4402,7 +4566,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   }}>
                                   <Text
                                     style={{
-                                      fontSize: 10,
+                                      fontSize: theme.fontSizes?.xs || 10,
+                                      fontWeight: (theme.fontWeights?.normal ||
+                                        '400') as any,
+                                      fontFamily: theme.fontFamilies?.regular,
                                       color: theme.colors.textSecondary,
                                     }}>
                                     {psbtDetails.derivePaths.length} different
@@ -4414,7 +4581,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                         ) : (
                           <Text
                             style={{
-                              fontSize: 12,
+                              fontSize: theme.fontSizes?.sm || 12,
+                              fontWeight: (theme.fontWeights?.normal ||
+                                '400') as any,
+                              fontFamily: theme.fontFamilies?.regular,
                               color: theme.colors.text,
                               textAlign: 'center',
                             }}>
@@ -4442,198 +4612,221 @@ const MobileNostrPairing = ({navigation}: any) => {
                         }}>
                         <Text
                           style={{
-                            fontSize: 13,
-                            fontWeight: '700',
+                            fontSize: theme.fontSizes?.base || 13,
+                            fontWeight: (theme.fontWeights?.bold ||
+                              '700') as any,
+                            fontFamily: theme.fontFamilies?.regular,
                             color: theme.colors.text,
                             marginBottom: 8,
                           }}>
                           This Device
                         </Text>
-                      {sendModeDevices.length === 0 ? (
-                        <Text style={{color: theme.colors.text, opacity: 0.6}}>
-                          Loading...
-                        </Text>
-                      ) : (
-                        (() => {
-                          // Separate local and other devices
-                          const localDevice = sendModeDevices.find(
-                            d => d.isLocal,
-                          );
-                          const otherDevices = sendModeDevices
-                            .filter(d => !d.isLocal)
-                            .sort((a, b) => a.npub.localeCompare(b.npub));
+                        {sendModeDevices.length === 0 ? (
+                          <Text
+                            style={{color: theme.colors.text, opacity: 0.6}}>
+                            Loading...
+                          </Text>
+                        ) : (
+                          (() => {
+                            // Separate local and other devices
+                            const localDevice = sendModeDevices.find(
+                              d => d.isLocal,
+                            );
+                            const otherDevices = sendModeDevices
+                              .filter(d => !d.isLocal)
+                              .sort((a, b) => a.npub.localeCompare(b.npub));
 
-                          return (
-                            <>
-                              {/* Current Device */}
-                              {localDevice && (
-                                <View
-                                  key={localDevice.keyshareLabel}
-                                  style={[
-                                    styles.sendModeDeviceItem,
-                                    {marginBottom: 12},
-                                  ]}>
-                                  <Image
-                                    source={require('../assets/phone-icon.png')}
-                                    style={styles.sendModeDeviceIcon}
-                                    resizeMode="contain"
-                                  />
-                                  <View style={styles.sendModeDeviceContent}>
-                                    <View style={{flex: 1}}>
+                            return (
+                              <>
+                                {/* Current Device */}
+                                {localDevice && (
+                                  <View
+                                    key={localDevice.keyshareLabel}
+                                    style={[
+                                      styles.sendModeDeviceItem,
+                                      {marginBottom: 12},
+                                    ]}>
+                                    <Image
+                                      source={require('../assets/phone-icon.png')}
+                                      style={styles.sendModeDeviceIcon}
+                                      resizeMode="contain"
+                                    />
+                                    <View style={styles.sendModeDeviceContent}>
+                                      <View style={{flex: 1}}>
+                                        <Text
+                                          style={styles.sendModeDeviceLabel}
+                                          numberOfLines={1}
+                                          ellipsizeMode="tail">
+                                          {localDevice.keyshareLabel}
+                                        </Text>
+                                        <Text
+                                          style={styles.sendModeDeviceBadge}>
+                                          This device
+                                        </Text>
+                                      </View>
                                       <Text
-                                        style={styles.sendModeDeviceLabel}
+                                        style={styles.sendModeDeviceNpub}
                                         numberOfLines={1}
-                                        ellipsizeMode="tail">
-                                        {localDevice.keyshareLabel}
-                                      </Text>
-                                      <Text style={styles.sendModeDeviceBadge}>
-                                        This device
+                                        ellipsizeMode="middle">
+                                        {shortenNpub(localDevice.npub, 8, 6)}
                                       </Text>
                                     </View>
-                                    <Text
-                                      style={styles.sendModeDeviceNpub}
-                                      numberOfLines={1}
-                                      ellipsizeMode="middle">
-                                      {shortenNpub(localDevice.npub, 8, 6)}
-                                    </Text>
                                   </View>
-                                </View>
-                              )}
+                                )}
 
-                              {/* Select One Other Device */}
-                              {otherDevices.length > 0 && (
-                                <>
-                                  <View>
-                                    <Text
-                                      style={{
-                                        fontSize: 13,
-                                        fontWeight: '700',
-                                        color: theme.colors.text,
-                                        marginBottom: 8,
-                                      }}>
-                                      {isTrio
-                                        ? 'Select one device to co-sign:'
-                                        : 'Co-signing device:'}
-                                    </Text>
-                                  {otherDevices.map(dev => {
-                                    // In duo mode, use View (not selectable)
-                                    // In trio mode, use TouchableOpacity (selectable)
-                                    if (!isTrio) {
-                                      return (
-                                        <View
-                                          key={dev.keyshareLabel}
-                                          style={styles.sendModeDeviceItem}>
-                                          <Image
-                                            source={require('../assets/phone-icon.png')}
-                                            style={styles.sendModeDeviceIcon}
-                                            resizeMode="contain"
-                                          />
-                                          <View
-                                            style={
-                                              styles.sendModeDeviceContent
-                                            }>
-                                            <Text
-                                              style={styles.sendModeDeviceLabel}
-                                              numberOfLines={1}
-                                              ellipsizeMode="tail">
-                                              {dev.keyshareLabel}
-                                            </Text>
-                                            <Text
-                                              style={styles.sendModeDeviceNpub}
-                                              numberOfLines={1}
-                                              ellipsizeMode="middle">
-                                              {shortenNpub(dev.npub, 8, 6)}
-                                            </Text>
-                                          </View>
-                                          {selectedPeerNpub === dev.npub && (
+                                {/* Select One Other Device */}
+                                {otherDevices.length > 0 && (
+                                  <>
+                                    <View>
+                                      <Text
+                                        style={{
+                                          fontSize: theme.fontSizes?.base || 13,
+                                          fontWeight: (theme.fontWeights
+                                            ?.bold || '700') as any,
+                                          fontFamily:
+                                            theme.fontFamilies?.regular,
+                                          color: theme.colors.text,
+                                          marginBottom: 8,
+                                        }}>
+                                        {isTrio
+                                          ? 'Select one device to co-sign:'
+                                          : 'Co-signing device:'}
+                                      </Text>
+                                      {otherDevices.map(dev => {
+                                        // In duo mode, use View (not selectable)
+                                        // In trio mode, use TouchableOpacity (selectable)
+                                        if (!isTrio) {
+                                          return (
+                                            <View
+                                              key={dev.keyshareLabel}
+                                              style={styles.sendModeDeviceItem}>
+                                              <Image
+                                                source={require('../assets/phone-icon.png')}
+                                                style={
+                                                  styles.sendModeDeviceIcon
+                                                }
+                                                resizeMode="contain"
+                                              />
+                                              <View
+                                                style={
+                                                  styles.sendModeDeviceContent
+                                                }>
+                                                <Text
+                                                  style={
+                                                    styles.sendModeDeviceLabel
+                                                  }
+                                                  numberOfLines={1}
+                                                  ellipsizeMode="tail">
+                                                  {dev.keyshareLabel}
+                                                </Text>
+                                                <Text
+                                                  style={
+                                                    styles.sendModeDeviceNpub
+                                                  }
+                                                  numberOfLines={1}
+                                                  ellipsizeMode="middle">
+                                                  {shortenNpub(dev.npub, 8, 6)}
+                                                </Text>
+                                              </View>
+                                              {selectedPeerNpub ===
+                                                dev.npub && (
+                                                <View
+                                                  style={[
+                                                    styles.sendModeCheckbox,
+                                                    styles.sendModeCheckboxChecked,
+                                                  ]}>
+                                                  <Text
+                                                    style={
+                                                      styles.sendModeCheckmark
+                                                    }>
+                                                    ✓
+                                                  </Text>
+                                                </View>
+                                              )}
+                                            </View>
+                                          );
+                                        }
+
+                                        // Trio mode: selectable
+                                        return (
+                                          <TouchableOpacity
+                                            key={dev.keyshareLabel}
+                                            style={[
+                                              styles.sendModeDeviceItem,
+                                              selectedPeerNpub === dev.npub &&
+                                                styles.sendModeDeviceItemSelected,
+                                            ]}
+                                            onPress={() => {
+                                              HapticFeedback.medium();
+                                              // In trio, allow user to select any device
+                                              // If clicking the same device, deselect (allow empty selection)
+                                              // If clicking different device, select that one
+                                              setSelectedPeerNpub(
+                                                selectedPeerNpub === dev.npub
+                                                  ? ''
+                                                  : dev.npub,
+                                              );
+                                              dbg(
+                                                'User selected peer in trio mode:',
+                                                dev.npub === selectedPeerNpub
+                                                  ? 'deselected'
+                                                  : dev.npub.substring(0, 20) +
+                                                      '...',
+                                              );
+                                            }}
+                                            activeOpacity={0.7}>
+                                            <Image
+                                              source={require('../assets/phone-icon.png')}
+                                              style={styles.sendModeDeviceIcon}
+                                              resizeMode="contain"
+                                            />
+                                            <View
+                                              style={
+                                                styles.sendModeDeviceContent
+                                              }>
+                                              <Text
+                                                style={
+                                                  styles.sendModeDeviceLabel
+                                                }
+                                                numberOfLines={1}
+                                                ellipsizeMode="tail">
+                                                {dev.keyshareLabel}
+                                              </Text>
+                                              <Text
+                                                style={
+                                                  styles.sendModeDeviceNpub
+                                                }
+                                                numberOfLines={1}
+                                                ellipsizeMode="middle">
+                                                {shortenNpub(dev.npub, 8, 6)}
+                                              </Text>
+                                            </View>
                                             <View
                                               style={[
                                                 styles.sendModeCheckbox,
-                                                styles.sendModeCheckboxChecked,
+                                                selectedPeerNpub === dev.npub &&
+                                                  styles.sendModeCheckboxChecked,
                                               ]}>
-                                              <Text
-                                                style={
-                                                  styles.sendModeCheckmark
-                                                }>
-                                                ✓
-                                              </Text>
+                                              {selectedPeerNpub ===
+                                                dev.npub && (
+                                                <Text
+                                                  style={
+                                                    styles.sendModeCheckmark
+                                                  }>
+                                                  ✓
+                                                </Text>
+                                              )}
                                             </View>
-                                          )}
-                                        </View>
-                                      );
-                                    }
-
-                                    // Trio mode: selectable
-                                    return (
-                                      <TouchableOpacity
-                                        key={dev.keyshareLabel}
-                                        style={[
-                                          styles.sendModeDeviceItem,
-                                          selectedPeerNpub === dev.npub &&
-                                            styles.sendModeDeviceItemSelected,
-                                        ]}
-                                        onPress={() => {
-                                          HapticFeedback.medium();
-                                          // In trio, allow user to select any device
-                                          // If clicking the same device, deselect (allow empty selection)
-                                          // If clicking different device, select that one
-                                          setSelectedPeerNpub(
-                                            selectedPeerNpub === dev.npub
-                                              ? ''
-                                              : dev.npub,
-                                          );
-                                          dbg(
-                                            'User selected peer in trio mode:',
-                                            dev.npub === selectedPeerNpub
-                                              ? 'deselected'
-                                              : dev.npub.substring(0, 20) +
-                                                  '...',
-                                          );
-                                        }}
-                                        activeOpacity={0.7}>
-                                        <Image
-                                          source={require('../assets/phone-icon.png')}
-                                          style={styles.sendModeDeviceIcon}
-                                          resizeMode="contain"
-                                        />
-                                        <View
-                                          style={styles.sendModeDeviceContent}>
-                                          <Text
-                                            style={styles.sendModeDeviceLabel}
-                                            numberOfLines={1}
-                                            ellipsizeMode="tail">
-                                            {dev.keyshareLabel}
-                                          </Text>
-                                          <Text
-                                            style={styles.sendModeDeviceNpub}
-                                            numberOfLines={1}
-                                            ellipsizeMode="middle">
-                                            {shortenNpub(dev.npub, 8, 6)}
-                                          </Text>
-                                        </View>
-                                        <View
-                                          style={[
-                                            styles.sendModeCheckbox,
-                                            selectedPeerNpub === dev.npub &&
-                                              styles.sendModeCheckboxChecked,
-                                          ]}>
-                                          {selectedPeerNpub === dev.npub && (
-                                            <Text
-                                              style={styles.sendModeCheckmark}>
-                                              ✓
-                                            </Text>
-                                          )}
-                                        </View>
-                                      </TouchableOpacity>
-                                    );
-                                  })}
-                                  </View>
-                                </>
-                              )}
-                            </>
-                          );
-                        })()
-                      )}
+                                          </TouchableOpacity>
+                                        );
+                                      })}
+                                    </View>
+                                  </>
+                                )}
+                              </>
+                            );
+                          })()
+                        )}
                       </View>
                     </View>
                   )}
@@ -4745,8 +4938,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                       <View style={styles.section}>
                         <Text
                           style={{
-                            fontSize: 14,
-                            fontWeight: '600',
+                            fontSize: theme.fontSizes?.base || 14,
+                            fontWeight: (theme.fontWeights?.semibold ||
+                              '600') as any,
+                            fontFamily: theme.fontFamilies?.regular,
                             color: theme.colors.text,
                             marginBottom: 12,
                           }}>
@@ -4825,8 +5020,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                     <View style={styles.section}>
                       <Text
                         style={{
-                          fontSize: 14,
-                          fontWeight: '600',
+                          fontSize: theme.fontSizes?.base || 14,
+                          fontWeight: (theme.fontWeights?.semibold ||
+                            '600') as any,
+                          fontFamily: theme.fontFamilies?.regular,
                           color: theme.colors.text,
                           marginBottom: 12,
                         }}>
@@ -4959,8 +5156,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                       <View style={styles.section}>
                         <Text
                           style={{
-                            fontSize: 14,
-                            fontWeight: '600',
+                            fontSize: theme.fontSizes?.base || 14,
+                            fontWeight: (theme.fontWeights?.semibold ||
+                              '600') as any,
+                            fontFamily: theme.fontFamilies?.regular,
                             color: theme.colors.text,
                             marginBottom: 12,
                           }}>
@@ -5637,11 +5836,14 @@ const MobileNostrPairing = ({navigation}: any) => {
                             }}>
                             <Text
                               style={{
-                                fontSize: 10,
-                                fontWeight: '700',
-                                color: theme.colors.background === '#ffffff'
-                                  ? theme.colors.primary
-                                  : theme.colors.text, // Use text color for better visibility in dark mode
+                                fontSize: theme.fontSizes?.xs || 10,
+                                fontWeight: (theme.fontWeights?.bold ||
+                                  '700') as any,
+                                fontFamily: theme.fontFamilies?.regular,
+                                color:
+                                  theme.colors.background === '#ffffff'
+                                    ? theme.colors.primary
+                                    : theme.colors.text, // Use text color for better visibility in dark mode
                                 textTransform: 'uppercase',
                                 letterSpacing: 0.5,
                                 marginTop: 4,
@@ -5659,7 +5861,11 @@ const MobileNostrPairing = ({navigation}: any) => {
                           </View>
                         </View>
                         {fromAddress && (
-                          <View style={[styles.transactionItem, {paddingVertical: 2, marginBottom: 3}]}>
+                          <View
+                            style={[
+                              styles.transactionItem,
+                              {paddingVertical: 2, marginBottom: 3},
+                            ]}>
                             <View
                               style={{
                                 flexDirection: 'row',
@@ -5667,18 +5873,25 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 justifyContent: 'space-between',
                                 marginBottom: 2,
                               }}>
-                              <Text style={[styles.transactionLabel, {fontSize: 12, lineHeight: 14}]}>From Address</Text>
+                              <Text
+                                style={[
+                                  styles.transactionLabel,
+                                  {
+                                    fontSize: theme.fontSizes?.sm || 12,
+                                    lineHeight: 14,
+                                  },
+                                ]}>
+                                From Address
+                              </Text>
                               {currentDerivationPath && (
                                 <Text
                                   style={{
-                                    fontSize: 10,
+                                    fontSize: theme.fontSizes?.xs || 10,
+                                    fontWeight: (theme.fontWeights?.normal || '400') as any,
+                                    fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
                                     fontStyle: 'italic',
                                     color: theme.colors.textSecondary,
                                     marginLeft: 6,
-                                    fontFamily:
-                                      Platform.OS === 'ios'
-                                        ? 'Menlo'
-                                        : 'monospace',
                                     textAlign: 'right',
                                     flex: 1,
                                     flexShrink: 1,
@@ -5697,8 +5910,21 @@ const MobileNostrPairing = ({navigation}: any) => {
                             </View>
                           </View>
                         )}
-                        <View style={[styles.transactionItem, {paddingVertical: 2, marginBottom: 3}]}>
-                          <Text style={[styles.transactionLabel, {fontSize: 12, lineHeight: 14}]}>To Address</Text>
+                        <View
+                          style={[
+                            styles.transactionItem,
+                            {paddingVertical: 2, marginBottom: 3},
+                          ]}>
+                          <Text
+                            style={[
+                              styles.transactionLabel,
+                              {
+                                fontSize: theme.fontSizes?.sm || 12,
+                                lineHeight: 14,
+                              },
+                            ]}>
+                            To Address
+                          </Text>
                           <View style={styles.addressContainer}>
                             <Text
                               style={styles.addressValue}
@@ -5709,30 +5935,68 @@ const MobileNostrPairing = ({navigation}: any) => {
                           </View>
                         </View>
 
-                        <View style={[styles.transactionItem, {paddingVertical: 2, marginBottom: 3}]}>
-                          <Text style={[styles.transactionLabel, {fontSize: 12, lineHeight: 14}]}>
+                        <View
+                          style={[
+                            styles.transactionItem,
+                            {paddingVertical: 2, marginBottom: 3},
+                          ]}>
+                          <Text
+                            style={[
+                              styles.transactionLabel,
+                              {
+                                fontSize: theme.fontSizes?.sm || 12,
+                                lineHeight: 14,
+                              },
+                            ]}>
                             Transaction Amount
                           </Text>
                           <View style={styles.amountContainer}>
-                            <Text style={[styles.amountValue, {fontSize: 13}]}>
+                            <Text
+                              style={[
+                                styles.amountValue,
+                                {fontSize: theme.fontSizes?.base || 13},
+                              ]}>
                               {sat2btcStr(route.params?.satoshiAmount)} BTC
                             </Text>
-                            <Text style={[styles.fiatValue, {fontSize: 12}]}>
+                            <Text
+                              style={[
+                                styles.fiatValue,
+                                {fontSize: theme.fontSizes?.sm || 12},
+                              ]}>
                               {route.params?.selectedCurrency || ''}{' '}
                               {formatFiat(route.params?.fiatAmount)}
                             </Text>
                           </View>
                         </View>
 
-                        <View style={[styles.transactionItem, {paddingVertical: 2, marginBottom: 0}]}>
-                          <Text style={[styles.transactionLabel, {fontSize: 12, lineHeight: 14}]}>
+                        <View
+                          style={[
+                            styles.transactionItem,
+                            {paddingVertical: 2, marginBottom: 0},
+                          ]}>
+                          <Text
+                            style={[
+                              styles.transactionLabel,
+                              {
+                                fontSize: theme.fontSizes?.sm || 12,
+                                lineHeight: 14,
+                              },
+                            ]}>
                             Transaction Fee
                           </Text>
                           <View style={styles.amountContainer}>
-                            <Text style={[styles.amountValue, {fontSize: 13}]}>
+                            <Text
+                              style={[
+                                styles.amountValue,
+                                {fontSize: theme.fontSizes?.base || 13},
+                              ]}>
                               {sat2btcStr(route.params?.satoshiFees)} BTC
                             </Text>
-                            <Text style={[styles.fiatValue, {fontSize: 12}]}>
+                            <Text
+                              style={[
+                                styles.fiatValue,
+                                {fontSize: theme.fontSizes?.sm || 12},
+                              ]}>
                               {route.params?.selectedCurrency || ''}{' '}
                               {formatFiat(route.params?.fiatFees)}
                             </Text>
@@ -5979,7 +6243,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                     <Text
                       style={[
                         styles.statusText,
-                        {fontWeight: 'bold', fontSize: 20},
+                        {
+                          fontWeight: (theme.fontWeights?.bold || '700') as any,
+                          fontSize: theme.fontSizes?.['2xl'] || 20,
+                        },
                       ]}>
                       Keyshare Created!
                     </Text>
@@ -5988,8 +6255,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                     style={[
                       styles.statusText,
                       {
-                        fontWeight: '400',
-                        fontSize: 15,
+                        fontWeight: (theme.fontWeights?.normal || '400') as any,
+                        fontSize: theme.fontSizes?.md || 15,
                         color: theme.colors.textSecondary,
                       },
                     ]}>
@@ -6225,8 +6492,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                       theme.colors.background === '#ffffff'
                         ? theme.colors.white
                         : theme.colors.text,
-                    fontWeight: '600',
-                    fontSize: 16,
+                    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+                    fontSize: theme.fontSizes?.lg || 16,
+                    fontFamily: theme.fontFamilies?.regular,
                   }}>
                   Share
                 </Text>

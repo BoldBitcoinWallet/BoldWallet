@@ -627,7 +627,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           dbg('Address type modal updated for network:', newNetwork);
           dbg('Legacy:', legacyAddr);
           dbg('Segwit:', segwitAddr);
-          dbg('Segwit Compatible:', segwitCompatibleAddr);
+          dbg('Nested SegWit:', segwitCompatibleAddr);
         } else {
           dbg('Could not get or derive btcPub for address generation');
         }
@@ -2260,9 +2260,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               activeOpacity={0.85}
               accessibilityLabel={`Address Type: ${
                 addressType === 'segwit-compatible'
-                  ? 'Segwit Compatible'
+                  ? 'Nested SegWit'
                   : addressType === 'segwit-native'
-                  ? 'Segwit Native'
+                  ? 'Native SegWit'
                   : 'Legacy'
               }`}
               accessibilityHint="Double tap to change address format"
@@ -2285,9 +2285,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                     numberOfLines={1}
                     adjustsFontSizeToFit>
                     {addressType === 'segwit-compatible'
-                      ? 'Segwit Compatible'
+                      ? 'Nested SegWit'
                       : addressType === 'segwit-native'
-                      ? 'Segwit Native'
+                      ? 'Native SegWit'
                       : 'Legacy'}
                   </Text>
                 </View>
@@ -2295,7 +2295,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             </TouchableOpacity>
           </View>
           <View style={styles.balanceContainer}>
-            {/* Eye icon on left, unit toggle on right */}
+            {/* Eye icon on left */}
             <TouchableOpacity
               onPress={() => {
                 HapticFeedback.light();
@@ -2316,66 +2316,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 accessibilityLabel={isBlurred ? 'Balance hidden' : 'Balance visible'}
               />
             </TouchableOpacity>
-            {!isBlurred && (
-              <View style={styles.balanceUnitToggleContainer}>
-                <TouchableOpacity
-                  onPress={() => {
-                    HapticFeedback.light();
-                    setShowSats(!showSats);
-                  }}
-                  style={styles.balanceUnitToggle}
-                  activeOpacity={0.7}
-                  accessibilityLabel={`Switch to ${showSats ? 'BTC' : 'Satoshis'}`}
-                  accessibilityRole="button">
-                  <Text style={styles.balanceUnitToggleText}>
-                    {showSats ? '₿' : 'sats'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
-            {balanceError && !isBlurred ? (
-              <View style={styles.balanceErrorContainer}>
-                <Text style={styles.balanceErrorText}>{balanceError}</Text>
-              </View>
-            ) : (
-              <>
-                <Animated.View
-                  style={[
-                    styles.balanceRowWithMargin,
-                    {
-                      opacity: balanceUpdateAnimation,
-                    },
-                  ]}
-                  pointerEvents="box-none">
-                  <TouchableOpacity
-                    style={styles.balanceTouchable}
-                    onPress={() => {
-                      HapticFeedback.light();
-                      handleBlurred();
-                    }}
-                    activeOpacity={0.7}
-                    accessibilityLabel={`Bitcoin balance: ${isBlurred ? 'hidden' : showSats ? `${formatSats(parseFloat(balanceBTC || '0') * 1e8)} sats` : `${formatBTC(balanceBTC)} ₿`}`}
-                    accessibilityHint="Double tap to toggle balance visibility"
-                    accessibilityRole="button">
-                    {isBalanceLoading && !isBlurred && !isRefreshing ? (
-                      <ActivityIndicator
-                        size="small"
-                        color={theme.colors.white}
-                        style={styles.balanceLoadingIndicator}
-                      />
-                    ) : (
-                      <Text
-                        style={[styles.balanceBTC, isBlurred && styles.blurredText]}>
-                        {isBlurred
-                          ? '* * * * * *'
-                          : showSats
-                          ? `${formatSats(parseFloat(balanceBTC || '0') * 1e8)} sats`
-                          : `${formatBTC(balanceBTC)} ₿`}
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                </Animated.View>
-                {btcRate > 0 && (
+
+            {/* Balance content in center */}
+            <View style={styles.balanceContentContainer}>
+              {balanceError && !isBlurred ? (
+                <View style={styles.balanceErrorContainer}>
+                  <Text style={styles.balanceErrorText}>{balanceError}</Text>
+                </View>
+              ) : (
+                <>
                   <Animated.View
                     style={[
                       styles.balanceRowWithMargin,
@@ -2391,7 +2340,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                         handleBlurred();
                       }}
                       activeOpacity={0.7}
-                      accessibilityLabel={`Fiat balance: ${isBlurred ? 'hidden' : `${getCurrencySymbol(selectedCurrency)}${presentFiat(balanceFiat)}`}`}
+                      accessibilityLabel={`Bitcoin balance: ${isBlurred ? 'hidden' : showSats ? `${formatSats(parseFloat(balanceBTC || '0') * 1e8)} sats` : `${formatBTC(balanceBTC)} ₿`}`}
                       accessibilityHint="Double tap to toggle balance visibility"
                       accessibilityRole="button">
                       {isBalanceLoading && !isBlurred && !isRefreshing ? (
@@ -2402,19 +2351,84 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                         />
                       ) : (
                         <Text
-                          style={[styles.balanceFiat, isBlurred && styles.blurredText]}>
+                          style={styles.balanceBTC}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit={true}
+                          minimumFontScale={0.4}
+                          allowFontScaling={true}>
                           {isBlurred
-                            ? '* * *'
-                            : `${getCurrencySymbol(selectedCurrency)}${presentFiat(
-                                balanceFiat,
-                              )}`}
+                            ? showSats
+                              ? '********* sats'
+                              : '********* ₿'
+                            : showSats
+                            ? `${formatSats(parseFloat(balanceBTC || '0') * 1e8)} sats`
+                            : `${formatBTC(balanceBTC, {compact: false, maxDecimals: 8, showTrailingZeros: false})} ₿`}
                         </Text>
                       )}
                     </TouchableOpacity>
                   </Animated.View>
-                )}
-              </>
-            )}
+                  {btcRate > 0 && (
+                    <Animated.View
+                      style={[
+                        styles.balanceRowWithMargin,
+                        {
+                          opacity: balanceUpdateAnimation,
+                        },
+                      ]}
+                      pointerEvents="box-none">
+                      <TouchableOpacity
+                        style={styles.balanceTouchable}
+                        onPress={() => {
+                          HapticFeedback.light();
+                          handleBlurred();
+                        }}
+                        activeOpacity={0.7}
+                        accessibilityLabel={`Fiat balance: ${isBlurred ? 'hidden' : `${getCurrencySymbol(selectedCurrency)}${presentFiat(balanceFiat)}`}`}
+                        accessibilityHint="Double tap to toggle balance visibility"
+                        accessibilityRole="button">
+                        {isBalanceLoading && !isBlurred && !isRefreshing ? (
+                          <ActivityIndicator
+                            size="small"
+                            color={theme.colors.white}
+                            style={styles.balanceLoadingIndicator}
+                          />
+                        ) : (
+                          <Text
+                            style={styles.balanceFiat}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit={true}
+                            minimumFontScale={0.5}
+                            allowFontScaling={true}>
+                            {isBlurred
+                              ? `${getCurrencySymbol(selectedCurrency)} ******`
+                              : `${getCurrencySymbol(selectedCurrency)}${presentFiat(
+                                  balanceFiat,
+                                )}`}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    </Animated.View>
+                  )}
+                </>
+              )}
+            </View>
+
+            {/* Unit toggle on right - always visible */}
+            <View style={styles.balanceUnitToggleContainer}>
+              <TouchableOpacity
+                onPress={() => {
+                  HapticFeedback.light();
+                  setShowSats(!showSats);
+                }}
+                style={styles.balanceUnitToggle}
+                activeOpacity={0.7}
+                accessibilityLabel={`Switch to ${showSats ? 'BTC' : 'Satoshis'}`}
+                accessibilityRole="button">
+                <Text style={styles.balanceUnitToggleText}>
+                  {showSats ? '₿' : 'sats'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <View style={styles.actions}>
             <TouchableOpacity
@@ -2642,7 +2656,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               />
               <View style={styles.addressTypeContent}>
                 <Text style={styles.addressTypeLabel} numberOfLines={1}>
-                  Segwit Native (Bech32)
+                  Native SegWit (Bech32)
                 </Text>
                 <View style={styles.addressTypeLabelRow}>
                   <Text style={styles.addressTypeValue} numberOfLines={1}>
@@ -2679,7 +2693,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               />
               <View style={styles.addressTypeContent}>
                 <Text style={styles.addressTypeLabel} numberOfLines={1}>
-                  Segwit Compatible (P2SH)
+                  Nested SegWit (P2SH)
                 </Text>
                 <Text style={styles.addressTypeValue}>
                   {shorten(segwitCompatibleAddress, 6)}

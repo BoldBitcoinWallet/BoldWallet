@@ -1300,8 +1300,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderBottomColor: theme.colors.border,
     },
     headerTitle: {
-      fontSize: 28,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.['3xl'] || 28,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       textAlign: 'center',
     },
@@ -1337,13 +1338,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       tintColor: theme.colors.text,
     },
     sectionHeaderTitle: {
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     expandIcon: {
-      fontSize: 14,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     sectionContent: {
       paddingHorizontal: 12,
@@ -1358,12 +1361,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       paddingHorizontal: 4,
     },
     toggleLabel: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     toggleDescription: {
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 12,
     },
@@ -1380,13 +1386,16 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       flex: 1,
     },
     appIconHintTitle: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 2,
     },
     appIconHintSubtitle: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       lineHeight: 16,
     },
@@ -1395,7 +1404,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderColor: theme.colors.border,
       borderRadius: 6,
       padding: 10,
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       backgroundColor: theme.colors.background,
       color: theme.colors.text,
       marginBottom: 8,
@@ -1431,7 +1442,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       flex: 1,
       paddingHorizontal: 12,
       paddingVertical: 12,
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       backgroundColor: 'transparent',
     },
@@ -1444,8 +1457,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderLeftColor: theme.colors.border,
     },
     apiDropdownIcon: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     apiInputRow: {
       flexDirection: 'row',
@@ -1475,8 +1489,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     },
     apiSaveButtonText: {
       color: theme.colors.textOnPrimary,
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     apiSaveButtonTextDisabled: {
       color: theme.colors.textSecondary,
@@ -1522,11 +1537,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderColor: theme.colors.received + '4D', // ~30% opacity
     },
     apiNetworkModeIcon: {
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontFamily: theme.fontFamilies?.regular,
     },
     apiNetworkModeText: {
-      fontSize: 13,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       letterSpacing: 0.2,
     },
     apiNetworkModeTextTestnet: {
@@ -1555,12 +1572,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       tintColor: theme.colors.text, // Use text color for better visibility in dark mode
     },
     apiInfoButtonText: {
-      fontSize: 12,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.primary,
     },
     apiNetworkDescription: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       lineHeight: 16,
       marginTop: 4,
     },
@@ -1636,8 +1656,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       paddingBottom: Platform.OS === 'ios' ? 32 : 24,
     },
     apiModalTitle: {
-      fontSize: 16,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       letterSpacing: -0.5,
     },
     apiModalHeaderTitleContainer: {
@@ -1658,8 +1679,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       alignItems: 'center',
     },
     apiModalCloseText: {
-      fontSize: 18,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     apiModalSearchContainer: {
       flexDirection: 'row',
@@ -1672,12 +1694,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderWidth: 1,
     },
     apiModalSearchIcon: {
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontFamily: theme.fontFamilies?.regular,
       marginRight: 8,
     },
     apiModalSearchInput: {
       flex: 1,
-      fontSize: 15,
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       padding: 0,
       margin: 0,
     },
@@ -1686,8 +1711,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginLeft: 8,
     },
     apiModalSearchClearText: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     apiModalListContent: {
       paddingTop: 4,
@@ -1708,17 +1734,20 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       backgroundColor: theme.colors.cardBackground,
     },
     apiModalItemIcon: {
-      fontSize: 18,
+      fontSize: theme.fontSizes?.xl || 18,
+      fontFamily: theme.fontFamilies?.regular,
       marginRight: 12,
     },
     apiModalItemText: {
       flex: 1,
-      fontSize: 15,
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       lineHeight: 20,
       letterSpacing: -0.2,
     },
     apiModalItemTextSelected: {
-      fontWeight: '600',
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
     },
     apiModalItemCheckContainer: {
       width: 24,
@@ -1729,8 +1758,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginLeft: 8,
     },
     apiModalItemCheck: {
-      fontSize: 14,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.white,
     },
     apiModalLoading: {
@@ -1738,7 +1768,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       alignItems: 'center',
     },
     apiModalLoadingText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       fontStyle: 'italic',
     },
     apiModalEmpty: {
@@ -1746,7 +1778,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       alignItems: 'center',
     },
     apiModalEmptyText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       fontStyle: 'italic',
     },
     button: {
@@ -1767,28 +1801,34 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     },
     buttonText: {
       color: theme.colors.textOnPrimary,
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     apiItem: {
       marginTop: 0, // Section padding handles first element spacing
       marginBottom: 0, // Consistent spacing
     },
     apiName: {
-      fontSize: 14,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text, // Use text color for better readability in dark mode
       marginBottom: 4,
     },
     apiDescription: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       lineHeight: 20,
       marginBottom: 6,
     },
     linkText: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text, // Use text color for better readability in dark mode
-      fontWeight: 'bold',
       textDecorationLine: 'underline',
       textDecorationColor: theme.colors.text, // Match underline color
     },
@@ -1802,14 +1842,16 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderBottomColor: theme.colors.border,
     },
     aboutLabel: {
-      fontSize: 15,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       letterSpacing: -0.2,
     },
     aboutValue: {
-      fontSize: 15,
-      fontWeight: '500',
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       letterSpacing: -0.2,
     },
@@ -1833,26 +1875,33 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       tintColor: theme.colors.text,
     },
     aboutSectionTitle: {
-      fontSize: 16,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       letterSpacing: -0.3,
     },
     aboutSectionDescription: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       lineHeight: 22,
       letterSpacing: -0.1,
     },
     aboutLinkText: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text, // Use text color for better readability in dark mode
-      fontWeight: '600',
       textDecorationLine: 'underline',
       textDecorationColor: theme.colors.text, // Match underline color
     },
     termsLink: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text, // Use text color for better readability in dark mode
-      fontWeight: 'bold',
       textDecorationLine: 'underline',
       textDecorationColor: theme.colors.text, // Match underline color
       marginTop: 8,
@@ -1882,12 +1931,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       tintColor: theme.colors.text, // Use text color for better visibility in dark mode
     },
     modalTitle: {
-      fontSize: 20,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     modalDescription: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 20,
       textAlign: 'center',
@@ -1896,8 +1948,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginBottom: 12,
     },
     passwordLabel: {
-      fontSize: 14,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 4,
     },
@@ -1911,7 +1964,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     passwordInput: {
       flex: 1,
       padding: 10,
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     eyeButton: {
@@ -1923,7 +1978,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       tintColor: theme.colors.text,
     },
     passwordHint: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
     },
     modalActions: {
@@ -1977,12 +2034,14 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       alignItems: 'center',
     },
     apiInfoModalIcon: {
-      fontSize: 20,
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontFamily: theme.fontFamilies?.regular,
     },
     apiInfoModalTitle: {
       flex: 1,
-      fontSize: 18,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginLeft: 12,
       letterSpacing: -0.3,
@@ -1996,8 +2055,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       alignItems: 'center',
     },
     apiInfoModalCloseText: {
-      fontSize: 18,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
     },
     apiInfoModalBody: {
@@ -2012,17 +2072,21 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginBottom: 8,
     },
     apiInfoSectionIcon: {
-      fontSize: 20,
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontFamily: theme.fontFamilies?.regular,
       marginRight: 10,
     },
     apiInfoSectionTitle: {
-      fontSize: 16,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       letterSpacing: -0.2,
     },
     apiInfoSectionText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       lineHeight: 22,
       letterSpacing: -0.1,
@@ -2037,8 +2101,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       justifyContent: 'center',
     },
     apiInfoModalButtonText: {
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       letterSpacing: -0.2,
     },
     networkOption: {
@@ -2058,7 +2123,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       padding: 14,
       marginBottom: 16,
       textAlign: 'center',
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       backgroundColor: theme.colors.cardBackground,
     },
@@ -2084,8 +2151,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderRadius: 4,
     },
     strengthText: {
-      fontSize: 12,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       minWidth: 60,
       textAlign: 'right',
       color: theme.colors.textSecondary,
@@ -2094,9 +2162,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginTop: 4,
     },
     requirementText: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.warningAccent,
-      fontWeight: '500',
     },
     nostrRelaysInput: {
       minHeight: 120,
@@ -2110,7 +2179,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     },
     errorText: {
       color: theme.colors.danger,
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       marginTop: 4,
     },
     buttonContent: {
@@ -2133,11 +2204,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginBottom: 8,
     },
     networkStatusTitle: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       marginBottom: 2,
     },
     networkStatusText: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     appIconCheckStatesButton: {
       marginBottom: 10,
@@ -2151,12 +2226,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       paddingHorizontal: 4,
     },
     walletModeLabel: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     walletModeDescription: {
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 12,
     },
@@ -2183,12 +2261,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       justifyContent: 'space-between',
     },
     themeOptionLabel: {
-      fontSize: 15,
-      fontWeight: '500',
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     themeOptionLabelSelected: {
-      fontWeight: '600',
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
       color: theme.colors.accent,
     },
     themeOptionCheck: {

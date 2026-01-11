@@ -111,8 +111,8 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
         type === 'legacy'
           ? 'Legacy'
           : type === 'segwitNative'
-          ? 'SegWit Native'
-          : 'SegWit Compatible';
+          ? 'Native Segwit'
+          : 'Nested SegWit';
       Toast.show({
         type: 'success',
         text1: 'Copied',
@@ -356,7 +356,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                     </Text>
                     <Text style={styles.watchWalletWarning}>
                       ⚠️ Note: Taproot is not supported. Only Legacy, SegWit
-                      Native, and SegWit Compatible address types are supported.
+                      Native, and Nested SegWit address types are supported.
                     </Text>
                     <View>
                       {/* Output Descriptors - One row per address type */}
@@ -411,7 +411,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                       {keyshareInfo.outputDescriptors?.segwitNative && (
                         <View style={styles.watchWalletItem}>
                           <Text style={styles.watchWalletItemLabel}>
-                            Output Descriptor (SegWit Native)
+                            Output Descriptor (Native Segwit)
                           </Text>
                           <View style={styles.watchWalletItemValueContainer}>
                             <Text
@@ -460,7 +460,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                       {keyshareInfo.outputDescriptors?.segwitCompatible && (
                         <View style={styles.watchWalletItem}>
                           <Text style={styles.watchWalletItemLabel}>
-                            Output Descriptor (SegWit Compatible)
+                            Output Descriptor (Nested SegWit)
                           </Text>
                           <View style={styles.watchWalletItemValueContainer}>
                             <Text
@@ -553,8 +553,8 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
           selectedDescriptorType === 'legacy'
             ? 'Legacy'
             : selectedDescriptorType === 'segwitNative'
-            ? 'SegWit Native'
-            : 'SegWit Compatible'
+            ? 'Native Segwit'
+            : 'Nested SegWit'
         })`}
         value={
           selectedDescriptorType && keyshareInfo?.outputDescriptors

@@ -305,8 +305,9 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       borderColor: theme.colors.border || theme.colors.secondary,
     },
     feeLabel: {
-      fontSize: 13,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary, // Remove fallback for better dark mode readability
       marginBottom: 8,
     },
@@ -314,14 +315,17 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       marginTop: 0,
     },
     feeAmount: {
-      fontSize: 15,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     feeCalculating: {
       marginLeft: 10,
       color: theme.colors.textSecondary, // Use theme color for dark mode readability
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     feeAmountContainer: {
       flexDirection: 'row',
@@ -335,7 +339,9 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       marginTop: 5,
     },
     feeAmountUsd: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary, // Remove fallback for better dark mode readability
     },
     sendCancelButtons: {
@@ -364,8 +370,9 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     },
     buttonText: {
       color: '#fff',
-      fontSize: 15,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     disabledButton: {
       opacity: 0.5,
@@ -391,9 +398,10 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       tintColor: theme.colors.text, // Use text color for better dark mode visibility
     },
     setupGuideHintText: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text, // Use text color for better dark mode readability
-      fontWeight: '500',
       textDecorationLine: 'underline',
       textDecorationColor: theme.colors.text + '80',
     },

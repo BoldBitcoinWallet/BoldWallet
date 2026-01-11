@@ -103,13 +103,16 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
       alignItems: 'center',
     },
     scannerTitle: {
-      fontSize: 20,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.white,
       marginBottom: 8,
     },
     scannerSubtitle: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.white + 'B3', // ~70% opacity
       textAlign: 'center',
       paddingHorizontal: 20,
@@ -288,13 +291,16 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
       alignItems: 'center',
     },
     scannerTitle: {
-      fontSize: 20,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.white,
       marginBottom: 8,
     },
     scannerSubtitle: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.white + 'B3', // ~70% opacity
       textAlign: 'center',
       paddingHorizontal: 20,

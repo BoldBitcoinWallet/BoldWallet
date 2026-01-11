@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -25,7 +26,16 @@ type MessagePump struct {
 	processedMu sync.Mutex
 }
 
-func NewMessagePump(cfg Config, client *Client) *MessagePump {
+func NewMessagePump(cfg Config, client *Client) (result *MessagePump) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in NewMessagePump: %v", r)
+			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+			result = nil
+		}
+	}()
+
 	cfg.ApplyDefaults()
 	return &MessagePump{
 		cfg:       cfg,
@@ -35,7 +45,16 @@ func NewMessagePump(cfg Config, client *Client) *MessagePump {
 	}
 }
 
-func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) error {
+func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in MessagePump.Run: %v", r)
+			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+		}
+	}()
+
 	// Convert local npub to hex for comparison (event.PubKey is hex)
 	localNpubHex := p.cfg.LocalNpub
 	if strings.HasPrefix(p.cfg.LocalNpub, "npub1") {
@@ -88,7 +107,16 @@ func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) error
 	defer retryTicker.Stop()
 
 	// Helper function to process an event (unwrap, verify, and call handler)
-	processEvent := func(event *nostr.Event) error {
+	processEvent := func(event *nostr.Event) (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				errMsg := fmt.Sprintf("PANIC in MessagePump.processEvent: %v", r)
+				fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+				fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+				err = fmt.Errorf("internal error (panic): %v", r)
+			}
+		}()
+
 		if event == nil {
 			return nil
 		}
@@ -256,10 +284,24 @@ func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) error
 
 	queryDone := make(chan bool, 1)
 	go func() {
-		defer func() { queryDone <- true }()
+		defer func() {
+			if r := recover(); r != nil {
+				errMsg := fmt.Sprintf("PANIC in MessagePump.Run query goroutine: %v", r)
+				fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+				fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+			}
+			queryDone <- true
+		}()
 		// Query all relays in parallel
 		for _, url := range relaysToQuery {
 			go func(relayURL string) {
+				defer func() {
+					if r := recover(); r != nil {
+						errMsg := fmt.Sprintf("PANIC in MessagePump.Run relay query goroutine: %v", r)
+						fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+						fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+					}
+				}()
 				relay, err := p.client.GetPool().EnsureRelay(relayURL)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to ensure relay %s for query: %v\n", relayURL, err)

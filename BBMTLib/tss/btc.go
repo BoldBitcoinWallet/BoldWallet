@@ -335,7 +335,15 @@ func SelectUTXOs(utxos []UTXO, totalAmount int64, strategy string) ([]UTXO, int6
 }
 
 func wifECDSASign(senderWIF string, data []byte) []byte {
-	wifKey, _ := btcutil.DecodeWIF(senderWIF)
+	wifKey, err := btcutil.DecodeWIF(senderWIF)
+	if err != nil {
+		Logf("ERROR: failed to decode WIF: %v", err)
+		panic(fmt.Errorf("failed to decode WIF: %w", err))
+	}
+	if wifKey == nil || wifKey.PrivKey == nil {
+		Logf("ERROR: invalid WIF key or private key is nil")
+		panic(fmt.Errorf("invalid WIF key or private key is nil"))
+	}
 	signature := mecdsa.Sign(wifKey.PrivKey, data[:])
 	return signature.Serialize()
 }
@@ -470,7 +478,17 @@ func EstimateFees(senderAddress, receiverAddress string, amountSatoshi int64) (r
 	return strconv.FormatInt(_fee, 10), nil
 }
 
-func SendBitcoin(wifKey, publicKey, senderAddress, receiverAddress string, preview, amountSatoshi int64) (string, error) {
+func SendBitcoin(wifKey, publicKey, senderAddress, receiverAddress string, preview, amountSatoshi int64) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in SendBitcoin: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	Logln("BBMTLog", "invoking SendBitcoin...")
 	params := &chaincfg.TestNet3Params
 	if _btc_net == "mainnet" {
@@ -1154,7 +1172,17 @@ func MpcSendBTC(
 	return txid, nil
 }
 
-func DecodeAddress(address string) (string, error) {
+func DecodeAddress(address string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in DecodeAddress: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	params := &chaincfg.TestNet3Params
 	if _btc_net == "mainnet" {
 		params = &chaincfg.MainNetParams
@@ -1548,7 +1576,16 @@ func ReplaceTransaction(
 	/* tx */
 	originalTxID string,
 	/* amounts */
-	amountSatoshi, newFee int64) (string, error) {
+	amountSatoshi, newFee int64) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in ReplaceTransaction: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
 
 	Logln("BBMTLog", "invoking ReplaceTransaction...")
 
@@ -1637,7 +1674,7 @@ func ReplaceTransaction(
 	}
 
 	// Update the change output value
-	_, _ = hex.DecodeString(txData.Vout[changeOutputIndex].Scriptpubkey)
+	// Note: We already decoded the scriptpubkey earlier, so we can skip it here
 	tx.TxOut[changeOutputIndex].Value = newChangeValue
 
 	// Sign the transaction using the same process as MpcSendBTC

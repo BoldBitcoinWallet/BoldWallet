@@ -232,8 +232,8 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
         type === 'legacy'
           ? 'Legacy'
           : type === 'segwitNative'
-            ? 'SegWit Native'
-            : 'SegWit Compatible';
+            ? 'Native SegWit'
+            : 'Nested SegWit';
       Toast.show({
         type: 'success',
         text1: 'Copied',
@@ -496,7 +496,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   PSBT.
                 </Text>
                 <Text style={styles.watchWalletWarning}>
-                  ⚠️ Note: Taproot is not supported. Only Legacy, SegWit Native, and SegWit Compatible address types are supported.
+                  ⚠️ Note: Taproot is not supported. Only Legacy, Native SegWit, and Nested SegWit address types are supported.
                 </Text>
                 <Text style={styles.watchWalletHint}>
                   Import using one of the details below:
@@ -551,7 +551,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 {keyshareInfo.outputDescriptors.segwitNative && (
                   <View style={styles.watchWalletDetailRow}>
                     <Text style={styles.watchWalletDetailLabel}>
-                      Output Descriptor (SegWit Native)
+                      Output Descriptor (Native SegWit)
                     </Text>
                     <View style={styles.watchWalletValueContainer}>
                       <Text
@@ -602,7 +602,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 {keyshareInfo.outputDescriptors.segwitCompatible && (
                   <View style={styles.watchWalletDetailRow}>
                     <Text style={styles.watchWalletDetailLabel}>
-                      Output Descriptor (SegWit Compatible)
+                      Output Descriptor (Nested SegWit)
                     </Text>
                     <View style={styles.watchWalletValueContainer}>
                       <Text
@@ -736,8 +736,8 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
           selectedDescriptorType === 'legacy'
             ? 'Legacy'
             : selectedDescriptorType === 'segwitNative'
-              ? 'SegWit Native'
-              : 'SegWit Compatible'
+              ? 'Native SegWit'
+              : 'Nested SegWit'
         })`}
         value={
           selectedDescriptorType && keyshareInfo?.outputDescriptors
@@ -827,18 +827,23 @@ const createStyles = (theme: any) =>
       tintColor: theme.colors.text,
     },
     watchWalletTitle: {
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     watchWalletSubtitle: {
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       lineHeight: 18,
       color: theme.colors.textSecondary,
       marginBottom: 8,
     },
     watchWalletWarning: {
-      fontSize: 11,
+      fontSize: theme.fontSizes?.xs || 11,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       lineHeight: 16,
       color: theme.colors.textSecondary,
       marginTop: 8,
@@ -846,7 +851,9 @@ const createStyles = (theme: any) =>
       fontStyle: 'italic',
     },
     watchWalletHint: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       lineHeight: 16,
       color: theme.colors.textSecondary,
       textDecorationLine: 'underline',
@@ -854,8 +861,9 @@ const createStyles = (theme: any) =>
       marginBottom: 6,
     },
     watchWalletExpandIcon: {
-      fontSize: 14,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     watchWalletContent: {
       paddingHorizontal: 0,
@@ -877,8 +885,9 @@ const createStyles = (theme: any) =>
       marginBottom: 0,
     },
     watchWalletDetailLabel: {
-      fontSize: 13,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       width: 140,
       flexShrink: 0,
@@ -895,8 +904,9 @@ const createStyles = (theme: any) =>
     watchWalletValueText: {
       flex: 1,
       flexShrink: 1,
-      fontSize: 11,
-      fontFamily: 'monospace',
+      fontSize: theme.fontSizes?.xs || 11,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.monospace || 'monospace',
       color: theme.colors.text,
       minWidth: 0,
     },
@@ -959,13 +969,15 @@ const createStyles = (theme: any) =>
       tintColor: theme.colors.text,
     },
     psbtSectionTitle: {
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     psbtSectionExpandIcon: {
-      fontSize: 14,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     psbtSectionContent: {
       paddingHorizontal: 0,

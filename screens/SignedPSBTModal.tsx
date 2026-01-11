@@ -323,14 +323,17 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
       maxHeight: '90%',
     },
     title: {
-      fontSize: 24,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.['3xl'] || 24,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 8,
       textAlign: 'center',
     },
     subtitle: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 24,
       textAlign: 'center',
@@ -346,7 +349,9 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
       marginBottom: 12,
     },
     qrInfo: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
     },
@@ -368,9 +373,10 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
     },
     buttonText: {
       color: theme.colors.textOnPrimary,
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       height: 20,
-      fontWeight: '600',
       marginLeft: 8,
     },
     buttonSecondary: {
@@ -395,8 +401,9 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
     },
     closeButtonText: {
       color: theme.colors.text,
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     modeToggle: {
       flexDirection: 'row',
@@ -416,8 +423,9 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
       backgroundColor: theme.colors.primary,
     },
     modeButtonText: {
-      fontSize: 14,
-      fontWeight: '500',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
     },
     modeButtonTextActive: {

@@ -725,8 +725,8 @@ const TransactionList = React.forwardRef<
         paddingBottom: 20,
       },
       transactionItem: {
-        padding: 12,
-        marginVertical: 4,
+        padding: 10,
+        marginVertical: 3,
         backgroundColor: appTheme.colors.background === '#ffffff' 
           ? '#ffffff' // White in light mode
           : appTheme.colors.cardBackground, // Dark card in dark mode
@@ -756,28 +756,28 @@ const TransactionList = React.forwardRef<
         padding: 10,
       },
       status: {
-        fontSize: appTheme.fontSizes?.md || 15,
+        fontSize: appTheme.fontSizes?.sm || 13,
         fontWeight: (appTheme.fontWeights?.semibold || '600') as any,
         fontFamily: appTheme.fontFamilies?.regular,
         color: appTheme.colors.text,
         opacity: 0.9,
       },
       amount: {
-        fontSize: appTheme.fontSizes?.lg || 17,
+        fontSize: appTheme.fontSizes?.md || 15,
         fontWeight: (appTheme.fontWeights?.bold || '700') as any,
         fontFamily: appTheme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
         color: appTheme.colors.text,
         opacity: 0.95,
       },
       fiatAmount: {
-        fontSize: appTheme.fontSizes?.base || 13,
+        fontSize: appTheme.fontSizes?.sm || 12,
         fontWeight: (appTheme.fontWeights?.normal || '400') as any,
         fontFamily: appTheme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
         color: appTheme.colors.text,
         opacity: 0.6,
       },
       address: {
-        fontSize: appTheme.fontSizes?.base || 13,
+        fontSize: appTheme.fontSizes?.sm || 12,
         fontWeight: (appTheme.fontWeights?.normal || '400') as any,
         fontFamily: appTheme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
         color: appTheme.colors.text,
@@ -785,21 +785,21 @@ const TransactionList = React.forwardRef<
         marginRight: 4,
       },
       addressText: {
-        fontSize: appTheme.fontSizes?.base || 13,
+        fontSize: appTheme.fontSizes?.sm || 12,
         fontWeight: (appTheme.fontWeights?.normal || '400') as any,
         fontFamily: appTheme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
         color: appTheme.colors.text,
         opacity: 0.8,
       },
       txId: {
-        fontSize: appTheme.fontSizes?.sm || 12,
+        fontSize: appTheme.fontSizes?.xs || 11,
         fontWeight: (appTheme.fontWeights?.normal || '400') as any,
         fontFamily: appTheme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
         color: appTheme.colors.text,
         opacity: 0.5,
       },
       timestamp: {
-        fontSize: appTheme.fontSizes?.sm || 12,
+        fontSize: appTheme.fontSizes?.xs || 11,
         fontWeight: (appTheme.fontWeights?.normal || '400') as any,
         fontFamily: appTheme.fontFamilies?.regular,
         color: appTheme.colors.text,
@@ -1019,16 +1019,15 @@ const TransactionList = React.forwardRef<
       );
     }, [loading, styles.emptyContainer, styles.emptyText]);
 
+    const safeAreaStyle = {
+      paddingTop: Platform.OS === 'android' ? 0 : insets.top,
+      paddingLeft: insets.left,
+      paddingRight: insets.right,
+    };
+
     return (
       <View
-        style={[
-          styles.container,
-          {
-            paddingTop: insets.top,
-            paddingLeft: insets.left,
-            paddingRight: insets.right,
-          },
-        ]}>
+        style={[styles.container, safeAreaStyle]}>
         <FlatList
           style={styles.list}
           contentContainerStyle={styles.listContent}
@@ -1058,6 +1057,20 @@ const TransactionList = React.forwardRef<
               onRefresh={handlePullRefresh}
               progressViewOffset={0}
               enabled={true}
+              tintColor={
+                appTheme.colors.background === '#ffffff'
+                  ? appTheme.colors.accent || appTheme.colors.primary
+                  : appTheme.colors.accent || appTheme.colors.secondary || appTheme.colors.white
+              }
+              colors={
+                Platform.OS === 'android'
+                  ? [
+                      appTheme.colors.background === '#ffffff'
+                        ? appTheme.colors.accent || appTheme.colors.primary
+                        : appTheme.colors.accent || appTheme.colors.secondary || appTheme.colors.white,
+                    ]
+                  : undefined
+              }
             />
           }
         />

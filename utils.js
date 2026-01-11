@@ -293,7 +293,7 @@ export const formatBTC = (btcAmount, options = {}) => {
   const [wholePart, decimalPart = ''] = amountStr.split('.');
 
   // Use thin space (U+2009) as thousand separator - narrower than regular space
-  const thinSpace = '\u200A';
+  const thinSpace = '\u200A\u200A';
 
   // Format whole part: standard thousand separators (every 3 digits from right) using thin space
   const formattedWhole = Number(wholePart).toLocaleString('en-US').replace(/,/g, thinSpace);
