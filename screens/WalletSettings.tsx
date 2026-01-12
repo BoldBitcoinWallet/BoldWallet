@@ -791,10 +791,14 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       return theme.colors.danger;
     }
     if (passwordStrength <= 2) {
-      return theme.colors.accent;
+      return theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange;
     }
     if (passwordStrength <= 3) {
-      return theme.colors.accent;
+      return theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange;
     }
     return theme.colors.received;
   };
@@ -1351,7 +1355,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     sectionContent: {
       paddingHorizontal: 12,
       borderTopWidth: 1,
-      borderTopColor: theme.colors.accent,
+      borderTopColor: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
     },
     toggleContainer: {
       flexDirection: 'row',
@@ -1547,7 +1553,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       letterSpacing: 0.2,
     },
     apiNetworkModeTextTestnet: {
-      color: theme.colors.accent,
+      color: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
     },
     apiNetworkModeTextMainnet: {
       color: theme.colors.received,
@@ -1790,14 +1798,18 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginTop: 6,
     },
     deleteButton: {
-      backgroundColor: theme.colors.accent,
+      backgroundColor: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
     },
     backupButton: {
       backgroundColor: theme.colors.primary,
       marginBottom: 16, // Add spacing after backup button before delete section
     },
     resetButton: {
-      backgroundColor: theme.colors.accent,
+      backgroundColor: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
     },
     buttonText: {
       color: theme.colors.textOnPrimary,
@@ -1999,7 +2011,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       backgroundColor: theme.colors.secondary,
     },
     confirmButton: {
-      backgroundColor: theme.colors.accent,
+      backgroundColor: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
     },
     disabledButton: {
       backgroundColor: theme.colors.disabled,
@@ -2251,7 +2265,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginBottom: 4,
     },
     themeOptionSelected: {
-      borderColor: theme.colors.accent,
+      borderColor: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
       borderWidth: 2,
       backgroundColor: theme.colors.cardBackground,
     },
@@ -2268,12 +2284,16 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     },
     themeOptionLabelSelected: {
       fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      color: theme.colors.accent,
+      color: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
     },
     themeOptionCheck: {
       width: 18,
       height: 18,
-      tintColor: theme.colors.accent,
+      tintColor: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
     },
   });
 
@@ -2400,7 +2420,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 true: theme.colors.primary,
                 false: theme.colors.secondary,
               }}
-              thumbColor={theme.colors.accent}
+              thumbColor={theme.colors.background === '#ffffff'
+                ? theme.colors.accent
+                : theme.colors.bitcoinOrange}
               onValueChange={handleToggleHaptics}
               value={hapticsEnabled}
             />
@@ -2437,7 +2459,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   true: theme.colors.primary,
                   false: theme.colors.secondary,
                 }}
-                thumbColor={theme.colors.accent}
+                thumbColor={theme.colors.background === '#ffffff'
+                ? theme.colors.accent
+                : theme.colors.bitcoinOrange}
                 onValueChange={async value => {
                   try {
                     HapticFeedback.light();
@@ -2514,7 +2538,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 true: theme.colors.primary,
                 false: theme.colors.secondary,
               }}
-              thumbColor={theme.colors.accent}
+              thumbColor={theme.colors.background === '#ffffff'
+                ? theme.colors.accent
+                : theme.colors.bitcoinOrange}
               onValueChange={async value => {
                 HapticFeedback.light();
                 const mode = value ? 'psbt' : 'full';
@@ -2610,7 +2636,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 true: theme.colors.primary,
                 false: theme.colors.secondary,
               }}
-              thumbColor={theme.colors.accent}
+              thumbColor={theme.colors.background === '#ffffff'
+                ? theme.colors.accent
+                : theme.colors.bitcoinOrange}
               onValueChange={toggleNetwork}
               value={isTestnet}
             />

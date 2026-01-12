@@ -869,7 +869,9 @@ const createStyles = (theme: any) =>
       paddingHorizontal: 0,
       paddingVertical: 0,
       borderTopWidth: 1,
-      borderTopColor: theme.colors.accent || theme.colors.primary,
+      borderTopColor: theme.colors.background === '#ffffff'
+        ? (theme.colors.accent || theme.colors.primary)
+        : theme.colors.bitcoinOrange,
       overflow: 'hidden',
     },
     watchWalletContentExpanded: {
@@ -983,7 +985,9 @@ const createStyles = (theme: any) =>
       paddingHorizontal: 0,
       paddingVertical: 0,
       borderTopWidth: 1,
-      borderTopColor: theme.colors.accent || theme.colors.primary,
+      borderTopColor: theme.colors.background === '#ffffff'
+        ? (theme.colors.accent || theme.colors.primary)
+        : theme.colors.bitcoinOrange,
       overflow: 'hidden',
     },
     psbtBodyContainer: {

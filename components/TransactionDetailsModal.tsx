@@ -279,7 +279,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       marginBottom: 12,
     },
     addressIndex: {
-      fontSize: theme.fontSizes?.base || 13,
+      fontSize: theme.fontSizes?.base || 14,
       fontWeight: (theme.fontWeights?.semibold || '600') as any,
       fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary, // Use textSecondary for better readability
@@ -318,7 +318,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       color: theme.colors.textSecondary, // Use textSecondary for better readability
     },
     txId: {
-      fontSize: theme.fontSizes?.base || 13,
+      fontSize: theme.fontSizes?.base || 14,
       fontWeight: (theme.fontWeights?.normal || '400') as any,
       fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.text,
@@ -354,10 +354,10 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     },
     statusBadgePending: {
       backgroundColor: theme.colors.background === '#121212' || theme.colors.background.includes('12')
-        ? theme.colors.accent + '26' // Dark mode with opacity
+        ? theme.colors.bitcoinOrange + '26' // Dark mode with opacity - use bitcoin orange
         : theme.colors.dangerOverlay15, // Light mode
       borderColor: theme.colors.background === '#121212' || theme.colors.background.includes('12')
-        ? theme.colors.accent + '80' // More visible border in dark mode
+        ? theme.colors.bitcoinOrange + '80' // More visible border in dark mode - use bitcoin orange
         : theme.colors.dangerOverlay40, // Light mode
     },
   });
@@ -398,7 +398,9 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                       {
                         color: status.confirmed
                           ? theme.colors.received || theme.colors.secondary
-                          : theme.colors.accent,
+                          : (theme.colors.background === '#ffffff'
+                              ? theme.colors.accent // Use accent in light mode
+                              : theme.colors.bitcoinOrange), // Use bitcoin orange in dark mode
                       },
                     ]}>
                     {status.text}

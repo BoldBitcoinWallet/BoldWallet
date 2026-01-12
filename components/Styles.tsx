@@ -845,7 +845,9 @@ export const createStyles = (theme: Theme): Styles => ({
     minHeight: 68,
   },
   addressTypeButtonSelected: {
-    borderColor: theme.colors.accent,
+    borderColor: theme.colors.background === '#ffffff'
+      ? theme.colors.accent
+      : theme.colors.bitcoinOrange,
     borderWidth: 2,
   },
   addressTypeLabel: {
@@ -901,7 +903,9 @@ export const createStyles = (theme: Theme): Styles => ({
   modalOptionCheckIcon: {
     width: 18,
     height: 18,
-    tintColor: theme.colors.accent,
+    tintColor: theme.colors.background === '#ffffff'
+      ? theme.colors.accent
+      : theme.colors.bitcoinOrange,
     opacity: 0.9,
     marginLeft: 4,
   },
@@ -962,7 +966,9 @@ export const createStyles = (theme: Theme): Styles => ({
   refreshIcon: {
     width: 16,
     height: 16,
-    tintColor: theme.colors.accent,
+    tintColor: theme.colors.background === '#ffffff'
+      ? theme.colors.accent
+      : theme.colors.bitcoinOrange,
     opacity: 0.9,
   },
   cacheText: {
@@ -1140,7 +1146,9 @@ export const createStyles = (theme: Theme): Styles => ({
     fontSize: theme.fontSizes?.lg || 16,
     fontWeight: (theme.fontWeights?.bold || '700') as any,
     fontFamily: theme.fontFamilies?.regular,
-    color: theme.colors.accent,
+    color: theme.colors.background === '#ffffff'
+      ? theme.colors.accent
+      : theme.colors.bitcoinOrange,
   },
   modalBoldText: {
     fontSize: theme.fontSizes?.md || 15,
@@ -1159,7 +1167,9 @@ export const createStyles = (theme: Theme): Styles => ({
     width: 36,
     height: 36,
     marginBottom: 12,
-    tintColor: theme.colors.accent,
+    tintColor: theme.colors.background === '#ffffff'
+      ? theme.colors.accent
+      : theme.colors.bitcoinOrange,
     alignSelf: 'center' as const,
   },
   modalActionButtonText: {
@@ -1211,7 +1221,9 @@ export const createStyles = (theme: Theme): Styles => ({
     fontSize: theme.fontSizes?.base || 14,
     fontWeight: (theme.fontWeights?.bold || '700') as any,
     fontFamily: theme.fontFamilies?.regular,
-    color: theme.colors.accent,
+    color: theme.colors.background === '#ffffff'
+      ? theme.colors.accent
+      : theme.colors.bitcoinOrange,
   },
   apiDisplayContainer: {
     paddingHorizontal: 16,
@@ -1314,12 +1326,16 @@ export const createStyles = (theme: Theme): Styles => ({
     letterSpacing: 0.5,
   },
   warningBox: {
-    backgroundColor: theme.colors.accent + '1A', // 10% opacity
+    backgroundColor: (theme.colors.background === '#ffffff'
+      ? theme.colors.accent
+      : theme.colors.bitcoinOrange) + '1A', // 10% opacity
     borderRadius: 8,
     padding: 12,
     marginVertical: 8,
     borderLeftWidth: 4,
-    borderLeftColor: theme.colors.accent,
+    borderLeftColor: theme.colors.background === '#ffffff'
+      ? theme.colors.accent
+      : theme.colors.bitcoinOrange,
   },
   warningText: {
     fontSize: theme.fontSizes?.base || 14,
@@ -1343,13 +1359,17 @@ export const createStyles = (theme: Theme): Styles => ({
     color: theme.colors.white,
   },
   warningBoxWithMargin: {
-    backgroundColor: theme.colors.accent + '1A', // 10% opacity
+    backgroundColor: (theme.colors.background === '#ffffff'
+      ? theme.colors.accent
+      : theme.colors.bitcoinOrange) + '1A', // 10% opacity
     borderRadius: 8,
     padding: 12,
     marginVertical: 8,
     marginTop: 10,
     borderLeftWidth: 4,
-    borderLeftColor: theme.colors.accent,
+    borderLeftColor: theme.colors.background === '#ffffff'
+      ? theme.colors.accent
+      : theme.colors.bitcoinOrange,
   },
   modalTipText: {
     fontSize: theme.fontSizes?.base || 13,
@@ -1427,12 +1447,16 @@ export const createStyles = (theme: Theme): Styles => ({
     lineHeight: 20,
   },
   warningBoxCompact: {
-    backgroundColor: theme.colors.accent + '14', // 8% opacity
+    backgroundColor: (theme.colors.background === '#ffffff'
+      ? theme.colors.accent
+      : theme.colors.bitcoinOrange) + '14', // 8% opacity
     borderRadius: 6,
     padding: 10,
     marginBottom: 10,
     borderLeftWidth: 3,
-    borderLeftColor: theme.colors.accent,
+    borderLeftColor: theme.colors.background === '#ffffff'
+      ? theme.colors.accent
+      : theme.colors.bitcoinOrange,
   },
   warningTextCompact: {
     fontSize: theme.fontSizes?.base || 13,

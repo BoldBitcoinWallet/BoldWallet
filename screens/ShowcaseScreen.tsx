@@ -319,7 +319,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
       borderRadius: 12,
       paddingVertical: 16,
       paddingHorizontal: 24,
@@ -405,7 +405,9 @@ const ShowcaseScreen = ({navigation}: any) => {
       fontSize: theme.fontSizes?.base || 14,
       fontWeight: (theme.fontWeights?.semibold || '600') as any,
       fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.accent,
+      color: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
       textDecorationLine: 'underline',
     },
     checkboxContainer: {
@@ -428,8 +430,8 @@ const ShowcaseScreen = ({navigation}: any) => {
       justifyContent: 'center',
     },
     checkboxChecked: {
-      backgroundColor: theme.colors.background === '#ffffff' ? theme.colors.primary : theme.colors.accent,
-      borderColor: theme.colors.background === '#ffffff' ? theme.colors.primary : theme.colors.accent,
+      backgroundColor: theme.colors.background === '#ffffff' ? theme.colors.primary : theme.colors.bitcoinOrange,
+      borderColor: theme.colors.background === '#ffffff' ? theme.colors.primary : theme.colors.bitcoinOrange,
     },
     checkmark: {
       color: theme.colors.background,
@@ -522,7 +524,9 @@ const ShowcaseScreen = ({navigation}: any) => {
     },
     passwordInput: {
       borderWidth: 1.5,
-      borderColor: theme.colors.accent,
+      borderColor: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
       borderRadius: 12,
       paddingHorizontal: 16,
       paddingRight: 50,
@@ -573,7 +577,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
     },
     modalActionButtonText: {
       fontSize: theme.fontSizes?.base || 14,
@@ -601,7 +605,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       tintColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
     },
     buttonIcon: {
       width: 16,
@@ -670,12 +674,12 @@ const ShowcaseScreen = ({navigation}: any) => {
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.subPrimary + '10'
-          : theme.colors.accent + '20',
+          : theme.colors.bitcoinOrange + '20',
       borderWidth: 1.5,
       borderColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.subPrimary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
     },
     modeOptionHeader: {
       flexDirection: 'row',
@@ -721,7 +725,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.border
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
       opacity: theme.colors.background === '#ffffff' ? 0.4 : 0.6,
       zIndex: 0,
     },
@@ -851,7 +855,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       tintColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
     },
     setupGuideHintText: {
       fontSize: theme.fontSizes?.base || 13,
@@ -860,12 +864,12 @@ const ShowcaseScreen = ({navigation}: any) => {
       color:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
       textDecorationLine: 'underline',
       textDecorationColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary + '80'
-          : theme.colors.accent + '80',
+          : theme.colors.bitcoinOrange + '80',
     },
   });
 
@@ -1203,7 +1207,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                               backgroundColor:
                                 theme.colors.background === '#ffffff'
                                   ? theme.colors.primary
-                                  : theme.colors.accent,
+                                  : theme.colors.bitcoinOrange,
                               transform: [
                                 {
                                   translateX: connectorAnim.interpolate({
@@ -1225,7 +1229,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                               tintColor:
                                 theme.colors.background === '#ffffff'
                                   ? theme.colors.primary
-                                  : theme.colors.accent,
+                                  : theme.colors.bitcoinOrange,
                             },
                           ]}
                           resizeMode="contain"
@@ -1238,7 +1242,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                               tintColor:
                                 theme.colors.background === '#ffffff'
                                   ? theme.colors.primary
-                                  : theme.colors.accent,
+                                  : theme.colors.bitcoinOrange,
                             },
                           ]}
                           resizeMode="contain"
@@ -1313,7 +1317,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                               tintColor:
                                 theme.colors.background === '#ffffff'
                                   ? theme.colors.primary
-                                  : theme.colors.accent,
+                                  : theme.colors.bitcoinOrange,
                             },
                           ]}
                           resizeMode="contain"
@@ -1326,7 +1330,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                               tintColor:
                                 theme.colors.background === '#ffffff'
                                   ? theme.colors.primary
-                                  : theme.colors.accent,
+                                  : theme.colors.bitcoinOrange,
                             },
                           ]}
                           resizeMode="contain"

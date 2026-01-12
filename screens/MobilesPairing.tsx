@@ -1867,7 +1867,9 @@ const MobilesPairing = ({navigation}: any) => {
       fontSize: theme.fontSizes?.base || 14,
       fontWeight: (theme.fontWeights?.semibold || '600') as any,
       fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.accent,
+      color: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
       textDecorationLine: 'underline',
       textAlign: 'left',
     },
@@ -1986,7 +1988,7 @@ const MobilesPairing = ({navigation}: any) => {
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: 8,
@@ -2026,7 +2028,7 @@ const MobilesPairing = ({navigation}: any) => {
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary + '10'
-          : theme.colors.accent + '20',
+          : theme.colors.bitcoinOrange + '20',
     },
     enhancedCheckbox: {
       width: 20,
@@ -2042,11 +2044,11 @@ const MobilesPairing = ({navigation}: any) => {
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
       borderColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
     },
     checkmark: {
       color: theme.colors.background,
@@ -2133,7 +2135,7 @@ const MobilesPairing = ({navigation}: any) => {
       tintColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
     },
     finalStepTextContainer: {
       flex: 1,
@@ -2292,7 +2294,7 @@ const MobilesPairing = ({navigation}: any) => {
       borderColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
       justifyContent: 'center',
       alignItems: 'center',
       marginRight: 12,
@@ -2307,11 +2309,11 @@ const MobilesPairing = ({navigation}: any) => {
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
       borderColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
     },
     checkboxLabel: {
       fontSize: theme.fontSizes?.base || 14,
@@ -2354,13 +2356,13 @@ const MobilesPairing = ({navigation}: any) => {
       tintColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary + '95'
-          : theme.colors.accent + '95',
+          : theme.colors.bitcoinOrange + '95',
     },
     deviceSelfActive: {
       tintColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
     },
     deviceInactive: {
       tintColor: theme.colors.textSecondary,
@@ -2371,7 +2373,7 @@ const MobilesPairing = ({navigation}: any) => {
       tintColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary + '80'
-          : theme.colors.accent + '80',
+          : theme.colors.bitcoinOrange + '80',
       shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 2},
       shadowOpacity: 0.1,
@@ -2406,7 +2408,7 @@ const MobilesPairing = ({navigation}: any) => {
       color:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
       textAlign: 'center',
       width: 120,
       lineHeight: 18,
@@ -2443,7 +2445,7 @@ const MobilesPairing = ({navigation}: any) => {
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
       borderRadius: 2,
     },
     statusText: {
@@ -2478,7 +2480,7 @@ const MobilesPairing = ({navigation}: any) => {
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
       borderRadius: 12,
       paddingVertical: 14,
       paddingHorizontal: 20,
@@ -2510,7 +2512,7 @@ const MobilesPairing = ({navigation}: any) => {
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
       borderRadius: 12,
       paddingVertical: 14,
       paddingHorizontal: 20,
@@ -2576,7 +2578,7 @@ const MobilesPairing = ({navigation}: any) => {
       tintColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
     },
     modalTitle: {
       fontSize: theme.fontSizes?.['2xl'] || 20,
@@ -2713,7 +2715,7 @@ const MobilesPairing = ({navigation}: any) => {
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
     },
     buttonText: {
       fontSize: theme.fontSizes?.lg || 16,
@@ -2775,7 +2777,7 @@ const MobilesPairing = ({navigation}: any) => {
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
       borderRadius: 12,
       paddingVertical: 12,
       paddingHorizontal: 20,
@@ -2820,7 +2822,7 @@ const MobilesPairing = ({navigation}: any) => {
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.subPrimary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
       width: '100%',
       borderRadius: 12,
       paddingVertical: 14,
@@ -2850,7 +2852,7 @@ const MobilesPairing = ({navigation}: any) => {
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
       borderRadius: 12,
       paddingVertical: 14,
       paddingHorizontal: 20,
@@ -2925,7 +2927,7 @@ const MobilesPairing = ({navigation}: any) => {
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary + '20'
-          : theme.colors.accent + '20',
+          : theme.colors.bitcoinOrange + '20',
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -2935,7 +2937,7 @@ const MobilesPairing = ({navigation}: any) => {
       tintColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
     },
     progressContainer: {
       marginVertical: 8,
@@ -2977,7 +2979,7 @@ const MobilesPairing = ({navigation}: any) => {
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
       marginRight: 8,
     },
     finalizingStatusText: {
@@ -3065,7 +3067,7 @@ const MobilesPairing = ({navigation}: any) => {
       color:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
     },
     amountContainer: {
       flexDirection: 'row',
@@ -3644,7 +3646,7 @@ const MobilesPairing = ({navigation}: any) => {
                             tintColor:
                               theme.colors.background === '#ffffff'
                                 ? theme.colors.primary
-                                : theme.colors.accent,
+                                : theme.colors.bitcoinOrange,
                           }}
                           resizeMode="contain"
                         />
@@ -3681,7 +3683,7 @@ const MobilesPairing = ({navigation}: any) => {
                                   tintColor:
                                     theme.colors.background === '#ffffff'
                                       ? theme.colors.primary
-                                      : theme.colors.accent,
+                                      : theme.colors.bitcoinOrange,
                                 }}
                                 resizeMode="contain"
                               />
@@ -3700,7 +3702,7 @@ const MobilesPairing = ({navigation}: any) => {
                                   backgroundColor:
                                     theme.colors.background === '#ffffff'
                                       ? theme.colors.primary + '20'
-                                      : theme.colors.accent + '20',
+                                      : theme.colors.bitcoinOrange + '20',
                                   paddingHorizontal: 8,
                                   paddingVertical: 2,
                                   borderRadius: 8,
@@ -3713,7 +3715,7 @@ const MobilesPairing = ({navigation}: any) => {
                                     color:
                                       theme.colors.background === '#ffffff'
                                         ? theme.colors.primary
-                                        : theme.colors.accent,
+                                        : theme.colors.bitcoinOrange,
                                     letterSpacing: 1,
                                   }}>
                                   ENTERPRISE-GRADE
@@ -3736,7 +3738,7 @@ const MobilesPairing = ({navigation}: any) => {
                                   color:
                                     theme.colors.background === '#ffffff'
                                       ? theme.colors.primary
-                                      : theme.colors.accent,
+                                      : theme.colors.bitcoinOrange,
                                   fontStyle: 'italic',
                                 }}>
                                 Institutional-grade security in the palm of your
@@ -3750,7 +3752,9 @@ const MobilesPairing = ({navigation}: any) => {
                                   fontSize: theme.fontSizes?.base || 13,
                                   fontWeight: (theme.fontWeights?.medium || '500') as any,
                                   fontFamily: theme.fontFamilies?.regular,
-                                  color: theme.colors.accent,
+                                  color: theme.colors.background === '#ffffff'
+                                    ? theme.colors.accent
+                                    : theme.colors.bitcoinOrange,
                                   textDecorationLine: 'underline',
                                 }}
                                 onPress={() => {
@@ -3850,7 +3854,7 @@ const MobilesPairing = ({navigation}: any) => {
                                               theme.colors.background ===
                                               '#ffffff'
                                                 ? theme.colors.primary
-                                                : theme.colors.accent,
+                                                : theme.colors.bitcoinOrange,
                                             width:
                                               progressAnimation.interpolate({
                                                 inputRange: [0, 1],
@@ -4085,7 +4089,7 @@ const MobilesPairing = ({navigation}: any) => {
                             tintColor:
                               theme.colors.background === '#ffffff'
                                 ? theme.colors.secondary
-                                : theme.colors.accent,
+                                : theme.colors.bitcoinOrange,
                           }}
                           resizeMode="contain"
                         />
@@ -4271,7 +4275,7 @@ const MobilesPairing = ({navigation}: any) => {
                         tintColor:
                           theme.colors.background === '#ffffff'
                             ? theme.colors.primary
-                            : theme.colors.accent,
+                            : theme.colors.bitcoinOrange,
                         marginBottom: 8,
                       }}
                       resizeMode="contain"
@@ -4307,7 +4311,7 @@ const MobilesPairing = ({navigation}: any) => {
                             backgroundColor:
                               theme.colors.background === '#ffffff'
                                 ? theme.colors.primary + '20'
-                                : theme.colors.accent + '20',
+                                : theme.colors.bitcoinOrange + '20',
                             paddingHorizontal: 6,
                             paddingVertical: 2,
                             borderRadius: 4,
@@ -4320,7 +4324,7 @@ const MobilesPairing = ({navigation}: any) => {
                               color:
                                 theme.colors.background === '#ffffff'
                                   ? theme.colors.primary
-                                  : theme.colors.accent,
+                                  : theme.colors.bitcoinOrange,
                               textTransform: 'uppercase',
                               letterSpacing: 0.5,
                             }}>

@@ -727,9 +727,10 @@ const TransactionList = React.forwardRef<
       transactionItem: {
         padding: 10,
         marginVertical: 3,
-        backgroundColor: appTheme.colors.background === '#ffffff' 
-          ? '#ffffff' // White in light mode
-          : appTheme.colors.cardBackground, // Dark card in dark mode
+        backgroundColor:
+          appTheme.colors.background === '#ffffff'
+            ? '#ffffff' // White in light mode
+            : appTheme.colors.cardBackground, // Dark card in dark mode
         borderRadius: 10,
         elevation: 1,
         shadowColor: appTheme.colors.shadowColor,
@@ -737,9 +738,10 @@ const TransactionList = React.forwardRef<
         shadowOpacity: 0.05,
         shadowRadius: 1,
         borderWidth: 1,
-        borderColor: appTheme.colors.background === '#ffffff'
-          ? appTheme.colors.blackOverlay05 // Original light mode border
-          : appTheme.colors.border + '40', // Dark border in dark mode
+        borderColor:
+          appTheme.colors.background === '#ffffff'
+            ? appTheme.colors.blackOverlay05 // Original light mode border
+            : appTheme.colors.border + '40', // Dark border in dark mode
       },
       transactionRow: {
         flexDirection: 'row',
@@ -756,7 +758,7 @@ const TransactionList = React.forwardRef<
         padding: 10,
       },
       status: {
-        fontSize: appTheme.fontSizes?.sm || 13,
+        fontSize: appTheme.fontSizes?.lg || 16, // Increased from 13px for better readability
         fontWeight: (appTheme.fontWeights?.semibold || '600') as any,
         fontFamily: appTheme.fontFamilies?.regular,
         color: appTheme.colors.text,
@@ -765,38 +767,48 @@ const TransactionList = React.forwardRef<
       amount: {
         fontSize: appTheme.fontSizes?.md || 15,
         fontWeight: (appTheme.fontWeights?.bold || '700') as any,
-        fontFamily: appTheme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+        fontFamily:
+          appTheme.fontFamilies?.monospace ||
+          (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
         color: appTheme.colors.text,
         opacity: 0.95,
       },
       fiatAmount: {
-        fontSize: appTheme.fontSizes?.sm || 12,
+        fontSize: appTheme.fontSizes?.base || 13, // Increased from 12px for better accessibility
         fontWeight: (appTheme.fontWeights?.normal || '400') as any,
-        fontFamily: appTheme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+        fontFamily:
+          appTheme.fontFamilies?.monospace ||
+          (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
         color: appTheme.colors.text,
         opacity: 0.6,
       },
       address: {
-        fontSize: appTheme.fontSizes?.sm || 12,
-        fontWeight: (appTheme.fontWeights?.normal || '400') as any,
-        fontFamily: appTheme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+        fontSize: appTheme.fontSizes?.base || 13,
+        fontWeight: (appTheme.fontWeights?.medium || '400') as any, // Medium weight for better hierarchy
+        fontFamily:
+          appTheme.fontFamilies?.monospace ||
+          (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
         color: appTheme.colors.text,
         opacity: 0.6,
         marginRight: 4,
       },
       addressText: {
-        fontSize: appTheme.fontSizes?.sm || 12,
+        fontSize: appTheme.fontSizes?.base || 13,
         fontWeight: (appTheme.fontWeights?.normal || '400') as any,
-        fontFamily: appTheme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+        fontFamily:
+          appTheme.fontFamilies?.monospace ||
+          (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
         color: appTheme.colors.text,
         opacity: 0.8,
       },
       txId: {
-        fontSize: appTheme.fontSizes?.xs || 11,
-        fontWeight: (appTheme.fontWeights?.normal || '400') as any,
-        fontFamily: appTheme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+        fontSize: appTheme.fontSizes?.base || 13,
+        fontWeight: (appTheme.fontWeights?.medium || '400') as any, // Medium weight for better hierarchy
+        fontFamily:
+          appTheme.fontFamilies?.monospace ||
+          (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
         color: appTheme.colors.text,
-        opacity: 0.5,
+        opacity: 0.6,
       },
       timestamp: {
         fontSize: appTheme.fontSizes?.xs || 11,
@@ -808,9 +820,11 @@ const TransactionList = React.forwardRef<
       txText: {
         fontSize: appTheme.fontSizes?.base || 13,
         fontWeight: (appTheme.fontWeights?.normal || '400') as any,
-        fontFamily: appTheme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+        fontFamily:
+          appTheme.fontFamilies?.monospace ||
+          (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
         color: appTheme.colors.text,
-        opacity: 0.7,
+        opacity: 0.8,
       },
       emptyContainer: {
         flex: 1,
@@ -886,21 +900,23 @@ const TransactionList = React.forwardRef<
         // Get the relevant address(es) based on transaction type
         let relevantAddresses: string[] = [];
         let relevantAddress: string | null = null;
-        
+
         if (status.includes('Sen')) {
           // For sent transactions: collect ALL recipient addresses (outputs that aren't the sender's address)
-          relevantAddresses = item?.vout
-            ?.filter((output: any) => output.scriptpubkey_address !== address)
-            .map((output: any) => output.scriptpubkey_address)
-            .filter((addr: string) => addr) || [];
+          relevantAddresses =
+            item?.vout
+              ?.filter((output: any) => output.scriptpubkey_address !== address)
+              .map((output: any) => output.scriptpubkey_address)
+              .filter((addr: string) => addr) || [];
           // Remove duplicates
           relevantAddresses = [...new Set(relevantAddresses)];
           relevantAddress = relevantAddresses[0] || null;
         } else {
           // For received transactions: show the first input address that's not the receiver's address
-          relevantAddress = item?.vin?.find(
-            (input: any) => input.prevout.scriptpubkey_address !== address,
-          )?.prevout?.scriptpubkey_address || null;
+          relevantAddress =
+            item?.vin?.find(
+              (input: any) => input.prevout.scriptpubkey_address !== address,
+            )?.prevout?.scriptpubkey_address || null;
           // Set empty array for received transactions (not used in display)
           relevantAddresses = [];
         }
@@ -957,7 +973,12 @@ const TransactionList = React.forwardRef<
                 style={[
                   styles.amount,
                   status.includes('Sen')
-                    ? {color: themes.cryptoVibrant.colors.accent} // Original: #F5A623
+                    ? {
+                        color:
+                          appTheme.colors.background === '#ffffff'
+                            ? themes.cryptoVibrant.colors.accent // Light mode: use accent
+                            : appTheme.colors.bitcoinOrange,
+                      } // Dark mode: use bitcoin orange
                     : {color: themes.cryptoVibrant.colors.secondary}, // Original: #00D2B8
                 ]}>
                 {isBlurred ? '***' : info}
@@ -969,12 +990,15 @@ const TransactionList = React.forwardRef<
                   <Text style={styles.address}>
                     {status.includes('Sen') ? 'To  : ' : 'From: '}
                     <Text style={styles.addressText}>
-                      {relevantAddress.slice(0, 4)}...{relevantAddress.slice(-4)}
-                      {status.includes('Sen') && relevantAddresses.length > 1 && (
-                        <Text style={styles.addressText}>
-                          {' '}(+{relevantAddresses.length - 1} more)
-                        </Text>
-                      )}
+                      {relevantAddress.slice(0, 4)}...
+                      {relevantAddress.slice(-4)}
+                      {status.includes('Sen') &&
+                        relevantAddresses.length > 1 && (
+                          <Text style={styles.addressText}>
+                            {' '}
+                            (+{relevantAddresses.length - 1} more)
+                          </Text>
+                        )}
                     </Text>
                   </Text>
                 </View>
@@ -988,7 +1012,8 @@ const TransactionList = React.forwardRef<
             <View style={styles.transactionRow}>
               <View style={styles.txIdContainer}>
                 <Text style={styles.txId}>
-                  <Text style={styles.txText}>Tx  : {shortTxId}</Text>
+                  TxID:
+                  <Text style={styles.txText}> {shortTxId}</Text>
                 </Text>
               </View>
               <Text style={styles.timestamp}>{timestamp}</Text>
@@ -1000,11 +1025,27 @@ const TransactionList = React.forwardRef<
         getTransactionStatus,
         getTransactionAmounts,
         address,
-        styles,
+        styles.transactionItem,
+        styles.transactionRow,
+        styles.statusContainer,
+        styles.statusIcon,
+        styles.status,
+        styles.amount,
+        styles.addressRow,
+        styles.addressContainer,
+        styles.address,
+        styles.addressText,
+        styles.fiatAmount,
+        styles.txIdContainer,
+        styles.txId,
+        styles.txText,
+        styles.timestamp,
+        appTheme.colors.background,
+        appTheme.colors.bitcoinOrange,
+        isBlurred,
+        getCurrencySymbol,
         selectedCurrency,
         btcRate,
-        getCurrencySymbol,
-        isBlurred,
       ],
     );
 
@@ -1026,8 +1067,7 @@ const TransactionList = React.forwardRef<
     };
 
     return (
-      <View
-        style={[styles.container, safeAreaStyle]}>
+      <View style={[styles.container, safeAreaStyle]}>
         <FlatList
           style={styles.list}
           contentContainerStyle={styles.listContent}
@@ -1060,14 +1100,18 @@ const TransactionList = React.forwardRef<
               tintColor={
                 appTheme.colors.background === '#ffffff'
                   ? appTheme.colors.accent || appTheme.colors.primary
-                  : appTheme.colors.accent || appTheme.colors.secondary || appTheme.colors.white
+                  : appTheme.colors.bitcoinOrange ||
+                    appTheme.colors.secondary ||
+                    appTheme.colors.white
               }
               colors={
                 Platform.OS === 'android'
                   ? [
                       appTheme.colors.background === '#ffffff'
                         ? appTheme.colors.accent || appTheme.colors.primary
-                        : appTheme.colors.accent || appTheme.colors.secondary || appTheme.colors.white,
+                        : appTheme.colors.bitcoinOrange ||
+                          appTheme.colors.secondary ||
+                          appTheme.colors.white,
                     ]
                   : undefined
               }

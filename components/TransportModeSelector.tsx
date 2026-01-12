@@ -101,7 +101,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       tintColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
     },
     modalTitle: {
       fontSize: theme.fontSizes?.xl || 18,
@@ -166,12 +166,12 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.subPrimary + '10'
-          : theme.colors.accent + '20',
+          : theme.colors.bitcoinOrange + '20',
       borderWidth: 1.5,
       borderColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.subPrimary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
     },
     transportOptionContent: {
       alignItems: 'center',
@@ -209,7 +209,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       tintColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
     },
     transportOptionIconNostrSelected: {
       width: 64,
@@ -219,7 +219,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       tintColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
     },
     transportOptionTitle: {
       fontSize: theme.fontSizes?.md || 15,
@@ -233,7 +233,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       color:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
     },
     transportOptionDescription: {
       fontSize: theme.fontSizes?.sm || 11,
@@ -297,7 +297,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
-          : theme.colors.accent,
+          : theme.colors.bitcoinOrange,
     },
     continueButtonDisabled: {
       opacity: 0.5,

@@ -199,7 +199,9 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
             style={{
               color: isRefreshing
                 ? theme.colors.textSecondary
-                : theme.colors.accent,
+                : (theme.colors.background === '#ffffff'
+                    ? theme.colors.accent
+                    : theme.colors.bitcoinOrange),
             }}>
             {isRefreshing
               ? 'Refreshing...'

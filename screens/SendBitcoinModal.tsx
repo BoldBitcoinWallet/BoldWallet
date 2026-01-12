@@ -219,7 +219,9 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       fontSize: theme.fontSizes?.base || 14,
       fontWeight: (theme.fontWeights?.bold || '700') as any,
       fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.accent,
+      color: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
       marginBottom: 10,
       textDecorationLine: 'underline',
     },
@@ -260,7 +262,9 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       color: theme.colors.textSecondary, // Remove fallback for better dark mode readability
     },
     balanceCardMaxButton: {
-      backgroundColor: theme.colors.accent || theme.colors.primary,
+      backgroundColor: theme.colors.background === '#ffffff'
+        ? (theme.colors.accent || theme.colors.primary)
+        : theme.colors.bitcoinOrange,
       paddingVertical: 7,
       paddingHorizontal: 14,
       borderRadius: 8,

@@ -94,11 +94,11 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
     fontWeight: (theme.fontWeights?.normal || '400') as any,
     fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textSecondary,
-    lineHeight: 14,
     flexShrink: 1, // Allow text to shrink
     textAlign: 'center',
     maxWidth: 120, // Limit provider text width to prevent overflow
-    marginTop: 16, // Space for the absolutely positioned network badge
+    top: '50%',
+    marginTop: 2,
   };
 
   const cleanProviderUrl = apiBase
@@ -255,7 +255,7 @@ export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: 24,
+    gap: 16,
     paddingTop: 12,
     paddingBottom: 12,
     paddingRight: 16,
@@ -268,21 +268,20 @@ export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor:
-      theme.colors.background === '#121212' ||
-      theme.colors.background.includes('12')
-        ? theme.colors.cardBackground // Use cardBackground in dark mode
-        : theme.colors.blackOverlay06, // Light mode background
-    borderWidth: 1,
+      theme.colors.background === '#ffffff' ||
+      theme.colors.background.includes('ffffff')
+        ? theme.colors.blackOverlay06 // Light mode background
+        : theme.colors.cardBackground, // Dark mode background
+    borderWidth: 4,
     borderColor:
-      theme.colors.background === '#121212' ||
-      theme.colors.background.includes('12')
-        ? theme.colors.border + '80' // More visible border in dark mode
-        : theme.colors.blackOverlay10, // Light mode border
-    paddingHorizontal: 14,
+      theme.colors.background === '#ffffff' ||
+      theme.colors.background.includes('ffffff')
+        ? theme.colors.blackOverlay10 // Light mode border
+        : theme.colors.border + '80', // Dark mode border
+    paddingHorizontal: 16,
     paddingVertical: 0,
     borderRadius: 10,
     height: 36,
-    minWidth: 90,
     shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.05,
     shadowRadius: 3,
@@ -425,7 +424,10 @@ export const HeaderTitle: React.FC<{title?: string}> = () => {
 
   // Center the container when title is empty
   const containerStyle = isEmpty
-    ? [styles.headerTitleContainer, {justifyContent: 'center' as const, paddingLeft: 0}]
+    ? [
+        styles.headerTitleContainer,
+        {justifyContent: 'center' as const, paddingLeft: 0},
+      ]
     : styles.headerTitleContainer;
 
   // Remove marginRight from logo when title is empty

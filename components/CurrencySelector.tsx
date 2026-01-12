@@ -138,8 +138,12 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
       borderColor: theme.colors.border + '40', // Add border for dark mode visibility
     },
     selectedCurrency: {
-      backgroundColor: theme.colors.accent,
-      borderColor: theme.colors.accent, // Match border to accent when selected
+      backgroundColor: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
+      borderColor: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange, // Match border to accent/bitcoin orange when selected
     },
     currencyCode: {
       fontSize: theme.fontSizes?.lg || 16,
