@@ -263,6 +263,14 @@ export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
     minHeight: 60,
   };
 
+  // Keep the price pill visually symmetric with the right-side buttons cluster.
+  // Each right button is 36px wide and there is a 16px gap between them:
+  // cluster width = 36 * 2 + 16 = 88. Add a small buffer for internal padding.
+  const settingsBtnWidth = Number(styles.settingsButton?.width ?? 36);
+  const buttonsGap = Number(headerButtonsContainer.gap ?? 16);
+  const rightClusterWidth = settingsBtnWidth * 2 + buttonsGap;
+  const priceMinWidth = rightClusterWidth + 8; // ~96px target footprint
+
   const priceButtonStyle: any = {
     flexDirection: 'row',
     alignItems: 'center',
@@ -282,6 +290,8 @@ export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
     paddingVertical: 0,
     borderRadius: 10,
     height: 36,
+    minWidth: priceMinWidth,
+    maxWidth: 140, // avoid over-expansion when currency codes are long
     shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.05,
     shadowRadius: 3,
