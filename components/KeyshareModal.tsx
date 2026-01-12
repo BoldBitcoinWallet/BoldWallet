@@ -25,7 +25,7 @@ interface KeyshareInfo {
   type: 'duo' | 'trio';
   pubKey: string;
   chainCode: string;
-  xpub: string;
+  fingerprint: string;
   npub: string | null;
   createdAt?: number | null;
   outputDescriptors?: {
@@ -41,7 +41,6 @@ interface KeyshareModalProps {
   keyshareInfo: KeyshareInfo | null;
   network: 'mainnet' | 'testnet';
   onNavigateToSettings: () => void;
-  onShowXpubQR: () => void;
   onShowOutputDescriptorQR?: () => void;
   onShowNpubQR: () => void;
 }
@@ -52,7 +51,6 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
   keyshareInfo,
   network,
   onNavigateToSettings,
-  onShowXpubQR,
   onShowNpubQR,
 }) => {
   const {theme} = useTheme();
@@ -103,31 +101,6 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
     [],
   );
 
-  const handleShareXpub = useCallback(() => {
-    if (!keyshareInfo?.xpub) return;
-    const now = new Date();
-    const month = now.toLocaleDateString('en-US', {month: 'short'});
-    const day = now.getDate().toString().padStart(2, '0');
-    const year = now.getFullYear();
-    const hours = now.getHours().toString().padStart(2, '0');
-    const minutes = now.getMinutes().toString().padStart(2, '0');
-    const filename = `${
-      network === 'mainnet' ? 'xpub' : 'tpub'
-    }.${month}${day}.${year}.${hours}${minutes}.txt`;
-    shareTextAsFile(keyshareInfo.xpub, filename, 'Share Extended Pubkey');
-  }, [keyshareInfo, network, shareTextAsFile]);
-
-  const handleCopyXpub = useCallback(() => {
-    if (!keyshareInfo?.xpub) return;
-    HapticFeedback.light();
-    Clipboard.setString(keyshareInfo.xpub);
-    Toast.show({
-      type: 'success',
-      text1: 'Copied',
-      text2: 'Extended pubkey copied to clipboard',
-    });
-  }, [keyshareInfo]);
-
   const handleCopyOutputDescriptor = useCallback(
     (type: 'legacy' | 'segwitNative' | 'segwitCompatible') => {
       const descriptor = keyshareInfo?.outputDescriptors?.[type] || '';
@@ -138,8 +111,8 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
         type === 'legacy'
           ? 'Legacy'
           : type === 'segwitNative'
-          ? 'SegWit Native'
-          : 'SegWit Compatible';
+          ? 'Native Segwit'
+          : 'Nested SegWit';
       Toast.show({
         type: 'success',
         text1: 'Copied',
@@ -193,29 +166,6 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
     });
   }, [keyshareInfo]);
 
-  const handleCopyPubKey = useCallback(() => {
-    if (!keyshareInfo?.pubKey) return;
-    HapticFeedback.light();
-    Clipboard.setString(keyshareInfo.pubKey);
-    Toast.show({
-      type: 'success',
-      text1: 'Copied',
-      text2: 'Public key copied to clipboard',
-    });
-  }, [keyshareInfo]);
-
-  const handleShowPubKeyQR = useCallback(() => {
-    if (!keyshareInfo?.pubKey) return;
-    HapticFeedback.light();
-    onClose();
-  }, [keyshareInfo, onClose]);
-
-  const handleShowXpubQR = useCallback(() => {
-    HapticFeedback.light();
-    onClose();
-    setTimeout(() => onShowXpubQR(), 300);
-  }, [onClose, onShowXpubQR]);
-
   const handleShowNpubQR = useCallback(() => {
     HapticFeedback.light();
     onClose();
@@ -267,17 +217,20 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                 <>
                   {/* Compact keyshare summary card */}
                   <View style={styles.keyshareInfoCard}>
-                    <View style={styles.keyshareDetailRow}>
-                      <Text style={styles.keyshareDetailLabel}>
-                        Keyshare ID
-                      </Text>
-                      <Text style={styles.keyshareDetailValue}>
-                        {keyshareInfo.label}
-                      </Text>
+                    <View style={styles.keyshareKeyItem}>
+                      <Text style={styles.keyshareKeyLabel}>Wallet ID</Text>
+                      <View style={styles.keyshareKeyContainer}>
+                        <Text
+                          style={styles.keyshareKeyText}
+                          numberOfLines={1}
+                          ellipsizeMode="middle">
+                          {keyshareInfo.fingerprint || 'N/A'}
+                        </Text>
+                      </View>
                     </View>
                     <View style={styles.keyshareDetailRow}>
                       <Text style={styles.keyshareDetailLabel}>
-                        Keyshare Type
+                        Wallet Type
                       </Text>
                       <View
                         style={[
@@ -293,46 +246,26 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                         </Text>
                       </View>
                     </View>
+
+                    <View style={styles.keyshareDetailRow}>
+                      <Text style={styles.keyshareDetailLabel}>
+                        Keyshare ID
+                      </Text>
+                      <Text style={styles.keyshareDetailValue}>
+                        {keyshareInfo.label}
+                      </Text>
+                    </View>
                     {typeof keyshareInfo.createdAt === 'number' &&
                       keyshareInfo.createdAt > 0 && (
                         <View style={styles.keyshareDetailRow}>
                           <Text style={styles.keyshareDetailLabel}>
-                            Created
+                            Created At
                           </Text>
                           <Text style={styles.keyshareDetailValue}>
                             {new Date(keyshareInfo.createdAt).toLocaleString()}
                           </Text>
                         </View>
                       )}
-                    <View style={styles.keyshareKeyItem}>
-                      <Text style={styles.keyshareKeyLabel}>Public Key</Text>
-                      <View style={styles.keyshareKeyContainer}>
-                        <Text
-                          style={styles.keyshareKeyText}
-                          numberOfLines={1}
-                          ellipsizeMode="middle">
-                          {keyshareInfo.pubKey || 'N/A'}
-                        </Text>
-                        <View style={styles.keyshareButtonsRow}>
-                          <TouchableOpacity
-                            onPress={handleCopyPubKey}
-                            style={styles.keyshareCopyButton}>
-                            <Image
-                              source={require('../assets/copy-icon.png')}
-                              style={styles.keyshareCopyIcon}
-                            />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={handleShowPubKeyQR}
-                            style={styles.keyshareCopyButton}>
-                            <Image
-                              source={require('../assets/qr-icon.png')}
-                              style={styles.keyshareCopyIcon}
-                            />
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </View>
                   </View>
 
                   {/* Capabilities / connectivity summary */}
@@ -381,9 +314,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
 
                     {keyshareInfo.supportsNostr && keyshareInfo.npub && (
                       <View style={styles.keyshareKeyItem}>
-                        <Text style={styles.keyshareKeyLabel}>
-                          Nostr Pubkey
-                        </Text>
+                        <Text style={styles.keyshareKeyLabel}>NPub</Text>
                         <View style={styles.keyshareKeyContainer}>
                           <Text
                             style={styles.keyshareKeyText}
@@ -420,51 +351,14 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                       Watch-Wallet • Export
                     </Text>
                     <Text style={styles.watchWalletDescription}>
-                      Import the extended pubkey or output descriptor into
-                      Sparrow or another PSBT-capable wallet to create a
-                      watch-only wallet.
+                      Import the output descriptor into Sparrow or another
+                      PSBT-capable wallet to create a watch-only wallet.
+                    </Text>
+                    <Text style={styles.watchWalletWarning}>
+                      ⚠️ Note: Taproot is not supported. Only Legacy, SegWit
+                      Native, and Nested SegWit address types are supported.
                     </Text>
                     <View>
-                      <View style={styles.watchWalletItem}>
-                        <Text style={styles.watchWalletItemLabel}>
-                          Extended Pubkey (
-                          {network === 'mainnet' ? 'xpub' : 'tpub'})
-                        </Text>
-                        <View style={styles.watchWalletItemValueContainer}>
-                          <Text
-                            style={styles.watchWalletItemValue}
-                            numberOfLines={1}
-                            ellipsizeMode="middle">
-                            {keyshareInfo.xpub || 'N/A'}
-                          </Text>
-                          <View style={styles.keyshareButtonsRow}>
-                            <TouchableOpacity
-                              onPress={handleCopyXpub}
-                              style={styles.keyshareCopyButton}>
-                              <Image
-                                source={require('../assets/copy-icon.png')}
-                                style={styles.keyshareCopyIcon}
-                              />
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              onPress={handleShareXpub}
-                              style={styles.keyshareCopyButton}>
-                              <Image
-                                source={require('../assets/share-icon.png')}
-                                style={styles.keyshareCopyIcon}
-                              />
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              onPress={handleShowXpubQR}
-                              style={styles.keyshareCopyButton}>
-                              <Image
-                                source={require('../assets/qr-icon.png')}
-                                style={styles.keyshareCopyIcon}
-                              />
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      </View>
                       {/* Output Descriptors - One row per address type */}
                       {keyshareInfo.outputDescriptors?.legacy && (
                         <View style={styles.watchWalletItem}>
@@ -517,7 +411,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                       {keyshareInfo.outputDescriptors?.segwitNative && (
                         <View style={styles.watchWalletItem}>
                           <Text style={styles.watchWalletItemLabel}>
-                            Output Descriptor (SegWit Native)
+                            Output Descriptor (Native Segwit)
                           </Text>
                           <View style={styles.watchWalletItemValueContainer}>
                             <Text
@@ -566,7 +460,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                       {keyshareInfo.outputDescriptors?.segwitCompatible && (
                         <View style={styles.watchWalletItem}>
                           <Text style={styles.watchWalletItemLabel}>
-                            Output Descriptor (SegWit Compatible)
+                            Output Descriptor (Nested SegWit)
                           </Text>
                           <View style={styles.watchWalletItemValueContainer}>
                             <Text
@@ -659,8 +553,8 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
           selectedDescriptorType === 'legacy'
             ? 'Legacy'
             : selectedDescriptorType === 'segwitNative'
-            ? 'SegWit Native'
-            : 'SegWit Compatible'
+            ? 'Native Segwit'
+            : 'Nested SegWit'
         })`}
         value={
           selectedDescriptorType && keyshareInfo?.outputDescriptors

@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
   Linking,
 } from 'react-native';
-import {themes} from '../theme';
+import {useTheme} from '../theme';
 import {dbg} from '../utils';
 
 interface LegalModalProps {
@@ -20,6 +20,7 @@ interface LegalModalProps {
 }
 
 const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
+  const {theme} = useTheme();
   const {height} = useWindowDimensions();
   const [content, setContent] = useState<string>('');
   const [loading, setLoading] = useState(false);
@@ -97,6 +98,121 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
     fetchContent();
   }, [fetchContent]);
 
+  const styles = StyleSheet.create({
+    modalContainer: {
+      flex: 1,
+      backgroundColor: theme.colors.modalBackdrop,
+      justifyContent: 'flex-end',
+    },
+    modalContent: {
+      backgroundColor: theme.colors.background,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border + '40', // Add border for dark mode visibility
+      paddingBottom: 20,
+    },
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      padding: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border + '40', // Use theme border color
+    },
+    title: {
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text,
+      flex: 1,
+    },
+    headerActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    refreshButton: {
+      padding: 8,
+      marginRight: 8,
+    },
+    refreshButtonText: {
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text,
+    },
+    closeButton: {
+      padding: 8,
+    },
+    closeButtonText: {
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text,
+    },
+    scrollContent: {
+      padding: 16,
+    },
+    loadingContainer: {
+      alignItems: 'center',
+      padding: 40,
+    },
+    loadingText: {
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      marginTop: 16,
+      color: theme.colors.textSecondary,
+    },
+    errorContainer: {
+      alignItems: 'center',
+      padding: 40,
+    },
+    errorText: {
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textSecondary,
+      textAlign: 'center',
+      marginBottom: 20,
+    },
+    retryButton: {
+      backgroundColor: theme.colors.primary,
+      paddingHorizontal: 20,
+      paddingVertical: 10,
+      borderRadius: 8,
+    },
+    retryButtonText: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textOnPrimary || theme.colors.white,
+    },
+    content: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      lineHeight: 22,
+      color: theme.colors.text, // Use text color instead of textSecondary for better readability
+      marginBottom: 20,
+    },
+    linkContainer: {
+      padding: 16,
+      borderWidth: 1,
+      borderColor: theme.colors.border + '40', // Use theme border color
+      borderRadius: 8,
+      alignItems: 'center',
+      marginBottom: 16,
+      backgroundColor: theme.colors.cardBackground, // Add background for better visibility
+    },
+    linkText: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text, // Use text color for better readability
+    },
+  });
+
   return (
     <Modal
       visible={visible}
@@ -126,6 +242,7 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
               <View style={styles.loadingContainer}>
                 <ActivityIndicator
                   size="large"
+                  color={theme.colors.text}
                 />
                 <Text style={styles.loadingText}>Loading...</Text>
               </View>
@@ -163,103 +280,5 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
     </Modal>
   );
 };
-
-const styles = StyleSheet.create({
-  modalContainer: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: themes.lightPolished.colors.background,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: 20,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: themes.lightPolished.colors.border,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: themes.lightPolished.colors.text,
-    flex: 1,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  refreshButton: {
-    padding: 8,
-    marginRight: 8,
-  },
-  refreshButtonText: {
-    fontSize: 18,
-    color: themes.lightPolished.colors.text,
-  },
-  closeButton: {
-    padding: 8,
-  },
-  closeButtonText: {
-    fontSize: 20,
-    color: themes.lightPolished.colors.text,
-  },
-  scrollContent: {
-    padding: 16,
-  },
-  loadingContainer: {
-    alignItems: 'center',
-    padding: 40,
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: themes.lightPolished.colors.textSecondary,
-  },
-  errorContainer: {
-    alignItems: 'center',
-    padding: 40,
-  },
-  errorText: {
-    fontSize: 16,
-    color: themes.lightPolished.colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  retryButton: {
-    backgroundColor: themes.lightPolished.colors.primary,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: themes.lightPolished.colors.background,
-    fontWeight: '600',
-  },
-  content: {
-    fontSize: 14,
-    lineHeight: 22,
-    color: themes.lightPolished.colors.textSecondary,
-    marginBottom: 20,
-  },
-  linkContainer: {
-    padding: 16,
-    borderWidth: 1,
-    borderColor: themes.lightPolished.colors.border,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  linkText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: themes.lightPolished.colors.text,
-  },
-});
 
 export default LegalModal;

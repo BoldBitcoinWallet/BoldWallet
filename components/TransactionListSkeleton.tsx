@@ -9,18 +9,26 @@ interface ShimmerEffectProps {
   translateX: Animated.AnimatedInterpolation<string | number>;
 }
 
-const ShimmerEffect: React.FC<ShimmerEffectProps> = ({
+const ShimmerEffect: React.FC<ShimmerEffectProps & {dynamicStyles?: any}> = ({
   style,
   translateX,
+  dynamicStyles,
 }) => {
   const {theme} = useTheme();
-  
+  const isDarkMode = theme.colors.background !== '#ffffff';
+  const shimmerColor = isDarkMode
+    ? theme.colors.disabled + '60'
+    : '#e9ecef';
+
   return (
     <View style={[style, styles.shimmerWrapper]}>
       <Animated.View
         style={[styles.shimmerContainer, {transform: [{translateX}]}]}>
         <View
-          style={[styles.gradient, {backgroundColor: theme.colors.background}]}
+          style={[
+            dynamicStyles?.gradient || styles.gradient,
+            {backgroundColor: shimmerColor},
+          ]}
         />
       </Animated.View>
     </View>
@@ -29,59 +37,68 @@ const ShimmerEffect: React.FC<ShimmerEffectProps> = ({
 
 interface TransactionSkeletonItemProps {
   translateX: Animated.AnimatedInterpolation<string | number>;
+  dynamicStyles?: any;
 }
 
 const TransactionSkeletonItem: React.FC<TransactionSkeletonItemProps> = ({
   translateX,
+  dynamicStyles,
 }) => {
-  
   return (
-    <View style={styles.transactionItem}>
+    <View style={dynamicStyles?.transactionItem || styles.transactionItem}>
       {/* Top row with status and amount */}
       <View style={styles.transactionRow}>
         <View style={styles.statusContainer}>
           <ShimmerEffect
             style={styles.statusIconSkeleton}
             translateX={translateX}
+            dynamicStyles={dynamicStyles}
           />
           <ShimmerEffect
             style={styles.statusTextSkeleton}
             translateX={translateX}
+            dynamicStyles={dynamicStyles}
           />
         </View>
         <ShimmerEffect
           style={styles.amountSkeleton}
           translateX={translateX}
+          dynamicStyles={dynamicStyles}
         />
       </View>
-      
+
       {/* Address row */}
       <View style={styles.addressRow}>
         <ShimmerEffect
           style={styles.addressSkeleton}
           translateX={translateX}
+          dynamicStyles={dynamicStyles}
         />
         <ShimmerEffect
           style={styles.usdAmountSkeleton}
           translateX={translateX}
+          dynamicStyles={dynamicStyles}
         />
       </View>
-      
+
       {/* Bottom row with transaction ID and timestamp */}
       <View style={styles.transactionRow}>
         <View style={styles.txIdContainer}>
           <ShimmerEffect
             style={styles.linkIconSkeleton}
             translateX={translateX}
+            dynamicStyles={dynamicStyles}
           />
           <ShimmerEffect
             style={styles.txIdSkeleton}
             translateX={translateX}
+            dynamicStyles={dynamicStyles}
           />
         </View>
         <ShimmerEffect
           style={styles.timestampSkeleton}
           translateX={translateX}
+          dynamicStyles={dynamicStyles}
         />
       </View>
     </View>
@@ -89,6 +106,7 @@ const TransactionSkeletonItem: React.FC<TransactionSkeletonItemProps> = ({
 };
 
 const TransactionListSkeleton: React.FC = () => {
+  const {theme} = useTheme();
   const animatedValue = useMemo(() => new Animated.Value(0), []);
 
   React.useEffect(() => {
@@ -120,12 +138,44 @@ const TransactionListSkeleton: React.FC = () => {
     outputRange: [-width * 1.2, width * 1.2],
   });
 
+  // Ensure we never use white background in dark mode
+  const isDarkMode =
+    theme.colors.background === '#121212' ||
+    theme.colors.background.includes('12');
+  const containerBg = isDarkMode
+    ? theme.colors.background
+    : theme.colors.background;
+  const itemBg = isDarkMode ? theme.colors.cardBackground : '#ffffff';
+  const borderColor = isDarkMode
+    ? theme.colors.border + '40'
+    : theme.colors.blackOverlay03;
+  const shimmerColor = isDarkMode
+    ? theme.colors.disabled + '60'
+    : '#e9ecef';
+
+  const dynamicStyles = {
+    container: {
+      ...styles.container,
+      backgroundColor: containerBg,
+    },
+    transactionItem: {
+      ...styles.transactionItem,
+      backgroundColor: itemBg,
+      borderColor: borderColor,
+    },
+    gradient: {
+      ...styles.gradient,
+      backgroundColor: shimmerColor,
+    },
+  };
+
   return (
-    <View style={styles.container}>
+    <View style={dynamicStyles.container}>
       {[1, 2, 3, 4].map(i => (
         <TransactionSkeletonItem
           key={i}
           translateX={translateX}
+          dynamicStyles={dynamicStyles}
         />
       ))}
     </View>
@@ -137,20 +187,15 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
     paddingTop: 0,
-    backgroundColor: '#ffffff',
+    // backgroundColor will be set dynamically based on theme
   },
   transactionItem: {
     padding: 16,
     marginVertical: 4,
     borderRadius: 12,
-    backgroundColor: '#ffffff',
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+    // backgroundColor and borderColor will be set dynamically based on theme
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.03)',
+    // borderColor will be set dynamically
   },
   transactionRow: {
     flexDirection: 'row',
@@ -220,13 +265,14 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   shimmerContainer: {
-    width: '100%',
+    width: '200%', // Wider container for smoother effect on Android
     height: '100%',
   },
   gradient: {
     flex: 1,
-    borderRadius: 6,
-    backgroundColor: '#e9ecef',
+    width: '50%', // Half of the container width for smoother gradient
+    height: '100%',
+    // Background color will be set dynamically
   },
 });
 

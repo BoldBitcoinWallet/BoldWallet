@@ -76,6 +76,8 @@ For app screenshots and visual previews, check the [App Store listing](https://a
 ### 🔁 Via Auto Builder
 Relies on docker (Dockerfile) - guaranteed quick way to compile and release the APK.
 
+**Docker scripts are located in `docker/scripts/` - see [docker/README.md](docker/README.md) for full documentation.**
+
 Build the APK seamlessly following the steps:
 - Optional: edit android/release.sh when needed:
 ```sh

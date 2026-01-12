@@ -8,14 +8,17 @@ import {
   TouchableOpacity,
   Alert,
   Animated,
-  DeviceEventEmitter,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {NativeModules} from 'react-native';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
-import {HeaderRightButton, HeaderTitle} from '../components/Header';
+import {
+  HeaderRightButton,
+  HeaderPriceButton,
+  HeaderNetworkProvider,
+} from '../components/Header';
 import {PSBTLoader} from './PSBTModal';
 import {dbg, HapticFeedback, generateAllOutputDescriptors} from '../utils';
 import {CommonActions, useRoute, RouteProp} from '@react-navigation/native';
@@ -26,11 +29,13 @@ import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
 import QRCodeModal from '../components/QRCodeModal';
 import SignedPSBTModal from './SignedPSBTModal';
+import {WalletService} from '../services/WalletService';
+import LocalCache from '../services/LocalCache';
+import CurrencySelector from '../components/CurrencySelector';
 
 const {BBMTLibNativeModule} = NativeModules;
 
 interface KeyshareInfoForPsbt {
-  xpub: string;
   outputDescriptors: {
     legacy: string;
     segwitNative: string;
@@ -46,14 +51,17 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
   const {theme} = useTheme();
   const styles = createStyles(theme);
-  const {activeNetwork: network, activeAddressType: addressType} = useUser();
+  const {
+    activeNetwork: network,
+    activeAddressType: addressType,
+    activeApiProvider: apiBase,
+  } = useUser();
 
   const [keyshareInfo, setKeyshareInfo] = useState<KeyshareInfoForPsbt | null>(
     null,
   );
   const [isWatchWalletExpanded, setIsWatchWalletExpanded] = useState(false);
   const [isPSBTSectionExpanded, setIsPSBTSectionExpanded] = useState(false);
-  const [isXpubQrVisible, setIsXpubQrVisible] = useState(false);
   const [isOutputDescriptorQrVisible, setIsOutputDescriptorQrVisible] =
     useState(false);
   const [selectedDescriptorType, setSelectedDescriptorType] = useState<
@@ -66,6 +74,11 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   } | null>(null);
   const [signedPsbt, setSignedPsbt] = useState<string | null>(null);
   const [isSignedPSBTModalVisible, setIsSignedPSBTModalVisible] =
+    useState(false);
+  const [btcPrice, setBtcPrice] = useState<string>('');
+  const [selectedCurrency, setSelectedCurrency] = useState('');
+  const [priceData, setPriceData] = useState<{[key: string]: number}>({});
+  const [isCurrencySelectorVisible, setIsCurrencySelectorVisible] =
     useState(false);
 
   // Animation for Bold Connect collapsible section
@@ -136,11 +149,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       const pubKey = keyshare.pub_key || '';
       const chainCode = keyshare.chain_code_hex || '';
 
-      // Generate xpub/tpub for watch-only wallet compatibility (Sparrow, etc.)
-      const xpub =
-        (await BBMTLibNativeModule.encodeXpub(pubKey, chainCode, network)) ||
-        '';
-
       // Generate output descriptors for all address types using utility function
       const descriptors = await generateAllOutputDescriptors(
         BBMTLibNativeModule,
@@ -157,7 +165,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       };
 
       setKeyshareInfo({
-        xpub,
         outputDescriptors,
       });
     } catch (error) {
@@ -177,7 +184,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     }
   }, [route.params?.signedPsbt, navigation]);
 
-  // Share helper for exporting text as a small file (xpub / descriptor)
+  // Share helper for exporting text as a small file (descriptor)
   const shareTextAsFile = useCallback(
     async (text: string, filename: string, title: string) => {
       HapticFeedback.medium();
@@ -214,37 +221,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     [],
   );
 
-  const handleCopyXpub = useCallback(() => {
-    if (!keyshareInfo?.xpub) return;
-    HapticFeedback.light();
-    Clipboard.setString(keyshareInfo.xpub);
-    Toast.show({
-      type: 'success',
-      text1: 'Copied',
-      text2: 'Extended pubkey copied to clipboard',
-    });
-  }, [keyshareInfo]);
-
-  const handleShareXpub = useCallback(() => {
-    if (!keyshareInfo?.xpub) return;
-    const now = new Date();
-    const month = now.toLocaleDateString('en-US', {month: 'short'});
-    const day = now.getDate().toString().padStart(2, '0');
-    const year = now.getFullYear();
-    const hours = now.getHours().toString().padStart(2, '0');
-    const minutes = now.getMinutes().toString().padStart(2, '0');
-    const filename = `${
-      network === 'mainnet' ? 'xpub' : 'tpub'
-    }.${month}${day}.${year}.${hours}${minutes}.txt`;
-    shareTextAsFile(keyshareInfo.xpub, filename, 'Share Extended Pubkey');
-  }, [keyshareInfo, network, shareTextAsFile]);
-
-  const handleShowXpubQR = useCallback(() => {
-    if (!keyshareInfo?.xpub) return;
-    HapticFeedback.light();
-    setIsXpubQrVisible(true);
-  }, [keyshareInfo]);
-
   const handleCopyOutputDescriptor = useCallback(
     (type: 'legacy' | 'segwitNative' | 'segwitCompatible') => {
       const descriptor =
@@ -256,8 +232,8 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
         type === 'legacy'
           ? 'Legacy'
           : type === 'segwitNative'
-            ? 'SegWit Native'
-            : 'SegWit Compatible';
+            ? 'Native SegWit'
+            : 'Nested SegWit';
       Toast.show({
         type: 'success',
         text1: 'Copied',
@@ -369,23 +345,71 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     [pendingPSBTParams, addressType, navigation],
   );
 
+  const headerLeft = React.useCallback(
+    () => (
+      <HeaderPriceButton
+        btcPrice={btcPrice}
+        selectedCurrency={selectedCurrency}
+        onCurrencyPress={() => setIsCurrencySelectorVisible(true)}
+      />
+    ),
+    [btcPrice, selectedCurrency],
+  );
+
+  const headerTitle = React.useCallback(
+    () => <HeaderNetworkProvider network={network} apiBase={apiBase} />,
+    [network, apiBase],
+  );
+
   const headerRight = React.useCallback(
     () => <HeaderRightButton navigation={navigation} />,
     [navigation],
   );
 
-  const headerTitle = React.useCallback(() => <HeaderTitle />, []);
-
   useEffect(() => {
     navigation.setOptions({
       headerRight,
+      headerLeft,
       headerTitle,
+      headerTitleAlign: 'center',
     });
-  }, [navigation, headerRight, headerTitle]);
+  }, [navigation, headerRight, headerLeft, headerTitle]);
 
   useEffect(() => {
     loadKeyshareInfo();
   }, [loadKeyshareInfo]);
+
+  // Fetch bitcoin price and initialize currency
+  useEffect(() => {
+    const fetchPrice = async () => {
+      try {
+        const currency = (await LocalCache.getItem('currency')) || 'USD';
+        setSelectedCurrency(currency);
+        const walletService = WalletService.getInstance();
+        await walletService.initialize();
+        const priceResponse = await walletService.getBitcoinPrice();
+        if (priceResponse && priceResponse.rates) {
+          setPriceData(priceResponse.rates);
+          const r = priceResponse.rates[currency] || priceResponse.rate || 0;
+          if (r && r > 0) {
+            setBtcPrice(r.toString());
+          }
+        }
+      } catch (error) {
+        dbg('PSBTScreen: Error fetching price:', error);
+      }
+    };
+    fetchPrice();
+  }, []);
+
+  const handleCurrencySelect = async (currency: {code: string}) => {
+    setSelectedCurrency(currency.code);
+    await LocalCache.setItem('currency', currency.code);
+    if (priceData[currency.code]) {
+      const formattedPrice = priceData[currency.code].toFixed(2);
+      setBtcPrice(formattedPrice);
+    }
+  };
 
   // Handle section expansion based on PSBT mode toggle state
   useEffect(() => {
@@ -471,55 +495,12 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   transactions in a watch-only compatible wallet like Sparrow or Electrum and sign them securely via
                   PSBT.
                 </Text>
+                <Text style={styles.watchWalletWarning}>
+                  ⚠️ Note: Taproot is not supported. Only Legacy, Native SegWit, and Nested SegWit address types are supported.
+                </Text>
                 <Text style={styles.watchWalletHint}>
                   Import using one of the details below:
                 </Text>
-
-                {/* Extended Pubkey - Single Row Layout */}
-                <View style={styles.watchWalletDetailRow}>
-                  <Text style={styles.watchWalletDetailLabel}>
-                    Extended Pubkey
-                  </Text>
-                  <View style={styles.watchWalletValueContainer}>
-                    <Text
-                      style={styles.watchWalletValueText}
-                      numberOfLines={1}
-                      ellipsizeMode="tail">
-                      {keyshareInfo.xpub || 'N/A'}
-                    </Text>
-                    {keyshareInfo.xpub && (
-                      <View style={styles.watchWalletButtonsRow}>
-                        <TouchableOpacity
-                          onPress={handleCopyXpub}
-                          style={styles.watchWalletIconButton}
-                          activeOpacity={0.7}>
-                          <Image
-                            source={require('../assets/copy-icon.png')}
-                            style={styles.watchWalletIconButtonIcon}
-                          />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={handleShareXpub}
-                          style={styles.watchWalletIconButton}
-                          activeOpacity={0.7}>
-                          <Image
-                            source={require('../assets/share-icon.png')}
-                            style={styles.watchWalletIconButtonIcon}
-                          />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={handleShowXpubQR}
-                          style={styles.watchWalletIconButton}
-                          activeOpacity={0.7}>
-                          <Image
-                            source={require('../assets/qr-icon.png')}
-                            style={styles.watchWalletIconButtonIcon}
-                          />
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
-                </View>
 
                 {/* Output Descriptors - One row per address type */}
                 {keyshareInfo.outputDescriptors.legacy && (
@@ -570,7 +551,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 {keyshareInfo.outputDescriptors.segwitNative && (
                   <View style={styles.watchWalletDetailRow}>
                     <Text style={styles.watchWalletDetailLabel}>
-                      Output Descriptor (SegWit Native)
+                      Output Descriptor (Native SegWit)
                     </Text>
                     <View style={styles.watchWalletValueContainer}>
                       <Text
@@ -621,7 +602,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 {keyshareInfo.outputDescriptors.segwitCompatible && (
                   <View style={styles.watchWalletDetailRow}>
                     <Text style={styles.watchWalletDetailLabel}>
-                      Output Descriptor (SegWit Compatible)
+                      Output Descriptor (Nested SegWit)
                     </Text>
                     <View style={styles.watchWalletValueContainer}>
                       <Text
@@ -728,43 +709,23 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   disableCancelWhenEmpty={true}
                   useOverlay={false}
                   onSign={handlePSBTSign}
-                  middleButton={
-                    <TouchableOpacity
-                      style={styles.lockButton}
-                      onPress={() => {
-                        HapticFeedback.light();
-                        // Emit a reload event to App.tsx to trigger authentication lock
-                        DeviceEventEmitter.emit('app:reload');
-                      }}
-                      activeOpacity={0.7}
-                      accessible={true}
-                      accessibilityRole="button"
-                      accessibilityLabel="Lock wallet"
-                      accessibilityHint="Double tap to lock the wallet">
-                      <Image
-                        source={require('../assets/locker-icon.png')}
-                        style={styles.lockButtonIcon}
-                        resizeMode="contain"
-                      />
-                    </TouchableOpacity>
-                  }
+                  btcPrice={btcPrice}
+                  selectedCurrency={selectedCurrency}
+                  onCurrencyPress={() => setIsCurrencySelectorVisible(true)}
                 />
               </View>
             </View>
           )}
         </View>
       </ScrollView>
-      {/* QR Code Modals for watch-wallet import helpers */}
-      <QRCodeModal
-        visible={isXpubQrVisible}
-        onClose={() => setIsXpubQrVisible(false)}
-        title={`Wallet • ${network === 'mainnet' ? 'xpub' : 'tpub'}`}
-        value={keyshareInfo?.xpub || ''}
-        network={network as 'mainnet' | 'testnet'}
-        showShareButton={true}
-        topRightClose={true}
-        nonDismissible={false}
+      <CurrencySelector
+        visible={isCurrencySelectorVisible}
+        onClose={() => setIsCurrencySelectorVisible(false)}
+        onSelect={handleCurrencySelect}
+        currentCurrency={selectedCurrency}
+        availableCurrencies={priceData}
       />
+      {/* QR Code Modals for watch-wallet import helpers */}
       <QRCodeModal
         visible={isOutputDescriptorQrVisible}
         onClose={() => {
@@ -775,8 +736,8 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
           selectedDescriptorType === 'legacy'
             ? 'Legacy'
             : selectedDescriptorType === 'segwitNative'
-              ? 'SegWit Native'
-              : 'SegWit Compatible'
+              ? 'Native SegWit'
+              : 'Nested SegWit'
         })`}
         value={
           selectedDescriptorType && keyshareInfo?.outputDescriptors
@@ -866,18 +827,33 @@ const createStyles = (theme: any) =>
       tintColor: theme.colors.text,
     },
     watchWalletTitle: {
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     watchWalletSubtitle: {
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       lineHeight: 18,
       color: theme.colors.textSecondary,
       marginBottom: 8,
     },
+    watchWalletWarning: {
+      fontSize: theme.fontSizes?.xs || 11,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      lineHeight: 16,
+      color: theme.colors.textSecondary,
+      marginTop: 8,
+      marginBottom: 8,
+      fontStyle: 'italic',
+    },
     watchWalletHint: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       lineHeight: 16,
       color: theme.colors.textSecondary,
       textDecorationLine: 'underline',
@@ -885,14 +861,17 @@ const createStyles = (theme: any) =>
       marginBottom: 6,
     },
     watchWalletExpandIcon: {
-      fontSize: 14,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     watchWalletContent: {
       paddingHorizontal: 0,
       paddingVertical: 0,
       borderTopWidth: 1,
-      borderTopColor: theme.colors.accent || theme.colors.primary,
+      borderTopColor: theme.colors.background === '#ffffff'
+        ? (theme.colors.accent || theme.colors.primary)
+        : theme.colors.bitcoinOrange,
       overflow: 'hidden',
     },
     watchWalletContentExpanded: {
@@ -908,8 +887,9 @@ const createStyles = (theme: any) =>
       marginBottom: 0,
     },
     watchWalletDetailLabel: {
-      fontSize: 13,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       width: 140,
       flexShrink: 0,
@@ -926,8 +906,9 @@ const createStyles = (theme: any) =>
     watchWalletValueText: {
       flex: 1,
       flexShrink: 1,
-      fontSize: 11,
-      fontFamily: 'monospace',
+      fontSize: theme.fontSizes?.xs || 11,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.monospace || 'monospace',
       color: theme.colors.text,
       minWidth: 0,
     },
@@ -990,43 +971,29 @@ const createStyles = (theme: any) =>
       tintColor: theme.colors.text,
     },
     psbtSectionTitle: {
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     psbtSectionExpandIcon: {
-      fontSize: 14,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     psbtSectionContent: {
       paddingHorizontal: 0,
       paddingVertical: 0,
       borderTopWidth: 1,
-      borderTopColor: theme.colors.accent || theme.colors.primary,
+      borderTopColor: theme.colors.background === '#ffffff'
+        ? (theme.colors.accent || theme.colors.primary)
+        : theme.colors.bitcoinOrange,
       overflow: 'hidden',
     },
     psbtBodyContainer: {
       marginTop: 0,
       marginBottom: 8,
       padding: 12,
-    },
-    lockButton: {
-      width: 48,
-      height: 48,
-      borderRadius: 12,
-      backgroundColor: theme.colors.primary,
-      alignItems: 'center',
-      justifyContent: 'center',
-      shadowColor: '#000',
-      shadowOffset: {width: 0, height: 2},
-      shadowOpacity: 0.2,
-      shadowRadius: 4,
-      elevation: 4,
-    },
-    lockButtonIcon: {
-      width: 20,
-      height: 20,
-      tintColor: theme.colors.textOnPrimary,
     },
   });
 

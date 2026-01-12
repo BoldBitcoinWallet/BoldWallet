@@ -18,7 +18,7 @@ import QRScanner from '../components/QRScanner';
 import BarcodeZxingScan from 'rn-barcode-zxing-scan';
 // @ts-ignore - bc-ur types (Buffer polyfill is in polyfills.js)
 import {URDecoder} from '@ngraveio/bc-ur';
-import {dbg, HapticFeedback} from '../utils';
+import {dbg, HapticFeedback, presentFiat} from '../utils';
 import {useTheme} from '../theme';
 
 const {BBMTLibNativeModule} = NativeModules;
@@ -58,6 +58,10 @@ export interface PSBTLoaderProps {
   useOverlay?: boolean;
   // Optional middle button to render between Cancel and Co-Sign buttons
   middleButton?: React.ReactNode;
+  // Bitcoin price button props
+  btcPrice?: string;
+  selectedCurrency?: string;
+  onCurrencyPress?: () => void;
 }
 
 export interface PSBTModalProps extends PSBTLoaderProps {
@@ -74,6 +78,9 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
   disableCancelWhenEmpty = false,
   useOverlay = true,
   middleButton,
+  btcPrice,
+  selectedCurrency,
+  onCurrencyPress,
 }) => {
   const {theme} = useTheme();
   const [psbtBase64, setPsbtBase64] = useState<string | null>(null);
@@ -822,11 +829,36 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
       <View style={useOverlay ? styles.modalContent : styles.embeddedContent}>
           {/* Header */}
           <View style={styles.headerRow}>
-            <Image
-              source={require('../assets/key-icon.png')}
-              style={styles.headerIcon}
-            />
-            <Text style={styles.headerTitle}>Sign • PSBT</Text>
+            {btcPrice !== undefined && onCurrencyPress && (
+              <TouchableOpacity
+                style={styles.priceButton}
+                onPress={() => {
+                  HapticFeedback.light();
+                  onCurrencyPress();
+                }}
+                activeOpacity={0.7}
+                accessible={true}
+                accessibilityRole="button"
+                accessibilityLabel={`Bitcoin price: ${
+                  btcPrice ? presentFiat(btcPrice) : '-'
+                } ${selectedCurrency || ''}`}
+                accessibilityHint="Double tap to change currency">
+                <Image
+                  source={require('../assets/bitcoin-logo.png')}
+                  style={styles.priceButtonIcon}
+                />
+                <View style={styles.priceTextContainer}>
+                  <Text style={styles.priceText}>
+                    {btcPrice ? presentFiat(btcPrice) : '-'}
+                  </Text>
+                  {selectedCurrency && (
+                    <Text style={styles.priceCurrencyBadge}>
+                      {selectedCurrency}
+                    </Text>
+                  )}
+                </View>
+              </TouchableOpacity>
+            )}
             <View style={styles.networkBadge}>
               <Text style={styles.networkBadgeText}>
                 {network === 'mainnet' ? 'MAINNET' : 'TESTNET'}
@@ -1177,7 +1209,7 @@ const createStyles = (theme: any) =>
   StyleSheet.create({
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0, 0, 0, 0.85)',
+      backgroundColor: theme.colors.modalBackdrop,
       justifyContent: 'center',
       alignItems: 'center',
       padding: 20,
@@ -1190,7 +1222,7 @@ const createStyles = (theme: any) =>
       maxWidth: 400,
       maxHeight: '85%',
       // Add shadow for better visibility
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 4},
       shadowOpacity: 0.3,
       shadowRadius: 8,
@@ -1211,18 +1243,6 @@ const createStyles = (theme: any) =>
       justifyContent: 'space-between',
       marginBottom: 12,
     },
-    headerIcon: {
-      width: 24,
-      height: 24,
-      marginRight: 10,
-      tintColor: theme.colors.primary,
-    },
-    headerTitle: {
-      fontSize: 20,
-      fontWeight: '700',
-      color: theme.colors.text,
-      flex: 1,
-    },
     networkBadge: {
       backgroundColor: theme.colors.background,
       paddingHorizontal: 8,
@@ -1232,13 +1252,66 @@ const createStyles = (theme: any) =>
       borderColor: theme.colors.border,
     },
     networkBadgeText: {
-      fontSize: 10,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.xs || 10,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       letterSpacing: 0.5,
     },
+    priceButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      backgroundColor:
+        theme.colors.background === '#121212' ||
+        theme.colors.background.includes('12')
+          ? theme.colors.cardBackground
+          : theme.colors.shadowColor + '0F', // ~6% opacity
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#121212' ||
+        theme.colors.background.includes('12')
+          ? theme.colors.border + '80'
+          : theme.colors.shadowColor + '1A', // ~10% opacity
+      paddingHorizontal: 14,
+      paddingVertical: 0,
+      borderRadius: 10,
+      height: 36,
+      minWidth: 90,
+      shadowOffset: {width: 0, height: 1},
+      shadowOpacity: 0.05,
+      shadowRadius: 3,
+      elevation: Platform.OS === 'android' ? 0 : 1,
+    },
+    priceButtonIcon: {
+      width: 20,
+      height: 20,
+      resizeMode: 'contain',
+    },
+    priceTextContainer: {
+      flexDirection: 'column',
+      alignItems: 'flex-start',
+      justifyContent: 'center',
+    },
+    priceText: {
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text,
+      lineHeight: 14,
+    },
+    priceCurrencyBadge: {
+      fontSize: theme.fontSizes?.xs || 10,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textSecondary,
+      lineHeight: 12,
+    },
     description: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       lineHeight: 20,
       marginBottom: 16,
@@ -1262,11 +1335,12 @@ const createStyles = (theme: any) =>
       width: 24,
       height: 24,
       marginRight: 12,
-      tintColor: theme.colors.primary,
+      tintColor: theme.colors.text, // Use text color for better visibility in dark mode
     },
     importButtonText: {
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     loadingContainer: {
@@ -1274,19 +1348,23 @@ const createStyles = (theme: any) =>
       padding: 20,
     },
     loadingText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
     },
     errorContainer: {
-      backgroundColor: 'rgba(255, 59, 48, 0.1)',
+      backgroundColor: theme.colors.danger + '1A', // ~10% opacity
       borderRadius: 12,
       padding: 16,
       marginBottom: 20,
       alignItems: 'center',
     },
     errorText: {
-      fontSize: 14,
-      color: '#FF3B30',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.danger,
       textAlign: 'center',
       marginBottom: 12,
     },
@@ -1297,9 +1375,10 @@ const createStyles = (theme: any) =>
       borderRadius: 8,
     },
     retryButtonText: {
-      fontSize: 14,
-      fontWeight: '600',
-      color: '#FFFFFF',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.white,
     },
     detailsContainer: {
       maxHeight: 400,
@@ -1312,26 +1391,30 @@ const createStyles = (theme: any) =>
       marginBottom: 12,
     },
     summaryLabel: {
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
     },
     psbtSizeBadge: {
-      backgroundColor: 'rgba(52, 199, 89, 0.15)',
+      backgroundColor: theme.colors.success + '26', // ~15% opacity
       paddingHorizontal: 8,
       paddingVertical: 3,
       borderRadius: 6,
     },
     psbtSizeText: {
-      fontSize: 11,
-      fontWeight: '600',
-      color: '#34C759',
+      fontSize: theme.fontSizes?.xs || 11,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.success,
     },
     detailsSection: {
       marginBottom: 12,
     },
     detailsSectionTitle: {
-      fontSize: 10,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.xs || 10,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 6,
       textTransform: 'uppercase',
@@ -1352,9 +1435,10 @@ const createStyles = (theme: any) =>
       marginRight: 8,
     },
     inputTxidText: {
-      fontSize: 11,
+      fontSize: theme.fontSizes?.xs || 11,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.text,
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
       marginBottom: 4,
     },
     derivePathContainer: {
@@ -1363,15 +1447,17 @@ const createStyles = (theme: any) =>
       marginTop: 4,
     },
     derivePathLabel: {
-      fontSize: 9,
+      fontSize: theme.fontSizes?.xs || 9,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginRight: 6,
-      fontWeight: '600',
     },
     derivePathText: {
-      fontSize: 10,
+      fontSize: theme.fontSizes?.xs || 10,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.primary,
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
       flex: 1,
     },
     outputRow: {
@@ -1385,11 +1471,12 @@ const createStyles = (theme: any) =>
       marginBottom: 6,
     },
     addressText: {
-      fontSize: 11,
+      fontSize: theme.fontSizes?.xs || 11,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.text,
       flex: 1,
       marginRight: 8,
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     },
     derivePathSummary: {
       backgroundColor: theme.colors.card || theme.colors.background,
@@ -1400,21 +1487,24 @@ const createStyles = (theme: any) =>
       borderColor: theme.colors.border,
     },
     derivePathSummaryLabel: {
-      fontSize: 10,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.xs || 10,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 4,
       textTransform: 'uppercase',
       letterSpacing: 0.5,
     },
     derivePathSummaryText: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.primary,
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-      fontWeight: '600',
     },
     derivePathNote: {
-      fontSize: 9,
+      fontSize: theme.fontSizes?.xs || 9,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginTop: 4,
       fontStyle: 'italic',
@@ -1428,8 +1518,9 @@ const createStyles = (theme: any) =>
       width: '100%',
     },
     flowSectionTitle: {
-      fontSize: 10,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.xs || 10,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 12,
       textTransform: 'uppercase',
@@ -1454,25 +1545,28 @@ const createStyles = (theme: any) =>
       width: 20,
       height: 20,
       marginRight: 8,
-      tintColor: theme.colors.primary,
+      tintColor: theme.colors.text, // Use text color for better visibility in dark mode
     },
     flowItemInfo: {
       flex: 1,
     },
     flowItemLabel: {
-      fontSize: 11,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.xs || 11,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.text,
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
       marginBottom: 2,
     },
     flowItemPath: {
-      fontSize: 9,
+      fontSize: theme.fontSizes?.xs || 9,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.primary,
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     },
     flowItemType: {
-      fontSize: 9,
+      fontSize: theme.fontSizes?.xs || 9,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       fontStyle: 'italic',
       marginTop: 2,
@@ -1481,12 +1575,15 @@ const createStyles = (theme: any) =>
       alignItems: 'flex-end',
     },
     flowAmountBTC: {
-      fontSize: 12,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.primary,
     },
     flowAmountFiat: {
-      fontSize: 9,
+      fontSize: theme.fontSizes?.xs || 9,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginTop: 2,
     },
@@ -1513,16 +1610,18 @@ const createStyles = (theme: any) =>
       marginBottom: 4,
     },
     hubArrowText: {
-      fontSize: 20,
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.primary,
-      fontWeight: '700',
     },
     hubLabel: {
       marginTop: 4,
     },
     hubLabelText: {
-      fontSize: 11,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.xs || 11,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textTransform: 'uppercase',
       letterSpacing: 0.5,
@@ -1543,15 +1642,17 @@ const createStyles = (theme: any) =>
       marginRight: 12,
     },
     summaryBarText: {
-      fontSize: 12,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 4,
     },
     summaryBarPath: {
-      fontSize: 10,
+      fontSize: theme.fontSizes?.xs || 10,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.primary,
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     },
     summaryBarBadge: {
       backgroundColor: theme.colors.primary + '20',
@@ -1560,20 +1661,24 @@ const createStyles = (theme: any) =>
       paddingVertical: 6,
     },
     summaryBarBadgeText: {
-      fontSize: 10,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.xs || 10,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.primary,
     },
     amountContainer: {
       alignItems: 'flex-end',
     },
     amountText: {
-      fontSize: 12,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.primary,
     },
     fiatText: {
-      fontSize: 10,
+      fontSize: theme.fontSizes?.xs || 10,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginTop: 1,
     },
@@ -1589,18 +1694,24 @@ const createStyles = (theme: any) =>
       marginBottom: 6,
     },
     feeLabel: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
     },
     feeValueContainer: {
       alignItems: 'flex-end',
     },
     feeValue: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     feeFiatValue: {
-      fontSize: 10,
+      fontSize: theme.fontSizes?.xs || 10,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
     },
     totalRow: {
@@ -1612,20 +1723,24 @@ const createStyles = (theme: any) =>
       borderTopColor: theme.colors.border,
     },
     totalLabel: {
-      fontSize: 14,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     totalValueContainer: {
       alignItems: 'flex-end',
     },
     totalValue: {
-      fontSize: 14,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.primary,
     },
     totalFiatValue: {
-      fontSize: 11,
+      fontSize: theme.fontSizes?.xs || 11,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginTop: 1,
     },
@@ -1649,8 +1764,9 @@ const createStyles = (theme: any) =>
       alignItems: 'center',
     },
     cancelButtonText: {
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     cancelButtonDisabled: {
@@ -1676,15 +1792,16 @@ const createStyles = (theme: any) =>
       width: 20,
       height: 20,
       marginRight: 8,
-      tintColor: '#FFFFFF',
+      tintColor: theme.colors.white,
     },
     signButtonIconDisabled: {
       tintColor: theme.colors.textSecondary,
     },
     signButtonText: {
-      fontSize: 16,
-      fontWeight: '600',
-      color: '#FFFFFF',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.white,
     },
     signButtonTextDisabled: {
       color: theme.colors.textSecondary,
@@ -1713,14 +1830,17 @@ const createStyles = (theme: any) =>
       alignItems: 'center',
     },
     scannerTitle: {
-      fontSize: 20,
-      fontWeight: '700',
-      color: '#FFFFFF',
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.white,
       marginBottom: 8,
     },
     scannerSubtitle: {
-      fontSize: 14,
-      color: 'rgba(255, 255, 255, 0.7)',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.white + 'B3', // ~70% opacity
       textAlign: 'center',
       paddingHorizontal: 20,
     },
@@ -1728,40 +1848,43 @@ const createStyles = (theme: any) =>
       marginTop: 16,
       width: 200,
       height: 6,
-      backgroundColor: 'rgba(255, 255, 255, 0.2)',
+      backgroundColor: theme.colors.white + '33', // ~20% opacity
       borderRadius: 3,
       overflow: 'hidden',
     },
     progressBar: {
       height: '100%',
-      backgroundColor: '#F7931A', // Bitcoin orange
+      backgroundColor: theme.colors.bitcoinOrange,
       borderRadius: 3,
     },
     closeScannerButton: {
       position: 'absolute',
       bottom: 60,
       alignSelf: 'center',
-      backgroundColor: 'rgba(255, 255, 255, 0.2)',
+      backgroundColor: theme.colors.white + '33', // ~20% opacity
       paddingVertical: 14,
       paddingHorizontal: 40,
       borderRadius: 12,
     },
     closeScannerButtonText: {
-      fontSize: 16,
-      fontWeight: '600',
-      color: '#FFFFFF',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.white,
     },
     cameraNotFound: {
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
-      color: '#FFFFFF',
-      fontSize: 16,
+      color: theme.colors.white,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     // Android scanning progress modal styles
     androidScanModalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0, 0, 0, 0.85)',
+      backgroundColor: theme.colors.modalBackdrop,
       justifyContent: 'center',
       alignItems: 'center',
       padding: 20,
@@ -1775,14 +1898,17 @@ const createStyles = (theme: any) =>
       alignItems: 'center',
     },
     androidScanModalTitle: {
-      fontSize: 20,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 12,
       textAlign: 'center',
     },
     androidScanModalSubtitle: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
       marginBottom: 20,
@@ -1796,9 +1922,10 @@ const createStyles = (theme: any) =>
       borderRadius: 12,
     },
     androidScanCancelButtonText: {
-      fontSize: 16,
-      fontWeight: '600',
-      color: '#FFFFFF',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.white,
     },
   });
 

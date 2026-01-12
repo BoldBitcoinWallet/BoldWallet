@@ -91,7 +91,7 @@ const ReceiveModal: React.FC<{
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
-      backgroundColor: 'rgba(0, 0, 0, 0.8)',
+      backgroundColor: theme.colors.modalBackdrop,
     },
     modalContent: {
       backgroundColor: theme.colors.cardBackground,
@@ -106,6 +106,8 @@ const ReceiveModal: React.FC<{
       shadowOffset: {width: 0, height: 2},
       shadowOpacity: 0.25,
       shadowRadius: 3.84,
+      borderWidth: 1,
+      borderColor: theme.colors.border + '40', // Add border to match other modals
     },
     header: {
       flexDirection: 'row',
@@ -122,8 +124,9 @@ const ReceiveModal: React.FC<{
       flex: 1,
     },
     title: {
-      fontSize: 20,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       flex: 1,
     },
@@ -139,9 +142,10 @@ const ReceiveModal: React.FC<{
       borderRadius: 0,
     },
     closeButtonText: {
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontWeight: '600',
       textAlign: 'center',
       verticalAlign: 'middle',
       lineHeight: 30,
@@ -154,9 +158,10 @@ const ReceiveModal: React.FC<{
       marginBottom: 20,
     },
     networkText: {
-      color: theme.colors.primary,
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text, // Fix dark mode readability
     },
     qrContainer: {
       backgroundColor: 'white',
@@ -174,11 +179,12 @@ const ReceiveModal: React.FC<{
       marginBottom: 20,
     },
     addressText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.text,
       textAlign: 'center',
       marginBottom: 16,
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     },
     addressTouchable: {
       padding: 12,
@@ -195,12 +201,13 @@ const ReceiveModal: React.FC<{
       justifyContent: 'center',
     },
     addressTextInteractive: {
-      fontSize: 14,
-      color: theme.colors.primary,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+      color: theme.colors.text, // Fix dark mode readability
       textAlign: 'center',
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
       textDecorationLine: 'underline',
-      textDecorationColor: theme.colors.primary,
+      textDecorationColor: theme.colors.text, // Fix dark mode readability
     },
     copyFeedback: {
       position: 'absolute',
@@ -216,12 +223,15 @@ const ReceiveModal: React.FC<{
       gap: 8,
     },
     copyFeedbackText: {
-      color: theme.colors.primary,
-      fontSize: 15,
-      fontWeight: '600',
+      color: theme.colors.text, // Fix dark mode readability
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     addressHint: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
       marginTop: 4,
@@ -249,8 +259,9 @@ const ReceiveModal: React.FC<{
     },
     actionButtonText: {
       color: theme.colors.textOnPrimary,
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       marginLeft: 8,
     },
     buttonIcon: {
@@ -261,7 +272,7 @@ const ReceiveModal: React.FC<{
     copyIcon: {
       width: 16,
       height: 16,
-      tintColor: theme.colors.primary,
+      tintColor: theme.colors.text, // Use text color for better visibility in dark mode
     },
   });
 

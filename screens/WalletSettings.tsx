@@ -457,7 +457,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
               onFocus={handleFocus}
               onBlur={handleBlur}
               placeholder="Your Mempool Endpoint"
-              placeholderTextColor={theme.colors.textSecondary}
+              placeholderTextColor={theme.colors.textSecondary + '80'}
               autoCapitalize="none"
               autoCorrect={false}
               editable={!isTestnet}
@@ -529,7 +529,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                         source={require('../assets/api-icon.png')}
                         style={[
                           styles.apiModalHeaderIcon,
-                          {tintColor: theme.colors.primary},
+                          {tintColor: theme.colors.text}, // Use text color for better visibility in dark mode
                         ]}
                         resizeMode="contain"
                       />
@@ -614,7 +614,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                         {color: theme.colors.text},
                       ]}
                       placeholder="Search endpoints..."
-                      placeholderTextColor={theme.colors.textSecondary}
+                      placeholderTextColor={theme.colors.textSecondary + '80'}
                       value={searchQuery}
                       onChangeText={setSearchQuery}
                       autoCapitalize="none"
@@ -730,7 +730,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     walletMode: false,
   });
 
-  const {theme} = useTheme();
+  const {theme, themeMode, setThemeMode} = useTheme();
   const [appVersion, setAppVersion] = useState('');
   const [buildNumber, setBuildNumber] = useState('');
   const [usageSize, setUsageSize] = useState<{fileCount: number; mb: string}>({
@@ -791,12 +791,16 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       return theme.colors.danger;
     }
     if (passwordStrength <= 2) {
-      return '#FFA500';
+      return theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange;
     }
     if (passwordStrength <= 3) {
-      return '#FFD700';
+      return theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange;
     }
-    return '#4CAF50';
+    return theme.colors.received;
   };
 
   const clearBackupModal = () => {
@@ -1039,6 +1043,27 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     }, 300);
   };
 
+  const normalizeAPIUrl = (url: string): string => {
+    if (!url || url.trim() === '') {
+      return url;
+    }
+    
+    // Trim whitespace
+    let normalized = url.trim();
+    
+    // Remove trailing slashes
+    normalized = normalized.replace(/\/+$/, '');
+    
+    // Check if it ends with /api (case-insensitive)
+    const apiPattern = /\/api$/i;
+    if (!apiPattern.test(normalized)) {
+      // If it doesn't end with /api, append it
+      normalized = normalized + '/api';
+    }
+    
+    return normalized;
+  };
+
   const validateAPIEndpoint = async (api: string): Promise<boolean> => {
     try {
       const testUrl = `${api.replace(/\/$/, '')}/blocks/tip/hash`;
@@ -1086,10 +1111,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       return;
     }
 
+    // Normalize the URL to ensure it ends with /api
+    const normalizedApi = normalizeAPIUrl(api);
+    dbg('Original API URL:', api);
+    dbg('Normalized API URL:', normalizedApi);
+
     setIsAPISaving(true);
     try {
-      // Validate the API endpoint first
-      const isValid = await validateAPIEndpoint(api);
+      // Validate the API endpoint first (using normalized URL)
+      const isValid = await validateAPIEndpoint(normalizedApi);
       if (!isValid) {
         Alert.alert(
           'Invalid API Endpoint',
@@ -1098,15 +1128,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         return;
       }
 
-      // Update API via UserContext
-      await setActiveApiProvider(api);
-      // Update local state
-      setBaseAPI(api);
-      // Reset pending API to the saved API
-      setPendingAPI(api);
-      dbg('Local state updated with API:', api);
+      // Update API via UserContext (using normalized URL)
+      await setActiveApiProvider(normalizedApi);
+      // Update local state (using normalized URL)
+      setBaseAPI(normalizedApi);
+      // Reset pending API to the saved API (using normalized URL)
+      setPendingAPI(normalizedApi);
+      dbg('Local state updated with API:', normalizedApi);
       Alert.alert('Success', 'API endpoint updated successfully!');
-      dbg('=== API saved and propagated successfully:', api);
+      dbg('=== API saved and propagated successfully:', normalizedApi);
       // Navigate to home after successful save
       navigation.reset({index: 0, routes: [{name: 'Home'}]});
     } catch (error) {
@@ -1274,19 +1304,20 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderBottomColor: theme.colors.border,
     },
     headerTitle: {
-      fontSize: 28,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.['3xl'] || 28,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       textAlign: 'center',
     },
     collapsibleSection: {
-      marginBottom: 8,
+      marginBottom: 10,
       backgroundColor: theme.colors.cardBackground,
       borderRadius: 8,
       borderWidth: 1,
       borderColor: theme.colors.border,
       overflow: 'hidden',
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 1},
       shadowOpacity: 0.1,
       shadowRadius: 2,
@@ -1311,18 +1342,22 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       tintColor: theme.colors.text,
     },
     sectionHeaderTitle: {
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     expandIcon: {
-      fontSize: 14,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     sectionContent: {
       paddingHorizontal: 12,
       borderTopWidth: 1,
-      borderTopColor: theme.colors.accent,
+      borderTopColor: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
     },
     toggleContainer: {
       flexDirection: 'row',
@@ -1332,12 +1367,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       paddingHorizontal: 4,
     },
     toggleLabel: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     toggleDescription: {
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 12,
     },
@@ -1354,13 +1392,16 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       flex: 1,
     },
     appIconHintTitle: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 2,
     },
     appIconHintSubtitle: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       lineHeight: 16,
     },
@@ -1369,7 +1410,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderColor: theme.colors.border,
       borderRadius: 6,
       padding: 10,
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       backgroundColor: theme.colors.background,
       color: theme.colors.text,
       marginBottom: 8,
@@ -1387,7 +1430,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderRadius: 8,
       backgroundColor: theme.colors.background,
       minHeight: 44,
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 1},
       shadowOpacity: 0.05,
       shadowRadius: 2,
@@ -1405,7 +1448,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       flex: 1,
       paddingHorizontal: 12,
       paddingVertical: 12,
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       backgroundColor: 'transparent',
     },
@@ -1418,8 +1463,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderLeftColor: theme.colors.border,
     },
     apiDropdownIcon: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     apiInputRow: {
       flexDirection: 'row',
@@ -1437,7 +1483,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       minHeight: 44,
       justifyContent: 'center',
       alignItems: 'center',
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 1},
       shadowOpacity: 0.1,
       shadowRadius: 2,
@@ -1449,8 +1495,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     },
     apiSaveButtonText: {
       color: theme.colors.textOnPrimary,
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     apiSaveButtonTextDisabled: {
       color: theme.colors.textSecondary,
@@ -1486,28 +1533,32 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       minHeight: 36,
     },
     apiNetworkModeBadgeTestnet: {
-      backgroundColor: 'rgba(255, 165, 0, 0.15)',
+      backgroundColor: theme.colors.warning + '26', // ~15% opacity
       borderWidth: 1,
-      borderColor: 'rgba(255, 165, 0, 0.3)',
+      borderColor: theme.colors.warning + '4D', // ~30% opacity
     },
     apiNetworkModeBadgeMainnet: {
-      backgroundColor: 'rgba(76, 175, 80, 0.15)',
+      backgroundColor: theme.colors.received + '26', // ~15% opacity
       borderWidth: 1,
-      borderColor: 'rgba(76, 175, 80, 0.3)',
+      borderColor: theme.colors.received + '4D', // ~30% opacity
     },
     apiNetworkModeIcon: {
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontFamily: theme.fontFamilies?.regular,
     },
     apiNetworkModeText: {
-      fontSize: 13,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       letterSpacing: 0.2,
     },
     apiNetworkModeTextTestnet: {
-      color: '#FFA500',
+      color: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
     },
     apiNetworkModeTextMainnet: {
-      color: '#4CAF50',
+      color: theme.colors.received,
     },
     apiInfoButton: {
       flex: 1,
@@ -1526,15 +1577,18 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     apiInfoButtonIcon: {
       width: 14,
       height: 14,
-      tintColor: theme.colors.primary,
+      tintColor: theme.colors.text, // Use text color for better visibility in dark mode
     },
     apiInfoButtonText: {
-      fontSize: 12,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.primary,
     },
     apiNetworkDescription: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       lineHeight: 16,
       marginTop: 4,
     },
@@ -1553,6 +1607,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     apiActionButton: {
       flex: 1,
       minHeight: 44,
+      height: 44,
     },
     apiModalContainer: {
       flex: 1,
@@ -1564,7 +1619,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     },
     apiModalBackdrop: {
       flex: 1,
-      backgroundColor: 'rgba(0, 0, 0, 0.6)',
+      backgroundColor: theme.colors.modalBackdrop,
       justifyContent: 'flex-end',
     },
     apiModalContent: {
@@ -1573,7 +1628,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderTopRightRadius: 10,
       paddingBottom: Platform.OS === 'ios' ? 17 : 10,
       paddingTop: 5,
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: -4},
       shadowOpacity: 0.2,
       shadowRadius: 12,
@@ -1609,8 +1664,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       paddingBottom: Platform.OS === 'ios' ? 32 : 24,
     },
     apiModalTitle: {
-      fontSize: 16,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       letterSpacing: -0.5,
     },
     apiModalHeaderTitleContainer: {
@@ -1631,8 +1687,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       alignItems: 'center',
     },
     apiModalCloseText: {
-      fontSize: 18,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     apiModalSearchContainer: {
       flexDirection: 'row',
@@ -1645,12 +1702,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderWidth: 1,
     },
     apiModalSearchIcon: {
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontFamily: theme.fontFamilies?.regular,
       marginRight: 8,
     },
     apiModalSearchInput: {
       flex: 1,
-      fontSize: 15,
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       padding: 0,
       margin: 0,
     },
@@ -1659,8 +1719,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginLeft: 8,
     },
     apiModalSearchClearText: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     apiModalListContent: {
       paddingTop: 4,
@@ -1681,17 +1742,20 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       backgroundColor: theme.colors.cardBackground,
     },
     apiModalItemIcon: {
-      fontSize: 18,
+      fontSize: theme.fontSizes?.xl || 18,
+      fontFamily: theme.fontFamilies?.regular,
       marginRight: 12,
     },
     apiModalItemText: {
       flex: 1,
-      fontSize: 15,
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       lineHeight: 20,
       letterSpacing: -0.2,
     },
     apiModalItemTextSelected: {
-      fontWeight: '600',
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
     },
     apiModalItemCheckContainer: {
       width: 24,
@@ -1702,16 +1766,19 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginLeft: 8,
     },
     apiModalItemCheck: {
-      fontSize: 14,
-      fontWeight: 'bold',
-      color: '#FFFFFF',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.white,
     },
     apiModalLoading: {
       padding: 48,
       alignItems: 'center',
     },
     apiModalLoadingText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       fontStyle: 'italic',
     },
     apiModalEmpty: {
@@ -1719,7 +1786,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       alignItems: 'center',
     },
     apiModalEmptyText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       fontStyle: 'italic',
     },
     button: {
@@ -1729,38 +1798,51 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginTop: 6,
     },
     deleteButton: {
-      backgroundColor: theme.colors.accent,
+      backgroundColor: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
     },
     backupButton: {
       backgroundColor: theme.colors.primary,
+      marginBottom: 16, // Add spacing after backup button before delete section
     },
     resetButton: {
-      backgroundColor: theme.colors.accent,
+      backgroundColor: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
     },
     buttonText: {
       color: theme.colors.textOnPrimary,
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     apiItem: {
-      marginTop: 12,
+      marginTop: 0, // Section padding handles first element spacing
+      marginBottom: 0, // Consistent spacing
     },
     apiName: {
-      fontSize: 14,
-      fontWeight: 'bold',
-      color: theme.colors.primary,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text, // Use text color for better readability in dark mode
       marginBottom: 4,
     },
     apiDescription: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       lineHeight: 20,
       marginBottom: 6,
     },
     linkText: {
-      color: theme.colors.primary,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text, // Use text color for better readability in dark mode
       textDecorationLine: 'underline',
+      textDecorationColor: theme.colors.text, // Match underline color
     },
     aboutInfoRow: {
       flexDirection: 'row',
@@ -1772,14 +1854,16 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderBottomColor: theme.colors.border,
     },
     aboutLabel: {
-      fontSize: 15,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       letterSpacing: -0.2,
     },
     aboutValue: {
-      fontSize: 15,
-      fontWeight: '500',
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       letterSpacing: -0.2,
     },
@@ -1803,31 +1887,40 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       tintColor: theme.colors.text,
     },
     aboutSectionTitle: {
-      fontSize: 16,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       letterSpacing: -0.3,
     },
     aboutSectionDescription: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       lineHeight: 22,
       letterSpacing: -0.1,
     },
     aboutLinkText: {
-      color: theme.colors.primary,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text, // Use text color for better readability in dark mode
       textDecorationLine: 'underline',
+      textDecorationColor: theme.colors.text, // Match underline color
     },
     termsLink: {
-      color: theme.colors.primary,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text, // Use text color for better readability in dark mode
       textDecorationLine: 'underline',
+      textDecorationColor: theme.colors.text, // Match underline color
       marginTop: 8,
     },
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.8)',
+      backgroundColor: theme.colors.modalBackdrop,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -1847,15 +1940,18 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       width: 24,
       height: 24,
       marginRight: 10,
-      tintColor: theme.colors.primary,
+      tintColor: theme.colors.text, // Use text color for better visibility in dark mode
     },
     modalTitle: {
-      fontSize: 20,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     modalDescription: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 20,
       textAlign: 'center',
@@ -1864,8 +1960,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginBottom: 12,
     },
     passwordLabel: {
-      fontSize: 14,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 4,
     },
@@ -1879,7 +1976,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     passwordInput: {
       flex: 1,
       padding: 10,
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     eyeButton: {
@@ -1888,9 +1987,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     eyeIcon: {
       width: 20,
       height: 20,
+      tintColor: theme.colors.text,
     },
     passwordHint: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
     },
     modalActions: {
@@ -1909,7 +2011,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       backgroundColor: theme.colors.secondary,
     },
     confirmButton: {
-      backgroundColor: theme.colors.accent,
+      backgroundColor: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
     },
     disabledButton: {
       backgroundColor: theme.colors.disabled,
@@ -1919,7 +2023,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderRadius: 16,
       width: '85%',
       maxWidth: 400,
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 4},
       shadowOpacity: 0.3,
       shadowRadius: 12,
@@ -1944,12 +2048,14 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       alignItems: 'center',
     },
     apiInfoModalIcon: {
-      fontSize: 20,
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontFamily: theme.fontFamilies?.regular,
     },
     apiInfoModalTitle: {
       flex: 1,
-      fontSize: 18,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginLeft: 12,
       letterSpacing: -0.3,
@@ -1963,8 +2069,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       alignItems: 'center',
     },
     apiInfoModalCloseText: {
-      fontSize: 18,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
     },
     apiInfoModalBody: {
@@ -1979,17 +2086,21 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginBottom: 8,
     },
     apiInfoSectionIcon: {
-      fontSize: 20,
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontFamily: theme.fontFamilies?.regular,
       marginRight: 10,
     },
     apiInfoSectionTitle: {
-      fontSize: 16,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       letterSpacing: -0.2,
     },
     apiInfoSectionText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       lineHeight: 22,
       letterSpacing: -0.1,
@@ -2004,8 +2115,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       justifyContent: 'center',
     },
     apiInfoModalButtonText: {
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       letterSpacing: -0.2,
     },
     networkOption: {
@@ -2016,6 +2128,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       width: 20,
       height: 20,
       marginRight: 8,
+      tintColor: theme.colors.text, // Use text color for visibility in dark mode
     },
     input: {
       borderWidth: 1,
@@ -2024,7 +2137,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       padding: 14,
       marginBottom: 16,
       textAlign: 'center',
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       backgroundColor: theme.colors.cardBackground,
     },
@@ -2050,8 +2165,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderRadius: 4,
     },
     strengthText: {
-      fontSize: 12,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       minWidth: 60,
       textAlign: 'right',
       color: theme.colors.textSecondary,
@@ -2060,13 +2176,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginTop: 4,
     },
     requirementText: {
-      fontSize: 12,
-      color: '#FF6B35',
-      fontWeight: '500',
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.warningAccent,
     },
     nostrRelaysInput: {
       minHeight: 120,
       textAlignVertical: 'top',
+      textAlign: 'left', // Align text entries to the left
       paddingTop: 12,
       backgroundColor: theme.colors.cardBackground,
     },
@@ -2075,7 +2193,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     },
     errorText: {
       color: theme.colors.danger,
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       marginTop: 4,
     },
     buttonContent: {
@@ -2092,17 +2212,21 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       flex: 1,
     },
     whiteTint: {
-      tintColor: '#ffffff',
+      tintColor: theme.colors.white,
     },
     networkStatusContainer: {
       marginBottom: 8,
     },
     networkStatusTitle: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       marginBottom: 2,
     },
     networkStatusText: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     appIconCheckStatesButton: {
       marginBottom: 10,
@@ -2116,14 +2240,60 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       paddingHorizontal: 4,
     },
     walletModeLabel: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     walletModeDescription: {
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 12,
+    },
+    themeOptionContainer: {
+      gap: 8,
+      marginBottom: 8,
+    },
+    themeOption: {
+      backgroundColor: theme.colors.background,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      padding: 12,
+      marginBottom: 4,
+    },
+    themeOptionSelected: {
+      borderColor: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
+      borderWidth: 2,
+      backgroundColor: theme.colors.cardBackground,
+    },
+    themeOptionContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    themeOptionLabel: {
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text,
+    },
+    themeOptionLabelSelected: {
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      color: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
+    },
+    themeOptionCheck: {
+      width: 18,
+      height: 18,
+      tintColor: theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
     },
   });
 
@@ -2138,7 +2308,268 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         bounces={true}
         scrollEventThrottle={16}
         overScrollMode="auto">
-        {/* Backup & Reset Section */}
+        {/* Theme Section - First for better UX */}
+        <CollapsibleSection
+          title="Theme"
+          isExpanded={expandedSections.theme}
+          onToggle={() => toggleSection('theme')}
+          styles={styles}
+          theme={theme}>
+          <Text style={styles.toggleDescription}>
+            Choose your preferred color theme. OS Default follows your system settings.
+          </Text>
+          <View style={styles.themeOptionContainer}>
+            <TouchableOpacity
+              style={[
+                styles.themeOption,
+                themeMode === 'os' && styles.themeOptionSelected,
+              ]}
+              onPress={() => {
+                HapticFeedback.light();
+                setThemeMode('os');
+              }}
+              activeOpacity={0.7}>
+              <View style={styles.themeOptionContent}>
+                <Text
+                  style={[
+                    styles.themeOptionLabel,
+                    themeMode === 'os' && styles.themeOptionLabelSelected,
+                  ]}>
+                  OS Default
+                </Text>
+                {themeMode === 'os' && (
+                  <Image
+                    source={require('../assets/check-icon.png')}
+                    style={styles.themeOptionCheck}
+                    resizeMode="contain"
+                  />
+                )}
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.themeOption,
+                themeMode === 'light' && styles.themeOptionSelected,
+              ]}
+              onPress={() => {
+                HapticFeedback.light();
+                setThemeMode('light');
+              }}
+              activeOpacity={0.7}>
+              <View style={styles.themeOptionContent}>
+                <Text
+                  style={[
+                    styles.themeOptionLabel,
+                    themeMode === 'light' && styles.themeOptionLabelSelected,
+                  ]}>
+                  Light
+                </Text>
+                {themeMode === 'light' && (
+                  <Image
+                    source={require('../assets/check-icon.png')}
+                    style={styles.themeOptionCheck}
+                    resizeMode="contain"
+                  />
+                )}
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.themeOption,
+                themeMode === 'dark' && styles.themeOptionSelected,
+              ]}
+              onPress={() => {
+                HapticFeedback.light();
+                setThemeMode('dark');
+              }}
+              activeOpacity={0.7}>
+              <View style={styles.themeOptionContent}>
+                <Text
+                  style={[
+                    styles.themeOptionLabel,
+                    themeMode === 'dark' && styles.themeOptionLabelSelected,
+                  ]}>
+                  Dark
+                </Text>
+                {themeMode === 'dark' && (
+                  <Image
+                    source={require('../assets/check-icon.png')}
+                    style={styles.themeOptionCheck}
+                    resizeMode="contain"
+                  />
+                )}
+              </View>
+            </TouchableOpacity>
+          </View>
+        </CollapsibleSection>
+
+        {/* Haptics Section */}
+        <CollapsibleSection
+          title="Haptics"
+          isExpanded={expandedSections.haptics}
+          onToggle={() => toggleSection('haptics')}
+          styles={styles}
+          theme={theme}>
+          <Text style={styles.toggleDescription}>
+            Enable vibration feedback. OS settings may override this.
+          </Text>
+          <View style={styles.toggleContainer}>
+            <Text style={styles.toggleLabel}>Haptics Off</Text>
+            <Switch
+              trackColor={{
+                true: theme.colors.primary,
+                false: theme.colors.secondary,
+              }}
+              thumbColor={theme.colors.background === '#ffffff'
+                ? theme.colors.accent
+                : theme.colors.bitcoinOrange}
+              onValueChange={handleToggleHaptics}
+              value={hapticsEnabled}
+            />
+            <Text style={styles.toggleLabel}>Haptics On</Text>
+          </View>
+        </CollapsibleSection>
+
+        {/* App Icon Section - Android Only */}
+        {Platform.OS === 'android' && (
+          <CollapsibleSection
+            title="App Icon"
+            isExpanded={expandedSections.appIcon}
+            onToggle={() => toggleSection('appIcon')}
+            styles={styles}
+            theme={theme}>
+            <View style={styles.appIconHintRow}>
+              <View style={styles.appIconHintTextContainer}>
+                <Text style={styles.appIconHintTitle}>
+                  Blend in when you need to.
+                </Text>
+                <Text style={styles.appIconHintSubtitle}>
+                  Switch to the calculator icon when you want your wallet to
+                  look like just another app on your home screen.
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.toggleDescription}>
+              Change the app's launcher icon on your device.
+            </Text>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Bold Wallet</Text>
+              <Switch
+                trackColor={{
+                  true: theme.colors.primary,
+                  false: theme.colors.secondary,
+                }}
+                thumbColor={theme.colors.background === '#ffffff'
+                ? theme.colors.accent
+                : theme.colors.bitcoinOrange}
+                onValueChange={async value => {
+                  try {
+                    HapticFeedback.light();
+                    const newIcon = value ? 'alternative' : 'default';
+
+                    // Check if IconChanger module is available
+                    if (!IconChanger || !IconChanger.changeIcon) {
+                      Alert.alert(
+                        'Error',
+                        'Icon switching is not available on this device.',
+                        [{text: 'OK'}],
+                      );
+                      return;
+                    }
+
+                    // Update UI state
+                    setSelectedIcon(newIcon);
+
+                    // Save preference
+                    await EncryptedStorage.setItem(
+                      'app_icon_preference',
+                      newIcon,
+                    );
+
+                    // Change the icon
+                    await IconChanger.changeIcon(newIcon);
+
+                    // Show success message
+                    const iconName =
+                      newIcon === 'alternative' ? 'QuickCalc' : 'Bold Wallet';
+                    Alert.alert(
+                      'Icon Changed',
+                      `App icon switched to ${iconName}.\n\nYou may need to refresh your launcher to see the change.`,
+                      [{text: 'OK'}],
+                    );
+                  } catch (error: any) {
+                    console.error('Error changing icon:', error);
+
+                    // Revert UI state on error
+                    setSelectedIcon(value ? 'default' : 'alternative');
+
+                    Alert.alert(
+                      'Error',
+                      error?.message ||
+                        'Failed to change app icon. Please try again.',
+                      [{text: 'OK'}],
+                    );
+                  }
+                }}
+                value={selectedIcon === 'alternative'}
+                disabled={selectedIcon === 'loading'}
+              />
+              <Text style={styles.toggleLabel}>QuickCalc</Text>
+            </View>
+          </CollapsibleSection>
+        )}
+
+        {/* Wallet Mode Section */}
+        <CollapsibleSection
+          title="Wallet Mode"
+          isExpanded={expandedSections.walletMode}
+          onToggle={() => toggleSection('walletMode')}
+          styles={styles}
+          theme={theme}>
+          <Text style={styles.walletModeDescription}>
+            Choose the default wallet experience when opening the app. PSBT Mode
+            jumps directly into PSBT signing workflows, while Full Mode opens
+            the main wallet home screen.
+          </Text>
+          <View style={styles.walletModeRow}>
+            <Text style={styles.walletModeLabel}>Full Mode</Text>
+            <Switch
+              trackColor={{
+                true: theme.colors.primary,
+                false: theme.colors.secondary,
+              }}
+              thumbColor={theme.colors.background === '#ffffff'
+                ? theme.colors.accent
+                : theme.colors.bitcoinOrange}
+              onValueChange={async value => {
+                HapticFeedback.light();
+                const mode = value ? 'psbt' : 'full';
+                setWalletMode(mode);
+                try {
+                  await EncryptedStorage.setItem('wallet_mode', mode);
+                  // If switching to PSBT mode, set flag for first visit (both sections closed)
+                  if (mode === 'psbt') {
+                    await EncryptedStorage.setItem(
+                      'psbt_mode_first_visit',
+                      'true',
+                    );
+                  }
+                } catch (error) {
+                  dbg('Error saving wallet_mode:', error);
+                }
+                // Immediately navigate to the selected default screen
+                navigation.reset({
+                  index: 0,
+                  routes: [{name: mode === 'psbt' ? 'PSBT' : 'Home'}],
+                });
+              }}
+              value={walletMode === 'psbt'}
+            />
+            <Text style={styles.walletModeLabel}>PSBT Only</Text>
+          </View>
+        </CollapsibleSection>
+
+        {/* Security Section */}
         <CollapsibleSection
           title="Security"
           isExpanded={expandedSections.backup}
@@ -2183,49 +2614,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </TouchableOpacity>
         </CollapsibleSection>
-        {/* Wallet Mode Section */}
-        <CollapsibleSection
-          title="Wallet Mode"
-          isExpanded={expandedSections.walletMode}
-          onToggle={() => toggleSection('walletMode')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.walletModeDescription}>
-            Choose the default wallet experience when opening the app. PSBT Mode
-            jumps directly into PSBT signing workflows, while Full Mode opens
-            the main wallet home screen.
-          </Text>
-          <View style={styles.walletModeRow}>
-            <Text style={styles.walletModeLabel}>Full Mode</Text>
-            <Switch
-              onValueChange={async value => {
-                HapticFeedback.light();
-                const mode = value ? 'psbt' : 'full';
-                setWalletMode(mode);
-                try {
-                  await EncryptedStorage.setItem('wallet_mode', mode);
-                  // If switching to PSBT mode, set flag for first visit (both sections closed)
-                  if (mode === 'psbt') {
-                    await EncryptedStorage.setItem(
-                      'psbt_mode_first_visit',
-                      'true',
-                    );
-                  }
-                } catch (error) {
-                  dbg('Error saving wallet_mode:', error);
-                }
-                // Immediately navigate to the selected default screen
-                navigation.reset({
-                  index: 0,
-                  routes: [{name: mode === 'psbt' ? 'PSBT' : 'Home'}],
-                });
-              }}
-              value={walletMode === 'psbt'}
-            />
-            <Text style={styles.walletModeLabel}>PSBT Only</Text>
-          </View>
-        </CollapsibleSection>
-        {/* Advanced Section */}
+        {/* Network Providers Section */}
         <CollapsibleSection
           title="Network Providers"
           isExpanded={expandedSections.advanced}
@@ -2242,7 +2631,17 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               />
               <Text style={styles.toggleLabel}>Mainnet</Text>
             </View>
-            <Switch onValueChange={toggleNetwork} value={isTestnet} />
+            <Switch
+              trackColor={{
+                true: theme.colors.primary,
+                false: theme.colors.secondary,
+              }}
+              thumbColor={theme.colors.background === '#ffffff'
+                ? theme.colors.accent
+                : theme.colors.bitcoinOrange}
+              onValueChange={toggleNetwork}
+              value={isTestnet}
+            />
             <View style={styles.networkOption}>
               <Image
                 source={require('../assets/testnet-icon.png')}
@@ -2481,14 +2880,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 </View>
               </TouchableOpacity>
             </View>
-            {nostrRelays && (
-              <View style={styles.apiItem}>
-                <Text style={styles.apiDescription}>
-                  Current:{'\n'}
-                  {nostrRelays.split(',').join('\n')}
-                </Text>
-              </View>
-            )}
           </CollapsibleSection>
         )}
         {/* Storage Section */}
@@ -2534,113 +2925,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </TouchableOpacity>
         </CollapsibleSection>
-
-        {/* Haptics Section */}
-        <CollapsibleSection
-          title="Haptics"
-          isExpanded={expandedSections.haptics}
-          onToggle={() => toggleSection('haptics')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.toggleDescription}>
-            Enable vibration feedback. OS settings may override this.
-          </Text>
-          <View style={styles.toggleContainer}>
-            <Text style={styles.toggleLabel}>Haptics Off</Text>
-            <Switch
-              onValueChange={handleToggleHaptics}
-              value={hapticsEnabled}
-            />
-            <Text style={styles.toggleLabel}>Haptics On</Text>
-          </View>
-        </CollapsibleSection>
-
-        {/* App Icon Section - Android Only */}
-        {Platform.OS === 'android' && (
-          <CollapsibleSection
-            title="App Icon"
-            isExpanded={expandedSections.appIcon}
-            onToggle={() => toggleSection('appIcon')}
-            styles={styles}
-            theme={theme}>
-            <View style={styles.appIconHintRow}>
-              <View style={styles.appIconHintTextContainer}>
-                <Text style={styles.appIconHintTitle}>
-                  Blend in when you need to.
-                </Text>
-                <Text style={styles.appIconHintSubtitle}>
-                  Switch to the calculator icon when you want your wallet to
-                  look like just another app on your home screen.
-                </Text>
-              </View>
-            </View>
-            <Text style={styles.toggleDescription}>
-              Change the app's launcher icon on your device.
-            </Text>
-            <View style={styles.toggleContainer}>
-              <Text style={styles.toggleLabel}>Bold Wallet</Text>
-              <Switch
-                trackColor={{
-                  true: theme.colors.primary,
-                  false: theme.colors.secondary,
-                }}
-                thumbColor={theme.colors.accent}
-                onValueChange={async value => {
-                  try {
-                    HapticFeedback.light();
-                    const newIcon = value ? 'alternative' : 'default';
-
-                    // Check if IconChanger module is available
-                    if (!IconChanger || !IconChanger.changeIcon) {
-                      Alert.alert(
-                        'Error',
-                        'Icon switching is not available on this device.',
-                        [{text: 'OK'}],
-                      );
-                      return;
-                    }
-
-                    // Update UI state
-                    setSelectedIcon(newIcon);
-
-                    // Save preference
-                    await EncryptedStorage.setItem(
-                      'app_icon_preference',
-                      newIcon,
-                    );
-
-                    // Change the icon
-                    await IconChanger.changeIcon(newIcon);
-
-                    // Show success message
-                    const iconName =
-                      newIcon === 'alternative' ? 'QuickCalc' : 'Bold Wallet';
-                    Alert.alert(
-                      'Icon Changed',
-                      `App icon switched to ${iconName}.\n\nYou may need to refresh your launcher to see the change.`,
-                      [{text: 'OK'}],
-                    );
-                  } catch (error: any) {
-                    console.error('Error changing icon:', error);
-
-                    // Revert UI state on error
-                    setSelectedIcon(value ? 'default' : 'alternative');
-
-                    Alert.alert(
-                      'Error',
-                      error?.message ||
-                        'Failed to change app icon. Please try again.',
-                      [{text: 'OK'}],
-                    );
-                  }
-                }}
-                value={selectedIcon === 'alternative'}
-                disabled={selectedIcon === 'loading'}
-              />
-              <Text style={styles.toggleLabel}>QuickCalc</Text>
-            </View>
-          </CollapsibleSection>
-        )}
 
         {/* Legal Section */}
         <CollapsibleSection
@@ -2776,6 +3060,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   <TextInput
                     style={styles.passwordInput}
                     placeholder="Enter a strong password"
+                    placeholderTextColor={theme.colors.textSecondary + '80'}
                     secureTextEntry={!passwordVisible}
                     value={password}
                     onChangeText={handlePasswordChange}
@@ -2847,6 +3132,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                         styles.errorInput,
                     ]}
                     placeholder="Confirm your password"
+                    placeholderTextColor={theme.colors.textSecondary + '80'}
                     secureTextEntry={!confirmPasswordVisible}
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
@@ -2942,6 +3228,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             <TextInput
               style={styles.input}
               placeholder='"delete my wallet"'
+              placeholderTextColor={theme.colors.textSecondary + '80'}
               value={deleteInput}
               onChangeText={setDeleteInput}
             />

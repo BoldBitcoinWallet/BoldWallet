@@ -34,11 +34,8 @@ import {
   getNostrRelays,
   getKeyshareLabel,
   hexToString,
-  getDerivePathForNetwork,
-  isLegacyWallet,
 } from '../utils';
 import {useTheme} from '../theme';
-import {useUser} from '../context/UserContext';
 import LocalCache from '../services/LocalCache';
 import {WalletService} from '../services/WalletService';
 import RNFS from 'react-native-fs';
@@ -56,6 +53,8 @@ type RouteParams = {
   selectedCurrency?: string;
   spendingHash?: string;
   psbtBase64?: string; // For PSBT signing mode
+  derivationPath?: string; // Derivation path from QR code (ensures same source address)
+  network?: string; // Network from QR code (ensures same network)
 };
 
 const MobileNostrPairing = ({navigation}: any) => {
@@ -63,12 +62,10 @@ const MobileNostrPairing = ({navigation}: any) => {
   const isSendBitcoin = route.params?.mode === 'send_btc';
   const isSignPSBT = route.params?.mode === 'sign_psbt';
   const setupMode = route.params?.mode;
-  const addressType = route.params?.addressType;
   // In send mode, determine isTrio from keyshare (3 devices = trio, 2 devices = duo)
   // In keygen mode, use setupMode
   const [isTrio, setIsTrio] = useState<boolean>(setupMode === 'trio');
   const {theme} = useTheme();
-  const {activeAddress} = useUser();
   const ppmFile = `${RNFS.DocumentDirectoryPath}/ppm.json`;
 
   // Nostr Identity
@@ -122,6 +119,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     totalOutput: number;
     derivePaths?: string[];
   } | null>(null);
+  const [fromAddress, setFromAddress] = useState<string>(''); // Derived address for send transaction
+  const [currentDerivationPath, setCurrentDerivationPath] =
+    useState<string>(''); // Derivation path for display
+  const [currentNetwork, setCurrentNetwork] = useState<string>('mainnet'); // Network for display
   const [isPreParamsReady, setIsPreParamsReady] = useState(false);
   const [isPreparing, setIsPreparing] = useState(false);
   const [isPrepared, setIsPrepared] = useState(false);
@@ -233,12 +234,12 @@ const MobileNostrPairing = ({navigation}: any) => {
           // Clear LocalCache
           await LocalCache.clear();
           dbg('LocalCache cleared successfully');
-          
+
           // Clear stale EncryptedStorage items (but keep keyshare if it exists for signing)
           // We clear btcPub as it will be regenerated with the new keyshare
           await EncryptedStorage.removeItem('btcPub');
           dbg('Cleared stale btcPub from EncryptedStorage');
-          
+
           // Clear WalletService cache
           try {
             await LocalCache.removeItem('walletCache');
@@ -246,7 +247,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           } catch (error) {
             dbg('Error clearing WalletService cache:', error);
           }
-          
+
           dbg('=== MobileNostrPairing: Cache clearing completed');
         } catch (error) {
           dbg('Error clearing cache in MobileNostrPairing:', error);
@@ -738,6 +739,157 @@ const MobileNostrPairing = ({navigation}: any) => {
       }
     }
   }, [isSendBitcoin, isSignPSBT, isTrio, sendModeDevices, selectedPeerNpub]);
+
+  // Initialize network immediately when component loads (for send Bitcoin mode)
+  useEffect(() => {
+    const initializeNetwork = async () => {
+      if (!isSendBitcoin || !route.params) {
+        // For non-send modes, use cached network
+        const cachedNetwork =
+          (await LocalCache.getItem('network')) || 'mainnet';
+        setCurrentNetwork(cachedNetwork);
+        return;
+      }
+
+      dbg('=== MobileNostrPairing: Received route params ===', {
+        network: route.params?.network,
+        derivationPath: route.params?.derivationPath,
+        addressType: route.params?.addressType,
+        toAddress: route.params?.toAddress,
+        satoshiAmount: route.params?.satoshiAmount,
+        allParams: route.params,
+      });
+
+      // CRITICAL: In send mode, ALL parameters MUST come from route params (no fallbacks)
+      if (!route.params.network || route.params.network.trim() === '') {
+        dbg('ERROR: Network missing from route params in send mode');
+        return;
+      }
+
+      // ALWAYS use route params - no fallbacks
+      const netForNative = route.params.network.trim();
+      const netForDisplay =
+        netForNative === 'testnet3' ? 'testnet' : netForNative;
+
+      setCurrentNetwork(netForDisplay);
+
+      // Also set derivation path immediately if available from route params
+      if (
+        route.params.derivationPath &&
+        route.params.derivationPath.trim() !== ''
+      ) {
+        setCurrentDerivationPath(route.params.derivationPath.trim());
+        dbg(
+          'MobileNostrPairing: Initialized derivation path from route params:',
+          route.params.derivationPath,
+        );
+      }
+
+      dbg(
+        'MobileNostrPairing: Initialized network for display:',
+        netForDisplay,
+        '(native format:',
+        netForNative,
+        ')',
+      );
+    };
+
+    initializeNetwork();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSendBitcoin, route.params?.network, route.params?.derivationPath]);
+
+  // Compute from address for send transactions
+  useEffect(() => {
+    const computeFromAddress = async () => {
+      if (!isSendBitcoin || !route.params) return;
+
+      try {
+        // CRITICAL: In send mode, ALL parameters MUST come from route params (no fallbacks)
+        // This ensures consistency between devices and prevents mismatches
+        if (!route.params.network || route.params.network.trim() === '') {
+          dbg('ERROR: Network missing from route params in send mode');
+          setFromAddress('');
+          return;
+        }
+        if (
+          !route.params.addressType ||
+          route.params.addressType.trim() === ''
+        ) {
+          dbg('ERROR: Address type missing from route params in send mode');
+          setFromAddress('');
+          return;
+        }
+        if (
+          !route.params.derivationPath ||
+          route.params.derivationPath.trim() === ''
+        ) {
+          dbg('ERROR: Derivation path missing from route params in send mode');
+          setFromAddress('');
+          return;
+        }
+
+        const keyshareJSON = await EncryptedStorage.getItem('keyshare');
+        if (!keyshareJSON) return;
+
+        const keyshare = JSON.parse(keyshareJSON);
+
+        // ALWAYS use route params - no fallbacks
+        const netForNative = route.params.network.trim();
+        const addressTypeToUse = route.params.addressType.trim();
+        const path = route.params.derivationPath.trim();
+
+        // Normalize for display only: 'testnet3' -> 'testnet'
+        const netForDisplay =
+          netForNative === 'testnet3' ? 'testnet' : netForNative;
+
+        dbg(
+          '=== MobileNostrPairing: Using route params ONLY (no fallbacks) ===',
+          {
+            network: netForNative,
+            addressType: addressTypeToUse,
+            derivationPath: path,
+          },
+        );
+
+        // Derive the public key and address
+        const publicKey = await BBMTLibNativeModule.derivePubkey(
+          keyshare.pub_key,
+          keyshare.chain_code_hex,
+          path,
+        );
+
+        // Use original network format for native module (requires 'testnet3' not 'testnet')
+        const derivedAddress = await BBMTLibNativeModule.btcAddress(
+          publicKey,
+          netForNative,
+          addressTypeToUse,
+        );
+
+        setFromAddress(derivedAddress);
+        setCurrentDerivationPath(path);
+        setCurrentNetwork(netForDisplay);
+        dbg('=== MobileNostrPairing: Computed from address ===', {
+          derivationPath: path,
+          addressType: addressTypeToUse,
+          fromAddress: derivedAddress,
+          network: netForNative,
+          networkForDisplay: netForDisplay,
+        });
+      } catch (error) {
+        dbg('Error computing from address:', error);
+        setFromAddress('');
+      }
+    };
+
+    computeFromAddress();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isSendBitcoin,
+    route.params?.derivationPath,
+    route.params?.mode,
+    route.params?.network,
+    route.params?.addressType,
+  ]);
 
   const generateLocalKeypair = async () => {
     try {
@@ -1397,127 +1549,158 @@ const MobileNostrPairing = ({navigation}: any) => {
     setProgress(0);
     setStatus('Starting transaction signing...');
 
+    // Store original network/API to restore after transaction
+    let originalNetwork = '';
+    let originalApiUrl = '';
+
     try {
-      // Get wallet balance in satoshis
+      // Read ALL parameters from route params ONLY (no fallbacks)
+      if (!route.params?.network || route.params.network.trim() === '') {
+        throw new Error('Network is required in route params');
+      }
+      if (
+        !route.params?.addressType ||
+        route.params.addressType.trim() === ''
+      ) {
+        throw new Error('Address type is required in route params');
+      }
+      if (
+        !route.params?.derivationPath ||
+        route.params.derivationPath.trim() === ''
+      ) {
+        throw new Error('Derivation path is required in route params');
+      }
+      if (!route.params?.toAddress || route.params.toAddress.trim() === '') {
+        throw new Error('Destination address is required in route params');
+      }
+      if (
+        !route.params?.satoshiAmount ||
+        route.params.satoshiAmount.trim() === ''
+      ) {
+        throw new Error('Amount is required in route params');
+      }
+      if (
+        !route.params?.satoshiFees ||
+        route.params.satoshiFees.trim() === ''
+      ) {
+        throw new Error('Fees are required in route params');
+      }
+
+      // Extract all params from route
+      const net = route.params.network.trim();
+      const addressTypeToUse = route.params.addressType.trim();
+      const path = route.params.derivationPath.trim();
+      const toAddress = route.params.toAddress.trim();
+      const satoshiAmount = route.params.satoshiAmount.trim();
+      const satoshiFees = route.params.satoshiFees.trim();
+
+      dbg('MobileNostrPairing: Using route params ONLY:', {
+        network: net,
+        addressType: addressTypeToUse,
+        derivationPath: path,
+        toAddress,
+        satoshiAmount,
+        satoshiFees,
+      });
+
+      // Store original network/API
+      originalNetwork = (await LocalCache.getItem('network')) || 'mainnet';
+      const cachedApi = await LocalCache.getItem(`api_${originalNetwork}`);
+      originalApiUrl = cachedApi || '';
+      if (!originalApiUrl) {
+        originalApiUrl =
+          originalNetwork === 'testnet3' || originalNetwork === 'testnet'
+            ? 'https://mempool.space/testnet/api'
+            : 'https://mempool.space/api';
+      }
+
+      // Set network and API in BBMTLib for this transaction
+      let apiUrl = await LocalCache.getItem(`api_${net}`);
+      if (!apiUrl) {
+        apiUrl =
+          net === 'testnet3' || net === 'testnet'
+            ? 'https://mempool.space/testnet/api'
+            : 'https://mempool.space/api';
+      }
+      await BBMTLibNativeModule.setBtcNetwork(net);
+      await BBMTLibNativeModule.setAPI(net, apiUrl);
+      dbg('MobileNostrPairing: Set network and API in BBMTLib:', net, apiUrl);
+
+      // Get keyshare and nsec
       const keyshareJSON = await EncryptedStorage.getItem('keyshare');
       if (!keyshareJSON) {
         throw new Error('Keyshare not found');
       }
-
       const keyshare = JSON.parse(keyshareJSON);
 
-      // Get nsec from keyshare (use local variable, not state)
       let nsecToUse = localNsec;
       if (!nsecToUse || !nsecToUse.startsWith('nsec1')) {
         const nsecFromKeyshare = keyshare.nsec || '';
         if (nsecFromKeyshare) {
-          try {
-            let decodedNsec = '';
-
-            // Check if it's already in bech32 format
-            if (nsecFromKeyshare.startsWith('nsec1')) {
-              decodedNsec = nsecFromKeyshare;
-            } else {
-              decodedNsec = hexToString(nsecFromKeyshare);
-            }
-
-            if (decodedNsec.startsWith('nsec1')) {
-              nsecToUse = decodedNsec;
-              setLocalNsec(decodedNsec); // Update state for UI
-              dbg(
-                'Loaded nsec from keyshare in startSendBTC:',
-                decodedNsec.substring(0, 20) + '...',
-              );
-            } else {
-              throw new Error(
-                `Invalid nsec format in keyshare: ${decodedNsec.substring(
-                  0,
-                  50,
-                )}`,
-              );
-            }
-          } catch (error) {
-            dbg('Error loading nsec from keyshare in startSendBTC:', error);
-            throw new Error(`Failed to load nsec from keyshare: ${error}`);
+          if (nsecFromKeyshare.startsWith('nsec1')) {
+            nsecToUse = nsecFromKeyshare;
+          } else {
+            nsecToUse = hexToString(nsecFromKeyshare);
+          }
+          if (nsecToUse.startsWith('nsec1')) {
+            setLocalNsec(nsecToUse);
+          } else {
+            throw new Error('Invalid nsec format in keyshare');
           }
         } else {
           throw new Error('nsec not found in keyshare');
         }
       }
 
-      // Verify nsec is valid
-      if (!nsecToUse || !nsecToUse.startsWith('nsec1')) {
-        throw new Error(
-          'Invalid nsec: nsec must be in bech32 format (nsec1...)',
-        );
-      }
+      // Derive from address using route params
+      const publicKey = await BBMTLibNativeModule.derivePubkey(
+        keyshare.pub_key,
+        keyshare.chain_code_hex,
+        path,
+      );
+      const senderAddress = await BBMTLibNativeModule.btcAddress(
+        publicKey,
+        net,
+        addressTypeToUse,
+      );
 
-      if (!activeAddress) {
-        throw new Error('Active address not found');
-      }
-
+      // Get balance for sessionFlag calculation
       const balance = await WalletService.getInstance().getWalletBalance(
-        activeAddress,
+        senderAddress,
         0,
         0,
         false,
       );
-      const balanceSats = Big(balance.btc).times(1e8).toString();
+      const balanceSats = Big(balance.btc).times(1e8).toFixed(0);
 
-      // IMPORTANT: For session ID, we need ALL npubs from the keyshare (all participants)
-      // Get all hex keys from keygen_committee_keys and convert them ALL to npubs
+      // Get all npubs from keyshare for sessionFlag calculation
       const allNpubsFromKeyshare: string[] = [];
-
-      // Get all keys from keygen_committee_keys and convert them ALL to npubs
       const sortedKeys = [...keyshare.keygen_committee_keys].sort();
       for (const key of sortedKeys) {
         try {
-          // Check if it's already an npub (shouldn't happen, but handle it)
           if (key && typeof key === 'string' && key.startsWith('npub1')) {
             allNpubsFromKeyshare.push(key);
-            dbg('Key already npub format:', key.substring(0, 20) + '...');
             continue;
           }
-
-          // Validate hex key format
           const hexPattern = /^[0-9a-fA-F]+$/;
           if (!hexPattern.test(key)) {
-            dbg(
-              'Invalid key format (not hex, not npub), skipping:',
-              key.substring(0, 20) + '...',
-            );
             continue;
           }
-
-          // Convert hex to npub (convert ALL keys, including local)
           const npub = await BBMTLibNativeModule.hexToNpub(key);
           if (npub && typeof npub === 'string' && npub.startsWith('npub1')) {
             allNpubsFromKeyshare.push(npub);
-            dbg(
-              'Converted hex to npub for session ID:',
-              npub.substring(0, 20) + '...',
-            );
-          } else {
-            dbg('Failed to convert hex to npub, result:', npub);
           }
         } catch (error) {
-          dbg('Error converting hex to npub for session ID:', error);
+          dbg('Error converting hex to npub:', error);
         }
       }
 
-      // Sort all npubs - this must match on all devices
       const npubsSorted = [...allNpubsFromKeyshare].sort().join(',');
-
       if (npubsSorted.length === 0 || allNpubsFromKeyshare.length < 2) {
         throw new Error(
-          `Failed to get all npubs from keyshare. Got ${allNpubsFromKeyshare.length} npubs. Please ensure all devices are loaded.`,
+          `Failed to get all npubs from keyshare. Got ${allNpubsFromKeyshare.length} npubs.`,
         );
       }
-
-      dbg(
-        'All npubs for session ID:',
-        allNpubsFromKeyshare.map(n => n.substring(0, 20) + '...'),
-      );
 
       // Prepare parties npubs CSV for the actual signing (only participating devices)
       // IMPORTANT: Use the full npubs from allNpubsFromKeyshare (already converted from hex)
@@ -1655,100 +1838,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       }
       const partiesNpubsCSV = allNpubs.sort().join(',');
 
-      dbg(
-        'partiesNpubsCSV for signing (full npubs, length=',
-        partiesNpubsCSV.length,
-        '):',
-        partiesNpubsCSV.substring(0, 100) + '...',
-      );
-      const satoshiAmount = route.params.satoshiAmount || '0';
-      const satoshiFees = route.params.satoshiFees || '0';
-
-      // Generate session ID (includes all transaction details that must match)
-      // Format: sha256(npubsSorted,balance,amount,rounded)
-      const rounded = Math.floor(Date.now() / 90000);
-
-      dbg(
-        'session id params:',
-        `${npubsSorted},${balanceSats},${satoshiAmount},${rounded}`,
-      );
-      dbg(
-        'session_params',
-        JSON.stringify(
-          {npubsSorted, balanceSats, satoshiAmount, rounded},
-          null,
-          4,
-        ),
-      );
-
       // Prepare relays CSV
       const relaysCSV = relays.join(',');
 
-      const network = (await LocalCache.getItem('network')) || 'mainnet';
-      // Get address type from route params or cache, default to segwit-native
-      const currentAddressType =
-        addressType ||
-        (await LocalCache.getItem('addressType')) ||
-        'segwit-native';
-      // Check if this is a legacy wallet (created before migration timestamp)
-      const useLegacyPath = isLegacyWallet(keyshare.created_at);
-      const derivePath = getDerivePathForNetwork(
-        network,
-        currentAddressType,
-        useLegacyPath,
-      );
-      dbg('Deriving path for Nostr send:', {
-        network,
-        currentAddressType,
-        useLegacyPath,
-        derivePath,
-      });
-
-      // Derive the public key from the root key using the derivation path
-      // This is critical - we need the DERIVED public key, not the root!
-      const publicKey = await BBMTLibNativeModule.derivePubkey(
-        keyshare.pub_key,
-        keyshare.chain_code_hex,
-        derivePath,
-      );
-
-      dbg(
-        'Derived public key for path:',
-        derivePath,
-        'pubKey:',
-        publicKey.substring(0, 20) + '...',
-      );
-
-      // Generate BTC address using addressType (same as MobilesPairing.tsx)
-      const net = (await LocalCache.getItem('network')) || 'mainnet';
-      const btcAddress = await BBMTLibNativeModule.btcAddress(
-        publicKey,
-        net,
-        addressType,
-      );
-
-      dbg('Starting Nostr send BTC with:', {
-        relays: relaysCSV,
-        parties: partiesNpubsCSV,
-        npubsSorted: npubsSorted.substring(0, 30) + '...',
-        balance: balanceSats,
-        amount: route.params?.satoshiAmount,
-        localNsec: nsecToUse ? nsecToUse.substring(0, 20) + '...' : 'MISSING',
-        derivePath: derivePath,
-        derivedPublicKey: publicKey.substring(0, 20) + '...',
-        btcAddress: btcAddress,
-        addressType: addressType,
-        estimatedFees: satoshiFees,
-      });
-
-      dbg(
-        'Calling nostrMpcSendBTC (pre-agreement handled internally):',
-        nsecToUse.substring(0, 20) + '...',
-      );
-
-      // Call native module - pre-agreement is now handled internally in Go
-      // The function will calculate sessionFlag, do pre-agreement, update sessionID and fees
-      // Use btcAddress generated from addressType (same as MobilesPairing.tsx)
+      // Call MPC send BTC
       const txId = await BBMTLibNativeModule.nostrMpcSendBTC(
         relaysCSV,
         nsecToUse,
@@ -1756,12 +1849,12 @@ const MobileNostrPairing = ({navigation}: any) => {
         npubsSorted,
         balanceSats,
         keyshareJSON,
-        derivePath,
+        path,
         publicKey,
-        btcAddress,
-        route.params.toAddress || '',
-        route.params.satoshiAmount || '0',
-        route.params.satoshiFees || '0',
+        senderAddress,
+        toAddress,
+        satoshiAmount,
+        satoshiFees,
       );
 
       // Validate txId
@@ -1772,15 +1865,15 @@ const MobileNostrPairing = ({navigation}: any) => {
 
       // Save pending transaction
       const pendingTxs = JSON.parse(
-        (await LocalCache.getItem(`${activeAddress}-pendingTxs`)) || '{}',
+        (await LocalCache.getItem(`${senderAddress}-pendingTxs`)) || '{}',
       );
       pendingTxs[txId] = {
         txid: txId,
-        from: activeAddress,
-        to: route.params.toAddress,
-        amount: route.params.satoshiAmount,
-        satoshiAmount: route.params.satoshiAmount,
-        satoshiFees: route.params.satoshiFees,
+        from: senderAddress,
+        to: toAddress,
+        amount: satoshiAmount,
+        satoshiAmount: satoshiAmount,
+        satoshiFees: satoshiFees,
         sentAt: Date.now(),
         status: {
           confirmed: false,
@@ -1788,7 +1881,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         },
       };
       await LocalCache.setItem(
-        `${activeAddress}-pendingTxs`,
+        `${senderAddress}-pendingTxs`,
         JSON.stringify(pendingTxs),
       );
 
@@ -1806,6 +1899,29 @@ const MobileNostrPairing = ({navigation}: any) => {
       Alert.alert('Error', error?.message || 'Transaction signing failed');
       setStatus('Transaction signing failed');
     } finally {
+      // CRITICAL: Restore original network after transaction completes (success or failure)
+      // This ensures the device's active network remains unchanged
+      if (originalNetwork && originalApiUrl) {
+        try {
+          await BBMTLibNativeModule.setBtcNetwork(originalNetwork);
+          await BBMTLibNativeModule.setAPI(originalNetwork, originalApiUrl);
+          // Restore WalletService internal state
+          const walletService = WalletService.getInstance();
+          (walletService as any).currentNetwork = originalNetwork;
+          (walletService as any).currentApiUrl = originalApiUrl;
+          dbg(
+            'MobileNostrPairing: Restored original network:',
+            originalNetwork,
+            'API:',
+            originalApiUrl,
+          );
+        } catch (restoreError) {
+          dbg(
+            'MobileNostrPairing: Error restoring original network:',
+            restoreError,
+          );
+        }
+      }
       setIsPairing(false);
     }
   };
@@ -2090,12 +2206,12 @@ const MobileNostrPairing = ({navigation}: any) => {
       return theme.colors.danger;
     }
     if (passwordStrength <= 2) {
-      return '#FFA500';
+      return theme.colors.warning;
     }
     if (passwordStrength <= 3) {
-      return '#FFD700';
+      return theme.colors.warningLight;
     }
-    return '#4CAF50';
+    return theme.colors.received;
   };
 
   const getPasswordStrengthText = () => {
@@ -2461,8 +2577,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginBottom: 8,
     },
     sectionTitle: {
-      fontSize: 18,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 12,
     },
@@ -2474,9 +2591,15 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderColor: theme.colors.border + '40',
     },
     cardSelected: {
-      borderColor: theme.colors.primary,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
       borderWidth: 2,
-      backgroundColor: theme.colors.primary + '10',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '10'
+          : theme.colors.bitcoinOrange + '20',
     },
     deviceInfoRowWithCheckbox: {
       flexDirection: 'row',
@@ -2497,13 +2620,20 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginLeft: 12,
     },
     peerCheckboxChecked: {
-      borderColor: theme.colors.primary,
-      backgroundColor: theme.colors.primary,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     peerCheckmark: {
       color: theme.colors.white,
-      fontSize: 16,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     input: {
       borderWidth: 1.5,
@@ -2511,13 +2641,24 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderRadius: 12,
       paddingHorizontal: 16,
       paddingVertical: 14,
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      backgroundColor: 'rgba(0,0,0,0.02)',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.shadowColor + '05' // ~2% opacity
+          : theme.colors.cardBackground,
     },
     inputFocused: {
-      borderColor: theme.colors.primary,
-      backgroundColor: 'rgba(0,0,0,0.03)',
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.shadowColor + '08' // ~3% opacity
+          : theme.colors.cardBackground,
     },
     inputWithIcons: {
       flexDirection: 'row',
@@ -2538,7 +2679,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       width: 48,
       height: 48,
       borderRadius: 12,
-      backgroundColor: theme.colors.primary + '20',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '20'
+          : theme.colors.bitcoinOrange + '20',
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -2552,9 +2696,11 @@ const MobileNostrPairing = ({navigation}: any) => {
       paddingVertical: 4,
     },
     deviceInfoSingleLine: {
-      fontSize: 14,
-      fontWeight: '600',
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily:
+        theme.fontFamilies?.monospace ||
+        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.text,
       flex: 1,
       textAlign: 'center',
@@ -2564,14 +2710,22 @@ const MobileNostrPairing = ({navigation}: any) => {
       flex: 1,
     },
     hintBox: {
-      backgroundColor: theme.colors.primary + '10',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '10'
+          : theme.colors.bitcoinOrange + '20',
       borderRadius: 8,
       padding: 6,
       borderLeftWidth: 3,
-      borderLeftColor: theme.colors.primary,
+      borderLeftColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     hintText: {
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       lineHeight: 18,
     },
@@ -2587,14 +2741,23 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderColor: theme.colors.border + '30',
     },
     sendModeDeviceItemSelected: {
-      borderColor: theme.colors.primary,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
       borderWidth: 1.5,
-      backgroundColor: theme.colors.primary + '08',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '08'
+          : theme.colors.bitcoinOrange + '20',
     },
     sendModeDeviceIcon: {
       width: 20,
       height: 20,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
       marginRight: 10,
     },
     sendModeDeviceContent: {
@@ -2604,22 +2767,31 @@ const MobileNostrPairing = ({navigation}: any) => {
       justifyContent: 'space-between',
     },
     sendModeDeviceLabel: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily:
+        theme.fontFamilies?.monospace ||
+        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.text,
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     },
     sendModeDeviceNpub: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily:
+        theme.fontFamilies?.monospace ||
+        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.textSecondary,
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
       marginLeft: 8,
     },
     sendModeDeviceBadge: {
-      fontSize: 11,
-      color: theme.colors.primary,
+      fontSize: theme.fontSizes?.xs || 11,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
       marginTop: 2,
-      fontWeight: '500',
     },
     sendModeCheckbox: {
       width: 22,
@@ -2633,13 +2805,20 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginLeft: 8,
     },
     sendModeCheckboxChecked: {
-      borderColor: theme.colors.primary,
-      backgroundColor: theme.colors.primary,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     sendModeCheckmark: {
       color: theme.colors.background,
-      fontSize: 14,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     buttonHalf: {
       flex: 0.48,
@@ -2658,18 +2837,25 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderColor: theme.colors.border,
     },
     buttonTextCompact: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     iconImageCompact: {
       width: 18,
       height: 18,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     iconImage: {
       width: 24,
       height: 24,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     iconPrepare: {
       width: 24,
@@ -2684,19 +2870,25 @@ const MobileNostrPairing = ({navigation}: any) => {
     checkIconLeft: {
       width: 20,
       height: 20,
-      tintColor: '#4CAF50',
+      tintColor: theme.colors.received,
       marginRight: 8,
     },
     qrContainer: {
-      backgroundColor: 'white',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? 'white'
+          : theme.colors.cardBackground,
       padding: 16,
       borderRadius: 12,
       alignItems: 'center',
       marginBottom: 16,
     },
     connectionDetailsText: {
-      fontSize: 12,
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily:
+        theme.fontFamilies?.monospace ||
+        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.textSecondary,
       marginBottom: 12,
       textAlign: 'center',
@@ -2708,7 +2900,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     button: {
       flex: 1,
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
       borderRadius: 12,
       paddingVertical: 14,
       alignItems: 'center',
@@ -2722,9 +2917,13 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderColor: theme.colors.border,
     },
     buttonText: {
-      color: theme.colors.background,
-      fontSize: 16,
-      fontWeight: '600',
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.text,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     buttonTextSecondary: {
       color: theme.colors.secondary,
@@ -2736,14 +2935,18 @@ const MobileNostrPairing = ({navigation}: any) => {
       width: 8,
       height: 8,
       borderRadius: 4,
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
       marginRight: 8,
     },
     modalSubtitle: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 16,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'center',
       lineHeight: 20,
     },
@@ -2760,10 +2963,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       alignItems: 'center',
     },
     progressPercentage: {
-      fontSize: 14,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'center',
       marginBottom: 16,
     },
@@ -2775,14 +2978,20 @@ const MobileNostrPairing = ({navigation}: any) => {
       width: 50,
       height: 50,
       borderRadius: 25,
-      backgroundColor: theme.colors.primary + '20',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '20'
+          : theme.colors.bitcoinOrange + '20',
       alignItems: 'center',
       justifyContent: 'center',
     },
     finalizingModalIcon: {
       width: 24,
       height: 24,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     statusContainer: {
       width: '100%',
@@ -2794,27 +3003,32 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginBottom: 8,
     },
     finalizingStatusText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontWeight: '500',
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       flex: 1,
     },
     finalizingCountdownText: {
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'center',
     },
     statusCheck: {
       width: 20,
       height: 20,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     statusText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontWeight: '500',
     },
     statusTextSecondary: {
       color: theme.colors.textSecondary,
@@ -2824,7 +3038,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       alignItems: 'center',
     },
     progressText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginTop: 8,
     },
@@ -2837,41 +3053,59 @@ const MobileNostrPairing = ({navigation}: any) => {
       width: 250,
       height: 250,
       borderWidth: 2,
-      borderColor: theme.colors.primary,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
       borderRadius: 12,
     },
     closeScannerButton: {
       position: 'absolute',
       bottom: 40,
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
       paddingHorizontal: 24,
       paddingVertical: 12,
       borderRadius: 12,
     },
     closeScannerButtonText: {
-      color: theme.colors.background,
-      fontSize: 16,
-      fontWeight: '600',
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.text,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     cameraNotFound: {
       color: theme.colors.text,
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     sessionInfo: {
       marginTop: 12,
       padding: 12,
-      backgroundColor: 'rgba(0,0,0,0.02)',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.shadowColor + '05' // ~2% opacity
+          : theme.colors.cardBackground,
       borderRadius: 8,
     },
     sessionInfoText: {
-      fontSize: 11,
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      fontSize: theme.fontSizes?.xs || 11,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily:
+        theme.fontFamilies?.monospace ||
+        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.textSecondary,
       marginBottom: 4,
     },
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.75)',
+      backgroundColor: theme.colors.modalBackdrop,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -2880,7 +3114,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderRadius: 16,
       width: '85%',
       maxWidth: 400,
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 10},
       shadowOpacity: 0.3,
       shadowRadius: 20,
@@ -2898,12 +3132,15 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderBottomColor: theme.colors.border + '40',
     },
     qrModalTitle: {
-      fontSize: 18,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     qrModalDescription: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
       marginTop: 12,
@@ -2920,9 +3157,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderColor: theme.colors.border + '10',
     },
     qrModalCloseText: {
-      fontSize: 18,
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontWeight: '600',
     },
     qrModalBody: {
       padding: 24,
@@ -2938,7 +3176,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       alignItems: 'center',
     },
     sectionSubtitle: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginTop: 4,
     },
@@ -2946,7 +3186,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       width: 36,
       height: 36,
       borderRadius: 18,
-      backgroundColor: theme.colors.primary + '20',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '20'
+          : theme.colors.bitcoinOrange + '20',
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: 12,
@@ -2954,7 +3197,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     helpIcon: {
       width: 20,
       height: 20,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     stepIndicatorContainer: {
       marginBottom: 8,
@@ -2977,12 +3223,19 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderColor: theme.colors.border,
     },
     stepCircleCompleted: {
-      backgroundColor: theme.colors.primary,
-      borderColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     stepNumber: {
-      fontSize: 14,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
     },
     stepNumberCompleted: {
@@ -3001,7 +3254,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginTop: 4,
     },
     stepLabel: {
-      fontSize: 11,
+      fontSize: theme.fontSizes?.xs || 11,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
       flex: 1,
@@ -3015,8 +3270,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderColor: theme.colors.border + '40',
     },
     collapsibleHeaderText: {
-      fontSize: 13,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
     },
     collapsibleContent: {
@@ -3036,7 +3292,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     primaryActionButton: {
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
       paddingHorizontal: 16,
       paddingVertical: 10,
       borderRadius: 8,
@@ -3054,15 +3313,23 @@ const MobileNostrPairing = ({navigation}: any) => {
       opacity: 0.5,
     },
     emptyStateText: {
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
       paddingHorizontal: 20,
       lineHeight: 18,
     },
     readyCard: {
-      backgroundColor: theme.colors.primary + '10',
-      borderColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '10'
+          : theme.colors.bitcoinOrange + '20',
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
       borderWidth: 2,
     },
     helpModalBody: {
@@ -3073,23 +3340,32 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginBottom: 24,
     },
     helpTitle: {
-      fontSize: 16,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 8,
     },
     helpText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       lineHeight: 20,
     },
     inputError: {
-      borderColor: theme.colors.danger || '#FF3B30',
-      backgroundColor: (theme.colors.danger || '#FF3B30') + '10',
+      borderColor: theme.colors.danger,
+      backgroundColor: theme.colors.danger + '1A', // ~10% opacity
     },
     inputSuccess: {
-      borderColor: theme.colors.primary,
-      backgroundColor: theme.colors.primary + '10',
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '10'
+          : theme.colors.bitcoinOrange + '20',
     },
     inputValidating: {
       borderColor: theme.colors.textSecondary,
@@ -3098,15 +3374,16 @@ const MobileNostrPairing = ({navigation}: any) => {
     errorIndicator: {
       marginTop: 8,
       padding: 8,
-      backgroundColor: (theme.colors.danger || '#FF3B30') + '10',
+      backgroundColor: theme.colors.danger + '1A', // ~10% opacity
       borderRadius: 6,
       borderLeftWidth: 3,
-      borderLeftColor: theme.colors.danger || '#FF3B30',
+      borderLeftColor: theme.colors.danger,
     },
     errorText: {
-      fontSize: 12,
-      color: theme.colors.danger || '#FF3B30',
-      fontWeight: '500',
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.danger,
     },
     validatingIndicator: {
       width: 48,
@@ -3115,9 +3392,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       justifyContent: 'center',
     },
     validatingText: {
-      fontSize: 18,
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
-      fontWeight: '600',
     },
     checkboxContainer: {
       flexDirection: 'row',
@@ -3137,16 +3415,25 @@ const MobileNostrPairing = ({navigation}: any) => {
       justifyContent: 'center',
     },
     checkboxChecked: {
-      backgroundColor: theme.colors.primary,
-      borderColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     checkboxCheckmark: {
       color: theme.colors.background,
-      fontSize: 16,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     checkboxLabel: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       flex: 1,
     },
@@ -3157,7 +3444,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       width: '90%',
       maxWidth: 400,
       alignItems: 'center',
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 8},
       shadowOpacity: 0.25,
       shadowRadius: 16,
@@ -3171,24 +3458,33 @@ const MobileNostrPairing = ({navigation}: any) => {
       width: 64,
       height: 64,
       borderRadius: 32,
-      backgroundColor: theme.colors.primary + '20',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '20'
+          : theme.colors.bitcoinOrange + '20',
       alignItems: 'center',
       justifyContent: 'center',
     },
     preparingModalIcon: {
       width: 32,
       height: 32,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     preparingModalTitle: {
-      fontSize: 20,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       textAlign: 'center',
       marginBottom: 8,
     },
     preparingModalSubtitle: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
       marginBottom: 24,
@@ -3223,16 +3519,22 @@ const MobileNostrPairing = ({navigation}: any) => {
       width: 8,
       height: 8,
       borderRadius: 4,
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
       marginRight: 8,
     },
     preparingStatusText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontWeight: '500',
     },
     preparingCountdownText: {
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
     },
@@ -3251,7 +3553,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     backupButton: {
       marginTop: 12,
-      backgroundColor: theme.colors.subPrimary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.subPrimary
+          : theme.colors.bitcoinOrange,
       width: '100%',
       borderRadius: 12,
       paddingVertical: 14,
@@ -3266,10 +3571,13 @@ const MobileNostrPairing = ({navigation}: any) => {
       elevation: 4,
     },
     backupButtonText: {
-      color: theme.colors.background,
-      fontSize: 16,
-      fontWeight: '600',
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.background
+          : theme.colors.text,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       textAlign: 'center',
       lineHeight: 22,
     },
@@ -3289,19 +3597,21 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     backupConfirmationIconText: {
       color: theme.colors.background,
-      fontSize: 14,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     backupConfirmationTitle: {
-      fontSize: 18,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     backupConfirmationDescription: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       lineHeight: 20,
       marginBottom: 10,
     },
@@ -3325,16 +3635,17 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginLeft: 12,
     },
     backupCheckboxLabel: {
-      fontSize: 15,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       marginBottom: 2,
     },
     backupCheckboxHint: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       fontStyle: 'italic',
     },
     backupCheckIcon: {
@@ -3347,20 +3658,30 @@ const MobileNostrPairing = ({navigation}: any) => {
       height: 24,
       borderRadius: 6,
       borderWidth: 2,
-      borderColor: theme.colors.primary,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
       justifyContent: 'center',
       alignItems: 'center',
       backgroundColor: 'transparent',
       marginRight: 12,
     },
     enhancedCheckboxChecked: {
-      backgroundColor: theme.colors.primary,
-      borderColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     checkmark: {
       color: theme.colors.background,
-      fontSize: 16,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     enhancedCheckboxContainer: {
       flexDirection: 'row',
@@ -3373,27 +3694,32 @@ const MobileNostrPairing = ({navigation}: any) => {
       backgroundColor: 'transparent',
     },
     enhancedCheckboxContainerChecked: {
-      backgroundColor: theme.colors.primary + '10',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '10'
+          : theme.colors.bitcoinOrange + '20',
     },
     checkboxTextContainer: {
       flex: 1,
       padding: 8,
     },
     enhancedCheckboxLabel: {
-      fontSize: 15,
-      fontWeight: '500',
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     warningHint: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       marginTop: 2,
       fontStyle: 'italic',
     },
     warningIcon: {
-      fontSize: 18,
+      fontSize: theme.fontSizes?.xl || 18,
+      fontFamily: theme.fontFamilies?.regular,
       marginLeft: 8,
     },
     finalStepHeader: {
@@ -3410,24 +3736,28 @@ const MobileNostrPairing = ({navigation}: any) => {
     finalStepPhoneIcon: {
       width: 24,
       height: 24,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     finalStepTextContainer: {
       flex: 1,
     },
     finalStepTitle: {
-      fontSize: 18,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       marginBottom: 4,
     },
     finalStepDescription: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 12,
       lineHeight: 20,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     participantsList: {
       marginTop: 8,
@@ -3440,8 +3770,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderColor: theme.colors.border + '30',
     },
     participantsListTitle: {
-      fontSize: 13,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 8,
     },
@@ -3451,32 +3782,41 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginBottom: 8,
     },
     bulletPoint: {
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.primary,
       marginRight: 8,
       marginTop: 2,
-      fontWeight: 'bold',
     },
     participantText: {
       flex: 1,
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       lineHeight: 18,
     },
     participantLabel: {
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     localDeviceBadge: {
-      fontSize: 12,
-      fontWeight: '500',
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.primary,
       fontStyle: 'italic',
     },
     participantNpub: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily:
+        theme.fontFamilies?.monospace ||
+        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.textSecondary,
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
       marginTop: 2,
     },
     participantDevicesInfo: {
@@ -3486,8 +3826,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderTopColor: theme.colors.border + '40',
     },
     participantDevicesInfoTitle: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 10,
     },
@@ -3511,18 +3852,25 @@ const MobileNostrPairing = ({navigation}: any) => {
     participantDeviceIcon: {
       width: 18,
       height: 18,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
       marginRight: 10,
     },
     participantDeviceLabel: {
-      fontSize: 13,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     participantDeviceNpub: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily:
+        theme.fontFamilies?.monospace ||
+        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
       color: theme.colors.textSecondary,
-      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
       textAlign: 'right',
     },
     twoPhonesContainer: {
@@ -3552,7 +3900,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     proceedButtonOn: {
       marginTop: 16,
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
       borderRadius: 12,
       paddingVertical: 16,
       paddingHorizontal: 24,
@@ -3579,10 +3930,13 @@ const MobileNostrPairing = ({navigation}: any) => {
       opacity: 0.6,
     },
     pairButtonText: {
-      color: theme.colors.textOnPrimary,
-      fontSize: 16,
-      fontWeight: '600',
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.text,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     buttonContent: {
       flexDirection: 'row',
@@ -3593,7 +3947,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     buttonIcon: {
       width: 20,
       height: 20,
-      tintColor: theme.colors.background,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.text,
     },
     modalContent: {
       backgroundColor: theme.colors.cardBackground,
@@ -3601,7 +3958,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       padding: 24,
       width: '90%',
       maxWidth: 400,
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 10},
       shadowOpacity: 0.3,
       shadowRadius: 20,
@@ -3616,30 +3973,34 @@ const MobileNostrPairing = ({navigation}: any) => {
       width: 32,
       height: 32,
       marginRight: 12,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     modalTitle: {
-      fontSize: 20,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     modalDescription: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 20,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       lineHeight: 20,
     },
     passwordContainer: {
       marginBottom: 16,
     },
     passwordLabel: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 8,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     passwordInputContainer: {
       flexDirection: 'row',
@@ -3653,9 +4014,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     passwordInput: {
       flex: 1,
       paddingVertical: 12,
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     eyeButton: {
       padding: 8,
@@ -3663,7 +4025,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     eyeIcon: {
       width: 20,
       height: 20,
-      tintColor: theme.colors.textSecondary,
+      tintColor: theme.colors.text,
     },
     strengthContainer: {
       marginTop: 8,
@@ -3680,22 +4042,23 @@ const MobileNostrPairing = ({navigation}: any) => {
       borderRadius: 2,
     },
     strengthText: {
-      fontSize: 12,
-      fontWeight: '600',
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
     },
     requirementsContainer: {
       marginTop: 8,
       paddingLeft: 4,
     },
     requirementText: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 4,
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
     },
     errorInput: {
-      borderColor: theme.colors.danger || '#FF3B30',
+      borderColor: theme.colors.danger,
     },
     modalActions: {
       flexDirection: 'row',
@@ -3714,7 +4077,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       backgroundColor: theme.colors.border,
     },
     confirmButton: {
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     disabledButton: {
       opacity: 0.5,
@@ -3726,11 +4092,11 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     cancelLinkText: {
       color: theme.colors.textSecondary,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       textDecorationLine: 'underline',
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
       textAlign: 'center',
-      fontSize: 14,
       marginTop: 12,
     },
     retryButton: {
@@ -3750,10 +4116,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     retryLink: {
       color: theme.colors.background,
-      fontWeight: '600',
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       textAlign: 'center',
-      fontSize: 14,
       marginLeft: 6,
     },
     buttonFlex: {
@@ -3773,10 +4139,83 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     cancelLink: {
       color: theme.colors.secondary,
-      fontWeight: '600',
-      fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
       textAlign: 'center',
-      fontSize: 14,
+    },
+    transactionItem: {
+      borderBottomWidth: 0,
+      paddingVertical: 4,
+      marginBottom: 4,
+    },
+    transactionLabel: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text,
+      marginBottom: 2,
+      textAlign: 'left',
+      lineHeight: 16,
+    },
+    transactionItemLabel: {
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textSecondary,
+      marginBottom: 4,
+    },
+    transactionItemValue: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text,
+      textAlign: 'right',
+    },
+    addressContainer: {
+      backgroundColor: theme.colors.background,
+      paddingVertical: 4,
+      paddingHorizontal: 6,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    addressValue: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily:
+        theme.fontFamilies?.monospace ||
+        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+      color: theme.colors.text,
+      textAlign: 'left',
+      lineHeight: 14,
+    },
+    amountContainer: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      backgroundColor: theme.colors.background,
+      paddingVertical: 4,
+      paddingHorizontal: 6,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    amountValue: {
+      fontSize: theme.fontSizes?.md || 15,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text,
+      textAlign: 'left',
+      lineHeight: 14,
+    },
+    fiatValue: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontWeight: (theme.fontWeights?.normal || '400') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textSecondary,
+      textAlign: 'right',
+      lineHeight: 14,
     },
   });
 
@@ -3841,18 +4280,21 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 width: 20,
                                 height: 20,
                                 marginRight: 8,
-                                tintColor: theme.colors.primary,
+                                tintColor:
+                                  theme.colors.background === '#ffffff'
+                                    ? theme.colors.primary
+                                    : theme.colors.bitcoinOrange,
                               }}
                               resizeMode="contain"
                             />
                             <Text
                               style={{
-                                fontSize: 18,
-                                fontWeight: '700',
+                                fontSize: theme.fontSizes?.md || 15,
+                                fontWeight: (theme.fontWeights?.bold ||
+                                  '700') as any,
+                                fontFamily: theme.fontFamilies?.regular,
                                 color: theme.colors.text,
                                 textAlign: 'center',
-                                fontFamily:
-                                  Platform.OS === 'ios' ? 'System' : 'Roboto',
                               }}>
                               {isSignPSBT
                                 ? 'PSBT Co-Signing'
@@ -3895,379 +4337,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                     </View>
                   </View>
 
-                  {/* PSBT Info Section */}
-                  {isSignPSBT && route.params?.psbtBase64 && (
-                    <View style={styles.section}>
-                      <View
-                        style={{
-                          backgroundColor: theme.colors.cardBackground,
-                          borderRadius: 12,
-                          padding: 12,
-                          borderWidth: 1,
-                          borderColor: theme.colors.border + '40',
-                        }}>
-                        <Text
-                          style={{
-                            fontSize: 14,
-                            fontWeight: '700',
-                            color: theme.colors.text,
-                            marginBottom: 8,
-                            textAlign: 'center',
-                          }}>
-                          PSBT Ready to Sign
-                        </Text>
-                        {psbtDetails ? (
-                          <>
-                            <View
-                              style={{
-                                flexDirection: 'row',
-                                justifyContent: 'space-between',
-                                marginBottom: 6,
-                              }}>
-                              <Text
-                                style={{
-                                  fontSize: 12,
-                                  color: theme.colors.textSecondary,
-                                }}>
-                                Inputs:
-                              </Text>
-                              <Text
-                                style={{
-                                  fontSize: 12,
-                                  color: theme.colors.text,
-                                  fontWeight: '600',
-                                }}>
-                                {psbtDetails.inputs.length}
-                              </Text>
-                            </View>
-                            <View
-                              style={{
-                                flexDirection: 'row',
-                                justifyContent: 'space-between',
-                                marginBottom: 6,
-                              }}>
-                              <Text
-                                style={{
-                                  fontSize: 12,
-                                  color: theme.colors.textSecondary,
-                                }}>
-                                Outputs:
-                              </Text>
-                              <Text
-                                style={{
-                                  fontSize: 12,
-                                  color: theme.colors.text,
-                                  fontWeight: '600',
-                                }}>
-                                {psbtDetails.outputs.length}
-                              </Text>
-                            </View>
-                            <View
-                              style={{
-                                flexDirection: 'row',
-                                justifyContent: 'space-between',
-                                marginBottom: 6,
-                              }}>
-                              <Text
-                                style={{
-                                  fontSize: 12,
-                                  color: theme.colors.textSecondary,
-                                }}>
-                                Total Input:
-                              </Text>
-                              <Text
-                                style={{
-                                  fontSize: 13,
-                                  color: theme.colors.text,
-                                  fontWeight: '600',
-                                }}>
-                                {sat2btcStr(String(psbtDetails.totalInput))} BTC
-                              </Text>
-                            </View>
-                            <View
-                              style={{
-                                flexDirection: 'row',
-                                justifyContent: 'space-between',
-                                marginBottom: 6,
-                              }}>
-                              <Text
-                                style={{
-                                  fontSize: 12,
-                                  color: theme.colors.textSecondary,
-                                }}>
-                                Total Output:
-                              </Text>
-                              <Text
-                                style={{
-                                  fontSize: 13,
-                                  color: theme.colors.text,
-                                  fontWeight: '600',
-                                }}>
-                                {sat2btcStr(String(psbtDetails.totalOutput))}{' '}
-                                BTC
-                              </Text>
-                            </View>
-                            <View
-                              style={{
-                                flexDirection: 'row',
-                                justifyContent: 'space-between',
-                                marginBottom: 0,
-                              }}>
-                              <Text
-                                style={{
-                                  fontSize: 12,
-                                  color: theme.colors.textSecondary,
-                                }}>
-                                Fee:
-                              </Text>
-                              <Text
-                                style={{
-                                  fontSize: 13,
-                                  color: theme.colors.text,
-                                  fontWeight: '600',
-                                }}>
-                                {sat2btcStr(String(psbtDetails.fee))} BTC
-                              </Text>
-                            </View>
-                            {psbtDetails.derivePaths &&
-                              psbtDetails.derivePaths.length > 1 && (
-                                <View
-                                  style={{
-                                    marginTop: 4,
-                                    paddingTop: 4,
-                                    borderTopWidth: 1,
-                                    borderTopColor: theme.colors.border,
-                                  }}>
-                                  <Text
-                                    style={{
-                                      fontSize: 10,
-                                      color: theme.colors.textSecondary,
-                                    }}>
-                                    {psbtDetails.derivePaths.length} different
-                                    paths
-                                  </Text>
-                                </View>
-                              )}
-                          </>
-                        ) : (
-                          <Text
-                            style={{
-                              fontSize: 12,
-                              color: theme.colors.text,
-                              textAlign: 'center',
-                            }}>
-                            {route.params.psbtBase64
-                              ? `PSBT (${Math.round(
-                                  (route.params.psbtBase64.length || 0) / 1024,
-                                )} KB) - Parsing...`
-                              : 'No PSBT data'}
-                          </Text>
-                        )}
-                      </View>
-                    </View>
-                  )}
-
-                  {/* Send Mode: Device Selection - Show current device and allow selecting one other */}
-                  {(isSendBitcoin || isSignPSBT) && (
-                    <View style={styles.section}>
-                      <Text
-                        style={{
-                          fontSize: 16,
-                          fontWeight: '700',
-                          color: theme.colors.text,
-                          marginBottom: 8,
-                        }}>
-                        This Device
-                      </Text>
-                      {sendModeDevices.length === 0 ? (
-                        <Text style={{color: theme.colors.text, opacity: 0.6}}>
-                          Loading...
-                        </Text>
-                      ) : (
-                        (() => {
-                          // Separate local and other devices
-                          const localDevice = sendModeDevices.find(
-                            d => d.isLocal,
-                          );
-                          const otherDevices = sendModeDevices
-                            .filter(d => !d.isLocal)
-                            .sort((a, b) => a.npub.localeCompare(b.npub));
-
-                          return (
-                            <>
-                              {/* Current Device */}
-                              {localDevice && (
-                                <View
-                                  key={localDevice.keyshareLabel}
-                                  style={[
-                                    styles.sendModeDeviceItem,
-                                    {marginBottom: 24},
-                                  ]}>
-                                  <Image
-                                    source={require('../assets/phone-icon.png')}
-                                    style={styles.sendModeDeviceIcon}
-                                    resizeMode="contain"
-                                  />
-                                  <View style={styles.sendModeDeviceContent}>
-                                    <View style={{flex: 1}}>
-                                      <Text
-                                        style={styles.sendModeDeviceLabel}
-                                        numberOfLines={1}
-                                        ellipsizeMode="tail">
-                                        {localDevice.keyshareLabel}
-                                      </Text>
-                                      <Text style={styles.sendModeDeviceBadge}>
-                                        This device
-                                      </Text>
-                                    </View>
-                                    <Text
-                                      style={styles.sendModeDeviceNpub}
-                                      numberOfLines={1}
-                                      ellipsizeMode="middle">
-                                      {shortenNpub(localDevice.npub, 8, 6)}
-                                    </Text>
-                                  </View>
-                                </View>
-                              )}
-
-                              {/* Select One Other Device */}
-                              {otherDevices.length > 0 && (
-                                <>
-                                  <Text
-                                    style={{
-                                      fontSize: 16,
-                                      fontWeight: '700',
-                                      color: theme.colors.text,
-                                      marginBottom: 12,
-                                      marginTop: 8,
-                                    }}>
-                                    {isTrio
-                                      ? 'Select one device to co-sign:'
-                                      : 'Co-signing device:'}
-                                  </Text>
-                                  {otherDevices.map(dev => {
-                                    // In duo mode, use View (not selectable)
-                                    // In trio mode, use TouchableOpacity (selectable)
-                                    if (!isTrio) {
-                                      return (
-                                        <View
-                                          key={dev.keyshareLabel}
-                                          style={styles.sendModeDeviceItem}>
-                                          <Image
-                                            source={require('../assets/phone-icon.png')}
-                                            style={styles.sendModeDeviceIcon}
-                                            resizeMode="contain"
-                                          />
-                                          <View
-                                            style={
-                                              styles.sendModeDeviceContent
-                                            }>
-                                            <Text
-                                              style={styles.sendModeDeviceLabel}
-                                              numberOfLines={1}
-                                              ellipsizeMode="tail">
-                                              {dev.keyshareLabel}
-                                            </Text>
-                                            <Text
-                                              style={styles.sendModeDeviceNpub}
-                                              numberOfLines={1}
-                                              ellipsizeMode="middle">
-                                              {shortenNpub(dev.npub, 8, 6)}
-                                            </Text>
-                                          </View>
-                                          {selectedPeerNpub === dev.npub && (
-                                            <View
-                                              style={[
-                                                styles.sendModeCheckbox,
-                                                styles.sendModeCheckboxChecked,
-                                              ]}>
-                                              <Text
-                                                style={
-                                                  styles.sendModeCheckmark
-                                                }>
-                                                ✓
-                                              </Text>
-                                            </View>
-                                          )}
-                                        </View>
-                                      );
-                                    }
-
-                                    // Trio mode: selectable
-                                    return (
-                                      <TouchableOpacity
-                                        key={dev.keyshareLabel}
-                                        style={[
-                                          styles.sendModeDeviceItem,
-                                          selectedPeerNpub === dev.npub &&
-                                            styles.sendModeDeviceItemSelected,
-                                        ]}
-                                        onPress={() => {
-                                          HapticFeedback.medium();
-                                          // In trio, allow user to select any device
-                                          // If clicking the same device, deselect (allow empty selection)
-                                          // If clicking different device, select that one
-                                          setSelectedPeerNpub(
-                                            selectedPeerNpub === dev.npub
-                                              ? ''
-                                              : dev.npub,
-                                          );
-                                          dbg(
-                                            'User selected peer in trio mode:',
-                                            dev.npub === selectedPeerNpub
-                                              ? 'deselected'
-                                              : dev.npub.substring(0, 20) +
-                                                  '...',
-                                          );
-                                        }}
-                                        activeOpacity={0.7}>
-                                        <Image
-                                          source={require('../assets/phone-icon.png')}
-                                          style={styles.sendModeDeviceIcon}
-                                          resizeMode="contain"
-                                        />
-                                        <View
-                                          style={styles.sendModeDeviceContent}>
-                                          <Text
-                                            style={styles.sendModeDeviceLabel}
-                                            numberOfLines={1}
-                                            ellipsizeMode="tail">
-                                            {dev.keyshareLabel}
-                                          </Text>
-                                          <Text
-                                            style={styles.sendModeDeviceNpub}
-                                            numberOfLines={1}
-                                            ellipsizeMode="middle">
-                                            {shortenNpub(dev.npub, 8, 6)}
-                                          </Text>
-                                        </View>
-                                        <View
-                                          style={[
-                                            styles.sendModeCheckbox,
-                                            selectedPeerNpub === dev.npub &&
-                                              styles.sendModeCheckboxChecked,
-                                          ]}>
-                                          {selectedPeerNpub === dev.npub && (
-                                            <Text
-                                              style={styles.sendModeCheckmark}>
-                                              ✓
-                                            </Text>
-                                          )}
-                                        </View>
-                                      </TouchableOpacity>
-                                    );
-                                  })}
-                                </>
-                              )}
-                            </>
-                          );
-                        })()
-                      )}
-                    </View>
-                  )}
-
-                  {/* Relay Configuration - Collapsible - Hide when Final Step is shown */}
-                  {!showFinalStep && (
+                  {/* Relay Configuration - Show in send Bitcoin/PSBT mode, right after title */}
+                  {(isSendBitcoin || isSignPSBT) && !showFinalStep && (
                     <View style={styles.section}>
                       <TouchableOpacity
                         style={styles.collapsibleHeader}
@@ -4285,7 +4356,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                         <View style={styles.collapsibleContent}>
                           <Text
                             style={{
-                              fontSize: 12,
+                              fontSize: theme.fontSizes?.sm || 12,
+                              fontWeight: (theme.fontWeights?.normal ||
+                                '400') as any,
+                              fontFamily: theme.fontFamilies?.regular,
                               color: theme.colors.textSecondary,
                               marginBottom: 8,
                             }}>
@@ -4317,6 +4391,443 @@ const MobileNostrPairing = ({navigation}: any) => {
                           />
                         </View>
                       )}
+                    </View>
+                  )}
+
+                  {/* PSBT Info Section */}
+                  {isSignPSBT && route.params?.psbtBase64 && (
+                    <View style={styles.section}>
+                      <View
+                        style={{
+                          backgroundColor: theme.colors.cardBackground,
+                          borderRadius: 12,
+                          padding: 12,
+                          borderWidth: 1,
+                          borderColor: theme.colors.border + '40',
+                        }}>
+                        <Text
+                          style={{
+                            fontSize: theme.fontSizes?.base || 14,
+                            fontWeight: (theme.fontWeights?.bold ||
+                              '700') as any,
+                            fontFamily: theme.fontFamilies?.regular,
+                            color: theme.colors.text,
+                            marginBottom: 8,
+                            textAlign: 'center',
+                          }}>
+                          PSBT Ready to Sign
+                        </Text>
+                        {psbtDetails ? (
+                          <>
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                justifyContent: 'space-between',
+                                marginBottom: 6,
+                              }}>
+                              <Text
+                                style={{
+                                  fontSize: theme.fontSizes?.sm || 12,
+                                  fontWeight: (theme.fontWeights?.normal ||
+                                    '400') as any,
+                                  fontFamily: theme.fontFamilies?.regular,
+                                  color: theme.colors.textSecondary,
+                                }}>
+                                Inputs:
+                              </Text>
+                              <Text
+                                style={{
+                                  fontSize: theme.fontSizes?.sm || 12,
+                                  fontWeight: (theme.fontWeights?.semibold ||
+                                    '600') as any,
+                                  fontFamily: theme.fontFamilies?.regular,
+                                  color: theme.colors.text,
+                                }}>
+                                {psbtDetails.inputs.length}
+                              </Text>
+                            </View>
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                justifyContent: 'space-between',
+                                marginBottom: 6,
+                              }}>
+                              <Text
+                                style={{
+                                  fontSize: theme.fontSizes?.sm || 12,
+                                  fontWeight: (theme.fontWeights?.normal ||
+                                    '400') as any,
+                                  fontFamily: theme.fontFamilies?.regular,
+                                  color: theme.colors.textSecondary,
+                                }}>
+                                Outputs:
+                              </Text>
+                              <Text
+                                style={{
+                                  fontSize: theme.fontSizes?.sm || 12,
+                                  fontWeight: (theme.fontWeights?.semibold ||
+                                    '600') as any,
+                                  fontFamily: theme.fontFamilies?.regular,
+                                  color: theme.colors.text,
+                                }}>
+                                {psbtDetails.outputs.length}
+                              </Text>
+                            </View>
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                justifyContent: 'space-between',
+                                marginBottom: 6,
+                              }}>
+                              <Text
+                                style={{
+                                  fontSize: theme.fontSizes?.sm || 12,
+                                  fontWeight: (theme.fontWeights?.normal ||
+                                    '400') as any,
+                                  fontFamily: theme.fontFamilies?.regular,
+                                  color: theme.colors.textSecondary,
+                                }}>
+                                Total Input:
+                              </Text>
+                              <Text
+                                style={{
+                                  fontSize: theme.fontSizes?.base || 13,
+                                  fontWeight: (theme.fontWeights?.semibold ||
+                                    '600') as any,
+                                  fontFamily: theme.fontFamilies?.regular,
+                                  color: theme.colors.text,
+                                }}>
+                                {sat2btcStr(String(psbtDetails.totalInput))} BTC
+                              </Text>
+                            </View>
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                justifyContent: 'space-between',
+                                marginBottom: 6,
+                              }}>
+                              <Text
+                                style={{
+                                  fontSize: theme.fontSizes?.sm || 12,
+                                  fontWeight: (theme.fontWeights?.normal ||
+                                    '400') as any,
+                                  fontFamily: theme.fontFamilies?.regular,
+                                  color: theme.colors.textSecondary,
+                                }}>
+                                Total Output:
+                              </Text>
+                              <Text
+                                style={{
+                                  fontSize: theme.fontSizes?.base || 13,
+                                  fontWeight: (theme.fontWeights?.semibold ||
+                                    '600') as any,
+                                  fontFamily: theme.fontFamilies?.regular,
+                                  color: theme.colors.text,
+                                }}>
+                                {sat2btcStr(String(psbtDetails.totalOutput))}{' '}
+                                BTC
+                              </Text>
+                            </View>
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                justifyContent: 'space-between',
+                                marginBottom: 0,
+                              }}>
+                              <Text
+                                style={{
+                                  fontSize: theme.fontSizes?.sm || 12,
+                                  fontWeight: (theme.fontWeights?.normal ||
+                                    '400') as any,
+                                  fontFamily: theme.fontFamilies?.regular,
+                                  color: theme.colors.textSecondary,
+                                }}>
+                                Fee:
+                              </Text>
+                              <Text
+                                style={{
+                                  fontSize: theme.fontSizes?.base || 13,
+                                  fontWeight: (theme.fontWeights?.semibold ||
+                                    '600') as any,
+                                  fontFamily: theme.fontFamilies?.regular,
+                                  color: theme.colors.text,
+                                }}>
+                                {sat2btcStr(String(psbtDetails.fee))} BTC
+                              </Text>
+                            </View>
+                            {psbtDetails.derivePaths &&
+                              psbtDetails.derivePaths.length > 1 && (
+                                <View
+                                  style={{
+                                    marginTop: 4,
+                                    paddingTop: 4,
+                                    borderTopWidth: 1,
+                                    borderTopColor: theme.colors.border,
+                                  }}>
+                                  <Text
+                                    style={{
+                                      fontSize: theme.fontSizes?.xs || 10,
+                                      fontWeight: (theme.fontWeights?.normal ||
+                                        '400') as any,
+                                      fontFamily: theme.fontFamilies?.regular,
+                                      color: theme.colors.textSecondary,
+                                    }}>
+                                    {psbtDetails.derivePaths.length} different
+                                    paths
+                                  </Text>
+                                </View>
+                              )}
+                          </>
+                        ) : (
+                          <Text
+                            style={{
+                              fontSize: theme.fontSizes?.sm || 12,
+                              fontWeight: (theme.fontWeights?.normal ||
+                                '400') as any,
+                              fontFamily: theme.fontFamilies?.regular,
+                              color: theme.colors.text,
+                              textAlign: 'center',
+                            }}>
+                            {route.params.psbtBase64
+                              ? `PSBT (${Math.round(
+                                  (route.params.psbtBase64.length || 0) / 1024,
+                                )} KB) - Parsing...`
+                              : 'No PSBT data'}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Send Mode: Device Selection - Show current device and allow selecting one other */}
+                  {(isSendBitcoin || isSignPSBT) && (
+                    <View style={styles.section}>
+                      <View
+                        style={{
+                          backgroundColor: theme.colors.cardBackground,
+                          borderRadius: 12,
+                          padding: 12,
+                          borderWidth: 1.5,
+                          borderColor: theme.colors.border,
+                        }}>
+                        <Text
+                          style={{
+                            fontSize: theme.fontSizes?.base || 13,
+                            fontWeight: (theme.fontWeights?.bold ||
+                              '700') as any,
+                            fontFamily: theme.fontFamilies?.regular,
+                            color: theme.colors.text,
+                            marginBottom: 8,
+                          }}>
+                          This Device
+                        </Text>
+                        {sendModeDevices.length === 0 ? (
+                          <Text
+                            style={{color: theme.colors.text, opacity: 0.6}}>
+                            Loading...
+                          </Text>
+                        ) : (
+                          (() => {
+                            // Separate local and other devices
+                            const localDevice = sendModeDevices.find(
+                              d => d.isLocal,
+                            );
+                            const otherDevices = sendModeDevices
+                              .filter(d => !d.isLocal)
+                              .sort((a, b) => a.npub.localeCompare(b.npub));
+
+                            return (
+                              <>
+                                {/* Current Device */}
+                                {localDevice && (
+                                  <View
+                                    key={localDevice.keyshareLabel}
+                                    style={[
+                                      styles.sendModeDeviceItem,
+                                      {marginBottom: 12},
+                                    ]}>
+                                    <Image
+                                      source={require('../assets/phone-icon.png')}
+                                      style={styles.sendModeDeviceIcon}
+                                      resizeMode="contain"
+                                    />
+                                    <View style={styles.sendModeDeviceContent}>
+                                      <View style={{flex: 1}}>
+                                        <Text
+                                          style={styles.sendModeDeviceLabel}
+                                          numberOfLines={1}
+                                          ellipsizeMode="tail">
+                                          {localDevice.keyshareLabel}
+                                        </Text>
+                                        <Text
+                                          style={styles.sendModeDeviceBadge}>
+                                          This device
+                                        </Text>
+                                      </View>
+                                      <Text
+                                        style={styles.sendModeDeviceNpub}
+                                        numberOfLines={1}
+                                        ellipsizeMode="middle">
+                                        {shortenNpub(localDevice.npub, 8, 6)}
+                                      </Text>
+                                    </View>
+                                  </View>
+                                )}
+
+                                {/* Select One Other Device */}
+                                {otherDevices.length > 0 && (
+                                  <>
+                                    <View>
+                                      <Text
+                                        style={{
+                                          fontSize: theme.fontSizes?.base || 13,
+                                          fontWeight: (theme.fontWeights
+                                            ?.bold || '700') as any,
+                                          fontFamily:
+                                            theme.fontFamilies?.regular,
+                                          color: theme.colors.text,
+                                          marginBottom: 8,
+                                        }}>
+                                        {isTrio
+                                          ? 'Select one device to co-sign:'
+                                          : 'Co-signing device:'}
+                                      </Text>
+                                      {otherDevices.map(dev => {
+                                        // In duo mode, use View (not selectable)
+                                        // In trio mode, use TouchableOpacity (selectable)
+                                        if (!isTrio) {
+                                          return (
+                                            <View
+                                              key={dev.keyshareLabel}
+                                              style={styles.sendModeDeviceItem}>
+                                              <Image
+                                                source={require('../assets/phone-icon.png')}
+                                                style={
+                                                  styles.sendModeDeviceIcon
+                                                }
+                                                resizeMode="contain"
+                                              />
+                                              <View
+                                                style={
+                                                  styles.sendModeDeviceContent
+                                                }>
+                                                <Text
+                                                  style={
+                                                    styles.sendModeDeviceLabel
+                                                  }
+                                                  numberOfLines={1}
+                                                  ellipsizeMode="tail">
+                                                  {dev.keyshareLabel}
+                                                </Text>
+                                                <Text
+                                                  style={
+                                                    styles.sendModeDeviceNpub
+                                                  }
+                                                  numberOfLines={1}
+                                                  ellipsizeMode="middle">
+                                                  {shortenNpub(dev.npub, 8, 6)}
+                                                </Text>
+                                              </View>
+                                              {selectedPeerNpub ===
+                                                dev.npub && (
+                                                <View
+                                                  style={[
+                                                    styles.sendModeCheckbox,
+                                                    styles.sendModeCheckboxChecked,
+                                                  ]}>
+                                                  <Text
+                                                    style={
+                                                      styles.sendModeCheckmark
+                                                    }>
+                                                    ✓
+                                                  </Text>
+                                                </View>
+                                              )}
+                                            </View>
+                                          );
+                                        }
+
+                                        // Trio mode: selectable
+                                        return (
+                                          <TouchableOpacity
+                                            key={dev.keyshareLabel}
+                                            style={[
+                                              styles.sendModeDeviceItem,
+                                              selectedPeerNpub === dev.npub &&
+                                                styles.sendModeDeviceItemSelected,
+                                            ]}
+                                            onPress={() => {
+                                              HapticFeedback.medium();
+                                              // In trio, allow user to select any device
+                                              // If clicking the same device, deselect (allow empty selection)
+                                              // If clicking different device, select that one
+                                              setSelectedPeerNpub(
+                                                selectedPeerNpub === dev.npub
+                                                  ? ''
+                                                  : dev.npub,
+                                              );
+                                              dbg(
+                                                'User selected peer in trio mode:',
+                                                dev.npub === selectedPeerNpub
+                                                  ? 'deselected'
+                                                  : dev.npub.substring(0, 20) +
+                                                      '...',
+                                              );
+                                            }}
+                                            activeOpacity={0.7}>
+                                            <Image
+                                              source={require('../assets/phone-icon.png')}
+                                              style={styles.sendModeDeviceIcon}
+                                              resizeMode="contain"
+                                            />
+                                            <View
+                                              style={
+                                                styles.sendModeDeviceContent
+                                              }>
+                                              <Text
+                                                style={
+                                                  styles.sendModeDeviceLabel
+                                                }
+                                                numberOfLines={1}
+                                                ellipsizeMode="tail">
+                                                {dev.keyshareLabel}
+                                              </Text>
+                                              <Text
+                                                style={
+                                                  styles.sendModeDeviceNpub
+                                                }
+                                                numberOfLines={1}
+                                                ellipsizeMode="middle">
+                                                {shortenNpub(dev.npub, 8, 6)}
+                                              </Text>
+                                            </View>
+                                            <View
+                                              style={[
+                                                styles.sendModeCheckbox,
+                                                selectedPeerNpub === dev.npub &&
+                                                  styles.sendModeCheckboxChecked,
+                                              ]}>
+                                              {selectedPeerNpub ===
+                                                dev.npub && (
+                                                <Text
+                                                  style={
+                                                    styles.sendModeCheckmark
+                                                  }>
+                                                  ✓
+                                                </Text>
+                                              )}
+                                            </View>
+                                          </TouchableOpacity>
+                                        );
+                                      })}
+                                    </View>
+                                  </>
+                                )}
+                              </>
+                            );
+                          })()
+                        )}
+                      </View>
                     </View>
                   )}
 
@@ -4427,8 +4938,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                       <View style={styles.section}>
                         <Text
                           style={{
-                            fontSize: 14,
-                            fontWeight: '600',
+                            fontSize: theme.fontSizes?.base || 14,
+                            fontWeight: (theme.fontWeights?.semibold ||
+                              '600') as any,
+                            fontFamily: theme.fontFamilies?.regular,
                             color: theme.colors.text,
                             marginBottom: 12,
                           }}>
@@ -4460,7 +4973,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                               activeOpacity={0.7}
                               style={{
                                 padding: 8,
-                                backgroundColor: theme.colors.primary + '10',
+                                backgroundColor:
+                                  theme.colors.background === '#ffffff'
+                                    ? theme.colors.primary + '10'
+                                    : theme.colors.bitcoinOrange + '20',
                                 borderRadius: 8,
                               }}>
                               <Image
@@ -4478,7 +4994,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                               activeOpacity={0.7}
                               style={{
                                 padding: 8,
-                                backgroundColor: theme.colors.primary + '10',
+                                backgroundColor:
+                                  theme.colors.background === '#ffffff'
+                                    ? theme.colors.primary + '10'
+                                    : theme.colors.bitcoinOrange + '20',
                                 borderRadius: 8,
                               }}>
                               <Image
@@ -4501,8 +5020,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                     <View style={styles.section}>
                       <Text
                         style={{
-                          fontSize: 14,
-                          fontWeight: '600',
+                          fontSize: theme.fontSizes?.base || 14,
+                          fontWeight: (theme.fontWeights?.semibold ||
+                            '600') as any,
+                          fontFamily: theme.fontFamilies?.regular,
                           color: theme.colors.text,
                           marginBottom: 12,
                         }}>
@@ -4635,8 +5156,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                       <View style={styles.section}>
                         <Text
                           style={{
-                            fontSize: 14,
-                            fontWeight: '600',
+                            fontSize: theme.fontSizes?.base || 14,
+                            fontWeight: (theme.fontWeights?.semibold ||
+                              '600') as any,
+                            fontFamily: theme.fontFamilies?.regular,
                             color: theme.colors.text,
                             marginBottom: 12,
                           }}>
@@ -4850,7 +5373,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 style={[
                                   styles.preparingProgressBar,
                                   {
-                                    backgroundColor: theme.colors.primary,
+                                    backgroundColor:
+                                      theme.colors.background === '#ffffff'
+                                        ? theme.colors.primary
+                                        : theme.colors.bitcoinOrange,
                                     width: progressAnimation.interpolate({
                                       inputRange: [0, 1],
                                       outputRange: ['0%', '100%'],
@@ -4914,7 +5440,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   width: 18,
                                   height: 18,
                                   marginRight: 8,
-                                  tintColor: theme.colors.primary,
+                                  tintColor:
+                                    theme.colors.background === '#ffffff'
+                                      ? theme.colors.primary
+                                      : theme.colors.bitcoinOrange,
                                 }}
                                 resizeMode="contain"
                               />
@@ -4941,7 +5470,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   width: 18,
                                   height: 18,
                                   marginRight: 8,
-                                  tintColor: theme.colors.primary,
+                                  tintColor:
+                                    theme.colors.background === '#ffffff'
+                                      ? theme.colors.primary
+                                      : theme.colors.bitcoinOrange,
                                 }}
                                 resizeMode="contain"
                               />
@@ -4968,7 +5500,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   width: 18,
                                   height: 18,
                                   marginRight: 8,
-                                  tintColor: theme.colors.primary,
+                                  tintColor:
+                                    theme.colors.background === '#ffffff'
+                                      ? theme.colors.primary
+                                      : theme.colors.bitcoinOrange,
                                 }}
                                 resizeMode="contain"
                               />
@@ -4995,7 +5530,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   width: 18,
                                   height: 18,
                                   marginRight: 8,
-                                  tintColor: theme.colors.primary,
+                                  tintColor:
+                                    theme.colors.background === '#ffffff'
+                                      ? theme.colors.primary
+                                      : theme.colors.bitcoinOrange,
                                 }}
                                 resizeMode="contain"
                               />
@@ -5272,48 +5810,124 @@ const MobileNostrPairing = ({navigation}: any) => {
                     <View style={styles.section}>
                       <View
                         style={{
-                          padding: 8,
-                          paddingTop: 0,
-                          width: '100%',
+                          backgroundColor: theme.colors.cardBackground,
+                          borderRadius: 12,
+                          padding: 12,
+                          borderWidth: 1.5,
+                          borderColor: theme.colors.border,
                         }}>
+                        {/* Network Badge */}
                         <View
                           style={{
-                            borderBottomWidth: 0,
-                            paddingVertical: 6,
+                            flexDirection: 'row',
+                            alignItems: 'center',
                             marginBottom: 6,
+                            paddingVertical: 2,
                           }}>
-                          <Text
-                            style={{
-                              fontSize: 16,
-                              fontWeight: '600',
-                              color: theme.colors.text,
-                              marginTop: 1,
-                              marginBottom: 2,
-                              fontFamily:
-                                Platform.OS === 'ios' ? 'System' : 'Roboto',
-                              textAlign: 'left',
-                              lineHeight: 18,
-                            }}>
-                            To Address
-                          </Text>
                           <View
                             style={{
-                              backgroundColor: theme.colors.background,
-                              paddingVertical: 6,
-                              paddingHorizontal: 8,
-                              borderRadius: 8,
-                              borderWidth: 1,
-                              borderColor: theme.colors.border,
+                              backgroundColor:
+                                theme.colors.background === '#ffffff'
+                                  ? theme.colors.primary + '20'
+                                  : theme.colors.bitcoinOrange + '20',
+                              paddingHorizontal: 6,
+                              paddingVertical: 2,
+                              borderRadius: 4,
                             }}>
                             <Text
                               style={{
-                                fontSize: 16,
-                                color: theme.colors.text,
-                                textAlign: 'left',
-                                fontFamily:
-                                  Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                                lineHeight: 16,
-                              }}
+                                fontSize: theme.fontSizes?.xs || 10,
+                                fontWeight: (theme.fontWeights?.bold ||
+                                  '700') as any,
+                                fontFamily: theme.fontFamilies?.regular,
+                                color:
+                                  theme.colors.background === '#ffffff'
+                                    ? theme.colors.primary
+                                    : theme.colors.text, // Use text color for better visibility in dark mode
+                                textTransform: 'uppercase',
+                                letterSpacing: 0.5,
+                                marginTop: 4,
+                              }}>
+                              {(() => {
+                                const net =
+                                  route.params?.network || currentNetwork;
+                                const normalizedNet =
+                                  net === 'testnet3' ? 'testnet' : net;
+                                return normalizedNet === 'testnet'
+                                  ? 'Testnet'
+                                  : 'Mainnet';
+                              })()}
+                            </Text>
+                          </View>
+                        </View>
+                        {fromAddress && (
+                          <View
+                            style={[
+                              styles.transactionItem,
+                              {paddingVertical: 2, marginBottom: 3},
+                            ]}>
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                marginBottom: 2,
+                              }}>
+                              <Text
+                                style={[
+                                  styles.transactionLabel,
+                                  {
+                                    fontSize: theme.fontSizes?.sm || 12,
+                                    lineHeight: 14,
+                                  },
+                                ]}>
+                                From Address
+                              </Text>
+                              {currentDerivationPath && (
+                                <Text
+                                  style={{
+                                    fontSize: theme.fontSizes?.xs || 10,
+                                    fontWeight: (theme.fontWeights?.normal || '400') as any,
+                                    fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+                                    fontStyle: 'italic',
+                                    color: theme.colors.textSecondary,
+                                    marginLeft: 6,
+                                    textAlign: 'right',
+                                    flex: 1,
+                                    flexShrink: 1,
+                                  }}>
+                                  {currentDerivationPath}
+                                </Text>
+                              )}
+                            </View>
+                            <View style={styles.addressContainer}>
+                              <Text
+                                style={styles.addressValue}
+                                numberOfLines={1}
+                                ellipsizeMode="middle">
+                                {fromAddress}
+                              </Text>
+                            </View>
+                          </View>
+                        )}
+                        <View
+                          style={[
+                            styles.transactionItem,
+                            {paddingVertical: 2, marginBottom: 3},
+                          ]}>
+                          <Text
+                            style={[
+                              styles.transactionLabel,
+                              {
+                                fontSize: theme.fontSizes?.sm || 12,
+                                lineHeight: 14,
+                              },
+                            ]}>
+                            To Address
+                          </Text>
+                          <View style={styles.addressContainer}>
+                            <Text
+                              style={styles.addressValue}
                               numberOfLines={1}
                               ellipsizeMode="middle">
                               {route.params?.toAddress || ''}
@@ -5322,58 +5936,33 @@ const MobileNostrPairing = ({navigation}: any) => {
                         </View>
 
                         <View
-                          style={{
-                            borderBottomWidth: 0,
-                            paddingVertical: 6,
-                            marginBottom: 6,
-                          }}>
+                          style={[
+                            styles.transactionItem,
+                            {paddingVertical: 2, marginBottom: 3},
+                          ]}>
                           <Text
-                            style={{
-                              fontSize: 16,
-                              fontWeight: '600',
-                              color: theme.colors.text,
-                              marginTop: 1,
-                              marginBottom: 2,
-                              fontFamily:
-                                Platform.OS === 'ios' ? 'System' : 'Roboto',
-                              textAlign: 'left',
-                              lineHeight: 18,
-                            }}>
+                            style={[
+                              styles.transactionLabel,
+                              {
+                                fontSize: theme.fontSizes?.sm || 12,
+                                lineHeight: 14,
+                              },
+                            ]}>
                             Transaction Amount
                           </Text>
-                          <View
-                            style={{
-                              flexDirection: 'row',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              backgroundColor: theme.colors.background,
-                              paddingVertical: 6,
-                              paddingHorizontal: 8,
-                              borderRadius: 8,
-                              borderWidth: 1,
-                              borderColor: theme.colors.border,
-                            }}>
+                          <View style={styles.amountContainer}>
                             <Text
-                              style={{
-                                fontSize: 17,
-                                fontWeight: '600',
-                                color: theme.colors.text,
-                                fontFamily:
-                                  Platform.OS === 'ios' ? 'System' : 'Roboto',
-                                textAlign: 'left',
-                                lineHeight: 16,
-                              }}>
+                              style={[
+                                styles.amountValue,
+                                {fontSize: theme.fontSizes?.base || 13},
+                              ]}>
                               {sat2btcStr(route.params?.satoshiAmount)} BTC
                             </Text>
                             <Text
-                              style={{
-                                fontSize: 16,
-                                color: theme.colors.textSecondary,
-                                fontFamily:
-                                  Platform.OS === 'ios' ? 'System' : 'Roboto',
-                                textAlign: 'right',
-                                lineHeight: 16,
-                              }}>
+                              style={[
+                                styles.fiatValue,
+                                {fontSize: theme.fontSizes?.sm || 12},
+                              ]}>
                               {route.params?.selectedCurrency || ''}{' '}
                               {formatFiat(route.params?.fiatAmount)}
                             </Text>
@@ -5381,58 +5970,33 @@ const MobileNostrPairing = ({navigation}: any) => {
                         </View>
 
                         <View
-                          style={{
-                            borderBottomWidth: 0,
-                            paddingVertical: 6,
-                            marginBottom: 6,
-                          }}>
+                          style={[
+                            styles.transactionItem,
+                            {paddingVertical: 2, marginBottom: 0},
+                          ]}>
                           <Text
-                            style={{
-                              fontSize: 16,
-                              fontWeight: '600',
-                              color: theme.colors.text,
-                              marginTop: 1,
-                              marginBottom: 2,
-                              fontFamily:
-                                Platform.OS === 'ios' ? 'System' : 'Roboto',
-                              textAlign: 'left',
-                              lineHeight: 18,
-                            }}>
+                            style={[
+                              styles.transactionLabel,
+                              {
+                                fontSize: theme.fontSizes?.sm || 12,
+                                lineHeight: 14,
+                              },
+                            ]}>
                             Transaction Fee
                           </Text>
-                          <View
-                            style={{
-                              flexDirection: 'row',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              backgroundColor: theme.colors.background,
-                              paddingVertical: 6,
-                              paddingHorizontal: 8,
-                              borderRadius: 8,
-                              borderWidth: 1,
-                              borderColor: theme.colors.border,
-                            }}>
+                          <View style={styles.amountContainer}>
                             <Text
-                              style={{
-                                fontSize: 17,
-                                fontWeight: '600',
-                                color: theme.colors.text,
-                                fontFamily:
-                                  Platform.OS === 'ios' ? 'System' : 'Roboto',
-                                textAlign: 'left',
-                                lineHeight: 16,
-                              }}>
+                              style={[
+                                styles.amountValue,
+                                {fontSize: theme.fontSizes?.base || 13},
+                              ]}>
                               {sat2btcStr(route.params?.satoshiFees)} BTC
                             </Text>
                             <Text
-                              style={{
-                                fontSize: 16,
-                                color: theme.colors.textSecondary,
-                                fontFamily:
-                                  Platform.OS === 'ios' ? 'System' : 'Roboto',
-                                textAlign: 'right',
-                                lineHeight: 16,
-                              }}>
+                              style={[
+                                styles.fiatValue,
+                                {fontSize: theme.fontSizes?.sm || 12},
+                              ]}>
                               {route.params?.selectedCurrency || ''}{' '}
                               {formatFiat(route.params?.fiatFees)}
                             </Text>
@@ -5679,7 +6243,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                     <Text
                       style={[
                         styles.statusText,
-                        {fontWeight: 'bold', fontSize: 20},
+                        {
+                          fontWeight: (theme.fontWeights?.bold || '700') as any,
+                          fontSize: theme.fontSizes?.['2xl'] || 20,
+                        },
                       ]}>
                       Keyshare Created!
                     </Text>
@@ -5688,8 +6255,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                     style={[
                       styles.statusText,
                       {
-                        fontWeight: '400',
-                        fontSize: 15,
+                        fontWeight: (theme.fontWeights?.normal || '400') as any,
+                        fontSize: theme.fontSizes?.md || 15,
                         color: theme.colors.textSecondary,
                       },
                     ]}>
@@ -5841,7 +6408,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           width: 20,
                           height: 20,
                           marginRight: 8,
-                          tintColor: '#fff',
+                          tintColor: theme.colors.white,
                         }}
                         resizeMode="contain"
                       />
@@ -5900,7 +6467,10 @@ const MobileNostrPairing = ({navigation}: any) => {
               </Text>
               <TouchableOpacity
                 style={{
-                  backgroundColor: theme.colors.primary,
+                  backgroundColor:
+                    theme.colors.background === '#ffffff'
+                      ? theme.colors.primary
+                      : theme.colors.bitcoinOrange,
                   borderRadius: 12,
                   paddingVertical: 14,
                   paddingHorizontal: 20,
@@ -5918,9 +6488,13 @@ const MobileNostrPairing = ({navigation}: any) => {
                 />
                 <Text
                   style={{
-                    color: theme.colors.textOnPrimary,
-                    fontWeight: '600',
-                    fontSize: 16,
+                    color:
+                      theme.colors.background === '#ffffff'
+                        ? theme.colors.white
+                        : theme.colors.text,
+                    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+                    fontSize: theme.fontSizes?.lg || 16,
+                    fontFamily: theme.fontFamilies?.regular,
                   }}>
                   Share
                 </Text>
@@ -5972,6 +6546,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                   <TextInput
                     style={styles.passwordInput}
                     placeholder="Enter a strong password"
+                    placeholderTextColor={theme.colors.textSecondary + '80'}
                     secureTextEntry={!passwordVisible}
                     value={password}
                     onChangeText={handlePasswordChange}
@@ -6043,6 +6618,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                         styles.errorInput,
                     ]}
                     placeholder="Confirm your password"
+                    placeholderTextColor={theme.colors.textSecondary + '80'}
                     secureTextEntry={!confirmPasswordVisible}
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}

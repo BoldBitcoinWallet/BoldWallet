@@ -1,0 +1,38 @@
+# Optimized for Docker on Linux host (native build, no QEMU emulation)
+# Can use more aggressive settings since there's no emulation overhead
+# Allocate more memory and use more parallel workers for faster builds
+
+# Memory allocation - more aggressive for native Linux Docker
+# Recommended: 6-8GB for native Linux builds
+org.gradle.jvmargs=-Xmx6144m -XX:MaxMetaspaceSize=1536m -XX:+HeapDumpOnOutOfMemoryError -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+
+org.gradle.parallel=true
+org.gradle.caching=true
+
+# Use more workers for native Linux Docker builds
+# Recommended: Number of CPU cores - 1 (e.g., 7 workers for 8-core CPU)
+org.gradle.workers.max=6
+
+# Kotlin daemon with more memory
+kotlin.daemon.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m
+kotlin.incremental=true
+
+# Disable configuration cache - React Native doesn't fully support it yet
+org.gradle.configuration-cache=false
+
+# Enable build cache for faster subsequent builds
+org.gradle.build-cache=true
+
+android.useAndroidX=true
+
+# Build all architectures for native Linux (no QEMU linker crashes)
+reactNativeArchitectures=armeabi-v7a,arm64-v8a,x86,x86_64
+
+newArchEnabled=true
+hermesEnabled=true
+
+VisionCamera_enableCodeScanner=false
+
+# 16KB page size support
+android.enableJetifier=true
+

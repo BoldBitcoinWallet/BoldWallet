@@ -10,7 +10,6 @@ import {
   Easing,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import LinearGradient from 'react-native-linear-gradient';
 import {useTheme} from '../theme';
 import {HapticFeedback} from '../utils';
 
@@ -354,9 +353,10 @@ const LoadingScreen = ({onRetry}: any) => {
       opacity: 0.7,
     },
     buttonText: {
+      fontSize: theme.fontSizes?.xl || 18,
+      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.primary,
-      fontSize: 18,
-      fontWeight: '700',
       marginLeft: 12,
       letterSpacing: 0.5,
     },
@@ -382,14 +382,15 @@ const LoadingScreen = ({onRetry}: any) => {
     icon: {
       width: 40,
       height: 40,
-      tintColor: '#FFFFFF',
+      tintColor: theme.colors.white,
     },
     versionText: {
+      fontSize: theme.fontSizes?.base || 13,
+      fontWeight: (theme.fontWeights?.medium || '500') as any,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
-      fontSize: 13,
       opacity: 0.8,
       marginBottom: 8,
-      fontWeight: '500',
     },
     bottomContainer: {
       alignItems: 'center',
@@ -427,9 +428,10 @@ const LoadingScreen = ({onRetry}: any) => {
       justifyContent: 'center',
     },
     loadingText: {
-      color: '#FFFFFF',
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.white,
       marginLeft: 12,
     },
     safeArea: {
@@ -438,21 +440,13 @@ const LoadingScreen = ({onRetry}: any) => {
     },
   });
 
+  // Use simple background color instead of gradient, especially in dark mode
+  const isDarkMode = theme.colors.background === '#121212' || theme.colors.background.includes('12');
+  const backgroundColor = isDarkMode ? '#1A1A1A' : theme.colors.background;
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <LinearGradient
-        colors={[
-          'rgba(240, 245, 255, 0.15)', // Cool blue-white top
-          'rgba(255, 255, 255, 0.25)', // Bright white
-          'rgba(248, 252, 255, 0.35)', // Cool highlight
-          'rgba(255, 255, 255, 0.45)', // Peak brightness
-          'rgba(248, 252, 255, 0.35)', // Cool fade
-          'rgba(240, 245, 255, 0.25)', // Cool bottom
-        ]}
-        locations={[0, 0.2, 0.4, 0.6, 0.8, 1]}
-        start={{x: 0.5, y: 0}}
-        end={{x: 0.5, y: 1}}
-        style={[styles.container]}>
+      <View style={[styles.container, {backgroundColor}]}>
         <View style={[styles.contentContainer]}>
           <Animated.View
             style={styles.logoContainer}
@@ -506,7 +500,11 @@ const LoadingScreen = ({onRetry}: any) => {
               <Animated.View style={{transform: [{scale: logoScale}]}}>
                 <Image
                   style={[styles.storeIcon]}
-                  source={require('../assets/bold-icon.png')}
+                  source={
+                    theme.colors.background === '#121212' || theme.colors.background.includes('12')
+                      ? require('../assets/bold-icon-inverted.png') // Use inverted icon in dark mode
+                      : require('../assets/bold-icon.png') // Original icon in light mode
+                  }
                 />
               </Animated.View>
             </TouchableOpacity>
@@ -534,7 +532,7 @@ const LoadingScreen = ({onRetry}: any) => {
               testID="unlock-biometric-button">
               {loading ? (
                 <View style={styles.loadingContainer}>
-                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <ActivityIndicator size="small" color={theme.colors.white} />
                   <Text style={styles.loadingText}>Unlocking...</Text>
                 </View>
               ) : (
@@ -560,7 +558,7 @@ const LoadingScreen = ({onRetry}: any) => {
             </TouchableOpacity>
           </Animated.View>
         </View>
-      </LinearGradient>
+      </View>
     </SafeAreaView>
   );
 };

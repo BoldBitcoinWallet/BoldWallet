@@ -1,6 +1,6 @@
 {
   "name": "boldwallet",
-  "version": "2.1.6",
+  "version": "2.1.11",
   "private": true,
   "scripts": {
     "android": "react-native run-android",

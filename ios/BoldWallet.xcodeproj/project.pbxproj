@@ -211,6 +211,7 @@
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
+				F2A8B9C12D4E5F6A7B8C9D0E /* Generate Framework dSYMs */,
 				E8D6F183D6CC6CC44ACC99AE /* [CP] Embed Pods Frameworks */,
 				A4868003626827247A694241 /* [CP] Copy Pods Resources */,
 				0444C49D2EAE13A800CD740F /* Embed Frameworks */,
@@ -426,6 +427,21 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-BoldWallet-BoldWalletTests/Pods-BoldWallet-BoldWalletTests-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
+		F2A8B9C12D4E5F6A7B8C9D0E /* Generate Framework dSYMs */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Generate Framework dSYMs";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Only run during archiving (install action)\nif [ \"${ACTION}\" = \"install\" ]; then\n    \"${SRCROOT}/scripts/generate_framework_dsyms.sh\"\nfi\n";
+			showEnvVarsInLog = 0;
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -518,7 +534,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CLANG_ENABLE_MODULES = YES;
-				CURRENT_PROJECT_VERSION = 38;
+				CURRENT_PROJECT_VERSION = 44;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 2G529K765N;
 				ENABLE_BITCODE = NO;
@@ -532,7 +548,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.1.6;
+				MARKETING_VERSION = 2.1.11;
 				ONLY_ACTIVE_ARCH = NO;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -556,7 +572,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CLANG_ENABLE_MODULES = YES;
-				CURRENT_PROJECT_VERSION = 38;
+				CURRENT_PROJECT_VERSION = 44;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 2G529K765N;
 				ENABLE_TESTABILITY = NO;
@@ -569,7 +585,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.1.6;
+				MARKETING_VERSION = 2.1.11;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_LDFLAGS = (
 					"$(inherited)",

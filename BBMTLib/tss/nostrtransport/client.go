@@ -35,7 +35,17 @@ func (c *Client) GetPool() *nostr.SimplePool {
 	return c.pool
 }
 
-func NewClient(cfg Config) (*Client, error) {
+func NewClient(cfg Config) (result *Client, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in NewClient: %v", r)
+			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = nil
+		}
+	}()
+
 	cfg.ApplyDefaults()
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -92,6 +102,13 @@ func NewClient(cfg Config) (*Client, error) {
 		}
 		for _, url := range remainingRelays {
 			go func(relayURL string) {
+				defer func() {
+					if r := recover(); r != nil {
+						errMsg := fmt.Sprintf("PANIC in NewClient background retry goroutine: %v", r)
+						fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+						fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+					}
+				}()
 				for {
 					relay, err := pool.EnsureRelay(relayURL)
 					if err == nil {
@@ -203,6 +220,13 @@ func NewClient(cfg Config) (*Client, error) {
 
 // Close tears down relay connections.
 func (c *Client) Close(reason string) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in Client.Close: %v", r)
+			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+		}
+	}()
 	if c.pool != nil {
 		c.pool.Close(reason)
 	}
@@ -211,7 +235,16 @@ func (c *Client) Close(reason string) {
 	}
 }
 
-func (c *Client) Publish(ctx context.Context, event *Event) error {
+func (c *Client) Publish(ctx context.Context, event *Event) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in Client.Publish: %v", r)
+			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+		}
+	}()
+
 	if event == nil {
 		return errors.New("nil event")
 	}
@@ -417,7 +450,17 @@ func (c *Client) Publish(ctx context.Context, event *Event) error {
 	}
 }
 
-func (c *Client) Subscribe(ctx context.Context, filter Filter) (<-chan *Event, error) {
+func (c *Client) Subscribe(ctx context.Context, filter Filter) (result <-chan *Event, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in Client.Subscribe: %v", r)
+			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = nil
+		}
+	}()
+
 	// Use all valid relays, not just initially connected ones
 	relaysToUse := c.validRelays
 	if len(relaysToUse) == 0 {
@@ -447,6 +490,13 @@ func (c *Client) Subscribe(ctx context.Context, filter Filter) (<-chan *Event, e
 	// Try connecting to all relays in parallel
 	for _, url := range relaysToUse {
 		go func(relayURL string) {
+			defer func() {
+				if r := recover(); r != nil {
+					errMsg := fmt.Sprintf("PANIC in Client.Subscribe connection goroutine: %v", r)
+					fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+					fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+				}
+			}()
 			relay, err := c.pool.EnsureRelay(relayURL)
 			if err == nil && relay != nil {
 				fmt.Fprintf(os.Stderr, "BBMTLog: Client.Subscribe - relay %s connected for subscription\n", relayURL)
@@ -477,7 +527,14 @@ func (c *Client) Subscribe(ctx context.Context, filter Filter) (<-chan *Event, e
 
 	// Process events and track connections in background
 	go func() {
-		defer close(events)
+		defer func() {
+			if r := recover(); r != nil {
+				errMsg := fmt.Sprintf("PANIC in Client.Subscribe event processing goroutine: %v", r)
+				fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+				fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+			}
+			close(events)
+		}()
 		for {
 			select {
 			case <-ctx.Done():
@@ -559,7 +616,16 @@ func (c *Client) Subscribe(ctx context.Context, filter Filter) (<-chan *Event, e
 // Resiliency policy: Publishes to ALL valid relays in parallel, returns immediately on first success,
 // continues publishing to other relays in background. Only fails if ALL relays fail.
 // This ensures co-signing messages are delivered even if some relays are down or slow.
-func (c *Client) PublishWrap(ctx context.Context, wrap *Event) error {
+func (c *Client) PublishWrap(ctx context.Context, wrap *Event) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in Client.PublishWrap: %v", r)
+			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+		}
+	}()
+
 	if wrap == nil {
 		return errors.New("nil wrap event")
 	}
