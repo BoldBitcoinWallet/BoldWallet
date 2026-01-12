@@ -1,5 +1,37 @@
 # Changelog
 
+## [2.1.11] - 2026-01-12
+
+### Changed
+- **Transaction List Typography Improvements**: Enhanced font sizes and weights for better readability and visual hierarchy
+  - Status text increased from 13px to 16px (lg) for improved readability
+  - Fiat amount increased from 12px to 13px (base) for better accessibility
+  - Address labels and transaction IDs standardized to 13px (base) for consistency
+  - Improved typography hierarchy following mobile financial app best practices
+  - Better visual balance between primary, secondary, and tertiary information
+- **Dark Mode Color Theme**: Replaced yellow accent colors with Bitcoin orange (#F7931A) in dark mode
+  - Transaction status badges now use Bitcoin orange instead of yellow in dark mode
+  - All accent colors across screens and components updated to Bitcoin orange in dark mode
+  - Maintains yellow accent in light mode for consistency
+  - Updated components: TransactionDetailsModal, TransactionList, TransportModeSelector, CurrencySelector, CacheIndicator, Styles
+  - Updated screens: WalletSettings, ShowcaseScreen, SendBitcoinModal, PSBTScreen, MobilesPairing, MobileNostrPairing
+- **Header Visual Symmetry**: Improved header layout balance
+  - Price button width now matches combined width of lock and settings buttons for visual symmetry
+  - Better visual balance between left and right header elements
+  - Enhanced header component consistency
+
+### Fixed
+- **Transaction Details Font Sizing**: Fixed inconsistent font sizes in transaction details modal
+  - From/To address font sizes aligned with transaction ID font size (14px)
+  - Address index labels standardized to 14px for consistency
+  - Improved readability and visual consistency across transaction details
+
+### Technical Details
+- **Files Changed**: 14 files changed with 341 insertions and 219 deletions
+- **Components Updated**: TransactionList, TransactionDetailsModal, Header, Styles, CacheIndicator, CurrencySelector, TransportModeSelector
+- **Screens Updated**: WalletSettings, ShowcaseScreen, SendBitcoinModal, PSBTScreen, MobilesPairing, MobileNostrPairing
+- **Version Update**: Version bumped to 2.1.11
+
 ## [2.1.10] - 2026-01-12
 
 ### Added
