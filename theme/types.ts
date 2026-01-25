@@ -36,6 +36,11 @@ export interface ThemeColors {
   success: string;
   successLight: string;
   skeletonGray: string;
+  // Switch component colors
+  switchTrackFalse: string; // Track color when switch is off
+  switchTrackTrue: string; // Track color when switch is on
+  switchThumb: string; // Thumb/circle color
+  switchIosBackground: string; // iOS specific background color
   // Overlay colors for glassmorphism effects
   blackOverlay05: string; // rgba(0, 0, 0, 0.05)
   blackOverlay06: string; // rgba(0, 0, 0, 0.06)

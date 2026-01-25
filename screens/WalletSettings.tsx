@@ -2263,6 +2263,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             <Switch
               onValueChange={handleToggleHaptics}
               value={hapticsEnabled}
+              trackColor={{
+                false: theme.colors.switchTrackFalse,
+                true: theme.colors.switchTrackTrue,
+              }}
+              thumbColor={theme.colors.switchThumb}
+              ios_backgroundColor={theme.colors.switchIosBackground}
             />
             <Text style={styles.toggleLabel}>Haptics On</Text>
           </View>
@@ -2306,6 +2312,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             <Switch
               onValueChange={handleToggleBalanceFormatting}
               value={balanceFormattingEnabled}
+              trackColor={{
+                false: theme.colors.switchTrackFalse,
+                true: theme.colors.switchTrackTrue,
+              }}
+              thumbColor={theme.colors.switchThumb}
+              ios_backgroundColor={theme.colors.switchIosBackground}
             />
             <Text style={styles.toggleLabel}>Formatted</Text>
           </View>
@@ -2335,6 +2347,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             <View style={styles.toggleContainer}>
               <Text style={styles.toggleLabel}>Bold Wallet</Text>
               <Switch
+                value={selectedIcon === 'alternative'}
+                trackColor={{
+                  false: theme.colors.switchTrackFalse,
+                  true: theme.colors.switchTrackTrue,
+                }}
+                thumbColor={theme.colors.switchThumb}
+                ios_backgroundColor={theme.colors.switchIosBackground}
                 onValueChange={async value => {
                   try {
                     HapticFeedback.light();
@@ -2377,7 +2396,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     );
                   }
                 }}
-                value={selectedIcon === 'alternative'}
                 disabled={selectedIcon === 'loading'}
               />
               <Text style={styles.toggleLabel}>QuickCalc</Text>
@@ -2399,6 +2417,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <View style={styles.walletModeRow}>
             <Text style={styles.walletModeLabel}>Full Mode</Text>
             <Switch
+              value={walletMode === 'psbt'}
+              trackColor={{
+                false: theme.colors.switchTrackFalse,
+                true: theme.colors.switchTrackTrue,
+              }}
+              thumbColor={theme.colors.switchThumb}
+              ios_backgroundColor={theme.colors.switchIosBackground}
               onValueChange={async value => {
                 HapticFeedback.light();
                 const mode = value ? 'psbt' : 'full';
@@ -2421,7 +2446,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   routes: [{name: mode === 'psbt' ? 'PSBT' : 'Home'}],
                 });
               }}
-              value={walletMode === 'psbt'}
             />
             <Text style={styles.walletModeLabel}>PSBT Only</Text>
           </View>
@@ -2487,7 +2511,16 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               />
               <Text style={styles.toggleLabel}>Mainnet</Text>
             </View>
-            <Switch onValueChange={toggleNetwork} value={isTestnet} />
+            <Switch
+              onValueChange={toggleNetwork}
+              value={isTestnet}
+              trackColor={{
+                false: theme.colors.switchTrackFalse,
+                true: theme.colors.switchTrackTrue,
+              }}
+              thumbColor={theme.colors.switchThumb}
+              ios_backgroundColor={theme.colors.switchIosBackground}
+            />
             <View style={styles.networkOption}>
               <Image
                 source={require('../assets/testnet-icon.png')}
@@ -2840,6 +2873,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             <Switch
               onValueChange={handleToggleDebugLogging}
               value={debugLoggingEnabled}
+              trackColor={{
+                false: theme.colors.switchTrackFalse,
+                true: theme.colors.switchTrackTrue,
+              }}
+              thumbColor={theme.colors.switchThumb}
+              ios_backgroundColor={theme.colors.switchIosBackground}
             />
             <Text style={styles.toggleLabel}>Enable Debug Logging</Text>
           </View>
