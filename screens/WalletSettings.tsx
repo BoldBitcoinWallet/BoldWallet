@@ -1056,7 +1056,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       dbg('Error saving balance_formatting_enabled:', error);
     }
   };
-  const styles = StyleSheet.create({
+  const styles = useMemo(() => StyleSheet.create({
     container: {
       flex: 1,
       backgroundColor: theme.colors.background,
@@ -2094,7 +2094,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           ? theme.colors.accent
           : theme.colors.bitcoinOrange,
     },
-  });
+  }), [theme]);
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <ScrollView
