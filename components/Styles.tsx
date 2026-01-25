@@ -5,22 +5,89 @@ import {
   TextStyle,
   ViewStyle,
 } from 'react-native';
-
 export interface Theme {
   colors: {
     background: string;
     cardBackground: string;
     primary: string;
+    subPrimary: string;
     secondary: string;
     accent: string;
+    danger: string;
     text: string;
     textSecondary: string;
     textOnPrimary: string;
     white: string;
     border: string;
+    disabled: string;
+    sent: string;
+    received: string;
+    buttonText: string;
+    disabledText: string;
+    modalBackdrop: string;
+    lightGray: string;
+    mediumGray: string;
+    bitcoinOrange: string;
+    warning: string;
+    warningLight: string;
+    warningAccent: string;
+    success: string;
+    successLight: string;
+    skeletonGray: string;
+    // Overlay colors for glassmorphism effects
+    blackOverlay02: string;
+    blackOverlay03: string;
+    blackOverlay04: string;
+    blackOverlay05: string;
+    blackOverlay06: string;
+    blackOverlay10: string;
+    blackOverlay30: string;
+    blackOverlay50: string;
+    whiteOverlay08: string;
+    whiteOverlay10: string;
+    whiteOverlay12: string;
+    whiteOverlay15: string;
+    whiteOverlay18: string;
+    whiteOverlay20: string;
+    whiteOverlay25: string;
+    whiteOverlay30: string;
+    primaryOverlay95: string;
+    // Status color overlays
+    receivedOverlay15: string;
+    receivedOverlay40: string;
+    dangerOverlay15: string;
+    dangerOverlay40: string;
+    shadowColor: string;
+  };
+  fontSizes?: {
+    xs: number;
+    sm: number;
+    base: number;
+    md: number;
+    lg: number;
+    xl: number;
+    '2xl': number;
+    '3xl': number;
+    small?: number;
+    medium?: number;
+    large?: number;
+    extraLarge?: number;
+  };
+  fontWeights?: {
+    normal: string;
+    medium: string;
+    semibold: string;
+    bold: string;
+  };
+  fontFamilies?: {
+    regular: string;
+    medium: string;
+    bold: string;
+    monospace: string;
+    monospaceMedium: string;
+    monospaceBold: string;
   };
 }
-
 export interface Styles {
   actionButton: ViewStyle;
   settingsButton: ViewStyle;
@@ -37,13 +104,27 @@ export interface Styles {
   btcPrice: TextStyle;
   currencyBadge: TextStyle;
   balanceContainer: ViewStyle;
+  balanceContentContainer: ViewStyle;
+  balanceHeaderRow: ViewStyle;
   balanceRow: ViewStyle;
   balanceRowWithMargin: ViewStyle;
   balanceBTC: TextStyle;
   balanceFiat: TextStyle;
   balanceIcon: ImageStyle;
+  balanceHeaderControls: ViewStyle;
+  balanceEyeIcon: ViewStyle;
+  balanceUnitToggleContainer: ViewStyle;
+  balanceUnitToggle: ViewStyle;
+  balanceUnitToggleText: TextStyle;
   blurredText: TextStyle;
+  balancePrivacyPlaceholder: TextStyle;
+  balancePrivacyContainer: ViewStyle;
   balanceHint: TextStyle;
+  balanceTouchable: ViewStyle;
+  balanceLoadingIndicator: ViewStyle;
+  balanceErrorContainer: ViewStyle;
+  balanceErrorText: TextStyle;
+  providerValueCompact: TextStyle;
   qrContainer: ViewStyle;
   address: TextStyle;
   partyContainer: ViewStyle;
@@ -57,6 +138,7 @@ export interface Styles {
   actions: ViewStyle;
   sendButton: ViewStyle;
   sendButtonText: TextStyle;
+  sendButtonDisabled: ViewStyle;
   addressTypeModalButton: ViewStyle;
   addressTypeButtonText: TextStyle;
   addressTypeButtonIcon: ImageStyle;
@@ -169,10 +251,13 @@ export interface Styles {
   keyshareInfoValueDisabled: TextStyle;
   keyshareKeySection: ViewStyle;
   keyshareKeyContainer: ViewStyle;
+  keyshareKeyContainerBadge: ViewStyle;
   keyshareKeyText: TextStyle;
+  keyshareKeyTextClickable: TextStyle;
   keyshareCopyButton: ViewStyle;
   keyshareCopyButtonText: TextStyle;
   keyshareCopyIcon: ImageStyle;
+  keyshareBadgeCopyIcon: ImageStyle;
   keyshareButtonsRow: ViewStyle;
   qrModalContent: ViewStyle;
   qrModalTitle: TextStyle;
@@ -191,6 +276,7 @@ export interface Styles {
   keyshareInfoCard: ViewStyle;
   keyshareSectionTitle: TextStyle;
   keyshareDetailRow: ViewStyle;
+  keyshareDetailRowLast: ViewStyle;
   keyshareDetailLabel: TextStyle;
   keyshareDetailValue: TextStyle;
   keyshareBadge: ViewStyle;
@@ -204,12 +290,15 @@ export interface Styles {
   keyshareStatusBadgeTextSuccess: TextStyle;
   keyshareStatusBadgeTextDisabled: TextStyle;
   keyshareKeyItem: ViewStyle;
+  keyshareKeyItemLast: ViewStyle;
   keyshareKeyLabel: TextStyle;
   watchWalletHeader: ViewStyle;
   keyshareInfoHeader: TextStyle;
   watchWalletTitle: TextStyle;
   watchWalletDescription: TextStyle;
+  watchWalletWarning: TextStyle;
   watchWalletItem: ViewStyle;
+  watchWalletItemLast: ViewStyle;
   watchWalletItemLabel: TextStyle;
   watchWalletItemValue: TextStyle;
   watchWalletItemValueContainer: ViewStyle;
@@ -226,35 +315,73 @@ export interface Styles {
   qrModalTopRightCloseText: TextStyle;
   qrModalShareButtonSingle: ViewStyle;
   qrModalButtonsContainerCentered: ViewStyle;
+  qrModalValueContainer: ViewStyle;
+  qrModalValueText: TextStyle;
+  qrModalValueScrollContent: ViewStyle;
+  collapsibleHeader: ViewStyle;
+  collapsibleHeaderContent: ViewStyle;
+  collapsibleHeaderIcon: ImageStyle;
+  collapsibleHeaderTitle: TextStyle;
+  collapsibleChevron: TextStyle;
+  collapsibleContent: ViewStyle;
+  walletInfoContainer: ViewStyle;
+  walletInfoTitle: TextStyle;
+  walletInfoTitleRow: ViewStyle;
+  walletInfoTitleIcon: ImageStyle;
+  walletInfoContent: ViewStyle;
+  walletInfoRow: ViewStyle;
+  walletInfoKeyItem: ViewStyle;
+  walletInfoHint: TextStyle;
 }
-
 export const createStyles = (theme: Theme): Styles => ({
   actionButton: {
-    paddingVertical: 12,
-    marginBottom: 4,
-    marginHorizontal: 8,
+    paddingVertical: 12, // Consistent vertical padding for all action buttons
+    paddingHorizontal: 0, // Gap handles spacing, no horizontal padding needed
+    marginTop: 0,
+    marginBottom: 0, // Gap handles spacing
     borderRadius: 8,
     alignItems: 'center' as const,
+    justifyContent: 'center' as const,
   },
   settingsButton: {
-    marginBottom: 4,
-    marginHorizontal: 8,
-    borderRadius: 8,
+    marginBottom: 0,
+    marginHorizontal: 0,
+    borderRadius: 10,
     alignItems: 'center' as const,
-    width: 30,
-    height: 30,
-    backgroundColor: theme.colors.cardBackground,
+    justifyContent: 'center' as const,
+    width: 36,
+    height: 36,
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.blackOverlay06
+        : theme.colors.cardBackground,
+    borderWidth: 1,
+    borderColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.blackOverlay10
+        : theme.colors.border + '80',
     padding: 0,
+    shadowColor: theme.colors.shadowColor,
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: Platform.OS === 'android' ? 0 : 1,
   },
   settingsLogo: {
-    marginTop: 3,
-    height: 24,
-    width: 24,
+    marginTop: 0,
+    height: 20,
+    width: 20,
+    tintColor: theme.colors.text,
+    opacity: 0.8,
     resizeMode: 'contain',
   },
   headerTitleContainer: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
+    justifyContent: 'flex-start' as const,
+    marginLeft: 0,
+    paddingLeft: 8,
+    minWidth: 0,
   },
   headerLogo: {
     width: 40,
@@ -263,37 +390,49 @@ export const createStyles = (theme: Theme): Styles => ({
     marginRight: 8,
   },
   headerTitleText: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: theme.fontSizes?.xl || 18,
+    fontFamily: theme.fontFamilies?.bold,
+    color: theme.colors.text, // Use theme text color for both light and dark mode
   },
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
   },
   contentContainer: {
-    paddingTop: 12,
     paddingLeft: 16,
+    paddingTop: 12,
     paddingRight: 16,
     paddingBottom: 0,
+    position: 'relative' as const,
+    zIndex: 2,
   },
   walletHeader: {
-    padding: 12,
-    backgroundColor: theme.colors.primary,
+    padding: 8,
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.primaryOverlay95 // Increased opacity for better contrast in light mode
+        : theme.colors.whiteOverlay15, // Brighter glassy overlay for better contrast in dark mode
     borderRadius: 12,
-    alignItems: 'center' as const,
-    marginBottom: 0,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    alignItems: 'stretch' as const, // Changed from 'center' to allow marginHorizontal to work
+    marginBottom: 12, // Normalized spacing to CacheIndicator
+    borderWidth: 1,
+    borderColor: theme.colors.whiteOverlay30, // More visible border for better contrast
+    // Explicit stacking context so action buttons stay on top on Android
+    position: 'relative',
+    zIndex: 3,
+    elevation: 6,
+    shadowColor: theme.colors.shadowColor,
+    shadowOffset: {width: 0, height: 3},
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    overflow: 'visible' as const, // Changed from 'hidden' to allow proper touch handling
   },
   headerTop: {
     flexDirection: 'row' as const,
     justifyContent: 'space-between' as const,
     alignItems: 'center' as const,
     width: '100%',
-    marginBottom: 8,
+    marginBottom: 16, // Normalized spacing to party container
   },
   btcLogo: {
     width: 32,
@@ -303,41 +442,151 @@ export const createStyles = (theme: Theme): Styles => ({
   priceContainer: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: theme.colors.whiteOverlay20, // Increased opacity for better contrast
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
   },
   btcPrice: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: theme.fontSizes?.base || 14,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.white,
     marginRight: 6,
   },
   currencyBadge: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: theme.fontSizes?.sm || 12,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.white,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: theme.colors.whiteOverlay25, // Increased opacity for better contrast
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
   balanceContainer: {
+    flexDirection: 'row' as const,
     alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    paddingTop: 16,
+    paddingBottom: 12, // Reduced to create smaller gap with action buttons
+    paddingHorizontal: 16,
+    minHeight: 80,
+    marginTop: 8, // Reduced gap from party container (partyContainer marginBottom: 8 + this: 8 = 16px total)
+    marginBottom: 0, // Actions container has marginTop instead
+    marginHorizontal: 0, // Match actionButton marginHorizontal to align with send/receive buttons
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.whiteOverlay12 // Increased opacity for better contrast in light mode
+        : theme.colors.whiteOverlay18, // Increased opacity for better contrast in dark mode
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.whiteOverlay25 // More visible border for better contrast in light mode
+        : theme.colors.whiteOverlay30, // More visible border for better contrast in dark mode
+    overflow: 'hidden' as const,
+    position: 'relative' as const,
+  },
+  balanceContentContainer: {
+    flex: 1,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    paddingHorizontal: 12,
+    minWidth: 0, // Allow flex shrinking
+    maxWidth: '100%', // Constrain to container width
+  },
+  balanceHeaderControls: {
+    position: 'absolute' as const,
+    top: 8,
+    left: 8,
+    right: 8,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    zIndex: 10,
+  },
+  balanceEyeIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: theme.colors.whiteOverlay15,
+    borderWidth: 1,
+    borderColor: theme.colors.whiteOverlay25,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+    marginRight: 12,
+    flexShrink: 0,
+  },
+  balanceUnitToggleContainer: {
+    marginLeft: 12,
+    flexShrink: 0,
+  },
+  balanceUnitToggle: {
+    width: 44, // Same square size as eye icon
+    height: 44, // Same square size as eye icon
+    borderRadius: 10,
+    backgroundColor: theme.colors.whiteOverlay15,
+    borderWidth: 1,
+    borderColor: theme.colors.whiteOverlay25,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+  },
+  balanceUnitToggleText: {
+    fontSize: theme.fontSizes?.sm || 12,
+    fontFamily: theme.fontFamilies?.bold,
+    color: theme.colors.white,
+    opacity: 0.9,
+  },
+  balanceHeaderRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
     width: '100%',
-    paddingVertical: 4,
-    marginBottom: 4,
+    marginBottom: 8, // Normalized internal spacing
+    paddingBottom: 8, // Normalized internal spacing
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.whiteOverlay20, // More visible divider
+  },
+  providerValueCompact: {
+    fontSize: theme.fontSizes?.xs || 10,
+    fontFamily: theme.fontFamilies?.medium,
+    color: theme.colors.white,
+    flex: 1,
+    textAlign: 'right' as const,
+    marginLeft: 8,
+  },
+  balanceTouchable: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    width: '100%',
+    maxWidth: '100%', // Ensure it respects container width
+    minWidth: 0, // Allow flex shrinking
+  },
+  balanceLoadingIndicator: {
+    marginRight: 8,
+  },
+  balanceErrorContainer: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: 'center' as const,
+  },
+  balanceErrorText: {
+    fontSize: theme.fontSizes?.sm || 12,
+    fontFamily: theme.fontFamilies?.medium,
+    color: theme.colors.danger,
+    textAlign: 'center' as const,
   },
   balanceRow: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 6,
-    minHeight: 32,
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.whiteOverlay12 // Original glassy white overlay from commit abc07a5e
+        : theme.colors.whiteOverlay08, // Glassy white overlay in dark mode
     width: '100%',
     justifyContent: 'center' as const,
   },
@@ -345,29 +594,45 @@ export const createStyles = (theme: Theme): Styles => ({
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 6,
-    minHeight: 32,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
     borderRadius: 8,
     backgroundColor: 'transparent',
     width: '100%',
+    maxWidth: '100%', // Ensure it respects container width
     justifyContent: 'center' as const,
-    marginTop: 4,
+    marginTop: 0,
+    marginBottom: 4, // Normalized spacing between BTC and fiat amounts
+    paddingTop: 0,
+    pointerEvents: 'box-none' as const,
+    minHeight: 24,
+    minWidth: 0, // Allow flex shrinking
   },
   balanceBTC: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: theme.fontSizes?.['2xl'],
+    fontFamily: theme.fontFamilies?.monospaceBold,
     color: theme.colors.white,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    textShadowColor: theme.colors.shadowColor + '33', // 20% opacity
+    textShadowOffset: {width: 0, height: 1},
+    textShadowRadius: 2,
+    lineHeight: theme.fontSizes?.['2xl'] ? theme.fontSizes['2xl'] * 1.2 : 24,
+    textAlign: 'center' as const,
+    includeFontPadding: false,
+    flexShrink: 1, // Allow text to shrink
   },
   balanceFiat: {
-    fontSize: 16,
+    fontSize: theme.fontSizes?.lg || 16,
+    fontFamily: theme.fontFamilies?.monospace,
     color: theme.colors.white,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    textShadowColor: theme.colors.shadowColor + '26', // 15% opacity
+    textShadowOffset: {width: 0, height: 1},
+    textShadowRadius: 1,
+    lineHeight: theme.fontSizes?.lg ? theme.fontSizes.lg * 1.2 : 19,
+    textAlign: 'center' as const,
+    includeFontPadding: false,
+    flexShrink: 1, // Allow text to shrink
   },
   balanceIcon: {
-    width: 18,
-    height: 18,
+    width: 22,
+    height: 22,
     tintColor: theme.colors.white,
     opacity: 0.9,
   },
@@ -375,8 +640,24 @@ export const createStyles = (theme: Theme): Styles => ({
     opacity: 0.7,
     letterSpacing: 2,
   },
+  balancePrivacyContainer: {
+    width: '100%',
+    height: 58,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  balancePrivacyPlaceholder: {
+    fontSize: theme.fontSizes?.['3xl'] || 24,
+    fontFamily: theme.fontFamilies?.bold,
+    color: theme.colors.white,
+    textAlign: 'center' as const,
+    letterSpacing: 4,
+    opacity: 0.8,
+    includeFontPadding: false,
+    lineHeight: theme.fontSizes?.['3xl'] ? theme.fontSizes['3xl'] * 1.2 : 29,
+  },
   balanceHint: {
-    fontSize: 10,
+    fontSize: theme.fontSizes?.xs || 10,
     color: theme.colors.textOnPrimary,
     opacity: 0.7,
     marginTop: 4,
@@ -385,27 +666,28 @@ export const createStyles = (theme: Theme): Styles => ({
   },
   qrContainer: {
     padding: 8,
-    backgroundColor: '#fff',
+    backgroundColor: theme.colors.white,
     borderRadius: 4,
     elevation: 4,
-    shadowColor: '#000',
+    shadowColor: theme.colors.shadowColor,
     shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.2,
     shadowRadius: 4,
   },
   address: {
-    fontSize: 14,
+    fontSize: theme.fontSizes?.base || 14,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.textOnPrimary,
     marginTop: 8,
     textAlign: 'center' as const,
-    fontWeight: '600',
   },
   partyContainer: {
     flexDirection: 'row' as const,
     width: '100%',
-    marginTop: 4,
-    marginBottom: 6,
+    marginTop: 0,
     borderRadius: 8,
+    flexWrap: 'nowrap' as const,
+    gap: 8,
   },
   partyLeft: {
     flex: 1,
@@ -420,18 +702,18 @@ export const createStyles = (theme: Theme): Styles => ({
     alignItems: 'flex-end' as const,
   },
   party: {
-    fontSize: 12,
+    fontSize: theme.fontSizes?.sm || 12,
+    fontFamily: theme.fontFamilies?.medium,
     color: theme.colors.textOnPrimary,
-    fontWeight: '500',
   },
   partyText: {
-    fontSize: 12,
+    fontSize: theme.fontSizes?.sm || 12,
+    fontFamily: theme.fontFamilies?.medium,
     color: theme.colors.textOnPrimary,
-    fontWeight: '500',
     opacity: 0.9,
   },
   partyLabel: {
-    fontSize: 10,
+    fontSize: theme.fontSizes?.xs || 9,
     color: theme.colors.textOnPrimary,
     opacity: 0.7,
     marginBottom: 1,
@@ -439,41 +721,67 @@ export const createStyles = (theme: Theme): Styles => ({
     letterSpacing: 0.2,
   },
   partyValue: {
-    fontSize: 12,
+    fontSize: theme.fontSizes?.xs || 11,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.textOnPrimary,
-    fontWeight: '600',
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
+    flexShrink: 1,
   },
   actions: {
     flexDirection: 'row' as const,
-    marginTop: 8,
+    marginTop: 8, // Reduced gap from balance container (balanceContainer paddingBottom: 12 + this: 8 = 20px total)
     width: '100%',
-    gap: 0,
+    gap: 8, // Consistent gap between buttons
+    alignItems: 'stretch' as const,
+    // Ensure buttons are above everything else
+    zIndex: 100,
+    elevation: Platform.OS === 'android' ? 10 : 0,
+    position: 'relative',
   },
   sendButton: {
     flex: 1,
-    backgroundColor: theme.colors.accent,
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
-    gap: 8,
+    gap: 8, // Internal gap for icon and text
+    minHeight: 48,
+    // Ensure button is clickable on both platforms
+    zIndex: 101,
+    elevation: Platform.OS === 'android' ? 11 : 0,
   },
   addressTypeModalButton: {
-    width: 50,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    width: 56,
+    minHeight: 48,
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.whiteOverlay15 // Glassy white overlay in light mode
+        : theme.colors.whiteOverlay10, // Glassy white overlay in dark mode
+    borderWidth: 1,
+    borderColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.whiteOverlay25
+        : theme.colors.whiteOverlay15, // Glassy border in dark mode
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
-    gap: 4,
+    gap: 0, // No internal gap needed for icon-only button
+    borderRadius: 10,
+    // Ensure button is clickable on both platforms
+    zIndex: 101,
+    elevation: Platform.OS === 'android' ? 0 : 11,
   },
   addressTypeButtonText: {
+    fontSize: theme.fontSizes?.sm || 12,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.textOnPrimary,
-    fontSize: 12,
-    fontWeight: '600',
   },
   addressTypeButtonIcon: {
-    width: 20,
-    height: 20,
+    width: 28,
+    height: 28,
     tintColor: theme.colors.textOnPrimary,
     opacity: 0.9,
   },
@@ -483,11 +791,15 @@ export const createStyles = (theme: Theme): Styles => ({
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
-    gap: 8,
+    gap: 8, // Internal gap for icon and text
+    minHeight: 48,
+    // Ensure button is clickable on both platforms
+    zIndex: 101,
+    elevation: Platform.OS === 'android' ? 11 : 0,
   },
   modalOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.8)',
+    backgroundColor: theme.colors.modalBackdrop,
     justifyContent: 'center' as const,
     alignItems: 'center' as const,
     zIndex: 100,
@@ -498,27 +810,32 @@ export const createStyles = (theme: Theme): Styles => ({
     padding: 20,
     width: '80%',
     alignItems: 'center' as const,
+    borderWidth: 1,
+    borderColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+        : theme.colors.whiteOverlay20, // Dark mode: subtle light border
   },
   modalText: {
-    fontSize: 18,
+    fontSize: theme.fontSizes?.xl || 18,
     marginBottom: 10,
     textAlign: 'center' as const,
     color: theme.colors.text,
   },
   receiveButtonText: {
+    fontSize: theme.fontSizes?.lg || 16,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.white,
-    fontSize: 16,
-    fontWeight: '600',
   },
   sendButtonText: {
+    fontSize: theme.fontSizes?.lg || 16,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.white,
-    fontSize: 16,
-    fontWeight: '600',
   },
   actionButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: theme.fontSizes?.base || 14,
+    fontFamily: theme.fontFamilies?.bold,
+    color: theme.colors.buttonText || theme.colors.white,
   },
   addressTypeButton: {
     backgroundColor: theme.colors.cardBackground,
@@ -535,29 +852,32 @@ export const createStyles = (theme: Theme): Styles => ({
     minHeight: 68,
   },
   addressTypeButtonSelected: {
-    borderColor: theme.colors.accent,
+    borderColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
     borderWidth: 2,
   },
   addressTypeLabel: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: theme.fontSizes?.md || 15,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.text,
     marginBottom: 4,
     flexShrink: 1,
     marginRight: 6,
   },
   addressTypeValue: {
-    marginTop: 4,
-    fontSize: 12,
+    fontSize: theme.fontSizes?.sm || 12,
+    fontFamily: theme.fontFamilies?.monospace,
     color: theme.colors.textSecondary,
     textAlign: 'left' as const,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    marginTop: 4,
     flexShrink: 1,
     marginRight: 6,
   },
   recommendBadge: {
-    backgroundColor: 'rgba(76, 175, 80, 0.12)',
-    borderColor: 'rgba(76, 175, 80, 0.35)',
+    backgroundColor: theme.colors.received + '1F', // 12% opacity
+    borderColor: theme.colors.received + '59', // 35% opacity
     borderWidth: 1,
     borderRadius: 10,
     padding: 4,
@@ -565,14 +885,15 @@ export const createStyles = (theme: Theme): Styles => ({
     alignSelf: 'auto',
   },
   recommendBadgeText: {
-    color: '#4CAF50',
-    fontSize: 9,
-    fontWeight: '600' as const,
+    fontSize: theme.fontSizes?.xs || 9,
+    fontFamily: theme.fontFamilies?.bold,
+    color: theme.colors.received,
     letterSpacing: 0.2,
   },
   addressTypeIcon: {
     width: 16,
     height: 16,
+    marginLeft: 8,
     tintColor: theme.colors.white,
     opacity: 0.9,
   },
@@ -585,7 +906,10 @@ export const createStyles = (theme: Theme): Styles => ({
   modalOptionCheckIcon: {
     width: 18,
     height: 18,
-    tintColor: theme.colors.accent,
+    tintColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
     opacity: 0.9,
     marginLeft: 4,
   },
@@ -600,8 +924,8 @@ export const createStyles = (theme: Theme): Styles => ({
     flexWrap: 'nowrap',
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: theme.fontSizes?.['2xl'] || 20,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.text,
     marginBottom: 16,
   },
@@ -609,25 +933,33 @@ export const createStyles = (theme: Theme): Styles => ({
     flex: 1,
   },
   cacheIndicator: {
-    padding: 12,
+    padding: 8,
     marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 8,
+    marginTop: 0, // walletHeader already has marginBottom: 16
+    marginBottom: 0, // No gap - transaction list starts immediately
     borderRadius: 8,
     flexDirection: 'row' as const,
     justifyContent: 'space-between' as const,
     alignItems: 'center' as const,
-    elevation: 1,
-    shadowColor: '#000',
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.background // Transparent/background in light mode
+        : theme.colors.whiteOverlay08, // Glassy white overlay in dark mode
+    elevation: Platform.OS === 'android' ? 0 : 1,
+    shadowColor: theme.colors.shadowColor,
     shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.1,
     shadowRadius: 1,
     borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.05)',
+    borderColor:
+      theme.colors.background === '#121212' ||
+      theme.colors.background.includes('12')
+        ? theme.colors.whiteOverlay15 // Glassy border in dark mode
+        : theme.colors.blackOverlay05, // Original light mode border
   },
   refreshText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: theme.fontSizes?.base || 14,
+    fontFamily: theme.fontFamilies?.bold,
     textAlign: 'left' as const,
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
@@ -636,11 +968,14 @@ export const createStyles = (theme: Theme): Styles => ({
   refreshIcon: {
     width: 16,
     height: 16,
-    tintColor: theme.colors.accent,
+    tintColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
     opacity: 0.9,
   },
   cacheText: {
-    fontSize: 13,
+    fontSize: theme.fontSizes?.base || 13,
     marginBottom: 0,
     marginTop: 0,
     textAlign: 'right' as const,
@@ -652,7 +987,10 @@ export const createStyles = (theme: Theme): Styles => ({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.02)',
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.blackOverlay02
+        : theme.colors.shadowColor + '05',
     borderRadius: 8,
     overflow: 'hidden',
   },
@@ -662,7 +1000,10 @@ export const createStyles = (theme: Theme): Styles => ({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.04)',
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.blackOverlay04
+        : theme.colors.shadowColor + '0A',
     transform: [{translateX: -100}],
   },
   disabled: {
@@ -672,8 +1013,10 @@ export const createStyles = (theme: Theme): Styles => ({
     flex: 1,
     marginBottom: 0,
     padding: 16,
-    paddingTop: 0,
+    paddingTop: 0, // CacheIndicator already has marginBottom: 16
     backgroundColor: theme.colors.background,
+    position: 'relative',
+    zIndex: 1,
   },
   sectionHeader: {
     flexDirection: 'row' as const,
@@ -684,13 +1027,13 @@ export const createStyles = (theme: Theme): Styles => ({
     marginBottom: 4,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: theme.fontSizes?.lg || 16,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.text,
     opacity: 0.9,
   },
   sectionSubtitle: {
-    fontSize: 13,
+    fontSize: theme.fontSizes?.base || 13,
     color: theme.colors.textSecondary,
   },
   emptyStateContainer: {
@@ -701,7 +1044,7 @@ export const createStyles = (theme: Theme): Styles => ({
     marginTop: 20,
   },
   emptyStateText: {
-    fontSize: 16,
+    fontSize: theme.fontSizes?.lg || 16,
     color: theme.colors.textSecondary,
     textAlign: 'center' as const,
     marginTop: 8,
@@ -715,28 +1058,40 @@ export const createStyles = (theme: Theme): Styles => ({
   actionButtonIcon: {
     width: 18,
     height: 18,
-    tintColor: '#fff',
+    tintColor: theme.colors.white,
   },
   addressTypeContainer: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 4,
-    backgroundColor: 'rgba(255,255,255,0.18)', // glassy
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.whiteOverlay18 // glassy
+        : theme.colors.whiteOverlay12, // Glassy white overlay in dark mode
     borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
-    shadowColor: '#000',
+    borderColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.whiteOverlay25
+        : theme.colors.whiteOverlay20, // Glassy border in dark mode
+    shadowColor: theme.colors.shadowColor,
     shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.08,
     shadowRadius: 6,
     // Add elevation for Android
     elevation: 2,
+    minWidth: 0,
+    flex: 1,
+    flexShrink: 1,
   },
   addressTypeClickable: {
     // For extra visual feedback if needed
     opacity: 0.96,
+  },
+  sendButtonDisabled: {
+    opacity: 0.6,
   },
   networkRow: {
     flexDirection: 'row',
@@ -745,7 +1100,7 @@ export const createStyles = (theme: Theme): Styles => ({
   networkIcon: {
     width: 16,
     height: 16,
-    tintColor: '#FFFFFF',
+    tintColor: theme.colors.white,
   },
   rowCenter: {
     flexDirection: 'row' as const,
@@ -784,30 +1139,36 @@ export const createStyles = (theme: Theme): Styles => ({
     borderWidth: 0,
   },
   modalCloseButtonText: {
-    color: theme.colors.accent,
-    fontWeight: 'bold' as const,
-    fontSize: 16,
+    fontSize: theme.fontSizes?.lg || 16,
+    fontFamily: theme.fontFamilies?.bold,
+    color:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
   },
   modalBoldText: {
-    fontSize: 15,
-    fontWeight: 'bold' as const,
+    fontSize: theme.fontSizes?.md || 15,
+    fontFamily: theme.fontFamilies?.bold,
   },
   modalTextLeft: {
+    fontSize: theme.fontSizes?.md || 15,
     textAlign: 'left' as const,
     color: theme.colors.text,
-    fontSize: 15,
     marginBottom: 12,
   },
   modalInfoIcon: {
     width: 36,
     height: 36,
     marginBottom: 12,
-    tintColor: theme.colors.accent,
+    tintColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
     alignSelf: 'center' as const,
   },
   modalActionButtonText: {
-    fontSize: 16,
-    fontWeight: 'bold' as const,
+    fontSize: theme.fontSizes?.lg || 16,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.primary,
     letterSpacing: 0.2,
   },
@@ -822,12 +1183,15 @@ export const createStyles = (theme: Theme): Styles => ({
   modalHeaderIcon: {
     width: 24,
     height: 24,
-    tintColor: theme.colors.primary,
+    tintColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.primary
+        : theme.colors.white,
     marginRight: 10,
   },
   modalHeaderTitle: {
-    fontSize: 20,
-    fontWeight: 'bold' as const,
+    fontSize: theme.fontSizes?.['2xl'] || 20,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.text,
     flex: 1,
     textAlign: 'left' as const,
@@ -849,8 +1213,12 @@ export const createStyles = (theme: Theme): Styles => ({
     alignItems: 'flex-end' as const,
   },
   linkText: {
-    color: theme.colors.accent,
-    fontWeight: 'bold' as const,
+    fontSize: theme.fontSizes?.base || 14,
+    fontFamily: theme.fontFamilies?.bold,
+    color:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
   },
   apiDisplayContainer: {
     paddingHorizontal: 16,
@@ -878,14 +1246,13 @@ export const createStyles = (theme: Theme): Styles => ({
     opacity: 0.7,
   },
   apiDisplayLabel: {
-    fontSize: 11,
-    fontWeight: '500' as const,
+    fontSize: theme.fontSizes?.sm || 11,
+    fontFamily: theme.fontFamilies?.medium,
     color: theme.colors.textSecondary,
     marginRight: 4,
   },
   apiDisplayValue: {
-    fontSize: 11,
-    fontWeight: '400' as const,
+    fontSize: theme.fontSizes?.sm || 11,
     color: theme.colors.textSecondary,
     flex: 1,
     textAlign: 'right' as const,
@@ -914,14 +1281,12 @@ export const createStyles = (theme: Theme): Styles => ({
     opacity: 0.8,
   },
   providerLabel: {
-    fontSize: 11,
-    fontWeight: '400' as const,
+    fontSize: theme.fontSizes?.sm || 11,
     color: theme.colors.textSecondary,
     letterSpacing: 0.2,
   },
   providerValue: {
-    fontSize: 11,
-    fontWeight: '400' as const,
+    fontSize: theme.fontSizes?.sm || 11,
     color: theme.colors.textSecondary,
     letterSpacing: 0.1,
     flex: 1,
@@ -929,30 +1294,42 @@ export const createStyles = (theme: Theme): Styles => ({
     opacity: 0.8,
   },
   networkBadge: {
-    backgroundColor: theme.colors.primary + '20',
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.primary + '40' // Increased opacity for better contrast in light mode
+        : theme.colors.whiteOverlay15, // Glassy background in dark mode
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
-    marginRight: 8,
+    marginRight: 0, // No margin needed in compact layout
   },
   networkBadgeText: {
-    fontSize: 9,
-    fontWeight: '700' as const,
-    color: theme.colors.primary,
+    fontSize: theme.fontSizes?.xs || 9,
+    fontFamily: theme.fontFamilies?.bold,
+    color:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.white // White text for better contrast on dark badge in light mode
+        : theme.colors.text, // Use theme text color in dark mode
     letterSpacing: 0.5,
   },
   warningBox: {
-    backgroundColor: 'rgba(255, 193, 7, 0.1)',
+    backgroundColor:
+      (theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange) + '1A', // 10% opacity
     borderRadius: 8,
     padding: 12,
     marginVertical: 8,
     borderLeftWidth: 4,
-    borderLeftColor: '#FFC107',
+    borderLeftColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
   },
   warningText: {
-    fontSize: 14,
-    fontWeight: '500' as const,
-    color: '#FF6B35',
+    fontSize: theme.fontSizes?.base || 14,
+    fontFamily: theme.fontFamilies?.medium,
+    color: theme.colors.danger,
     lineHeight: 20,
   },
   backupButton: {
@@ -964,21 +1341,27 @@ export const createStyles = (theme: Theme): Styles => ({
     alignItems: 'center' as const,
   },
   backupButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600' as const,
+    fontSize: theme.fontSizes?.lg || 16,
+    fontFamily: theme.fontFamilies?.bold,
+    color: theme.colors.white,
   },
   warningBoxWithMargin: {
-    backgroundColor: 'rgba(255, 193, 7, 0.1)',
+    backgroundColor:
+      (theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange) + '1A', // 10% opacity
     borderRadius: 8,
     padding: 12,
     marginVertical: 8,
     marginTop: 10,
     borderLeftWidth: 4,
-    borderLeftColor: '#FFC107',
+    borderLeftColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
   },
   modalTipText: {
-    fontSize: 13,
+    fontSize: theme.fontSizes?.base || 13,
     color: theme.colors.textSecondary,
     marginTop: 12,
     textAlign: 'left' as const,
@@ -996,15 +1379,19 @@ export const createStyles = (theme: Theme): Styles => ({
     borderRadius: 16,
     padding: 16,
     width: '90%',
+    minWidth: '90%',
     maxHeight: '100%',
     alignSelf: 'center' as const,
     elevation: 8,
-    shadowColor: '#000',
+    shadowColor: theme.colors.shadowColor,
     shadowOffset: {width: 0, height: 4},
     shadowOpacity: 0.15,
     shadowRadius: 10,
     borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+        : theme.colors.whiteOverlay20, // Dark mode: subtle light border
     flexDirection: 'column' as const,
     justifyContent: 'flex-start' as const,
     overflow: 'hidden' as const,
@@ -1023,17 +1410,17 @@ export const createStyles = (theme: Theme): Styles => ({
   modalHeaderIconCompact: {
     width: 24,
     height: 24,
-    tintColor: theme.colors.primary,
+    tintColor: theme.colors.text,
     marginRight: 10,
   },
   modalHeaderTitleCompact: {
-    fontSize: 20,
-    fontWeight: 'bold' as const,
+    fontSize: theme.fontSizes?.['2xl'] || 20,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.text,
     flex: 1,
   },
   modalTextCompact: {
-    fontSize: 14,
+    fontSize: theme.fontSizes?.base || 14,
     lineHeight: 20,
     color: theme.colors.text,
     marginBottom: 12,
@@ -1041,28 +1428,34 @@ export const createStyles = (theme: Theme): Styles => ({
     includeFontPadding: false,
   },
   modalBoldTextCompact: {
-    fontSize: 14,
-    fontWeight: '600' as const,
+    fontSize: theme.fontSizes?.base || 14,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.text,
     includeFontPadding: false,
     lineHeight: 20,
   },
   warningBoxCompact: {
-    backgroundColor: 'rgba(255, 193, 7, 0.08)',
+    backgroundColor:
+      (theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange) + '14', // 8% opacity
     borderRadius: 6,
     padding: 10,
     marginBottom: 10,
     borderLeftWidth: 3,
-    borderLeftColor: '#FFC107',
+    borderLeftColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
   },
   warningTextCompact: {
-    fontSize: 13,
-    fontWeight: '500' as const,
-    color: '#FF6B35',
+    fontSize: theme.fontSizes?.base || 13,
+    fontFamily: theme.fontFamilies?.medium,
+    color: theme.colors.danger,
     lineHeight: 18,
   },
   modalTipTextCompact: {
-    fontSize: 12,
+    fontSize: theme.fontSizes?.sm || 12,
     color: theme.colors.textSecondary,
     marginBottom: 14,
     textAlign: 'left' as const,
@@ -1076,9 +1469,9 @@ export const createStyles = (theme: Theme): Styles => ({
     alignItems: 'center' as const,
   },
   backupButtonTextCompact: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600' as const,
+    fontSize: theme.fontSizes?.base || 14,
+    fontFamily: theme.fontFamilies?.bold,
+    color: theme.colors.white,
   },
   keyshareModalCloseButton: {
     marginLeft: 'auto' as const,
@@ -1090,8 +1483,8 @@ export const createStyles = (theme: Theme): Styles => ({
     marginTop: 4,
   },
   keyshareModalCloseText: {
-    fontSize: 22,
-    fontWeight: '700' as const,
+    fontSize: theme.fontSizes?.['2xl'] || 22,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.text,
     lineHeight: 22,
   },
@@ -1109,7 +1502,8 @@ export const createStyles = (theme: Theme): Styles => ({
     minHeight: 24,
   },
   keyshareInfoLabel: {
-    fontWeight: '600' as const,
+    fontSize: theme.fontSizes?.base || 14,
+    fontFamily: theme.fontFamilies?.bold,
     flexShrink: 0,
     minWidth: 150,
     textAlign: 'left' as const,
@@ -1117,6 +1511,7 @@ export const createStyles = (theme: Theme): Styles => ({
     textAlignVertical: 'center' as const,
   },
   keyshareInfoValue: {
+    fontSize: theme.fontSizes?.base || 14,
     flex: 1,
     flexShrink: 1,
     textAlign: 'right' as const,
@@ -1124,10 +1519,10 @@ export const createStyles = (theme: Theme): Styles => ({
     textAlignVertical: 'center' as const,
   },
   keyshareInfoValueSuccess: {
-    color: '#4CAF50',
+    color: theme.colors.received,
   },
   keyshareInfoValueDisabled: {
-    color: '#757575',
+    color: theme.colors.disabledText,
   },
   keyshareKeySection: {
     gap: 8,
@@ -1140,30 +1535,75 @@ export const createStyles = (theme: Theme): Styles => ({
     gap: 8,
     minWidth: 0,
   },
-  keyshareKeyText: {
+  keyshareKeyContainerBadge: {
     flex: 1,
     flexShrink: 1,
-    fontFamily: 'monospace',
-    fontSize: 11,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 8,
+    minWidth: 0,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    minHeight: 32,
+    borderRadius: 8,
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.primary + '15'
+        : theme.colors.whiteOverlay10,
+    borderWidth: 1,
+    borderColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.primary + '40'
+        : theme.colors.border + '60',
+  },
+  keyshareKeyText: {
+    fontSize: theme.fontSizes?.sm || 11,
+    fontFamily: theme.fontFamilies?.monospace,
+    flex: 1,
+    flexShrink: 1,
     color: theme.colors.text,
     minWidth: 0,
+    textAlign: 'right' as const,
+  },
+  keyshareKeyTextClickable: {
+    fontSize: theme.fontSizes?.sm || 11,
+    fontFamily: theme.fontFamilies?.monospaceBold,
+    flex: 1,
+    flexShrink: 1,
+    color:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.primary
+        : theme.colors.text,
+    minWidth: 0,
+    textAlign: 'center' as const,
+    letterSpacing: 0.3,
   },
   keyshareCopyButton: {
     padding: 8,
+    minHeight: 32,
     backgroundColor: theme.colors.primary,
     borderRadius: 6,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
   },
   keyshareCopyButtonText: {
-    fontSize: 11,
-    fontWeight: '600' as const,
+    fontSize: theme.fontSizes?.sm || 11,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.textOnPrimary,
   },
   keyshareCopyIcon: {
     width: 16,
     height: 16,
-    tintColor: theme.colors.textOnPrimary,
+    tintColor: theme.colors.white,
+  },
+  keyshareBadgeCopyIcon: {
+    width: 14,
+    height: 14,
+    tintColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.primary
+        : theme.colors.text,
   },
   keyshareButtonsRow: {
     flexDirection: 'row' as const,
@@ -1177,15 +1617,20 @@ export const createStyles = (theme: Theme): Styles => ({
     alignItems: 'center' as const,
     minWidth: 280,
     maxWidth: 320,
+    borderWidth: 1,
+    borderColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+        : theme.colors.whiteOverlay20, // Dark mode: subtle light border
   },
   qrModalTitle: {
-    fontSize: 18,
-    fontWeight: '700' as const,
+    fontSize: theme.fontSizes?.xl || 18,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.text,
     marginBottom: 4,
   },
   qrModalSubtitle: {
-    fontSize: 13,
+    fontSize: theme.fontSizes?.base || 13,
     color: theme.colors.textSecondary,
     marginBottom: 20,
   },
@@ -1196,7 +1641,7 @@ export const createStyles = (theme: Theme): Styles => ({
     marginBottom: 16,
   },
   qrModalHint: {
-    fontSize: 12,
+    fontSize: theme.fontSizes?.sm || 12,
     color: theme.colors.textSecondary,
     marginBottom: 16,
     fontStyle: 'italic' as const,
@@ -1208,8 +1653,8 @@ export const createStyles = (theme: Theme): Styles => ({
     borderRadius: 8,
   },
   qrModalCloseButtonText: {
-    fontSize: 14,
-    fontWeight: '600' as const,
+    fontSize: theme.fontSizes?.base || 14,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.textOnPrimary,
   },
   keyshareLoadingContainer: {
@@ -1237,17 +1682,87 @@ export const createStyles = (theme: Theme): Styles => ({
     paddingVertical: 8,
     paddingBottom: 16,
   },
-  keyshareInfoCard: {
-    backgroundColor: theme.colors.background,
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 12,
+  walletInfoContainer: {
+    backgroundColor: theme.colors.cardBackground,
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 4,
+    marginTop: 4,
     borderWidth: 1,
-    borderColor: theme.colors.border + '50',
+    borderColor: theme.colors.border,
+    width: '100%',
+    shadowColor: theme.colors.shadowColor,
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  walletInfoTitleRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    marginBottom: 16,
+  },
+  walletInfoTitleIcon: {
+    width: 20,
+    height: 20,
+    marginRight: 8,
+    tintColor: theme.colors.text,
+  },
+  walletInfoTitle: {
+    fontSize: theme.fontSizes?.sm || 12,
+    fontFamily: theme.fontFamilies?.bold,
+    color: theme.colors.textSecondary,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+  },
+  walletInfoContent: {
+    gap: 0,
+  },
+  walletInfoHint: {
+    fontSize: theme.fontSizes?.xs || 10,
+    fontFamily: theme.fontFamilies?.regular,
+    color: theme.colors.textSecondary,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border + '30',
+    fontStyle: 'italic' as const,
+    textAlign: 'center' as const,
+  },
+  walletInfoRow: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
+    paddingVertical: 6,
+    minHeight: 32,
+  },
+  walletInfoKeyItem: {
+    flexDirection: 'row' as const,
+    paddingVertical: 6,
+    paddingHorizontal: 2,
+    alignItems: 'center' as const,
+    width: '100%',
+    minHeight: 32,
+  },
+  keyshareInfoCard: {
+    backgroundColor: theme.colors.cardBackground,
+    borderRadius: 8,
+    padding: 0,
+    marginBottom: 4,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    width: '100%',
+    overflow: 'hidden' as const,
+    shadowColor: theme.colors.shadowColor,
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   keyshareSectionTitle: {
-    fontSize: 14,
-    fontWeight: '700' as const,
+    fontSize: theme.fontSizes?.base || 14,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.text,
     marginBottom: 10,
     letterSpacing: 0.2,
@@ -1260,16 +1775,24 @@ export const createStyles = (theme: Theme): Styles => ({
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border + '30',
   },
+  keyshareDetailRowLast: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
+    paddingVertical: 8,
+    borderBottomWidth: 0,
+  },
   keyshareDetailLabel: {
-    fontSize: 13,
+    fontSize: theme.fontSizes?.base || 13,
+    fontFamily: theme.fontFamilies?.medium,
     color: theme.colors.textSecondary,
-    fontWeight: '500' as const,
-    flex: 1,
+    width: 110,
+    flexShrink: 0,
   },
   keyshareDetailValue: {
-    fontSize: 13,
+    fontSize: theme.fontSizes?.base || 13,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.text,
-    fontWeight: '600' as const,
     flex: 1,
     textAlign: 'right' as const,
   },
@@ -1280,15 +1803,17 @@ export const createStyles = (theme: Theme): Styles => ({
     alignSelf: 'flex-end' as const,
   },
   keyshareBadgeText: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: '#FFFFFF',
+    fontSize: theme.fontSizes?.sm || 12,
+    fontFamily: theme.fontFamilies?.bold,
+    color: theme.colors.white,
+    textAlign: 'center' as const,
+    flex: 1,
   },
   keyshareBadgeTrio: {
     backgroundColor: theme.colors.primary,
   },
   keyshareBadgeDuo: {
-    backgroundColor: theme.colors.secondary ,
+    backgroundColor: theme.colors.secondary,
   },
   keyshareStatusBadge: {
     paddingHorizontal: 10,
@@ -1297,20 +1822,20 @@ export const createStyles = (theme: Theme): Styles => ({
     alignSelf: 'flex-end' as const,
   },
   keyshareStatusBadgeText: {
-    fontSize: 12,
-    fontWeight: '600' as const,
+    fontSize: theme.fontSizes?.sm || 12,
+    fontFamily: theme.fontFamilies?.bold,
   },
   keyshareStatusBadgeSuccess: {
-    backgroundColor: '#4CAF50' + '20',
+    backgroundColor: theme.colors.received + '33', // 20% opacity
   },
   keyshareStatusBadgeDisabled: {
-    backgroundColor: '#757575' + '20',
+    backgroundColor: theme.colors.disabledText + '33', // 20% opacity
   },
   keyshareStatusBadgeTextSuccess: {
-    color: '#4CAF50',
+    color: theme.colors.received,
   },
   keyshareStatusBadgeTextDisabled: {
-    color: '#757575',
+    color: theme.colors.disabledText,
   },
   keyshareKeyItem: {
     flexDirection: 'row' as const,
@@ -1321,10 +1846,18 @@ export const createStyles = (theme: Theme): Styles => ({
     alignItems: 'center' as const,
     width: '100%',
   },
+  keyshareKeyItemLast: {
+    flexDirection: 'row' as const,
+    paddingVertical: 6,
+    paddingHorizontal: 2,
+    borderBottomWidth: 0,
+    alignItems: 'center' as const,
+    width: '100%',
+  },
   keyshareKeyLabel: {
-    fontSize: 13,
+    fontSize: theme.fontSizes?.base || 13,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.textSecondary,
-    fontWeight: '600' as const,
     width: 130,
     flexShrink: 0,
     marginRight: 12,
@@ -1343,17 +1876,17 @@ export const createStyles = (theme: Theme): Styles => ({
     width: '100%',
   },
   keyshareTableKey: {
-    fontSize: 13,
+    fontSize: theme.fontSizes?.base || 13,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.textSecondary,
-    fontWeight: '600' as const,
     width: 130,
     flexShrink: 0,
     marginRight: 12,
   },
   keyshareTableValue: {
-    fontSize: 13,
+    fontSize: theme.fontSizes?.base || 13,
+    fontFamily: theme.fontFamilies?.medium,
     color: theme.colors.text,
-    fontWeight: '500' as const,
     flex: 1,
     flexShrink: 1,
     textAlign: 'left' as const,
@@ -1368,45 +1901,60 @@ export const createStyles = (theme: Theme): Styles => ({
     minWidth: 0,
   },
   keyshareTableValueKey: {
+    fontSize: theme.fontSizes?.sm || 11,
+    fontFamily: theme.fontFamilies?.monospace,
     flex: 1,
     flexShrink: 1,
-    fontSize: 11,
-    fontFamily: 'monospace',
     color: theme.colors.text,
     textAlign: 'left' as const,
     minWidth: 0,
   },
   keyshareTableValueSuccess: {
-    color: '#4CAF50',
-    fontWeight: '600' as const,
+    fontSize: theme.fontSizes?.base || 13,
+    fontFamily: theme.fontFamilies?.bold,
+    color: theme.colors.received,
   },
   keyshareTableValueDisabled: {
-    color: '#757575',
+    color: theme.colors.disabledText,
   },
   keyshareInfoHeader: {
-    fontSize: 14,
-    fontWeight: '700' as const,
+    fontSize: theme.fontSizes?.base || 14,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.text,
   },
   watchWalletHeader: {
-    marginTop: 12,
-    backgroundColor: theme.colors.background,
-    borderRadius: 10,
-    padding: 14,
+    marginTop: 4,
+    marginBottom: 4,
+    backgroundColor: theme.colors.cardBackground,
+    borderRadius: 8,
+    padding: 0,
     borderWidth: 1,
-    borderColor: theme.colors.border + '40',
+    borderColor: theme.colors.border,
+    width: '100%',
+    overflow: 'hidden' as const,
+    shadowColor: theme.colors.shadowColor,
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   watchWalletTitle: {
-    fontSize: 14,
-    fontWeight: '700' as const,
+    fontSize: theme.fontSizes?.base || 14,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.text,
   },
   watchWalletDescription: {
-    fontSize: 12,
+    fontSize: theme.fontSizes?.sm || 12,
     lineHeight: 18,
     color: theme.colors.text,
     marginTop: 4,
     marginBottom: 12,
+  },
+  watchWalletWarning: {
+    fontSize: theme.fontSizes?.sm || 11,
+    lineHeight: 16,
+    color: theme.colors.textSecondary,
+    fontStyle: 'italic' as const,
   },
   watchWalletItem: {
     marginTop: 12,
@@ -1414,25 +1962,32 @@ export const createStyles = (theme: Theme): Styles => ({
     borderTopWidth: 1,
     borderTopColor: theme.colors.border + '40',
   },
+  watchWalletItemLast: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 0,
+  },
   watchWalletItemLabel: {
-    fontSize: 13,
+    fontSize: theme.fontSizes?.base || 13,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.textSecondary,
-    fontWeight: '600' as const,
     marginBottom: 8,
   },
   watchWalletItemValue: {
+    fontSize: theme.fontSizes?.sm || 11,
+    fontFamily: theme.fontFamilies?.monospace,
     flex: 1,
     flexShrink: 1,
-    fontSize: 11,
-    fontFamily: 'monospace',
     textAlign: 'left' as const,
     minWidth: 0,
+    color: theme.colors.text, // Fix dark mode readability
   },
   watchWalletItemValueContainer: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 8,
     minWidth: 0,
+    flex: 1,
   },
   clickableTextContainer: {
     flex: 1,
@@ -1440,6 +1995,7 @@ export const createStyles = (theme: Theme): Styles => ({
     minWidth: 0,
   },
   clickableText: {
+    fontSize: theme.fontSizes?.base || 14,
     color: theme.colors.primary,
     textDecorationLine: 'underline' as const,
   },
@@ -1474,7 +2030,8 @@ export const createStyles = (theme: Theme): Styles => ({
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 1000,
+    zIndex: 10000,
+    elevation: 10000,
     pointerEvents: 'box-none' as const,
   },
   qrModalHeader: {
@@ -1485,8 +2042,8 @@ export const createStyles = (theme: Theme): Styles => ({
     marginBottom: 16,
   },
   qrModalHeaderTitle: {
-    fontSize: 18,
-    fontWeight: '700' as const,
+    fontSize: theme.fontSizes?.xl || 18,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.text,
     flex: 1,
   },
@@ -1500,8 +2057,8 @@ export const createStyles = (theme: Theme): Styles => ({
     borderRadius: 18,
   },
   qrModalTopRightCloseText: {
-    fontSize: 22,
-    fontWeight: '700' as const,
+    fontSize: theme.fontSizes?.['2xl'] || 22,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.text,
     lineHeight: 22,
   },
@@ -1513,5 +2070,71 @@ export const createStyles = (theme: Theme): Styles => ({
   qrModalButtonsContainerCentered: {
     justifyContent: 'center' as const,
     alignItems: 'center' as const,
+  },
+  qrModalValueContainer: {
+    backgroundColor: theme.colors.cardBackground || theme.colors.background,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    marginHorizontal: 0,
+    borderWidth: 1,
+    borderColor: theme.colors.border + '40',
+    maxHeight: 100,
+    width: '100%',
+    alignSelf: 'stretch' as const,
+    minWidth: 0,
+  },
+  qrModalValueText: {
+    fontSize: theme.fontSizes?.xs || 10,
+    fontFamily: theme.fontFamilies?.monospace,
+    color: theme.colors.text,
+    flexShrink: 1,
+    minWidth: 0,
+    letterSpacing: 0.3,
+    ...(Platform.OS === 'ios' && {
+      // iOS-specific: Use tighter letter spacing and ensure proper wrapping
+      includeFontPadding: false,
+    }),
+  },
+  qrModalValueScrollContent: {
+    flexGrow: 1,
+    minWidth: 0,
+  },
+  collapsibleHeader: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
+    padding: 12,
+    minWidth: '100%',
+    backgroundColor: theme.colors.cardBackground,
+  },
+  collapsibleHeaderContent: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    flex: 1,
+  },
+  collapsibleHeaderIcon: {
+    width: 20,
+    height: 20,
+    marginRight: 8,
+    tintColor: theme.colors.text,
+  },
+  collapsibleHeaderTitle: {
+    fontSize: theme.fontSizes?.lg || 16,
+    fontFamily: theme.fontFamilies?.bold,
+    color: theme.colors.text,
+  },
+  collapsibleChevron: {
+    fontSize: theme.fontSizes?.base || 14,
+    fontFamily: theme.fontFamilies?.bold,
+  },
+  collapsibleContent: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.accent
+        : theme.colors.bitcoinOrange,
   },
 });

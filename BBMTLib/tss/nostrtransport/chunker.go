@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,21 +25,31 @@ func (c ChunkMetadata) TagValue() string {
 	return fmt.Sprintf("%s/%d/%d", c.Hash, c.Index, c.Total)
 }
 
-func ParseChunkTag(value string) (ChunkMetadata, error) {
+func ParseChunkTag(value string) (result ChunkMetadata, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in ParseChunkTag: %v", r)
+			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ChunkMetadata{}
+		}
+	}()
+
 	var meta ChunkMetadata
 	parts := strings.Split(value, "/")
 	if len(parts) != 3 {
 		return ChunkMetadata{}, fmt.Errorf("invalid chunk tag format: expected 'hash/index/total', got %d parts", len(parts))
 	}
 	meta.Hash = parts[0]
-	var err error
-	meta.Index, err = strconv.Atoi(parts[1])
-	if err != nil {
-		return ChunkMetadata{}, fmt.Errorf("invalid chunk index: %w", err)
+	var parseErr error
+	meta.Index, parseErr = strconv.Atoi(parts[1])
+	if parseErr != nil {
+		return ChunkMetadata{}, fmt.Errorf("invalid chunk index: %w", parseErr)
 	}
-	meta.Total, err = strconv.Atoi(parts[2])
-	if err != nil {
-		return ChunkMetadata{}, fmt.Errorf("invalid chunk total: %w", err)
+	meta.Total, parseErr = strconv.Atoi(parts[2])
+	if parseErr != nil {
+		return ChunkMetadata{}, fmt.Errorf("invalid chunk total: %w", parseErr)
 	}
 	return meta, nil
 }
@@ -49,7 +61,17 @@ type Chunk struct {
 }
 
 // ChunkPayload splits the ciphertext into fixed-size chunks and returns the chunks plus the payload hash.
-func ChunkPayload(sessionID, recipient string, ciphertext []byte, chunkSize int) ([]Chunk, string) {
+func ChunkPayload(sessionID, recipient string, ciphertext []byte, chunkSize int) (resultChunks []Chunk, resultHash string) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in ChunkPayload: %v", r)
+			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+			resultChunks = nil
+			resultHash = ""
+		}
+	}()
+
 	if chunkSize <= 0 {
 		chunkSize = 16 * 1024
 	}
@@ -90,7 +112,16 @@ type chunkState struct {
 	deadline time.Time
 }
 
-func NewChunkAssembler(ttl time.Duration) *ChunkAssembler {
+func NewChunkAssembler(ttl time.Duration) (result *ChunkAssembler) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in NewChunkAssembler: %v", r)
+			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+			result = nil
+		}
+	}()
+
 	if ttl == 0 {
 		ttl = 2 * time.Minute
 	}
@@ -101,7 +132,17 @@ func NewChunkAssembler(ttl time.Duration) *ChunkAssembler {
 }
 
 // Add stores the chunk and returns the reassembled payload when all parts arrive.
-func (a *ChunkAssembler) Add(meta ChunkMetadata, data []byte) ([]byte, bool) {
+func (a *ChunkAssembler) Add(meta ChunkMetadata, data []byte) (result []byte, complete bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in ChunkAssembler.Add: %v", r)
+			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+			result = nil
+			complete = false
+		}
+	}()
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -146,6 +187,14 @@ func assemblePayload(state *chunkState) []byte {
 
 // Cleanup removes expired chunk states to keep memory bounded.
 func (a *ChunkAssembler) Cleanup() {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in ChunkAssembler.Cleanup: %v", r)
+			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+		}
+	}()
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	now := time.Now()

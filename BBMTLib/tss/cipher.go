@@ -39,7 +39,17 @@ func GenerateKeyPair() (result string, err error) {
 	return string(keyPairJSON), nil
 }
 
-func EciesPubkeyFromPrivateKey(privateKeyHex string) (string, error) {
+func EciesPubkeyFromPrivateKey(privateKeyHex string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in EciesPubkeyFromPrivateKey: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	privateKey, err := eciesgo.NewPrivateKeyFromHex(privateKeyHex)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode private key: %w", err)
@@ -47,7 +57,17 @@ func EciesPubkeyFromPrivateKey(privateKeyHex string) (string, error) {
 	return privateKey.PublicKey.Hex(true), nil
 }
 
-func EciesEncrypt(data, publicKeyHex string) (string, error) {
+func EciesEncrypt(data, publicKeyHex string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in EciesEncrypt: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	publicKey, err := eciesgo.NewPublicKeyFromHex(publicKeyHex)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode public key: %w", err)
@@ -60,7 +80,17 @@ func EciesEncrypt(data, publicKeyHex string) (string, error) {
 	return encodedData, nil
 }
 
-func EciesDecrypt(encryptedData, privateKeyHex string) (string, error) {
+func EciesDecrypt(encryptedData, privateKeyHex string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in EciesDecrypt: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	privateKey, err := eciesgo.NewPrivateKeyFromHex(privateKeyHex)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode private key: %w", err)

@@ -10,9 +10,7 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 import LocalCache from '../services/LocalCache';
 import {BBMTLibNativeModule} from '../native_modules';
 import {getDerivePathForNetwork, isLegacyWallet, dbg} from '../utils';
-
 type AddressType = 'legacy' | 'segwit-native' | 'segwit-compatible';
-
 interface UserContextType {
   btcPub: string;
   legacyMainnetAddress: string;
@@ -21,20 +19,16 @@ interface UserContextType {
   legacyTestnetAddress: string;
   segwitNativeTestnetAddress: string;
   segwitCompatibleTestnetAddress: string;
-
   activeNetwork: string;
   activeAddressType: AddressType;
   activeAddress: string;
   activeApiProvider: string;
-
   setActiveNetwork: (newNetwork: string) => Promise<void>;
   setActiveAddressType: (newType: AddressType) => Promise<void>;
   setActiveApiProvider: (newApi: string) => Promise<void>;
   refresh: () => Promise<void>;
 }
-
 const UserContext = createContext<UserContextType | undefined>(undefined);
-
 export const UserProvider: React.FC<{children: React.ReactNode}> = ({
   children,
 }) => {
@@ -42,7 +36,6 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
   const [network, setNetwork] = useState<string>('mainnet');
   const [apiBase, setApiBase] = useState<string>('');
   const [btcPub, setBtcPub] = useState<string>('');
-
   // Derived addresses for both networks
   const [legacyMainnetAddress, setLegacyMainnetAddress] = useState<string>('');
   const [segwitNativeMainnetAddress, setSegwitNativeMainnetAddress] =
@@ -54,10 +47,8 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     useState<string>('');
   const [segwitCompatibleTestnetAddress, setSegwitCompatibleTestnetAddress] =
     useState<string>('');
-
   const [activeAddressType, setActiveAddressTypeState] =
     useState<AddressType>('legacy');
-
   // Compute the currently active address based on active network + address type
   const activeAddress = useMemo(() => {
     const isTestnet = network !== 'mainnet';
@@ -73,7 +64,6 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         ? segwitCompatibleTestnetAddress
         : segwitCompatibleMainnetAddress;
     }
-
     // Log address computation for debugging
     dbg(`[UserContext] activeAddress computed:`, {
       timestamp: Date.now(),
@@ -98,7 +88,6 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         ? `${segwitNativeTestnetAddress.substring(0, 8)}...`
         : 'EMPTY',
     });
-
     return computedAddress;
   }, [
     network,
@@ -110,7 +99,6 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     segwitNativeTestnetAddress,
     segwitCompatibleTestnetAddress,
   ]);
-
   // Ensure native module knows about network/api when they change
   useEffect(() => {
     const syncApi = async () => {
@@ -123,14 +111,12 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     };
     syncApi();
   }, [network, apiBase]);
-
   // Initialize network/api from cache (migrated from NetworkContext)
   useEffect(() => {
     const initializeNetwork = async () => {
       try {
         const net = (await LocalCache.getItem('network')) || 'mainnet';
         setNetwork(net);
-
         let api = await LocalCache.getItem(`api_${net}`);
         if (!api) {
           api =
@@ -141,7 +127,6 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
           await LocalCache.setItem('api', api);
           await LocalCache.setItem(`api_${net}`, api);
         }
-
         setApiBase(api);
         await BBMTLibNativeModule.setAPI(net, api);
       } catch {
@@ -150,7 +135,6 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     };
     initializeNetwork();
   }, []);
-
   const deriveAllAddressesForNetwork = useCallback(
     async (pub: string, net: string) => {
       const isTestnet = net !== 'mainnet';
@@ -161,13 +145,11 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         isTestnet,
         pubPrefix: pub ? `${pub.substring(0, 16)}...` : 'EMPTY',
       });
-
       const [legacy, segwitNative, segwitCompatible] = await Promise.all([
         BBMTLibNativeModule.btcAddress(pub, net, 'legacy'),
         BBMTLibNativeModule.btcAddress(pub, net, 'segwit-native'),
         BBMTLibNativeModule.btcAddress(pub, net, 'segwit-compatible'),
       ]);
-
       const endTime = Date.now();
       dbg(`[UserContext] deriveAllAddressesForNetwork COMPLETE:`, {
         timestamp: endTime,
@@ -187,7 +169,6 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
             )}`
           : 'EMPTY',
       });
-
       if (isTestnet) {
         dbg(`[UserContext] Setting TESTNET addresses:`, {
           timestamp: Date.now(),
@@ -214,7 +195,6 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     },
     [],
   );
-
   const refresh = useCallback(async () => {
     const refreshStartTime = Date.now();
     dbg(`[UserContext] refresh() START:`, {
@@ -222,7 +202,6 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
       network,
       stackTrace: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
     });
-
     try {
       // Load address type
       const storedType = (await LocalCache.getItem(
@@ -236,7 +215,6 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         network,
       });
       setActiveAddressTypeState(currentAddressType);
-
       // Always derive btcPub fresh to ensure it matches the current address type
       // This prevents issues where stored btcPub was derived with a different address type
       let pub = '';
@@ -274,7 +252,6 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         }
       }
       setBtcPub(pub);
-
       if (pub && ks) {
         // Ensure native network is set; returns "<net>@<api>"
         const netParams = await BBMTLibNativeModule.setBtcNetwork(network);
@@ -284,11 +261,9 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
           network,
           actualNet,
         });
-
         // CRITICAL: btcPub is network-specific (derivation path includes coin type)
         // Only generate addresses for the CURRENT network using the CURRENT network's btcPub
         await deriveAllAddressesForNetwork(pub, actualNet);
-
         // For the other network, we need to derive a separate btcPub with that network's path
         // because btcPub is network-specific (derivation path includes coin type: 0' for mainnet, 1' for testnet)
         const otherNet = actualNet === 'mainnet' ? 'testnet3' : 'mainnet';
@@ -313,7 +288,6 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
           await deriveAllAddressesForNetwork(otherPub, otherNet);
         }
       }
-
       const refreshEndTime = Date.now();
       dbg(`[UserContext] refresh() COMPLETE:`, {
         timestamp: refreshEndTime,
@@ -329,11 +303,9 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
       });
     }
   }, [network, deriveAllAddressesForNetwork]);
-
   useEffect(() => {
     refresh();
   }, [refresh]);
-
   const handleSetActiveNetwork = useCallback(
     async (newNetwork: string) => {
       try {
@@ -342,10 +314,8 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         if (currentApi) {
           await LocalCache.setItem(`api_${network}`, currentApi);
         }
-
         // Cache the new network
         await LocalCache.setItem('network', newNetwork);
-
         // Try to get the previously selected API for this network, fallback to default
         let nextApi = await LocalCache.getItem(`api_${newNetwork}`);
         if (!nextApi) {
@@ -354,13 +324,11 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
               ? 'https://mempool.space/testnet/api'
               : 'https://mempool.space/api';
         }
-
         // Cache and update state
         await LocalCache.setItem(`api_${newNetwork}`, nextApi);
         await LocalCache.setItem('api', nextApi);
         setNetwork(newNetwork);
         setApiBase(nextApi);
-
         // Update native module
         await BBMTLibNativeModule.setAPI(newNetwork, nextApi);
       } catch {
@@ -369,7 +337,6 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     },
     [apiBase, network],
   );
-
   const handleSetActiveAddressType = useCallback(
     async (newType: AddressType) => {
       await LocalCache.setItem('addressType', newType);
@@ -384,7 +351,6 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     },
     [activeAddress, refresh],
   );
-
   const handleSetActiveApiProvider = useCallback(
     async (newApi: string) => {
       try {
@@ -398,7 +364,6 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     },
     [network],
   );
-
   const value: UserContextType = {
     btcPub,
     legacyMainnetAddress,
@@ -416,10 +381,8 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     setActiveApiProvider: handleSetActiveApiProvider,
     refresh,
   };
-
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 };
-
 export const useUser = (): UserContextType => {
   const ctx = useContext(UserContext);
   if (ctx === undefined) {

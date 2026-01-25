@@ -75,7 +75,17 @@ func LocalPreParams(ppmFile string, timeoutMinutes int) (result bool, err error)
 	}
 }
 
-func PreParams(ppmFile string) (*ecdsaKeygen.LocalPreParams, error) {
+func PreParams(ppmFile string) (result *ecdsaKeygen.LocalPreParams, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in PreParams: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = nil
+		}
+	}()
+
 	Logln("BBMTLog", "ppm generation...")
 
 	if _, err := os.Stat(ppmFile); err != nil {
@@ -113,7 +123,17 @@ func PreParams(ppmFile string) (*ecdsaKeygen.LocalPreParams, error) {
 	}
 }
 
-func NewService(msg Messenger, stateAccessor LocalStateAccessor, createPreParam bool, ppmFile string) (*ServiceImpl, error) {
+func NewService(msg Messenger, stateAccessor LocalStateAccessor, createPreParam bool, ppmFile string) (result *ServiceImpl, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in NewService: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = nil
+		}
+	}()
+
 	if msg == nil {
 		return nil, errors.New("nil messenger")
 	}

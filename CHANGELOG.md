@@ -1,41 +1,375 @@
 # Changelog
 
-## [Unreleased]
+## [2.1.12] - 2026-01-25
 
 ### Added
-- **Legacy Wallet Migration Modal**: New modal appears for users with legacy wallets, advising migration to new wallet setup for better PSBT compatibility
-  - Non-dismissible modal with friendly messaging
-  - "Do not remind me again" checkbox option
-  - Modal flag automatically resets on new wallet import (if wallet is legacy)
-  - Standalone `LegacyWalletModal` component for reusability
+- **Custom Font System**: Professional typography with Inter and JetBrains Mono fonts
+  - Inter font family for UI text (Regular, Medium, SemiBold weights)
+  - JetBrains Mono font family for technical content like Bitcoin addresses (Regular, Medium, Bold weights)
+  - New font system with proper font family mappings and weight-to-family conversion
+  - Font comparison and verification components for testing and validation
+  - Automated font download scripts and comprehensive documentation
+  - Font assets properly linked for both iOS and Android platforms
+  - Enhanced typography consistency across all screens and components
+- **Mempool Privacy Configuration**: New user preference screen for enhanced privacy
+  - Custom mempool.space API endpoint configuration during wallet setup
+  - Privacy-focused feature to reduce third-party tracking of Bitcoin addresses
+  - API endpoint validation with automatic URL normalization
+  - Option to skip configuration and use default public mempool servers
+  - Settings integration for changing API endpoint after wallet creation
+  - Educational information about privacy benefits of self-hosted mempool servers
+- **Comprehensive Icon Asset Library**: Added 50+ new icon assets for improved UI consistency
+  - Icons for settings, actions, network status, and wallet features
+  - Theme-aware icon support with inverted variants for dark mode
+  - Consistent icon styling across all screens and components
+- **User Preference Screen**: New onboarding screen for privacy configuration
+  - Clean, professional UI with privacy-focused messaging
+  - API endpoint input with validation and error handling
+  - Skip option for users who prefer default settings
+  - Integrated into app navigation flow
 
 ### Changed
-- **Network Reset on Wallet Import**: Network always resets to mainnet when importing a keyshare to ensure clean state
-- **Balance Display Styling**: Balance rows (BTC and USD) now have transparent background while maintaining tap-to-hide functionality
-- **Button Alignment**: Send and Receive buttons now vertically align with Device and Address Type buttons above for consistent spacing
-- **QR Scanner Subtitle**: Updated subtitle text to "Point camera to Sending Device QR" for clarity
+- **Typography System Refactoring**: Complete font system overhaul
+  - Migrated from system fonts to custom Inter and JetBrains Mono fonts
+  - New `theme/fonts.ts` module with font utilities and mappings
+  - Font weight to font family mapping for proper font selection
+  - Enhanced font style creation with theme integration
+  - All components updated to use new font system
+- **Component Font Updates**: Updated all components to use new font families
+  - TransactionList, TransactionDetailsModal, TransactionListSkeleton with Inter fonts
+  - WalletSkeleton, Header, CurrencySelector with updated typography
+  - QRScanner components with monospace font for addresses
+  - TransportModeSelector, CacheIndicator, and other UI components
+  - Consistent font usage across all screens
+- **Screen Refactoring**: Improved code organization and font integration
+  - MobileNostrPairing, MobilesPairing screens with font updates
+  - PSBTModal, PSBTScreen with enhanced typography
+  - SendBitcoinModal, ReceiveModal, SignedPSBTModal with font improvements
+  - WalletHome, WalletSettings, ShowcaseScreen with updated fonts
+  - LoadingScreen with theme-aware font support
+- **Asset Organization**: Better asset management and organization
+  - New assets directory structure with organized icon assets
+  - Font assets properly linked via manifest files
+  - Improved asset loading and caching
 
 ### Fixed
-- **Address Flickering Issue**: Fixed address changing/flickering after lock/unlock by making UserContext the single source of truth for addresses
-  - UserContext now properly derives network-specific btcPub for both mainnet and testnet
-  - WalletHome prioritizes userActiveAddress from UserContext over local state
-  - Eliminated race conditions in address derivation
-- **Network State Management**: Improved network state consistency across the app
-  - Network reset on import ensures proper address derivation
-  - All contexts and providers properly synchronized with network changes
-- **Cache Clearing**: Comprehensive cache clearing on wallet setup and import screens
-  - LocalCache cleared on ShowcaseScreen (import)
-  - LocalCache cleared on MobilesPairing and MobileNostrPairing (setup mode only)
-  - Stale btcPub removed from EncryptedStorage
-  - WalletService cache cleared for fresh state
+- **Font Consistency Issues**: Fixed inconsistent font rendering across platforms
+  - Proper font family mapping for iOS and Android
+  - Fixed font weight issues with correct font file selection
+  - Improved monospace font rendering for Bitcoin addresses
+  - Better font fallback handling
+- **Code Cleanup**: Removed unused code and contexts
+  - Removed unused NetworkContext, UserContext, WalletContext files
+  - Cleaned up unused components and utilities
+  - Removed deprecated useQRScanner hook
+  - Improved code organization and maintainability
 
 ### Technical Details
-- **UserContext**: Enhanced refresh() to derive separate btcPub values for mainnet and testnet
-- **WalletHome**: Updated to use UserContext as primary address source, with local state as fallback
-- **ShowcaseScreen**: Added network reset to mainnet on keyshare import using setActiveNetwork()
-- **Cache Management**: Added useEffect hooks to clear all cache on wallet setup/import screens
-- **Styles**: Updated balanceRowWithMargin to use transparent background
-- **Button Layout**: Applied flexOneMinWidthZero and partyGap styles to action buttons for consistent alignment
+- **Font System**: New `theme/fonts.ts` module with comprehensive font utilities
+  - Font family mappings for Inter and JetBrains Mono
+  - Weight-to-family conversion for proper font selection
+  - Font style creation utilities with theme integration
+  - Platform-specific font handling
+- **Font Assets**: Added font files for both iOS and Android
+  - Inter-Regular.ttf, Inter-Medium.ttf, Inter-SemiBold.ttf
+  - JetBrainsMono-Regular.ttf, JetBrainsMono-Medium.ttf, JetBrainsMono-Bold.ttf
+  - Proper font linking via link-assets-manifest.json files
+- **User Preference Screen**: New screen component for privacy configuration
+  - API endpoint validation with timeout handling
+  - URL normalization and validation logic
+  - Integration with UserContext for API provider management
+- **Asset Management**: 50+ new icon assets added
+  - Icons organized in assets/assets/assets/ directory
+  - Theme-aware icon variants for light and dark modes
+- **Files Changed**: 144 files changed with 6,026 insertions and 3,817 deletions
+- **Components Updated**: All major components updated for new font system
+- **Screens Updated**: All screens updated with font improvements and privacy features
+- **Build System**: Updated iOS Xcode project and Android build configuration for font assets
+
+## [2.1.11] - 2026-01-12
+
+### Changed
+- **Transaction List Typography Improvements**: Enhanced font sizes and weights for better readability and visual hierarchy
+  - Status text increased from 13px to 16px (lg) for improved readability
+  - Fiat amount increased from 12px to 13px (base) for better accessibility
+  - Address labels and transaction IDs standardized to 13px (base) for consistency
+  - Improved typography hierarchy following mobile financial app best practices
+  - Better visual balance between primary, secondary, and tertiary information
+- **Dark Mode Color Theme**: Replaced yellow accent colors with Bitcoin orange (#F7931A) in dark mode
+  - Transaction status badges now use Bitcoin orange instead of yellow in dark mode
+  - All accent colors across screens and components updated to Bitcoin orange in dark mode
+  - Maintains yellow accent in light mode for consistency
+  - Updated components: TransactionDetailsModal, TransactionList, TransportModeSelector, CurrencySelector, CacheIndicator, Styles
+  - Updated screens: WalletSettings, ShowcaseScreen, SendBitcoinModal, PSBTScreen, MobilesPairing, MobileNostrPairing
+- **Header Visual Symmetry**: Improved header layout balance
+  - Price button width now matches combined width of lock and settings buttons for visual symmetry
+  - Better visual balance between left and right header elements
+  - Enhanced header component consistency
+
+### Fixed
+- **Transaction Details Font Sizing**: Fixed inconsistent font sizes in transaction details modal
+  - From/To address font sizes aligned with transaction ID font size (14px)
+  - Address index labels standardized to 14px for consistency
+  - Improved readability and visual consistency across transaction details
+
+### Technical Details
+- **Files Changed**: 14 files changed with 341 insertions and 219 deletions
+- **Components Updated**: TransactionList, TransactionDetailsModal, Header, Styles, CacheIndicator, CurrencySelector, TransportModeSelector
+- **Screens Updated**: WalletSettings, ShowcaseScreen, SendBitcoinModal, PSBTScreen, MobilesPairing, MobileNostrPairing
+- **Version Update**: Version bumped to 2.1.11
+
+## [2.1.10] - 2026-01-12
+
+### Added
+- **Comprehensive Panic Recovery in Nostr Transport**: Enhanced error handling and crash prevention throughout the Nostr transport layer
+  - Panic recovery added to chunk assembler operations (`ChunkAssembler.Add`, `ChunkPayload`, `ParseChunkTag`)
+  - Panic recovery in message pump operations (`MessagePump.Run`, `processEvent`, query goroutines)
+  - Panic recovery in session coordinator (`SessionCoordinator.AwaitPeers`, `PublishReady`, `PublishComplete`)
+  - Stack trace logging for all panic recoveries to aid debugging
+  - Improved reliability and stability of Nostr-based device pairing and transaction signing
+- **Theme-Aware Typography System**: Font system now uses theme constants for consistency
+  - Font sizes now use `theme.fontSizes` (xl, lg, base) instead of hardcoded values
+  - Font weights use `theme.fontWeights` (bold, semibold, normal) with proper type casting
+  - Font families use `theme.fontFamilies` (regular, monospace) for better theming support
+  - Enhanced typography consistency across all screens and components
+
+### Changed
+- **Nostr Transport Layer Refactoring**: Improved code organization and error handling
+  - Enhanced chunk handling with better metadata parsing and validation
+  - Improved message processing with better error recovery
+  - Enhanced session management with better peer coordination
+  - Improved client connection handling and relay communication
+  - Better error messages and logging throughout the transport layer
+- **Screen Component Refactoring**: Major refactoring across multiple screens for better code organization
+  - `MobileNostrPairing.tsx`: Significant refactoring (1102 lines changed) with improved error handling and code formatting
+  - `MobilesPairing.tsx`: Refactored with better code structure (474 lines changed)
+  - `PSBTModal.tsx`: Enhanced with improved UI and error handling (217 lines changed)
+  - `WalletSettings.tsx`: Updated with better organization (251 lines changed)
+  - `ShowcaseScreen.tsx`: Improved layout and functionality (118 lines changed)
+  - `WalletHome.tsx`: Refactored for better maintainability (168 lines changed)
+  - `PSBTScreen.tsx`, `SendBitcoinModal.tsx`, `SignedPSBTModal.tsx`: Enhanced with improvements
+- **Component Theme Integration**: Enhanced components with better theme support
+  - `Header.tsx`: Updated with theme-aware typography (47 lines changed)
+  - `TransactionList.tsx`: Improved theme integration (47 lines changed)
+  - `QRScanner.tsx`: Enhanced with theme constants (18 lines changed)
+  - `KeyshareModal.tsx`: Updated with improvements (14 lines changed)
+  - `Styles.tsx`: Refactored for better organization (153 lines changed)
+- **TSS Library Updates**: Updated native libraries with improvements
+  - Updated TSS framework binaries for iOS (all architectures)
+  - Updated TSS AAR library for Android
+  - Enhanced Go library with improved error handling and panic recovery
+
+### Fixed
+- **Nostr Transport Stability**: Fixed potential crashes from unhandled panics in transport operations
+  - All critical operations now have panic recovery with proper error handling
+  - Better error messages for debugging transport issues
+  - Improved reliability of chunk assembly and message processing
+- **Code Formatting and Consistency**: Improved code formatting across multiple files
+  - Better indentation and line breaks for improved readability
+  - Consistent code style across screens and components
+  - Removed unused code (LoadingScreen.tsx cleanup)
+
+### Technical Details
+- **Nostr Transport Layer**: Enhanced with comprehensive panic recovery
+  - `chunker.go`: Added panic recovery to chunk operations
+  - `pump.go`: Enhanced message pump with panic recovery in all goroutines
+  - `session.go`: Added panic recovery to session operations
+  - `client.go`, `messenger.go`, `relay.go`: Improved error handling
+- **Version Update**: Android version code bumped to 43, version name to 2.1.10
+- **Files Changed**: 39 files changed with 2,213 insertions and 1,152 deletions
+- **Build System**: Updated iOS Xcode project and Android build configuration
+
+## [2.1.9] - 2026-01-10
+
+### Added
+- **Modular Header Components**: New reusable header components for better code organization
+  - `HeaderPriceButton`: Standalone BTC price display component with currency selector integration
+  - `HeaderNetworkProvider`: Network and API provider information display component
+  - Improved component modularity and reusability across the app
+- **Extended Theme Color System**: Enhanced theme palette with comprehensive overlay colors
+  - New color constants: `bitcoinOrange`, `warning`, `success`, and their variants
+  - Glassmorphism overlay colors: `blackOverlay02-50`, `whiteOverlay08-30`, `primaryOverlay95`
+  - Status color overlays: `receivedOverlay15/40`, `dangerOverlay15/40`
+  - Skeleton loading colors: `skeletonGray`
+  - Better support for layered UI effects and visual depth
+- **Balance Header Controls**: New style properties for balance visibility and unit toggling
+  - `balanceHeaderControls`, `balanceEyeIcon`, `balanceUnitToggleContainer` styles
+  - Foundation for enhanced balance display controls
+
+### Changed
+- **Theme Color Consistency**: Replaced hardcoded color values with theme color constants
+  - Modal backdrops now use `theme.colors.modalBackdrop` instead of hardcoded rgba values
+  - Error boundary colors use `theme.colors.danger` and `theme.colors.white`
+  - QR Scanner components use theme colors for text, progress bars, and backgrounds
+  - Currency selector and legal modals use theme-aware backdrop colors
+- **Dark Mode Detection**: Simplified dark mode detection logic
+  - Changed from checking background color strings to simple `!== '#ffffff'` comparison
+  - More reliable and performant dark mode detection
+  - Consistent dark mode behavior across all header components
+- **Header Component Styling**: Enhanced header button and container styling
+  - Consistent use of `theme.colors.blackOverlay06` and `theme.colors.blackOverlay10` for light mode
+  - Better border and background color consistency across header elements
+  - Improved visual hierarchy with theme-aware styling
+- **Glassmorphism Effects**: Enhanced glassmorphism with new overlay color system
+  - Wallet header uses `primaryOverlay95` in light mode and `whiteOverlay15` in dark mode
+  - Consistent border colors using `whiteOverlay30` for better contrast
+  - More refined visual depth and layering effects
+
+### Fixed
+- **Color Consistency Issues**: Fixed hardcoded color values throughout components
+  - Replaced `rgba(0, 0, 0, 0.5)` with `theme.colors.modalBackdrop` in modals
+  - Replaced `#ff6b6b` with `theme.colors.danger` in error boundaries
+  - Replaced `#FFFFFF` and rgba white values with `theme.colors.white` and opacity variants
+  - Replaced `#F7931A` with `theme.colors.bitcoinOrange` in QR scanners
+- **QR Scanner Theme Support**: Improved QR scanner color consistency
+  - All text colors now use theme color constants with proper opacity
+  - Progress bars use theme colors for better visual consistency
+  - Better dark mode support across all QR scanner variants
+
+### Technical Details
+- **Component Refactoring**: Header component split into modular sub-components
+  - `HeaderPriceButton`: 216 lines of new component code
+  - `HeaderNetworkProvider`: 216 lines of new component code
+  - Better separation of concerns and component reusability
+- **Theme System**: Extended `Styles.tsx` with 30+ new color constants
+  - New overlay color system for glassmorphism effects
+  - Better type safety with TypeScript theme definitions
+- **Version Update**: Android version code bumped to 42, version name to 2.1.9
+- **Files Changed**: Multiple components updated for theme color consistency
+  - `Header.tsx`, `Styles.tsx`, `ErrorBoundary.tsx`, `CurrencySelector.tsx`
+  - `LegalModal.tsx`, `LegacyWalletModal.tsx`, `QRScanner.tsx`, `QRScanner.foss.tsx`
+
+## [2.1.8] - 2026-01-07
+
+### Added
+- **Dark Mode Support**: Complete dark mode implementation with system theme detection
+  - New theme system with light and dark themes (`theme/themes.ts`)
+  - Theme context provider with OS-based, light, and dark mode options (`theme/context.tsx`)
+  - Automatic system theme detection and persistence of user preference
+  - Dark mode optimized color palette with improved contrast and readability
+  - Support for theme mode switching in wallet settings
+- **Wallet Home UI Revamp**: Redesigned wallet home screen with enhanced visual hierarchy
+  - Improved balance container styling with dark mode support
+  - Enhanced glassmorphism effects for better visual depth
+  - Updated wallet header with better contrast and visibility
+  - Refined action button styling and positioning
+- **Enhanced Header Component**: New header system with integrated features
+  - BTC price display in header with currency selector integration
+  - Custom header components with configurable height
+  - Improved header button styling with dark mode support
+  - Better visual integration of price and currency information
+- **iOS Framework dSYM Generation**: Automated dSYM generation for crash reporting
+  - New script (`ios/scripts/generate_framework_dsyms.sh`) for generating dSYM files
+  - Automatic dSYM generation for Tss.framework and hermesvm.framework
+  - Integrated into Xcode build process for release builds
+  - Improved crash symbolication support for embedded frameworks
+- **Dark Mode Assets**: New inverted icon assets for dark mode compatibility
+  - `bold-icon-inverted.png` for dark mode header display
+  - `icon-inverted.png` for dark mode app icon variants
+
+### Changed
+- **Theme System Refactoring**: Complete theme architecture overhaul
+  - Migrated from single `theme.js` to modular theme system (`theme/` directory)
+  - Separated theme types, definitions, context, and utilities
+  - Improved type safety with TypeScript theme definitions
+  - Better theme mode management with OS default support
+- **UI Components Dark Mode Support**: All major components updated for dark mode
+  - `TransactionList` and `TransactionListSkeleton` with dark mode styling
+  - `TransactionDetailsModal` with improved dark mode contrast
+  - `TransportModeSelector` with theme-aware styling
+  - `WalletSkeleton` with dark mode loading states
+  - `QRScanner` components with dark mode support
+  - `CurrencySelector` with theme-aware UI
+  - `LegalModal` and `LegacyWalletModal` with dark mode styling
+- **Wallet Settings Theme Integration**: Theme selector in wallet settings
+  - New theme mode selector (OS Default, Light, Dark)
+  - Theme preference persistence across app sessions
+  - Legacy theme migration support
+- **Docker Build Optimizations**: Improved Docker build process
+  - Fixed working directory context in Dockerfile
+  - Better path handling for Go module downloads
+  - Improved build reliability and consistency
+
+### Fixed
+- **Loading Screen Theme Support**: Fixed loading screen background for dark mode
+- **Error Boundary Theme Integration**: Updated error boundary with theme support
+- **Cache Indicator Dark Mode**: Improved cache indicator visibility in dark mode
+- **Showcase Screen Theme Support**: Updated showcase screen with dark mode styling
+- **PSBT Screen Theme Integration**: Enhanced PSBT screen with theme-aware components
+- **Receive Modal Dark Mode**: Improved receive modal styling for dark mode
+- **Send Bitcoin Modal Theme Support**: Enhanced send modal with dark mode styling
+
+### Technical Details
+- **Theme Architecture**: New `theme/` directory structure
+  - `types.ts`: TypeScript type definitions for themes
+  - `themes.ts`: Light and dark theme definitions
+  - `context.tsx`: React context for theme management
+  - `utils.ts`: Theme utility functions
+  - `index.ts`: Theme module exports
+- **Component Updates**: 39 files changed with 2,967 insertions and 1,522 deletions
+- **Build System**: iOS Xcode project updated with dSYM generation build phase
+- **Asset Management**: New inverted icon assets for dark mode compatibility
+
+## [2.1.7] - 2026-01-05
+
+### Added
+- **Docker Build System**: Complete Docker-based build infrastructure for Android APK compilation with cross-platform support
+- **Enhanced QR Code for Send Bitcoin**: QR codes now include address type, derivation path, and network to prevent session timeouts between devices
+- **From Address Display**: Transaction details now show the source (from) address in pairing screens
+- **Watch-Only Wallet Export**: Streamlined to output descriptors only (removed xpub/tpub export)
+- **Multiple Address Display in Transactions**: Transaction details now show all recipient addresses for sent transactions and all sender addresses for received transactions
+  - Sent transactions with multiple outputs (e.g., PSBT transactions) display all recipient addresses with individual amounts
+  - Received transactions with multiple inputs display all sender addresses with the received output amount
+  - Each address shows its BTC amount and fiat equivalent
+  - Transaction list shows count indicator for multiple recipients: "To: address... (+2 more)"
+
+### Changed
+- **Docker Build System**: Moved Docker scripts to organized `docker/scripts/` directory
+- **Android Build Configuration**: Enhanced build system with Docker-specific Gradle settings and improved ProGuard rules
+
+### Fixed
+- **Nostr Transport Panic Recovery**: Enhanced panic recovery in co-signing operations with better error handling
+- **Legacy Wallet Migration Modal**: New modal appears for users with legacy wallets, advising migration to new wallet setup
+- **Network Reset on Wallet Import**: Network always resets to mainnet when importing a keyshare to ensure clean state
+- **Address Flickering Issue**: Fixed address changing/flickering after lock/unlock by making UserContext the single source of truth
+- **Session Timeout Fix for QR Code Scanning**: Fixed session timeouts when scanning send Bitcoin QR codes from second device
+- **TransactionList Loading State**: Fixed infinite "Loading..." state and network errors when restoring wallet for the first time
+
+## [2.1.6] - 2025-12-31
+
+### Added
+- **Balance Card in Send Modal**: New prominent balance card displayed above amount input in Send Bitcoin modal
+  - Shows available balance in BTC and fiat currency
+  - Integrated "Max" button for quick balance selection
+  - Clean, professional UI with card styling
+- **Smart Balance Check for Send Button**: Automatic balance refresh when clicking Send with zero balance
+  - Prevents modal from opening prematurely when balance hasn't loaded
+  - Shows loading spinner on Send button during balance check
+  - Automatically opens modal if balance is found, or shows alert if truly zero
+  - Prevents multiple rapid clicks with button disable state
+  - 5-second timeout with graceful error handling
+
+### Fixed
+- **Co-signing Go Panic Recovery**: Fixed potential panic crashes in Nostr transport layer during co-signing
+  - Added panic recovery with stack trace logging in `Client.Publish` goroutine
+  - Improved nil pointer safety when extracting relay URLs
+  - Better error messages for debugging relay connection issues
+  - Enhanced resiliency for co-signing message delivery across multiple relays
+- **Send Button Balance Race Condition**: Fixed issue where Send button would show "Insufficient Balance" alert even when balance was still loading
+  - Eliminates flickering and need to click Send button multiple times
+  - Better UX with immediate feedback during balance check
+
+### Changed
+- **Send Modal UI Enhancement**: Improved balance visibility and Max button placement
+  - Balance card replaces inline "Max" text link
+  - More prominent balance display with better visual hierarchy
+  - Updated QR scanner icon to use scan-icon.png for consistency
+
+### Technical Details
+- **WalletHome.tsx**: Added `checkBalanceForSend()` function for dedicated balance fetching
+- **SendBitcoinModal.tsx**: New balance card component with integrated Max button
+- **client.go**: Enhanced panic recovery and error handling in Nostr publish operations
+- **Error Handling**: Improved timeout and error recovery for balance checks
 
 ## [2.1.4] - 2025-12-30
 
@@ -51,8 +385,6 @@
 ### Fixed
 - **Android navigation bar overlap**: Fixed bottom navigation bar overlapping system navigation on Android devices (e.g., Samsung)
 - **Message delivery reliability**: Improved handling of messages sent just before subscription starts
-
----
 
 ## [2.1.3] - 2025-12-20
 

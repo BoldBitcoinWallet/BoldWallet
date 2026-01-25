@@ -6,7 +6,10 @@ react {
     autolinkLibrariesWithApp()
 }
 
-def enableProguardInReleaseBuilds = false
+// Enable R8/ProGuard for release builds
+// Set to false if you encounter runtime issues after enabling
+// Note: Disabling this will prevent generating mapping.txt for Play Console
+def enableProguardInReleaseBuilds = true
 
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
@@ -24,8 +27,8 @@ android {
         applicationId "com.boldwallet"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 38
-        versionName "2.1.5"
+        versionCode 45
+        versionName "2.1.12"
         missingDimensionStrategy 'react-native-camera', 'general'
         missingDimensionStrategy 'react-native-arch', 'oldarch'
         
@@ -38,6 +41,8 @@ android {
             cmake {
                 cppFlags "-O2"
                 arguments "-DANDROID_ARM_NEON=TRUE", "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=0x4000", "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
+                // Reduce parallel jobs for C++ builds to avoid QEMU linker crashes
+                arguments "-DCMAKE_BUILD_PARALLEL_LEVEL=2"
             }
         }
     }
@@ -83,7 +88,7 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            shrinkResources false
+            shrinkResources enableProguardInReleaseBuilds
             signingConfig signingConfigs.release
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"

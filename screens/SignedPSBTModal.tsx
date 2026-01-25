@@ -1,9 +1,9 @@
-import React, {useCallback, useRef, useState, useMemo, useEffect} from 'react';
+import React, {useCallback, useRef, useState, useMemo} from 'react';
 import {
   View,
   Text,
   Modal,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   Alert,
   Image,
@@ -20,13 +20,12 @@ import {CryptoPSBT} from '@keystonehq/bc-ur-registry-btc';
 import {dbg, HapticFeedback} from '../utils';
 import {useTheme} from '../theme';
 import Toast from 'react-native-toast-message';
-
+import {createToastConfig} from '../utils/toastConfig';
 interface SignedPSBTModalProps {
   visible: boolean;
   signedPsbtBase64: string;
   onClose: () => void;
 }
-
 const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
   visible,
   signedPsbtBase64,
@@ -36,7 +35,6 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
   const [isCopied, setIsCopied] = useState(false);
   const [qrMode, setQrMode] = useState<'single' | 'animated'>('single');
   const qrRef = useRef<any>(null);
-
   // Convert base64 PSBT to bytes for UR encoding
   const psbtBytes = useMemo(() => {
     try {
@@ -52,7 +50,6 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
       return null;
     }
   }, [signedPsbtBase64]);
-
   // Store the original UR object (not the encoder, since encoder doesn't have reset)
   const urObject = useMemo(() => {
     if (!psbtBytes) return null;
@@ -69,7 +66,6 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
       return null;
     }
   }, [psbtBytes]);
-
   // Helper function to create a new encoder and get a specific part
   const getURPart = useCallback(
     (partIndex: number = 0): string | null => {
@@ -89,7 +85,6 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
     },
     [urObject],
   );
-
   // Get encoder info (fragmentsLength) - create a temporary encoder to get this
   const encoderInfo = useMemo(() => {
     if (!urObject) return null;
@@ -103,7 +98,6 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
       return null;
     }
   }, [urObject]);
-
   // Copy base64 to clipboard
   const handleCopy = useCallback(() => {
     HapticFeedback.light();
@@ -119,7 +113,6 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
       setIsCopied(false);
     }, 2000);
   }, [signedPsbtBase64]);
-
   // Share PSBT as file
   const handleShareFile = useCallback(async () => {
     HapticFeedback.medium();
@@ -132,19 +125,15 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
       const hours = now.getHours().toString().padStart(2, '0');
       const minutes = now.getMinutes().toString().padStart(2, '0');
       const filename = `signed-psbt.${month}${day}.${year}.${hours}${minutes}.psbt`;
-
       const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
       const filePath = `${tempDir}/${filename}`;
-
       // Check if file exists and delete
       const fileExists = await RNFS.exists(filePath);
       if (fileExists) {
         await RNFS.unlink(filePath);
       }
-
       // Write base64 PSBT to file (as binary)
       await RNFS.writeFile(filePath, signedPsbtBase64, 'base64');
-
       // Share the file
       await Share.open({
         title: 'Share Signed PSBT',
@@ -155,7 +144,6 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
         isNewTask: true,
         failOnCancel: false,
       });
-
       // Cleanup
       try {
         await RNFS.unlink(filePath);
@@ -167,16 +155,13 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
       }
     }
   }, [signedPsbtBase64]);
-
   // Share PSBT as animated QR (UR format)
   const handleShareQR = useCallback(async () => {
     HapticFeedback.medium();
-
     if (!qrRef.current) {
       Alert.alert('Error', 'QR Code is not ready yet');
       return;
     }
-
     try {
       // Generate base64 from QR component
       const base64Data: string = await new Promise((resolve, reject) => {
@@ -188,15 +173,12 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
           }
         });
       });
-
       const filePath = `${RNFS.TemporaryDirectoryPath}/signed-psbt-qr.jpg`;
       const fileExists = await RNFS.exists(filePath);
       if (fileExists) {
         await RNFS.unlink(filePath);
       }
-
       await RNFS.writeFile(filePath, base64Data, 'base64');
-
       await Share.open({
         title: 'Share Signed PSBT QR Code',
         message: 'Scan this QR code to import the signed PSBT',
@@ -205,7 +187,6 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
         isNewTask: true,
         failOnCancel: false,
       });
-
       // Cleanup
       try {
         await RNFS.unlink(filePath);
@@ -217,10 +198,8 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
       }
     }
   }, []);
-
   // Track frame index for animated QR
   const [qrFrameIndex, setQrFrameIndex] = useState(0);
-
   // Get current QR data (single or animated)
   const getQRData = useCallback(() => {
     if (qrMode === 'animated' && urObject) {
@@ -245,10 +224,8 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
       }
     }
   }, [qrMode, urObject, signedPsbtBase64, qrFrameIndex, getURPart]);
-
   const qrData = getQRData();
   const totalParts = encoderInfo ? encoderInfo.fragmentsLength : 1;
-
   // Check if PSBT fits in a single QR code
   // QR codes can handle up to ~2953 bytes (Level H), but we'll be conservative
   // Also check if it's only 1 fragment (meaning it fits in one UR part)
@@ -271,7 +248,6 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
     }
     return false;
   }, [urObject, totalParts, signedPsbtBase64.length]);
-
   // If PSBT doesn't fit in single QR, force animated mode
   useEffect(() => {
     if (!fitsInSingleQR && qrMode === 'single') {
@@ -279,16 +255,13 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitsInSingleQR]);
-
   const isAnimated = qrMode === 'animated' && urObject;
   const currentPart = encoderInfo ? qrFrameIndex + 1 : 1;
-
   // Auto-advance animated QR frames
   useEffect(() => {
     if (isAnimated && urObject && encoderInfo) {
       // Reset frame index when switching to animated mode
       setQrFrameIndex(0);
-
       const interval = setInterval(() => {
         setQrFrameIndex(prev => {
           const next = prev + 1;
@@ -299,14 +272,12 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
           return next;
         });
       }, 500); // Change frame every 500ms
-
       return () => clearInterval(interval);
     } else if (urObject) {
       // Reset frame index when switching away from animated mode
       setQrFrameIndex(0);
     }
   }, [isAnimated, urObject, encoderInfo]);
-
   const styles = StyleSheet.create({
     modalOverlay: {
       flex: 1,
@@ -321,16 +292,21 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
       width: '90%',
       maxWidth: 500,
       maxHeight: '90%',
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
     },
     title: {
-      fontSize: 24,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.['3xl'] || 24,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       marginBottom: 8,
       textAlign: 'center',
     },
     subtitle: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
       color: theme.colors.textSecondary,
       marginBottom: 24,
       textAlign: 'center',
@@ -346,7 +322,7 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
       marginBottom: 12,
     },
     qrInfo: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
       color: theme.colors.textSecondary,
       textAlign: 'center',
     },
@@ -368,9 +344,9 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
     },
     buttonText: {
       color: theme.colors.textOnPrimary,
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontFamily: theme.fontFamilies?.bold,
       height: 20,
-      fontWeight: '600',
       marginLeft: 8,
     },
     buttonSecondary: {
@@ -395,8 +371,18 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
     },
     closeButtonText: {
       color: theme.colors.text,
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontFamily: theme.fontFamilies?.bold,
+    },
+    toastContainer: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      zIndex: 10000,
+      elevation: 10000,
+      pointerEvents: 'box-none',
     },
     modeToggle: {
       flexDirection: 'row',
@@ -416,38 +402,34 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
       backgroundColor: theme.colors.primary,
     },
     modeButtonText: {
-      fontSize: 14,
-      fontWeight: '500',
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.textSecondary,
     },
     modeButtonTextActive: {
       color: '#FFFFFF',
     },
   });
-
   return (
     <Modal
       visible={visible}
       transparent={true}
       animationType="fade"
       onRequestClose={onClose}>
-      <TouchableOpacity
+      <Pressable
         style={styles.modalOverlay}
-        activeOpacity={1}
         onPress={onClose}>
-        <TouchableOpacity
+          <Pressable
           style={styles.modalContent}
-          activeOpacity={1}
           onPress={e => e.stopPropagation()}>
           <Text style={styles.title}>Signed PSBT</Text>
           <Text style={styles.subtitle}>
             Share back the signed PSBT
           </Text>
-
           <View style={styles.qrContainer}>
             {urObject && fitsInSingleQR && (
               <View style={styles.modeToggle}>
-                <TouchableOpacity
+                <Pressable
                   style={[
                     styles.modeButton,
                     qrMode === 'single' && styles.modeButtonActive,
@@ -463,8 +445,8 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
                     ]}>
                     Single QR
                   </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
+                </Pressable>
+                <Pressable
                   style={[
                     styles.modeButton,
                     qrMode === 'animated' && styles.modeButtonActive,
@@ -480,10 +462,9 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
                     ]}>
                     Animated QR
                   </Text>
-                </TouchableOpacity>
+                </Pressable>
               </View>
             )}
-
             <QRCode
               ref={qrRef}
               value={qrData}
@@ -491,7 +472,6 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
               color={theme.colors.text}
               backgroundColor={theme.colors.background}
             />
-
             {isAnimated && (
               <Text style={styles.qrInfo}>
                 Frame {currentPart} of {totalParts}
@@ -503,12 +483,11 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
               </Text>
             )}
           </View>
-
           <View style={styles.buttonRow}>
-            <TouchableOpacity
+            <Pressable
               style={[styles.button, styles.buttonSecondary]}
               onPress={handleCopy}
-              activeOpacity={0.7}>
+              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
               <Image
                 source={require('../assets/paste-icon.png')}
                 style={styles.buttonIcon}
@@ -517,44 +496,44 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
               <Text style={styles.buttonSecondaryText}>
                 {isCopied ? '✓ Copied' : 'Copy'}
               </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
+            </Pressable>
+            <Pressable
               style={[styles.button, styles.buttonSecondary]}
               onPress={handleShareFile}
-              activeOpacity={0.7}>
+              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
               <Image
                 source={require('../assets/share-icon.png')}
                 style={styles.buttonIcon}
                 resizeMode="contain"
               />
               <Text style={styles.buttonSecondaryText}>Share File</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
-
           {fitsInSingleQR && (
-            <TouchableOpacity
+            <Pressable
               style={styles.button}
               onPress={handleShareQR}
-              activeOpacity={0.7}>
+              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
               <Image
                 source={require('../assets/share-icon.png')}
                 style={[styles.buttonIcon, {tintColor: theme.colors.textOnPrimary}]}
                 resizeMode="contain"
               />
               <Text style={styles.buttonText}>Share QR Code</Text>
-            </TouchableOpacity>
+            </Pressable>
           )}
-
-          <TouchableOpacity
+          <Pressable
             style={styles.closeButton}
             onPress={onClose}
-            activeOpacity={0.7}>
+            android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
             <Text style={styles.closeButtonText}>Close</Text>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </TouchableOpacity>
+          </Pressable>
+          </Pressable>
+      </Pressable>
+      <View style={styles.toastContainer}>
+        <Toast config={createToastConfig(theme)} />
+      </View>
     </Modal>
   );
 };
-
 export default SignedPSBTModal;

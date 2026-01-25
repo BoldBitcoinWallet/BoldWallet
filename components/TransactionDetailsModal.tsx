@@ -4,15 +4,13 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   ScrollView,
-  Platform,
   Linking,
 } from 'react-native';
-import {themes} from '../theme';
+import {useTheme} from '../theme';
 import moment from 'moment';
-import {HapticFeedback} from '../utils';
-
+import {HapticFeedback, dbg} from '../utils';
 interface TransactionDetailsModalProps {
   visible: boolean;
   onClose: () => void;
@@ -33,7 +31,6 @@ interface TransactionDetailsModalProps {
   } | null;
   isBlurred?: boolean;
 }
-
 const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   visible,
   onClose,
@@ -42,17 +39,54 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   selectedCurrency,
   btcRate,
   getCurrencySymbol,
+  address,
   status,
   amounts,
   isBlurred = false,
 }) => {
+  const {theme} = useTheme();
+  const [currentBlockHeight, setCurrentBlockHeight] = React.useState<
+    number | null
+  >(null);
+  const baseUrl = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
+  const explorerLink = transaction ? `${baseUrl}/tx/${transaction.txid}` : '';
+  // Fetch current block height to calculate confirmations
+  React.useEffect(() => {
+    if (visible && transaction?.status?.block_height) {
+      const fetchCurrentBlockHeight = async () => {
+        try {
+          // Use /api/blocks/tip/height endpoint (e.g., https://mempool.space/api/blocks/tip/height)
+          const apiUrl = baseApi.replace(/\/+$/, ''); // Remove trailing slashes
+          const response = await fetch(`${apiUrl}/blocks/tip/height`);
+          if (response.ok) {
+            const height = await response.text();
+            const blockHeight = parseInt(height.trim(), 10);
+            if (!isNaN(blockHeight) && blockHeight > 0) {
+              setCurrentBlockHeight(blockHeight);
+            }
+          }
+        } catch (error) {
+          // Silently fail - confirmations will just not be shown
+          dbg('Failed to fetch current block height:', error);
+        }
+      };
+      fetchCurrentBlockHeight();
+    }
+  }, [visible, transaction?.status?.block_height, baseApi]);
+  // Calculate confirmations if we have both block heights
+  const confirmations = React.useMemo(() => {
+    if (
+      transaction?.status?.block_height &&
+      currentBlockHeight &&
+      currentBlockHeight >= transaction.status.block_height
+    ) {
+      return currentBlockHeight - transaction.status.block_height + 1;
+    }
+    return null;
+  }, [transaction?.status?.block_height, currentBlockHeight]);
   if (!transaction || !status || !amounts) {
     return null;
   }
-
-  const baseUrl = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
-  const explorerLink = `${baseUrl}/tx/${transaction.txid}`;
-
   const formatBtcAmount = (amount: number) => {
     if (typeof amount !== 'number' || !Number.isFinite(amount)) {
       return '0.00000000';
@@ -61,7 +95,6 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     const [whole, decimal] = formatted.split('.');
     return `${Number(whole).toLocaleString()}.${decimal}`;
   };
-
   const getFiatAmount = (btcAmount: number) => {
     if (!btcRate || btcRate <= 0) {
       return '0.00';
@@ -69,42 +102,263 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     const amount = btcAmount * btcRate;
     return amount.toFixed(2);
   };
-
   const isSent = status.text.includes('Sen') || transaction.sentAt;
   const amount = isSent ? amounts.sent : amounts.received;
-  const hasValidAmount =
-    typeof amount === 'number' && Number.isFinite(amount);
-
+  const hasValidAmount = typeof amount === 'number' && Number.isFinite(amount);
   const hasValidSent =
     typeof amounts.sent === 'number' && Number.isFinite(amounts.sent);
   const hasValidReceived =
     typeof amounts.received === 'number' && Number.isFinite(amounts.received);
-
-  // Get the relevant address based on transaction type
-  const relevantAddress = isSent
-    ? transaction.vout?.find(
-        (output: any) =>
-          output.scriptpubkey_address !==
-          transaction.vin[0]?.prevout?.scriptpubkey_address,
-      )?.scriptpubkey_address
-    : transaction.vin?.find(
-        (input: any) =>
-          input.prevout.scriptpubkey_address !==
-          transaction.vout[0]?.scriptpubkey_address,
-      )?.prevout?.scriptpubkey_address;
-
-  const addressLabel = isSent ? 'To Address' : 'From Address';
-  const addressExplorerLink = relevantAddress
-    ? `${baseUrl}/address/${relevantAddress}`
-    : '';
-
+  // Get the relevant address(es) with amounts based on transaction type
+  // For sent: show ALL recipient addresses with their amounts (all outputs that aren't the sender's address)
+  // For received: show ALL input addresses (excluding the receiver's own address if it appears)
+  interface AddressWithAmount {
+    address: string;
+    amount: number; // in BTC
+  }
+  let relevantAddresses: AddressWithAmount[] = [];
+  let addressLabel = '';
+  if (isSent) {
+    // Sent transaction: show ALL recipient addresses with their amounts
+    const recipientOutputs =
+      transaction.vout?.filter((output: any) => {
+        // Exclude outputs that match the sender's address (change outputs)
+        return (
+          output.scriptpubkey_address && output.scriptpubkey_address !== address
+        );
+      }) || [];
+    // Group by address and sum amounts (in case same address appears multiple times)
+    const addressAmountMap = new Map<string, number>();
+    recipientOutputs.forEach((output: any) => {
+      const addr = output.scriptpubkey_address;
+      const amountSats = output.value || 0;
+      const currentAmount = addressAmountMap.get(addr) || 0;
+      addressAmountMap.set(addr, currentAmount + amountSats);
+    });
+    // Convert to array with amounts in BTC
+    relevantAddresses = Array.from(addressAmountMap.entries()).map(
+      ([addr, amountSats]) => ({
+        address: addr,
+        amount: amountSats / 1e8, // Convert satoshis to BTC
+      }),
+    );
+    addressLabel = relevantAddresses.length > 1 ? 'To Addresses' : 'To Address';
+  } else {
+    // Received transaction: collect ALL unique input addresses (these are the senders)
+    // Exclude the user's own address (change) from the list since it's not a "from" address
+    // For received transactions, show the output amount that went to user's address, not input amounts
+    const inputAddresses: string[] = (transaction.vin
+      ?.map((input: any) => input.prevout?.scriptpubkey_address)
+      .filter(
+        (addr: any): addr is string =>
+          typeof addr === 'string' && addr !== address,
+      ) || []) as string[]; // Exclude user's own address (change)
+    // Remove duplicates
+    const uniqueAddresses: string[] = [...new Set(inputAddresses)];
+    // Calculate total received amount from outputs to user's address
+    const totalReceivedSats =
+      transaction.vout
+        ?.filter((output: any) => output.scriptpubkey_address === address)
+        .reduce(
+          (total: number, output: any) => total + (output.value || 0),
+          0,
+        ) || 0;
+    const totalReceivedBTC = totalReceivedSats / 1e8;
+    // Show all sender addresses with the total received amount
+    // (We can't attribute portions to individual senders since Bitcoin doesn't work that way)
+    relevantAddresses = uniqueAddresses.map((addr: string) => ({
+      address: addr,
+      amount: totalReceivedBTC, // Show the received output amount, not input amounts
+    }));
+    addressLabel =
+      relevantAddresses.length > 1 ? 'From Addresses' : 'From Address';
+  }
   const renderDetailRow = (label: string, value: string | React.ReactNode) => (
     <View style={styles.detailRow}>
       <Text style={styles.detailLabel}>{label}</Text>
       <Text style={styles.detailValue}>{value}</Text>
     </View>
   );
-
+  const styles = StyleSheet.create({
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: theme.colors.blackOverlay50,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    modalContent: {
+      backgroundColor: theme.colors.background,
+      borderRadius: 16,
+      width: '92%',
+      maxHeight: '85%',
+      elevation: 5,
+      shadowColor: theme.colors.shadowColor,
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: 0.2,
+      shadowRadius: 6,
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
+    },
+    modalHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      padding: 16,
+      borderBottomWidth: 1,
+      borderBottomColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
+    },
+    modalTitle: {
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text,
+    },
+    closeButton: {
+      padding: 8,
+    },
+    closeButtonText: {
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text,
+      opacity: 0.7,
+    },
+    scrollContent: {
+      padding: 16,
+    },
+    section: {
+      marginBottom: 24,
+    },
+    sectionTitle: {
+      fontSize: theme.fontSizes?.md || 15,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text,
+      marginBottom: 12,
+      letterSpacing: 0.2,
+    },
+    detailRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
+      gap: 12,
+    },
+    detailLabel: {
+      fontSize: theme.fontSizes?.base || 13,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textSecondary, // Use textSecondary for better readability
+      minWidth: 108,
+    },
+    detailValue: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.monospace,
+      color: theme.colors.text,
+      flexShrink: 1,
+    },
+    addressItem: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      marginBottom: 12,
+    },
+    addressIndex: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.textSecondary, // Use textSecondary for better readability
+      marginRight: 8,
+      minWidth: 20,
+    },
+    txIdContainer: {
+      backgroundColor:
+        theme.colors.background === '#121212' ||
+        theme.colors.background.includes('12')
+          ? theme.colors.cardBackground // Use cardBackground in dark mode
+          : theme.colors.blackOverlay03, // Light mode background
+      padding: 12,
+      borderRadius: 8,
+      flex: 1,
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#121212' ||
+        theme.colors.background.includes('12')
+          ? theme.colors.border + '40' // More visible border in dark mode
+          : theme.colors.blackOverlay06, // Light mode border
+      marginRight: 12,
+    },
+    addressAmountContainer: {
+      alignItems: 'flex-end',
+      justifyContent: 'center',
+      minWidth: 100,
+    },
+    addressAmount: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.monospaceBold,
+      color: theme.colors.text,
+      marginBottom: 2,
+    },
+    addressAmountFiat: {
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.monospace,
+      color: theme.colors.textSecondary, // Use textSecondary for better readability
+    },
+    txId: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.monospace,
+      color: theme.colors.text,
+      marginBottom: 8,
+      flexWrap: 'wrap',
+    },
+    clickableText: {
+      color: theme.colors.text, // Use text color for better readability in dark mode
+      textDecorationLine: 'underline',
+      textDecorationColor: theme.colors.text, // Match underline color
+    },
+    statusText: {
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.bold,
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+    },
+    statusBadge: {
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+      borderWidth: 1,
+      alignSelf: 'flex-start',
+    },
+    statusBadgeConfirmed: {
+      backgroundColor:
+        theme.colors.background === '#121212' ||
+        theme.colors.background.includes('12')
+          ? (theme.colors.received || '#66BB6A') + '26' // Dark mode with opacity
+          : theme.colors.receivedOverlay15, // Light mode
+      borderColor:
+        theme.colors.background === '#121212' ||
+        theme.colors.background.includes('12')
+          ? (theme.colors.received || '#66BB6A') + '80' // More visible border in dark mode
+          : theme.colors.receivedOverlay40, // Light mode
+    },
+    statusBadgePending: {
+      backgroundColor:
+        theme.colors.background === '#121212' ||
+        theme.colors.background.includes('12')
+          ? theme.colors.bitcoinOrange + '26' // Dark mode with opacity - use bitcoin orange
+          : theme.colors.dangerOverlay15, // Light mode
+      borderColor:
+        theme.colors.background === '#121212' ||
+        theme.colors.background.includes('12')
+          ? theme.colors.bitcoinOrange + '80' // More visible border in dark mode - use bitcoin orange
+          : theme.colors.dangerOverlay40, // Light mode
+    },
+  });
   return (
     <Modal
       visible={visible}
@@ -115,17 +369,22 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Transaction Details</Text>
-            <TouchableOpacity 
+            <Pressable
               onPress={() => {
                 HapticFeedback.light();
                 onClose();
-              }} 
-              style={styles.closeButton}>
+              }}
+              style={styles.closeButton}
+              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
               <Text style={styles.closeButtonText}>✕</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
-
-          <ScrollView style={styles.scrollContent}>
+          <ScrollView
+            style={styles.scrollContent}
+            removeClippedSubviews
+            keyboardShouldPersistTaps="handled"
+            overScrollMode="never"
+            showsVerticalScrollIndicator={false}>
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Overview</Text>
               {renderDetailRow(
@@ -133,15 +392,19 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                 <View
                   style={[
                     styles.statusBadge,
-                    status.confirmed ? styles.statusBadgeConfirmed : styles.statusBadgePending,
+                    status.confirmed
+                      ? styles.statusBadgeConfirmed
+                      : styles.statusBadgePending,
                   ]}>
                   <Text
                     style={[
                       styles.statusText,
                       {
                         color: status.confirmed
-                          ? themes.lightPolished.colors.primary
-                          : themes.lightPolished.colors.accent,
+                          ? theme.colors.received
+                          : theme.colors.background === '#ffffff'
+                          ? theme.colors.accent // Use accent in light mode
+                          : theme.colors.bitcoinOrange, // Use bitcoin orange in dark mode
                       },
                     ]}>
                     {status.text}
@@ -158,9 +421,11 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                     )
                   : 'Pending',
               )}
-              {isSent && hasValidSent &&
+              {isSent &&
+                hasValidSent &&
                 renderDetailRow('Sent', `${formatBtcAmount(amounts.sent)} BTC`)}
-              {!isSent && hasValidReceived &&
+              {!isSent &&
+                hasValidReceived &&
                 renderDetailRow(
                   'Received',
                   `${formatBtcAmount(amounts.received)} BTC`,
@@ -175,54 +440,82 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                       )}`,
                 )}
             </View>
-
-            {relevantAddress && (
+            {relevantAddresses.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>{addressLabel}</Text>
-                <View style={styles.txIdContainer}>
-                  <TouchableOpacity
-                    onPress={() => {
-                      HapticFeedback.light();
-                      Linking.openURL(addressExplorerLink);
-                    }}>
-                    <Text style={[styles.txId, styles.clickableText]}>
-                      {relevantAddress}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                {relevantAddresses.map((addrWithAmount, index) => {
+                  const addressExplorerLink = `${baseUrl}/address/${addrWithAmount.address}`;
+                  const showAmount = addrWithAmount.amount > 0;
+                  return (
+                    <View key={index} style={styles.addressItem}>
+                      {relevantAddresses.length > 1 && (
+                        <Text style={styles.addressIndex}>{index + 1}.</Text>
+                      )}
+                      <View style={styles.txIdContainer}>
+                        <Pressable
+                          onPress={() => {
+                            HapticFeedback.light();
+                            Linking.openURL(addressExplorerLink);
+                          }}
+                          android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                          <Text style={[styles.txId, styles.clickableText]}>
+                            {addrWithAmount.address}
+                          </Text>
+                        </Pressable>
+                      </View>
+                      {showAmount && (
+                        <View style={styles.addressAmountContainer}>
+                          <Text style={styles.addressAmount}>
+                            {isBlurred
+                              ? '***'
+                              : formatBtcAmount(addrWithAmount.amount)}{' '}
+                            BTC
+                          </Text>
+                          {!isBlurred && btcRate > 0 && (
+                            <Text style={styles.addressAmountFiat}>
+                              {getCurrencySymbol(selectedCurrency)}
+                              {getFiatAmount(addrWithAmount.amount)}
+                            </Text>
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
               </View>
             )}
-
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Transaction ID</Text>
               <View style={styles.txIdContainer}>
-                <TouchableOpacity 
+                <Pressable
                   onPress={() => {
                     HapticFeedback.light();
                     Linking.openURL(explorerLink);
-                  }}>
+                  }}
+                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                   <Text style={[styles.txId, styles.clickableText]}>
                     {transaction.txid}
                   </Text>
-                </TouchableOpacity>
+                </Pressable>
               </View>
             </View>
-
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Details</Text>
               {renderDetailRow(
                 'Block Height',
                 transaction.status?.block_height || 'Pending',
               )}
+              {confirmations !== null &&
+                renderDetailRow('Confirmations', confirmations.toString())}
               {typeof transaction.fee === 'number' &&
                 Number.isFinite(transaction.fee) &&
                 renderDetailRow(
                   'Fee',
                   `${formatBtcAmount(
                     transaction.fee / 1e8,
-                  )} BTC (${getCurrencySymbol(
-                    selectedCurrency,
-                  )}${getFiatAmount(transaction.fee / 1e8)})`,
+                  )} BTC (${getCurrencySymbol(selectedCurrency)}${getFiatAmount(
+                    transaction.fee / 1e8,
+                  )})`,
                 )}
               {typeof transaction.size === 'number' &&
                 Number.isFinite(transaction.size) &&
@@ -234,122 +527,4 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     </Modal>
   );
 };
-
-const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: themes.lightPolished.colors.background,
-    borderRadius: 16,
-    width: '92%',
-    maxHeight: '85%',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.06)',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: themes.lightPolished.colors.text,
-  },
-  closeButton: {
-    padding: 8,
-  },
-  closeButtonText: {
-    fontSize: 20,
-    color: themes.lightPolished.colors.text,
-    opacity: 0.7,
-  },
-  scrollContent: {
-    padding: 16,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: themes.lightPolished.colors.text,
-    marginBottom: 12,
-    letterSpacing: 0.2,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.04)',
-    gap: 12,
-  },
-  detailLabel: {
-    fontSize: 13,
-    color: themes.lightPolished.colors.text,
-    opacity: 0.6,
-    minWidth: 108,
-  },
-  detailValue: {
-    fontSize: 14,
-    color: themes.lightPolished.colors.text,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    flexShrink: 1,
-  },
-  txIdContainer: {
-    backgroundColor: 'rgba(0, 0, 0, 0.03)',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.06)',
-  },
-  txId: {
-    fontSize: 13,
-    color: themes.lightPolished.colors.text,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    marginBottom: 8,
-    flexWrap: 'wrap',
-  },
-  clickableText: {
-    color: themes.lightPolished.colors.primary,
-    textDecorationLine: 'underline',
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    alignSelf: 'flex-start',
-  },
-  statusBadgeConfirmed: {
-    backgroundColor: 'rgba(46, 204, 113, 0.15)',
-    borderColor: 'rgba(46, 204, 113, 0.4)',
-  },
-  statusBadgePending: {
-    backgroundColor: 'rgba(231, 76, 60, 0.15)',
-    borderColor: 'rgba(231, 76, 60, 0.4)',
-  },
-});
-
 export default TransactionDetailsModal;

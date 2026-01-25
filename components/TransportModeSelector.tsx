@@ -3,7 +3,7 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   Modal,
   Image,
   ScrollView,
@@ -11,7 +11,6 @@ import {
 import QRCode from 'react-native-qrcode-svg';
 import {useTheme} from '../theme';
 import {HapticFeedback, encodeSendBitcoinQR} from '../utils';
-
 interface TransportModeSelectorProps {
   visible: boolean;
   onClose: () => void;
@@ -24,10 +23,16 @@ interface TransportModeSelectorProps {
     amountSats: string;
     feeSats: string;
     spendingHash?: string;
+    addressType?: string;
+    derivationPath?: string;
+    network?: string;
+    fromAddress?: string; // From address for display
+    fiatAmount?: string; // Fiat amount for display
+    fiatFees?: string; // Fiat fees for display
+    selectedCurrency?: string; // Currency symbol for display
   } | null;
   showQRCode?: boolean; // Whether to show QR code (false when data came from scan)
 }
-
 const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
   visible,
   onClose,
@@ -38,13 +43,13 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
   showQRCode = true,
 }) => {
   const {theme} = useTheme();
-  const [selectedTransport, setSelectedTransport] = useState<'local' | 'nostr' | null>(null);
-
+  const [selectedTransport, setSelectedTransport] = useState<
+    'local' | 'nostr' | null
+  >(null);
   const handleSelect = (transport: 'local' | 'nostr') => {
     HapticFeedback.medium();
     setSelectedTransport(transport);
   };
-
   const handleContinue = () => {
     if (selectedTransport) {
       HapticFeedback.medium();
@@ -53,11 +58,10 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       setSelectedTransport(null);
     }
   };
-
   const styles = StyleSheet.create({
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.75)',
+      backgroundColor: theme.colors.modalBackdrop,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -66,7 +70,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       borderRadius: 16,
       width: '85%',
       maxWidth: 420,
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 10},
       shadowOpacity: 0.3,
       shadowRadius: 20,
@@ -81,16 +85,22 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       paddingTop: 24,
       paddingBottom: 16,
       borderBottomWidth: 1,
-      borderBottomColor: 'rgba(0,0,0,0.05)',
+      borderBottomColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
     },
     modalHeaderIconImage: {
       width: 24,
       height: 24,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     modalTitle: {
-      fontSize: 18,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.xl || 18,
+      fontFamily: theme.fontFamilies?.bold,
       marginLeft: 12,
       color: theme.colors.text,
       flex: 1,
@@ -108,20 +118,20 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       borderColor: theme.colors.border + '10',
     },
     closeButtonText: {
-      fontSize: 20,
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
-      fontWeight: '600',
     },
     modalBody: {
       paddingHorizontal: 24,
       paddingVertical: 20,
     },
     modalDescription: {
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
+      fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.textSecondary,
       marginBottom: 12,
       textAlign: 'left',
-      fontWeight: '500',
     },
     transportOptionsContainer: {
       flexDirection: 'row',
@@ -135,16 +145,25 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       paddingHorizontal: 10,
       borderWidth: 1.5,
       borderColor: theme.colors.border + '40',
-      backgroundColor: theme.colors.white,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.cardBackground,
       position: 'relative',
       flex: 1,
       alignItems: 'center',
       justifyContent: 'center',
     },
     transportOptionCardSelected: {
-      backgroundColor: theme.colors.subPrimary + '10',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.subPrimary + '10'
+          : theme.colors.bitcoinOrange + '20',
       borderWidth: 1.5,
-      borderColor: theme.colors.subPrimary,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.subPrimary
+          : theme.colors.bitcoinOrange,
     },
     transportOptionContent: {
       alignItems: 'center',
@@ -176,28 +195,39 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       height: 40,
       backgroundColor: 'transparent',
       opacity: 1,
+      tintColor: theme.colors.primary,
     },
     transportOptionIconSelected: {
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     transportOptionIconNostrSelected: {
       width: 64,
       height: 64,
       opacity: 1,
       backgroundColor: 'transparent',
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     transportOptionTitle: {
-      fontSize: 15,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.md || 15,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       textAlign: 'center',
       marginBottom: 2,
     },
     transportOptionTitleSelected: {
-      color: theme.colors.primary,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     transportOptionDescription: {
-      fontSize: 11,
+      fontSize: theme.fontSizes?.sm || 11,
       color: theme.colors.textSecondary,
       textAlign: 'center',
       lineHeight: 14,
@@ -207,11 +237,15 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
     },
     transportSelectedHint: {
       marginTop: 12,
-      backgroundColor: theme.colors.white,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.cardBackground,
       padding: 10,
       borderRadius: 12,
       borderWidth: 1,
       borderColor: theme.colors.border,
+      opacity: 0.5,
     },
     transportSelectedHintRow: {
       flexDirection: 'row',
@@ -222,58 +256,71 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
     transportSelectedHintIcon: {
       width: 20,
       height: 20,
-      tintColor: theme.colors.primary,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.text,
       marginTop: 2,
     },
     transportSelectedHintText: {
-      color: theme.colors.primary,
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.text,
       textAlign: 'left',
       flex: 1,
       flexWrap: 'wrap',
       lineHeight: 20,
     },
     transportSelectedHintTextBold: {
-      fontWeight: '700',
+      fontFamily: theme.fontFamilies?.bold,
     },
     continueButton: {
       marginTop: 12,
       borderRadius: 12,
       paddingVertical: 14,
       alignItems: 'center',
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     continueButtonDisabled: {
       opacity: 0.5,
     },
     continueButtonText: {
-      color: theme.colors.background,
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.white,
     },
     qrCodeSection: {
       marginTop: 12,
       marginBottom: 24,
       padding: 16,
-      backgroundColor: theme.colors.white,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.cardBackground,
       borderRadius: 12,
-      borderWidth: 1,
+      borderWidth: 1.5,
       borderColor: theme.colors.border,
+      borderStyle: 'dashed',
       alignItems: 'center',
     },
     qrCodeLabel: {
-      fontSize: 13,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 13,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       marginBottom: 12,
       textAlign: 'center',
       lineHeight: 18,
     },
     qrCodeSubLabel: {
-      fontSize: 11,
-      fontWeight: '400',
+      fontSize: theme.fontSizes?.sm || 11,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
-      marginTop: 4,
+      marginBottom: 8,
       textAlign: 'center',
       lineHeight: 15,
     },
@@ -283,7 +330,6 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       borderRadius: 8,
     },
   });
-
   return (
     <Modal
       transparent={true}
@@ -299,62 +345,70 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
               style={styles.modalHeaderIconImage}
             />
             <Text style={styles.modalTitle}>{title}</Text>
-            <TouchableOpacity
+            <Pressable
               style={styles.closeButton}
               onPress={() => {
                 HapticFeedback.medium();
                 setSelectedTransport(null);
                 onClose();
               }}
-              activeOpacity={0.7}>
+              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
               <Text style={styles.closeButtonText}>✕</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
-
           {/* Modal Body */}
-          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            style={styles.modalBody}
+            removeClippedSubviews
+            keyboardShouldPersistTaps="handled"
+            overScrollMode="never"
+            showsVerticalScrollIndicator={false}>
             {description && description.length > 0 && (
               <Text style={styles.modalDescription}>{description}</Text>
             )}
-
             {/* QR Code Section - Only show if sendBitcoinData exists and showQRCode is true */}
-            {sendBitcoinData && showQRCode && (() => {
-              const qrData = encodeSendBitcoinQR(
-                sendBitcoinData.toAddress,
-                sendBitcoinData.amountSats,
-                sendBitcoinData.feeSats,
-                sendBitcoinData.spendingHash || '',
-              );
-              return (
-                <View style={styles.qrCodeSection}>
-                  <Text style={styles.qrCodeLabel}>
-                    Quick Shortcut for Other Devices
-                  </Text>
-                  <Text style={styles.qrCodeSubLabel}>
-                    Scan this QR code on other devices to{'\n'}automatically enter address and amount
-                  </Text>
-                  <View style={styles.qrCodeContainer}>
-                    <QRCode
-                      value={qrData}
-                      size={180}
-                      backgroundColor="white"
-                      color="black"
-                    />
+            {sendBitcoinData &&
+              showQRCode &&
+              (() => {
+                const qrData = encodeSendBitcoinQR(
+                  sendBitcoinData.toAddress,
+                  sendBitcoinData.amountSats,
+                  sendBitcoinData.feeSats,
+                  sendBitcoinData.spendingHash || '',
+                  sendBitcoinData.addressType || '',
+                  sendBitcoinData.derivationPath || '',
+                  sendBitcoinData.network || '',
+                );
+                return (
+                  <View style={styles.qrCodeSection}>
+                    <Text style={styles.qrCodeLabel}>
+                      Quick Shortcut for Other Devices
+                    </Text>
+                    <Text style={styles.qrCodeSubLabel}>
+                      Scan this QR code on other devices to{'\n'}automatically
+                      enter address and amount
+                    </Text>
+                    <View style={styles.qrCodeContainer}>
+                      <QRCode
+                        value={qrData}
+                        size={180}
+                        backgroundColor="white"
+                        color="black"
+                      />
+                    </View>
                   </View>
-                </View>
-              );
-            })()}
-
+                );
+              })()}
             <View style={styles.transportOptionsContainer}>
               {/* Local WiFi/Hotspot Option */}
-              <TouchableOpacity
+              <Pressable
                 style={[
                   styles.transportOptionCard,
                   selectedTransport === 'local' &&
                     styles.transportOptionCardSelected,
                 ]}
                 onPress={() => handleSelect('local')}
-                activeOpacity={0.8}>
+                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <View style={styles.transportOptionContent}>
                   <View style={styles.transportOptionIconWrapper}>
                     <Image
@@ -384,17 +438,16 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                     Connect devices on the same network
                   </Text>
                 </View>
-              </TouchableOpacity>
-
+              </Pressable>
               {/* Nostr Option */}
-              <TouchableOpacity
+              <Pressable
                 style={[
                   styles.transportOptionCard,
                   selectedTransport === 'nostr' &&
                     styles.transportOptionCardSelected,
                 ]}
                 onPress={() => handleSelect('nostr')}
-                activeOpacity={0.8}>
+                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <View style={styles.transportOptionContent}>
                   <View style={styles.transportOptionIconWrapper}>
                     <View style={styles.nostrIconContainer}>
@@ -427,9 +480,8 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                     Connect via decentralized relays
                   </Text>
                 </View>
-              </TouchableOpacity>
+              </Pressable>
             </View>
-
             {/* Selected Transport Hint */}
             {selectedTransport && description && description.length > 0 && (
               <View style={styles.transportSelectedHint}>
@@ -461,26 +513,21 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                 </View>
               </View>
             )}
-
             {/* Continue Button */}
-            <TouchableOpacity
+            <Pressable
               style={[
                 styles.continueButton,
                 !selectedTransport && styles.continueButtonDisabled,
               ]}
               onPress={handleContinue}
               disabled={!selectedTransport}
-              activeOpacity={0.8}>
-              <Text style={styles.continueButtonText}>
-                Continue →
-              </Text>
-            </TouchableOpacity>
+              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+              <Text style={styles.continueButtonText}>Continue →</Text>
+            </Pressable>
           </ScrollView>
         </View>
       </View>
     </Modal>
   );
 };
-
 export default TransportModeSelector;
-

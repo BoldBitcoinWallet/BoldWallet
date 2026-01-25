@@ -2,9 +2,11 @@ package tss
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -279,18 +281,45 @@ func listen(port string) *http.Server {
 
 var server *http.Server = nil
 
-func RunRelay(port string) (string, error) {
+func RunRelay(port string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in RunRelay: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	if server != nil {
 		StopRelay()
 	}
 	time.Sleep(time.Second)
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				errMsg := fmt.Sprintf("PANIC in RunRelay goroutine: %v", r)
+				Logf("BBMTLog: %s", errMsg)
+				Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			}
+		}()
 		server = listen(port)
 	}()
 	return "ok", nil
 }
 
-func StopRelay() (string, error) {
+func StopRelay() (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in StopRelay: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	if server == nil {
 		return "already_closed", nil
 	}

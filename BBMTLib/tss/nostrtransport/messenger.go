@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"time"
 )
 
@@ -15,7 +16,16 @@ type Messenger struct {
 	client *Client
 }
 
-func NewMessenger(cfg Config, client *Client) *Messenger {
+func NewMessenger(cfg Config, client *Client) (result *Messenger) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in NewMessenger: %v", r)
+			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+			result = nil
+		}
+	}()
+
 	cfg.ApplyDefaults()
 	return &Messenger{cfg: cfg, client: client}
 }
@@ -26,7 +36,16 @@ func (m *Messenger) Cfg() Config {
 }
 
 // SendMessage encrypts, chunks, and publishes a TSS message body string using NIP-44 rumor/wrap/seal.
-func (m *Messenger) SendMessage(ctx context.Context, from, to, body string) error {
+func (m *Messenger) SendMessage(ctx context.Context, from, to, body string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in Messenger.SendMessage: %v", r)
+			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+		}
+	}()
+
 	fmt.Fprintf(os.Stderr, "BBMTLog: Messenger sending message from %s to %s (%d bytes)\n", from, to, len(body))
 
 	// Convert sender npub to hex for rumor

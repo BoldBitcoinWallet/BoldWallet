@@ -1,16 +1,14 @@
 import React, {useState} from 'react';
-import {Modal, View, Text, TouchableOpacity, Image} from 'react-native';
+import {Modal, View, Text, Pressable, Image} from 'react-native';
 import {HapticFeedback} from '../utils';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
 import LocalCache from '../services/LocalCache';
-
 interface LegacyWalletModalProps {
   visible: boolean;
   onCancel: () => void;
   onUnderstand: () => void;
 }
-
 const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
   visible,
   onCancel,
@@ -26,24 +24,24 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
       paddingVertical: 16,
     } as const,
     legacyModalText: {
+      fontSize: theme.fontSizes?.md || 15,
       marginBottom: 16,
       lineHeight: 22,
       textAlign: 'left' as const,
-      fontSize: 15,
       color: theme.colors.text,
     } as const,
     legacyModalWarningText: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.bold,
       marginBottom: 16,
       lineHeight: 20,
       textAlign: 'left' as const,
-      fontSize: 14,
-      color: theme.colors.danger || '#ff6b6b',
-      fontWeight: '600' as const,
+      color: theme.colors.danger,
     } as const,
     legacyModalNoteText: {
+      fontSize: theme.fontSizes?.base || 13,
       marginBottom: 24,
       lineHeight: 18,
-      fontSize: 13,
       color: theme.colors.textSecondary,
       fontStyle: 'italic' as const,
     } as const,
@@ -70,13 +68,13 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
       borderColor: theme.colors.primary,
     } as const,
     legacyModalCheckmark: {
+      fontSize: theme.fontSizes?.base || 13,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.background,
-      fontSize: 13,
-      fontWeight: 'bold' as const,
     } as const,
     legacyModalCheckboxLabel: {
+      fontSize: theme.fontSizes?.base || 14,
       flex: 1,
-      fontSize: 14,
       lineHeight: 20,
       color: theme.colors.text,
     } as const,
@@ -101,31 +99,30 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
       color: theme.colors.text,
     } as const,
   };
-
   const handleCancel = async () => {
     HapticFeedback.light();
     // Save checkbox state: "yes" = do not remind, "no" = show again
-    await LocalCache.setItem('legacyWalletModalDoNotRemind', doNotRemind ? 'yes' : 'no');
+    await LocalCache.setItem(
+      'legacyWalletModalDoNotRemind',
+      doNotRemind ? 'yes' : 'no',
+    );
     onCancel();
   };
-
   const handleUnderstand = async () => {
     HapticFeedback.medium();
     // Save checkbox state: "yes" = do not remind, "no" = show again
-    await LocalCache.setItem('legacyWalletModalDoNotRemind', doNotRemind ? 'yes' : 'no');
+    await LocalCache.setItem(
+      'legacyWalletModalDoNotRemind',
+      doNotRemind ? 'yes' : 'no',
+    );
     onUnderstand();
   };
-
   const handleCheckboxToggle = () => {
     HapticFeedback.light();
     setDoNotRemind(prev => !prev);
   };
-
   return (
-    <Modal
-      visible={visible}
-      transparent={true}
-      animationType="fade">
+    <Modal visible={visible} transparent={true} animationType="fade">
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeaderRow}>
@@ -135,29 +132,25 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
             />
             <Text style={styles.modalHeaderTitle}>Legacy Wallet Detected</Text>
           </View>
-
           <View style={styles.legacyModalContent}>
             <Text style={styles.legacyModalText}>
               You're currently using a legacy wallet setup. For better PSBT
-              compatibility and interoperability with modern wallets, we recommend
-              creating a new wallet setup and migrating your funds.
+              compatibility and interoperability with modern wallets, we
+              recommend creating a new wallet setup and migrating your funds.
             </Text>
-
             <Text style={styles.legacyModalWarningText}>
               ⚠️ Important: Make sure you have a backup of your legacy wallet
               before creating a new wallet. Your current wallet will continue to
               work until you're ready to migrate.
             </Text>
-
             <Text style={styles.legacyModalNoteText}>
-              To migrate: Create a new wallet setup and send all your funds to the
-              new wallet address.
+              To migrate: Create a new wallet setup and send all your funds to
+              the new wallet address.
             </Text>
-
-            <TouchableOpacity
+            <Pressable
               style={styles.legacyModalCheckboxContainer}
               onPress={handleCheckboxToggle}
-              activeOpacity={0.7}>
+              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
               <View
                 style={[
                   styles.legacyModalCheckbox,
@@ -170,16 +163,13 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
               <Text style={styles.legacyModalCheckboxLabel}>
                 Do not remind me again
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
-
           <View style={styles.legacyModalButtonsContainer}>
-            <TouchableOpacity
-              style={[
-                styles.actionButton,
-                styles.legacyModalButtonSecondary,
-              ]}
-              onPress={handleCancel}>
+            <Pressable
+              style={[styles.actionButton, styles.legacyModalButtonSecondary]}
+              onPress={handleCancel}
+              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
               <Text
                 style={[
                   styles.actionButtonText,
@@ -187,23 +177,17 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
                 ]}>
                 Cancel
               </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.actionButton,
-                styles.legacyModalButtonPrimary,
-              ]}
-              onPress={handleUnderstand}>
-              <Text style={styles.actionButtonText}>
-                I Understand
-              </Text>
-            </TouchableOpacity>
+            </Pressable>
+            <Pressable
+              style={[styles.actionButton, styles.legacyModalButtonPrimary]}
+              onPress={handleUnderstand}
+              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+              <Text style={styles.actionButtonText}>I Understand</Text>
+            </Pressable>
           </View>
         </View>
       </View>
     </Modal>
   );
 };
-
 export default LegacyWalletModal;
-

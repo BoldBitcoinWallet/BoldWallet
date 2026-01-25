@@ -3,15 +3,13 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   TextInput,
   Alert,
   Modal,
   NativeModules,
   Switch,
-  Linking,
   ScrollView,
-  Animated,
   Image,
   Keyboard,
   KeyboardAvoidingView,
@@ -20,20 +18,23 @@ import {
   useWindowDimensions,
   DeviceEventEmitter,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  withTiming,
+  withSpring,
+  useAnimatedStyle,
+  interpolate,
+  runOnJS,
+} from 'react-native-reanimated';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import Share from 'react-native-share';
-import RNFS from 'react-native-fs';
 import EncryptedStorage from 'react-native-encrypted-storage';
 const {BBMTLibNativeModule} = NativeModules;
 import DeviceInfo from 'react-native-device-info';
 import {useUser} from '../context/UserContext';
-
 // Predefined API endpoints
 const MAINNET_APIS = ['https://mempool.space/api'];
 const TESTNET_APIS = ['https://mempool.space/testnet/api'];
-
 const {IconChanger} = NativeModules; // This is fine here, as it's not a Hook
-
 import {
   dbg,
   HapticFeedback,
@@ -46,8 +47,9 @@ import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
 import LegalModal from '../components/LegalModal';
+import BackupKeyshareModal from '../components/BackupKeyshareModal';
 import {fetchDynamicAPIEndpoints, getNostrRelays} from '../utils';
-
+import FontComparisonScreen from '../components/FontComparisonScreen';
 interface CollapsibleSectionProps {
   title: string;
   children: React.ReactNode;
@@ -56,7 +58,6 @@ interface CollapsibleSectionProps {
   styles: any;
   theme: any;
 }
-
 const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   title,
   children,
@@ -65,36 +66,24 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   styles,
   theme,
 }) => {
-  const rotationAnim = useRef(new Animated.Value(isExpanded ? 1 : 0)).current;
-
+  const rotationAnim = useSharedValue(isExpanded ? 1 : 0);
   useEffect(() => {
     // Sync rotation with isExpanded on mount or prop change
-    Animated.timing(rotationAnim, {
-      toValue: isExpanded ? 1 : 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
+    rotationAnim.value = withTiming(isExpanded ? 1 : 0, {duration: 200});
   }, [isExpanded, rotationAnim]);
-
-  const rotateInterpolate = rotationAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '90deg'],
+  const rotateAnimatedStyle = useAnimatedStyle(() => {
+    const rotation = interpolate(rotationAnim.value, [0, 1], [0, 90]);
+    return {
+      transform: [{rotate: `${rotation}deg`}],
+    };
   });
-
   const handlePress = () => {
     HapticFeedback.light();
-
     // Animate rotation immediately
-    Animated.timing(rotationAnim, {
-      toValue: isExpanded ? 0 : 1,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
-
+    rotationAnim.value = withTiming(isExpanded ? 0 : 1, {duration: 200});
     // Toggle content
     onToggle();
   };
-
   const animatedStyle = useMemo(
     () => ({
       opacity: isExpanded ? 1 : 0,
@@ -104,14 +93,13 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
     }),
     [isExpanded],
   );
-
   return (
     <View
       style={[styles.collapsibleSection, isExpanded && styles.sectionExpanded]}>
-      <TouchableOpacity
+      <Pressable
         style={styles.sectionHeader}
         onPress={handlePress}
-        activeOpacity={0.7}
+        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
         accessible={true}
         accessibilityRole="button"
         accessibilityLabel={`${title} section, ${
@@ -131,15 +119,14 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
         <Animated.Text
           style={[
             styles.expandIcon,
+            rotateAnimatedStyle,
             {
-              transform: [{rotate: rotateInterpolate}],
               color: theme.colors.text,
             },
           ]}>
           ▶
         </Animated.Text>
-      </TouchableOpacity>
-
+      </Pressable>
       {/* Always render content, collapse with opacity/scale animation */}
       <Animated.View style={[styles.sectionContent, animatedStyle]}>
         {children}
@@ -147,7 +134,6 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
     </View>
   );
 };
-
 // API Endpoint Autocomplete Component
 interface APIAutocompleteProps {
   value: string;
@@ -156,7 +142,6 @@ interface APIAutocompleteProps {
   styles: any;
   theme: any;
 }
-
 const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
   value,
   onChangeText,
@@ -174,29 +159,23 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
   const searchInputRef = useRef<TextInput>(null);
   const flatListRef = useRef<FlatList<string>>(null);
   const {height} = useWindowDimensions();
-  const modalAnimation = useRef(new Animated.Value(0)).current;
-
+  const modalAnimation = useSharedValue(0);
   const reversedOptions = useMemo(
     () => [...filteredOptions].reverse(),
     [filteredOptions],
   );
-
   // Get the appropriate API list - filter by network
   const [predefinedAPIs, setPredefinedAPIs] = useState<string[]>([]);
   const [isLoadingPredefinedAPIs, setIsLoadingPredefinedAPIs] = useState(false);
   const lastLoadedNetworkRef = useRef<string | null>(null);
-
   // Load API lists - restrict testnet to only the hardcoded endpoint
   useEffect(() => {
     const currentNetwork = isTestnet ? 'testnet' : 'mainnet';
-
     // Only load if network changed
     if (lastLoadedNetworkRef.current === currentNetwork) {
       return; // Already loaded for this network
     }
-
     if (isLoadingPredefinedAPIs) return;
-
     const loadAPIList = async () => {
       setIsLoadingPredefinedAPIs(true);
       try {
@@ -220,11 +199,9 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
         setIsLoadingPredefinedAPIs(false);
       }
     };
-
     loadAPIList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTestnet]);
-
   // Fetch dynamic APIs - load when in mainnet mode and not already loaded
   const dynamicAPIsLoadingRef = useRef(false);
   useEffect(() => {
@@ -232,17 +209,14 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
     if (isTestnet) {
       return;
     }
-
     // If already loading or already have dynamic APIs, don't reload
     if (isLoadingAPIs || dynamicAPIs.length > 0) {
       return;
     }
-
     // Prevent multiple simultaneous load attempts
     if (dynamicAPIsLoadingRef.current) {
       return;
     }
-
     const loadDynamicAPIs = async () => {
       dynamicAPIsLoadingRef.current = true;
       setIsLoadingAPIs(true);
@@ -259,10 +233,8 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
         dynamicAPIsLoadingRef.current = false;
       }
     };
-
     loadDynamicAPIs();
   }, [isTestnet, dynamicAPIs.length, isLoadingAPIs]);
-
   // Compute available APIs based on network - use useMemo to prevent unnecessary recalculations
   const availableAPIs = useMemo(() => {
     if (isTestnet) {
@@ -277,7 +249,6 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
       return [...new Set(filtered)];
     }
   }, [isTestnet, predefinedAPIs, dynamicAPIs]);
-
   // Filter options based on search query - only update when search query or available APIs change
   useEffect(() => {
     if (searchQuery.trim() === '') {
@@ -289,12 +260,10 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
       setFilteredOptions(filtered);
     }
   }, [searchQuery, availableAPIs]);
-
   // Reset search query when network changes
   useEffect(() => {
     setSearchQuery('');
   }, [isTestnet]);
-
   // Handle keyboard appearance - modal adjusts via KeyboardAvoidingView
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener(
@@ -306,72 +275,60 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
         }, 100);
       },
     );
-
     return () => {
       keyboardDidShowListener.remove();
     };
   }, []);
-
   const handleTextChange = (text: string) => {
     onChangeText(text);
   };
-
   const handleFocus = () => {
     setIsFocused(true);
   };
-
   const handleBlur = () => {
     setIsFocused(false);
   };
-
   const openModal = () => {
     // Prevent modal opening in testnet mode
     if (isTestnet) return;
-
     HapticFeedback.light();
     // The filtered options will be set by the useEffect that handles API options
     setSearchQuery('');
     setIsModalVisible(true);
     inputRef.current?.blur();
     // Reset and animate modal entrance
-    modalAnimation.setValue(0);
-    Animated.spring(modalAnimation, {
-      toValue: 1,
-      useNativeDriver: true,
-      tension: 65,
-      friction: 11,
-    }).start();
+    modalAnimation.value = 0;
+    modalAnimation.value = withSpring(1, {
+      damping: 11,
+      stiffness: 65,
+    });
   };
-
   const closeModal = () => {
     HapticFeedback.light();
     // Animate modal exit
-    Animated.timing(modalAnimation, {
-      toValue: 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start(() => {
+    const finishCallback = () => {
       setIsModalVisible(false);
       setSearchQuery('');
+    };
+    modalAnimation.value = withTiming(0, {duration: 200}, () => {
+      runOnJS(finishCallback)();
     });
   };
-
   const selectOption = async (option: string) => {
     dbg('selectOption called with:', option);
     HapticFeedback.selection();
     await onChangeText(option);
     closeModal();
   };
-
   const getNetworkIcon = (api: string) => {
-    return api.toLowerCase().includes('testnet') ? '🧪' : '🌐';
+    return api.toLowerCase().includes('testnet')
+      ? require('../assets/testnet-icon.png')
+      : require('../assets/mainnet-icon.png');
   };
-
   const renderApiItem = ({item}: {item: string}) => {
     const isSelected = item === value;
-
     return (
-      <TouchableOpacity
+      <Pressable
         key={item}
         style={[
           styles.apiModalItem,
@@ -379,15 +336,24 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
           isSelected && styles.apiModalItemSelected,
         ]}
         onPress={() => selectOption(item)}
-        activeOpacity={0.7}>
-        <Text style={styles.apiModalItemIcon}>{getNetworkIcon(item)}</Text>
+        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+        <Image
+          source={getNetworkIcon(item)}
+          style={styles.apiModalItemIcon}
+          resizeMode="contain"
+        />
         <Text
           style={[
             styles.apiModalItemText,
             {color: theme.colors.text},
             isSelected && [
               styles.apiModalItemTextSelected,
-              {color: theme.colors.primary},
+              {
+                color:
+                  theme.colors.background === '#ffffff'
+                    ? theme.colors.primary
+                    : theme.colors.bitcoinOrange,
+              },
             ],
           ]}
           numberOfLines={1}
@@ -403,10 +369,9 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
             <Text style={styles.apiModalItemCheck}>✓</Text>
           </View>
         )}
-      </TouchableOpacity>
+      </Pressable>
     );
   };
-
   const renderListEmpty = () => {
     if (isLoadingAPIs && !isTestnet) {
       return (
@@ -421,7 +386,6 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
         </View>
       );
     }
-
     return (
       <View style={styles.apiModalEmpty}>
         <Text
@@ -434,7 +398,6 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
       </View>
     );
   };
-
   const getInputContainerStyle = () => {
     const baseStyle = [styles.apiInputContainer];
     if (isFocused) {
@@ -442,7 +405,14 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
     }
     return baseStyle;
   };
-
+  // Animated style for modal
+  const modalAnimatedStyle = useAnimatedStyle(() => {
+    const translateY = interpolate(modalAnimation.value, [0, 1], [100, 0]);
+    return {
+      opacity: modalAnimation.value,
+      transform: [{translateY}],
+    };
+  });
   return (
     <>
       <View style={styles.apiAutocompleteContainer}>
@@ -457,15 +427,19 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
               onFocus={handleFocus}
               onBlur={handleBlur}
               placeholder="Your Mempool Endpoint"
-              placeholderTextColor={theme.colors.textSecondary}
+              placeholderTextColor={theme.colors.textSecondary + '80'}
               autoCapitalize="none"
               autoCorrect={false}
               editable={!isTestnet}
             />
-            <TouchableOpacity
+            <Pressable
               style={styles.apiDropdownButton}
-              onPress={isTestnet ? undefined : openModal}
-              activeOpacity={isTestnet ? 1 : 0.6}
+              onPress={() => {
+                if (!isTestnet) {
+                  openModal();
+                }
+              }}
+              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
               disabled={isTestnet}>
               <Text
                 style={[
@@ -478,11 +452,10 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                 ]}>
                 ▼
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
       </View>
-
       <Modal
         visible={isModalVisible}
         transparent={true}
@@ -492,31 +465,21 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
           style={styles.apiModalKeyboardView}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={0}>
-          <TouchableOpacity
+          <Pressable
             style={styles.apiModalBackdrop}
-            activeOpacity={1}
             onPress={() => {
               Keyboard.dismiss();
               closeModal();
             }}>
-            <TouchableOpacity
-              activeOpacity={1}
-              onPress={e => e.stopPropagation()}>
+            <Pressable
+              onPress={e => {
+                e.stopPropagation();
+              }}>
               <Animated.View
                 style={[
                   styles.apiModalContent,
-                  {
-                    maxHeight: height * 0.8,
-                    opacity: modalAnimation,
-                    transform: [
-                      {
-                        translateY: modalAnimation.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [100, 0],
-                        }),
-                      },
-                    ],
-                  },
+                  {maxHeight: height * 0.8},
+                  modalAnimatedStyle,
                 ]}>
                 <View
                   style={[
@@ -529,7 +492,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                         source={require('../assets/api-icon.png')}
                         style={[
                           styles.apiModalHeaderIcon,
-                          {tintColor: theme.colors.primary},
+                          {tintColor: theme.colors.text}, // Use text color for better visibility in dark mode
                         ]}
                         resizeMode="contain"
                       />
@@ -541,13 +504,13 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                         Select Mempool.Space Provider
                       </Text>
                     </View>
-                    <TouchableOpacity
+                    <Pressable
                       onPress={closeModal}
                       style={[
                         styles.apiModalCloseButton,
                         {backgroundColor: theme.colors.cardBackground},
                       ]}
-                      activeOpacity={0.6}>
+                      android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                       <Text
                         style={[
                           styles.apiModalCloseText,
@@ -555,7 +518,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                         ]}>
                         ✕
                       </Text>
-                    </TouchableOpacity>
+                    </Pressable>
                   </View>
                 </View>
                 <View style={styles.apiModalListWrapper}>
@@ -606,7 +569,11 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                         borderColor: theme.colors.border,
                       },
                     ]}>
-                    <Text style={styles.apiModalSearchIcon}>🔍</Text>
+                    <Image
+                      source={require('../assets/search-icon.png')}
+                      style={styles.apiModalSearchIcon}
+                      resizeMode="contain"
+                    />
                     <TextInput
                       ref={searchInputRef}
                       style={[
@@ -614,7 +581,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                         {color: theme.colors.text},
                       ]}
                       placeholder="Search endpoints..."
-                      placeholderTextColor={theme.colors.textSecondary}
+                      placeholderTextColor={theme.colors.textSecondary + '80'}
                       value={searchQuery}
                       onChangeText={setSearchQuery}
                       autoCapitalize="none"
@@ -624,10 +591,10 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                       blurOnSubmit={false}
                     />
                     {searchQuery.length > 0 && (
-                      <TouchableOpacity
+                      <Pressable
                         onPress={() => setSearchQuery('')}
                         style={styles.apiModalSearchClear}
-                        activeOpacity={0.6}>
+                        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                         <Text
                           style={[
                             styles.apiModalSearchClearText,
@@ -635,19 +602,18 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                           ]}>
                           ✕
                         </Text>
-                      </TouchableOpacity>
+                      </Pressable>
                     )}
                   </View>
                 </View>
               </Animated.View>
-            </TouchableOpacity>
-          </TouchableOpacity>
+            </Pressable>
+          </Pressable>
         </KeyboardAvoidingView>
       </Modal>
     </>
   );
 };
-
 // Helper function to get section icons
 const getSectionIcon = (title: string): any => {
   switch (title.toLowerCase()) {
@@ -673,11 +639,14 @@ const getSectionIcon = (title: string): any => {
       return require('../assets/spy-icon.png');
     case 'wallet mode':
       return require('../assets/mode-icon.png');
+    case 'font testing':
+      return require('../assets/font-icon.png');
+    case 'balance display':
+      return require('../assets/numbers-icon.png');
     default:
       return require('../assets/advanced-icon.png');
   }
 };
-
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   // Use UserContext for reactive network and API state
   const {setActiveNetwork, setActiveApiProvider} = useUser();
@@ -685,8 +654,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     'default' | 'alternative' | 'loading'
   >('loading');
   const [deleteInput, setDeleteInput] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [isModalResetVisible, setIsModalResetVisible] = useState(false);
   const [isBackupModalVisible, setIsBackupModalVisible] = useState(false);
@@ -698,27 +665,22 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [nostrRelays, setNostrRelays] = useState<string>('');
   const [pendingNostrRelays, setPendingNostrRelays] = useState<string>('');
   const [walletMode, setWalletMode] = useState<'full' | 'psbt'>('full');
-
   const [hasNostr, setHasNostr] = useState(false);
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
   const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
     'terms',
   );
-  const [passwordVisible, setPasswordVisible] = useState(false);
-  const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
   const [hapticsEnabled, setHapticsEnabledState] = useState(true);
+  const [balanceFormattingEnabled, setBalanceFormattingEnabledState] =
+    useState(false); // Default to raw numbers (not formatted)
   const [isApiInfoVisible, setIsApiInfoVisible] = useState(false);
-
-  // Password validation states
-  const [passwordStrength, setPasswordStrength] = useState(0);
-  const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
-
   // Collapsible states
   const [expandedSections, setExpandedSections] = useState<{
     [key: string]: boolean;
   }>({
     theme: false,
     haptics: false,
+    displayFormat: false,
     backup: false,
     advanced: false,
     nostr: false,
@@ -728,91 +690,18 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     appIcon: false,
     devicePairing: false,
     walletMode: false,
+    fontTesting: false,
   });
-
-  const {theme} = useTheme();
+  const {theme, themeMode, setThemeMode} = useTheme();
   const [appVersion, setAppVersion] = useState('');
   const [buildNumber, setBuildNumber] = useState('');
   const [usageSize, setUsageSize] = useState<{fileCount: number; mb: string}>({
     fileCount: 0,
     mb: '0.00 MB',
   });
-  // Password validation functions
-  const validatePassword = (pass: string) => {
-    const errors: string[] = [];
-    const checks = {
-      length: pass.length >= 12,
-      uppercase: /[A-Z]/.test(pass),
-      lowercase: /[a-z]/.test(pass),
-      number: /\d/.test(pass),
-      symbol: /[!@#$%^&*(),.?":{}|<>]/.test(pass),
-    };
-
-    if (!checks.length) {
-      errors.push('12+ characters');
-    }
-    if (!checks.uppercase) {
-      errors.push('Uppercase letter (A-Z)');
-    }
-    if (!checks.lowercase) {
-      errors.push('Lowercase letter (a-z)');
-    }
-    if (!checks.number) {
-      errors.push('Number (0-9)');
-    }
-    if (!checks.symbol) {
-      errors.push('Special character (!@#$...)');
-    }
-
-    setPasswordErrors(errors);
-
-    // Calculate strength (0-4)
-    const strength = Object.values(checks).filter(Boolean).length;
-    setPasswordStrength(strength);
-
-    return errors.length === 0;
-  };
-
-  const getPasswordStrengthText = () => {
-    if (passwordStrength <= 1) {
-      return 'Very Weak';
-    }
-    if (passwordStrength <= 2) {
-      return 'Weak';
-    }
-    if (passwordStrength <= 3) {
-      return 'Medium';
-    }
-    return 'Strong';
-  };
-
-  const getPasswordStrengthColor = () => {
-    if (passwordStrength <= 1) {
-      return theme.colors.danger;
-    }
-    if (passwordStrength <= 2) {
-      return '#FFA500';
-    }
-    if (passwordStrength <= 3) {
-      return '#FFD700';
-    }
-    return '#4CAF50';
-  };
-
-  const clearBackupModal = () => {
-    setPassword('');
-    setConfirmPassword('');
-    setPasswordVisible(false);
-    setConfirmPasswordVisible(false);
-    setPasswordStrength(0);
-    setPasswordErrors([]);
-    setIsBackupModalVisible(false);
-  };
-
   const toggleSection = (section: string) => {
     // Haptic feedback for section toggle
     HapticFeedback.light();
-
     setExpandedSections(prev => {
       const newState = Object.keys(prev).reduce((acc, key) => {
         acc[key] = false; // Close all sections
@@ -822,7 +711,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       return newState;
     });
   };
-
   useEffect(() => {
     setAppVersion(DeviceInfo.getVersion());
     setBuildNumber(DeviceInfo.getBuildNumber());
@@ -830,7 +718,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     LocalCache.usageSize().then(size => {
       setUsageSize(size);
     });
-
     // Load wallet mode preference (default to full mode)
     EncryptedStorage.getItem('wallet_mode')
       .then(mode => {
@@ -844,8 +731,21 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('Error loading wallet_mode from storage:', error);
         setWalletMode('full');
       });
+    // Load balance formatting preference (default to disabled - raw numbers)
+    EncryptedStorage.getItem('balance_formatting_enabled')
+      .then(enabled => {
+        if (enabled === null || enabled === undefined) {
+          // Default to false (raw numbers, not formatted)
+          setBalanceFormattingEnabledState(false);
+        } else {
+          setBalanceFormattingEnabledState(enabled === 'true');
+        }
+      })
+      .catch(error => {
+        dbg('Error loading balance_formatting_enabled from storage:', error);
+        setBalanceFormattingEnabledState(false);
+      });
   }, []);
-
   // Load saved icon preference on component mount
   useEffect(() => {
     const loadIconPreference = async () => {
@@ -860,14 +760,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           setSelectedIcon('default');
         }
       } catch (error) {
-        console.warn('Error loading icon preference:', error);
+        dbg('Error loading icon preference:', error);
         setSelectedIcon('default');
       }
     };
-
     loadIconPreference();
   }, []);
-
   useEffect(() => {
     EncryptedStorage.getItem('keyshare').then(ks => {
       try {
@@ -878,25 +776,21 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         // Get keyshare label (KeyShare1/2/3) or fallback to local_party_key
         const keyshareLabel = getKeyshareLabel(json);
         setParty(keyshareLabel || json.local_party_key || '');
-
         // Only show Nostr settings when the keyshare contains an npub
         setHasNostr(!!json.nostr_npub);
       } catch (error) {
         dbg('Failed to parse keyshare for settings screen:', error);
       }
     });
-
     // Load network and corresponding cached API
     LocalCache.getItem('network').then(async net => {
       dbg('=== Loading settings for network:', net);
       setIsTestnet(net !== 'mainnet');
       // Clear any pending API changes when switching networks
       setPendingAPI('');
-
       // Try to get the cached API for this network
       const cachedApi = await LocalCache.getItem(`api_${net}`);
       dbg(`Cached API for ${net}:`, cachedApi);
-
       if (cachedApi) {
         setBaseAPI(cachedApi);
         setPendingAPI(cachedApi); // Initialize pending API to current API
@@ -911,7 +805,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         // Fallback to current API or default
         const currentApi = await LocalCache.getItem('api');
         dbg('Current API (fallback):', currentApi);
-
         if (currentApi) {
           setBaseAPI(currentApi);
           setPendingAPI(currentApi); // Initialize pending API to current API
@@ -948,17 +841,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       setPendingNostrRelays(relaysForDisplay);
     });
   }, []);
-
   const toggleNetwork = async (value: boolean) => {
     // Haptic feedback for network toggle
     HapticFeedback.light();
     dbg('=== Network toggle started:', value ? 'testnet' : 'mainnet');
     const newNetwork = value ? 'testnet3' : 'mainnet';
     const networkName = value ? 'Testnet' : 'Mainnet';
-    const networkIcon = value ? '🧪' : '🌐';
-
     await setActiveNetwork(newNetwork);
-
     // Check user's wallet mode preference before navigating
     let targetRoute = 'Home';
     try {
@@ -973,30 +862,27 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       dbg('Error loading wallet_mode during network toggle:', error);
       // Default to 'Home' if there's an error
     }
-
     // Navigate to the appropriate screen based on user preference
     navigation.reset({index: 0, routes: [{name: targetRoute}]});
-
     // Show brief feedback alert after a brief delay to ensure navigation completes
     setTimeout(() => {
       // warn user if test net bitcoin is not real
       // add i understand button to the alert
       if (newNetwork === 'mainnet') {
         Alert.alert(
-          `${networkIcon} Switched to ${networkName}`,
+          `Switched to ${networkName}`,
           'Mainnet Bitcoin is the real Bitcoin. It is the main network for all Bitcoin transactions.',
           [{text: 'I understand', onPress: () => {}}],
         );
       } else {
         Alert.alert(
-          `${networkIcon} Switched to ${networkName}`,
+          `Switched to ${networkName}`,
           'Testnet Bitcoin is not real Bitcoin. It is a test network for developers to test their applications. Do not use it for real transactions.',
           [{text: 'I understand', onPress: () => {}}],
         );
       }
     }, 300);
   };
-
   const resetAPI = async () => {
     dbg('resetAPI called');
     const net = await LocalCache.getItem('network');
@@ -1005,10 +891,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         ? 'https://mempool.space/api' // MAINNET_APIS[0]
         : 'https://mempool.space/testnet/api'; // TESTNET_APIS[0]
     dbg('Resetting to default API for network:', net, 'API:', api);
-
     // Clear pending API selection and set to new API
     setPendingAPI(api);
-
     // Update local state
     setBaseAPI(api);
     dbg('Local state updated with API:', api);
@@ -1038,16 +922,29 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       Alert.alert('Success', 'API endpoint reset to default!');
     }, 300);
   };
-
+  const normalizeAPIUrl = (url: string): string => {
+    if (!url || url.trim() === '') {
+      return url;
+    }
+    // Trim whitespace
+    let normalized = url.trim();
+    // Remove trailing slashes
+    normalized = normalized.replace(/\/+$/, '');
+    // Check if it ends with /api (case-insensitive)
+    const apiPattern = /\/api$/i;
+    if (!apiPattern.test(normalized)) {
+      // If it doesn't end with /api, append it
+      normalized = normalized + '/api';
+    }
+    return normalized;
+  };
   const validateAPIEndpoint = async (api: string): Promise<boolean> => {
     try {
       const testUrl = `${api.replace(/\/$/, '')}/blocks/tip/hash`;
       dbg('Testing API endpoint:', testUrl);
-
       // Create AbortController for timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-
       const response = await fetch(testUrl, {
         method: 'GET',
         headers: {
@@ -1055,23 +952,18 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         },
         signal: controller.signal,
       });
-
       clearTimeout(timeoutId);
-
       if (!response.ok) {
         dbg('API validation failed: HTTP', response.status);
         return false;
       }
-
       const blockHash = await response.text();
       // Check if response looks like a valid block hash (64 character hex string)
       const isValidBlockHash = /^[a-f0-9]{64}$/i.test(blockHash.trim());
-
       if (!isValidBlockHash) {
         dbg('API validation failed: Invalid block hash format:', blockHash);
         return false;
       }
-
       dbg('API validation successful:', blockHash);
       return true;
     } catch (error) {
@@ -1079,17 +971,19 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       return false;
     }
   };
-
   const saveAPI = async (api: string) => {
     if (!api || api.trim() === '') {
       Alert.alert('Error', 'Please select a valid API endpoint.');
       return;
     }
-
+    // Normalize the URL to ensure it ends with /api
+    const normalizedApi = normalizeAPIUrl(api);
+    dbg('Original API URL:', api);
+    dbg('Normalized API URL:', normalizedApi);
     setIsAPISaving(true);
     try {
-      // Validate the API endpoint first
-      const isValid = await validateAPIEndpoint(api);
+      // Validate the API endpoint first (using normalized URL)
+      const isValid = await validateAPIEndpoint(normalizedApi);
       if (!isValid) {
         Alert.alert(
           'Invalid API Endpoint',
@@ -1097,16 +991,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         );
         return;
       }
-
-      // Update API via UserContext
-      await setActiveApiProvider(api);
-      // Update local state
-      setBaseAPI(api);
-      // Reset pending API to the saved API
-      setPendingAPI(api);
-      dbg('Local state updated with API:', api);
+      // Update API via UserContext (using normalized URL)
+      await setActiveApiProvider(normalizedApi);
+      // Update local state (using normalized URL)
+      setBaseAPI(normalizedApi);
+      // Reset pending API to the saved API (using normalized URL)
+      setPendingAPI(normalizedApi);
+      dbg('Local state updated with API:', normalizedApi);
       Alert.alert('Success', 'API endpoint updated successfully!');
-      dbg('=== API saved and propagated successfully:', api);
+      dbg('=== API saved and propagated successfully:', normalizedApi);
       // Navigate to home after successful save
       navigation.reset({index: 0, routes: [{name: 'Home'}]});
     } catch (error) {
@@ -1116,12 +1009,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       setIsAPISaving(false);
     }
   };
-
   const handleAPISelection = (api: string) => {
     // Just update the pending API selection - don't save immediately
     setPendingAPI(api);
   };
-
   const handleResetWallet = async () => {
     if (deleteInput.trim().toLowerCase() === 'delete my wallet') {
       try {
@@ -1148,113 +1039,23 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       );
     }
   };
-
-  const handleBackupWallet = async () => {
-    if (!validatePassword(password)) {
-      const missingRequirements = passwordErrors.join('\n• ');
-      Alert.alert(
-        'Password Requirements Not Met',
-        `Your password must meet all of the following requirements:\n\n• ${missingRequirements}\n\nPlease update your password and try again.`,
-      );
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      Alert.alert(
-        'Passwords Do Not Match',
-        'The password and confirmation password must be identical. Please check both fields and try again.',
-      );
-      return;
-    }
-
-    try {
-      HapticFeedback.medium();
-
-      const storedKeyshare = await EncryptedStorage.getItem('keyshare');
-      if (storedKeyshare) {
-        const json = JSON.parse(storedKeyshare);
-        const encryptedKeyshare = await BBMTLibNativeModule.aesEncrypt(
-          storedKeyshare,
-          await BBMTLibNativeModule.sha256(password),
-        );
-
-        // Create filename based on pub_key hash and keyshare number
-        if (!json.pub_key) {
-          Alert.alert('Error', 'Keyshare missing pub_key.');
-          return;
-        }
-        
-        // Get SHA256 hash of pub_key and take first 4 characters
-        const pubKeyHash = await BBMTLibNativeModule.sha256(json.pub_key);
-        const hashPrefix = pubKeyHash.substring(0, 4).toLowerCase();
-        
-        // Extract keyshare number from label (KeyShare1 -> 1, KeyShare2 -> 2, etc.)
-        const keyshareLabel = getKeyshareLabel(json);
-        let keyshareNumber = '1'; // default
-        if (keyshareLabel) {
-          const match = keyshareLabel.match(/KeyShare(\d+)/);
-          if (match) {
-            keyshareNumber = match[1];
-          }
-        } else if (json.keygen_committee_keys && json.local_party_key) {
-          // Fallback: compute from position in sorted keygen_committee_keys
-          const sortedKeys = [...json.keygen_committee_keys].sort();
-          const index = sortedKeys.indexOf(json.local_party_key);
-          if (index >= 0) {
-            keyshareNumber = String(index + 1);
-          }
-        }
-        
-        const friendlyFilename = `${hashPrefix}K${keyshareNumber}.share`;
-
-        const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
-        const filePath = `${tempDir}/${friendlyFilename}`;
-
-        await RNFS.writeFile(filePath, encryptedKeyshare, 'base64');
-
-        await Share.open({
-          title: 'Backup Your Keyshare',
-          isNewTask: true,
-          message:
-            'Save this encrypted file securely. It is required for wallet recovery.',
-          url: `file://${filePath}`,
-          type: 'application/octet-stream',
-          filename: friendlyFilename,
-          failOnCancel: false,
-        });
-
-        // Cleanup temp file (best-effort)
-        try {
-          await RNFS.unlink(filePath);
-        } catch {
-          // ignore cleanup errors
-        }
-        clearBackupModal();
-      } else {
-        Alert.alert('Error', 'Invalid keyshare.');
-      }
-    } catch (error) {
-      dbg('Error encrypting or sharing keyshare:', error);
-      Alert.alert('Error', 'Failed to encrypt or share the keyshare.');
-    }
-  };
-
-  const handlePasswordChange = (text: string) => {
-    setPassword(text);
-    if (text.length > 0) {
-      validatePassword(text);
-    } else {
-      setPasswordStrength(0);
-      setPasswordErrors([]);
-    }
-  };
-
   const handleToggleHaptics = (value: boolean) => {
     HapticFeedback.light();
     setHapticsEnabledState(value);
     setHapticsEnabled(value);
   };
-
+  const handleToggleBalanceFormatting = async (value: boolean) => {
+    HapticFeedback.light();
+    setBalanceFormattingEnabledState(value);
+    try {
+      await EncryptedStorage.setItem(
+        'balance_formatting_enabled',
+        value.toString(),
+      );
+    } catch (error) {
+      dbg('Error saving balance_formatting_enabled:', error);
+    }
+  };
   const styles = StyleSheet.create({
     container: {
       flex: 1,
@@ -1274,19 +1075,19 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderBottomColor: theme.colors.border,
     },
     headerTitle: {
-      fontSize: 28,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.['3xl'] || 28,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       textAlign: 'center',
     },
     collapsibleSection: {
-      marginBottom: 8,
+      marginBottom: 10,
       backgroundColor: theme.colors.cardBackground,
       borderRadius: 8,
       borderWidth: 1,
       borderColor: theme.colors.border,
       overflow: 'hidden',
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 1},
       shadowOpacity: 0.1,
       shadowRadius: 2,
@@ -1311,18 +1112,21 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       tintColor: theme.colors.text,
     },
     sectionHeaderTitle: {
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
     },
     expandIcon: {
-      fontSize: 14,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.bold,
     },
     sectionContent: {
       paddingHorizontal: 12,
       borderTopWidth: 1,
-      borderTopColor: theme.colors.accent,
+      borderTopColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.accent
+          : theme.colors.bitcoinOrange,
     },
     toggleContainer: {
       flexDirection: 'row',
@@ -1332,13 +1136,33 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       paddingHorizontal: 4,
     },
     toggleLabel: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
     },
     toggleDescription: {
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
       color: theme.colors.textSecondary,
+      marginTop: 12,
+      textAlign: 'center',
+      marginBottom: 12,
+    },
+    hintText: {
+      fontSize: theme.fontSizes?.base || 13,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textSecondary,
+      lineHeight: 18,
+      textAlign: 'left' as const,
+    },
+    hintBold: {
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text,
+    },
+    hintAmount: {
+      fontFamily: theme.fontFamilies?.monospaceBold,
+      color: theme.colors.text,
+    },
+    hintSpacing: {
       marginBottom: 12,
     },
     appIconHintRow: {
@@ -1354,13 +1178,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       flex: 1,
     },
     appIconHintTitle: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       marginBottom: 2,
     },
     appIconHintSubtitle: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
       color: theme.colors.textSecondary,
       lineHeight: 16,
     },
@@ -1369,7 +1193,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderColor: theme.colors.border,
       borderRadius: 6,
       padding: 10,
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
       backgroundColor: theme.colors.background,
       color: theme.colors.text,
       marginBottom: 8,
@@ -1387,7 +1211,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderRadius: 8,
       backgroundColor: theme.colors.background,
       minHeight: 44,
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 1},
       shadowOpacity: 0.05,
       shadowRadius: 2,
@@ -1405,7 +1229,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       flex: 1,
       paddingHorizontal: 12,
       paddingVertical: 12,
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
       color: theme.colors.text,
       backgroundColor: 'transparent',
     },
@@ -1418,8 +1242,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderLeftColor: theme.colors.border,
     },
     apiDropdownIcon: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.bold,
     },
     apiInputRow: {
       flexDirection: 'row',
@@ -1437,7 +1261,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       minHeight: 44,
       justifyContent: 'center',
       alignItems: 'center',
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 1},
       shadowOpacity: 0.1,
       shadowRadius: 2,
@@ -1449,8 +1273,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     },
     apiSaveButtonText: {
       color: theme.colors.textOnPrimary,
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.bold,
+      textAlign: 'center',
     },
     apiSaveButtonTextDisabled: {
       color: theme.colors.textSecondary,
@@ -1486,28 +1311,33 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       minHeight: 36,
     },
     apiNetworkModeBadgeTestnet: {
-      backgroundColor: 'rgba(255, 165, 0, 0.15)',
+      backgroundColor: theme.colors.warning + '26', // ~15% opacity
       borderWidth: 1,
-      borderColor: 'rgba(255, 165, 0, 0.3)',
+      borderColor: theme.colors.warning + '4D', // ~30% opacity
     },
     apiNetworkModeBadgeMainnet: {
-      backgroundColor: 'rgba(76, 175, 80, 0.15)',
+      backgroundColor: theme.colors.received + '26', // ~15% opacity
       borderWidth: 1,
-      borderColor: 'rgba(76, 175, 80, 0.3)',
+      borderColor: theme.colors.received + '4D', // ~30% opacity
     },
     apiNetworkModeIcon: {
-      fontSize: 16,
+      width: 16,
+      height: 16,
+      marginRight: 6,
     },
     apiNetworkModeText: {
-      fontSize: 13,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 13,
+      fontFamily: theme.fontFamilies?.bold,
       letterSpacing: 0.2,
     },
     apiNetworkModeTextTestnet: {
-      color: '#FFA500',
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.accent
+          : theme.colors.text,
     },
     apiNetworkModeTextMainnet: {
-      color: '#4CAF50',
+      color: theme.colors.received,
     },
     apiInfoButton: {
       flex: 1,
@@ -1521,20 +1351,23 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderWidth: 1,
       borderColor: theme.colors.primary,
       gap: 6,
-      minHeight: 36,
+      minHeight: 40,
     },
     apiInfoButtonIcon: {
       width: 14,
       height: 14,
-      tintColor: theme.colors.primary,
+      tintColor: theme.colors.text, // Use text color for better visibility in dark mode
     },
     apiInfoButtonText: {
-      fontSize: 12,
-      fontWeight: '600',
-      color: theme.colors.primary,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.bold,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.text,
     },
     apiNetworkDescription: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
       lineHeight: 16,
       marginTop: 4,
     },
@@ -1553,6 +1386,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     apiActionButton: {
       flex: 1,
       minHeight: 44,
+      height: 44,
     },
     apiModalContainer: {
       flex: 1,
@@ -1564,7 +1398,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     },
     apiModalBackdrop: {
       flex: 1,
-      backgroundColor: 'rgba(0, 0, 0, 0.6)',
+      backgroundColor: theme.colors.modalBackdrop,
       justifyContent: 'flex-end',
     },
     apiModalContent: {
@@ -1573,12 +1407,19 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderTopRightRadius: 10,
       paddingBottom: Platform.OS === 'ios' ? 17 : 10,
       paddingTop: 5,
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: -4},
       shadowOpacity: 0.2,
       shadowRadius: 12,
       elevation: 20,
       flexDirection: 'column',
+      borderTopWidth: 1,
+      borderLeftWidth: 1,
+      borderRightWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
     },
     apiModalListWrapper: {
       height: 300,
@@ -1595,6 +1436,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       paddingTop: 12,
       paddingBottom: 12,
       borderBottomWidth: 1,
+      borderBottomColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
     },
     apiModalHeaderTop: {
       flexDirection: 'row',
@@ -1609,8 +1454,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       paddingBottom: Platform.OS === 'ios' ? 32 : 24,
     },
     apiModalTitle: {
-      fontSize: 16,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontFamily: theme.fontFamilies?.bold,
       letterSpacing: -0.5,
     },
     apiModalHeaderTitleContainer: {
@@ -1631,8 +1476,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       alignItems: 'center',
     },
     apiModalCloseText: {
-      fontSize: 18,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.xl || 18,
+      fontFamily: theme.fontFamilies?.bold,
     },
     apiModalSearchContainer: {
       flexDirection: 'row',
@@ -1645,12 +1490,14 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderWidth: 1,
     },
     apiModalSearchIcon: {
-      fontSize: 16,
+      width: 16,
+      height: 16,
       marginRight: 8,
+      tintColor: theme.colors.text,
     },
     apiModalSearchInput: {
       flex: 1,
-      fontSize: 15,
+      fontSize: theme.fontSizes?.md || 15,
       padding: 0,
       margin: 0,
     },
@@ -1659,8 +1506,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginLeft: 8,
     },
     apiModalSearchClearText: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.bold,
     },
     apiModalListContent: {
       paddingTop: 4,
@@ -1681,17 +1528,19 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       backgroundColor: theme.colors.cardBackground,
     },
     apiModalItemIcon: {
-      fontSize: 18,
+      width: 18,
+      height: 18,
       marginRight: 12,
+      tintColor: theme.colors.text,
     },
     apiModalItemText: {
       flex: 1,
-      fontSize: 15,
+      fontSize: theme.fontSizes?.md || 15,
       lineHeight: 20,
       letterSpacing: -0.2,
     },
     apiModalItemTextSelected: {
-      fontWeight: '600',
+      fontFamily: theme.fontFamilies?.bold,
     },
     apiModalItemCheckContainer: {
       width: 24,
@@ -1702,16 +1551,16 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginLeft: 8,
     },
     apiModalItemCheck: {
-      fontSize: 14,
-      fontWeight: 'bold',
-      color: '#FFFFFF',
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.white,
     },
     apiModalLoading: {
       padding: 48,
       alignItems: 'center',
     },
     apiModalLoadingText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
       fontStyle: 'italic',
     },
     apiModalEmpty: {
@@ -1719,48 +1568,60 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       alignItems: 'center',
     },
     apiModalEmptyText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
       fontStyle: 'italic',
     },
     button: {
       paddingVertical: 10,
       borderRadius: 6,
       alignItems: 'center',
+      justifyContent: 'center',
       marginTop: 6,
     },
     deleteButton: {
-      backgroundColor: theme.colors.accent,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.accent
+          : theme.colors.bitcoinOrange,
     },
     backupButton: {
       backgroundColor: theme.colors.primary,
+      marginBottom: 16, // Add spacing after backup button before delete section
     },
     resetButton: {
-      backgroundColor: theme.colors.accent,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.accent
+          : theme.colors.bitcoinOrange,
     },
     buttonText: {
       color: theme.colors.textOnPrimary,
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontFamily: theme.fontFamilies?.bold,
+      textAlign: 'center',
     },
     apiItem: {
-      marginTop: 12,
+      marginTop: 0, // Section padding handles first element spacing
+      marginBottom: 0, // Consistent spacing
     },
     apiName: {
-      fontSize: 14,
-      fontWeight: 'bold',
-      color: theme.colors.primary,
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text, // Use text color for better readability in dark mode
       marginBottom: 4,
     },
     apiDescription: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
       color: theme.colors.textSecondary,
       lineHeight: 20,
       marginBottom: 6,
     },
     linkText: {
-      color: theme.colors.primary,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text, // Use text color for better readability in dark mode
       textDecorationLine: 'underline',
+      textDecorationColor: theme.colors.text, // Match underline color
     },
     aboutInfoRow: {
       flexDirection: 'row',
@@ -1772,14 +1633,14 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderBottomColor: theme.colors.border,
     },
     aboutLabel: {
-      fontSize: 15,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.md || 15,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       letterSpacing: -0.2,
     },
     aboutValue: {
-      fontSize: 15,
-      fontWeight: '500',
+      fontSize: theme.fontSizes?.md || 15,
+      fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.textSecondary,
       letterSpacing: -0.2,
     },
@@ -1803,31 +1664,35 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       tintColor: theme.colors.text,
     },
     aboutSectionTitle: {
-      fontSize: 16,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       letterSpacing: -0.3,
     },
     aboutSectionDescription: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
       color: theme.colors.textSecondary,
       lineHeight: 22,
       letterSpacing: -0.1,
     },
     aboutLinkText: {
-      color: theme.colors.primary,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text, // Use text color for better readability in dark mode
       textDecorationLine: 'underline',
+      textDecorationColor: theme.colors.text, // Match underline color
     },
     termsLink: {
-      color: theme.colors.primary,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text, // Use text color for better readability in dark mode
       textDecorationLine: 'underline',
+      textDecorationColor: theme.colors.text, // Match underline color
       marginTop: 8,
     },
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.8)',
+      backgroundColor: theme.colors.modalBackdrop,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -1836,6 +1701,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       padding: 20,
       borderRadius: 8,
       width: '80%',
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
     },
     modalHeader: {
       flexDirection: 'row',
@@ -1847,15 +1717,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       width: 24,
       height: 24,
       marginRight: 10,
-      tintColor: theme.colors.primary,
+      tintColor: theme.colors.text, // Use text color for better visibility in dark mode
     },
     modalTitle: {
-      fontSize: 20,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.['2xl'] || 20,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
     },
     modalDescription: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
       color: theme.colors.textSecondary,
       marginBottom: 20,
       textAlign: 'center',
@@ -1864,8 +1734,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginBottom: 12,
     },
     passwordLabel: {
-      fontSize: 14,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       marginBottom: 4,
     },
@@ -1879,7 +1749,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     passwordInput: {
       flex: 1,
       padding: 10,
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
       color: theme.colors.text,
     },
     eyeButton: {
@@ -1888,9 +1758,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     eyeIcon: {
       width: 20,
       height: 20,
+      tintColor: theme.colors.text,
     },
     passwordHint: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
       color: theme.colors.textSecondary,
     },
     modalActions: {
@@ -1904,26 +1775,56 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       paddingVertical: 14,
       borderRadius: 8,
       alignItems: 'center',
+      justifyContent: 'center',
     },
     cancelButton: {
       backgroundColor: theme.colors.secondary,
     },
+    cancelButtonText: {
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.text,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontFamily: theme.fontFamilies?.bold,
+      textAlign: 'center',
+    },
     confirmButton: {
-      backgroundColor: theme.colors.accent,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.accent
+          : theme.colors.bitcoinOrange,
+    },
+    confirmButtonText: {
+      color: theme.colors.white,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontFamily: theme.fontFamilies?.bold,
+      textAlign: 'center',
     },
     disabledButton: {
       backgroundColor: theme.colors.disabled,
+    },
+    disabledButtonText: {
+      color: theme.colors.disabledText || theme.colors.textSecondary,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontFamily: theme.fontFamilies?.bold,
+      textAlign: 'center',
     },
     apiInfoModalContent: {
       backgroundColor: theme.colors.background,
       borderRadius: 16,
       width: '85%',
       maxWidth: 400,
-      shadowColor: '#000',
+      shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 4},
       shadowOpacity: 0.3,
       shadowRadius: 12,
       elevation: 20,
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
     },
     apiInfoModalHeader: {
       flexDirection: 'row',
@@ -1944,12 +1845,14 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       alignItems: 'center',
     },
     apiInfoModalIcon: {
-      fontSize: 20,
+      width: 20,
+      height: 20,
+      tintColor: theme.colors.text,
     },
     apiInfoModalTitle: {
       flex: 1,
-      fontSize: 18,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.xl || 18,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       marginLeft: 12,
       letterSpacing: -0.3,
@@ -1963,8 +1866,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       alignItems: 'center',
     },
     apiInfoModalCloseText: {
-      fontSize: 18,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.xl || 18,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.textSecondary,
     },
     apiInfoModalBody: {
@@ -1979,17 +1882,19 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginBottom: 8,
     },
     apiInfoSectionIcon: {
-      fontSize: 20,
+      width: 20,
+      height: 20,
       marginRight: 10,
+      tintColor: theme.colors.text,
     },
     apiInfoSectionTitle: {
-      fontSize: 16,
-      fontWeight: '700',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       letterSpacing: -0.2,
     },
     apiInfoSectionText: {
-      fontSize: 14,
+      fontSize: theme.fontSizes?.base || 14,
       color: theme.colors.textSecondary,
       lineHeight: 22,
       letterSpacing: -0.1,
@@ -2004,9 +1909,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       justifyContent: 'center',
     },
     apiInfoModalButtonText: {
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.lg || 16,
+      fontFamily: theme.fontFamilies?.bold,
       letterSpacing: -0.2,
+      textAlign: 'center',
     },
     networkOption: {
       flexDirection: 'row',
@@ -2016,6 +1922,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       width: 20,
       height: 20,
       marginRight: 8,
+      tintColor: theme.colors.text, // Use text color for visibility in dark mode
     },
     input: {
       borderWidth: 1,
@@ -2024,7 +1931,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       padding: 14,
       marginBottom: 16,
       textAlign: 'center',
-      fontSize: 16,
+      fontSize: theme.fontSizes?.lg || 16,
       color: theme.colors.text,
       backgroundColor: theme.colors.cardBackground,
     },
@@ -2050,8 +1957,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       borderRadius: 4,
     },
     strengthText: {
-      fontSize: 12,
-      fontWeight: 'bold',
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.bold,
       minWidth: 60,
       textAlign: 'right',
       color: theme.colors.textSecondary,
@@ -2060,13 +1967,14 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginTop: 4,
     },
     requirementText: {
-      fontSize: 12,
-      color: '#FF6B35',
-      fontWeight: '500',
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.warningAccent,
     },
     nostrRelaysInput: {
       minHeight: 120,
       textAlignVertical: 'top',
+      textAlign: 'left', // Align text entries to the left
       paddingTop: 12,
       backgroundColor: theme.colors.cardBackground,
     },
@@ -2075,12 +1983,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     },
     errorText: {
       color: theme.colors.danger,
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
       marginTop: 4,
     },
     buttonContent: {
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'center',
     },
     buttonIcon: {
       width: 20,
@@ -2088,21 +1997,36 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       marginRight: 12,
       tintColor: theme.colors.white,
     },
+    buttonIconOnColored: {
+      width: 20,
+      height: 20,
+      marginRight: 12,
+      tintColor: theme.colors.white,
+    },
+    buttonIconOnSecondary: {
+      width: 20,
+      height: 20,
+      marginRight: 12,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.text,
+    },
     flexContainer: {
       flex: 1,
     },
     whiteTint: {
-      tintColor: '#ffffff',
+      tintColor: theme.colors.white,
     },
     networkStatusContainer: {
       marginBottom: 8,
     },
     networkStatusTitle: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
       marginBottom: 2,
     },
     networkStatusText: {
-      fontSize: 12,
+      fontSize: theme.fontSizes?.sm || 12,
     },
     appIconCheckStatesButton: {
       marginBottom: 10,
@@ -2116,73 +2040,305 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       paddingHorizontal: 4,
     },
     walletModeLabel: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
     },
     walletModeDescription: {
-      fontSize: 13,
+      fontSize: theme.fontSizes?.base || 13,
       color: theme.colors.textSecondary,
       marginBottom: 12,
     },
+    themeOptionContainer: {
+      gap: 8,
+      marginBottom: 8,
+    },
+    themeOption: {
+      backgroundColor: theme.colors.background,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      padding: 12,
+      marginBottom: 4,
+    },
+    themeOptionSelected: {
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.accent
+          : theme.colors.bitcoinOrange,
+      borderWidth: 2,
+      backgroundColor: theme.colors.cardBackground,
+    },
+    themeOptionContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    themeOptionLabel: {
+      fontSize: theme.fontSizes?.md || 15,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.text,
+    },
+    themeOptionLabelSelected: {
+      fontFamily: theme.fontFamilies?.bold,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.accent
+          : theme.colors.bitcoinOrange,
+    },
+    themeOptionCheck: {
+      width: 18,
+      height: 18,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.accent
+          : theme.colors.bitcoinOrange,
+    },
   });
-
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={true}
+        removeClippedSubviews
         keyboardShouldPersistTaps="handled"
+        overScrollMode="never"
+        showsVerticalScrollIndicator={false}
         nestedScrollEnabled={true}
         bounces={true}
-        scrollEventThrottle={16}
-        overScrollMode="auto">
-        {/* Backup & Reset Section */}
+        scrollEventThrottle={16}>
+        {/* Theme Section - First for better UX */}
         <CollapsibleSection
-          title="Security"
-          isExpanded={expandedSections.backup}
-          onToggle={() => toggleSection('backup')}
+          title="Theme"
+          isExpanded={expandedSections.theme}
+          onToggle={() => toggleSection('theme')}
           styles={styles}
           theme={theme}>
-          <Text style={styles.apiName}>Backup Wallet Keyshare</Text>
-
-          <TouchableOpacity
-            style={[styles.button, styles.backupButton]}
-            onPress={() => {
-              HapticFeedback.light();
-              setIsBackupModalVisible(true);
-            }}>
-            <View style={styles.buttonContent}>
-              <Image
-                source={require('../assets/upload-icon.png')}
-                style={styles.buttonIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.buttonText}>Backup {party}</Text>
-            </View>
-          </TouchableOpacity>
-
-          <View style={styles.apiItem}>
-            <Text style={styles.apiName}>Delete Wallet Keyshare</Text>
+          <Text style={styles.toggleDescription}>
+            Choose your preferred color theme. OS Default follows your system
+            settings.
+          </Text>
+          <View style={styles.themeOptionContainer}>
+            <Pressable
+              style={[
+                styles.themeOption,
+                themeMode === 'os' && styles.themeOptionSelected,
+              ]}
+              onPress={() => {
+                HapticFeedback.light();
+                setThemeMode('os');
+              }}
+              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+              <View style={styles.themeOptionContent}>
+                <Text
+                  style={[
+                    styles.themeOptionLabel,
+                    themeMode === 'os' && styles.themeOptionLabelSelected,
+                  ]}>
+                  OS Default
+                </Text>
+                {themeMode === 'os' && (
+                  <Image
+                    source={require('../assets/check-icon.png')}
+                    style={styles.themeOptionCheck}
+                    resizeMode="contain"
+                  />
+                )}
+              </View>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.themeOption,
+                themeMode === 'light' && styles.themeOptionSelected,
+              ]}
+              onPress={() => {
+                HapticFeedback.light();
+                setThemeMode('light');
+              }}
+              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+              <View style={styles.themeOptionContent}>
+                <Text
+                  style={[
+                    styles.themeOptionLabel,
+                    themeMode === 'light' && styles.themeOptionLabelSelected,
+                  ]}>
+                  Light
+                </Text>
+                {themeMode === 'light' && (
+                  <Image
+                    source={require('../assets/check-icon.png')}
+                    style={styles.themeOptionCheck}
+                    resizeMode="contain"
+                  />
+                )}
+              </View>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.themeOption,
+                themeMode === 'dark' && styles.themeOptionSelected,
+              ]}
+              onPress={() => {
+                HapticFeedback.light();
+                setThemeMode('dark');
+              }}
+              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+              <View style={styles.themeOptionContent}>
+                <Text
+                  style={[
+                    styles.themeOptionLabel,
+                    themeMode === 'dark' && styles.themeOptionLabelSelected,
+                  ]}>
+                  Dark
+                </Text>
+                {themeMode === 'dark' && (
+                  <Image
+                    source={require('../assets/check-icon.png')}
+                    style={styles.themeOptionCheck}
+                    resizeMode="contain"
+                  />
+                )}
+              </View>
+            </Pressable>
           </View>
-
-          <TouchableOpacity
-            style={[styles.button, styles.deleteButton]}
-            onPress={() => {
-              HapticFeedback.light();
-              setIsModalResetVisible(true);
-            }}>
-            <View style={styles.buttonContent}>
-              <Image
-                source={require('../assets/delete-icon.png')}
-                style={[styles.buttonIcon, styles.whiteTint]}
-                resizeMode="contain"
-              />
-              <Text style={styles.buttonText}>Delete {party}</Text>
-            </View>
-          </TouchableOpacity>
         </CollapsibleSection>
+        {/* Haptics Section */}
+        <CollapsibleSection
+          title="Haptics"
+          isExpanded={expandedSections.haptics}
+          onToggle={() => toggleSection('haptics')}
+          styles={styles}
+          theme={theme}>
+          <Text style={styles.toggleDescription}>
+            Enable vibration feedback. OS settings may override this.
+          </Text>
+          <View style={styles.toggleContainer}>
+            <Text style={styles.toggleLabel}>Haptics Off</Text>
+            <Switch
+              onValueChange={handleToggleHaptics}
+              value={hapticsEnabled}
+            />
+            <Text style={styles.toggleLabel}>Haptics On</Text>
+          </View>
+        </CollapsibleSection>
+        {/* Display Format Section */}
+        <CollapsibleSection
+          title="Balance Display"
+          isExpanded={expandedSections.displayFormat}
+          onToggle={() => toggleSection('displayFormat')}
+          styles={styles}
+          theme={theme}>
+          <Text style={styles.hintText}>
+            Bitcoin uses <Text style={styles.hintBold}>8 decimal places</Text>{' '}
+            for full accuracy.
+          </Text>
+
+          <Text style={[styles.hintText, styles.hintSpacing]}>
+            <Text style={styles.hintAmount}>1 BTC</Text> ={' '}
+            <Text style={styles.hintAmount}>100,000,000 satoshis (sats)</Text>
+          </Text>
+
+          <Text style={[styles.hintText, styles.hintSpacing]}>
+            You can choose how your balance is shown:
+          </Text>
+
+          <Text style={[styles.hintText, styles.hintSpacing]}>
+            <Text style={styles.hintBold}>Formatted:</Text> Thousand separators
+            make large numbers easier to read and verify decimal precision.
+            Example:{' '}
+            <Text style={styles.hintAmount}>1,234.56,789,010 ₿</Text> or{' '}
+            <Text style={styles.hintAmount}>123,456,789,010 sats</Text>
+          </Text>
+
+          <Text style={[styles.hintText, styles.hintSpacing]}>
+            <Text style={styles.hintBold}>Raw Numbers:</Text> Exact values
+            without separators. Example:{' '}
+            <Text style={styles.hintAmount}>1234.56789 ₿</Text> or{' '}
+            <Text style={styles.hintAmount}>123456789000 sats</Text>
+          </Text>
+          <View style={styles.toggleContainer}>
+            <Text style={styles.toggleLabel}>Raw Numbers</Text>
+            <Switch
+              onValueChange={handleToggleBalanceFormatting}
+              value={balanceFormattingEnabled}
+            />
+            <Text style={styles.toggleLabel}>Formatted</Text>
+          </View>
+        </CollapsibleSection>
+        {/* App Icon Section - Android Only */}
+        {Platform.OS === 'android' && (
+          <CollapsibleSection
+            title="App Icon"
+            isExpanded={expandedSections.appIcon}
+            onToggle={() => toggleSection('appIcon')}
+            styles={styles}
+            theme={theme}>
+            <View style={styles.appIconHintRow}>
+              <View style={styles.appIconHintTextContainer}>
+                <Text style={styles.appIconHintTitle}>
+                  Blend in when you need to.
+                </Text>
+                <Text style={styles.appIconHintSubtitle}>
+                  Switch to the calculator icon when you want your wallet to
+                  look like just another app on your home screen.
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.toggleDescription}>
+              Change the app's launcher icon on your device.
+            </Text>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Bold Wallet</Text>
+              <Switch
+                onValueChange={async value => {
+                  try {
+                    HapticFeedback.light();
+                    const newIcon = value ? 'alternative' : 'default';
+                    // Check if IconChanger module is available
+                    if (!IconChanger || !IconChanger.changeIcon) {
+                      Alert.alert(
+                        'Error',
+                        'Icon switching is not available on this device.',
+                        [{text: 'OK'}],
+                      );
+                      return;
+                    }
+                    // Update UI state
+                    setSelectedIcon(newIcon);
+                    // Save preference
+                    await EncryptedStorage.setItem(
+                      'app_icon_preference',
+                      newIcon,
+                    );
+                    // Change the icon
+                    await IconChanger.changeIcon(newIcon);
+                    // Show success message
+                    const iconName =
+                      newIcon === 'alternative' ? 'QuickCalc' : 'Bold Wallet';
+                    Alert.alert(
+                      'Icon Changed',
+                      `App icon switched to ${iconName}.\n\nYou may need to refresh your launcher to see the change.`,
+                      [{text: 'OK'}],
+                    );
+                  } catch (error: any) {
+                    dbg('Error changing icon:', error);
+                    // Revert UI state on error
+                    setSelectedIcon(value ? 'default' : 'alternative');
+                    Alert.alert(
+                      'Error',
+                      error?.message ||
+                        'Failed to change app icon. Please try again.',
+                      [{text: 'OK'}],
+                    );
+                  }
+                }}
+                value={selectedIcon === 'alternative'}
+                disabled={selectedIcon === 'loading'}
+              />
+              <Text style={styles.toggleLabel}>QuickCalc</Text>
+            </View>
+          </CollapsibleSection>
+        )}
         {/* Wallet Mode Section */}
         <CollapsibleSection
           title="Wallet Mode"
@@ -2225,7 +2381,51 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             <Text style={styles.walletModeLabel}>PSBT Only</Text>
           </View>
         </CollapsibleSection>
-        {/* Advanced Section */}
+        {/* Security Section */}
+        <CollapsibleSection
+          title="Security"
+          isExpanded={expandedSections.backup}
+          onToggle={() => toggleSection('backup')}
+          styles={styles}
+          theme={theme}>
+          <Text style={styles.apiName}>Backup Wallet Keyshare</Text>
+          <Pressable
+            style={[styles.button, styles.backupButton]}
+            onPress={() => {
+              HapticFeedback.light();
+              setIsBackupModalVisible(true);
+            }}
+            android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+            <View style={styles.buttonContent}>
+              <Image
+                source={require('../assets/upload-icon.png')}
+                style={[styles.buttonIcon, styles.whiteTint]}
+                resizeMode="contain"
+              />
+              <Text style={styles.buttonText}>Backup {party}</Text>
+            </View>
+          </Pressable>
+          <View style={styles.apiItem}>
+            <Text style={styles.apiName}>Delete Wallet Keyshare</Text>
+          </View>
+          <Pressable
+            style={[styles.button, styles.deleteButton]}
+            onPress={() => {
+              HapticFeedback.light();
+              setIsModalResetVisible(true);
+            }}
+            android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+            <View style={styles.buttonContent}>
+              <Image
+                source={require('../assets/delete-icon.png')}
+                style={[styles.buttonIcon, styles.whiteTint]}
+                resizeMode="contain"
+              />
+              <Text style={styles.buttonText}>Delete {party}</Text>
+            </View>
+          </Pressable>
+        </CollapsibleSection>
+        {/* Network Providers Section */}
         <CollapsibleSection
           title="Network Providers"
           isExpanded={expandedSections.advanced}
@@ -2242,7 +2442,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               />
               <Text style={styles.toggleLabel}>Mainnet</Text>
             </View>
-            <Switch onValueChange={toggleNetwork} value={isTestnet} />
+            <Switch
+              onValueChange={toggleNetwork}
+              value={isTestnet}
+            />
             <View style={styles.networkOption}>
               <Image
                 source={require('../assets/testnet-icon.png')}
@@ -2252,7 +2455,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               <Text style={styles.toggleLabel}>Testnet3</Text>
             </View>
           </View>
-
           {/* Network mode indicator and info */}
           <View style={styles.apiNetworkInfoContainer}>
             <View style={styles.apiNetworkModeRow}>
@@ -2263,9 +2465,24 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     ? styles.apiNetworkModeBadgeTestnet
                     : styles.apiNetworkModeBadgeMainnet,
                 ]}>
-                <Text style={styles.apiNetworkModeIcon}>
-                  {isTestnet ? '🔒' : '🌐'}
-                </Text>
+                <Image
+                  source={
+                    isTestnet
+                      ? require('../assets/locker-icon.png')
+                      : require('../assets/privacy-icon.png')
+                  }
+                  style={[
+                    styles.apiNetworkModeIcon,
+                    {
+                      tintColor: isTestnet
+                        ? theme.colors.background === '#ffffff'
+                          ? theme.colors.accent
+                          : theme.colors.bitcoinOrange
+                        : theme.colors.received,
+                    },
+                  ]}
+                  resizeMode="contain"
+                />
                 <Text
                   style={[
                     styles.apiNetworkModeText,
@@ -2277,20 +2494,20 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 </Text>
               </View>
               {!isTestnet && (
-                <TouchableOpacity
+                <Pressable
                   style={styles.apiInfoButton}
                   onPress={() => {
                     HapticFeedback.light();
                     setIsApiInfoVisible(true);
                   }}
-                  activeOpacity={0.7}>
+                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                   <Image
                     source={require('../assets/about-icon.png')}
                     style={styles.apiInfoButtonIcon}
                     resizeMode="contain"
                   />
-                  <Text style={styles.apiInfoButtonText}>Change Provider?</Text>
-                </TouchableOpacity>
+                    <Text style={styles.apiInfoButtonText}>Change Provider?</Text>
+                </Pressable>
               )}
             </View>
             <Text
@@ -2305,7 +2522,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 : 'Mainnet Providers are customizable.'}
             </Text>
           </View>
-
           <APIAutocomplete
             value={pendingAPI || baseAPI}
             onChangeText={handleAPISelection}
@@ -2313,12 +2529,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             styles={styles}
             theme={theme}
           />
-
           {/* Action buttons side by side */}
           <View style={styles.apiActionButtonsRow}>
             {/* Test & Save button - always show in mainnet, disabled when no changes */}
             {!isTestnet && (
-              <TouchableOpacity
+              <Pressable
                 style={[
                   styles.button,
                   styles.backupButton,
@@ -2331,23 +2546,28 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   HapticFeedback.light();
                   saveAPI(pendingAPI);
                 }}
-                disabled={isAPISaving || !pendingAPI || pendingAPI === baseAPI}>
+                disabled={isAPISaving || !pendingAPI || pendingAPI === baseAPI}
+                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <View style={styles.buttonContent}>
                   <Image
                     source={require('../assets/check-icon.png')}
                     style={[styles.buttonIcon, styles.whiteTint]}
                     resizeMode="contain"
                   />
-                  <Text style={styles.buttonText}>
+                  <Text
+                    style={[
+                      styles.buttonText,
+                      (isAPISaving || !pendingAPI || pendingAPI === baseAPI) &&
+                        styles.disabledButtonText,
+                    ]}>
                     {isAPISaving ? 'Verifying...' : 'Verify & Save'}
                   </Text>
                 </View>
-              </TouchableOpacity>
+              </Pressable>
             )}
-
             {/* Reset Default API button - only show in mainnet */}
             {!isTestnet && (
-              <TouchableOpacity
+              <Pressable
                 style={[
                   styles.button,
                   styles.resetButton,
@@ -2356,7 +2576,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 onPress={() => {
                   HapticFeedback.light();
                   resetAPI();
-                }}>
+                }}
+                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <View style={styles.buttonContent}>
                   <Image
                     source={require('../assets/refresh-icon.png')}
@@ -2365,7 +2586,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   />
                   <Text style={styles.buttonText}>Defaults</Text>
                 </View>
-              </TouchableOpacity>
+              </Pressable>
             )}
           </View>
         </CollapsibleSection>
@@ -2399,7 +2620,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               numberOfLines={6}
             />
             <View style={styles.apiActionButtonsRow}>
-              <TouchableOpacity
+              <Pressable
                 style={[
                   styles.button,
                   styles.backupButton,
@@ -2446,17 +2667,26 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 }}
                 disabled={
                   !pendingNostrRelays || pendingNostrRelays === nostrRelays
-                }>
+                }
+                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <View style={styles.buttonContent}>
                   <Image
                     source={require('../assets/check-icon.png')}
                     style={[styles.buttonIcon, styles.whiteTint]}
                     resizeMode="contain"
                   />
-                  <Text style={styles.buttonText}>Save Relays</Text>
+                  <Text
+                    style={[
+                      styles.buttonText,
+                      (!pendingNostrRelays ||
+                        pendingNostrRelays === nostrRelays) &&
+                        styles.disabledButtonText,
+                    ]}>
+                    Save Relays
+                  </Text>
                 </View>
-              </TouchableOpacity>
-              <TouchableOpacity
+              </Pressable>
+              <Pressable
                 style={[
                   styles.button,
                   styles.resetButton,
@@ -2470,7 +2700,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   // Convert CSV to newline-separated for multiline display
                   const relaysForDisplay = relaysCSV.split(',').join('\n');
                   setPendingNostrRelays(relaysForDisplay);
-                }}>
+                }}
+                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <View style={styles.buttonContent}>
                   <Image
                     source={require('../assets/refresh-icon.png')}
@@ -2479,16 +2710,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   />
                   <Text style={styles.buttonText}>Defaults</Text>
                 </View>
-              </TouchableOpacity>
+              </Pressable>
             </View>
-            {nostrRelays && (
-              <View style={styles.apiItem}>
-                <Text style={styles.apiDescription}>
-                  Current:{'\n'}
-                  {nostrRelays.split(',').join('\n')}
-                </Text>
-              </View>
-            )}
           </CollapsibleSection>
         )}
         {/* Storage Section */}
@@ -2505,7 +2728,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               Clear cached balances and history.
             </Text>
           </View>
-          <TouchableOpacity
+          <Pressable
             style={[styles.button, styles.deleteButton]}
             onPress={async () => {
               HapticFeedback.light();
@@ -2521,7 +2744,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   'Failed to clear cache. Please try again.',
                 );
               }
-            }}>
+            }}
+            android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
             <View style={styles.buttonContent}>
               <Image
                 source={require('../assets/delete-icon.png')}
@@ -2532,116 +2756,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 Clear Cache ({usageSize.mb})
               </Text>
             </View>
-          </TouchableOpacity>
+          </Pressable>
         </CollapsibleSection>
-
-        {/* Haptics Section */}
-        <CollapsibleSection
-          title="Haptics"
-          isExpanded={expandedSections.haptics}
-          onToggle={() => toggleSection('haptics')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.toggleDescription}>
-            Enable vibration feedback. OS settings may override this.
-          </Text>
-          <View style={styles.toggleContainer}>
-            <Text style={styles.toggleLabel}>Haptics Off</Text>
-            <Switch
-              onValueChange={handleToggleHaptics}
-              value={hapticsEnabled}
-            />
-            <Text style={styles.toggleLabel}>Haptics On</Text>
-          </View>
-        </CollapsibleSection>
-
-        {/* App Icon Section - Android Only */}
-        {Platform.OS === 'android' && (
-          <CollapsibleSection
-            title="App Icon"
-            isExpanded={expandedSections.appIcon}
-            onToggle={() => toggleSection('appIcon')}
-            styles={styles}
-            theme={theme}>
-            <View style={styles.appIconHintRow}>
-              <View style={styles.appIconHintTextContainer}>
-                <Text style={styles.appIconHintTitle}>
-                  Blend in when you need to.
-                </Text>
-                <Text style={styles.appIconHintSubtitle}>
-                  Switch to the calculator icon when you want your wallet to
-                  look like just another app on your home screen.
-                </Text>
-              </View>
-            </View>
-            <Text style={styles.toggleDescription}>
-              Change the app's launcher icon on your device.
-            </Text>
-            <View style={styles.toggleContainer}>
-              <Text style={styles.toggleLabel}>Bold Wallet</Text>
-              <Switch
-                trackColor={{
-                  true: theme.colors.primary,
-                  false: theme.colors.secondary,
-                }}
-                thumbColor={theme.colors.accent}
-                onValueChange={async value => {
-                  try {
-                    HapticFeedback.light();
-                    const newIcon = value ? 'alternative' : 'default';
-
-                    // Check if IconChanger module is available
-                    if (!IconChanger || !IconChanger.changeIcon) {
-                      Alert.alert(
-                        'Error',
-                        'Icon switching is not available on this device.',
-                        [{text: 'OK'}],
-                      );
-                      return;
-                    }
-
-                    // Update UI state
-                    setSelectedIcon(newIcon);
-
-                    // Save preference
-                    await EncryptedStorage.setItem(
-                      'app_icon_preference',
-                      newIcon,
-                    );
-
-                    // Change the icon
-                    await IconChanger.changeIcon(newIcon);
-
-                    // Show success message
-                    const iconName =
-                      newIcon === 'alternative' ? 'QuickCalc' : 'Bold Wallet';
-                    Alert.alert(
-                      'Icon Changed',
-                      `App icon switched to ${iconName}.\n\nYou may need to refresh your launcher to see the change.`,
-                      [{text: 'OK'}],
-                    );
-                  } catch (error: any) {
-                    console.error('Error changing icon:', error);
-
-                    // Revert UI state on error
-                    setSelectedIcon(value ? 'default' : 'alternative');
-
-                    Alert.alert(
-                      'Error',
-                      error?.message ||
-                        'Failed to change app icon. Please try again.',
-                      [{text: 'OK'}],
-                    );
-                  }
-                }}
-                value={selectedIcon === 'alternative'}
-                disabled={selectedIcon === 'loading'}
-              />
-              <Text style={styles.toggleLabel}>QuickCalc</Text>
-            </View>
-          </CollapsibleSection>
-        )}
-
         {/* Legal Section */}
         <CollapsibleSection
           title="Legal"
@@ -2652,7 +2768,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <Text style={styles.toggleDescription}>
             Terms of Service and Privacy Policy
           </Text>
-
           <Text
             style={styles.termsLink}
             onPress={() => {
@@ -2662,7 +2777,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             }}>
             Read Terms of Use
           </Text>
-
           <Text
             style={styles.termsLink}
             onPress={() => {
@@ -2688,237 +2802,36 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             <Text style={styles.aboutLabel}>Build Number</Text>
             <Text style={styles.aboutValue}>{buildNumber}</Text>
           </View>
-
-          <View style={styles.aboutSection}>
-            <View style={styles.aboutSectionHeader}>
-              <Image
-                source={require('../assets/api-icon.png')}
-                style={styles.aboutSectionIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.aboutSectionTitle}>Mempool.Space</Text>
-            </View>
-            <Text style={styles.aboutSectionDescription}>
-              Used for balances, history, transactions, and fees.{'\n'}Learn
-              more:{' '}
-              <Text
-                style={styles.aboutLinkText}
-                onPress={() => {
-                  HapticFeedback.light();
-                  Linking.openURL('https://mempool.space/docs/api/rest');
-                }}>
-                API Docs
-              </Text>
-            </Text>
-          </View>
-
-          <View style={styles.aboutSection}>
-            <View style={styles.aboutSectionHeader}>
-              <Image
-                source={require('../assets/privacy-icon.png')}
-                style={styles.aboutSectionIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.aboutSectionTitle}>Data & Security</Text>
-            </View>
-            <Text style={styles.aboutSectionDescription}>
-              We collect no personal data and run no backend. Keys and signing
-              operations happen solely on your devices. Connecting to your own
-              Self‑hosted mempool servers and devices can improve privacy and
-              control over your data. Without any third-party involvement or
-              data collection.
-            </Text>
-          </View>
+          <Text style={styles.toggleDescription}>
+            Make sure that your wallet keyshares devices are running the latest
+            version for optimal compatibility and security.
+          </Text>
         </CollapsibleSection>
+        {/* Font Testing Section - Development Only */}
+        {__DEV__ && (
+          <CollapsibleSection
+            title="Font Testing"
+            isExpanded={expandedSections.fontTesting}
+            onToggle={() => toggleSection('fontTesting')}
+            styles={styles}
+            theme={theme}>
+            <Text style={styles.toggleDescription}>
+              Visual font comparison tool to verify unified fonts across
+              platforms. This section only appears in development builds. Note
+              that rendered fonts may differ from the actual fonts on your
+              device. Also, the font testing section is only visible in
+              development builds.
+            </Text>
+            <FontComparisonScreen />
+          </CollapsibleSection>
+        )}
       </ScrollView>
-
       {/* Modals */}
-      <Modal
+      <BackupKeyshareModal
         visible={isBackupModalVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setIsBackupModalVisible(false)}>
-        <KeyboardAvoidingView
-          style={styles.flexContainer}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            activeOpacity={1}
-            onPress={() => {
-              // Dismiss keyboard when tapping outside
-              Keyboard.dismiss();
-            }}>
-            <TouchableOpacity
-              style={styles.modalContent}
-              activeOpacity={1}
-              onPress={() => {
-                // Prevent modal from closing when tapping inside
-              }}>
-              <View style={styles.modalHeader}>
-                <Image
-                  source={require('../assets/backup-icon.png')}
-                  style={styles.modalIcon}
-                  resizeMode="contain"
-                />
-                <Text style={styles.modalTitle}>Backup Keyshare</Text>
-              </View>
-
-              <Text style={styles.apiDescription}>
-                Store your keyshares in separate private locations e.g. cloud,
-                emails, external drives, etc. Do not keep them together so no
-                one can access them all and steal your funds.
-              </Text>
-
-              <View style={styles.passwordContainer}>
-                <Text style={styles.passwordLabel}>Set a Password</Text>
-                <View style={styles.passwordInputContainer}>
-                  <TextInput
-                    style={styles.passwordInput}
-                    placeholder="Enter a strong password"
-                    secureTextEntry={!passwordVisible}
-                    value={password}
-                    onChangeText={handlePasswordChange}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                  <TouchableOpacity
-                    style={styles.eyeButton}
-                    onPress={() => {
-                      HapticFeedback.light();
-                      setPasswordVisible(!passwordVisible);
-                    }}>
-                    <Image
-                      source={
-                        passwordVisible
-                          ? require('../assets/eye-off-icon.png')
-                          : require('../assets/eye-on-icon.png')
-                      }
-                      style={styles.eyeIcon}
-                      resizeMode="contain"
-                    />
-                  </TouchableOpacity>
-                </View>
-
-                {/* Password Strength Indicator */}
-                {password.length > 0 && (
-                  <View style={styles.strengthContainer}>
-                    <View style={styles.strengthBar}>
-                      <View
-                        style={[
-                          styles.strengthFill,
-                          {
-                            width: `${(passwordStrength / 4) * 100}%`,
-                            backgroundColor: getPasswordStrengthColor(),
-                          },
-                        ]}
-                      />
-                    </View>
-                    <Text
-                      style={[
-                        styles.strengthText,
-                        {color: getPasswordStrengthColor()},
-                      ]}>
-                      {getPasswordStrengthText()}
-                    </Text>
-                  </View>
-                )}
-
-                {/* Password Requirements */}
-                {passwordErrors.length > 0 && (
-                  <View style={styles.requirementsContainer}>
-                    {passwordErrors.map((error, index) => (
-                      <Text key={index} style={styles.requirementText}>
-                        • {error}
-                      </Text>
-                    ))}
-                  </View>
-                )}
-              </View>
-
-              <View style={styles.passwordContainer}>
-                <Text style={styles.passwordLabel}>Confirm Password</Text>
-                <View style={styles.passwordInputContainer}>
-                  <TextInput
-                    style={[
-                      styles.passwordInput,
-                      confirmPassword.length > 0 &&
-                        password !== confirmPassword &&
-                        styles.errorInput,
-                    ]}
-                    placeholder="Confirm your password"
-                    secureTextEntry={!confirmPasswordVisible}
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                  <TouchableOpacity
-                    style={styles.eyeButton}
-                    onPress={() => {
-                      HapticFeedback.light();
-                      setConfirmPasswordVisible(!confirmPasswordVisible);
-                    }}>
-                    <Image
-                      source={
-                        confirmPasswordVisible
-                          ? require('../assets/eye-off-icon.png')
-                          : require('../assets/eye-on-icon.png')
-                      }
-                      style={styles.eyeIcon}
-                      resizeMode="contain"
-                    />
-                  </TouchableOpacity>
-                </View>
-                {confirmPassword.length > 0 && password !== confirmPassword && (
-                  <Text style={styles.errorText}>Passwords do not match</Text>
-                )}
-              </View>
-
-              <View style={styles.modalActions}>
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.cancelButton]}
-                  onPress={() => {
-                    HapticFeedback.light();
-                    clearBackupModal();
-                  }}>
-                  <Text style={styles.buttonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.modalButton,
-                    styles.confirmButton,
-                    (!password ||
-                      !confirmPassword ||
-                      password !== confirmPassword ||
-                      passwordStrength < 3) &&
-                      styles.disabledButton,
-                  ]}
-                  onPress={() => {
-                    HapticFeedback.light();
-                    handleBackupWallet();
-                  }}
-                  disabled={
-                    !password ||
-                    !confirmPassword ||
-                    password !== confirmPassword ||
-                    passwordStrength < 3
-                  }>
-                  <View style={styles.buttonContent}>
-                    <Image
-                      source={require('../assets/upload-icon.png')}
-                      style={[styles.buttonIcon, styles.whiteTint]}
-                      resizeMode="contain"
-                    />
-                    <Text style={styles.buttonText}>Backup</Text>
-                  </View>
-                </TouchableOpacity>
-              </View>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </KeyboardAvoidingView>
-      </Modal>
-
+        onClose={() => setIsBackupModalVisible(false)}
+        description="Store your keyshares in separate private locations e.g. cloud, emails, external drives, etc. Do not keep them together so no one can access them all and steal your funds."
+      />
       <Modal
         visible={isModalResetVisible}
         transparent={true}
@@ -2942,19 +2855,21 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             <TextInput
               style={styles.input}
               placeholder='"delete my wallet"'
+              placeholderTextColor={theme.colors.textSecondary + '80'}
               value={deleteInput}
               onChangeText={setDeleteInput}
             />
             <View style={styles.modalActions}>
-              <TouchableOpacity
+              <Pressable
                 style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => {
                   HapticFeedback.light();
                   setIsModalResetVisible(false);
-                }}>
-                <Text style={styles.buttonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+                }}
+                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
                 style={[
                   styles.modalButton,
                   styles.confirmButton,
@@ -2964,16 +2879,20 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   HapticFeedback.light();
                   handleResetWallet();
                 }}
-                disabled={isDeleting}>
-                <Text style={styles.buttonText}>
+                disabled={isDeleting}
+                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                <Text
+                  style={[
+                    styles.confirmButtonText,
+                    isDeleting && styles.disabledButtonText,
+                  ]}>
                   {isDeleting ? 'Deleting...' : 'Delete'}
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </View>
         </View>
       </Modal>
-
       <LegalModal
         visible={isLegalModalVisible}
         onClose={() => {
@@ -2982,42 +2901,47 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         }}
         type={legalModalType}
       />
-
       {/* API Info Modal */}
       <Modal
         visible={isApiInfoVisible}
         transparent={true}
         animationType="fade"
         onRequestClose={() => setIsApiInfoVisible(false)}>
-        <TouchableOpacity
+        <Pressable
           style={styles.modalOverlay}
-          activeOpacity={1}
           onPress={() => setIsApiInfoVisible(false)}>
-          <TouchableOpacity
-            activeOpacity={1}
+          <Pressable
             onPress={e => e.stopPropagation()}>
             <View style={styles.apiInfoModalContent}>
               <View style={styles.apiInfoModalHeader}>
                 <View style={styles.apiInfoModalIconContainer}>
-                  <Text style={styles.apiInfoModalIcon}>🔒</Text>
+                  <Image
+                    source={require('../assets/api-icon.png')}
+                    style={styles.apiInfoModalIcon}
+                    resizeMode="contain"
+                  />
                 </View>
                 <Text style={styles.apiInfoModalTitle}>
                   Mempool.Space Providers
                 </Text>
-                <TouchableOpacity
+                <Pressable
                   style={styles.apiInfoModalCloseButton}
                   onPress={() => {
                     HapticFeedback.light();
                     setIsApiInfoVisible(false);
                   }}
-                  activeOpacity={0.6}>
+                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                   <Text style={styles.apiInfoModalCloseText}>✕</Text>
-                </TouchableOpacity>
+                </Pressable>
               </View>
               <View style={styles.apiInfoModalBody}>
                 <View style={styles.apiInfoSection}>
                   <View style={styles.apiInfoSectionRow}>
-                    <Text style={styles.apiInfoSectionIcon}>🌐</Text>
+                    <Image
+                      source={require('../assets/privacy-icon.png')}
+                      style={styles.apiInfoSectionIcon}
+                      resizeMode="contain"
+                    />
                     <Text style={styles.apiInfoSectionTitle}>
                       Privacy & Control
                     </Text>
@@ -3029,7 +2953,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 </View>
                 <View style={styles.apiInfoSection}>
                   <View style={styles.apiInfoSectionRow}>
-                    <Text style={styles.apiInfoSectionIcon}>🔍</Text>
+                    <Image
+                      source={require('../assets/eye-on-icon.png')}
+                      style={styles.apiInfoSectionIcon}
+                      resizeMode="contain"
+                    />
                     <Text style={styles.apiInfoSectionTitle}>
                       Reduce Tracking
                     </Text>
@@ -3041,7 +2969,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 </View>
                 <View style={styles.apiInfoSection}>
                   <View style={styles.apiInfoSectionRow}>
-                    <Text style={styles.apiInfoSectionIcon}>⚙️</Text>
+                    <Image
+                      source={require('../assets/info-icon.png')}
+                      style={styles.apiInfoSectionIcon}
+                      resizeMode="contain"
+                    />
                     <Text style={styles.apiInfoSectionTitle}>How to Use</Text>
                   </View>
                   <Text style={styles.apiInfoSectionText}>
@@ -3050,7 +2982,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   </Text>
                 </View>
               </View>
-              <TouchableOpacity
+              <Pressable
                 style={[
                   styles.apiInfoModalButton,
                   {backgroundColor: theme.colors.primary},
@@ -3059,7 +2991,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   HapticFeedback.light();
                   setIsApiInfoVisible(false);
                 }}
-                activeOpacity={0.8}>
+                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <Text
                   style={[
                     styles.apiInfoModalButtonText,
@@ -3067,13 +2999,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   ]}>
                   Got it
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
+          </Pressable>
+        </Pressable>
       </Modal>
     </SafeAreaView>
   );
 };
-
 export default WalletSettings;

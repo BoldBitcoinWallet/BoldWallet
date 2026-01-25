@@ -46,7 +46,17 @@ func decodeNsecFromBech32(nsec string) (string, error) {
 
 // DeriveNpubFromNsec derives a bech32 npub from a bech32 nsec (or hex nsec).
 // This function handles both bech32 (nsec1...) and hex formats.
-func DeriveNpubFromNsec(partyNsec string) (string, error) {
+func DeriveNpubFromNsec(partyNsec string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in DeriveNpubFromNsec: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	// Decode nsec from bech32 to hex if needed
 	skHex, err := decodeNsecFromBech32(partyNsec)
 	if err != nil {
@@ -71,7 +81,17 @@ func DeriveNpubFromNsec(partyNsec string) (string, error) {
 // NostrKeypair generates a new Nostr keypair and returns it as JSON string.
 // Returns: {"nsec": "...", "npub": "..."}
 // Both nsec and npub are returned in bech32 format (nsec1... and npub1...)
-func NostrKeypair() (string, error) {
+func NostrKeypair() (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in NostrKeypair: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	// Generate private key in hex format
 	skHex := nostr.GeneratePrivateKey()
 
@@ -92,11 +112,11 @@ func NostrKeypair() (string, error) {
 		return "", fmt.Errorf("failed to encode npub: %w", err)
 	}
 
-	result := map[string]string{
+	resultMap := map[string]string{
 		"nsec": nsec,
 		"npub": npub,
 	}
-	jsonBytes, err := json.Marshal(result)
+	jsonBytes, err := json.Marshal(resultMap)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal keypair: %w", err)
 	}
@@ -104,7 +124,17 @@ func NostrKeypair() (string, error) {
 }
 
 // HexToNpub converts a hex public key to bech32 npub format.
-func HexToNpub(hexKey string) (string, error) {
+func HexToNpub(hexKey string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in HexToNpub: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	// Decode hex string to bytes
 	pkHex, err := hex.DecodeString(hexKey)
 	if err != nil {
@@ -540,16 +570,26 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 // - fullNonce: sorted join of both peerNonces (like in keygen)
 // - averageFees: average of both satoshiFees
 // Returns JSON: {"fullNonce": "...", "averageFees": 1234}
-func NostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag string, localSatoshiFees int64) (string, error) {
-	result, err := runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, localSatoshiFees)
+func NostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag string, localSatoshiFees int64) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in NostrPreAgreementSendBTC: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
+	preAgreementResult, err := runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, localSatoshiFees)
 	if err != nil {
 		return "", err
 	}
 
 	// Return JSON result for backward compatibility
 	resultJSON := map[string]interface{}{
-		"fullNonce":   result.fullNonce,
-		"averageFees": result.averageFees,
+		"fullNonce":   preAgreementResult.fullNonce,
+		"averageFees": preAgreementResult.averageFees,
 	}
 	jsonBytes, err := json.Marshal(resultJSON)
 	if err != nil {
@@ -1724,11 +1764,28 @@ type nostrLocalStateAccessor struct {
 	saveFunc func(pubKey, state string) error
 }
 
-func (a *nostrLocalStateAccessor) GetLocalState(pubKey string) (string, error) {
+func (a *nostrLocalStateAccessor) GetLocalState(pubKey string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in nostrLocalStateAccessor.GetLocalState: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
 	return "", fmt.Errorf("GetLocalState not supported in Nostr keygen")
 }
 
-func (a *nostrLocalStateAccessor) SaveLocalState(pubKey, localState string) error {
+func (a *nostrLocalStateAccessor) SaveLocalState(pubKey, localState string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in nostrLocalStateAccessor.SaveLocalState: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+		}
+	}()
 	if a.saveFunc != nil {
 		return a.saveFunc(pubKey, localState)
 	}
@@ -1740,7 +1797,16 @@ type nostrKeysignStateAccessor struct {
 	keyshare *LocalStateNostr
 }
 
-func (a *nostrKeysignStateAccessor) GetLocalState(pubKey string) (string, error) {
+func (a *nostrKeysignStateAccessor) GetLocalState(pubKey string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in nostrKeysignStateAccessor.GetLocalState: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
 	if a.keyshare == nil {
 		return "", fmt.Errorf("keyshare not loaded")
 	}
@@ -1756,7 +1822,15 @@ func (a *nostrKeysignStateAccessor) GetLocalState(pubKey string) (string, error)
 	return string(keyshareJSON), nil
 }
 
-func (a *nostrKeysignStateAccessor) SaveLocalState(pubkey, localState string) error {
+func (a *nostrKeysignStateAccessor) SaveLocalState(pubkey, localState string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in nostrKeysignStateAccessor.SaveLocalState: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+		}
+	}()
 	// Keysign doesn't modify the keyshare, so we don't need to save
 	return nil
 }
@@ -1769,7 +1843,16 @@ type nostrMessengerAdapter struct {
 }
 
 // Send implements Messenger interface.
-func (a *nostrMessengerAdapter) Send(from, to, body string) error {
+func (a *nostrMessengerAdapter) Send(from, to, body string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in nostrMessengerAdapter.Send: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+		}
+	}()
+
 	cfg := a.messenger.Cfg()
 	status := getStatus(cfg.SessionID)
 	Logln("BBMTLog", "incremented Sent Message To OutSeqNo", status.SeqNo)

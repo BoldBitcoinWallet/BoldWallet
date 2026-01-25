@@ -1,0 +1,84 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+android/app/build/
+android/build/
+android/.gradle/
+android/app/release/
+ios/build/
+ios/Pods/
+ios/*.xcworkspace/xcuserdata/
+ios/*.xcodeproj/xcuserdata/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Docker
+Dockerfile
+.dockerignore
+docker-apk-builder.sh
+
+# Documentation
+*.md
+!BBMTLib/README.md
+!BBMTLib/RECOVER.md
+!BBMTLib/NOSTR_MESSAGE_ENCRYPTION_FLOW.md
+
+# Test files
+__tests__/
+*.test.tsx
+*.test.ts
+*.spec.ts
+*.spec.tsx
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Misc
+.env
+.env.local
+*.log
+build.log
+
+# Docker inline cache directory (should not be in build context)
+.docker-cache/
+
+# Already built artifacts
+*.apk
+*.aab
+*.aar
+*.jar
+*.xcframework
+BBMTLib/tss.aar
+BBMTLib/tss-sources.jar
+BBMTLib/Tss.xcframework/
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+
+# Release artifacts
+android/app-release.apk.sha256
+android/app-release.apk.sha256.asc
+android/mapping.txt
+

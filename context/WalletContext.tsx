@@ -3,9 +3,7 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 import {NativeModules} from 'react-native';
 import {dbg, getDerivePathForNetwork, isLegacyWallet} from '../utils';
 import LocalCache from '../services/LocalCache';
-
 const {BBMTLibNativeModule} = NativeModules;
-
 interface WalletContextType {
   address: string;
   baseApi: string;
@@ -14,9 +12,7 @@ interface WalletContextType {
   setAddressType: (type: string) => void;
   refreshWallet: () => Promise<void>;
 }
-
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
-
 export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
   children,
 }) => {
@@ -24,7 +20,6 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
   const [baseApi, setBaseApi] = useState<string>('');
   const [network, setNetwork] = useState<string>('mainnet');
   const [addressType, setAddressType] = useState<string>('legacy');
-
   const handleAddressTypeChange = async (type: string) => {
     try {
       dbg('WalletContext: Changing address type to:', type);
@@ -37,7 +32,6 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
       dbg('Error changing address type:', error);
     }
   };
-
   const refreshWallet = async () => {
     try {
       dbg('WalletContext: Starting wallet refresh');
@@ -46,9 +40,7 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
         dbg('WalletContext: No keyshare found, skipping wallet refresh');
         return;
       }
-
       const ks = JSON.parse(jks);
-
       // Get current network
       let net = await LocalCache.getItem('network');
       if (!net) {
@@ -56,7 +48,6 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
         await LocalCache.setItem('network', net);
       }
       dbg('WalletContext: Current network:', net);
-      
       // Get current address type for path calculation
       const storedAddressType = await LocalCache.getItem('addressType');
       const currentAddressType = (storedAddressType as string) || 'segwit-native';
@@ -64,16 +55,13 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
       const useLegacyPath = isLegacyWallet(ks.created_at);
       const path = getDerivePathForNetwork(net, currentAddressType, useLegacyPath);
       dbg('WalletContext: Using derivation path:', path);
-
       // Set network in native module first
       const netParams = await BBMTLibNativeModule.setBtcNetwork(net);
       net = netParams.split('@')[0];
       dbg('WalletContext: Network set in native module:', net);
-
       // Address type already loaded above, just set it
       setAddressType(currentAddressType);
       dbg('WalletContext: Current address type:', currentAddressType);
-
       // Derive public key
       const btcPub = await BBMTLibNativeModule.derivePubkey(
         ks.pub_key,
@@ -81,7 +69,6 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
         path,
       );
       dbg('WalletContext: Derived public key');
-
       // Generate address based on current type and network
       const btcAddress = await BBMTLibNativeModule.btcAddress(
         btcPub,
@@ -89,18 +76,15 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
         currentAddressType,
       );
       dbg('WalletContext: Generated address:', btcAddress);
-
       // Update state
       setAddress(btcAddress);
       setNetwork(net!!);
-
       // Handle API URL
       let base = netParams.split('@')[1];
       // Ensure base URL doesn't end with a slash
       if (base.endsWith('/')) {
         base = base.substring(0, base.length - 1);
       }
-
       let api = await LocalCache.getItem('api');
       if (api) {
         // Ensure API URL doesn't end with a slash
@@ -120,7 +104,6 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
       dbg('WalletContext: Error refreshing wallet:', error);
     }
   };
-
   useEffect(() => {
     const initWallet = async () => {
       const jks = await EncryptedStorage.getItem('keyshare');
@@ -132,7 +115,6 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
     };
     initWallet();
   }, []);
-
   return (
     <WalletContext.Provider
       value={{
@@ -147,7 +129,6 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
     </WalletContext.Provider>
   );
 };
-
 export const useWallet = () => {
   const context = useContext(WalletContext);
   if (context === undefined) {

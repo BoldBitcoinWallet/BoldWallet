@@ -4,6 +4,7 @@ import React, {
   useCallback,
   useRef,
   useImperativeHandle,
+  useMemo,
 } from 'react';
 import {
   FlatList,
@@ -12,9 +13,8 @@ import {
   View,
   ActivityIndicator,
   RefreshControl,
-  Linking,
   Platform,
-  TouchableOpacity,
+  Pressable,
   Image,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -22,20 +22,17 @@ import axios from 'axios';
 import Toast from 'react-native-toast-message';
 import moment from 'moment';
 import {dbg, presentFiat, HapticFeedback, isCanceledError} from '../utils';
-import {useTheme} from '@react-navigation/native';
-import {themes} from '../theme';
+import {themes, useTheme as useAppTheme} from '../theme';
+import {COMMON_FONT_CONFIGS} from '../theme/fonts';
 import TransactionListSkeleton from './TransactionListSkeleton';
 import {WalletService} from '../services/WalletService';
 import TransactionDetailsModal from './TransactionDetailsModal';
 import LocalCache from '../services/LocalCache';
-
 // Add icon imports
 const inIcon = require('../assets/in-icon.png');
 const outIcon = require('../assets/out-icon.png');
 const consolidateIcon = require('../assets/consolidate-icon.png');
-const linkIcon = require('../assets/link-icon.png');
 const pendingIcon = require('../assets/pending-icon.png');
-
 interface TransactionListProps {
   address: string;
   baseApi: string;
@@ -50,7 +47,6 @@ interface TransactionListProps {
 export interface TransactionListHandle {
   refresh: () => Promise<void> | void;
 }
-
 const TransactionList = React.forwardRef<
   TransactionListHandle,
   TransactionListProps
@@ -79,15 +75,12 @@ const TransactionList = React.forwardRef<
     const isFetching = useRef(false);
     const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
     const [isDetailsModalVisible, setIsDetailsModalVisible] = useState(false);
-
-    const {colors} = useTheme();
+    const {theme: appTheme} = useAppTheme();
     const insets = useSafeAreaInsets();
-
     // Add refs to track mounting state and prevent memory leaks
     const isMounted = useRef(true);
     const abortController = useRef<AbortController | null>(null);
     const isRefreshingRef = useRef(false);
-
     // Memoized transaction amount calculator
     const getTransactionAmounts = useCallback((tx: any, addr: string) => {
       if (tx.sentAt) {
@@ -102,40 +95,33 @@ const TransactionList = React.forwardRef<
           received: rcvd / 1e8,
         };
       }
-
       const sentAmount = tx.vin.reduce((total: number, input: any) => {
         return input.prevout.scriptpubkey_address === addr
           ? total + input.prevout.value
           : total;
       }, 0);
-
       const receivedAmount = tx.vout.reduce((total: number, output: any) => {
         return output.scriptpubkey_address === addr
           ? total + output.value
           : total;
       }, 0);
-
       const changeAmount = tx.vout.reduce((total: number, output: any) => {
         return sentAmount > 0 && output.scriptpubkey_address === addr
           ? total + output.value
           : total;
       }, 0);
-
       const fee = tx.fee || 0;
       const finalSentAmount = Math.max(0, sentAmount - changeAmount - fee);
-
       return {
         sent: finalSentAmount / 1e8,
         changeAmount: changeAmount / 1e8,
         received: receivedAmount / 1e8,
       };
     }, []);
-
     // Memoize fetchTransactions to prevent unnecessary re-renders
     const memoizedFetchTransactions = useCallback(
-      async (url: string | undefined) => {
+      async (url: string | undefined, silent: boolean = false) => {
         dbg('memoizedFetchTransactions...');
-
         // Prevent multiple simultaneous fetches
         if (isFetching.current) {
           dbg('Fetch already in progress, skipping');
@@ -145,19 +131,16 @@ const TransactionList = React.forwardRef<
           }
           return;
         }
-
         // Set loading state
         if (isMounted.current) {
           setLoading(true);
           isFetching.current = true;
         }
-
         // Cancel any ongoing requests
         if (abortController.current) {
           abortController.current.abort();
         }
         abortController.current = new AbortController();
-
         // Function to load from cache
         const loadFromCache = async () => {
           dbg('Loading from cache...');
@@ -176,7 +159,6 @@ const TransactionList = React.forwardRef<
             setIsRefreshing(false);
           }
         };
-
         try {
           if (!url || url === '') {
             dbg('URL is empty, loading from cache only');
@@ -188,7 +170,6 @@ const TransactionList = React.forwardRef<
             }
             return;
           }
-
           // Guard against network/address mismatch using baseApi
           const isTestnetApi = /\/testnet(\/|$)/.test(url);
           const addressMatchesNetwork = (a: string, testnetApi: boolean) => {
@@ -205,7 +186,6 @@ const TransactionList = React.forwardRef<
               a.startsWith('1') || a.startsWith('3') || a.startsWith('bc1')
             );
           };
-
           if (!addressMatchesNetwork(address, isTestnetApi)) {
             dbg('TransactionList: address/baseApi mismatch; skipping fetch', {
               address,
@@ -218,7 +198,6 @@ const TransactionList = React.forwardRef<
             }
             return;
           }
-
           dbg(
             'TransactionList: Guard passed. Address matches network. Proceeding to fetch.',
             {
@@ -226,17 +205,14 @@ const TransactionList = React.forwardRef<
               isTestnetApi,
             },
           );
-
           // Construct proper API URL
           const cleanBaseApi = url.replace(/\/+$/, '').replace(/\/api\/?$/, '');
           const apiUrl = `${cleanBaseApi}/api/address/${address}/txs`;
           dbg('Starting fetch transactions from:', apiUrl);
-
           // Set a timeout to fall back to cache if API takes too long
           const timeoutPromise = new Promise((_, reject) => {
             setTimeout(() => reject(new Error('API timeout')), 10000); // Increased timeout to 10s
           });
-
           const response = (await Promise.race([
             axios.get(apiUrl, {
               signal: abortController.current.signal,
@@ -244,22 +220,18 @@ const TransactionList = React.forwardRef<
             }),
             timeoutPromise,
           ])) as {data: any[]};
-
           dbg(
             'TransactionList: Received response with',
             response.data.length,
             'transactions',
           );
-
           if (!isMounted.current) {
             dbg('Component unmounted, skipping state updates');
             return;
           }
-
           const cached = JSON.parse(
             (await LocalCache.getItem(`${address}-pendingTxs`)) || '{}',
           );
-
           // Process pending transactions
           let pending = 0;
           let pendingTxs = response.data
@@ -271,7 +243,6 @@ const TransactionList = React.forwardRef<
               }
               return tx;
             });
-
           // Update cache
           response.data.forEach((tx: any) => {
             if (cached[tx.txid]) {
@@ -282,7 +253,6 @@ const TransactionList = React.forwardRef<
               );
             }
           });
-
           // Add cached transactions
           for (const txID in cached) {
             const validTxID = /^[a-fA-F0-9]{64}$/.test(txID);
@@ -304,9 +274,7 @@ const TransactionList = React.forwardRef<
               });
             }
           }
-
           await onUpdate(pendingTxs, pending);
-
           // Filter out duplicates, keeping confirmed transactions over pending ones
           const uniqueTransactions = response.data.reduce(
             (acc: any[], tx: any) => {
@@ -328,12 +296,10 @@ const TransactionList = React.forwardRef<
             },
             [],
           );
-
           const newTransactions = uniqueTransactions.sort((a: any, b: any) => {
             // If either transaction is pending (no status or no block_height), prioritize it
             const aIsPending = !a.status || !a.status.block_height;
             const bIsPending = !b.status || !b.status.block_height;
-
             if (aIsPending && !bIsPending) {
               return -1;
             } // a is pending, show it first
@@ -346,16 +312,13 @@ const TransactionList = React.forwardRef<
               const bTime = b.sentAt || 0;
               return bTime - aTime; // Most recent pending first
             }
-
             // For confirmed transactions, sort by block height
             return (b.status.block_height || 0) - (a.status.block_height || 0);
           });
-
           WalletService.getInstance().updateTransactionsCache(
             address,
             newTransactions,
           );
-
           if (isMounted.current) {
             dbg(
               'TransactionList: Setting',
@@ -379,12 +342,15 @@ const TransactionList = React.forwardRef<
             }
           } else {
             dbg('Error fetching transactions:', error);
-            if (isMounted.current) {
+            if (isMounted.current && !silent) {
               Toast.show({
                 type: 'error',
                 text1: 'Error loading transactions',
-                text2: 'Using offline cache',
+                text2: `Check your connection or try again.\n\n(${String(
+                  error,
+                ).slice(0, 60)}...)`,
               });
+              dbg('Error loading transactions:', error);
               // Always fallback to cache on any error
               await loadFromCache();
             }
@@ -399,7 +365,6 @@ const TransactionList = React.forwardRef<
       },
       [address, getTransactionAmounts, onUpdate],
     );
-
     // For user pull-to-refresh
     const handlePullRefresh = useCallback(async () => {
       if (isRefreshingRef.current || isFetching.current) {
@@ -418,7 +383,6 @@ const TransactionList = React.forwardRef<
         }
       }
     }, [baseApi, memoizedFetchTransactions, onPullRefresh]);
-
     // Expose imperative refresh method so parents (e.g., WalletHome) can trigger
     // the same behavior as a user pull-to-refresh gesture.
     useImperativeHandle(
@@ -431,7 +395,6 @@ const TransactionList = React.forwardRef<
       }),
       [handlePullRefresh],
     );
-
     // Cleanup on unmount
     useEffect(() => {
       return () => {
@@ -441,12 +404,10 @@ const TransactionList = React.forwardRef<
         }
       };
     }, []);
-
     // Sync isRefreshing state to ref to avoid effect re-runs
     useEffect(() => {
       isRefreshingRef.current = isRefreshing;
     }, [isRefreshing]);
-
     // Fix transaction refresh handling
     useEffect(() => {
       // Skip effect if address or baseApi are not initialized
@@ -462,18 +423,15 @@ const TransactionList = React.forwardRef<
         setIsRefreshing(false);
         return;
       }
-
       // Reset list when address or baseApi changes to prevent showing stale rows
       setTransactions([]);
       setHasMoreTransactions(true);
       setLastSeenTxId(null);
-
       let mounted = true;
       let refreshInterval: NodeJS.Timeout | null = null;
       const controller = new AbortController();
       abortController.current = controller;
-
-      const fetchData = async () => {
+      const fetchData = async (silent: boolean = false) => {
         if (!mounted || isFetching.current || isRefreshingRef.current) {
           dbg('Skipping fetch - conditions not met:', {
             mounted,
@@ -482,10 +440,9 @@ const TransactionList = React.forwardRef<
           });
           return;
         }
-
         try {
           dbg('Starting fetch transactions');
-          await memoizedFetchTransactions(baseApi);
+          await memoizedFetchTransactions(baseApi, silent);
         } catch (error: any) {
           dbg('error in fetch', error);
           if (!isCanceledError(error)) {
@@ -493,19 +450,16 @@ const TransactionList = React.forwardRef<
           }
         }
       };
-
       // Initial fetch
       if (!isFetching.current && !isRefreshingRef.current) {
         fetchData();
       }
-
       // Set up refresh interval
       refreshInterval = setInterval(() => {
         if (mounted && !isFetching.current && !isRefreshingRef.current) {
-          fetchData();
+          fetchData(true);
         }
       }, 30000); // Refresh every 30 seconds
-
       return () => {
         dbg('Cleaning up fetch effect');
         mounted = false;
@@ -521,7 +475,6 @@ const TransactionList = React.forwardRef<
         setIsRefreshing(false);
       };
     }, [address, baseApi, memoizedFetchTransactions]);
-
     // Memoized transaction status checker
     const getTransactionStatus = useCallback(
       (tx: any) => {
@@ -530,7 +483,6 @@ const TransactionList = React.forwardRef<
           !!tx.vin.some(
             (input: any) => input.prevout.scriptpubkey_address === address,
           );
-
         if (tx.sentAt || !tx.status.confirmed) {
           return {
             confirmed: false,
@@ -538,7 +490,6 @@ const TransactionList = React.forwardRef<
             icon: pendingIcon,
           };
         }
-
         return {
           confirmed: true,
           text: isSending ? 'Sent' : 'Received',
@@ -547,7 +498,6 @@ const TransactionList = React.forwardRef<
       },
       [address],
     );
-
     // Debounced fetch more implementation
     const fetchMore = useCallback(async () => {
       if (loadingMore || !isMounted.current) {
@@ -557,7 +507,6 @@ const TransactionList = React.forwardRef<
         });
         return;
       }
-
       // Guard against invalid state
       if (!lastSeenTxId || !address || !baseApi) {
         dbg('Skipping fetch more - invalid state:', {
@@ -567,7 +516,6 @@ const TransactionList = React.forwardRef<
         });
         return;
       }
-
       dbg('Starting fetch more from:', lastSeenTxId);
       setLoadingMore(true);
       try {
@@ -580,12 +528,10 @@ const TransactionList = React.forwardRef<
           },
         );
         dbg('Received more transactions:', response.data.length);
-
         if (!isMounted.current) {
           dbg('Component unmounted during fetch more');
           return;
         }
-
         const newTransactions = response.data;
         // Only set hasMoreTransactions to false if we get no new transactions
         if (newTransactions.length === 0) {
@@ -593,12 +539,10 @@ const TransactionList = React.forwardRef<
           setHasMoreTransactions(false);
           return;
         }
-
         const cached = JSON.parse(
           (await LocalCache.getItem(`${address}-pendingTxs`)) || '{}',
         );
         dbg('Cached transactions for fetch more:', Object.keys(cached).length);
-
         setTransactions(prevTransactions => {
           try {
             const existingIds = new Set(prevTransactions.map(tx => tx.txid));
@@ -606,7 +550,6 @@ const TransactionList = React.forwardRef<
               (tx: any) => !existingIds.has(tx.txid),
             );
             dbg('New unique transactions:', filteredTransactions.length);
-
             // Process pending transactions
             let pending = 0;
             let pendingTxs = filteredTransactions
@@ -619,7 +562,6 @@ const TransactionList = React.forwardRef<
                 return tx;
               });
             dbg('New pending transactions:', pendingTxs.length);
-
             // Update cache
             filteredTransactions.filter((tx: any) => {
               if (cached[tx.txid]) {
@@ -631,7 +573,6 @@ const TransactionList = React.forwardRef<
                 );
               }
             });
-
             // Add cached transactions
             for (const txID in cached) {
               dbg('prepending from cache in fetch more', txID, cached[txID]);
@@ -654,26 +595,21 @@ const TransactionList = React.forwardRef<
                 });
               }
             }
-
             onUpdate(pendingTxs, pending);
             dbg('Updated pending transactions in fetch more');
-
             const txs = [...prevTransactions, ...filteredTransactions];
-
             dbg('Caching transactions:', txs.length);
             WalletService.getInstance().updateTransactionsCache(
               address,
               txs,
               false, // isFromCache
             );
-
             return txs;
           } catch (error: any) {
             dbg('Error in setTransactions:', error);
             return prevTransactions;
           }
         });
-
         // Only update lastSeenTxId if we have new transactions
         if (newTransactions.length > 0) {
           setLastSeenTxId(newTransactions[newTransactions.length - 1].txid);
@@ -690,6 +626,7 @@ const TransactionList = React.forwardRef<
           Toast.show({
             type: 'error',
             text1: 'Error loading more transactions',
+            text2: 'Check your connection or try again.',
           });
         }
       } finally {
@@ -706,21 +643,19 @@ const TransactionList = React.forwardRef<
       getTransactionAmounts,
       onUpdate,
     ]);
-
     // Add effect to handle initialTransactions changes
     useEffect(() => {
       if (initialTransactions && initialTransactions.length > 0) {
         setTransactions(initialTransactions);
       }
     }, [initialTransactions]);
-
     const styles = StyleSheet.create({
       container: {
         flex: 1,
       },
       list: {
         flex: 1,
-        backgroundColor: colors.card,
+        backgroundColor: appTheme.colors.background, // White in light mode, dark in dark mode
         marginTop: Platform.OS === 'ios' ? -insets.top : 0,
       },
       listContent: {
@@ -728,17 +663,30 @@ const TransactionList = React.forwardRef<
         paddingBottom: 20,
       },
       transactionItem: {
-        padding: 12,
-        marginVertical: 4,
-        backgroundColor: colors.card,
+        padding: 10,
+        marginVertical: 3,
+        backgroundColor:
+          appTheme.colors.background === '#ffffff'
+            ? '#ffffff' // White in light mode
+            : appTheme.colors.cardBackground, // Dark card in dark mode
         borderRadius: 10,
         elevation: 1,
-        shadowColor: '#000',
+        shadowColor: appTheme.colors.shadowColor,
         shadowOffset: {width: 0, height: 1},
         shadowOpacity: 0.05,
         shadowRadius: 1,
         borderWidth: 1,
-        borderColor: 'rgba(0, 0, 0, 0.05)',
+        borderColor:
+          appTheme.colors.background === '#ffffff'
+            ? appTheme.colors.blackOverlay05 // Original light mode border
+            : appTheme.colors.border + '40', // Dark border in dark mode
+      },
+      transactionItemPressed: {
+        opacity: 0.7,
+        backgroundColor:
+          appTheme.colors.background === '#ffffff'
+            ? appTheme.colors.blackOverlay05 // Light mode pressed background
+            : appTheme.colors.whiteOverlay10, // Dark mode pressed background
       },
       transactionRow: {
         flexDirection: 'row',
@@ -748,59 +696,63 @@ const TransactionList = React.forwardRef<
       },
       endOfListText: {
         textAlign: 'center',
-        fontSize: 16,
-        color: colors.text,
+        fontSize: appTheme.fontSizes?.lg || 16,
+        fontFamily: appTheme.fontFamilies?.regular,
+        color: appTheme.colors.text,
         padding: 10,
       },
       status: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: colors.text,
+        fontSize: appTheme.fontSizes?.lg || 16, // Increased from 13px for better readability
+        fontFamily: appTheme.fontFamilies?.bold,
+        color: appTheme.colors.text,
         opacity: 0.9,
       },
       amount: {
-        fontSize: 17,
-        fontWeight: '700',
-        color: colors.text,
-        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+        fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
+        fontSize:
+          appTheme.fontSizes?.md ||
+          COMMON_FONT_CONFIGS.bitcoinAmountMono.fontSize,
+        letterSpacing: COMMON_FONT_CONFIGS.bitcoinAmountMono.letterSpacing,
+        fontVariant: ['no-ligatures'] as any, // Type assertion needed for React Native FontVariant
+        color: appTheme.colors.text,
         opacity: 0.95,
       },
       fiatAmount: {
-        fontSize: 13,
-        color: colors.text,
+        fontSize: appTheme.fontSizes?.base || 13, // Increased from 12px for better accessibility
+        fontFamily: appTheme.fontFamilies?.monospace,
+        color: appTheme.colors.text,
         opacity: 0.6,
-        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
       },
       address: {
-        fontSize: 13,
-        color: colors.text,
+        fontSize: appTheme.fontSizes?.base || 13,
+        fontFamily: appTheme.fontFamilies?.monospaceMedium,
+        color: appTheme.colors.text,
         opacity: 0.6,
-        flex: 1,
-        marginRight: 8,
-        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+        marginRight: 4,
       },
-      addressLink: {
-        color: colors.primary,
-        textDecorationLine: 'none',
-        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-        opacity: 0.9,
+      addressText: {
+        fontSize: appTheme.fontSizes?.base || 13,
+        fontFamily: appTheme.fontFamilies?.monospace,
+        color: appTheme.colors.text,
+        opacity: 0.8,
       },
       txId: {
-        fontSize: 12,
-        color: colors.text,
-        opacity: 0.5,
-        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+        fontSize: appTheme.fontSizes?.base || 13,
+        fontFamily: appTheme.fontFamilies?.monospaceMedium,
+        color: appTheme.colors.text,
+        opacity: 0.6,
       },
       timestamp: {
-        fontSize: 12,
-        color: colors.text,
+        fontSize: appTheme.fontSizes?.xs || 11,
+        fontFamily: appTheme.fontFamilies?.regular,
+        color: appTheme.colors.text,
         opacity: 0.5,
       },
-      txLink: {
-        color: colors.primary,
-        textDecorationLine: 'none',
-        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-        opacity: 0.9,
+      txText: {
+        fontSize: appTheme.fontSizes?.base || 13,
+        fontFamily: appTheme.fontFamilies?.monospace,
+        color: appTheme.colors.text,
+        opacity: 0.8,
       },
       emptyContainer: {
         flex: 1,
@@ -809,8 +761,9 @@ const TransactionList = React.forwardRef<
         padding: 20,
       },
       emptyText: {
-        fontSize: 15,
-        color: colors.text,
+        fontSize: appTheme.fontSizes?.md || 15,
+        fontFamily: appTheme.fontFamilies?.regular,
+        color: appTheme.colors.text,
         textAlign: 'center',
         opacity: 0.7,
       },
@@ -820,6 +773,11 @@ const TransactionList = React.forwardRef<
         alignItems: 'center',
         marginVertical: 2,
       },
+      addressContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+      },
       statusContainer: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -828,6 +786,7 @@ const TransactionList = React.forwardRef<
         width: 20,
         height: 20,
         marginRight: 8,
+        tintColor: appTheme.colors.text, // Use theme text color for icons in dark mode
       },
       txIdContainer: {
         flexDirection: 'row',
@@ -837,9 +796,9 @@ const TransactionList = React.forwardRef<
         width: 16,
         height: 16,
         marginRight: 4,
+        tintColor: appTheme.colors.textSecondary, // Use theme secondary text color for link icon
       },
     });
-
     // Memoized render item with currency support
     const renderItem = useCallback(
       ({item}: any) => {
@@ -852,45 +811,47 @@ const TransactionList = React.forwardRef<
           item,
           address,
         );
-
         const txTime = item.sentAt || item.status.block_time * 1000;
         const txConf = item.sentAt ? false : item.status.confirmed;
-
         const timestamp = txConf
           ? txTime < Date.now()
             ? moment(txTime).fromNow()
             : 'Recently confirmed'
           : 'Pending confirmation';
-
         const shortTxId = `${item.txid.slice(0, 4)}...${item.txid.slice(-4)}`;
-        const baseUrl = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
-
-        // Get the relevant address based on transaction type
-        const relevantAddress = status.includes('Sen')
-          ? item?.vout?.find(
-              (output: any) => output.scriptpubkey_address !== address,
-            )?.scriptpubkey_address
-          : item?.vin?.find(
+        // Get the relevant address(es) based on transaction type
+        let relevantAddresses: string[] = [];
+        let relevantAddress: string | null = null;
+        if (status.includes('Sen')) {
+          // For sent transactions: collect ALL recipient addresses (outputs that aren't the sender's address)
+          relevantAddresses =
+            item?.vout
+              ?.filter((output: any) => output.scriptpubkey_address !== address)
+              .map((output: any) => output.scriptpubkey_address)
+              .filter((addr: string) => addr) || [];
+          // Remove duplicates
+          relevantAddresses = [...new Set(relevantAddresses)];
+          relevantAddress = relevantAddresses[0] || null;
+        } else {
+          // For received transactions: show the first input address that's not the receiver's address
+          relevantAddress =
+            item?.vin?.find(
               (input: any) => input.prevout.scriptpubkey_address !== address,
-            )?.prevout?.scriptpubkey_address;
-
-        const addressExplorerLink = relevantAddress
-          ? `${baseUrl}/address/${relevantAddress}`
-          : '';
-
+            )?.prevout?.scriptpubkey_address || null;
+          // Set empty array for received transactions (not used in display)
+          relevantAddresses = [];
+        }
         // Format BTC amount with proper precision and grouping
         const formatBtcAmount = (amount: number) => {
           const formatted = amount.toFixed(8);
           const [whole, decimal] = formatted.split('.');
           return `${Number(whole).toLocaleString()}.${decimal}`;
         };
-
         let info = status.includes('Sen')
           ? `-${formatBtcAmount(sent)} BTC`
           : `+${formatBtcAmount(received)} BTC`;
         let finalStatus = status;
         let finalIcon = statusIcon;
-
         if (sent === 0 && received === changeAmount) {
           finalStatus = confirmed
             ? 'Consolidated UTXOs'
@@ -898,7 +859,6 @@ const TransactionList = React.forwardRef<
           info = `+${formatBtcAmount(received)} BTC`;
           finalIcon = confirmed ? consolidateIcon : pendingIcon;
         }
-
         // Calculate amount in selected currency with proper formatting
         const getFiatAmount = (btcAmount: number) => {
           if (!btcRate || btcRate <= 0) {
@@ -907,19 +867,26 @@ const TransactionList = React.forwardRef<
           const amount = btcAmount * btcRate;
           return presentFiat(amount);
         };
-
         const fiatAmount = status.includes('Sen')
           ? getFiatAmount(sent)
           : getFiatAmount(received);
-
         return (
-          <TouchableOpacity
-            style={styles.transactionItem}
-            activeOpacity={0.7}
+          <Pressable
+            style={({pressed}) => [
+              styles.transactionItem,
+              pressed && styles.transactionItemPressed,
+            ]}
             onPress={() => {
               HapticFeedback.light();
               setSelectedTransaction(item);
               setIsDetailsModalVisible(true);
+            }}
+            android_ripple={{
+              color:
+                appTheme.colors.background === '#ffffff'
+                  ? 'rgba(0,0,0,0.15)'
+                  : 'rgba(255,255,255,0.15)',
+              borderless: false,
             }}>
             <View style={styles.transactionRow}>
               <View style={styles.statusContainer}>
@@ -930,26 +897,35 @@ const TransactionList = React.forwardRef<
                 style={[
                   styles.amount,
                   status.includes('Sen')
-                    ? {color: themes.cryptoVibrant.colors.accent}
-                    : {color: themes.cryptoVibrant.colors.secondary},
+                    ? {
+                        color:
+                          appTheme.colors.background === '#ffffff'
+                            ? themes.cryptoVibrant.colors.accent // Light mode: use accent
+                            : appTheme.colors.bitcoinOrange,
+                      } // Dark mode: use bitcoin orange
+                    : {color: themes.cryptoVibrant.colors.secondary}, // Original: #00D2B8
                 ]}>
                 {isBlurred ? '***' : info}
               </Text>
             </View>
             {relevantAddress && (
               <View style={styles.addressRow}>
-                <Text style={styles.address}>
-                  {status.includes('Sen') ? 'To: ' : 'From: '}
-                  <Text
-                    style={styles.addressLink}
-                    onPress={() => {
-                      HapticFeedback.light();
-                      dbg('Opening address explorer:', addressExplorerLink);
-                      Linking.openURL(addressExplorerLink);
-                    }}>
-                    {relevantAddress.slice(0, 6)}...{relevantAddress.slice(-4)}
+                <View style={styles.addressContainer}>
+                  <Text style={styles.address}>
+                    {status.includes('Sen') ? 'To: ' : 'Fr: '}
+                    <Text style={styles.addressText}>
+                      {relevantAddress.slice(0, 4)}...
+                      {relevantAddress.slice(-4)}
+                      {status.includes('Sen') &&
+                        relevantAddresses.length > 1 && (
+                          <Text style={styles.addressText}>
+                            {' '}
+                            (+{relevantAddresses.length - 1})
+                          </Text>
+                        )}
+                    </Text>
                   </Text>
-                </Text>
+                </View>
                 <Text style={styles.fiatAmount}>
                   {isBlurred
                     ? '***'
@@ -959,29 +935,43 @@ const TransactionList = React.forwardRef<
             )}
             <View style={styles.transactionRow}>
               <View style={styles.txIdContainer}>
-                <Image source={linkIcon} style={styles.linkIcon} />
                 <Text style={styles.txId}>
-                  <Text style={styles.txLink}>0x{shortTxId}</Text>
+                  Tx:
+                  <Text style={styles.txText}> {shortTxId}</Text>
                 </Text>
               </View>
               <Text style={styles.timestamp}>{timestamp}</Text>
             </View>
-          </TouchableOpacity>
+          </Pressable>
         );
       },
       [
         getTransactionStatus,
         getTransactionAmounts,
         address,
-        baseApi,
-        styles,
+        styles.transactionItem,
+        styles.transactionRow,
+        styles.statusContainer,
+        styles.statusIcon,
+        styles.status,
+        styles.amount,
+        styles.addressRow,
+        styles.addressContainer,
+        styles.address,
+        styles.addressText,
+        styles.fiatAmount,
+        styles.txIdContainer,
+        styles.txId,
+        styles.txText,
+        styles.timestamp,
+        appTheme.colors.background,
+        appTheme.colors.bitcoinOrange,
+        isBlurred,
+        getCurrencySymbol,
         selectedCurrency,
         btcRate,
-        getCurrencySymbol,
-        isBlurred,
       ],
     );
-
     const renderEmptyComponent = useCallback(() => {
       if (loading) {
         return <TransactionListSkeleton />;
@@ -992,17 +982,16 @@ const TransactionList = React.forwardRef<
         </View>
       );
     }, [loading, styles.emptyContainer, styles.emptyText]);
-
+    const safeAreaStyle = useMemo(
+      () => ({
+        paddingTop: Platform.OS === 'android' ? 0 : insets.top,
+        paddingLeft: insets.left,
+        paddingRight: insets.right,
+      }),
+      [insets.top, insets.left, insets.right],
+    );
     return (
-      <View
-        style={[
-          styles.container,
-          {
-            paddingTop: insets.top,
-            paddingLeft: insets.left,
-            paddingRight: insets.right,
-          },
-        ]}>
+      <View style={[styles.container, safeAreaStyle]}>
         <FlatList
           style={styles.list}
           contentContainerStyle={styles.listContent}
@@ -1032,6 +1021,24 @@ const TransactionList = React.forwardRef<
               onRefresh={handlePullRefresh}
               progressViewOffset={0}
               enabled={true}
+              tintColor={
+                appTheme.colors.background === '#ffffff'
+                  ? appTheme.colors.accent || appTheme.colors.primary
+                  : appTheme.colors.bitcoinOrange ||
+                    appTheme.colors.secondary ||
+                    appTheme.colors.white
+              }
+              colors={
+                Platform.OS === 'android'
+                  ? [
+                      appTheme.colors.background === '#ffffff'
+                        ? appTheme.colors.accent || appTheme.colors.primary
+                        : appTheme.colors.bitcoinOrange ||
+                          appTheme.colors.secondary ||
+                          appTheme.colors.white,
+                    ]
+                  : undefined
+              }
             />
           }
         />
@@ -1076,10 +1083,8 @@ const TransactionList = React.forwardRef<
             isBlurred={isBlurred}
           />
         )}
-        <Toast config={{}} />
       </View>
     );
   },
 );
-
 export default TransactionList;

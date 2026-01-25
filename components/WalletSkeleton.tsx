@@ -1,42 +1,47 @@
 import React, {useMemo} from 'react';
-import {View, StyleSheet, Animated, Dimensions, Image} from 'react-native';
+import {View, StyleSheet, Animated, Dimensions} from 'react-native';
 import {useTheme} from '../theme';
+import {createStyles} from './Styles';
 import TransactionListSkeleton from './TransactionListSkeleton';
-
 const {width} = Dimensions.get('window');
-
 interface ShimmerEffectProps {
   style: any;
   translateX: Animated.AnimatedInterpolation<string | number>;
 }
-
-const ShimmerEffect: React.FC<ShimmerEffectProps> = ({
-  style,
-  translateX,
-}) => {
+const ShimmerEffect: React.FC<ShimmerEffectProps> = ({style, translateX}) => {
   const {theme} = useTheme();
+  const isDarkMode = theme.colors.background !== '#ffffff';
+  const shimmerColor = isDarkMode
+    ? theme.colors.disabled + '60'
+    : '#e9ecef';
   return (
-    <View style={[style, styles.shimmerWrapper]}>
+    <View style={[style, skeletonStyles.shimmerWrapper]}>
       <Animated.View
-        style={[styles.shimmerContainer, {transform: [{translateX}]}]}>
+        style={[
+          skeletonStyles.shimmerContainer,
+          {transform: [{translateX}]},
+        ]}>
         <View
-          style={[styles.gradient, {backgroundColor: theme.colors.background}]}
+          style={[
+            skeletonStyles.gradient,
+            {backgroundColor: shimmerColor},
+          ]}
         />
       </Animated.View>
     </View>
   );
 };
-
 const WalletSkeleton: React.FC = () => {
+  const {theme} = useTheme();
+  const styles = createStyles(theme);
   const animatedValue = useMemo(() => new Animated.Value(0), []);
-
   React.useEffect(() => {
     const startAnimation = () => {
       Animated.loop(
         Animated.sequence([
           Animated.timing(animatedValue, {
             toValue: 1,
-            duration: 1500,
+            duration: 1200,
             useNativeDriver: true,
           }),
           Animated.timing(animatedValue, {
@@ -47,326 +52,290 @@ const WalletSkeleton: React.FC = () => {
         ]),
       ).start();
     };
-
     startAnimation();
     return () => {
       animatedValue.stopAnimation();
     };
   }, [animatedValue]);
-
   const translateX = animatedValue.interpolate({
     inputRange: [0, 1],
-    outputRange: [-width * 1.5, width * 1.5],
+    outputRange: [-width * 1.2, width * 1.2],
   });
-
+  // Always use theme background - never white in dark mode
+  const containerBgColor = theme.colors.background;
   return (
-    <View style={styles.container}>
+    <View
+      style={[skeletonStyles.container, {backgroundColor: containerBgColor}]}>
       <View style={styles.contentContainer}>
-        <View style={styles.walletHeader}>
-          <View style={styles.headerTop}>
-            <Image
-              source={require('../assets/bitcoin-logo.png')}
-              style={styles.btcLogo}
-            />
-            <View style={styles.priceContainer}>
-              <ShimmerEffect
-                style={styles.priceSkeleton}
-                translateX={translateX}
-              />
+        <View
+          style={[styles.walletHeader, skeletonStyles.walletHeaderOverride]}>
+          {/* Party Container - Device, Sign PSBT, Address Type */}
+          <View style={[styles.partyContainer, styles.rowFullWidth]}>
+            <View
+              style={[styles.addressTypeContainer, styles.flexOneMinWidthZero]}>
+              <View style={styles.columnCenter}>
+                <ShimmerEffect
+                  style={skeletonStyles.partyLabelSkeleton}
+                  translateX={translateX}
+                />
+                <View style={styles.rowCenterMarginTop2}>
+                  <ShimmerEffect
+                    style={skeletonStyles.partyIconSkeleton}
+                    translateX={translateX}
+                  />
+                  <ShimmerEffect
+                    style={skeletonStyles.partyValueSkeleton}
+                    translateX={translateX}
+                  />
+                </View>
+              </View>
+            </View>
+            <View
+              style={[styles.addressTypeContainer, styles.flexOneMinWidthZero]}>
+              <View style={styles.columnCenter}>
+                <ShimmerEffect
+                  style={skeletonStyles.partyLabelSkeleton}
+                  translateX={translateX}
+                />
+                <View style={styles.rowCenterMarginTop2}>
+                  <ShimmerEffect
+                    style={skeletonStyles.partyIconSkeleton}
+                    translateX={translateX}
+                  />
+                  <ShimmerEffect
+                    style={skeletonStyles.partyValueSkeleton}
+                    translateX={translateX}
+                  />
+                </View>
+              </View>
+            </View>
+            <View
+              style={[styles.addressTypeContainer, styles.flexOneMinWidthZero]}>
+              <View style={styles.columnCenter}>
+                <ShimmerEffect
+                  style={skeletonStyles.partyLabelSkeleton}
+                  translateX={translateX}
+                />
+                <View style={styles.rowCenterMarginTop2}>
+                  <ShimmerEffect
+                    style={skeletonStyles.partyIconSkeleton}
+                    translateX={translateX}
+                  />
+                  <ShimmerEffect
+                    style={skeletonStyles.partyValueSkeleton}
+                    translateX={translateX}
+                  />
+                </View>
+              </View>
             </View>
           </View>
-          
+          {/* Balance Container */}
           <View style={styles.balanceContainer}>
-            <View style={styles.balanceRow}>
+            {/* Eye icon placeholder on left */}
+            <View style={styles.balanceEyeIcon}>
               <ShimmerEffect
-                style={styles.balanceSkeleton}
+                style={skeletonStyles.eyeIconSkeleton}
                 translateX={translateX}
               />
             </View>
-            <View style={styles.balanceRow}>
-              <ShimmerEffect
-                style={styles.usdSkeleton}
-                translateX={translateX}
-              />
-            </View>
-            <View style={styles.balanceHint}>
-              <ShimmerEffect
-                style={styles.hintSkeleton}
-                translateX={translateX}
-              />
-            </View>
-          </View>
-
-          <View style={styles.partyContainer}>
-            <View style={styles.partyItem}>
-              <ShimmerEffect
-                style={styles.partyLabelSkeleton}
-                translateX={translateX}
-              />
-              <View style={styles.partyValueRow}>
+            {/* Balance content in center */}
+            <View style={styles.balanceContentContainer}>
+              <View style={styles.balanceRowWithMargin}>
                 <ShimmerEffect
-                  style={styles.partyIconSkeleton}
+                  style={skeletonStyles.balanceSkeleton}
                   translateX={translateX}
                 />
+              </View>
+              <View style={styles.balanceRowWithMargin}>
                 <ShimmerEffect
-                  style={styles.partyValueSkeleton}
+                  style={skeletonStyles.usdSkeleton}
                   translateX={translateX}
                 />
               </View>
             </View>
-            <View style={styles.partyItem}>
-              <ShimmerEffect
-                style={styles.partyLabelSkeleton}
-                translateX={translateX}
-              />
-              <View style={styles.partyValueRow}>
+            {/* Unit toggle placeholder on right */}
+            <View style={styles.balanceUnitToggleContainer}>
+              <View style={styles.balanceUnitToggle}>
                 <ShimmerEffect
-                  style={styles.partyIconSkeleton}
-                  translateX={translateX}
-                />
-                <ShimmerEffect
-                  style={styles.partyValueSkeleton}
-                  translateX={translateX}
-                />
-              </View>
-            </View>
-            <View style={styles.partyItem}>
-              <ShimmerEffect
-                style={styles.partyLabelSkeleton}
-                translateX={translateX}
-              />
-              <View style={styles.partyValueRow}>
-                <ShimmerEffect
-                  style={styles.partyIconSkeleton}
-                  translateX={translateX}
-                />
-                <ShimmerEffect
-                  style={styles.partyValueSkeleton}
+                  style={skeletonStyles.unitToggleSkeleton}
                   translateX={translateX}
                 />
               </View>
             </View>
           </View>
-
-          <View style={styles.actions}>
-            <View style={styles.actionButton}>
+          {/* Action Buttons */}
+          <View style={styles.actions} collapsable={false}>
+            <View
+              style={[
+                styles.actionButton,
+                styles.sendButton,
+                styles.flexOneMinWidthZero,
+              ]}>
               <ShimmerEffect
-                style={styles.actionIconSkeleton}
+                style={skeletonStyles.actionIconSkeleton}
                 translateX={translateX}
               />
               <ShimmerEffect
-                style={styles.actionTextSkeleton}
+                style={skeletonStyles.actionTextSkeleton}
                 translateX={translateX}
               />
             </View>
-            <View style={styles.actionMiddleButton}>
+            <View style={[styles.addressTypeModalButton]}>
               <ShimmerEffect
-                style={styles.actionMiddleIconSkeleton}
+                style={skeletonStyles.actionMiddleIconSkeleton}
                 translateX={translateX}
               />
             </View>
-            <View style={styles.actionButton}>
+            <View
+              style={[
+                styles.actionButton,
+                styles.receiveButton,
+                styles.flexOneMinWidthZero,
+              ]}>
               <ShimmerEffect
-                style={styles.actionIconSkeleton}
+                style={skeletonStyles.actionIconSkeleton}
                 translateX={translateX}
               />
               <ShimmerEffect
-                style={styles.actionTextSkeleton}
+                style={skeletonStyles.actionTextSkeleton}
                 translateX={translateX}
               />
             </View>
           </View>
         </View>
       </View>
-      <TransactionListSkeleton />
+      {/* Cache Indicator Skeleton */}
+      <View style={styles.cacheIndicator}>
+        <View style={styles.refreshText}>
+          <ShimmerEffect
+            style={skeletonStyles.refreshIconSkeleton}
+            translateX={translateX}
+          />
+          <ShimmerEffect
+            style={skeletonStyles.refreshTextSkeleton}
+            translateX={translateX}
+          />
+        </View>
+        <View style={skeletonStyles.timeContainer}>
+          <ShimmerEffect
+            style={skeletonStyles.cacheTextSkeleton}
+            translateX={translateX}
+          />
+          <ShimmerEffect
+            style={skeletonStyles.clockIconSkeleton}
+            translateX={translateX}
+          />
+        </View>
+      </View>
+      {/* Transaction List Container - match spacing from WalletHome */}
+      <View style={styles.transactionListContainer}>
+        <TransactionListSkeleton noContainerPadding={true} />
+      </View>
     </View>
   );
 };
-
-const styles = StyleSheet.create({
+const skeletonStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    // backgroundColor will be set dynamically based on theme
   },
-  contentContainer: {
-    paddingTop: 12,
-    paddingLeft: 16,
-    paddingRight: 16,
-    paddingBottom: 0,
-  },
-  walletHeader: {
-    padding: 12,
-    backgroundColor: '#f0f2f5',
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: 0,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: 8,
-  },
-  btcLogo: {
-    width: 32,
-    height: 32,
-    resizeMode: 'contain',
-  },
-  priceContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  priceSkeleton: {
-    width: 80,
-    height: 16,
-    borderRadius: 4,
-  },
-  balanceContainer: {
-    alignItems: 'center',
-    width: '100%',
-    paddingVertical: 4,
-    marginBottom: 4,
-  },
-  balanceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    minHeight: 32,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    width: '100%',
-    justifyContent: 'center',
-    marginTop: 4,
-  },
-  balanceSkeleton: {
-    width: 160,
-    height: 24,
-    borderRadius: 6,
-  },
-  usdSkeleton: {
-    width: 120,
-    height: 18,
-    borderRadius: 6,
-  },
-  balanceHint: {
-    marginTop: 4,
-  },
-  hintSkeleton: {
-    width: 120,
-    height: 10,
-    borderRadius: 5,
-  },
-  partyContainer: {
-    flexDirection: 'row',
-    width: '100%',
-    marginTop: 4,
-    marginBottom: 6,
-    borderRadius: 8,
-  },
-  partyItem: {
-    flex: 1,
-    flexDirection: 'column',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
-    marginHorizontal: 4,
+  walletHeaderOverride: {
+    elevation: 0,
+    shadowOffset: {width: 0, height: 0},
+    shadowOpacity: 0,
+    shadowRadius: 0,
   },
   partyLabelSkeleton: {
     width: 50,
-    height: 8,
-    borderRadius: 4,
-    marginBottom: 4,
-  },
-  partyValueRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 2,
+    height: 9, // Match fontSize from partyLabel (xs = 9)
+    borderRadius: 4.5,
+    marginBottom: 1, // Match marginBottom from partyLabel
   },
   partyIconSkeleton: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     marginRight: 4,
   },
   partyValueSkeleton: {
-    width: 40,
-    height: 12,
+    width: 60,
+    height: 11, // Match fontSize from partyValue (xs = 11)
+    borderRadius: 5.5,
+  },
+  balanceSkeleton: {
+    width: 180,
+    height: 29, // Match lineHeight from balanceBTC (24 * 1.2 = 28.8, rounded to 29)
     borderRadius: 6,
   },
-  actions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 8,
-    width: '100%',
-    gap: 6,
-  },
-  actionButton: {
-    flex: 1,
-    paddingVertical: 12,
-    marginBottom: 4,
-    marginHorizontal: 8,
-    borderRadius: 8,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  actionMiddleButton: {
-    width: 50,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 12,
-    marginBottom: 4,
-    marginHorizontal: 8,
-    borderRadius: 8,
+  usdSkeleton: {
+    width: 140,
+    height: 19, // Match lineHeight from balanceFiat (16 * 1.2 = 19.2, rounded to 19)
+    borderRadius: 6,
   },
   actionIconSkeleton: {
-    width: 18,
-    height: 18,
+    width: 18, // Match actionButtonIcon width
+    height: 18, // Match actionButtonIcon height
     borderRadius: 9,
   },
   actionTextSkeleton: {
-    width: 40,
-    height: 14,
+    width: 50,
+    height: 14, // Match actionButtonText fontSize (base = 14)
     borderRadius: 7,
   },
   actionMiddleIconSkeleton: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+  },
+  eyeIconSkeleton: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+  },
+  unitToggleSkeleton: {
+    width: 30,
+    height: 14,
+    borderRadius: 7,
+  },
+  refreshIconSkeleton: {
+    width: 16, // Match refreshIcon width
+    height: 16, // Match refreshIcon height
+    borderRadius: 8,
+    marginRight: 6, // Match gap from refreshText
+  },
+  refreshTextSkeleton: {
+    width: 120, // Approximate width for "Tap to refresh"
+    height: 14, // Match refreshText fontSize (base = 14)
+    borderRadius: 7,
+  },
+  cacheTextSkeleton: {
+    width: 100, // Approximate width for time text
+    height: 13, // Match cacheText fontSize (base = 13)
+    borderRadius: 6.5,
+    marginRight: 4, // Match clockIcon marginLeft
+  },
+  clockIconSkeleton: {
+    width: 16, // Match clockIcon width
+    height: 16, // Match clockIcon height
+    borderRadius: 8,
+  },
+  timeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   shimmerWrapper: {
     overflow: 'hidden',
-    borderRadius: 4,
+    borderRadius: 6,
   },
   shimmerContainer: {
-    width: '100%',
+    width: '200%', // Wider container for smoother effect on Android
     height: '100%',
   },
   gradient: {
     flex: 1,
-    backgroundColor: '#e9ecef',
+    width: '50%', // Half of the container width for smoother gradient
+    height: '100%',
+    // Background color will be set dynamically
   },
 });
-
 export default WalletSkeleton;

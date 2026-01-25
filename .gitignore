@@ -54,6 +54,7 @@ yarn-error.log
 
 # Bundle artifact
 *.jsbundle
+bundle.js
 
 # Ruby / CocoaPods
 **/Pods/
@@ -383,3 +384,7 @@ PR_README.md
 
 # third_party
 third_party/
+
+# Docker cache
+.docker-cache/
+build.log
