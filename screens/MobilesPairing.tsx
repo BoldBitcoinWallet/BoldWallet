@@ -1,5 +1,5 @@
 /* eslint-disable react-native/no-inline-styles */
-import React, {useState, useEffect, useRef, useCallback} from 'react';
+import React, {useState, useEffect, useCallback} from 'react';
 import {
   View,
   Text,
@@ -545,6 +545,8 @@ const MobilesPairing = ({navigation}: any) => {
       setDoingMPC(true);
       setMpcDone(false);
       setPrepCounter(0);
+      setProgress(0);
+      setStatus('Processing cryptographic operations');
       dbg('mpcTssSetup...');
       const data = await initSession();
       dbg('got session data', data);
@@ -576,7 +578,6 @@ const MobilesPairing = ({navigation}: any) => {
         } catch {}
       }
       setShareName(partyID);
-      setProgress(0);
       dbg('starting keygen with', {
         server,
         partyID,
@@ -645,6 +646,8 @@ const MobilesPairing = ({navigation}: any) => {
     setDoingMPC(true);
     setMpcDone(false);
     setPrepCounter(0);
+    setProgress(0);
+    setStatus('Processing cryptographic operations');
     // CRITICAL: Store original network/API before transaction (declared outside try for finally block)
     // We'll use QR code network temporarily for signing, but restore original after
     let originalNetwork = '';
@@ -664,73 +667,113 @@ const MobilesPairing = ({navigation}: any) => {
       }
       const server = `http://${isMaster ? localIP : peerIP}:${discoveryPort}`;
       const jks = await EncryptedStorage.getItem('keyshare');
-      // Read ALL parameters from route params ONLY (no fallbacks)
-      if (!route.params?.network || route.params.network.trim() === '') {
-        throw new Error('Network is required in route params');
+      // Declare variables for send BTC mode (will be set in else block below)
+      let net = '';
+      let addressTypeToUse = '';
+      let path = '';
+      let toAddress = '';
+      let satoshiAmount = '';
+      let satoshiFees = '';
+      // For PSBT signing, network comes from app state, not route params
+      if (isSignPSBT) {
+        // Get network from LocalCache (app's current network state)
+        net = (await LocalCache.getItem('network')) || 'mainnet';
+        dbg(
+          'MobilesPairing: PSBT signing - using network from app state:',
+          net,
+        );
+        // Set network and API in BBMTLib for this transaction
+        let apiUrl = await LocalCache.getItem(`api_${net}`);
+        if (!apiUrl) {
+          apiUrl =
+            net === 'testnet3' || net === 'testnet'
+              ? 'https://mempool.space/testnet/api'
+              : 'https://mempool.space/api';
+        }
+        await BBMTLibNativeModule.setBtcNetwork(net);
+        await BBMTLibNativeModule.setAPI(net, apiUrl);
+        dbg('MobilesPairing: Set network and API in BBMTLib:', net, apiUrl);
+      } else {
+        // For send BTC, read ALL parameters from route params ONLY (no fallbacks)
+        if (!route.params?.network || route.params.network.trim() === '') {
+          throw new Error('Network is required in route params');
+        }
+        if (
+          !route.params?.addressType ||
+          route.params.addressType.trim() === ''
+        ) {
+          throw new Error('Address type is required in route params');
+        }
+        if (
+          !route.params?.derivationPath ||
+          route.params.derivationPath.trim() === ''
+        ) {
+          throw new Error('Derivation path is required in route params');
+        }
+        if (!route.params?.toAddress || route.params.toAddress.trim() === '') {
+          throw new Error('Destination address is required in route params');
+        }
+        if (
+          !route.params?.satoshiAmount ||
+          route.params.satoshiAmount.trim() === ''
+        ) {
+          throw new Error('Amount is required in route params');
+        }
+        if (
+          !route.params?.satoshiFees ||
+          route.params.satoshiFees.trim() === ''
+        ) {
+          throw new Error('Fees are required in route params');
+        }
+        // Extract all params from route
+        net = route.params.network.trim();
+        addressTypeToUse = route.params.addressType.trim();
+        path = route.params.derivationPath.trim();
+        toAddress = route.params.toAddress.trim();
+        satoshiAmount = route.params.satoshiAmount.trim();
+        satoshiFees = route.params.satoshiFees.trim();
+        dbg('MobilesPairing: Using route params ONLY:', {
+          network: net,
+          addressType: addressTypeToUse,
+          derivationPath: path,
+          toAddress,
+          satoshiAmount,
+          satoshiFees,
+        });
+        // Store original network/API
+        originalNetwork = (await LocalCache.getItem('network')) || 'mainnet';
+        const cachedApi = await LocalCache.getItem(`api_${originalNetwork}`);
+        originalApiUrl = cachedApi || '';
+        if (!originalApiUrl) {
+          originalApiUrl =
+            originalNetwork === 'testnet3' || originalNetwork === 'testnet'
+              ? 'https://mempool.space/testnet/api'
+              : 'https://mempool.space/api';
+        }
+        // Set network and API in BBMTLib for this transaction
+        let apiUrl = await LocalCache.getItem(`api_${net}`);
+        if (!apiUrl) {
+          apiUrl =
+            net === 'testnet3' || net === 'testnet'
+              ? 'https://mempool.space/testnet/api'
+              : 'https://mempool.space/api';
+        }
+        await BBMTLibNativeModule.setBtcNetwork(net);
+        await BBMTLibNativeModule.setAPI(net, apiUrl);
+        dbg('MobilesPairing: Set network and API in BBMTLib:', net, apiUrl);
       }
-      if (
-        !route.params?.addressType ||
-        route.params.addressType.trim() === ''
-      ) {
-        throw new Error('Address type is required in route params');
+      // Store original network/API (for both PSBT and send BTC modes)
+      if (isSignPSBT) {
+        originalNetwork = (await LocalCache.getItem('network')) || 'mainnet';
+        const cachedApi = await LocalCache.getItem(`api_${originalNetwork}`);
+        originalApiUrl = cachedApi || '';
+        if (!originalApiUrl) {
+          originalApiUrl =
+            originalNetwork === 'testnet3' || originalNetwork === 'testnet'
+              ? 'https://mempool.space/testnet/api'
+              : 'https://mempool.space/api';
+        }
       }
-      if (
-        !route.params?.derivationPath ||
-        route.params.derivationPath.trim() === ''
-      ) {
-        throw new Error('Derivation path is required in route params');
-      }
-      if (!route.params?.toAddress || route.params.toAddress.trim() === '') {
-        throw new Error('Destination address is required in route params');
-      }
-      if (
-        !route.params?.satoshiAmount ||
-        route.params.satoshiAmount.trim() === ''
-      ) {
-        throw new Error('Amount is required in route params');
-      }
-      if (
-        !route.params?.satoshiFees ||
-        route.params.satoshiFees.trim() === ''
-      ) {
-        throw new Error('Fees are required in route params');
-      }
-      // Extract all params from route
-      const net = route.params.network.trim();
-      const addressTypeToUse = route.params.addressType.trim();
-      const path = route.params.derivationPath.trim();
-      const toAddress = route.params.toAddress.trim();
-      const satoshiAmount = route.params.satoshiAmount.trim();
-      const satoshiFees = route.params.satoshiFees.trim();
-      dbg('MobilesPairing: Using route params ONLY:', {
-        network: net,
-        addressType: addressTypeToUse,
-        derivationPath: path,
-        toAddress,
-        satoshiAmount,
-        satoshiFees,
-      });
-      // Store original network/API
-      originalNetwork = (await LocalCache.getItem('network')) || 'mainnet';
-      const cachedApi = await LocalCache.getItem(`api_${originalNetwork}`);
-      originalApiUrl = cachedApi || '';
-      if (!originalApiUrl) {
-        originalApiUrl =
-          originalNetwork === 'testnet3' || originalNetwork === 'testnet'
-            ? 'https://mempool.space/testnet/api'
-            : 'https://mempool.space/api';
-      }
-      // Set network and API in BBMTLib for this transaction
-      let apiUrl = await LocalCache.getItem(`api_${net}`);
-      if (!apiUrl) {
-        apiUrl =
-          net === 'testnet3' || net === 'testnet'
-            ? 'https://mempool.space/testnet/api'
-            : 'https://mempool.space/api';
-      }
-      await BBMTLibNativeModule.setBtcNetwork(net);
-      await BBMTLibNativeModule.setAPI(net, apiUrl);
-      dbg('MobilesPairing: Set network and API in BBMTLib:', net, apiUrl);
       const ks = JSON.parse(jks || '{}');
       const partyID = ks.local_party_key;
       const allParties = [partyID];
@@ -781,30 +824,32 @@ const MobilesPairing = ({navigation}: any) => {
           route.params.psbtBase64 || '',
         )
           .then(async (signedPsbt: any) => {
-            dbg(partyID, 'PSBT signed successfully');
             if (
               !signedPsbt ||
               signedPsbt.includes('error') ||
               signedPsbt.includes('failed')
             ) {
-              throw new Error(signedPsbt || 'PSBT signing failed');
+              Alert.alert(
+                'Operation Error',
+                `Could not sign PSBT.\n${String(signedPsbt)}`,
+              );
+              dbg(partyID, 'PSBT signing error', String(signedPsbt));
+            }
+            else {
+              dbg(partyID, 'PSBT signed successfully');
             }
             // Check user's wallet mode preference before navigating
             let targetRoute = 'Home';
-            try {
-              const walletMode =
-                (await EncryptedStorage.getItem('wallet_mode')) || 'full';
-              targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
-              dbg(
-                'PSBT signing complete: Navigating to',
-                targetRoute,
-                'based on wallet_mode:',
-                walletMode,
-              );
-            } catch (error) {
-              dbg('Error loading wallet_mode after PSBT signing:', error);
-              // Default to 'Home' if there's an error
-            }
+
+            const walletMode =
+              (await EncryptedStorage.getItem('wallet_mode')) || 'full';
+            targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
+            dbg(
+              'PSBT signing complete: Navigating to',
+              targetRoute,
+              'based on wallet_mode:',
+              walletMode,
+            );
             navigation.dispatch(
               CommonActions.reset({
                 index: 0,
@@ -828,114 +873,117 @@ const MobilesPairing = ({navigation}: any) => {
             setDoingMPC(false);
           });
         return; // Exit early for PSBT
-      }
-      // Send BTC mode - derive from address using route params
-      const btcPub = await BBMTLibNativeModule.derivePubkey(
-        ks.pub_key,
-        ks.chain_code_hex,
-        path,
-      );
-      const senderAddress = await BBMTLibNativeModule.btcAddress(
-        btcPub,
-        net,
-        addressTypeToUse,
-      );
-      if (peerParty === partyID) {
-        throw 'Please Use "Two Different KeyShares" per Device';
-      }
-      if (satoshiAmount !== route.params.satoshiAmount) {
-        throw 'Make sure you\'re sending the "Same Bitcoin" amount from Both Devices';
-      }
-      setProgress(0);
-      // Call MPC send BTC
-      await BBMTLibNativeModule.mpcSendBTC(
-        server,
-        partyID,
-        partiesCSV,
-        sessionID,
-        sessionKey,
-        encKey,
-        decKey,
-        jks,
-        path,
-        btcPub,
-        senderAddress,
-        toAddress,
-        satoshiAmount,
-        satoshiFees,
-      )
-        .then(async (txId: any) => {
-          dbg(partyID, 'txID', txId);
-          const validTxID = /^[a-fA-F0-9]{64}$/.test(txId);
-          if (!validTxID) {
-            throw txId;
-          }
-          // Save pending transaction
-          const pendingTxs = JSON.parse(
-            (await LocalCache.getItem(`${senderAddress}-pendingTxs`)) || '{}',
-          );
-          pendingTxs[txId] = {
-            txid: txId,
-            from: senderAddress,
-            to: toAddress,
-            amount: satoshiAmount,
-            satoshiAmount: satoshiAmount,
-            satoshiFees: satoshiFees,
-            sentAt: Date.now(),
-            status: {
-              confirmed: false,
-              block_height: null,
-            },
-          };
-          await LocalCache.setItem(
-            `${senderAddress}-pendingTxs`,
-            JSON.stringify(pendingTxs),
-          );
-          navigation.dispatch(
-            CommonActions.reset({
-              index: 0,
-              routes: [{name: 'Home', params: {txId}}],
-            }),
-          );
-          setMpcDone(true);
-        })
-        .catch((e: any) => {
-          Alert.alert(
-            'Operation Error',
-            `Could not sign and send transaction.\n${e?.message}`,
-          );
-          dbg(partyID, 'keysign error', e);
-        })
-        .finally(async () => {
-          // CRITICAL: Restore original network after transaction completes (success or failure)
-          // This ensures the device's active network remains unchanged
-          if (originalNetwork && originalApiUrl) {
-            try {
-              await BBMTLibNativeModule.setBtcNetwork(originalNetwork);
-              await BBMTLibNativeModule.setAPI(originalNetwork, originalApiUrl);
-              // Restore WalletService internal state
-              const walletServiceRestore = WalletService.getInstance();
-              (walletServiceRestore as any).currentNetwork = originalNetwork;
-              (walletServiceRestore as any).currentApiUrl = originalApiUrl;
-              dbg(
-                'MobilesPairing: Restored original network:',
-                originalNetwork,
-                'API:',
-                originalApiUrl,
-              );
-            } catch (restoreError) {
-              dbg(
-                'MobilesPairing: Error restoring original network:',
-                restoreError,
-              );
+      } else {
+        // Send BTC mode - derive from address using route params
+        const btcPub = await BBMTLibNativeModule.derivePubkey(
+          ks.pub_key,
+          ks.chain_code_hex,
+          path,
+        );
+        const senderAddress = await BBMTLibNativeModule.btcAddress(
+          btcPub,
+          net,
+          addressTypeToUse,
+        );
+        if (peerParty === partyID) {
+          throw 'Please Use "Two Different KeyShares" per Device';
+        }
+        if (satoshiAmount !== route.params.satoshiAmount) {
+          throw 'Make sure you\'re sending the "Same Bitcoin" amount from Both Devices';
+        }
+        // Call MPC send BTC
+        await BBMTLibNativeModule.mpcSendBTC(
+          server,
+          partyID,
+          partiesCSV,
+          sessionID,
+          sessionKey,
+          encKey,
+          decKey,
+          jks,
+          path,
+          btcPub,
+          senderAddress,
+          toAddress,
+          satoshiAmount,
+          satoshiFees,
+        )
+          .then(async (txId: any) => {
+            dbg(partyID, 'txID', txId);
+            const validTxID = /^[a-fA-F0-9]{64}$/.test(txId);
+            if (!validTxID) {
+              throw txId;
             }
-          }
-          if (isMaster) {
-            await waitMS(2000);
-            stopRelay();
-          }
-          setDoingMPC(false);
-        });
+            // Save pending transaction
+            const pendingTxs = JSON.parse(
+              (await LocalCache.getItem(`${senderAddress}-pendingTxs`)) || '{}',
+            );
+            pendingTxs[txId] = {
+              txid: txId,
+              from: senderAddress,
+              to: toAddress,
+              amount: satoshiAmount,
+              satoshiAmount: satoshiAmount,
+              satoshiFees: satoshiFees,
+              sentAt: Date.now(),
+              status: {
+                confirmed: false,
+                block_height: null,
+              },
+            };
+            await LocalCache.setItem(
+              `${senderAddress}-pendingTxs`,
+              JSON.stringify(pendingTxs),
+            );
+            navigation.dispatch(
+              CommonActions.reset({
+                index: 0,
+                routes: [{name: 'Home', params: {txId}}],
+              }),
+            );
+            setMpcDone(true);
+          })
+          .catch((e: any) => {
+            Alert.alert(
+              'Operation Error',
+              `Could not sign and send transaction.\n${e?.message}`,
+            );
+            dbg(partyID, 'keysign error', e);
+          })
+          .finally(async () => {
+            // CRITICAL: Restore original network after transaction completes (success or failure)
+            // This ensures the device's active network remains unchanged
+            if (originalNetwork && originalApiUrl) {
+              try {
+                await BBMTLibNativeModule.setBtcNetwork(originalNetwork);
+                await BBMTLibNativeModule.setAPI(
+                  originalNetwork,
+                  originalApiUrl,
+                );
+                // Restore WalletService internal state
+                const walletServiceRestore = WalletService.getInstance();
+                (walletServiceRestore as any).currentNetwork = originalNetwork;
+                (walletServiceRestore as any).currentApiUrl = originalApiUrl;
+                dbg(
+                  'MobilesPairing: Restored original network:',
+                  originalNetwork,
+                  'API:',
+                  originalApiUrl,
+                );
+              } catch (restoreError) {
+                dbg(
+                  'MobilesPairing: Error restoring original network:',
+                  restoreError,
+                );
+              }
+            }
+            if (isMaster) {
+              await waitMS(2000);
+              stopRelay();
+            }
+            setDoingMPC(false);
+          });
+      }
     } catch (error: any) {
       Alert.alert('Operation Error', error?.message || error);
       dbg(localDevice, 'keysign error', error);
@@ -1019,9 +1067,13 @@ const MobilesPairing = ({navigation}: any) => {
         }
       } else if (msg.type === 'keysign') {
         const prgUTXO = (utxoIndex - 1) * utxoRange;
+        const progressValue =
+          utxoCount > 0
+            ? Math.round(prgUTXO + (utxoRange * msg.step) / keysignSteps)
+            : Math.round((100 * msg.step) / keysignSteps);
         dbg(
           'progress - keysign: ',
-          Math.round(prgUTXO + (utxoRange * msg.step) / keysignSteps),
+          progressValue,
           'prgUTXO',
           prgUTXO,
           'step',
@@ -1031,18 +1083,25 @@ const MobilesPairing = ({navigation}: any) => {
           'time',
           new Date(msg.time),
         );
-        setProgress(
-          Math.round(prgUTXO + (utxoRange * msg.step) / keysignSteps),
-        );
+
+        if (progressValue > 0) {
+          setProgress(progressValue);
+        }
+        if (progressValue > 100) {
+          setProgress(100);
+        }
         dbg('keysign_hook_info:', msg.info);
-        const statusDot =
-          msg.step % 3 === 0 ? '.' : msg.step % 3 === 1 ? '..' : '...';
-        setStatus('Processing cryptographic operations' + statusDot);
         if (msg.done) {
+          utxoIndex = 0;
+          utxoCount = 0;
+          utxoRange = 0;
           setProgress(100);
           setMpcDone(true);
         }
       }
+      const statusDot =
+        msg.step % 3 === 0 ? '.' : msg.step % 3 === 1 ? '..' : '...';
+      setStatus('Processing cryptographic operations' + statusDot);
     };
     if (Platform.OS === 'android') {
       subscription = logEmitter.addListener('BBMT_DROID', async log => {
@@ -1572,7 +1631,10 @@ const MobilesPairing = ({navigation}: any) => {
       padding: 12,
     },
     retryButton: {
-      backgroundColor: theme.colors.secondary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
       borderRadius: 18,
       flexDirection: 'row',
       alignItems: 'center',
@@ -1587,7 +1649,10 @@ const MobilesPairing = ({navigation}: any) => {
       minHeight: 36, // Ensure consistent height
     },
     retryLink: {
-      color: theme.colors.background,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.text,
       fontSize: theme.fontSizes?.base || 14,
       fontFamily: theme.fontFamilies?.bold,
       textAlign: 'center',
@@ -3264,7 +3329,10 @@ const MobilesPairing = ({navigation}: any) => {
                         style={{
                           width: 18,
                           height: 18,
-                          tintColor: theme.colors.background,
+                          tintColor:
+                            theme.colors.background === '#ffffff'
+                              ? theme.colors.white
+                              : theme.colors.text,
                         }}
                         resizeMode="contain"
                       />
@@ -3665,7 +3733,7 @@ const MobilesPairing = ({navigation}: any) => {
                                 <View style={styles.statusRow}>
                                   <View style={styles.statusIndicator} />
                                   <Text style={styles.finalizingStatusText}>
-                                    Processing cryptographic operations
+                                    {status}
                                   </Text>
                                 </View>
                                 <Text style={styles.finalizingCountdownText}>
@@ -4392,7 +4460,7 @@ const MobilesPairing = ({navigation}: any) => {
                             <View style={styles.statusRow}>
                               <View style={styles.statusIndicator} />
                               <Text style={styles.finalizingStatusText}>
-                                Processing multi-party signature
+                                {status}
                               </Text>
                             </View>
                             <Text style={styles.finalizingCountdownText}>

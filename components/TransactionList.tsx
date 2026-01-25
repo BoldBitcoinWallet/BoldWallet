@@ -713,7 +713,6 @@ const TransactionList = React.forwardRef<
           appTheme.fontSizes?.md ||
           COMMON_FONT_CONFIGS.bitcoinAmountMono.fontSize,
         letterSpacing: COMMON_FONT_CONFIGS.bitcoinAmountMono.letterSpacing,
-        fontVariant: ['no-ligatures'] as any, // Type assertion needed for React Native FontVariant
         color: appTheme.colors.text,
         opacity: 0.95,
       },
@@ -949,7 +948,8 @@ const TransactionList = React.forwardRef<
         getTransactionStatus,
         getTransactionAmounts,
         address,
-        styles.transactionItem,
+        appTheme.colors.background,
+        appTheme.colors.bitcoinOrange,
         styles.transactionRow,
         styles.statusContainer,
         styles.statusIcon,
@@ -964,8 +964,8 @@ const TransactionList = React.forwardRef<
         styles.txId,
         styles.txText,
         styles.timestamp,
-        appTheme.colors.background,
-        appTheme.colors.bitcoinOrange,
+        styles.transactionItem,
+        styles.transactionItemPressed,
         isBlurred,
         getCurrencySymbol,
         selectedCurrency,
@@ -974,7 +974,7 @@ const TransactionList = React.forwardRef<
     );
     const renderEmptyComponent = useCallback(() => {
       if (loading) {
-        return <TransactionListSkeleton />;
+        return <TransactionListSkeleton noContainerPadding={true} />;
       }
       return (
         <View style={styles.emptyContainer}>

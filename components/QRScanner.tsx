@@ -1,12 +1,5 @@
 import React, {useState, useEffect, useRef} from 'react';
-import {
-  View,
-  Text,
-  Pressable,
-  StyleSheet,
-  Modal,
-  Platform,
-} from 'react-native';
+import {View, Text, Pressable, StyleSheet, Modal, Platform} from 'react-native';
 import {useTheme} from '../theme';
 import {dbg} from '../utils';
 // iOS-specific imports (only imported when needed)
@@ -99,11 +92,17 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
       fontSize: theme.fontSizes?.['2xl'] || 20,
       fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.white,
+      backgroundColor: theme.colors.blackOverlay30,
+      borderRadius: 12,
+      padding: 12,
       marginBottom: 8,
     },
     scannerSubtitle: {
       fontSize: theme.fontSizes?.base || 14,
-      color: theme.colors.white + 'B3', // ~70% opacity
+      color: theme.colors.white,
+      backgroundColor: theme.colors.blackOverlay30,
+      borderRadius: 12,
+      padding: 12,
       textAlign: 'center',
       paddingHorizontal: 20,
     },
@@ -167,7 +166,7 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
           <Pressable
             style={styles.closeScannerButton}
             onPress={onClose}
-            android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
             <Text style={styles.closeScannerButtonText}>{closeButtonText}</Text>
           </Pressable>
         </View>
@@ -223,7 +222,7 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
         <Pressable
           style={styles.closeScannerButton}
           onPress={onClose}
-          android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
           <Text style={styles.closeScannerButtonText}>{closeButtonText}</Text>
         </Pressable>
       </View>
@@ -487,7 +486,7 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
           <Pressable
             style={styles.closeScannerButton}
             onPress={handleClose}
-            android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
             <Text style={styles.closeScannerButtonText}>{closeButtonText}</Text>
           </Pressable>
         </View>

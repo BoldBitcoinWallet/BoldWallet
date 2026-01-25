@@ -302,6 +302,8 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       const {psbtBase64} = pendingPSBTParams;
       const routeName =
         transport === 'local' ? 'Devices Pairing' : 'Nostr Connect';
+      // For PSBT signing, network is not strictly required (extracted from app state in MobilesPairing),
+      // but we pass it for consistency. Derivation path is extracted from PSBT's Bip32Derivation.
       navigation.dispatch(
         CommonActions.navigate({
           name: routeName,
@@ -309,12 +311,13 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
             mode: 'sign_psbt',
             addressType,
             psbtBase64,
+            network: network || 'mainnet', // Pass network for consistency (not strictly required for PSBT)
           },
         }),
       );
       setPendingPSBTParams(null);
     },
-    [pendingPSBTParams, addressType, navigation],
+    [pendingPSBTParams, addressType, navigation, network],
   );
   const headerLeft = React.useCallback(
     () => (

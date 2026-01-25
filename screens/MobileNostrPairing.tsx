@@ -36,12 +36,7 @@ import * as Progress from 'react-native-progress';
 import {CommonActions, RouteProp, useRoute} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Big from 'big.js';
-import {
-  dbg,
-  HapticFeedback,
-  getNostrRelays,
-  hexToString,
-} from '../utils';
+import {dbg, HapticFeedback, getNostrRelays, hexToString} from '../utils';
 import {useTheme} from '../theme';
 import LocalCache from '../services/LocalCache';
 import {WalletService} from '../services/WalletService';
@@ -60,15 +55,7 @@ const ProgressAnimatedView: React.FC<{
       width: `${width}%`,
     };
   });
-  return (
-    <Animated.View
-      style={[
-        style,
-        {backgroundColor},
-        animatedStyle,
-      ]}
-    />
-  );
+  return <Animated.View style={[style, {backgroundColor}, animatedStyle]} />;
 };
 
 type RouteParams = {
@@ -433,9 +420,6 @@ const MobileNostrPairing = ({navigation}: any) => {
             );
             setProgress(Math.round((100 * msg.step) / keygenSteps));
             dbg('keygen_hook_info:', msg.info);
-            const statusDot =
-              msg.step % 3 === 0 ? '.' : msg.step % 3 === 1 ? '..' : '...';
-            setStatus('Processing cryptographic operations' + statusDot);
           }
         } else if (msg.type === 'btc_send') {
           if (msg.done) {
@@ -452,9 +436,6 @@ const MobileNostrPairing = ({navigation}: any) => {
             });
           }
           dbg('btc_send_hook_info:', msg.info);
-          const statusDot =
-            msg.step % 3 === 0 ? '.' : msg.step % 3 === 1 ? '..' : '...';
-          setStatus('Processing cryptographic operations' + statusDot);
         } else if (msg.type === 'keysign') {
           const prgUTXO = (utxoIndex - 1) * utxoRange;
           const progressValue =
@@ -473,16 +454,24 @@ const MobileNostrPairing = ({navigation}: any) => {
             'time',
             new Date(msg.time),
           );
-          setProgress(progressValue);
           dbg('keysign_hook_info:', msg.info);
-          const statusDot =
-            msg.step % 3 === 0 ? '.' : msg.step % 3 === 1 ? '..' : '...';
-          setStatus('Processing cryptographic operations' + statusDot);
+          if (progressValue > 0) {
+            setProgress(progressValue);
+          }
+          if (progressValue > 100) {
+            setProgress(100);
+          }
           if (msg.done) {
+            utxoIndex = 0;
+            utxoCount = 0;
+            utxoRange = 0;
             setProgress(100);
             setMpcDone(true);
           }
         }
+        const statusDot =
+          msg.step % 3 === 0 ? '.' : msg.step % 3 === 1 ? '..' : '...';
+        setStatus('Processing cryptographic operations' + statusDot);
       } catch {
         // If parsing fails, it might be a log message, just log it
         dbg('TSS log:', message);
@@ -1925,47 +1914,55 @@ const MobileNostrPairing = ({navigation}: any) => {
         psbtLength: route.params.psbtBase64?.length,
       });
       // Call native module for PSBT signing
-      const signedPsbt = await BBMTLibNativeModule.nostrMpcSignPSBT(
+      await BBMTLibNativeModule.nostrMpcSignPSBT(
         relaysCSV,
         nsecToUse,
         partiesNpubsCSV,
         npubsSorted,
         keyshareJSON,
         route.params.psbtBase64,
-      );
-      // Validate result
-      if (
-        !signedPsbt ||
-        signedPsbt.includes('error') ||
-        signedPsbt.includes('failed')
-      ) {
-        throw new Error(signedPsbt || 'PSBT signing failed');
-      }
-      dbg('PSBT signed successfully, length:', signedPsbt.length);
-      // Check user's wallet mode preference before navigating
-      let targetRoute = 'Home';
-      try {
-        const walletMode =
-          (await EncryptedStorage.getItem('wallet_mode')) || 'full';
-        targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
-        dbg(
-          'PSBT signing complete: Navigating to',
-          targetRoute,
-          'based on wallet_mode:',
-          walletMode,
-        );
-      } catch (error) {
-        dbg('Error loading wallet_mode after PSBT signing:', error);
-        // Default to 'Home' if there's an error
-      }
-      // Navigate to the appropriate screen based on user preference
-      navigation.dispatch(
-        CommonActions.reset({
-          index: 0,
-          routes: [{name: targetRoute, params: {signedPsbt}}],
-        }),
-      );
-      setMpcDone(true);
+      )
+        .then(async (signedPsbt: any) => {
+          if (
+            !signedPsbt ||
+            signedPsbt.includes('error') ||
+            signedPsbt.includes('failed')
+          ) {
+            Alert.alert(
+              'Operation Error',
+              `Could not sign PSBT.\n${String(signedPsbt)}`,
+            );
+            dbg(localNpub, 'PSBT signing error', String(signedPsbt));
+          } else {
+            dbg(localNpub, 'PSBT signed successfully');
+          }
+          // Check user's wallet mode preference before navigating
+          let targetRoute = 'Home';
+
+          const walletMode =
+            (await EncryptedStorage.getItem('wallet_mode')) || 'full';
+          targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
+          dbg(
+            'PSBT signing complete: Navigating to',
+            targetRoute,
+            'based on wallet_mode:',
+            walletMode,
+          );
+          navigation.dispatch(
+            CommonActions.reset({
+              index: 0,
+              routes: [{name: targetRoute, params: {signedPsbt}}],
+            }),
+          );
+          setMpcDone(true);
+        })
+        .catch((e: any) => {
+          Alert.alert('Operation Error', `Could not sign PSBT.\n${e?.message}`);
+          dbg(localNpub, 'PSBT signing error', e);
+        })
+        .finally(async () => {
+          setMpcDone(true);
+        });
     } catch (error: any) {
       dbg('Sign PSBT error:', error);
       Alert.alert('Error', error?.message || 'PSBT signing failed');
@@ -3774,7 +3771,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           HapticFeedback.light();
                           setShowHelpModal(true);
                         }}
-                        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                         <Image
                           source={require('../assets/about-icon.png')}
                           style={styles.helpIcon}
@@ -3839,7 +3836,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                               );
                             }
                           }}
-                          android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                           <Text style={styles.cancelLink}>
                             {isSendBitcoin || isSignPSBT ? 'Cancel' : 'Abort'}
                           </Text>
@@ -3858,7 +3855,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           HapticFeedback.light();
                           setShowRelayConfig(!showRelayConfig);
                         }}
-                        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                         <Text style={styles.collapsibleHeaderText}>
                           {showRelayConfig ? '▼' : '▶'} Advanced: Nostr Relays
                           Settings
@@ -4245,7 +4242,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                                                       '...',
                                               );
                                             }}
-                                            android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                                            android_ripple={{
+                                              color: 'rgba(0,0,0,0.1)',
+                                            }}>
                                             <Image
                                               source={require('../assets/phone-icon.png')}
                                               style={styles.sendModeDeviceIcon}
@@ -4437,7 +4436,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           <View style={{flexDirection: 'row', gap: 8}}>
                             <Pressable
                               onPress={copyConnectionDetails}
-                              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
+                              android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                               style={{
                                 padding: 8,
                                 backgroundColor:
@@ -4458,7 +4457,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                             </Pressable>
                             <Pressable
                               onPress={showQRModal}
-                              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
+                              android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                               style={{
                                 padding: 8,
                                 backgroundColor:
@@ -4556,7 +4555,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 styles.iconButtonCentered,
                               ]}
                               onPress={() => clearPeerConnection(1)}
-                              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                               <Image
                                 source={require('../assets/delete-icon.png')}
                                 style={styles.iconImage}
@@ -4572,7 +4571,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   styles.iconButtonCentered,
                                 ]}
                                 onPress={() => handlePaste(1)}
-                                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                                 <Image
                                   source={require('../assets/paste-icon.png')}
                                   style={styles.iconImage}
@@ -4591,7 +4590,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   scanningForPeerRef.current = peerNum; // Update ref immediately
                                   setIsQRScannerVisible(true);
                                 }}
-                                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                                 <Image
                                   source={require('../assets/scan-icon.png')}
                                   style={styles.iconImage}
@@ -4688,7 +4687,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   styles.iconButtonCentered,
                                 ]}
                                 onPress={() => clearPeerConnection(2)}
-                                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                                 <Image
                                   source={require('../assets/delete-icon.png')}
                                   style={styles.iconImage}
@@ -4704,7 +4703,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                     styles.iconButtonCentered,
                                   ]}
                                   onPress={() => handlePaste(2)}
-                                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                                   <Image
                                     source={require('../assets/paste-icon.png')}
                                     style={styles.iconImage}
@@ -4723,7 +4722,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                     scanningForPeerRef.current = peerNum; // Update ref immediately
                                     setIsQRScannerVisible(true);
                                   }}
-                                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                                   <Image
                                     source={require('../assets/scan-icon.png')}
                                     style={styles.iconImage}
@@ -4765,7 +4764,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                             ]}
                             onPress={prepareDevice}
                             disabled={isPreparing || !isPrepared}
-                            android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                             <Image
                               source={require('../assets/prepare-icon.png')}
                               style={styles.iconPrepare}
@@ -4868,7 +4867,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                               HapticFeedback.medium();
                               setShowHelpModal(false);
                             }}
-                            android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                             <Text style={styles.qrModalCloseText}>✕</Text>
                           </Pressable>
                         </View>
@@ -5231,7 +5230,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                       <Pressable
                         style={styles.checkboxContainer}
                         onPress={toggleKeysignReady}
-                        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                         <View
                           style={[
                             styles.checkbox,
@@ -5470,7 +5469,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                               (isSignPSBT && !isKeysignReady)
                             : !canStartKeygen
                         }
-                        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                         <View style={styles.buttonContent}>
                           {(isSendBitcoin ||
                             isSignPSBT ||
@@ -5568,9 +5567,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                   <View style={styles.statusContainer}>
                     <View style={styles.statusRow}>
                       <View style={styles.statusIndicator} />
-                      <Text style={styles.finalizingStatusText}>
-                        {status || 'Processing cryptographic operations'}
-                      </Text>
+                      <Text style={styles.finalizingStatusText}>{status}</Text>
                     </View>
                     <Text style={styles.finalizingCountdownText}>
                       Time elapsed: {prepCounter} seconds
@@ -5629,9 +5626,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                   <View style={styles.statusContainer}>
                     <View style={styles.statusRow}>
                       <View style={styles.statusIndicator} />
-                      <Text style={styles.finalizingStatusText}>
-                        {status || 'Processing multi-party signature'}
-                      </Text>
+                      <Text style={styles.finalizingStatusText}>{status}</Text>
                     </View>
                     <Text style={styles.finalizingCountdownText}>
                       Time elapsed: {prepCounter} seconds
@@ -5864,7 +5859,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                   HapticFeedback.medium();
                   setIsQRModalVisible(false);
                 }}
-                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <Text style={styles.qrModalCloseText}>✕</Text>
               </Pressable>
             </View>
@@ -5896,7 +5891,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                   gap: 8,
                 }}
                 onPress={shareConnectionDetails}
-                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <Image
                   source={require('../assets/share-icon.png')}
                   style={styles.iconShare}

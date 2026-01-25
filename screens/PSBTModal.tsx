@@ -779,7 +779,9 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
             removeClippedSubviews
             keyboardShouldPersistTaps="handled"
             overScrollMode="never"
-            showsVerticalScrollIndicator={false}>
+            showsVerticalScrollIndicator={true}
+            nestedScrollEnabled={true}
+            scrollEnabled={true}>
             {/* Transaction Flow Diagram - Vertical Mobile-Friendly Layout */}
             <View style={styles.transactionFlow}>
               {/* Inputs Section */}
@@ -1116,8 +1118,9 @@ const createStyles = (theme: any) =>
       color: theme.colors.white,
     },
     detailsContainer: {
-      maxHeight: 400,
+      maxHeight: Platform.OS === 'android' ? 500 : 400,
       marginBottom: 16,
+      flexGrow: 0,
     },
     summaryHeader: {
       flexDirection: 'row',
@@ -1185,7 +1188,10 @@ const createStyles = (theme: any) =>
     derivePathText: {
       fontSize: theme.fontSizes?.xs || 10,
       fontFamily: theme.fontFamilies?.monospace,
-      color: theme.colors.primary,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
       flex: 1,
     },
     outputRow: {
@@ -1224,7 +1230,10 @@ const createStyles = (theme: any) =>
     derivePathSummaryText: {
       fontSize: theme.fontSizes?.sm || 12,
       fontFamily: theme.fontFamilies?.monospaceMedium,
-      color: theme.colors.primary,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     derivePathNote: {
       fontSize: theme.fontSizes?.xs || 9,
@@ -1281,7 +1290,10 @@ const createStyles = (theme: any) =>
     flowItemPath: {
       fontSize: theme.fontSizes?.xs || 9,
       fontFamily: theme.fontFamilies?.monospaceMedium,
-      color: theme.colors.primary,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     flowItemType: {
       fontSize: theme.fontSizes?.xs || 9,
@@ -1295,7 +1307,10 @@ const createStyles = (theme: any) =>
     flowAmountBTC: {
       fontSize: theme.fontSizes?.sm || 12,
       fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.primary,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     flowAmountFiat: {
       fontSize: theme.fontSizes?.xs || 9,
@@ -1363,7 +1378,10 @@ const createStyles = (theme: any) =>
     summaryBarPath: {
       fontSize: theme.fontSizes?.xs || 10,
       fontFamily: theme.fontFamilies?.monospaceMedium,
-      color: theme.colors.primary,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     summaryBarBadge: {
       backgroundColor: theme.colors.primary + '20',
@@ -1474,7 +1492,10 @@ const createStyles = (theme: any) =>
     signButton: {
       flex: 1,
       flexDirection: 'row',
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
       borderRadius: 12,
       paddingVertical: 14,
       alignItems: 'center',

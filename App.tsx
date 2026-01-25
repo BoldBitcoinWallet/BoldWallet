@@ -71,8 +71,12 @@ const HomeHeader = (props: any) => <CustomHeader {...props} height={60} />;
 const PSBTHeader = (props: any) => <CustomHeader {...props} height={60} />;
 const SettingsHeader = (props: any) => <CustomHeader {...props} height={60} />;
 const WelcomeHeader = (props: any) => <CustomHeader {...props} height={60} />;
-const DevicesPairingHeader = (props: any) => <CustomHeader {...props} height={60} />;
-const NostrConnectHeader = (props: any) => <CustomHeader {...props} height={60} />;
+const DevicesPairingHeader = (props: any) => (
+  <CustomHeader {...props} height={60} />
+);
+const NostrConnectHeader = (props: any) => (
+  <CustomHeader {...props} height={60} />
+);
 const App = () => {
   const [initialRoute, setInitialRoute] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -208,7 +212,7 @@ const App = () => {
     debugLoggingEnabledRef.current = debugLoggingEnabled;
     // Always disable logging by default (even in __DEV__)
     // Only enable if explicitly toggled via debug setting
-    if (!debugLoggingEnabled) {
+    if (!__DEV__ && !debugLoggingEnabled) {
       BBMTLibNativeModule.disableLogging('ok')
         .then((feedback: any) => {
           if (feedback === 'ok') {
@@ -381,86 +385,86 @@ const AppContent = ({initialRoute}: {initialRoute: string | null}) => {
     <UserProvider>
       <WalletProvider>
         <View style={dynamicStyles.navigationContainer}>
-                <NavigationContainer>
-                  <Stack.Navigator
-                    initialRouteName={initialRoute || undefined}
-                    screenOptions={{
-                      headerShown: false,
-                      headerTitleAlign: 'left',
-                    }}>
-                    <Stack.Screen
-                      name="PSBT"
-                      component={PSBTScreen}
-                      options={{
-                        headerShown: true,
-                        headerLeft: () => null,
-                        headerTitle: '',
-                        headerTitleAlign: 'left',
-                        header: PSBTHeader,
-                      }}
-                    />
-                    <Stack.Screen
-                      name="Home"
-                      component={WalletHome}
-                      options={{
-                        headerShown: true,
-                        headerLeft: () => null,
-                        headerTitle: '',
-                        headerTitleAlign: 'left',
-                        header: HomeHeader,
-                      }}
-                    />
-                    <Stack.Screen
-                      name="Welcome"
-                      component={ShowcaseScreen}
-                      options={{
-                        header: WelcomeHeader,
-                        title: 'Welcome',
-                      }}
-                    />
-                    <Stack.Screen
-                      name="Settings"
-                      component={WalletSettings}
-                      options={{
-                        headerShown: true,
-                        header: SettingsHeader,
-                        title: 'Settings',
-                      }}
-                    />
-                    <Stack.Screen
-                      name="Devices Pairing"
-                      component={MobilesPairing}
-                      options={{
-                        headerShown: true,
-                        header: DevicesPairingHeader,
-                        title: 'Devices Pairing',
-                      }}
-                    />
-                    <Stack.Screen
-                      name="Nostr Connect"
-                      component={MobileNostrPairing}
-                      options={{
-                        headerShown: true,
-                        header: NostrConnectHeader,
-                        title: 'Nostr Connect',
-                      }}
-                    />
-                    <Stack.Screen
-                      name="User Preferences"
-                      component={UserPreferenceScreen}
-                      options={{
-                        headerShown: false,
-                        title: 'User Preferences',
-                      }}
-                    />
-                  </Stack.Navigator>
-                </NavigationContainer>
-                <View style={styles.toastWrapper}>
-                  <Toast config={createToastConfig(theme)} />
-                </View>
-              </View>
-            </WalletProvider>
-          </UserProvider>
+          <NavigationContainer>
+            <Stack.Navigator
+              initialRouteName={initialRoute || undefined}
+              screenOptions={{
+                headerShown: false,
+                headerTitleAlign: 'left',
+              }}>
+              <Stack.Screen
+                name="PSBT"
+                component={PSBTScreen}
+                options={{
+                  headerShown: true,
+                  headerLeft: () => null,
+                  headerTitle: '',
+                  headerTitleAlign: 'left',
+                  header: PSBTHeader,
+                }}
+              />
+              <Stack.Screen
+                name="Home"
+                component={WalletHome}
+                options={{
+                  headerShown: true,
+                  headerLeft: () => null,
+                  headerTitle: '',
+                  headerTitleAlign: 'left',
+                  header: HomeHeader,
+                }}
+              />
+              <Stack.Screen
+                name="Welcome"
+                component={ShowcaseScreen}
+                options={{
+                  header: WelcomeHeader,
+                  title: 'Welcome',
+                }}
+              />
+              <Stack.Screen
+                name="Settings"
+                component={WalletSettings}
+                options={{
+                  headerShown: true,
+                  header: SettingsHeader,
+                  title: 'Settings',
+                }}
+              />
+              <Stack.Screen
+                name="Devices Pairing"
+                component={MobilesPairing}
+                options={{
+                  headerShown: true,
+                  header: DevicesPairingHeader,
+                  title: 'Devices Pairing',
+                }}
+              />
+              <Stack.Screen
+                name="Nostr Connect"
+                component={MobileNostrPairing}
+                options={{
+                  headerShown: true,
+                  header: NostrConnectHeader,
+                  title: 'Nostr Connect',
+                }}
+              />
+              <Stack.Screen
+                name="User Preferences"
+                component={UserPreferenceScreen}
+                options={{
+                  headerShown: false,
+                  title: 'User Preferences',
+                }}
+              />
+            </Stack.Navigator>
+          </NavigationContainer>
+          <View style={styles.toastWrapper}>
+            <Toast config={createToastConfig(theme)} />
+          </View>
+        </View>
+      </WalletProvider>
+    </UserProvider>
   );
 };
 const styles = StyleSheet.create({
