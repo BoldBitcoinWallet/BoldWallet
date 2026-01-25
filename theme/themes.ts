@@ -104,11 +104,11 @@ export const lightTheme: Theme = {
     success: '#34C759',
     successLight: '#66BB6A',
     skeletonGray: '#e9ecef',
-    // Switch component colors
-    switchTrackFalse: '#E5E7EB', // Light gray when off
-    switchTrackTrue: '#34C759', // Success green when on
-    switchThumb: '#FFFFFF', // White thumb
-    switchIosBackground: '#E5E7EB', // Light gray for iOS
+    // Switch component colors - using palette colors
+    switchTrackFalse: '#cbd5e1', // Use disabled color from palette
+    switchTrackTrue: '#34C759', // Use success color from palette
+    switchThumb: '#fff', // Use white from palette
+    switchIosBackground: '#cbd5e1', // Use disabled color for iOS
     // Overlay colors for glassmorphism effects
     blackOverlay05: 'rgba(0, 0, 0, 0.05)',
     blackOverlay06: 'rgba(0, 0, 0, 0.06)',
@@ -191,11 +191,11 @@ export const darkTheme: Theme = {
     success: '#34C759', // iOS success green
     successLight: '#66BB6A', // Lighter success green
     skeletonGray: '#2a2a2a', // Dark gray for skeleton loaders in dark mode
-    // Switch component colors
-    switchTrackFalse: '#424242', // Dark gray when off
-    switchTrackTrue: '#34C759', // Success green when on
-    switchThumb: '#FFFFFF', // White thumb
-    switchIosBackground: '#424242', // Dark gray for iOS
+    // Switch component colors - using palette colors
+    switchTrackFalse: '#424242', // Use disabled color from palette
+    switchTrackTrue: '#34C759', // Use success color from palette
+    switchThumb: '#FFFFFF', // Use white from palette
+    switchIosBackground: '#424242', // Use disabled color for iOS
     // Overlay colors for glassmorphism effects (same values for dark mode)
     blackOverlay05: 'rgba(0, 0, 0, 0.05)',
     blackOverlay06: 'rgba(0, 0, 0, 0.06)',
@@ -280,11 +280,11 @@ export const themes = {
       success: '#34C759',
       successLight: '#66BB6A',
       skeletonGray: '#e9ecef',
-      // Switch component colors
-      switchTrackFalse: '#E5E7EB', // Light gray when off
-      switchTrackTrue: '#34C759', // Success green when on
-      switchThumb: '#FFFFFF', // White thumb
-      switchIosBackground: '#E5E7EB', // Light gray for iOS
+      // Switch component colors - using palette colors
+      switchTrackFalse: '#cbd5e1', // Use disabled color from palette
+      switchTrackTrue: '#34C759', // Use success color from palette
+      switchThumb: '#fff', // Use white from palette
+      switchIosBackground: '#cbd5e1', // Use disabled color for iOS
       // Overlay colors for glassmorphism effects
       blackOverlay05: 'rgba(0, 0, 0, 0.05)',
       blackOverlay06: 'rgba(0, 0, 0, 0.06)',
