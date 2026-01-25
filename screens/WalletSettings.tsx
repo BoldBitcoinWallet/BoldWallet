@@ -693,6 +693,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     fontTesting: false,
   });
   const {theme, themeMode, setThemeMode} = useTheme();
+  // Force re-render on Android when theme changes
+  const [themeUpdateKey, setThemeUpdateKey] = useState(0);
   const [appVersion, setAppVersion] = useState('');
   const [buildNumber, setBuildNumber] = useState('');
   const [usageSize, setUsageSize] = useState<{fileCount: number; mb: string}>({
@@ -2095,9 +2097,14 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           : theme.colors.bitcoinOrange,
     },
   }), [theme]);
+  // Force re-render on Android when theme changes
+  useEffect(() => {
+    setThemeUpdateKey(prev => prev + 1);
+  }, [theme.colors.background, themeMode]);
   return (
-    <SafeAreaView style={styles.container} edges={['left', 'right']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']} key={themeUpdateKey}>
       <ScrollView
+        key={themeUpdateKey}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         removeClippedSubviews
