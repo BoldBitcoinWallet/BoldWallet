@@ -328,7 +328,13 @@ const ReceiveModal: React.FC<{
               }}
               android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
               <View style={styles.addressTextContainer}>
-                <Text style={styles.addressTextInteractive}>{address}</Text>
+                <Text 
+                  style={styles.addressTextInteractive}
+                  adjustsFontSizeToFit={true}
+                  numberOfLines={1}
+                  minimumFontScale={0.5}>
+                  {address}
+                </Text>
               </View>
               <Text style={styles.addressHint}>Tap to view in explorer</Text>
               {isCopied && (
