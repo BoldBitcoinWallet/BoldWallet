@@ -30,6 +30,7 @@ export interface ThemeColors {
   warning: string;
   warningLight: string;
   warningAccent: string;
+  warningBg: string; // Background color for warning containers
   warningBorder: string; // Border color for warning containers
   warningText: string; // Text color for warning containers
   success: string;

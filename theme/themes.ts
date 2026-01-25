@@ -98,6 +98,7 @@ export const lightTheme: Theme = {
     warning: '#FFA500',
     warningLight: '#FFD700',
     warningAccent: '#FF6B35',
+    warningBg: '#FFF3CD', // Light yellow background for warning containers
     warningBorder: '#FFC107', // Amber border for warning containers
     warningText: '#856404', // Dark amber text for warning containers
     success: '#34C759',
@@ -179,6 +180,7 @@ export const darkTheme: Theme = {
     warning: '#FFA500', // Orange for warnings
     warningLight: '#FFD700', // Lighter orange
     warningAccent: '#FF6B35', // Accent orange
+    warningBg: '#3D2F00', // Dark amber background for warning containers in dark mode
     warningBorder: '#FFA000', // Amber border for warning containers in dark mode
     warningText: '#FFC107', // Amber text for warning containers in dark mode
     success: '#34C759', // iOS success green
@@ -262,6 +264,7 @@ export const themes = {
       warning: '#FFA500',
       warningLight: '#FFD700',
       warningAccent: '#FF6B35',
+      warningBg: '#FFF3CD', // Light yellow background for warning containers
       warningBorder: '#FFC107', // Amber border for warning containers
       warningText: '#856404', // Dark amber text for warning containers
       success: '#34C759',

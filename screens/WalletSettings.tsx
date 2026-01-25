@@ -2811,10 +2811,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             style={[
               styles.warningContainer,
               {
-                backgroundColor:
-                  theme.colors.background === '#ffffff'
-                    ? '#FFF3CD'
-                    : '#3D2F00',
+                backgroundColor: theme.colors.warningBg,
                 borderColor: theme.colors.warningBorder,
               },
             ]}>
