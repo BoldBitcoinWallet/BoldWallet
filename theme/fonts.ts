@@ -176,19 +176,19 @@ export const FONT_STYLES = {
     fontFamily: FONT_FAMILIES.monospace,
     fontSize: 14,
     lineHeight: 20,
-    fontVariant: ['no-ligatures'] as any, // Disable ligatures - critical for Bitcoin
+    fontFeatureSettings: '"liga" 0', // Disable ligatures - critical for Bitcoin
   },
   addressSmall: {
     fontFamily: FONT_FAMILIES.monospace,
     fontSize: 12,
     lineHeight: 16,
-    fontVariant: ['no-ligatures'] as any, // Disable ligatures
+    fontFeatureSettings: '"liga" 0', // Disable ligatures
   },
   code: {
     fontFamily: FONT_FAMILIES.monospace,
     fontSize: 13,
     lineHeight: 18,
-    fontVariant: ['no-ligatures'] as any, // Disable ligatures
+    fontFeatureSettings: '"liga" 0', // Disable ligatures
   },
   // Bitcoin amounts - Inter Medium/SemiBold for trust and clarity
   amount: {
@@ -332,8 +332,7 @@ export const COMMON_FONT_CONFIGS = {
     fontFamily: FONT_FAMILIES.monospace,
     fontSize: 14,
     letterSpacing: 0.5,
-    fontVariant: ['no-ligatures'] as any,
-    fontFeatureSettings: '"liga" 0', // Alternative method to disable ligatures
+    fontFeatureSettings: '"liga" 0', // Disable ligatures
   } as TextStyle,
   // For Bitcoin amounts - Inter Medium for trust (proportional)
   bitcoinAmount: {
@@ -346,7 +345,6 @@ export const COMMON_FONT_CONFIGS = {
     fontFamily: FONT_FAMILIES.monospace, // Use Regular for best cross-platform consistency
     fontSize: 15,
     letterSpacing: 0,
-    fontVariant: ['no-ligatures'] as any,
     fontFeatureSettings: '"liga" 0', // Disable ligatures for consistent rendering
   } as TextStyle,
   // For QR code labels - Inter Regular
@@ -366,7 +364,6 @@ export const COMMON_FONT_CONFIGS = {
     fontFamily: FONT_FAMILIES.monospace,
     fontSize: 16,
     letterSpacing: 0.5,
-    fontVariant: ['no-ligatures'] as any,
-    fontFeatureSettings: '"liga" 0',
+    fontFeatureSettings: '"liga" 0', // Disable ligatures
   } as TextStyle,
 };

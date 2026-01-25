@@ -1,6 +1,7 @@
 import {Platform} from 'react-native';
 import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 import LocalCache from './services/LocalCache';
+import {isDebugLoggingEnabled} from './App';
 
 let ips = [];
 
@@ -18,8 +19,9 @@ export const getPinnedRemoteIP = () => (ips.length ? ips[ips.length - 1] : '');
 export const getPinnedRemoteIPs = () => [...ips];
 
 export const dbg = (message, ...optionalParams) => {
-  // Disable debug logging in production builds to prevent information leakage
-  if (!__DEV__) {
+  // Disable debug logging by default (even in __DEV__)
+  // Only enable if explicitly toggled via debug setting in WalletSettings
+  if (!isDebugLoggingEnabled()) {
     return;
   }
   let args = optionalParams.length === 0 ? '' : optionalParams;
@@ -394,6 +396,11 @@ export const formatSats = (satsAmount) => {
   const amount = parseFloat(amountStr);
   
   if (isNaN(amount) || amount < 0) {
+    return '0';
+  }
+
+  // Handle zero amount explicitly
+  if (amount === 0) {
     return '0';
   }
 

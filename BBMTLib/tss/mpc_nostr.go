@@ -732,7 +732,11 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 
 	mpcHook("adding inputs", sessionID, utxoSession, utxoIndex, utxoCount, false)
 	for _, utxo := range selectedUTXOs {
-		hash, _ := chainhash.NewHashFromStr(utxo.TxID)
+		hash, err := chainhash.NewHashFromStr(utxo.TxID)
+		if err != nil {
+			Logf("Error parsing UTXO TxID %s: %v", utxo.TxID, err)
+			return "", fmt.Errorf("invalid UTXO transaction ID %s: %w", utxo.TxID, err)
+		}
 		outPoint := wire.NewOutPoint(hash, utxo.Vout)
 		// Create input with RBF enabled (nSequence = 0xfffffffd)
 		txIn := wire.NewTxIn(outPoint, nil, nil)
@@ -779,7 +783,11 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 		if err != nil {
 			return "", fmt.Errorf("failed to fetch UTXO details for input %d: %w", i, err)
 		}
-		hash, _ := chainhash.NewHashFromStr(utxo.TxID)
+		hash, err := chainhash.NewHashFromStr(utxo.TxID)
+		if err != nil {
+			Logf("Error parsing UTXO TxID %s: %v", utxo.TxID, err)
+			return "", fmt.Errorf("invalid UTXO transaction ID %s for input %d: %w", utxo.TxID, i, err)
+		}
 		outPoint := wire.OutPoint{Hash: *hash, Index: utxo.Vout}
 		prevOuts[outPoint] = txOut
 	}
@@ -1478,17 +1486,47 @@ func runNostrKeysignInternal(cfg nostrtransport.Config, keyshare *LocalStateNost
 	status.Step++
 	status.Info = "running ECDSA keysign"
 	setStep(sessionID, status.Info, status.Step)
-	keysignResp, err := tssService.KeysignECDSA(&KeysignRequest{
-		PubKey:               keyshare.PubKey,
-		MessageToSign:        messageBase64,
-		KeysignCommitteeKeys: keysignCommitteeKeys,
-		LocalPartyKey:        cfg.LocalNpub,
-		DerivePath:           derivePath,
-	})
-	if err != nil {
+	
+	// Check if context is already cancelled before starting keysign
+	select {
+	case <-ctx.Done():
+		pumpCancel()
+		pumpWg.Wait()
+		return "", fmt.Errorf("context cancelled before keysign: %w", ctx.Err())
+	default:
+	}
+	
+	// Run keysign in a goroutine and monitor context timeout
+	keysignErrCh := make(chan error, 1)
+	keysignRespCh := make(chan *KeysignResponse, 1)
+	go func() {
+		resp, err := tssService.KeysignECDSA(&KeysignRequest{
+			PubKey:               keyshare.PubKey,
+			MessageToSign:        messageBase64,
+			KeysignCommitteeKeys: keysignCommitteeKeys,
+			LocalPartyKey:        cfg.LocalNpub,
+			DerivePath:           derivePath,
+		})
+		if err != nil {
+			keysignErrCh <- err
+		} else {
+			keysignRespCh <- resp
+		}
+	}()
+	
+	// Wait for keysign to complete or context to timeout
+	var keysignResp *KeysignResponse
+	select {
+	case <-ctx.Done():
+		pumpCancel()
+		pumpWg.Wait()
+		return "", fmt.Errorf("keysign timed out: %w", ctx.Err())
+	case err := <-keysignErrCh:
 		pumpCancel()
 		pumpWg.Wait()
 		return "", fmt.Errorf("keysign failed: %w", err)
+	case keysignResp = <-keysignRespCh:
+		// Keysign completed successfully
 	}
 
 	// Wait a bit for pump to finish processing
@@ -1703,17 +1741,47 @@ func runNostrKeysignInternalWithSighash(cfg nostrtransport.Config, keyshare *Loc
 	status.Step++
 	status.Info = "running ECDSA keysign"
 	setStep(sessionID, status.Info, status.Step)
-	keysignResp, err := tssService.KeysignECDSA(&KeysignRequest{
-		PubKey:               keyshare.PubKey,
-		MessageToSign:        messageBase64,
-		KeysignCommitteeKeys: keysignCommitteeKeys,
-		LocalPartyKey:        cfg.LocalNpub,
-		DerivePath:           derivePath,
-	})
-	if err != nil {
+	
+	// Check if context is already cancelled before starting keysign
+	select {
+	case <-ctx.Done():
+		pumpCancel()
+		pumpWg.Wait()
+		return "", fmt.Errorf("context cancelled before keysign: %w", ctx.Err())
+	default:
+	}
+	
+	// Run keysign in a goroutine and monitor context timeout
+	keysignErrCh := make(chan error, 1)
+	keysignRespCh := make(chan *KeysignResponse, 1)
+	go func() {
+		resp, err := tssService.KeysignECDSA(&KeysignRequest{
+			PubKey:               keyshare.PubKey,
+			MessageToSign:        messageBase64,
+			KeysignCommitteeKeys: keysignCommitteeKeys,
+			LocalPartyKey:        cfg.LocalNpub,
+			DerivePath:           derivePath,
+		})
+		if err != nil {
+			keysignErrCh <- err
+		} else {
+			keysignRespCh <- resp
+		}
+	}()
+	
+	// Wait for keysign to complete or context to timeout
+	var keysignResp *KeysignResponse
+	select {
+	case <-ctx.Done():
+		pumpCancel()
+		pumpWg.Wait()
+		return "", fmt.Errorf("keysign timed out: %w", ctx.Err())
+	case err := <-keysignErrCh:
 		pumpCancel()
 		pumpWg.Wait()
 		return "", fmt.Errorf("keysign failed: %w", err)
+	case keysignResp = <-keysignRespCh:
+		// Keysign completed successfully
 	}
 
 	// Wait a bit for pump to finish processing

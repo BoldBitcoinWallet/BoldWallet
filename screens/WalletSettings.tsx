@@ -50,6 +50,7 @@ import LegalModal from '../components/LegalModal';
 import BackupKeyshareModal from '../components/BackupKeyshareModal';
 import {fetchDynamicAPIEndpoints, getNostrRelays} from '../utils';
 import FontComparisonScreen from '../components/FontComparisonScreen';
+import {setDebugLoggingEnabled, isDebugLoggingEnabled} from '../App';
 interface CollapsibleSectionProps {
   title: string;
   children: React.ReactNode;
@@ -99,7 +100,7 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
       <Pressable
         style={styles.sectionHeader}
         onPress={handlePress}
-        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
+        android_ripple={{color: 'rgba(0,0,0,0.1)'}}
         accessible={true}
         accessibilityRole="button"
         accessibilityLabel={`${title} section, ${
@@ -336,7 +337,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
           isSelected && styles.apiModalItemSelected,
         ]}
         onPress={() => selectOption(item)}
-        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
         <Image
           source={getNetworkIcon(item)}
           style={styles.apiModalItemIcon}
@@ -439,7 +440,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                   openModal();
                 }
               }}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}
               disabled={isTestnet}>
               <Text
                 style={[
@@ -510,7 +511,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                         styles.apiModalCloseButton,
                         {backgroundColor: theme.colors.cardBackground},
                       ]}
-                      android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                       <Text
                         style={[
                           styles.apiModalCloseText,
@@ -594,7 +595,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                       <Pressable
                         onPress={() => setSearchQuery('')}
                         style={styles.apiModalSearchClear}
-                        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                         <Text
                           style={[
                             styles.apiModalSearchClearText,
@@ -619,8 +620,8 @@ const getSectionIcon = (title: string): any => {
   switch (title.toLowerCase()) {
     case 'theme':
       return require('../assets/theme-icon.png');
-    case 'network':
-      return require('../assets/network-icon.png');
+    case 'network providers':
+      return require('../assets/api-icon.png');
     case 'security':
       return require('../assets/backup-icon.png');
     case 'advanced':
@@ -674,6 +675,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [balanceFormattingEnabled, setBalanceFormattingEnabledState] =
     useState(false); // Default to raw numbers (not formatted)
   const [isApiInfoVisible, setIsApiInfoVisible] = useState(false);
+  const [debugLoggingEnabled, setDebugLoggingEnabledState] = useState(false);
   // Collapsible states
   const [expandedSections, setExpandedSections] = useState<{
     [key: string]: boolean;
@@ -691,6 +693,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     devicePairing: false,
     walletMode: false,
     fontTesting: false,
+    devDebug: false,
   });
   const {theme, themeMode, setThemeMode} = useTheme();
   // Force re-render on Android when theme changes
@@ -747,6 +750,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('Error loading balance_formatting_enabled from storage:', error);
         setBalanceFormattingEnabledState(false);
       });
+    // Initialize debug logging state from module-level ref
+    setDebugLoggingEnabledState(isDebugLoggingEnabled());
   }, []);
   // Load saved icon preference on component mount
   useEffect(() => {
@@ -1058,1051 +1063,1085 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       dbg('Error saving balance_formatting_enabled:', error);
     }
   };
-  const styles = useMemo(() => StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: theme.colors.background,
-    },
-    scrollView: {
-      flex: 1,
-    },
-    scrollContent: {
-      flexGrow: 1,
-      padding: 16,
-      paddingBottom: 24,
-    },
-    header: {
-      paddingHorizontal: 16,
-      borderBottomWidth: 1,
-      borderBottomColor: theme.colors.border,
-    },
-    headerTitle: {
-      fontSize: theme.fontSizes?.['3xl'] || 28,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.text,
-      textAlign: 'center',
-    },
-    collapsibleSection: {
-      marginBottom: 10,
-      backgroundColor: theme.colors.cardBackground,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      overflow: 'hidden',
-      shadowColor: theme.colors.shadowColor,
-      shadowOffset: {width: 0, height: 1},
-      shadowOpacity: 0.1,
-      shadowRadius: 2,
-      elevation: 2,
-    },
-    sectionHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      padding: 12,
-      backgroundColor: theme.colors.cardBackground,
-    },
-    sectionHeaderContent: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      flex: 1,
-    },
-    sectionIcon: {
-      width: 20,
-      height: 20,
-      marginRight: 8,
-      tintColor: theme.colors.text,
-    },
-    sectionHeaderTitle: {
-      fontSize: theme.fontSizes?.lg || 16,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.text,
-    },
-    expandIcon: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontFamily: theme.fontFamilies?.bold,
-    },
-    sectionContent: {
-      paddingHorizontal: 12,
-      borderTopWidth: 1,
-      borderTopColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.accent
-          : theme.colors.bitcoinOrange,
-    },
-    toggleContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 12,
-      paddingHorizontal: 4,
-    },
-    toggleLabel: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.text,
-    },
-    toggleDescription: {
-      fontSize: theme.fontSizes?.base || 13,
-      color: theme.colors.textSecondary,
-      marginTop: 12,
-      textAlign: 'center',
-      marginBottom: 12,
-    },
-    hintText: {
-      fontSize: theme.fontSizes?.base || 13,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.textSecondary,
-      lineHeight: 18,
-      textAlign: 'left' as const,
-    },
-    hintBold: {
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.text,
-    },
-    hintAmount: {
-      fontFamily: theme.fontFamilies?.monospaceBold,
-      color: theme.colors.text,
-    },
-    hintSpacing: {
-      marginBottom: 12,
-    },
-    appIconHintRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    appIconSpyIcon: {
-      width: 28,
-      height: 28,
-      marginRight: 10,
-    },
-    appIconHintTextContainer: {
-      flex: 1,
-    },
-    appIconHintTitle: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.text,
-      marginBottom: 2,
-    },
-    appIconHintSubtitle: {
-      fontSize: theme.fontSizes?.sm || 12,
-      color: theme.colors.textSecondary,
-      lineHeight: 16,
-    },
-    inputAPI: {
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      borderRadius: 6,
-      padding: 10,
-      fontSize: theme.fontSizes?.base || 13,
-      backgroundColor: theme.colors.background,
-      color: theme.colors.text,
-      marginBottom: 8,
-      flex: 1,
-    },
-    apiAutocompleteContainer: {
-      position: 'relative',
-      marginBottom: 8,
-    },
-    apiInputContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      borderRadius: 8,
-      backgroundColor: theme.colors.background,
-      minHeight: 44,
-      shadowColor: theme.colors.shadowColor,
-      shadowOffset: {width: 0, height: 1},
-      shadowOpacity: 0.05,
-      shadowRadius: 2,
-      elevation: 1,
-    },
-    apiInputContainerFocused: {
-      borderColor: theme.colors.primary,
-      shadowColor: theme.colors.primary,
-      shadowOffset: {width: 0, height: 0},
-      shadowOpacity: 0.2,
-      shadowRadius: 4,
-      elevation: 3,
-    },
-    apiTextInput: {
-      flex: 1,
-      paddingHorizontal: 12,
-      paddingVertical: 12,
-      fontSize: theme.fontSizes?.base || 14,
-      color: theme.colors.text,
-      backgroundColor: 'transparent',
-    },
-    apiDropdownButton: {
-      paddingHorizontal: 12,
-      paddingVertical: 12,
-      justifyContent: 'center',
-      alignItems: 'center',
-      borderLeftWidth: 1,
-      borderLeftColor: theme.colors.border,
-    },
-    apiDropdownIcon: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontFamily: theme.fontFamilies?.bold,
-    },
-    apiInputRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-    },
-    apiInputWithButton: {
-      flex: 1,
-    },
-    apiSaveButton: {
-      backgroundColor: theme.colors.primary,
-      paddingHorizontal: 16,
-      paddingVertical: 12,
-      borderRadius: 8,
-      minHeight: 44,
-      justifyContent: 'center',
-      alignItems: 'center',
-      shadowColor: theme.colors.shadowColor,
-      shadowOffset: {width: 0, height: 1},
-      shadowOpacity: 0.1,
-      shadowRadius: 2,
-      elevation: 2,
-    },
-    apiSaveButtonDisabled: {
-      backgroundColor: theme.colors.disabled,
-      shadowOpacity: 0.05,
-    },
-    apiSaveButtonText: {
-      color: theme.colors.textOnPrimary,
-      fontSize: theme.fontSizes?.base || 14,
-      fontFamily: theme.fontFamilies?.bold,
-      textAlign: 'center',
-    },
-    apiSaveButtonTextDisabled: {
-      color: theme.colors.textSecondary,
-    },
-    apiSaveButtonContainer: {
-      marginTop: 8,
-      alignItems: 'flex-start',
-    },
-    apiNetworkInfoContainer: {
-      marginTop: 8,
-      marginBottom: 12,
-      padding: 12,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderStyle: 'dashed',
-      borderColor: theme.colors.border,
-    },
-    apiNetworkModeRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      marginBottom: 8,
-    },
-    apiNetworkModeBadge: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingHorizontal: 10,
-      paddingVertical: 8,
-      borderRadius: 6,
-      gap: 6,
-      minHeight: 36,
-    },
-    apiNetworkModeBadgeTestnet: {
-      backgroundColor: theme.colors.warning + '26', // ~15% opacity
-      borderWidth: 1,
-      borderColor: theme.colors.warning + '4D', // ~30% opacity
-    },
-    apiNetworkModeBadgeMainnet: {
-      backgroundColor: theme.colors.received + '26', // ~15% opacity
-      borderWidth: 1,
-      borderColor: theme.colors.received + '4D', // ~30% opacity
-    },
-    apiNetworkModeIcon: {
-      width: 16,
-      height: 16,
-      marginRight: 6,
-    },
-    apiNetworkModeText: {
-      fontSize: theme.fontSizes?.base || 13,
-      fontFamily: theme.fontFamilies?.bold,
-      letterSpacing: 0.2,
-    },
-    apiNetworkModeTextTestnet: {
-      color:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.accent
-          : theme.colors.text,
-    },
-    apiNetworkModeTextMainnet: {
-      color: theme.colors.received,
-    },
-    apiInfoButton: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingHorizontal: 10,
-      paddingVertical: 8,
-      borderRadius: 6,
-      backgroundColor: theme.colors.background,
-      borderWidth: 1,
-      borderColor: theme.colors.primary,
-      gap: 6,
-      minHeight: 40,
-    },
-    apiInfoButtonIcon: {
-      width: 14,
-      height: 14,
-      tintColor: theme.colors.text, // Use text color for better visibility in dark mode
-    },
-    apiInfoButtonText: {
-      fontSize: theme.fontSizes?.sm || 12,
-      fontFamily: theme.fontFamilies?.bold,
-      color:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.primary
-          : theme.colors.text,
-    },
-    apiNetworkDescription: {
-      fontSize: theme.fontSizes?.sm || 12,
-      lineHeight: 16,
-      marginTop: 4,
-    },
-    apiNetworkDescriptionTestnet: {
-      color: theme.colors.textSecondary,
-    },
-    apiNetworkDescriptionMainnet: {
-      color: theme.colors.textSecondary,
-    },
-    apiActionButtonsRow: {
-      flexDirection: 'row',
-      gap: 12,
-      marginTop: 8,
-      alignItems: 'stretch',
-    },
-    apiActionButton: {
-      flex: 1,
-      minHeight: 44,
-      height: 44,
-    },
-    apiModalContainer: {
-      flex: 1,
-      justifyContent: 'flex-end',
-    },
-    apiModalKeyboardView: {
-      flex: 1,
-      justifyContent: 'flex-end',
-    },
-    apiModalBackdrop: {
-      flex: 1,
-      backgroundColor: theme.colors.modalBackdrop,
-      justifyContent: 'flex-end',
-    },
-    apiModalContent: {
-      backgroundColor: theme.colors.background,
-      borderTopLeftRadius: 10,
-      borderTopRightRadius: 10,
-      paddingBottom: Platform.OS === 'ios' ? 17 : 10,
-      paddingTop: 5,
-      shadowColor: theme.colors.shadowColor,
-      shadowOffset: {width: 0, height: -4},
-      shadowOpacity: 0.2,
-      shadowRadius: 12,
-      elevation: 20,
-      flexDirection: 'column',
-      borderTopWidth: 1,
-      borderLeftWidth: 1,
-      borderRightWidth: 1,
-      borderColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
-          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
-    },
-    apiModalListWrapper: {
-      height: 300,
-      flexShrink: 0,
-    },
-    apiModalFlatList: {
-      flex: 1,
-    },
-    apiModalListContainer: {
-      minHeight: 200,
-      paddingBottom: 20,
-    },
-    apiModalHeader: {
-      paddingTop: 12,
-      paddingBottom: 12,
-      borderBottomWidth: 1,
-      borderBottomColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
-          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
-    },
-    apiModalHeaderTop: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      paddingHorizontal: 20,
-      paddingBottom: 0,
-    },
-    apiModalFooter: {
-      paddingHorizontal: 16,
-      paddingTop: 16,
-      paddingBottom: Platform.OS === 'ios' ? 32 : 24,
-    },
-    apiModalTitle: {
-      fontSize: theme.fontSizes?.lg || 16,
-      fontFamily: theme.fontFamilies?.bold,
-      letterSpacing: -0.5,
-    },
-    apiModalHeaderTitleContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      flex: 1,
-    },
-    apiModalHeaderIcon: {
-      width: 20,
-      height: 20,
-      marginRight: 10,
-    },
-    apiModalCloseButton: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    apiModalCloseText: {
-      fontSize: theme.fontSizes?.xl || 18,
-      fontFamily: theme.fontFamilies?.bold,
-    },
-    apiModalSearchContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginHorizontal: 16,
-      marginTop: 8,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      borderRadius: 12,
-      borderWidth: 1,
-    },
-    apiModalSearchIcon: {
-      width: 16,
-      height: 16,
-      marginRight: 8,
-      tintColor: theme.colors.text,
-    },
-    apiModalSearchInput: {
-      flex: 1,
-      fontSize: theme.fontSizes?.md || 15,
-      padding: 0,
-      margin: 0,
-    },
-    apiModalSearchClear: {
-      padding: 4,
-      marginLeft: 8,
-    },
-    apiModalSearchClearText: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontFamily: theme.fontFamilies?.bold,
-    },
-    apiModalListContent: {
-      paddingTop: 4,
-      paddingBottom: 4,
-    },
-    apiModalItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 16,
-      paddingVertical: 14,
-      marginHorizontal: 16,
-      marginVertical: 0,
-      borderRadius: 0,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      minHeight: 56,
-    },
-    apiModalItemSelected: {
-      backgroundColor: theme.colors.cardBackground,
-    },
-    apiModalItemIcon: {
-      width: 18,
-      height: 18,
-      marginRight: 12,
-      tintColor: theme.colors.text,
-    },
-    apiModalItemText: {
-      flex: 1,
-      fontSize: theme.fontSizes?.md || 15,
-      lineHeight: 20,
-      letterSpacing: -0.2,
-    },
-    apiModalItemTextSelected: {
-      fontFamily: theme.fontFamilies?.bold,
-    },
-    apiModalItemCheckContainer: {
-      width: 24,
-      height: 24,
-      borderRadius: 12,
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginLeft: 8,
-    },
-    apiModalItemCheck: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.white,
-    },
-    apiModalLoading: {
-      padding: 48,
-      alignItems: 'center',
-    },
-    apiModalLoadingText: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontStyle: 'italic',
-    },
-    apiModalEmpty: {
-      padding: 48,
-      alignItems: 'center',
-    },
-    apiModalEmptyText: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontStyle: 'italic',
-    },
-    button: {
-      paddingVertical: 10,
-      borderRadius: 6,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginTop: 6,
-    },
-    deleteButton: {
-      backgroundColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.accent
-          : theme.colors.bitcoinOrange,
-    },
-    backupButton: {
-      backgroundColor: theme.colors.primary,
-      marginBottom: 16, // Add spacing after backup button before delete section
-    },
-    resetButton: {
-      backgroundColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.accent
-          : theme.colors.bitcoinOrange,
-    },
-    buttonText: {
-      color: theme.colors.textOnPrimary,
-      fontSize: theme.fontSizes?.lg || 16,
-      fontFamily: theme.fontFamilies?.bold,
-      textAlign: 'center',
-    },
-    apiItem: {
-      marginTop: 0, // Section padding handles first element spacing
-      marginBottom: 0, // Consistent spacing
-    },
-    apiName: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.text, // Use text color for better readability in dark mode
-      marginBottom: 4,
-    },
-    apiDescription: {
-      fontSize: theme.fontSizes?.base || 14,
-      color: theme.colors.textSecondary,
-      lineHeight: 20,
-      marginBottom: 6,
-    },
-    linkText: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.text, // Use text color for better readability in dark mode
-      textDecorationLine: 'underline',
-      textDecorationColor: theme.colors.text, // Match underline color
-    },
-    aboutInfoRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      paddingVertical: 12,
-      paddingHorizontal: 4,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: theme.colors.border,
-    },
-    aboutLabel: {
-      fontSize: theme.fontSizes?.md || 15,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.text,
-      letterSpacing: -0.2,
-    },
-    aboutValue: {
-      fontSize: theme.fontSizes?.md || 15,
-      fontFamily: theme.fontFamilies?.medium,
-      color: theme.colors.textSecondary,
-      letterSpacing: -0.2,
-    },
-    aboutSection: {
-      marginTop: 20,
-      padding: 16,
-      backgroundColor: theme.colors.cardBackground,
-      borderRadius: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: theme.colors.border,
-    },
-    aboutSectionHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 10,
-    },
-    aboutSectionIcon: {
-      width: 20,
-      height: 20,
-      marginRight: 10,
-      tintColor: theme.colors.text,
-    },
-    aboutSectionTitle: {
-      fontSize: theme.fontSizes?.lg || 16,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.text,
-      letterSpacing: -0.3,
-    },
-    aboutSectionDescription: {
-      fontSize: theme.fontSizes?.base || 14,
-      color: theme.colors.textSecondary,
-      lineHeight: 22,
-      letterSpacing: -0.1,
-    },
-    aboutLinkText: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.text, // Use text color for better readability in dark mode
-      textDecorationLine: 'underline',
-      textDecorationColor: theme.colors.text, // Match underline color
-    },
-    termsLink: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.text, // Use text color for better readability in dark mode
-      textDecorationLine: 'underline',
-      textDecorationColor: theme.colors.text, // Match underline color
-      marginTop: 8,
-    },
-    modalOverlay: {
-      flex: 1,
-      backgroundColor: theme.colors.modalBackdrop,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    modalContent: {
-      backgroundColor: theme.colors.background,
-      padding: 20,
-      borderRadius: 8,
-      width: '80%',
-      borderWidth: 1,
-      borderColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
-          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
-    },
-    modalHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginBottom: 16,
-    },
-    modalIcon: {
-      width: 24,
-      height: 24,
-      marginRight: 10,
-      tintColor: theme.colors.text, // Use text color for better visibility in dark mode
-    },
-    modalTitle: {
-      fontSize: theme.fontSizes?.['2xl'] || 20,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.text,
-    },
-    modalDescription: {
-      fontSize: theme.fontSizes?.base || 14,
-      color: theme.colors.textSecondary,
-      marginBottom: 20,
-      textAlign: 'center',
-    },
-    passwordContainer: {
-      marginBottom: 12,
-    },
-    passwordLabel: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.text,
-      marginBottom: 4,
-    },
-    passwordInputContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      borderRadius: 6,
-    },
-    passwordInput: {
-      flex: 1,
-      padding: 10,
-      fontSize: theme.fontSizes?.base || 13,
-      color: theme.colors.text,
-    },
-    eyeButton: {
-      padding: 10,
-    },
-    eyeIcon: {
-      width: 20,
-      height: 20,
-      tintColor: theme.colors.text,
-    },
-    passwordHint: {
-      fontSize: theme.fontSizes?.sm || 12,
-      color: theme.colors.textSecondary,
-    },
-    modalActions: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      marginTop: 20,
-      gap: 12,
-    },
-    modalButton: {
-      flex: 1,
-      paddingVertical: 14,
-      borderRadius: 8,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    cancelButton: {
-      backgroundColor: theme.colors.secondary,
-    },
-    cancelButtonText: {
-      color:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.white
-          : theme.colors.text,
-      fontSize: theme.fontSizes?.lg || 16,
-      fontFamily: theme.fontFamilies?.bold,
-      textAlign: 'center',
-    },
-    confirmButton: {
-      backgroundColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.accent
-          : theme.colors.bitcoinOrange,
-    },
-    confirmButtonText: {
-      color: theme.colors.white,
-      fontSize: theme.fontSizes?.lg || 16,
-      fontFamily: theme.fontFamilies?.bold,
-      textAlign: 'center',
-    },
-    disabledButton: {
-      backgroundColor: theme.colors.disabled,
-    },
-    disabledButtonText: {
-      color: theme.colors.disabledText || theme.colors.textSecondary,
-      fontSize: theme.fontSizes?.lg || 16,
-      fontFamily: theme.fontFamilies?.bold,
-      textAlign: 'center',
-    },
-    apiInfoModalContent: {
-      backgroundColor: theme.colors.background,
-      borderRadius: 16,
-      width: '85%',
-      maxWidth: 400,
-      shadowColor: theme.colors.shadowColor,
-      shadowOffset: {width: 0, height: 4},
-      shadowOpacity: 0.3,
-      shadowRadius: 12,
-      elevation: 20,
-      borderWidth: 1,
-      borderColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
-          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
-    },
-    apiInfoModalHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: 20,
-      paddingTop: 20,
-      paddingBottom: 16,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: theme.colors.border,
-    },
-    apiInfoModalIconContainer: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: theme.colors.cardBackground,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    apiInfoModalIcon: {
-      width: 20,
-      height: 20,
-      tintColor: theme.colors.text,
-    },
-    apiInfoModalTitle: {
-      flex: 1,
-      fontSize: theme.fontSizes?.xl || 18,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.text,
-      marginLeft: 12,
-      letterSpacing: -0.3,
-    },
-    apiInfoModalCloseButton: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      backgroundColor: theme.colors.cardBackground,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    apiInfoModalCloseText: {
-      fontSize: theme.fontSizes?.xl || 18,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.textSecondary,
-    },
-    apiInfoModalBody: {
-      padding: 20,
-    },
-    apiInfoSection: {
-      marginBottom: 20,
-    },
-    apiInfoSectionRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 8,
-    },
-    apiInfoSectionIcon: {
-      width: 20,
-      height: 20,
-      marginRight: 10,
-      tintColor: theme.colors.text,
-    },
-    apiInfoSectionTitle: {
-      fontSize: theme.fontSizes?.lg || 16,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.text,
-      letterSpacing: -0.2,
-    },
-    apiInfoSectionText: {
-      fontSize: theme.fontSizes?.base || 14,
-      color: theme.colors.textSecondary,
-      lineHeight: 22,
-      letterSpacing: -0.1,
-      marginLeft: 30,
-    },
-    apiInfoModalButton: {
-      marginHorizontal: 20,
-      marginBottom: 20,
-      paddingVertical: 14,
-      borderRadius: 12,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    apiInfoModalButtonText: {
-      fontSize: theme.fontSizes?.lg || 16,
-      fontFamily: theme.fontFamilies?.bold,
-      letterSpacing: -0.2,
-      textAlign: 'center',
-    },
-    networkOption: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    networkIcon: {
-      width: 20,
-      height: 20,
-      marginRight: 8,
-      tintColor: theme.colors.text, // Use text color for visibility in dark mode
-    },
-    input: {
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      borderRadius: 8,
-      padding: 14,
-      marginBottom: 16,
-      textAlign: 'center',
-      fontSize: theme.fontSizes?.lg || 16,
-      color: theme.colors.text,
-      backgroundColor: theme.colors.cardBackground,
-    },
-    halfOpacity: {
-      opacity: 0.5,
-    },
-    strengthContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginTop: 8,
-      marginBottom: 8,
-    },
-    strengthBar: {
-      flex: 1,
-      height: 8,
-      backgroundColor: theme.colors.border,
-      borderRadius: 4,
-      marginRight: 12,
-      overflow: 'hidden',
-    },
-    strengthFill: {
-      height: '100%',
-      borderRadius: 4,
-    },
-    strengthText: {
-      fontSize: theme.fontSizes?.sm || 12,
-      fontFamily: theme.fontFamilies?.bold,
-      minWidth: 60,
-      textAlign: 'right',
-      color: theme.colors.textSecondary,
-    },
-    requirementsContainer: {
-      marginTop: 4,
-    },
-    requirementText: {
-      fontSize: theme.fontSizes?.sm || 12,
-      fontFamily: theme.fontFamilies?.medium,
-      color: theme.colors.warningAccent,
-    },
-    nostrRelaysInput: {
-      minHeight: 120,
-      textAlignVertical: 'top',
-      textAlign: 'left', // Align text entries to the left
-      paddingTop: 12,
-      backgroundColor: theme.colors.cardBackground,
-    },
-    errorInput: {
-      borderColor: theme.colors.danger,
-    },
-    errorText: {
-      color: theme.colors.danger,
-      fontSize: theme.fontSizes?.sm || 12,
-      marginTop: 4,
-    },
-    buttonContent: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    buttonIcon: {
-      width: 20,
-      height: 20,
-      marginRight: 12,
-      tintColor: theme.colors.white,
-    },
-    buttonIconOnColored: {
-      width: 20,
-      height: 20,
-      marginRight: 12,
-      tintColor: theme.colors.white,
-    },
-    buttonIconOnSecondary: {
-      width: 20,
-      height: 20,
-      marginRight: 12,
-      tintColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.white
-          : theme.colors.text,
-    },
-    flexContainer: {
-      flex: 1,
-    },
-    whiteTint: {
-      tintColor: theme.colors.white,
-    },
-    networkStatusContainer: {
-      marginBottom: 8,
-    },
-    networkStatusTitle: {
-      fontSize: theme.fontSizes?.sm || 12,
-      marginBottom: 2,
-    },
-    networkStatusText: {
-      fontSize: theme.fontSizes?.sm || 12,
-    },
-    appIconCheckStatesButton: {
-      marginBottom: 10,
-      backgroundColor: theme.colors.secondary,
-    },
-    walletModeRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 12,
-      paddingHorizontal: 4,
-    },
-    walletModeLabel: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.text,
-    },
-    walletModeDescription: {
-      fontSize: theme.fontSizes?.base || 13,
-      color: theme.colors.textSecondary,
-      marginBottom: 12,
-    },
-    themeOptionContainer: {
-      gap: 8,
-      marginBottom: 8,
-    },
-    themeOption: {
-      backgroundColor: theme.colors.background,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      padding: 12,
-      marginBottom: 4,
-    },
-    themeOptionSelected: {
-      borderColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.accent
-          : theme.colors.bitcoinOrange,
-      borderWidth: 2,
-      backgroundColor: theme.colors.cardBackground,
-    },
-    themeOptionContent: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    },
-    themeOptionLabel: {
-      fontSize: theme.fontSizes?.md || 15,
-      fontFamily: theme.fontFamilies?.medium,
-      color: theme.colors.text,
-    },
-    themeOptionLabelSelected: {
-      fontFamily: theme.fontFamilies?.bold,
-      color:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.accent
-          : theme.colors.bitcoinOrange,
-    },
-    themeOptionCheck: {
-      width: 18,
-      height: 18,
-      tintColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.accent
-          : theme.colors.bitcoinOrange,
-    },
-  }), [theme]);
+  const handleToggleDebugLogging = (value: boolean) => {
+    HapticFeedback.light();
+    setDebugLoggingEnabledState(value);
+    // Update module-level ref
+    setDebugLoggingEnabled(value);
+    // Reload the app to apply the change
+    DeviceEventEmitter.emit('app:reload');
+  };
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        container: {
+          flex: 1,
+          backgroundColor: theme.colors.background,
+        },
+        scrollView: {
+          flex: 1,
+        },
+        scrollContent: {
+          flexGrow: 1,
+          padding: 16,
+          paddingBottom: 24,
+        },
+        header: {
+          paddingHorizontal: 16,
+          borderBottomWidth: 1,
+          borderBottomColor: theme.colors.border,
+        },
+        headerTitle: {
+          fontSize: theme.fontSizes?.['3xl'] || 28,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+          textAlign: 'center',
+        },
+        collapsibleSection: {
+          marginBottom: 10,
+          backgroundColor: theme.colors.cardBackground,
+          borderRadius: 8,
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+          overflow: 'hidden',
+          shadowColor: theme.colors.shadowColor,
+          shadowOffset: {width: 0, height: 1},
+          shadowOpacity: 0.1,
+          shadowRadius: 2,
+          elevation: 2,
+        },
+        sectionHeader: {
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: 12,
+          backgroundColor: theme.colors.cardBackground,
+        },
+        sectionHeaderContent: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          flex: 1,
+        },
+        sectionIcon: {
+          width: 20,
+          height: 20,
+          marginRight: 8,
+          tintColor: theme.colors.text,
+        },
+        sectionHeaderTitle: {
+          fontSize: theme.fontSizes?.lg || 16,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+        },
+        expandIcon: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+        },
+        sectionContent: {
+          paddingHorizontal: 12,
+          borderTopWidth: 1,
+          borderTopColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.accent
+              : theme.colors.bitcoinOrange,
+        },
+        toggleContainer: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 12,
+          paddingHorizontal: 4,
+        },
+        toggleLabel: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+        },
+        toggleDescription: {
+          fontSize: theme.fontSizes?.base || 13,
+          color: theme.colors.textSecondary,
+          marginTop: 12,
+          textAlign: 'center',
+          marginBottom: 12,
+        },
+        warningContainer: {
+          padding: 12,
+          borderRadius: 8,
+          borderWidth: 1,
+          marginBottom: 16,
+          marginTop: 8,
+        },
+        warningText: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          marginBottom: 8,
+          textAlign: 'center',
+        },
+        warningDescription: {
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: theme.fontFamilies?.regular,
+          lineHeight: 18,
+          textAlign: 'left',
+        },
+        hintText: {
+          fontSize: theme.fontSizes?.base || 13,
+          fontFamily: theme.fontFamilies?.regular,
+          color: theme.colors.textSecondary,
+          lineHeight: 18,
+          textAlign: 'left' as const,
+        },
+        hintBold: {
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+        },
+        hintAmount: {
+          fontFamily: theme.fontFamilies?.monospaceBold,
+          color: theme.colors.text,
+        },
+        hintSpacing: {
+          marginBottom: 12,
+        },
+        appIconHintRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+        },
+        appIconSpyIcon: {
+          width: 28,
+          height: 28,
+          marginRight: 10,
+        },
+        appIconHintTextContainer: {
+          flex: 1,
+        },
+        appIconHintTitle: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+          marginBottom: 2,
+        },
+        appIconHintSubtitle: {
+          fontSize: theme.fontSizes?.sm || 12,
+          color: theme.colors.textSecondary,
+          lineHeight: 16,
+        },
+        inputAPI: {
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+          borderRadius: 6,
+          padding: 10,
+          fontSize: theme.fontSizes?.base || 13,
+          backgroundColor: theme.colors.background,
+          color: theme.colors.text,
+          marginBottom: 8,
+          flex: 1,
+        },
+        apiAutocompleteContainer: {
+          position: 'relative',
+          marginBottom: 8,
+        },
+        apiInputContainer: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+          borderRadius: 8,
+          backgroundColor: theme.colors.background,
+          minHeight: 44,
+          shadowColor: theme.colors.shadowColor,
+          shadowOffset: {width: 0, height: 1},
+          shadowOpacity: 0.05,
+          shadowRadius: 2,
+          elevation: 1,
+        },
+        apiInputContainerFocused: {
+          borderColor: theme.colors.primary,
+          shadowColor: theme.colors.primary,
+          shadowOffset: {width: 0, height: 0},
+          shadowOpacity: 0.2,
+          shadowRadius: 4,
+          elevation: 3,
+        },
+        apiTextInput: {
+          flex: 1,
+          paddingHorizontal: 12,
+          paddingVertical: 12,
+          fontSize: theme.fontSizes?.base || 14,
+          color: theme.colors.text,
+          backgroundColor: 'transparent',
+        },
+        apiDropdownButton: {
+          paddingHorizontal: 12,
+          paddingVertical: 12,
+          justifyContent: 'center',
+          alignItems: 'center',
+          borderLeftWidth: 1,
+          borderLeftColor: theme.colors.border,
+        },
+        apiDropdownIcon: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+        },
+        apiInputRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 8,
+        },
+        apiInputWithButton: {
+          flex: 1,
+        },
+        apiSaveButton: {
+          backgroundColor: theme.colors.primary,
+          paddingHorizontal: 16,
+          paddingVertical: 12,
+          borderRadius: 8,
+          minHeight: 44,
+          justifyContent: 'center',
+          alignItems: 'center',
+          shadowColor: theme.colors.shadowColor,
+          shadowOffset: {width: 0, height: 1},
+          shadowOpacity: 0.1,
+          shadowRadius: 2,
+          elevation: 2,
+        },
+        apiSaveButtonDisabled: {
+          backgroundColor: theme.colors.disabled,
+          shadowOpacity: 0.05,
+        },
+        apiSaveButtonText: {
+          color: theme.colors.textOnPrimary,
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          textAlign: 'center',
+        },
+        apiSaveButtonTextDisabled: {
+          color: theme.colors.textSecondary,
+        },
+        apiSaveButtonContainer: {
+          marginTop: 8,
+          alignItems: 'flex-start',
+        },
+        apiNetworkInfoContainer: {
+          marginTop: 8,
+          marginBottom: 12,
+          padding: 12,
+          borderRadius: 8,
+          borderWidth: 1,
+          borderStyle: 'dashed',
+          borderColor: theme.colors.border,
+        },
+        apiNetworkModeRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 8,
+          marginBottom: 8,
+        },
+        apiNetworkModeBadge: {
+          flex: 1,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingHorizontal: 10,
+          paddingVertical: 8,
+          borderRadius: 6,
+          gap: 6,
+          minHeight: 36,
+        },
+        apiNetworkModeBadgeTestnet: {
+          backgroundColor: theme.colors.warning + '26', // ~15% opacity
+          borderWidth: 1,
+          borderColor: theme.colors.warning + '4D', // ~30% opacity
+        },
+        apiNetworkModeBadgeMainnet: {
+          backgroundColor: theme.colors.received + '26', // ~15% opacity
+          borderWidth: 1,
+          borderColor: theme.colors.received + '4D', // ~30% opacity
+        },
+        apiNetworkModeIcon: {
+          width: 16,
+          height: 16,
+          marginRight: 6,
+        },
+        apiNetworkModeText: {
+          fontSize: theme.fontSizes?.base || 13,
+          fontFamily: theme.fontFamilies?.bold,
+          letterSpacing: 0.2,
+        },
+        apiNetworkModeTextTestnet: {
+          color:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.accent
+              : theme.colors.text,
+        },
+        apiNetworkModeTextMainnet: {
+          color: theme.colors.received,
+        },
+        apiInfoButton: {
+          flex: 1,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingHorizontal: 10,
+          paddingVertical: 8,
+          borderRadius: 6,
+          backgroundColor: theme.colors.background,
+          borderWidth: 1,
+          borderColor: theme.colors.primary,
+          gap: 6,
+          minHeight: 40,
+        },
+        apiInfoButtonIcon: {
+          width: 14,
+          height: 14,
+          tintColor: theme.colors.text, // Use text color for better visibility in dark mode
+        },
+        apiInfoButtonText: {
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: theme.fontFamilies?.bold,
+          color:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.primary
+              : theme.colors.text,
+        },
+        apiNetworkDescription: {
+          fontSize: theme.fontSizes?.sm || 12,
+          lineHeight: 16,
+          marginTop: 4,
+        },
+        apiNetworkDescriptionTestnet: {
+          color: theme.colors.textSecondary,
+        },
+        apiNetworkDescriptionMainnet: {
+          color: theme.colors.textSecondary,
+        },
+        apiActionButtonsRow: {
+          flexDirection: 'row',
+          gap: 12,
+          marginTop: 8,
+          alignItems: 'stretch',
+        },
+        apiActionButton: {
+          flex: 1,
+          minHeight: 44,
+          height: 44,
+        },
+        apiModalContainer: {
+          flex: 1,
+          justifyContent: 'flex-end',
+        },
+        apiModalKeyboardView: {
+          flex: 1,
+          justifyContent: 'flex-end',
+        },
+        apiModalBackdrop: {
+          flex: 1,
+          backgroundColor: theme.colors.modalBackdrop,
+          justifyContent: 'flex-end',
+        },
+        apiModalContent: {
+          backgroundColor: theme.colors.background,
+          borderTopLeftRadius: 10,
+          borderTopRightRadius: 10,
+          paddingBottom: Platform.OS === 'ios' ? 17 : 10,
+          paddingTop: 5,
+          shadowColor: theme.colors.shadowColor,
+          shadowOffset: {width: 0, height: -4},
+          shadowOpacity: 0.2,
+          shadowRadius: 12,
+          elevation: 20,
+          flexDirection: 'column',
+          borderTopWidth: 1,
+          borderLeftWidth: 1,
+          borderRightWidth: 1,
+          borderColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+              : theme.colors.whiteOverlay20, // Dark mode: subtle light border
+        },
+        apiModalListWrapper: {
+          height: 300,
+          flexShrink: 0,
+        },
+        apiModalFlatList: {
+          flex: 1,
+        },
+        apiModalListContainer: {
+          minHeight: 200,
+          paddingBottom: 20,
+        },
+        apiModalHeader: {
+          paddingTop: 12,
+          paddingBottom: 12,
+          borderBottomWidth: 1,
+          borderBottomColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+              : theme.colors.whiteOverlay20, // Dark mode: subtle light border
+        },
+        apiModalHeaderTop: {
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          paddingHorizontal: 20,
+          paddingBottom: 0,
+        },
+        apiModalFooter: {
+          paddingHorizontal: 16,
+          paddingTop: 16,
+          paddingBottom: Platform.OS === 'ios' ? 32 : 24,
+        },
+        apiModalTitle: {
+          fontSize: theme.fontSizes?.lg || 16,
+          fontFamily: theme.fontFamilies?.bold,
+          letterSpacing: -0.5,
+        },
+        apiModalHeaderTitleContainer: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          flex: 1,
+        },
+        apiModalHeaderIcon: {
+          width: 20,
+          height: 20,
+          marginRight: 10,
+        },
+        apiModalCloseButton: {
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        apiModalCloseText: {
+          fontSize: theme.fontSizes?.xl || 18,
+          fontFamily: theme.fontFamilies?.bold,
+        },
+        apiModalSearchContainer: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginHorizontal: 16,
+          marginTop: 8,
+          paddingHorizontal: 12,
+          paddingVertical: 10,
+          borderRadius: 12,
+          borderWidth: 1,
+        },
+        apiModalSearchIcon: {
+          width: 16,
+          height: 16,
+          marginRight: 8,
+          tintColor: theme.colors.text,
+        },
+        apiModalSearchInput: {
+          flex: 1,
+          fontSize: theme.fontSizes?.md || 15,
+          padding: 0,
+          margin: 0,
+        },
+        apiModalSearchClear: {
+          padding: 4,
+          marginLeft: 8,
+        },
+        apiModalSearchClearText: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+        },
+        apiModalListContent: {
+          paddingTop: 4,
+          paddingBottom: 4,
+        },
+        apiModalItem: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 16,
+          paddingVertical: 14,
+          marginHorizontal: 16,
+          marginVertical: 0,
+          borderRadius: 0,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          minHeight: 56,
+        },
+        apiModalItemSelected: {
+          backgroundColor: theme.colors.cardBackground,
+        },
+        apiModalItemIcon: {
+          width: 18,
+          height: 18,
+          marginRight: 12,
+          tintColor: theme.colors.text,
+        },
+        apiModalItemText: {
+          flex: 1,
+          fontSize: theme.fontSizes?.md || 15,
+          lineHeight: 20,
+          letterSpacing: -0.2,
+        },
+        apiModalItemTextSelected: {
+          fontFamily: theme.fontFamilies?.bold,
+        },
+        apiModalItemCheckContainer: {
+          width: 24,
+          height: 24,
+          borderRadius: 12,
+          justifyContent: 'center',
+          alignItems: 'center',
+          marginLeft: 8,
+        },
+        apiModalItemCheck: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.white,
+        },
+        apiModalLoading: {
+          padding: 48,
+          alignItems: 'center',
+        },
+        apiModalLoadingText: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontStyle: 'italic',
+        },
+        apiModalEmpty: {
+          padding: 48,
+          alignItems: 'center',
+        },
+        apiModalEmptyText: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontStyle: 'italic',
+        },
+        button: {
+          paddingVertical: 10,
+          borderRadius: 6,
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginTop: 6,
+        },
+        deleteButton: {
+          backgroundColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.accent
+              : theme.colors.bitcoinOrange,
+        },
+        backupButton: {
+          backgroundColor: theme.colors.primary,
+          marginBottom: 16, // Add spacing after backup button before delete section
+        },
+        resetButton: {
+          backgroundColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.accent
+              : theme.colors.bitcoinOrange,
+        },
+        buttonText: {
+          color: theme.colors.textOnPrimary,
+          fontSize: theme.fontSizes?.lg || 16,
+          fontFamily: theme.fontFamilies?.bold,
+          textAlign: 'center',
+        },
+        apiItem: {
+          marginTop: 0, // Section padding handles first element spacing
+          marginBottom: 0, // Consistent spacing
+        },
+        apiName: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text, // Use text color for better readability in dark mode
+          marginBottom: 4,
+        },
+        apiDescription: {
+          fontSize: theme.fontSizes?.base || 14,
+          color: theme.colors.textSecondary,
+          lineHeight: 20,
+          marginBottom: 6,
+        },
+        linkText: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text, // Use text color for better readability in dark mode
+          textDecorationLine: 'underline',
+          textDecorationColor: theme.colors.text, // Match underline color
+        },
+        aboutInfoRow: {
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          paddingVertical: 12,
+          paddingHorizontal: 4,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: theme.colors.border,
+        },
+        aboutLabel: {
+          fontSize: theme.fontSizes?.md || 15,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+          letterSpacing: -0.2,
+        },
+        aboutValue: {
+          fontSize: theme.fontSizes?.md || 15,
+          fontFamily: theme.fontFamilies?.medium,
+          color: theme.colors.textSecondary,
+          letterSpacing: -0.2,
+        },
+        aboutSection: {
+          marginTop: 20,
+          padding: 16,
+          backgroundColor: theme.colors.cardBackground,
+          borderRadius: 12,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: theme.colors.border,
+        },
+        aboutSectionHeader: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginBottom: 10,
+        },
+        aboutSectionIcon: {
+          width: 20,
+          height: 20,
+          marginRight: 10,
+          tintColor: theme.colors.text,
+        },
+        aboutSectionTitle: {
+          fontSize: theme.fontSizes?.lg || 16,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+          letterSpacing: -0.3,
+        },
+        aboutSectionDescription: {
+          fontSize: theme.fontSizes?.base || 14,
+          color: theme.colors.textSecondary,
+          lineHeight: 22,
+          letterSpacing: -0.1,
+        },
+        aboutLinkText: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text, // Use text color for better readability in dark mode
+          textDecorationLine: 'underline',
+          textDecorationColor: theme.colors.text, // Match underline color
+        },
+        termsLink: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text, // Use text color for better readability in dark mode
+          textDecorationLine: 'underline',
+          textDecorationColor: theme.colors.text, // Match underline color
+          marginTop: 8,
+        },
+        modalOverlay: {
+          flex: 1,
+          backgroundColor: theme.colors.modalBackdrop,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        modalContent: {
+          backgroundColor: theme.colors.background,
+          padding: 20,
+          borderRadius: 8,
+          width: '80%',
+          borderWidth: 1,
+          borderColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+              : theme.colors.whiteOverlay20, // Dark mode: subtle light border
+        },
+        modalHeader: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: 16,
+        },
+        modalIcon: {
+          width: 24,
+          height: 24,
+          marginRight: 10,
+          tintColor: theme.colors.text, // Use text color for better visibility in dark mode
+        },
+        modalTitle: {
+          fontSize: theme.fontSizes?.['2xl'] || 20,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+        },
+        modalDescription: {
+          fontSize: theme.fontSizes?.base || 14,
+          color: theme.colors.textSecondary,
+          marginBottom: 20,
+          textAlign: 'center',
+        },
+        passwordContainer: {
+          marginBottom: 12,
+        },
+        passwordLabel: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+          marginBottom: 4,
+        },
+        passwordInputContainer: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+          borderRadius: 6,
+        },
+        passwordInput: {
+          flex: 1,
+          padding: 10,
+          fontSize: theme.fontSizes?.base || 13,
+          color: theme.colors.text,
+        },
+        eyeButton: {
+          padding: 10,
+        },
+        eyeIcon: {
+          width: 20,
+          height: 20,
+          tintColor: theme.colors.text,
+        },
+        passwordHint: {
+          fontSize: theme.fontSizes?.sm || 12,
+          color: theme.colors.textSecondary,
+        },
+        modalActions: {
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          marginTop: 20,
+          gap: 12,
+        },
+        modalButton: {
+          flex: 1,
+          paddingVertical: 14,
+          borderRadius: 8,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        cancelButton: {
+          backgroundColor: theme.colors.secondary,
+        },
+        cancelButtonText: {
+          color:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.white
+              : theme.colors.text,
+          fontSize: theme.fontSizes?.lg || 16,
+          fontFamily: theme.fontFamilies?.bold,
+          textAlign: 'center',
+        },
+        confirmButton: {
+          backgroundColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.accent
+              : theme.colors.bitcoinOrange,
+        },
+        confirmButtonText: {
+          color: theme.colors.white,
+          fontSize: theme.fontSizes?.lg || 16,
+          fontFamily: theme.fontFamilies?.bold,
+          textAlign: 'center',
+        },
+        disabledButton: {
+          backgroundColor: theme.colors.disabled,
+        },
+        disabledButtonText: {
+          color: theme.colors.disabledText || theme.colors.textSecondary,
+          fontSize: theme.fontSizes?.lg || 16,
+          fontFamily: theme.fontFamilies?.bold,
+          textAlign: 'center',
+        },
+        apiInfoModalContent: {
+          backgroundColor: theme.colors.background,
+          borderRadius: 16,
+          width: '85%',
+          maxWidth: 400,
+          shadowColor: theme.colors.shadowColor,
+          shadowOffset: {width: 0, height: 4},
+          shadowOpacity: 0.3,
+          shadowRadius: 12,
+          elevation: 20,
+          borderWidth: 1,
+          borderColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+              : theme.colors.whiteOverlay20, // Dark mode: subtle light border
+        },
+        apiInfoModalHeader: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: 20,
+          paddingTop: 20,
+          paddingBottom: 16,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: theme.colors.border,
+        },
+        apiInfoModalIconContainer: {
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          backgroundColor: theme.colors.cardBackground,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        apiInfoModalIcon: {
+          width: 20,
+          height: 20,
+          tintColor: theme.colors.text,
+        },
+        apiInfoModalTitle: {
+          flex: 1,
+          fontSize: theme.fontSizes?.xl || 18,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+          marginLeft: 12,
+          letterSpacing: -0.3,
+        },
+        apiInfoModalCloseButton: {
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          backgroundColor: theme.colors.cardBackground,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        apiInfoModalCloseText: {
+          fontSize: theme.fontSizes?.xl || 18,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.textSecondary,
+        },
+        apiInfoModalBody: {
+          padding: 20,
+        },
+        apiInfoSection: {
+          marginBottom: 20,
+        },
+        apiInfoSectionRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginBottom: 8,
+        },
+        apiInfoSectionIcon: {
+          width: 20,
+          height: 20,
+          marginRight: 10,
+          tintColor: theme.colors.text,
+        },
+        apiInfoSectionTitle: {
+          fontSize: theme.fontSizes?.lg || 16,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+          letterSpacing: -0.2,
+        },
+        apiInfoSectionText: {
+          fontSize: theme.fontSizes?.base || 14,
+          color: theme.colors.textSecondary,
+          lineHeight: 22,
+          letterSpacing: -0.1,
+          marginLeft: 30,
+        },
+        apiInfoModalButton: {
+          marginHorizontal: 20,
+          marginBottom: 20,
+          paddingVertical: 14,
+          borderRadius: 12,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        apiInfoModalButtonText: {
+          fontSize: theme.fontSizes?.lg || 16,
+          fontFamily: theme.fontFamilies?.bold,
+          letterSpacing: -0.2,
+          textAlign: 'center',
+        },
+        networkOption: {
+          flexDirection: 'row',
+          alignItems: 'center',
+        },
+        networkIcon: {
+          width: 20,
+          height: 20,
+          marginRight: 8,
+          tintColor: theme.colors.text, // Use text color for visibility in dark mode
+        },
+        input: {
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+          borderRadius: 8,
+          padding: 14,
+          marginBottom: 16,
+          textAlign: 'center',
+          fontSize: theme.fontSizes?.lg || 16,
+          color: theme.colors.text,
+          backgroundColor: theme.colors.cardBackground,
+        },
+        halfOpacity: {
+          opacity: 0.5,
+        },
+        strengthContainer: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginTop: 8,
+          marginBottom: 8,
+        },
+        strengthBar: {
+          flex: 1,
+          height: 8,
+          backgroundColor: theme.colors.border,
+          borderRadius: 4,
+          marginRight: 12,
+          overflow: 'hidden',
+        },
+        strengthFill: {
+          height: '100%',
+          borderRadius: 4,
+        },
+        strengthText: {
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: theme.fontFamilies?.bold,
+          minWidth: 60,
+          textAlign: 'right',
+          color: theme.colors.textSecondary,
+        },
+        requirementsContainer: {
+          marginTop: 4,
+        },
+        requirementText: {
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: theme.fontFamilies?.medium,
+          color: theme.colors.warningAccent,
+        },
+        nostrRelaysInput: {
+          minHeight: 120,
+          textAlignVertical: 'top',
+          textAlign: 'left', // Align text entries to the left
+          paddingTop: 12,
+          backgroundColor: theme.colors.cardBackground,
+        },
+        errorInput: {
+          borderColor: theme.colors.danger,
+        },
+        errorText: {
+          color: theme.colors.danger,
+          fontSize: theme.fontSizes?.sm || 12,
+          marginTop: 4,
+        },
+        buttonContent: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        buttonIcon: {
+          width: 20,
+          height: 20,
+          marginRight: 12,
+          tintColor: theme.colors.white,
+        },
+        buttonIconOnColored: {
+          width: 20,
+          height: 20,
+          marginRight: 12,
+          tintColor: theme.colors.white,
+        },
+        buttonIconOnSecondary: {
+          width: 20,
+          height: 20,
+          marginRight: 12,
+          tintColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.white
+              : theme.colors.text,
+        },
+        flexContainer: {
+          flex: 1,
+        },
+        whiteTint: {
+          tintColor: theme.colors.white,
+        },
+        networkStatusContainer: {
+          marginBottom: 8,
+        },
+        networkStatusTitle: {
+          fontSize: theme.fontSizes?.sm || 12,
+          marginBottom: 2,
+        },
+        networkStatusText: {
+          fontSize: theme.fontSizes?.sm || 12,
+        },
+        appIconCheckStatesButton: {
+          marginBottom: 10,
+          backgroundColor: theme.colors.secondary,
+        },
+        walletModeRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 12,
+          paddingHorizontal: 4,
+        },
+        walletModeLabel: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+        },
+        walletModeDescription: {
+          fontSize: theme.fontSizes?.base || 13,
+          color: theme.colors.textSecondary,
+          marginBottom: 12,
+        },
+        themeOptionContainer: {
+          gap: 8,
+          marginBottom: 8,
+        },
+        themeOption: {
+          backgroundColor: theme.colors.background,
+          borderRadius: 8,
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+          padding: 12,
+          marginBottom: 4,
+        },
+        themeOptionSelected: {
+          borderColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.accent
+              : theme.colors.bitcoinOrange,
+          borderWidth: 2,
+          backgroundColor: theme.colors.cardBackground,
+        },
+        themeOptionContent: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        },
+        themeOptionLabel: {
+          fontSize: theme.fontSizes?.md || 15,
+          fontFamily: theme.fontFamilies?.medium,
+          color: theme.colors.text,
+        },
+        themeOptionLabelSelected: {
+          fontFamily: theme.fontFamilies?.bold,
+          color:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.accent
+              : theme.colors.bitcoinOrange,
+        },
+        themeOptionCheck: {
+          width: 18,
+          height: 18,
+          tintColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.accent
+              : theme.colors.bitcoinOrange,
+        },
+      }),
+    [theme],
+  );
   // Force re-render on Android when theme changes
   useEffect(() => {
     setThemeUpdateKey(prev => prev + 1);
   }, [theme.colors.background, themeMode]);
   return (
-    <SafeAreaView style={styles.container} edges={['left', 'right']} key={themeUpdateKey}>
+    <SafeAreaView
+      style={styles.container}
+      edges={['left', 'right']}
+      key={themeUpdateKey}>
       <ScrollView
         key={themeUpdateKey}
         style={styles.scrollView}
@@ -2135,7 +2174,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 HapticFeedback.light();
                 setThemeMode('os');
               }}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
               <View style={styles.themeOptionContent}>
                 <Text
                   style={[
@@ -2162,7 +2201,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 HapticFeedback.light();
                 setThemeMode('light');
               }}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
               <View style={styles.themeOptionContent}>
                 <Text
                   style={[
@@ -2189,7 +2228,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 HapticFeedback.light();
                 setThemeMode('dark');
               }}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
               <View style={styles.themeOptionContent}>
                 <Text
                   style={[
@@ -2252,9 +2291,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <Text style={[styles.hintText, styles.hintSpacing]}>
             <Text style={styles.hintBold}>Formatted:</Text> Thousand separators
             make large numbers easier to read and verify decimal precision.
-            Example:{' '}
-            <Text style={styles.hintAmount}>1,234.56,789,010 ₿</Text> or{' '}
-            <Text style={styles.hintAmount}>123,456,789,010 sats</Text>
+            Example: <Text style={styles.hintAmount}>1,234.56,789,010 ₿</Text>{' '}
+            or <Text style={styles.hintAmount}>123,456,789,010 sats</Text>
           </Text>
 
           <Text style={[styles.hintText, styles.hintSpacing]}>
@@ -2402,7 +2440,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               HapticFeedback.light();
               setIsBackupModalVisible(true);
             }}
-            android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
             <View style={styles.buttonContent}>
               <Image
                 source={require('../assets/upload-icon.png')}
@@ -2421,7 +2459,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               HapticFeedback.light();
               setIsModalResetVisible(true);
             }}
-            android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
             <View style={styles.buttonContent}>
               <Image
                 source={require('../assets/delete-icon.png')}
@@ -2449,10 +2487,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               />
               <Text style={styles.toggleLabel}>Mainnet</Text>
             </View>
-            <Switch
-              onValueChange={toggleNetwork}
-              value={isTestnet}
-            />
+            <Switch onValueChange={toggleNetwork} value={isTestnet} />
             <View style={styles.networkOption}>
               <Image
                 source={require('../assets/testnet-icon.png')}
@@ -2507,13 +2542,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     HapticFeedback.light();
                     setIsApiInfoVisible(true);
                   }}
-                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                   <Image
                     source={require('../assets/about-icon.png')}
                     style={styles.apiInfoButtonIcon}
                     resizeMode="contain"
                   />
-                    <Text style={styles.apiInfoButtonText}>Change Provider?</Text>
+                  <Text style={styles.apiInfoButtonText}>Change Provider?</Text>
                 </Pressable>
               )}
             </View>
@@ -2554,7 +2589,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   saveAPI(pendingAPI);
                 }}
                 disabled={isAPISaving || !pendingAPI || pendingAPI === baseAPI}
-                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <View style={styles.buttonContent}>
                   <Image
                     source={require('../assets/check-icon.png')}
@@ -2584,7 +2619,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   HapticFeedback.light();
                   resetAPI();
                 }}
-                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <View style={styles.buttonContent}>
                   <Image
                     source={require('../assets/refresh-icon.png')}
@@ -2675,7 +2710,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 disabled={
                   !pendingNostrRelays || pendingNostrRelays === nostrRelays
                 }
-                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <View style={styles.buttonContent}>
                   <Image
                     source={require('../assets/check-icon.png')}
@@ -2708,7 +2743,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   const relaysForDisplay = relaysCSV.split(',').join('\n');
                   setPendingNostrRelays(relaysForDisplay);
                 }}
-                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <View style={styles.buttonContent}>
                   <Image
                     source={require('../assets/refresh-icon.png')}
@@ -2752,7 +2787,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 );
               }
             }}
-            android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
             <View style={styles.buttonContent}>
               <Image
                 source={require('../assets/delete-icon.png')}
@@ -2765,6 +2800,66 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </Pressable>
         </CollapsibleSection>
+
+        <CollapsibleSection
+          title="Dev Debug"
+          isExpanded={expandedSections.devDebug}
+          onToggle={() => toggleSection('devDebug')}
+          styles={styles}
+          theme={theme}>
+          <View
+            style={[
+              styles.warningContainer,
+              {
+                backgroundColor:
+                  theme.colors.background === '#ffffff' ? '#FFF3CD' : '#3D2F00',
+                borderColor:
+                  theme.colors.background === '#ffffff' ? '#FFC107' : '#FFA000',
+              },
+            ]}>
+            <Text
+              style={[
+                styles.warningText,
+                {
+                  color:
+                    theme.colors.background === '#ffffff'
+                      ? '#856404'
+                      : '#FFC107',
+                },
+              ]}>
+              ⚠️ Advanced Developers Only
+            </Text>
+            <Text
+              style={[
+                styles.warningDescription,
+                {
+                  color:
+                    theme.colors.background === '#ffffff'
+                      ? '#856404'
+                      : '#FFC107',
+                },
+              ]}>
+              This feature is for troubleshooting on secure, trusted devices
+              only. Never enable debug logging unless you know what you're
+              doing. Debug logs may contain sensitive information and should
+              only be used in development environments.
+            </Text>
+          </View>
+          <Text style={styles.toggleDescription}>
+            Enable debug logging to see detailed logs in the console. Logging is
+            disabled by default. When enabled, the app will reload to apply the
+            change. This setting is session-only and will reset to disabled when
+            the app restarts.
+          </Text>
+          <View style={styles.toggleContainer}>
+            <Switch
+              onValueChange={handleToggleDebugLogging}
+              value={debugLoggingEnabled}
+            />
+            <Text style={styles.toggleLabel}>Enable Debug Logging</Text>
+          </View>
+        </CollapsibleSection>
+
         {/* Legal Section */}
         <CollapsibleSection
           title="Legal"
@@ -2814,6 +2909,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             version for optimal compatibility and security.
           </Text>
         </CollapsibleSection>
+
         {/* Font Testing Section - Development Only */}
         {__DEV__ && (
           <CollapsibleSection
@@ -2873,7 +2969,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   HapticFeedback.light();
                   setIsModalResetVisible(false);
                 }}
-                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </Pressable>
               <Pressable
@@ -2887,7 +2983,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   handleResetWallet();
                 }}
                 disabled={isDeleting}
-                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <Text
                   style={[
                     styles.confirmButtonText,
@@ -2917,8 +3013,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         <Pressable
           style={styles.modalOverlay}
           onPress={() => setIsApiInfoVisible(false)}>
-          <Pressable
-            onPress={e => e.stopPropagation()}>
+          <Pressable onPress={e => e.stopPropagation()}>
             <View style={styles.apiInfoModalContent}>
               <View style={styles.apiInfoModalHeader}>
                 <View style={styles.apiInfoModalIconContainer}>
@@ -2937,7 +3032,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     HapticFeedback.light();
                     setIsApiInfoVisible(false);
                   }}
-                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                   <Text style={styles.apiInfoModalCloseText}>✕</Text>
                 </Pressable>
               </View>
@@ -2998,7 +3093,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   HapticFeedback.light();
                   setIsApiInfoVisible(false);
                 }}
-                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <Text
                   style={[
                     styles.apiInfoModalButtonText,

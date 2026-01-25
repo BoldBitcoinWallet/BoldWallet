@@ -39,6 +39,30 @@ import {createToastConfig} from './utils/toastConfig';
 enableScreens(true);
 const {BBMTLibNativeModule} = NativeModules;
 const Stack = createNativeStackNavigator();
+
+// Debug logging state (session-only, not persisted)
+// Default: false (logs suppressed even in __DEV__)
+// This is a module-level variable that can be set from WalletSettings
+let debugLoggingEnabledRef = {current: false};
+
+// Store original console methods before they get disabled
+const originalConsole = {
+  log: console.log,
+  warn: console.warn,
+  error: console.error,
+  debug: console.debug,
+  info: console.info,
+  trace: console.trace,
+};
+
+// Export functions to control debug logging from other modules
+export const setDebugLoggingEnabled = (enabled: boolean) => {
+  debugLoggingEnabledRef.current = enabled;
+};
+
+export const isDebugLoggingEnabled = () => {
+  return debugLoggingEnabledRef.current;
+};
 const rnBiometrics = new ReactNativeBiometrics({allowDeviceCredentials: true});
 const zeroconf = new Zeroconf();
 const zeroOut = new Zeroconf();
@@ -52,10 +76,16 @@ const NostrConnectHeader = (props: any) => <CustomHeader {...props} height={60} 
 const App = () => {
   const [initialRoute, setInitialRoute] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  // Initialize debug logging state from module-level ref
+  const [debugLoggingEnabled, setDebugLoggingEnabledState] = useState(
+    debugLoggingEnabledRef.current,
+  );
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener('app:reload', async () => {
       //dbg('App: Received app:reload event');
       setIsAuthenticated(false);
+      // Update debug logging state from ref
+      setDebugLoggingEnabledState(debugLoggingEnabledRef.current);
       // Re-check wallet state after reload to ensure correct initial route
       try {
         const keyshare = await EncryptedStorage.getItem('keyshare');
@@ -174,10 +204,18 @@ const App = () => {
   }, []);
   useEffect(() => {
     let subscription: EmitterSubscription | undefined;
-    if (!__DEV__) {
+    // Sync ref with state to ensure consistency
+    debugLoggingEnabledRef.current = debugLoggingEnabled;
+    // Always disable logging by default (even in __DEV__)
+    // Only enable if explicitly toggled via debug setting
+    if (!debugLoggingEnabled) {
       BBMTLibNativeModule.disableLogging('ok')
         .then((feedback: any) => {
           if (feedback === 'ok') {
+            // Restore console methods temporarily to log the message
+            console.log = originalConsole.log;
+            console.log('[DEBUG] Logging disabled');
+            // Now disable console methods
             console.log = () => {};
             console.warn = () => {};
             console.error = () => {};
@@ -189,9 +227,23 @@ const App = () => {
           }
         })
         .catch((e: Error) => {
-          dbg('error while disabling logging', e);
+          // Restore console.log temporarily to log the error
+          console.log = originalConsole.log;
+          console.log('error while disabling logging', e);
+          // Disable again
+          console.log = () => {};
         });
     } else {
+      // Restore original console methods first (they might be disabled from previous state)
+      console.log = originalConsole.log;
+      console.warn = originalConsole.warn;
+      console.error = originalConsole.error;
+      console.debug = originalConsole.debug;
+      console.info = originalConsole.info;
+      console.trace = originalConsole.trace;
+      // Now we can log the enabled message
+      console.log('[DEBUG] Logging enabled');
+      // Debug logging enabled - set up native log listeners
       const logEmitter = new NativeEventEmitter(BBMTLibNativeModule);
       if (Platform.OS === 'android') {
         logEmitter.removeAllListeners('BBMT_DROID');
@@ -209,7 +261,7 @@ const App = () => {
     return () => {
       subscription?.remove();
     };
-  }, []);
+  }, [debugLoggingEnabled]);
   const authenticateUser = async () => {
     try {
       dbg('Starting authentication...');
