@@ -3494,6 +3494,11 @@ const MobileNostrPairing = ({navigation}: any) => {
       shadowOpacity: 0.3,
       shadowRadius: 20,
       elevation: 10,
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10
+          : theme.colors.whiteOverlay20,
     },
     modalHeader: {
       flexDirection: 'row',

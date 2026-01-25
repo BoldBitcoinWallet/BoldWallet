@@ -334,7 +334,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     },
     sendButton: {
       flex: 1,
-      backgroundColor: theme.colors.primary,
+      backgroundColor: theme.colors.bitcoinOrange,
       paddingVertical: 12,
       paddingHorizontal: 16,
       borderRadius: 12,

@@ -76,6 +76,11 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       shadowRadius: 20,
       elevation: 10,
       overflow: 'hidden',
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10
+          : theme.colors.whiteOverlay20,
     },
     modalHeader: {
       flexDirection: 'row',

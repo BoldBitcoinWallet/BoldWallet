@@ -1603,8 +1603,21 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               fromAddressToUse = '';
             } else {
               // Use computed values from handleSend (sender device)
+              // Compute derivation path if not already set
               addressTypeToUse = addressType || 'segwit-native';
-              derivationPathToUse = currentDerivationPath;
+              if (!currentDerivationPath || currentDerivationPath.trim() === '') {
+                // Compute derivation path inline
+                const useLegacyPath = isLegacyWallet(keyshare.created_at);
+                const normalizedNetwork =
+                  network === 'testnet3' ? 'testnet' : network || 'mainnet';
+                derivationPathToUse = getDerivePathForNetwork(
+                  normalizedNetwork,
+                  addressTypeToUse,
+                  useLegacyPath,
+                );
+              } else {
+                derivationPathToUse = currentDerivationPath;
+              }
               networkToUse = network || 'mainnet'; // Keep native format
               fromAddressToUse = computedFromAddress;
             }

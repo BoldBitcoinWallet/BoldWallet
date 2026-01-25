@@ -431,6 +431,11 @@ const ShowcaseScreen = ({navigation}: any) => {
       shadowRadius: 20,
       elevation: 10,
       overflow: 'hidden',
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10
+          : theme.colors.whiteOverlay20,
     },
     modalHeader: {
       flexDirection: 'row',
@@ -440,7 +445,10 @@ const ShowcaseScreen = ({navigation}: any) => {
       paddingTop: 24,
       paddingBottom: 16,
       borderBottomWidth: 1,
-      borderBottomColor: 'rgba(0,0,0,0.05)',
+      borderBottomColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10
+          : theme.colors.whiteOverlay20,
     },
     modalTitle: {
       fontSize: theme.fontSizes?.xl || 18,

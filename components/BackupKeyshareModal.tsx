@@ -335,13 +335,11 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
       backgroundColor: theme.colors.secondary,
     },
     confirmButton: {
-      backgroundColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.accent
-          : theme.colors.bitcoinOrange,
+      backgroundColor: theme.colors.bitcoinOrange,
     },
     disabledButton: {
-      backgroundColor: theme.colors.disabled,
+      backgroundColor: theme.colors.disabled || theme.colors.border,
+      opacity: 0.5,
     },
     cancelButtonText: {
       fontSize: theme.fontSizes?.base || 14,

@@ -2290,6 +2290,11 @@ const MobilesPairing = ({navigation}: any) => {
       shadowOpacity: 0.25,
       shadowRadius: 16,
       elevation: 8,
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10
+          : theme.colors.whiteOverlay20,
     },
     modalHeader: {
       flexDirection: 'row',
