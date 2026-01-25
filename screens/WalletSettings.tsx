@@ -2807,37 +2807,32 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           onToggle={() => toggleSection('devDebug')}
           styles={styles}
           theme={theme}>
-          {(() => {
-            const isLightMode = theme.colors.background === '#ffffff';
-            const warningBgColor = isLightMode ? '#FFF3CD' : '#3D2F00';
-            const warningBorderColor = isLightMode ? '#FFC107' : '#FFA000';
-            const warningTextColor = isLightMode ? '#856404' : '#FFC107';
-            return (
-              <View
-                style={[
-                  styles.warningContainer,
-                  {
-                    backgroundColor: warningBgColor,
-                    borderColor: warningBorderColor,
-                  },
-                ]}>
-                <Text
-                  style={[styles.warningText, {color: warningTextColor}]}>
-                  ⚠️ Advanced Developers Only
-                </Text>
-                <Text
-                  style={[
-                    styles.warningDescription,
-                    {color: warningTextColor},
-                  ]}>
-                  This feature is for troubleshooting on secure, trusted devices
-                  only. Never enable debug logging unless you know what you're
-                  doing. Debug logs may contain sensitive information and should
-                  only be used in development environments.
-                </Text>
-              </View>
-            );
-          })()}
+          <View
+            style={[
+              styles.warningContainer,
+              {
+                backgroundColor:
+                  theme.colors.background === '#ffffff'
+                    ? '#FFF3CD'
+                    : '#3D2F00',
+                borderColor: theme.colors.warningBorder,
+              },
+            ]}>
+            <Text
+              style={[styles.warningText, {color: theme.colors.warningText}]}>
+              ⚠️ Advanced Developers Only
+            </Text>
+            <Text
+              style={[
+                styles.warningDescription,
+                {color: theme.colors.warningText},
+              ]}>
+              This feature is for troubleshooting on secure, trusted devices
+              only. Never enable debug logging unless you know what you're
+              doing. Debug logs may contain sensitive information and should
+              only be used in development environments.
+            </Text>
+          </View>
           <Text style={styles.toggleDescription}>
             Enable debug logging to see detailed logs in the console. Logging is
             disabled by default. When enabled, the app will reload to apply the
