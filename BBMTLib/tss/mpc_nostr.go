@@ -1486,7 +1486,7 @@ func runNostrKeysignInternal(cfg nostrtransport.Config, keyshare *LocalStateNost
 	status.Step++
 	status.Info = "running ECDSA keysign"
 	setStep(sessionID, status.Info, status.Step)
-	
+
 	// Check if context is already cancelled before starting keysign
 	select {
 	case <-ctx.Done():
@@ -1495,7 +1495,7 @@ func runNostrKeysignInternal(cfg nostrtransport.Config, keyshare *LocalStateNost
 		return "", fmt.Errorf("context cancelled before keysign: %w", ctx.Err())
 	default:
 	}
-	
+
 	// Run keysign in a goroutine and monitor context timeout
 	keysignErrCh := make(chan error, 1)
 	keysignRespCh := make(chan *KeysignResponse, 1)
@@ -1513,7 +1513,7 @@ func runNostrKeysignInternal(cfg nostrtransport.Config, keyshare *LocalStateNost
 			keysignRespCh <- resp
 		}
 	}()
-	
+
 	// Wait for keysign to complete or context to timeout
 	var keysignResp *KeysignResponse
 	select {
@@ -1741,7 +1741,7 @@ func runNostrKeysignInternalWithSighash(cfg nostrtransport.Config, keyshare *Loc
 	status.Step++
 	status.Info = "running ECDSA keysign"
 	setStep(sessionID, status.Info, status.Step)
-	
+
 	// Check if context is already cancelled before starting keysign
 	select {
 	case <-ctx.Done():
@@ -1750,7 +1750,7 @@ func runNostrKeysignInternalWithSighash(cfg nostrtransport.Config, keyshare *Loc
 		return "", fmt.Errorf("context cancelled before keysign: %w", ctx.Err())
 	default:
 	}
-	
+
 	// Run keysign in a goroutine and monitor context timeout
 	keysignErrCh := make(chan error, 1)
 	keysignRespCh := make(chan *KeysignResponse, 1)
@@ -1768,7 +1768,7 @@ func runNostrKeysignInternalWithSighash(cfg nostrtransport.Config, keyshare *Loc
 			keysignRespCh <- resp
 		}
 	}()
-	
+
 	// Wait for keysign to complete or context to timeout
 	var keysignResp *KeysignResponse
 	select {

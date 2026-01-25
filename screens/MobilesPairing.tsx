@@ -40,12 +40,7 @@ import {
 } from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Big from 'big.js';
-import {
-  dbg,
-  getPinnedRemoteIPs,
-  HapticFeedback,
-  hexToString,
-} from '../utils';
+import {dbg, getPinnedRemoteIPs, HapticFeedback, hexToString} from '../utils';
 import {useTheme} from '../theme';
 import {waitMS, WalletService} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
@@ -78,15 +73,7 @@ const ProgressBarAnimatedView: React.FC<{
       alignSelf: 'center' as const,
     };
   });
-  return (
-    <Animated.View
-      style={[
-        style,
-        {backgroundColor},
-        animatedStyle,
-      ]}
-    />
-  );
+  return <Animated.View style={[style, {backgroundColor}, animatedStyle]} />;
 };
 
 const MobilesPairing = ({navigation}: any) => {
@@ -2905,7 +2892,7 @@ const MobilesPairing = ({navigation}: any) => {
                       }),
                     );
                   }}
-                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                   style={styles.exitButton}>
                   <Text style={styles.exitButtonText}>Exit Pairing</Text>
                 </Pressable>
@@ -2936,7 +2923,7 @@ const MobilesPairing = ({navigation}: any) => {
                           }),
                         );
                       }}
-                      android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
+                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                       style={styles.exitButton}>
                       <Text style={styles.exitButtonText}>Exit Pairing</Text>
                     </Pressable>
@@ -3076,11 +3063,7 @@ const MobilesPairing = ({navigation}: any) => {
                     </Pressable>
                   ))}
                 </View>
-                <Text
-                  style={styles.pairingHint}
-                  numberOfLines={2}
-                  adjustsFontSizeToFit={true}
-                  minimumFontScale={0.8}>
+                <Text style={styles.pairingHint}>
                   ⚠️ Tip: for ultimate privacy and reliability, put one device
                   in Hotspot mode, and connect the{' '}
                   {isTrio ? 'other devices' : 'other device'} to it.

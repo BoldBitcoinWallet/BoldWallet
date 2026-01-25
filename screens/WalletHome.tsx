@@ -2194,16 +2194,20 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                         isBlurred
                           ? 'hidden'
                           : showSats
-                          ? balanceFormattingEnabled
-                            ? `${formatSats(
-                                parseFloat(balanceBTC || '0') * 1e8,
-                              )} sats`
-                            : `${Math.floor(
-                                parseFloat(balanceBTC || '0') * 1e8,
-                              )} sats`
-                          : balanceFormattingEnabled
-                          ? `${formatBTC(balanceBTC)} ₿`
-                          : `${parseFloat(balanceBTC || '0').toFixed(8)} ₿`
+                          ? (() => {
+                              const balanceNum = parseFloat(balanceBTC || '0');
+                              if (balanceNum === 0) return '0 sats';
+                              return balanceFormattingEnabled
+                                ? `${formatSats(balanceNum * 1e8)} sats`
+                                : `${Math.floor(balanceNum * 1e8)} sats`;
+                            })()
+                          : (() => {
+                              const balanceNum = parseFloat(balanceBTC || '0');
+                              if (balanceNum === 0) return '0 ₿';
+                              return balanceFormattingEnabled
+                                ? `${formatBTC(balanceBTC)} ₿`
+                                : `${balanceNum.toFixed(8)} ₿`;
+                            })()
                       }`}
                       accessibilityHint="Double tap to toggle balance visibility"
                       accessibilityRole="button">
@@ -2225,20 +2229,24 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                               ? '********* sats'
                               : '********* ₿'
                             : showSats
-                            ? balanceFormattingEnabled
-                              ? `${formatSats(
-                                  parseFloat(balanceBTC || '0') * 1e8,
-                                )} sats`
-                              : `${Math.floor(
-                                  parseFloat(balanceBTC || '0') * 1e8,
-                                )} sats`
-                            : balanceFormattingEnabled
-                            ? `${formatBTC(balanceBTC, {
-                                compact: false,
-                                maxDecimals: 8,
-                                showTrailingZeros: true,
-                              })} ₿`
-                            : `${parseFloat(balanceBTC || '0').toFixed(8)} ₿`}
+                            ? (() => {
+                                const balanceNum = parseFloat(balanceBTC || '0');
+                                if (balanceNum === 0) return '0 sats';
+                                return balanceFormattingEnabled
+                                  ? `${formatSats(balanceNum * 1e8)} sats`
+                                  : `${Math.floor(balanceNum * 1e8)} sats`;
+                              })()
+                            : (() => {
+                                const balanceNum = parseFloat(balanceBTC || '0');
+                                if (balanceNum === 0) return '0 ₿';
+                                return balanceFormattingEnabled
+                                  ? `${formatBTC(balanceBTC, {
+                                      compact: false,
+                                      maxDecimals: 8,
+                                      showTrailingZeros: true,
+                                    })} ₿`
+                                  : `${balanceNum.toFixed(8)} ₿`;
+                              })()}
                         </Text>
                       )}
                     </Pressable>
