@@ -1,8 +1,32 @@
 # Changelog
 
-## [2.1.13] - 2026-01-26
+## [2.1.12] - 2026-01-25
 
 ### Added
+- **Custom Font System**: Professional typography with Inter and JetBrains Mono fonts
+  - Inter font family for UI text (Regular, Medium, SemiBold weights)
+  - JetBrains Mono font family for technical content like Bitcoin addresses (Regular, Medium, Bold weights)
+  - New font system with proper font family mappings and weight-to-family conversion
+  - Font comparison and verification components for testing and validation
+  - Automated font download scripts and comprehensive documentation
+  - Font assets properly linked for both iOS and Android platforms
+  - Enhanced typography consistency across all screens and components
+- **Mempool Privacy Configuration**: New user preference screen for enhanced privacy
+  - Custom mempool.space API endpoint configuration during wallet setup
+  - Privacy-focused feature to reduce third-party tracking of Bitcoin addresses
+  - API endpoint validation with automatic URL normalization
+  - Option to skip configuration and use default public mempool servers
+  - Settings integration for changing API endpoint after wallet creation
+  - Educational information about privacy benefits of self-hosted mempool servers
+- **Comprehensive Icon Asset Library**: Added 50+ new icon assets for improved UI consistency
+  - Icons for settings, actions, network status, and wallet features
+  - Theme-aware icon support with inverted variants for dark mode
+  - Consistent icon styling across all screens and components
+- **User Preference Screen**: New onboarding screen for privacy configuration
+  - Clean, professional UI with privacy-focused messaging
+  - API endpoint input with validation and error handling
+  - Skip option for users who prefer default settings
+  - Integrated into app navigation flow
 - **Settings: Wallet Balance Formatting Option**: New user preference for balance display formatting
   - Toggle between raw numbers and formatted display with thousand separators
   - Better readability for large Bitcoin amounts and satoshi values
@@ -17,6 +41,28 @@
   - Warning messages for sensitive information handling
 
 ### Changed
+- **Typography System Refactoring**: Complete font system overhaul
+  - Migrated from system fonts to custom Inter and JetBrains Mono fonts
+  - New `theme/fonts.ts` module with font utilities and mappings
+  - Font weight to font family mapping for proper font selection
+  - Enhanced font style creation with theme integration
+  - All components updated to use new font system
+- **Component Font Updates**: Updated all components to use new font families
+  - TransactionList, TransactionDetailsModal, TransactionListSkeleton with Inter fonts
+  - WalletSkeleton, Header, CurrencySelector with updated typography
+  - QRScanner components with monospace font for addresses
+  - TransportModeSelector, CacheIndicator, and other UI components
+  - Consistent font usage across all screens
+- **Screen Refactoring**: Improved code organization and font integration
+  - MobileNostrPairing, MobilesPairing screens with font updates
+  - PSBTModal, PSBTScreen with enhanced typography
+  - SendBitcoinModal, ReceiveModal, SignedPSBTModal with font improvements
+  - WalletHome, WalletSettings, ShowcaseScreen with updated fonts
+  - LoadingScreen with theme-aware font support
+- **Asset Organization**: Better asset management and organization
+  - New assets directory structure with organized icon assets
+  - Font assets properly linked via manifest files
+  - Improved asset loading and caching
 - **Font Normalizations (iOS and Android)**: Enhanced cross-platform font consistency
   - Improved font rendering consistency across iOS and Android platforms
   - Better font weight mapping and family selection
@@ -53,77 +99,6 @@
   - Enhanced panic recovery and error logging
 
 ### Fixed
-- **Dev Debug Section UI/UX**: Enhanced developer tools interface
-  - Improved visual design with card-based layout
-  - Better status indicators and feedback
-  - Enhanced button styling and interactions
-  - Improved accessibility and user experience
-
-### Technical Details
-- **Dev Debug Implementation**: New developer tools section in WalletSettings
-  - Build number click tracking with visual feedback
-  - Session-based debug logging toggle
-  - Enhanced UI components with status indicators
-- **Performance Improvements**: Multiple optimization passes
-  - Component refactoring for better performance
-  - State management optimizations
-  - Network handling improvements
-- **Files Changed**: Multiple files updated for performance and stability
-- **Native Libraries**: Updated TSS framework binaries for iOS and Android
-
-## [2.1.12] - 2026-01-25
-
-### Added
-- **Custom Font System**: Professional typography with Inter and JetBrains Mono fonts
-  - Inter font family for UI text (Regular, Medium, SemiBold weights)
-  - JetBrains Mono font family for technical content like Bitcoin addresses (Regular, Medium, Bold weights)
-  - New font system with proper font family mappings and weight-to-family conversion
-  - Font comparison and verification components for testing and validation
-  - Automated font download scripts and comprehensive documentation
-  - Font assets properly linked for both iOS and Android platforms
-  - Enhanced typography consistency across all screens and components
-- **Mempool Privacy Configuration**: New user preference screen for enhanced privacy
-  - Custom mempool.space API endpoint configuration during wallet setup
-  - Privacy-focused feature to reduce third-party tracking of Bitcoin addresses
-  - API endpoint validation with automatic URL normalization
-  - Option to skip configuration and use default public mempool servers
-  - Settings integration for changing API endpoint after wallet creation
-  - Educational information about privacy benefits of self-hosted mempool servers
-- **Comprehensive Icon Asset Library**: Added 50+ new icon assets for improved UI consistency
-  - Icons for settings, actions, network status, and wallet features
-  - Theme-aware icon support with inverted variants for dark mode
-  - Consistent icon styling across all screens and components
-- **User Preference Screen**: New onboarding screen for privacy configuration
-  - Clean, professional UI with privacy-focused messaging
-  - API endpoint input with validation and error handling
-  - Skip option for users who prefer default settings
-  - Integrated into app navigation flow
-
-### Changed
-- **Typography System Refactoring**: Complete font system overhaul
-  - Migrated from system fonts to custom Inter and JetBrains Mono fonts
-  - New `theme/fonts.ts` module with font utilities and mappings
-  - Font weight to font family mapping for proper font selection
-  - Enhanced font style creation with theme integration
-  - All components updated to use new font system
-- **Component Font Updates**: Updated all components to use new font families
-  - TransactionList, TransactionDetailsModal, TransactionListSkeleton with Inter fonts
-  - WalletSkeleton, Header, CurrencySelector with updated typography
-  - QRScanner components with monospace font for addresses
-  - TransportModeSelector, CacheIndicator, and other UI components
-  - Consistent font usage across all screens
-- **Screen Refactoring**: Improved code organization and font integration
-  - MobileNostrPairing, MobilesPairing screens with font updates
-  - PSBTModal, PSBTScreen with enhanced typography
-  - SendBitcoinModal, ReceiveModal, SignedPSBTModal with font improvements
-  - WalletHome, WalletSettings, ShowcaseScreen with updated fonts
-  - LoadingScreen with theme-aware font support
-- **Asset Organization**: Better asset management and organization
-  - New assets directory structure with organized icon assets
-  - Font assets properly linked via manifest files
-  - Improved asset loading and caching
-
-### Fixed
 - **Font Consistency Issues**: Fixed inconsistent font rendering across platforms
   - Proper font family mapping for iOS and Android
   - Fixed font weight issues with correct font file selection
@@ -145,6 +120,11 @@
   - Improved spacing and visual hierarchy in Final Step section
   - Better participant device information display
   - Updated typography for participant titles
+- **Dev Debug Section UI/UX**: Enhanced developer tools interface
+  - Improved visual design with card-based layout
+  - Better status indicators and feedback
+  - Enhanced button styling and interactions
+  - Improved accessibility and user experience
 
 ### Technical Details
 - **Font System**: New `theme/fonts.ts` module with comprehensive font utilities
@@ -167,6 +147,15 @@
 - **Components Updated**: All major components updated for new font system
 - **Screens Updated**: All screens updated with font improvements and privacy features
 - **Build System**: Updated iOS Xcode project and Android build configuration for font assets
+- **Dev Debug Implementation**: New developer tools section in WalletSettings
+  - Build number click tracking with visual feedback
+  - Session-based debug logging toggle
+  - Enhanced UI components with status indicators
+- **Performance Improvements**: Multiple optimization passes
+  - Component refactoring for better performance
+  - State management optimizations
+  - Network handling improvements
+- **Native Libraries**: Updated TSS framework binaries for iOS and Android
 
 ## [2.1.11] - 2026-01-12
 
