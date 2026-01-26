@@ -936,7 +936,7 @@ export const createStyles = (theme: Theme): Styles => ({
     padding: 8,
     marginHorizontal: 16,
     marginTop: 0, // walletHeader already has marginBottom: 16
-    marginBottom: 0, // No gap - transaction list starts immediately
+    marginBottom: 6, // No gap - transaction list starts immediately
     borderRadius: 8,
     flexDirection: 'row' as const,
     justifyContent: 'space-between' as const,

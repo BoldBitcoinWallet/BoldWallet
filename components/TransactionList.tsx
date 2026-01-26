@@ -452,7 +452,7 @@ const TransactionList = React.forwardRef<
       };
       // Initial fetch
       if (!isFetching.current && !isRefreshingRef.current) {
-        fetchData();
+        fetchData(true);
       }
       // Set up refresh interval
       refreshInterval = setInterval(() => {

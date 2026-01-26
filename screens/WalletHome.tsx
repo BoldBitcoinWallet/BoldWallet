@@ -955,6 +955,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           stackTrace: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
         },
       );
+      // Reset modal states when returning to this screen
+      setIsPSBTModalVisible(false);
+      setIsPSBTTransportModalVisible(false);
+      setPendingPSBTParams(null);
       // Full re-initialization when returning from settings
       // This ensures everything is properly set up for the current network
       if (network && apiBase) {
@@ -2000,6 +2004,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     const {psbtBase64} = pendingPSBTParams;
     const routeName =
       transport === 'local' ? 'Devices Pairing' : 'Nostr Connect';
+    // Reset modal state before navigating
+    setIsPSBTModalVisible(false);
+    setIsPSBTTransportModalVisible(false);
     // For PSBT signing, network is not strictly required (extracted from app state),
     // but we pass it for consistency. Derivation path is extracted from PSBT's Bip32Derivation.
     navigation.dispatch(
@@ -2268,9 +2275,16 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                         accessibilityLabel={`Fiat balance: ${
                           isBlurred
                             ? 'hidden'
-                            : `${getCurrencySymbol(
-                                selectedCurrency,
-                              )}${presentFiat(balanceFiat)}`
+                            : (() => {
+                                const fiatValue = balanceFiat === '-' ? '0' : balanceFiat;
+                                return balanceFormattingEnabled
+                                  ? `${getCurrencySymbol(
+                                      selectedCurrency,
+                                    )}${presentFiat(fiatValue)}`
+                                  : `${getCurrencySymbol(
+                                      selectedCurrency,
+                                    )}${fiatValue}`;
+                              })()
                         }`}
                         accessibilityHint="Double tap to toggle balance visibility"
                         accessibilityRole="button">
@@ -2289,9 +2303,16 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                             allowFontScaling={true}>
                             {isBlurred
                               ? `${getCurrencySymbol(selectedCurrency)} ******`
-                              : `${getCurrencySymbol(
-                                  selectedCurrency,
-                                )}${presentFiat(balanceFiat)}`}
+                              : (() => {
+                                  const fiatValue = balanceFiat === '-' ? '0' : balanceFiat;
+                                  return balanceFormattingEnabled
+                                    ? `${getCurrencySymbol(
+                                        selectedCurrency,
+                                      )}${presentFiat(fiatValue)}`
+                                    : `${getCurrencySymbol(
+                                        selectedCurrency,
+                                      )}${fiatValue}`;
+                                })()}
                           </Text>
                         )}
                       </Pressable>

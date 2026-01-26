@@ -659,11 +659,11 @@ const MobilesPairing = ({navigation}: any) => {
       dbg('spending hash:', route.params.spendingHash);
       if (isMaster) {
         await BBMTLibNativeModule.stopRelay('stop');
-        await waitMS(2000);
+        await waitMS(500);
         const relay = await BBMTLibNativeModule.runRelay(String(discoveryPort));
         dbg('relay start:', relay, localDevice);
       } else {
-        await waitMS(3000); // Give master device time to start relay
+        await waitMS(500); // Give master device time to start relay
       }
       const server = `http://${isMaster ? localIP : peerIP}:${discoveryPort}`;
       const jks = await EncryptedStorage.getItem('keyshare');

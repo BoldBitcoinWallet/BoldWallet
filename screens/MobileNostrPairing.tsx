@@ -1956,9 +1956,23 @@ const MobileNostrPairing = ({navigation}: any) => {
           );
           setMpcDone(true);
         })
-        .catch((e: any) => {
+        .catch(async (e: any) => {
           Alert.alert('Operation Error', `Could not sign PSBT.\n${e?.message}`);
           dbg(localNpub, 'PSBT signing error', e);
+          // Navigate back to home on error to ensure modal cleanup
+          try {
+            const walletMode =
+              (await EncryptedStorage.getItem('wallet_mode')) || 'full';
+            const targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
+            navigation.dispatch(
+              CommonActions.reset({
+                index: 0,
+                routes: [{name: targetRoute}],
+              }),
+            );
+          } catch (navError) {
+            dbg('Error navigating after PSBT error:', navError);
+          }
         })
         .finally(async () => {
           setMpcDone(true);
@@ -1967,6 +1981,20 @@ const MobileNostrPairing = ({navigation}: any) => {
       dbg('Sign PSBT error:', error);
       Alert.alert('Error', error?.message || 'PSBT signing failed');
       setStatus('PSBT signing failed');
+      // Navigate back to home on error to ensure modal cleanup
+      try {
+        const walletMode =
+          (await EncryptedStorage.getItem('wallet_mode')) || 'full';
+        const targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
+        navigation.dispatch(
+          CommonActions.reset({
+            index: 0,
+            routes: [{name: targetRoute}],
+          }),
+        );
+      } catch (navError) {
+        dbg('Error navigating after PSBT error:', navError);
+      }
     } finally {
       setIsPairing(false);
     }
@@ -2118,6 +2146,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       setIsPreParamsReady(true);
       HapticFeedback.medium();
       dbg('Device prepared successfully');
+      setIsPrepared(true);
     } catch (error: any) {
       setIsPreParamsReady(false);
       dbg('Error preparing device:', error);
@@ -2186,6 +2215,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       padding: 20,
     },
     section: {
+      marginTop: 8,
       marginBottom: 8,
     },
     sectionTitle: {
@@ -2908,7 +2938,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       fontSize: theme.fontSizes?.lg || 16,
       fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
-      marginBottom: 8,
+      marginBottom: 0,
     },
     helpText: {
       fontSize: theme.fontSizes?.base || 14,
@@ -2960,7 +2990,6 @@ const MobileNostrPairing = ({navigation}: any) => {
     checkboxContainer: {
       flexDirection: 'row',
       alignItems: 'center',
-      marginTop: 16,
       paddingVertical: 8,
     },
     checkbox: {
@@ -3289,33 +3318,30 @@ const MobileNostrPairing = ({navigation}: any) => {
       flex: 1,
     },
     finalStepTitle: {
-      fontSize: theme.fontSizes?.xl || 18,
+      fontSize: theme.fontSizes?.base || 14,
       fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
-      marginBottom: 4,
+      marginBottom: 12,
     },
     finalStepDescription: {
       fontSize: theme.fontSizes?.base || 14,
       fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
-      marginBottom: 12,
       lineHeight: 20,
     },
     participantsList: {
-      marginTop: 8,
-      marginBottom: 12,
       paddingHorizontal: 12,
-      paddingVertical: 12,
       backgroundColor: theme.colors.cardBackground + '80',
       borderRadius: 8,
       borderWidth: 1,
       borderColor: theme.colors.border + '30',
     },
     participantsListTitle: {
-      fontSize: theme.fontSizes?.base || 13,
-      fontFamily: theme.fontFamilies?.bold,
+      fontSize: theme.fontSizes?.xl || 18,
+      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 8,
+      padding: 12,
     },
     participantItem: {
       flexDirection: 'row',
@@ -3354,16 +3380,23 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginTop: 2,
     },
     participantDevicesInfo: {
-      marginTop: 12,
-      paddingTop: 12,
-      borderTopWidth: 1,
-      borderTopColor: theme.colors.border + '40',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.primary + '10',
+      padding: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.border
+          : theme.colors.border + '30',
     },
     participantDevicesInfoTitle: {
-      fontSize: theme.fontSizes?.base || 14,
+      fontSize: theme.fontSizes?.xl || 18,
       fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
-      marginBottom: 10,
+      marginBottom: 8,
     },
     participantDeviceItem: {
       flexDirection: 'row',
@@ -4093,7 +4126,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                             color: theme.colors.text,
                             marginBottom: 8,
                           }}>
-                          This Device
+                          First Co-Signer
                         </Text>
                         {sendModeDevices.length === 0 ? (
                           <Text
@@ -4134,7 +4167,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                         </Text>
                                         <Text
                                           style={styles.sendModeDeviceBadge}>
-                                          This device
+                                          {'>>'} This device
                                         </Text>
                                       </View>
                                       <Text
@@ -4158,8 +4191,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                                           marginBottom: 8,
                                         }}>
                                         {isTrio
-                                          ? 'Select one device to co-sign:'
-                                          : 'Co-signing device:'}
+                                          ? 'Choose Second Co-signer'
+                                          : 'Second Co-Signer'}
                                       </Text>
                                       {otherDevices.map(dev => {
                                         // In duo mode, use View (not selectable)
@@ -4411,7 +4444,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                             color: theme.colors.text,
                             marginBottom: 12,
                           }}>
-                          This Device
+                          {'-->'} This Device (Copy or Share QR)
                         </Text>
                         <View
                           style={[
@@ -4491,8 +4524,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                           marginBottom: 12,
                         }}>
                         {isTrio
-                          ? 'Step 2: Second Device'
-                          : 'Step 2: Other Device'}
+                          ? 'Next: Scan Second Device'
+                          : '--> Scan Other Device (Paste or Scan QR)'}
                       </Text>
                       <View>
                         <View style={styles.inputWithIcons}>
@@ -4755,46 +4788,32 @@ const MobileNostrPairing = ({navigation}: any) => {
                       peerDeviceName2) ||
                       (!isTrio && peerNpub1 && peerDeviceName1)) && (
                       <View style={styles.section}>
-                        <View style={styles.card}>
-                          <Pressable
-                            style={[
-                              styles.button,
-                              (isPreparing || !isPrepared) &&
-                                styles.buttonDisabled,
-                            ]}
-                            onPress={prepareDevice}
-                            disabled={isPreparing || !isPrepared}
-                            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                            <Image
-                              source={require('../assets/prepare-icon.png')}
-                              style={styles.iconPrepare}
-                              resizeMode="contain"
-                            />
-                            <Text style={styles.buttonText}>
-                              {isPreparing ? 'Preparing...' : 'Prepare Device'}
-                            </Text>
-                          </Pressable>
-                          <Pressable
-                            style={styles.checkboxContainer}
-                            disabled={isPreparing}
-                            onPress={() => {
-                              HapticFeedback.light();
-                              setIsPrepared(!isPrepared);
-                            }}>
-                            <View
-                              style={[
-                                styles.checkbox,
-                                isPrepared && styles.checkboxChecked,
-                              ]}>
-                              {isPrepared && (
-                                <Text style={styles.checkboxCheckmark}>✓</Text>
-                              )}
-                            </View>
-                            <Text style={styles.checkboxLabel}>
-                              Keep app open during setup
-                            </Text>
-                          </Pressable>
-                        </View>
+                        <Text
+                          style={{
+                            fontSize: theme.fontSizes?.base || 14,
+                            fontFamily: theme.fontFamilies?.bold,
+                            color: theme.colors.text,
+                            marginBottom: 12,
+                          }}>
+                          {'-->'} Keep app open during preparation
+                        </Text>
+                        <Pressable
+                          style={[
+                            styles.button,
+                            isPreparing && styles.buttonDisabled,
+                          ]}
+                          onPress={prepareDevice}
+                          disabled={isPreparing}
+                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                          <Image
+                            source={require('../assets/prepare-icon.png')}
+                            style={styles.iconPrepare}
+                            resizeMode="contain"
+                          />
+                          <Text style={styles.buttonText}>
+                            {isPreparing ? 'Preparing...' : 'Prepare Device'}
+                          </Text>
+                        </Pressable>
                       </View>
                     )}
                   {/* Preparing Modal */}
@@ -4990,10 +5009,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                               <Text style={styles.helpTitle}>Tips</Text>
                             </View>
                             <Text style={styles.helpText}>
-                              • QR scanning is the easiest method{'\n'}• Make
-                              sure all devices are online{'\n'}• The process
-                              takes 1-2 minutes
-                              {'\n'}• Keep devices close together
+                              • Make sure all devices are ready{'\n'}• Your
+                              internet connection must be stable{'\n'}• The
+                              could take up 1-2 minutes
+                              {'\n'}• Keep app open during setup
                             </Text>
                           </View>
                         </ScrollView>
@@ -5013,61 +5032,14 @@ const MobileNostrPairing = ({navigation}: any) => {
                       peerNpub2 &&
                       peerDeviceName2) ||
                       (!isTrio && peerNpub1 && peerDeviceName1)) && (
-                      <View style={styles.section}>
-                        <View style={styles.informationCard}>
-                          <View style={styles.finalStepHeader}>
-                            <View style={styles.finalStepIconContainer}>
-                              <View
-                                style={
-                                  isTrio
-                                    ? styles.threeDevicesContainer
-                                    : styles.twoPhonesContainer
-                                }>
-                                <Image
-                                  source={require('../assets/phone-icon.png')}
-                                  style={[
-                                    styles.finalStepPhoneIcon,
-                                    styles.firstPhone,
-                                  ]}
-                                  resizeMode="contain"
-                                />
-                                <Image
-                                  source={require('../assets/phone-icon.png')}
-                                  style={[
-                                    styles.finalStepPhoneIcon,
-                                    styles.secondPhone,
-                                  ]}
-                                  resizeMode="contain"
-                                />
-                                {isTrio && (
-                                  <Image
-                                    source={require('../assets/phone-icon.png')}
-                                    style={[
-                                      styles.finalStepPhoneIcon,
-                                      styles.thirdPhone,
-                                    ]}
-                                    resizeMode="contain"
-                                  />
-                                )}
-                              </View>
-                            </View>
-                            <View style={styles.finalStepTextContainer}>
-                              <Text style={styles.finalStepTitle}>
-                                Final Step
-                              </Text>
-                              <Text style={styles.finalStepDescription}>
-                                Make sure{' '}
-                                {isTrio ? 'all devices' : 'both devices'}{' '}
-                                preparation step is complete.
-                              </Text>
-                            </View>
-                          </View>
+                      <>
+                        <View style={styles.section}>
+                          <Text style={styles.finalStepTitle}>
+                            {'-->'} Final Step
+                          </Text>
                           {/* Participants Device Information */}
                           {Object.keys(keyshareMapping).length > 0 && (
                             <View style={styles.participantsList}>
-                              <Text style={styles.participantsListTitle}>
-                                Participants:
-                              </Text>
                               {keyshareMapping.keyshare1 && (
                                 <View style={styles.participantItem}>
                                   <Text style={styles.bulletPoint}>•</Text>
@@ -5142,87 +5114,120 @@ const MobileNostrPairing = ({navigation}: any) => {
                               )}
                             </View>
                           )}
-                          <Pressable
-                            style={[
-                              styles.enhancedCheckboxContainer,
-                              isKeygenReady &&
-                                styles.enhancedCheckboxContainerChecked,
-                            ]}
-                            onPress={() => {
-                              HapticFeedback.medium();
-                              toggleKeygenReady();
-                            }}>
-                            <View
-                              style={[
-                                styles.enhancedCheckbox,
-                                isKeygenReady && styles.enhancedCheckboxChecked,
-                              ]}>
-                              {isKeygenReady && (
-                                <Text style={styles.checkmark}>✓</Text>
-                              )}
-                            </View>
-                            <View style={styles.checkboxTextContainer}>
-                              <Text style={styles.enhancedCheckboxLabel}>
-                                All devices are ready
-                              </Text>
-                            </View>
-                          </Pressable>
-                          {/* Participant Devices Info */}
-                          <View style={styles.participantDevicesInfo}>
-                            <Text style={styles.participantDevicesInfoTitle}>
-                              Participants:
-                            </Text>
-                            {(() => {
-                              // Collect all participants
-                              const participants: Array<{
-                                npub: string;
-                                deviceName: string;
-                              }> = [];
-                              if (localNpub && deviceName) {
-                                participants.push({
-                                  npub: localNpub,
-                                  deviceName: deviceName,
-                                });
-                              }
-                              if (peerNpub1 && peerDeviceName1) {
-                                participants.push({
-                                  npub: peerNpub1,
-                                  deviceName: peerDeviceName1,
-                                });
-                              }
-                              if (isTrio && peerNpub2 && peerDeviceName2) {
-                                participants.push({
-                                  npub: peerNpub2,
-                                  deviceName: peerDeviceName2,
-                                });
-                              }
-                              // Sort by npub
-                              participants.sort((a, b) =>
-                                a.npub.localeCompare(b.npub),
-                              );
-                              return participants.map((participant, index) => (
-                                <View
-                                  key={index}
-                                  style={styles.participantDeviceItem}>
-                                  <View style={styles.participantDeviceLeft}>
-                                    <Image
-                                      source={require('../assets/phone-icon.png')}
-                                      style={styles.participantDeviceIcon}
-                                      resizeMode="contain"
-                                    />
-                                    <Text style={styles.participantDeviceLabel}>
-                                      {participant.deviceName}
-                                    </Text>
-                                  </View>
-                                  <Text style={styles.participantDeviceNpub}>
-                                    {shortenNpub(participant.npub, 8, 6)}
+                          {/* Participant Devices Info - without container */}
+                          {(() => {
+                            // Collect all participants
+                            const participants: Array<{
+                              npub: string;
+                              deviceName: string;
+                            }> = [];
+                            if (localNpub && deviceName) {
+                              participants.push({
+                                npub: localNpub,
+                                deviceName: deviceName,
+                              });
+                            }
+                            if (peerNpub1 && peerDeviceName1) {
+                              participants.push({
+                                npub: peerNpub1,
+                                deviceName: peerDeviceName1,
+                              });
+                            }
+                            if (isTrio && peerNpub2 && peerDeviceName2) {
+                              participants.push({
+                                npub: peerNpub2,
+                                deviceName: peerDeviceName2,
+                              });
+                            }
+                            // Sort by npub
+                            participants.sort((a, b) =>
+                              a.npub.localeCompare(b.npub),
+                            );
+                            return participants.map((participant, index) => (
+                              <View
+                                key={index}
+                                style={styles.participantDeviceItem}>
+                                <View style={styles.participantDeviceLeft}>
+                                  <Image
+                                    source={require('../assets/phone-icon.png')}
+                                    style={styles.participantDeviceIcon}
+                                    resizeMode="contain"
+                                  />
+                                  <Text style={styles.participantDeviceLabel}>
+                                    {participant.npub === localNpub
+                                      ? 'This device'
+                                      : participant.deviceName}
                                   </Text>
                                 </View>
-                              ));
-                            })()}
-                          </View>
+                                <Text style={styles.participantDeviceNpub}>
+                                  {shortenNpub(participant.npub, 8, 6)}
+                                </Text>
+                              </View>
+                            ));
+                          })()}
                         </View>
-                      </View>
+                        {/* All devices ready checkbox and Start button - outside Final Step card */}
+                        {!isPairing && !mpcDone && isPrepared && (
+                          <>
+                            <Pressable
+                              style={[styles.enhancedCheckboxContainer]}
+                              onPress={() => {
+                                HapticFeedback.medium();
+                                toggleKeygenReady();
+                              }}>
+                              <View
+                                style={[
+                                  styles.enhancedCheckbox,
+                                  isKeygenReady &&
+                                    styles.enhancedCheckboxChecked,
+                                ]}>
+                                {isKeygenReady && (
+                                  <Text style={styles.checkmark}>✓</Text>
+                                )}
+                              </View>
+                              <View style={styles.checkboxTextContainer}>
+                                <Text style={styles.enhancedCheckboxLabel}>
+                                  All devices are ready.
+                                </Text>
+                                <Text style={styles.warningHint}>
+                                  Do not leave the app during setup.
+                                </Text>
+                              </View>
+                            </Pressable>
+                            <Pressable
+                              style={[
+                                styles.button,
+                                !canStartKeygen && styles.buttonDisabled,
+                              ]}
+                              onPress={startKeygen}
+                              disabled={!canStartKeygen}
+                              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                              <View style={styles.buttonContent}>
+                                <Image
+                                  source={require('../assets/key-icon.png')}
+                                  style={styles.buttonIcon}
+                                  resizeMode="contain"
+                                />
+                                <Text style={styles.buttonText}>
+                                  {(() => {
+                                    // For keygen, determine if local npub is first in sorted order
+                                    const allNpubs = [localNpub];
+                                    if (peerNpub1) allNpubs.push(peerNpub1);
+                                    if (isTrio && peerNpub2)
+                                      allNpubs.push(peerNpub2);
+                                    const sortedNpubs = allNpubs.sort();
+                                    const isKeyShare1 =
+                                      sortedNpubs[0] === localNpub;
+                                    return isKeyShare1
+                                      ? 'Start Key Generation'
+                                      : 'Join Key Generation';
+                                  })()}
+                                </Text>
+                              </View>
+                            </Pressable>
+                          </>
+                        )}
+                      </>
                     )}
                   {/* Readiness Checkbox for PSBT Signing */}
                   {isSignPSBT && !isPairing && !mpcDone && (
@@ -5441,39 +5446,46 @@ const MobileNostrPairing = ({navigation}: any) => {
                       </View>
                     </View>
                   )}
-                  {/* Start Button */}
-                  {!isPairing && !mpcDone && (
-                    <View style={styles.section}>
-                      <Pressable
-                        style={[
-                          styles.button,
-                          (isSendBitcoin || isSignPSBT
-                            ? !localNpub ||
-                              sendModeDevices.length === 0 ||
-                              (isTrio && !selectedPeerNpub) ||
-                              (isSignPSBT && !isKeysignReady)
-                            : !canStartKeygen) && styles.buttonDisabled,
-                        ]}
-                        onPress={
-                          isSignPSBT
-                            ? startSignPSBT
-                            : isSendBitcoin
-                            ? startSendBTC
-                            : startKeygen
-                        }
-                        disabled={
-                          isSendBitcoin || isSignPSBT
-                            ? !localNpub ||
-                              sendModeDevices.length === 0 ||
-                              (isTrio && !selectedPeerNpub) ||
-                              (isSignPSBT && !isKeysignReady)
-                            : !canStartKeygen
-                        }
-                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                        <View style={styles.buttonContent}>
-                          {(isSendBitcoin ||
-                            isSignPSBT ||
-                            !(isSendBitcoin || isSignPSBT)) && (
+                  {/* Start Button - Only for send/sign modes (keygen button is inside Final Step) */}
+                  {!isPairing &&
+                    !mpcDone &&
+                    (isSendBitcoin || isSignPSBT) && (
+                      <View style={styles.section}>
+                        <Pressable
+                          style={[
+                            styles.button,
+                            (isSendBitcoin || isSignPSBT
+                              ? !localNpub ||
+                                sendModeDevices.length === 0 ||
+                                // Ensure all npubs are fully converted (not placeholder hex values)
+                                sendModeDevices.some(
+                                  d => !d.npub || !d.npub.startsWith('npub1'),
+                                ) ||
+                                (isTrio && !selectedPeerNpub) ||
+                                (isSignPSBT && !isKeysignReady)
+                              : !canStartKeygen) && styles.buttonDisabled,
+                          ]}
+                          onPress={
+                            isSignPSBT
+                              ? startSignPSBT
+                              : isSendBitcoin
+                              ? startSendBTC
+                              : startKeygen
+                          }
+                          disabled={
+                            isSendBitcoin || isSignPSBT
+                              ? !localNpub ||
+                                sendModeDevices.length === 0 ||
+                                // Ensure all npubs are fully converted (not placeholder hex values)
+                                sendModeDevices.some(
+                                  d => !d.npub || !d.npub.startsWith('npub1'),
+                                ) ||
+                                (isTrio && !selectedPeerNpub) ||
+                                (isSignPSBT && !isKeysignReady)
+                              : !canStartKeygen
+                          }
+                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                          <View style={styles.buttonContent}>
                             <Image
                               source={
                                 isSendBitcoin || isSignPSBT
@@ -5483,42 +5495,42 @@ const MobileNostrPairing = ({navigation}: any) => {
                               style={styles.buttonIcon}
                               resizeMode="contain"
                             />
-                          )}
-                          <Text style={styles.buttonText}>
-                            {isSendBitcoin || isSignPSBT
-                              ? (() => {
-                                  // Determine if local device is KeyShare1
-                                  const localDevice = sendModeDevices.find(
-                                    d => d.isLocal,
-                                  );
-                                  const isKeyShare1 =
-                                    localDevice?.keyshareLabel === 'KeyShare1';
-                                  return isKeyShare1
-                                    ? isSignPSBT
-                                      ? 'Start PSBT Signing'
-                                      : 'Start Co-Signing'
-                                    : isSignPSBT
-                                    ? 'Join PSBT Signing'
-                                    : 'Join Co-Signing';
-                                })()
-                              : (() => {
-                                  // For keygen, determine if local npub is first in sorted order
-                                  const allNpubs = [localNpub];
-                                  if (peerNpub1) allNpubs.push(peerNpub1);
-                                  if (isTrio && peerNpub2)
-                                    allNpubs.push(peerNpub2);
-                                  const sortedNpubs = allNpubs.sort();
-                                  const isKeyShare1 =
-                                    sortedNpubs[0] === localNpub;
-                                  return isKeyShare1
-                                    ? 'Start Key Generation'
-                                    : 'Join Key Generation';
-                                })()}
-                          </Text>
-                        </View>
-                      </Pressable>
-                    </View>
-                  )}
+                            <Text style={styles.buttonText}>
+                              {isSendBitcoin || isSignPSBT
+                                ? (() => {
+                                    // Determine if local device is KeyShare1
+                                    const localDevice = sendModeDevices.find(
+                                      d => d.isLocal,
+                                    );
+                                    const isKeyShare1 =
+                                      localDevice?.keyshareLabel ===
+                                      'KeyShare1';
+                                    return isKeyShare1
+                                      ? isSignPSBT
+                                        ? 'Start PSBT Signing'
+                                        : 'Start Co-Signing'
+                                      : isSignPSBT
+                                      ? 'Join PSBT Signing'
+                                      : 'Join Co-Signing';
+                                  })()
+                                : (() => {
+                                    // For keygen, determine if local npub is first in sorted order
+                                    const allNpubs = [localNpub];
+                                    if (peerNpub1) allNpubs.push(peerNpub1);
+                                    if (isTrio && peerNpub2)
+                                      allNpubs.push(peerNpub2);
+                                    const sortedNpubs = allNpubs.sort();
+                                    const isKeyShare1 =
+                                      sortedNpubs[0] === localNpub;
+                                    return isKeyShare1
+                                      ? 'Start Key Generation'
+                                      : 'Join Key Generation';
+                                  })()}
+                            </Text>
+                          </View>
+                        </Pressable>
+                      </View>
+                    )}
                 </>
               );
             })()}

@@ -1,12 +1,19 @@
 package tss
 
+import "sync"
+
 type HookListener interface {
 	OnMessage(message string)
 }
 
-var hookListener HookListener
+var (
+	hookListener HookListener
+	hookMutex    sync.RWMutex
+)
 
 func SetHookListener(h HookListener) {
+	hookMutex.Lock()
+	defer hookMutex.Unlock()
 	hookListener = h
 }
 
@@ -18,8 +25,11 @@ func Hook(message string) {
 				Logf("BBMTLog: PANIC in Hook goroutine: %v", r)
 			}
 		}()
-		if hookListener != nil {
-			hookListener.OnMessage(message)
+		hookMutex.RLock()
+		listener := hookListener
+		hookMutex.RUnlock()
+		if listener != nil {
+			listener.OnMessage(message)
 		}
 		Logln(message)
 	}()

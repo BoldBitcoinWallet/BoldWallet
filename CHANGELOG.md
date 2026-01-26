@@ -63,6 +63,17 @@
   - Cleaned up unused components and utilities
   - Removed deprecated useQRScanner hook
   - Improved code organization and maintainability
+- **Co-Signing Timeout Fix**: Fixed transaction co-signing timeout issues
+  - Added validation to ensure all npubs are fully converted before enabling co-signing button
+  - Prevents session ID mismatch between devices during pre-agreement phase
+  - Button now properly disabled until all device npubs are loaded and converted from hex format
+  - Fixes timeout issues when Android and iOS devices have different session IDs
+- **Final Step UI Improvements**: Enhanced Final Step section UI and layout
+  - Removed card container wrapper for cleaner layout
+  - Moved "All devices ready" checkbox and "Start Key Generation" button to appropriate sections
+  - Improved spacing and visual hierarchy in Final Step section
+  - Better participant device information display
+  - Updated typography for participant titles
 
 ### Technical Details
 - **Font System**: New `theme/fonts.ts` module with comprehensive font utilities
