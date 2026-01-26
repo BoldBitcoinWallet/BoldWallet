@@ -1,5 +1,76 @@
 # Changelog
 
+## [2.1.13] - 2026-01-26
+
+### Added
+- **Settings: Wallet Balance Formatting Option**: New user preference for balance display formatting
+  - Toggle between raw numbers and formatted display with thousand separators
+  - Better readability for large Bitcoin amounts and satoshi values
+  - Preference persists across app sessions
+  - Enhanced visual clarity for decimal precision verification
+- **Settings: Dev Debug Mode (Advanced)**: Developer-focused debugging features
+  - Hidden developer debug section accessible via build number (7 clicks on Android)
+  - Debug logging toggle for logcat visibility (Android only)
+  - Session-only debug logging that resets on app restart
+  - Visual progress indicator with badge and toast notifications
+  - Enhanced UI with status indicators and card-based layout
+  - Warning messages for sensitive information handling
+
+### Changed
+- **Font Normalizations (iOS and Android)**: Enhanced cross-platform font consistency
+  - Improved font rendering consistency across iOS and Android platforms
+  - Better font weight mapping and family selection
+  - Optimized font loading and caching
+  - Enhanced monospace font rendering for technical content
+- **Nostr Pairing UI Flow Simplification**: Streamlined device pairing experience
+  - Simplified pairing flow with clearer step indicators
+  - Reduced UI complexity and improved user guidance
+  - Better error messaging and recovery paths
+  - Enhanced visual feedback during pairing process
+- **Enhanced Device Keyshare Modal Info Optimization**: Improved keyshare information display
+  - Enhanced wallet information display with better organization
+  - Clearer capabilities and feature indicators
+  - Bold Web Extension connector information
+  - Watch Wallet Export with output descriptor support
+  - Better visual hierarchy and information architecture
+- **Better Network Handling**: Improved network error management
+  - Reduced annoying UI error alerts for network issues
+  - Background API retry logic with exponential backoff
+  - Better error recovery and user feedback
+  - Graceful degradation when network is unavailable
+  - Improved timeout handling and connection management
+- **React Native Performance Optimization and Refactoring**: Enhanced app performance
+  - Code refactoring for better maintainability
+  - Performance optimizations across components and screens
+  - Reduced re-renders and improved state management
+  - Better memory management and resource cleanup
+  - Optimized asset loading and caching
+- **Nostr/TSS Performance and Stability Enhancements**: Improved reliability
+  - Enhanced Nostr transport layer performance
+  - Better TSS library stability and error handling
+  - Improved session management and recovery
+  - Optimized message processing and chunk handling
+  - Enhanced panic recovery and error logging
+
+### Fixed
+- **Dev Debug Section UI/UX**: Enhanced developer tools interface
+  - Improved visual design with card-based layout
+  - Better status indicators and feedback
+  - Enhanced button styling and interactions
+  - Improved accessibility and user experience
+
+### Technical Details
+- **Dev Debug Implementation**: New developer tools section in WalletSettings
+  - Build number click tracking with visual feedback
+  - Session-based debug logging toggle
+  - Enhanced UI components with status indicators
+- **Performance Improvements**: Multiple optimization passes
+  - Component refactoring for better performance
+  - State management optimizations
+  - Network handling improvements
+- **Files Changed**: Multiple files updated for performance and stability
+- **Native Libraries**: Updated TSS framework binaries for iOS and Android
+
 ## [2.1.12] - 2026-01-25
 
 ### Added

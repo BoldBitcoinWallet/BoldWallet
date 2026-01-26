@@ -51,6 +51,7 @@ import BackupKeyshareModal from '../components/BackupKeyshareModal';
 import {fetchDynamicAPIEndpoints, getNostrRelays} from '../utils';
 import FontComparisonScreen from '../components/FontComparisonScreen';
 import {setDebugLoggingEnabled, isDebugLoggingEnabled} from '../App';
+import Toast from 'react-native-toast-message';
 interface CollapsibleSectionProps {
   title: string;
   children: React.ReactNode;
@@ -676,6 +677,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     useState(false); // Default to raw numbers (not formatted)
   const [isApiInfoVisible, setIsApiInfoVisible] = useState(false);
   const [debugLoggingEnabled, setDebugLoggingEnabledState] = useState(false);
+  const [devDebugEnabled, setDevDebugEnabled] = useState(false);
+  // Click tracking for build number (7 clicks to enable dev mode)
+  const [buildNumberClickCount, setBuildNumberClickCount] = useState(0);
+  const buildNumberClickCountRef = useRef(0);
+  const buildNumberClickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // Collapsible states
   const [expandedSections, setExpandedSections] = useState<{
     [key: string]: boolean;
@@ -752,6 +758,27 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       });
     // Initialize debug logging state from module-level ref
     setDebugLoggingEnabledState(isDebugLoggingEnabled());
+    // Load dev debug enabled preference
+    EncryptedStorage.getItem('devDebugEnabled')
+      .then(enabled => {
+        if (enabled === 'true') {
+          setDevDebugEnabled(true);
+        } else {
+          setDevDebugEnabled(false);
+        }
+      })
+      .catch(error => {
+        dbg('Error loading devDebugEnabled from storage:', error);
+        setDevDebugEnabled(false);
+      });
+    // Cleanup timeout on unmount
+    return () => {
+      if (buildNumberClickTimeoutRef.current) {
+        clearTimeout(buildNumberClickTimeoutRef.current);
+      }
+      buildNumberClickCountRef.current = 0;
+      setBuildNumberClickCount(0);
+    };
   }, []);
   // Load saved icon preference on component mount
   useEffect(() => {
@@ -1679,6 +1706,87 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           fontFamily: theme.fontFamilies?.medium,
           color: theme.colors.textSecondary,
           letterSpacing: -0.2,
+        },
+        buildNumberContainer: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
+        },
+        buildNumberBadge: {
+          minWidth: 24,
+          height: 24,
+          borderRadius: 12,
+          backgroundColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.primary
+              : theme.colors.bitcoinOrange,
+          justifyContent: 'center',
+          alignItems: 'center',
+          paddingHorizontal: 8,
+        },
+        buildNumberBadgeText: {
+          fontSize: theme.fontSizes?.xs || 11,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.white,
+        },
+        debugLoggingCard: {
+          backgroundColor: theme.colors.cardBackground,
+          borderRadius: 12,
+          padding: 16,
+          marginTop: 12,
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+        },
+        debugLoggingHeader: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 12,
+        },
+        debugLoggingTitle: {
+          fontSize: theme.fontSizes?.md || 15,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+        },
+        debugLoggingStatus: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
+        },
+        debugLoggingStatusDot: {
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+        },
+        debugLoggingStatusText: {
+          fontSize: theme.fontSizes?.xs || 11,
+          fontFamily: theme.fontFamilies?.medium,
+          textTransform: 'uppercase',
+          letterSpacing: 0.5,
+        },
+        disableDevModeButton: {
+          backgroundColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.accent
+              : theme.colors.bitcoinOrange,
+          borderRadius: 12,
+          paddingVertical: 14,
+          paddingHorizontal: 20,
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexDirection: 'row',
+          gap: 8,
+          marginTop: 20,
+          shadowColor: theme.colors.danger,
+          shadowOffset: {width: 0, height: 2},
+          shadowOpacity: 0.2,
+          shadowRadius: 4,
+          elevation: 3,
+        },
+        disableDevModeButtonText: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.white,
         },
         aboutSection: {
           marginTop: 20,
@@ -2834,55 +2942,122 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           </Pressable>
         </CollapsibleSection>
 
-        <CollapsibleSection
-          title="Dev Debug"
-          isExpanded={expandedSections.devDebug}
-          onToggle={() => toggleSection('devDebug')}
-          styles={styles}
-          theme={theme}>
-          <View
-            style={[
-              styles.warningContainer,
-              {
-                backgroundColor: theme.colors.warningBg,
-                borderColor: theme.colors.warningBorder,
-              },
-            ]}>
-            <Text
-              style={[styles.warningText, {color: theme.colors.warningText}]}>
-              ⚠️ Advanced Developers Only
-            </Text>
-            <Text
+        {/* Dev Debug Section - Only visible on Android if enabled via build number clicks */}
+        {Platform.OS === 'android' && devDebugEnabled && (
+          <CollapsibleSection
+            title="Dev Debug"
+            isExpanded={expandedSections.devDebug}
+            onToggle={() => toggleSection('devDebug')}
+            styles={styles}
+            theme={theme}>
+            <View
               style={[
-                styles.warningDescription,
-                {color: theme.colors.warningText},
+                styles.warningContainer,
+                {
+                  backgroundColor: theme.colors.warningBg,
+                  borderColor: theme.colors.warningBorder,
+                },
               ]}>
-              This feature is for troubleshooting on secure, trusted devices
-              only. Never enable debug logging unless you know what you're
-              doing. Debug logs may contain sensitive information and should
-              only be used in development environments.
-            </Text>
-          </View>
-          <Text style={styles.toggleDescription}>
-            Enable debug logging to see detailed logs in the console. Logging is
-            disabled by default. When enabled, the app will reload to apply the
-            change. This setting is session-only and will reset to disabled when
-            the app restarts.
-          </Text>
-          <View style={styles.toggleContainer}>
-            <Switch
-              onValueChange={handleToggleDebugLogging}
-              value={debugLoggingEnabled}
-              trackColor={{
-                false: theme.colors.switchTrackFalse,
-                true: theme.colors.switchTrackTrue,
+              <Text
+                style={[styles.warningText, {color: theme.colors.warningText}]}>
+                ⚠️ Developers Only
+              </Text>
+              <Text
+                style={[
+                  styles.warningDescription,
+                  {color: theme.colors.warningText},
+                ]}>
+                Debug logs may contain sensitive information. Use only on
+                trusted devices, and only if you know what you are doing. View
+                detailed logs in logcat (Android only, requires USB debugging).
+                Session-only setting - resets on app restart.
+              </Text>
+            </View>
+            {/* Enhanced Debug Logging Card */}
+            <View style={styles.debugLoggingCard}>
+              <View style={styles.debugLoggingHeader}>
+                <Text style={styles.debugLoggingTitle}>Debug Logging</Text>
+                <View style={styles.debugLoggingStatus}>
+                  <View
+                    style={[
+                      styles.debugLoggingStatusDot,
+                      {
+                        backgroundColor: debugLoggingEnabled
+                          ? theme.colors.success
+                          : theme.colors.textSecondary,
+                      },
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      styles.debugLoggingStatusText,
+                      {
+                        color: debugLoggingEnabled
+                          ? theme.colors.success
+                          : theme.colors.textSecondary,
+                      },
+                    ]}>
+                    {debugLoggingEnabled ? 'Active' : 'Inactive'}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.toggleContainer}>
+                <Text style={styles.toggleLabel}>Enable Logging</Text>
+                <Switch
+                  onValueChange={handleToggleDebugLogging}
+                  value={debugLoggingEnabled}
+                  trackColor={{
+                    false: theme.colors.switchTrackFalse,
+                    true: theme.colors.switchTrackTrue,
+                  }}
+                  thumbColor={theme.colors.switchThumb}
+                  ios_backgroundColor={theme.colors.switchIosBackground}
+                />
+              </View>
+            </View>
+
+            {/* Enhanced Disable Dev Mode Button */}
+            <Pressable
+              style={styles.disableDevModeButton}
+              onPress={() => {
+                HapticFeedback.medium();
+                Alert.alert(
+                  'Disable Dev Mode',
+                  'Are you sure you want to hide the Dev Debug section? You can enable it again by clicking the build number 7 times.',
+                  [
+                    {
+                      text: 'Cancel',
+                      style: 'cancel',
+                    },
+                    {
+                      text: 'Disable',
+                      style: 'destructive',
+                      onPress: () => {
+                        setDevDebugEnabled(false);
+                        EncryptedStorage.setItem(
+                          'devDebugEnabled',
+                          'false',
+                        ).catch(error => {
+                          dbg('Error saving devDebugEnabled:', error);
+                        });
+                        Toast.show({
+                          type: 'info',
+                          text1: 'Dev Mode Disabled',
+                          text2: 'Dev Debug section is now hidden',
+                          position: 'top',
+                        });
+                      },
+                    },
+                  ],
+                );
               }}
-              thumbColor={theme.colors.switchThumb}
-              ios_backgroundColor={theme.colors.switchIosBackground}
-            />
-            <Text style={styles.toggleLabel}>Enable Debug Logging</Text>
-          </View>
-        </CollapsibleSection>
+              android_ripple={{color: 'rgba(255,255,255,0.2)'}}>
+              <Text style={styles.disableDevModeButtonText}>
+                Disable Dev Mode
+              </Text>
+            </Pressable>
+          </CollapsibleSection>
+        )}
 
         {/* Legal Section */}
         <CollapsibleSection
@@ -2926,7 +3101,94 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           </View>
           <View style={styles.aboutInfoRow}>
             <Text style={styles.aboutLabel}>Build Number</Text>
-            <Text style={styles.aboutValue}>{buildNumber}</Text>
+            <Pressable
+              onPress={() => {
+                HapticFeedback.light();
+                // Only enable on Android (iOS prod builds don't support logs)
+                if (Platform.OS !== 'android') {
+                  return;
+                }
+
+                // Check if dev mode is already enabled
+                if (devDebugEnabled) {
+                  Toast.show({
+                    type: 'info',
+                    text1: 'Dev Mode Already Enabled',
+                    text2: 'Developer debug section is already visible',
+                    position: 'top',
+                    visibilityTime: 2000,
+                  });
+                  return;
+                }
+
+                // Increment click count
+                buildNumberClickCountRef.current += 1;
+                const currentCount = buildNumberClickCountRef.current;
+                setBuildNumberClickCount(currentCount);
+
+                // Clear existing timeout
+                if (buildNumberClickTimeoutRef.current) {
+                  clearTimeout(buildNumberClickTimeoutRef.current);
+                }
+                // Reset count after 3 seconds of inactivity
+                buildNumberClickTimeoutRef.current = setTimeout(() => {
+                  buildNumberClickCountRef.current = 0;
+                  setBuildNumberClickCount(0);
+                }, 3000);
+
+                // Show progress toast starting from 2 clicks
+                if (currentCount >= 2 && currentCount < 7) {
+                  const stepsRemaining = 7 - currentCount;
+                  Toast.show({
+                    type: 'info',
+                    text1: `You're now ${stepsRemaining} step${
+                      stepsRemaining > 1 ? 's' : ''
+                    } to enable dev mode`,
+                    position: 'top',
+                    visibilityTime: 2000,
+                  });
+                }
+
+                // Check if we've reached 7 clicks
+                if (currentCount >= 7) {
+                  // Enable dev debug mode
+                  setDevDebugEnabled(true);
+                  EncryptedStorage.setItem('devDebugEnabled', 'true').catch(
+                    error => {
+                      dbg('Error saving devDebugEnabled:', error);
+                    },
+                  );
+                  // Open devDebug section and close about section
+                  setExpandedSections(prev => ({
+                    ...prev,
+                    about: false,
+                    devDebug: true,
+                  }));
+                  // Show toast
+                  Toast.show({
+                    type: 'success',
+                    text1: 'Dev Mode Enabled',
+                    text2: 'Developer debug section is now visible',
+                    position: 'top',
+                  });
+                  // Reset counter
+                  buildNumberClickCountRef.current = 0;
+                  setBuildNumberClickCount(0);
+                  if (buildNumberClickTimeoutRef.current) {
+                    clearTimeout(buildNumberClickTimeoutRef.current);
+                    buildNumberClickTimeoutRef.current = null;
+                  }
+                }
+              }}
+              style={styles.buildNumberContainer}>
+              {buildNumberClickCount >= 2 ? (
+                <View style={styles.buildNumberBadge}>
+                  <Text style={styles.buildNumberBadgeText}>{buildNumber}</Text>
+                </View>
+              ) : (
+                <Text style={styles.aboutValue}>{buildNumber}</Text>
+              )}
+            </Pressable>
           </View>
           <Text style={styles.toggleDescription}>
             Make sure that your wallet keyshares devices are running the latest
