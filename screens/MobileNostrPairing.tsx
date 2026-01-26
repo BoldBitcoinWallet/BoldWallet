@@ -1420,6 +1420,9 @@ const MobileNostrPairing = ({navigation}: any) => {
     // Store original network/API to restore after transaction
     let originalNetwork = '';
     let originalApiUrl = '';
+    // Store original WalletService state to restore after balance fetch
+    let originalWalletServiceNetwork = '';
+    let originalWalletServiceApiUrl = '';
     try {
       // Read ALL parameters from route params ONLY (no fallbacks)
       if (!route.params?.network || route.params.network.trim() === '') {
@@ -1453,13 +1456,17 @@ const MobileNostrPairing = ({navigation}: any) => {
         throw new Error('Fees are required in route params');
       }
       // Extract all params from route
-      const net = route.params.network.trim();
+      // CRITICAL: Normalize network to native format ('testnet3' not 'testnet') for BBMTLib
+      const networkFromParams = route.params.network.trim();
+      const net =
+        networkFromParams === 'testnet' ? 'testnet3' : networkFromParams;
       const addressTypeToUse = route.params.addressType.trim();
       const path = route.params.derivationPath.trim();
       const toAddress = route.params.toAddress.trim();
       const satoshiAmount = route.params.satoshiAmount.trim();
       const satoshiFees = route.params.satoshiFees.trim();
       dbg('MobileNostrPairing: Using route params ONLY:', {
+        networkFromParams,
         network: net,
         addressType: addressTypeToUse,
         derivationPath: path,
@@ -1478,6 +1485,7 @@ const MobileNostrPairing = ({navigation}: any) => {
             : 'https://mempool.space/api';
       }
       // Set network and API in BBMTLib for this transaction
+      // Use normalized network (native format) for API lookup and BBMTLib
       let apiUrl = await LocalCache.getItem(`api_${net}`);
       if (!apiUrl) {
         apiUrl =
@@ -1487,7 +1495,22 @@ const MobileNostrPairing = ({navigation}: any) => {
       }
       await BBMTLibNativeModule.setBtcNetwork(net);
       await BBMTLibNativeModule.setAPI(net, apiUrl);
+      // CRITICAL: Update LocalCache 'api' key so WalletService.getWalletBalance uses correct API
+      // This ensures balance fetch uses the network from route params, not device's current network
+      await LocalCache.setItem('api', apiUrl);
+      // CRITICAL: Temporarily update WalletService internal state so getWalletBalance uses correct network
+      // This is needed because getWalletBalance uses this.currentNetwork for address validation
+      const walletService = WalletService.getInstance();
+      originalWalletServiceNetwork = (walletService as any).currentNetwork || '';
+      originalWalletServiceApiUrl = (walletService as any).currentApiUrl || '';
+      (walletService as any).currentNetwork = net;
+      (walletService as any).currentApiUrl = apiUrl;
       dbg('MobileNostrPairing: Set network and API in BBMTLib:', net, apiUrl);
+      dbg('MobileNostrPairing: Temporarily updated WalletService network state:', {
+        from: originalWalletServiceNetwork,
+        to: net,
+        apiUrl,
+      });
       // Get keyshare and nsec
       const keyshareJSON = await EncryptedStorage.getItem('keyshare');
       if (!keyshareJSON) {
@@ -1524,12 +1547,20 @@ const MobileNostrPairing = ({navigation}: any) => {
         addressTypeToUse,
       );
       // Get balance for sessionFlag calculation
+      // WalletService now has correct network state for this call
       const balance = await WalletService.getInstance().getWalletBalance(
         senderAddress,
         0,
         0,
         false,
       );
+      // Restore WalletService internal state immediately after balance fetch
+      (walletService as any).currentNetwork = originalWalletServiceNetwork;
+      (walletService as any).currentApiUrl = originalWalletServiceApiUrl;
+      dbg('MobileNostrPairing: Restored WalletService network state:', {
+        network: originalWalletServiceNetwork,
+        apiUrl: originalWalletServiceApiUrl,
+      });
       const balanceSats = Big(balance.btc).times(1e8).toFixed(0);
       // Get all npubs from keyshare for sessionFlag calculation
       const allNpubsFromKeyshare: string[] = [];
@@ -1750,10 +1781,18 @@ const MobileNostrPairing = ({navigation}: any) => {
         try {
           await BBMTLibNativeModule.setBtcNetwork(originalNetwork);
           await BBMTLibNativeModule.setAPI(originalNetwork, originalApiUrl);
-          // Restore WalletService internal state
-          const walletService = WalletService.getInstance();
-          (walletService as any).currentNetwork = originalNetwork;
-          (walletService as any).currentApiUrl = originalApiUrl;
+          // Restore LocalCache 'api' key to original network's API
+          await LocalCache.setItem('api', originalApiUrl);
+          // Restore WalletService internal state (in case it wasn't restored earlier due to error)
+          if (originalWalletServiceNetwork && originalWalletServiceApiUrl) {
+            const walletService = WalletService.getInstance();
+            (walletService as any).currentNetwork = originalWalletServiceNetwork;
+            (walletService as any).currentApiUrl = originalWalletServiceApiUrl;
+            dbg(
+              'MobileNostrPairing: Restored WalletService network in finally block:',
+              originalWalletServiceNetwork,
+            );
+          }
           dbg(
             'MobileNostrPairing: Restored original network:',
             originalNetwork,
@@ -3132,8 +3171,8 @@ const MobileNostrPairing = ({navigation}: any) => {
       shadowOffset: {width: 0, height: 2},
       shadowOpacity: 0.1,
       shadowRadius: 8,
-      elevation: 3,
-      borderWidth: 1,
+      elevation: Platform.OS === 'android' ? 2 : 3, // Reduce elevation on Android
+      borderWidth: Platform.OS === 'android' ? 0.5 : 1, // Thinner border on Android to prevent distortion
       borderColor: theme.colors.border,
     },
     backupButton: {

@@ -726,13 +726,16 @@ const MobilesPairing = ({navigation}: any) => {
           throw new Error('Fees are required in route params');
         }
         // Extract all params from route
-        net = route.params.network.trim();
+        // CRITICAL: Normalize network to native format ('testnet3' not 'testnet') for BBMTLib
+        const networkFromParams = route.params.network.trim();
+        net = networkFromParams === 'testnet' ? 'testnet3' : networkFromParams;
         addressTypeToUse = route.params.addressType.trim();
         path = route.params.derivationPath.trim();
         toAddress = route.params.toAddress.trim();
         satoshiAmount = route.params.satoshiAmount.trim();
         satoshiFees = route.params.satoshiFees.trim();
         dbg('MobilesPairing: Using route params ONLY:', {
+          networkFromParams,
           network: net,
           addressType: addressTypeToUse,
           derivationPath: path,
@@ -760,6 +763,9 @@ const MobilesPairing = ({navigation}: any) => {
         }
         await BBMTLibNativeModule.setBtcNetwork(net);
         await BBMTLibNativeModule.setAPI(net, apiUrl);
+        // CRITICAL: Update LocalCache 'api' key so any balance/UTXO fetches use correct API
+        // This ensures operations use the network from route params, not device's current network
+        await LocalCache.setItem('api', apiUrl);
         dbg('MobilesPairing: Set network and API in BBMTLib:', net, apiUrl);
       }
       // Store original network/API (for both PSBT and send BTC modes)
@@ -834,8 +840,7 @@ const MobilesPairing = ({navigation}: any) => {
                 `Could not sign PSBT.\n${String(signedPsbt)}`,
               );
               dbg(partyID, 'PSBT signing error', String(signedPsbt));
-            }
-            else {
+            } else {
               dbg(partyID, 'PSBT signed successfully');
             }
             // Check user's wallet mode preference before navigating
@@ -960,6 +965,8 @@ const MobilesPairing = ({navigation}: any) => {
                   originalNetwork,
                   originalApiUrl,
                 );
+                // Restore LocalCache 'api' key to original network's API
+                await LocalCache.setItem('api', originalApiUrl);
                 // Restore WalletService internal state
                 const walletServiceRestore = WalletService.getInstance();
                 (walletServiceRestore as any).currentNetwork = originalNetwork;
@@ -992,6 +999,8 @@ const MobilesPairing = ({navigation}: any) => {
         try {
           await BBMTLibNativeModule.setBtcNetwork(originalNetwork);
           await BBMTLibNativeModule.setAPI(originalNetwork, originalApiUrl);
+          // Restore LocalCache 'api' key to original network's API
+          await LocalCache.setItem('api', originalApiUrl);
           // Restore WalletService internal state
           const walletServiceError = WalletService.getInstance();
           (walletServiceError as any).currentNetwork = originalNetwork;
@@ -1709,8 +1718,8 @@ const MobilesPairing = ({navigation}: any) => {
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.shadowColor + '0A' // ~4% opacity
-          : theme.colors.cardBackground,
-      borderWidth: 1,
+          : theme.colors.blackOverlay05,
+      borderWidth: Platform.OS === 'android' ? 0.5 : 1, // Thinner border on Android to prevent distortion
       borderColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.border + '60'
@@ -1725,7 +1734,7 @@ const MobilesPairing = ({navigation}: any) => {
       shadowOffset: {width: 0, height: 1},
       shadowOpacity: 0.05,
       shadowRadius: 2,
-      elevation: 1,
+      elevation: Platform.OS === 'android' ? 0 : 1, // Remove elevation on Android to prevent border distortion
     },
     exitButtonText: {
       color: theme.colors.textSecondary,
