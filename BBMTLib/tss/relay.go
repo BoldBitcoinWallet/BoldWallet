@@ -299,11 +299,11 @@ func RunRelay(port string) (result string, err error) {
 	serverMutex.Lock()
 	hasServer := server != nil
 	serverMutex.Unlock()
-	
+
 	if hasServer {
 		StopRelay()
 	}
-	
+
 	time.Sleep(time.Second)
 	go func() {
 		defer func() {
