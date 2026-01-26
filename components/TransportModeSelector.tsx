@@ -3,7 +3,7 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   Modal,
   Image,
   ScrollView,
@@ -11,7 +11,6 @@ import {
 import QRCode from 'react-native-qrcode-svg';
 import {useTheme} from '../theme';
 import {HapticFeedback, encodeSendBitcoinQR} from '../utils';
-
 interface TransportModeSelectorProps {
   visible: boolean;
   onClose: () => void;
@@ -34,7 +33,6 @@ interface TransportModeSelectorProps {
   } | null;
   showQRCode?: boolean; // Whether to show QR code (false when data came from scan)
 }
-
 const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
   visible,
   onClose,
@@ -48,12 +46,10 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
   const [selectedTransport, setSelectedTransport] = useState<
     'local' | 'nostr' | null
   >(null);
-
   const handleSelect = (transport: 'local' | 'nostr') => {
     HapticFeedback.medium();
     setSelectedTransport(transport);
   };
-
   const handleContinue = () => {
     if (selectedTransport) {
       HapticFeedback.medium();
@@ -62,7 +58,6 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       setSelectedTransport(null);
     }
   };
-
   const styles = StyleSheet.create({
     modalOverlay: {
       flex: 1,
@@ -81,6 +76,11 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       shadowRadius: 20,
       elevation: 10,
       overflow: 'hidden',
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10
+          : theme.colors.whiteOverlay20,
     },
     modalHeader: {
       flexDirection: 'row',
@@ -92,8 +92,8 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       borderBottomWidth: 1,
       borderBottomColor:
         theme.colors.background === '#ffffff'
-          ? theme.colors.shadowColor + '0D' // ~5% opacity
-          : theme.colors.border + '40',
+          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
     },
     modalHeaderIconImage: {
       width: 24,
@@ -105,8 +105,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
     },
     modalTitle: {
       fontSize: theme.fontSizes?.xl || 18,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       marginLeft: 12,
       color: theme.colors.text,
       flex: 1,
@@ -125,8 +124,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
     },
     closeButtonText: {
       fontSize: theme.fontSizes?.['2xl'] || 20,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
     },
     modalBody: {
@@ -135,8 +133,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
     },
     modalDescription: {
       fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.medium || '500') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.textSecondary,
       marginBottom: 12,
       textAlign: 'left',
@@ -223,8 +220,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
     },
     transportOptionTitle: {
       fontSize: theme.fontSizes?.md || 15,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       textAlign: 'center',
       marginBottom: 2,
@@ -237,8 +233,6 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
     },
     transportOptionDescription: {
       fontSize: theme.fontSizes?.sm || 11,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
       lineHeight: 14,
@@ -275,8 +269,6 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
     },
     transportSelectedHintText: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
@@ -287,7 +279,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       lineHeight: 20,
     },
     transportSelectedHintTextBold: {
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.bold,
     },
     continueButton: {
       marginTop: 12,
@@ -304,8 +296,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
     },
     continueButtonText: {
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.white,
     },
     qrCodeSection: {
@@ -324,8 +315,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
     },
     qrCodeLabel: {
       fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       marginBottom: 12,
       textAlign: 'center',
@@ -333,7 +323,6 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
     },
     qrCodeSubLabel: {
       fontSize: theme.fontSizes?.sm || 11,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
       fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 8,
@@ -346,7 +335,6 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       borderRadius: 8,
     },
   });
-
   return (
     <Modal
       transparent={true}
@@ -362,26 +350,27 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
               style={styles.modalHeaderIconImage}
             />
             <Text style={styles.modalTitle}>{title}</Text>
-            <TouchableOpacity
+            <Pressable
               style={styles.closeButton}
               onPress={() => {
                 HapticFeedback.medium();
                 setSelectedTransport(null);
                 onClose();
               }}
-              activeOpacity={0.7}>
+              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
               <Text style={styles.closeButtonText}>✕</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
-
           {/* Modal Body */}
           <ScrollView
             style={styles.modalBody}
+            removeClippedSubviews
+            keyboardShouldPersistTaps="handled"
+            overScrollMode="never"
             showsVerticalScrollIndicator={false}>
             {description && description.length > 0 && (
               <Text style={styles.modalDescription}>{description}</Text>
             )}
-
             {/* QR Code Section - Only show if sendBitcoinData exists and showQRCode is true */}
             {sendBitcoinData &&
               showQRCode &&
@@ -415,17 +404,16 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                   </View>
                 );
               })()}
-
             <View style={styles.transportOptionsContainer}>
               {/* Local WiFi/Hotspot Option */}
-              <TouchableOpacity
+              <Pressable
                 style={[
                   styles.transportOptionCard,
                   selectedTransport === 'local' &&
                     styles.transportOptionCardSelected,
                 ]}
                 onPress={() => handleSelect('local')}
-                activeOpacity={0.8}>
+                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <View style={styles.transportOptionContent}>
                   <View style={styles.transportOptionIconWrapper}>
                     <Image
@@ -455,17 +443,16 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                     Connect devices on the same network
                   </Text>
                 </View>
-              </TouchableOpacity>
-
+              </Pressable>
               {/* Nostr Option */}
-              <TouchableOpacity
+              <Pressable
                 style={[
                   styles.transportOptionCard,
                   selectedTransport === 'nostr' &&
                     styles.transportOptionCardSelected,
                 ]}
                 onPress={() => handleSelect('nostr')}
-                activeOpacity={0.8}>
+                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <View style={styles.transportOptionContent}>
                   <View style={styles.transportOptionIconWrapper}>
                     <View style={styles.nostrIconContainer}>
@@ -498,9 +485,8 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                     Connect via decentralized relays
                   </Text>
                 </View>
-              </TouchableOpacity>
+              </Pressable>
             </View>
-
             {/* Selected Transport Hint */}
             {selectedTransport && description && description.length > 0 && (
               <View style={styles.transportSelectedHint}>
@@ -532,23 +518,21 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                 </View>
               </View>
             )}
-
             {/* Continue Button */}
-            <TouchableOpacity
+            <Pressable
               style={[
                 styles.continueButton,
                 !selectedTransport && styles.continueButtonDisabled,
               ]}
               onPress={handleContinue}
               disabled={!selectedTransport}
-              activeOpacity={0.8}>
+              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
               <Text style={styles.continueButtonText}>Continue →</Text>
-            </TouchableOpacity>
+            </Pressable>
           </ScrollView>
         </View>
       </View>
     </Modal>
   );
 };
-
 export default TransportModeSelector;

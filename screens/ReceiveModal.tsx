@@ -3,12 +3,11 @@ import {
   View,
   Text,
   Modal,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   Image,
   Linking,
   Alert,
-  Platform,
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -17,7 +16,6 @@ import * as RNFS from 'react-native-fs';
 import {dbg, HapticFeedback} from '../utils';
 import {useTheme} from '../theme';
 import {capitalize} from 'lodash';
-
 const ReceiveModal: React.FC<{
   address: string;
   addressType: string;
@@ -28,7 +26,6 @@ const ReceiveModal: React.FC<{
   const qrRef = useRef<any>(null);
   const {theme} = useTheme();
   const [isCopied, setIsCopied] = useState(false);
-
   const copyToClipboard = useCallback(() => {
     Clipboard.setString(address);
     setIsCopied(true);
@@ -36,14 +33,24 @@ const ReceiveModal: React.FC<{
       setIsCopied(false);
     }, 350);
   }, [address]);
-
+  const formatAddressType = (addrType: string) => {
+    if (addrType === 'segwit-native') {
+      return 'Native SegWit';
+    }
+    if (addrType === 'segwit-compatible') {
+      return 'Nested SegWit';
+    }
+    if (addrType === 'legacy') {
+      return 'Legacy';
+    }
+    return addrType;
+  };
   const shareQRCode = useCallback(async () => {
     dbg('shareQRCode...');
     if (!qrRef.current) {
       Alert.alert('Error', 'QR Code is not ready yet');
       return;
     }
-
     try {
       await new Promise((resolve, reject) => {
         qrRef.current.toDataURL((base64Data: string) => {
@@ -61,10 +68,8 @@ const ReceiveModal: React.FC<{
           dbg('Deleting existing file...');
           await RNFS.unlink(filePath);
         }
-
         dbg('Writing base64 to file...');
         await RNFS.writeFile(filePath, base64Data, 'base64');
-
         dbg('Sharing QR code...');
         await Share.open({
           title: 'Bitcoin Receive Address',
@@ -75,7 +80,6 @@ const ReceiveModal: React.FC<{
           failOnCancel: false,
         });
         dbg('Share completed successfully');
-
         await RNFS.unlink(filePath).catch(err => {
           dbg('Cleanup error:', err);
         });
@@ -85,7 +89,6 @@ const ReceiveModal: React.FC<{
       Alert.alert('Error', 'Failed to share QR code');
     }
   }, [address, network]);
-
   const styles = StyleSheet.create({
     modalContainer: {
       flex: 1,
@@ -107,7 +110,10 @@ const ReceiveModal: React.FC<{
       shadowOpacity: 0.25,
       shadowRadius: 3.84,
       borderWidth: 1,
-      borderColor: theme.colors.border + '40', // Add border to match other modals
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
     },
     header: {
       flexDirection: 'row',
@@ -125,8 +131,7 @@ const ReceiveModal: React.FC<{
     },
     title: {
       fontSize: theme.fontSizes?.['2xl'] || 20,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       flex: 1,
     },
@@ -143,8 +148,7 @@ const ReceiveModal: React.FC<{
     },
     closeButtonText: {
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       textAlign: 'center',
       verticalAlign: 'middle',
@@ -159,8 +163,7 @@ const ReceiveModal: React.FC<{
     },
     networkText: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text, // Fix dark mode readability
     },
     qrContainer: {
@@ -180,8 +183,7 @@ const ReceiveModal: React.FC<{
     },
     addressText: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+      fontFamily: theme.fontFamilies?.monospaceMedium,
       color: theme.colors.text,
       textAlign: 'center',
       marginBottom: 16,
@@ -202,8 +204,7 @@ const ReceiveModal: React.FC<{
     },
     addressTextInteractive: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+      fontFamily: theme.fontFamilies?.monospaceMedium,
       color: theme.colors.text, // Fix dark mode readability
       textAlign: 'center',
       textDecorationLine: 'underline',
@@ -225,13 +226,10 @@ const ReceiveModal: React.FC<{
     copyFeedbackText: {
       color: theme.colors.text, // Fix dark mode readability
       fontSize: theme.fontSizes?.md || 15,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
     },
     addressHint: {
       fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
       marginTop: 4,
@@ -260,8 +258,7 @@ const ReceiveModal: React.FC<{
     actionButtonText: {
       color: theme.colors.textOnPrimary,
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       marginLeft: 8,
     },
     buttonIcon: {
@@ -275,7 +272,6 @@ const ReceiveModal: React.FC<{
       tintColor: theme.colors.text, // Use text color for better visibility in dark mode
     },
   });
-
   return (
     <Modal
       visible={true}
@@ -292,39 +288,36 @@ const ReceiveModal: React.FC<{
               />
               <Text style={styles.title}>Receive Bitcoin</Text>
             </View>
-            <TouchableOpacity 
+            <Pressable
               onPress={() => {
                 HapticFeedback.medium();
                 onClose();
-              }} 
-              style={styles.closeButton} 
-              activeOpacity={0.7}>
+              }}
+              style={styles.closeButton}
+              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
               <Text style={styles.closeButtonText}>✖️</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
-
           <View style={styles.networkBadge}>
             <Text style={styles.networkText}>
-              {capitalize(network)} • {capitalize(addressType)}
+              {capitalize(network)} • {formatAddressType(addressType)}
             </Text>
           </View>
-
-          <TouchableOpacity
+          <Pressable
             style={styles.qrContainer}
             onPress={() => {
               HapticFeedback.medium();
               copyToClipboard();
             }}
-            activeOpacity={0.7}>
+            android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
             <QRCode
               value={address}
               size={200}
               getRef={ref => (qrRef.current = ref)}
             />
-          </TouchableOpacity>
-
+          </Pressable>
           <View style={styles.addressContainer}>
-            <TouchableOpacity
+            <Pressable
               style={styles.addressTouchable}
               onPress={() => {
                 HapticFeedback.medium();
@@ -333,9 +326,15 @@ const ReceiveModal: React.FC<{
                 dbg('address URL', url);
                 Linking.openURL(url);
               }}
-              activeOpacity={0.7}>
+              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
               <View style={styles.addressTextContainer}>
-                <Text style={styles.addressTextInteractive}>{address}</Text>
+                <Text 
+                  style={styles.addressTextInteractive}
+                  adjustsFontSizeToFit={true}
+                  numberOfLines={1}
+                  minimumFontScale={0.5}>
+                  {address}
+                </Text>
               </View>
               <Text style={styles.addressHint}>Tap to view in explorer</Text>
               {isCopied && (
@@ -348,25 +347,23 @@ const ReceiveModal: React.FC<{
                   <Text style={styles.copyFeedbackText}>Copied!</Text>
                 </View>
               )}
-            </TouchableOpacity>
-
+            </Pressable>
             <View style={styles.buttonContainer}>
-              <TouchableOpacity
+              <Pressable
                 style={styles.actionButton}
                 onPress={() => {
                   HapticFeedback.medium();
                   copyToClipboard();
                 }}
-                activeOpacity={0.7}>
+                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <Image
                   source={require('../assets/paste-icon.png')}
                   style={styles.buttonIcon}
                   resizeMode="contain"
                 />
                 <Text style={styles.actionButtonText}>Copy</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
+              </Pressable>
+              <Pressable
                 style={[
                   styles.actionButton,
                   {backgroundColor: theme.colors.secondary},
@@ -375,14 +372,14 @@ const ReceiveModal: React.FC<{
                   HapticFeedback.medium();
                   shareQRCode();
                 }}
-                activeOpacity={0.7}>
+                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <Image
                   source={require('../assets/share-icon.png')}
                   style={styles.buttonIcon}
                   resizeMode="contain"
                 />
                 <Text style={styles.actionButtonText}>Share</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </View>
         </View>
@@ -390,5 +387,4 @@ const ReceiveModal: React.FC<{
     </Modal>
   );
 };
-
 export default ReceiveModal;

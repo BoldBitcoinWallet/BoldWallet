@@ -3,29 +3,27 @@ import {
   Modal,
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   ScrollView,
   useWindowDimensions,
   ActivityIndicator,
   Linking,
+  Image,
 } from 'react-native';
 import {useTheme} from '../theme';
 import {dbg} from '../utils';
-
 interface LegalModalProps {
   visible: boolean;
   onClose: () => void;
   type: 'terms' | 'privacy';
 }
-
 const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
   const {theme} = useTheme();
   const {height} = useWindowDimensions();
   const [content, setContent] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
-
   const urls = useMemo(
     () => ({
       terms:
@@ -35,7 +33,6 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
     }),
     [],
   );
-
   const titles = useMemo(
     () => ({
       terms: 'Terms of Service',
@@ -43,7 +40,6 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
     }),
     [],
   );
-
   const formatMarkdown = useCallback((markdown: string): string => {
     return (
       markdown
@@ -62,18 +58,15 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
         .trim()
     );
   }, []);
-
   const fetchContent = useCallback(async () => {
     setLoading(true);
     setError('');
-
     try {
       const response = await fetch(urls[type]);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       const markdownContent = await response.text();
-
       // Convert markdown to readable text
       const formattedContent = formatMarkdown(markdownContent);
       setContent(formattedContent);
@@ -86,18 +79,15 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
       setLoading(false);
     }
   }, [urls, type, formatMarkdown]);
-
   useEffect(() => {
     if (visible) {
       fetchContent();
     }
   }, [visible, type, fetchContent]);
-
   const handleRefresh = useCallback(() => {
     setContent('');
     fetchContent();
   }, [fetchContent]);
-
   const styles = StyleSheet.create({
     modalContainer: {
       flex: 1,
@@ -109,7 +99,10 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
       borderTopLeftRadius: 20,
       borderTopRightRadius: 20,
       borderTopWidth: 1,
-      borderTopColor: theme.colors.border + '40', // Add border for dark mode visibility
+      borderTopColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
       paddingBottom: 20,
     },
     header: {
@@ -118,12 +111,14 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
       alignItems: 'center',
       padding: 16,
       borderBottomWidth: 1,
-      borderBottomColor: theme.colors.border + '40', // Use theme border color
+      borderBottomColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
     },
     title: {
       fontSize: theme.fontSizes?.xl || 18,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       flex: 1,
     },
@@ -137,8 +132,6 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
     },
     refreshButtonText: {
       fontSize: theme.fontSizes?.xl || 18,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     closeButton: {
@@ -146,8 +139,7 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
     },
     closeButtonText: {
       fontSize: theme.fontSizes?.['2xl'] || 20,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
     },
     scrollContent: {
@@ -159,8 +151,6 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
     },
     loadingText: {
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       marginTop: 16,
       color: theme.colors.textSecondary,
     },
@@ -170,8 +160,6 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
     },
     errorText: {
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
       marginBottom: 20,
@@ -184,14 +172,11 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
     },
     retryButtonText: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.textOnPrimary || theme.colors.white,
     },
     content: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       lineHeight: 22,
       color: theme.colors.text, // Use text color instead of textSecondary for better readability
       marginBottom: 20,
@@ -199,20 +184,32 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
     linkContainer: {
       padding: 16,
       borderWidth: 1,
-      borderColor: theme.colors.border + '40', // Use theme border color
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
       borderRadius: 8,
       alignItems: 'center',
       marginBottom: 16,
       backgroundColor: theme.colors.cardBackground, // Add background for better visibility
     },
+    linkContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    linkIcon: {
+      width: 16,
+      height: 16,
+      marginRight: 8,
+      tintColor: theme.colors.text,
+    },
     linkText: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text, // Use text color for better readability
     },
   });
-
   return (
     <Modal
       visible={visible}
@@ -224,54 +221,63 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
           <View style={styles.header}>
             <Text style={styles.title}>{titles[type]}</Text>
             <View style={styles.headerActions}>
-              <TouchableOpacity
+              <Pressable
                 onPress={handleRefresh}
-                style={styles.refreshButton}>
+                style={styles.refreshButton}
+                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <Text style={styles.refreshButtonText}>↻</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              </Pressable>
+              <Pressable
+                onPress={onClose}
+                style={styles.closeButton}
+                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <Text style={styles.closeButtonText}>✕</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </View>
-
           <ScrollView
             style={styles.scrollContent}
+            removeClippedSubviews
+            keyboardShouldPersistTaps="handled"
+            overScrollMode="never"
             showsVerticalScrollIndicator={false}>
             {loading && (
               <View style={styles.loadingContainer}>
-                <ActivityIndicator
-                  size="large"
-                  color={theme.colors.text}
-                />
+                <ActivityIndicator size="large" color={theme.colors.text} />
                 <Text style={styles.loadingText}>Loading...</Text>
               </View>
             )}
-
             {error && (
               <View style={styles.errorContainer}>
                 <Text style={styles.errorText}>{error}</Text>
-                <TouchableOpacity
+                <Pressable
                   onPress={handleRefresh}
-                  style={styles.retryButton}>
+                  style={styles.retryButton}
+                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                   <Text style={styles.retryButtonText}>Retry</Text>
-                </TouchableOpacity>
+                </Pressable>
               </View>
             )}
-
             {content && !loading && !error && (
               <>
                 <Text style={styles.content}>{content}</Text>
-
-                <TouchableOpacity
+                <Pressable
                   onPress={() =>
                     Linking.openURL('https://boldbitcoinwallet.com#terms')
                   }
-                  style={styles.linkContainer}>
-                  <Text style={styles.linkText}>
-                    🌐 Terms and Conditions & Privacy Policy
-                  </Text>
-                </TouchableOpacity>
+                  style={styles.linkContainer}
+                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                  <View style={styles.linkContent}>
+                    <Image
+                      source={require('../assets/mainnet-icon.png')}
+                      style={styles.linkIcon}
+                      resizeMode="contain"
+                    />
+                    <Text style={styles.linkText}>
+                      Terms and Conditions & Privacy Policy
+                    </Text>
+                  </View>
+                </Pressable>
               </>
             )}
           </ScrollView>
@@ -280,5 +286,4 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
     </Modal>
   );
 };
-
 export default LegalModal;

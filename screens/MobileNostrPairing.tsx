@@ -6,7 +6,7 @@ import {
   StyleSheet,
   Alert,
   Image,
-  TouchableOpacity,
+  Pressable,
   Modal,
   TextInput,
   ScrollView,
@@ -14,9 +14,16 @@ import {
   KeyboardAvoidingView,
   NativeEventEmitter,
   EmitterSubscription,
-  Animated,
-  Keyboard,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  withTiming,
+  withRepeat,
+  withSequence,
+  useAnimatedStyle,
+  interpolate,
+  cancelAnimation,
+} from 'react-native-reanimated';
 import Share from 'react-native-share';
 import {NativeModules} from 'react-native';
 import DeviceInfo from 'react-native-device-info';
@@ -24,23 +31,32 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 import QRCode from 'react-native-qrcode-svg';
 import Clipboard from '@react-native-clipboard/clipboard';
 import QRScanner from '../components/QRScanner';
+import BackupKeyshareModal from '../components/BackupKeyshareModal';
 import * as Progress from 'react-native-progress';
 import {CommonActions, RouteProp, useRoute} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Big from 'big.js';
-import {
-  dbg,
-  HapticFeedback,
-  getNostrRelays,
-  getKeyshareLabel,
-  hexToString,
-} from '../utils';
+import {dbg, HapticFeedback, getNostrRelays, hexToString} from '../utils';
 import {useTheme} from '../theme';
 import LocalCache from '../services/LocalCache';
 import {WalletService} from '../services/WalletService';
 import RNFS from 'react-native-fs';
-
 const {BBMTLibNativeModule} = NativeModules;
+
+// Helper component for animated progress bar
+const ProgressAnimatedView: React.FC<{
+  style: any;
+  progressAnimation: ReturnType<typeof useSharedValue<number>>;
+  backgroundColor: string;
+}> = ({style, progressAnimation, backgroundColor}) => {
+  const animatedStyle = useAnimatedStyle(() => {
+    const width = interpolate(progressAnimation.value, [0, 1], [0, 100]);
+    return {
+      width: `${width}%`,
+    };
+  });
+  return <Animated.View style={[style, {backgroundColor}, animatedStyle]} />;
+};
 
 type RouteParams = {
   mode?: string; // 'duo' | 'trio' | 'send_btc' | 'sign_psbt'
@@ -56,7 +72,6 @@ type RouteParams = {
   derivationPath?: string; // Derivation path from QR code (ensures same source address)
   network?: string; // Network from QR code (ensures same network)
 };
-
 const MobileNostrPairing = ({navigation}: any) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
   const isSendBitcoin = route.params?.mode === 'send_btc';
@@ -67,19 +82,15 @@ const MobileNostrPairing = ({navigation}: any) => {
   const [isTrio, setIsTrio] = useState<boolean>(setupMode === 'trio');
   const {theme} = useTheme();
   const ppmFile = `${RNFS.DocumentDirectoryPath}/ppm.json`;
-
   // Nostr Identity
   const [localNsec, setLocalNsec] = useState<string>('');
   const [localNpub, setLocalNpub] = useState<string>('');
   const [deviceName, setDeviceName] = useState<string>('');
-
   // Relays - Load from cache or use defaults
   const [relaysInput, setRelaysInput] = useState<string>('');
   const [relays, setRelays] = useState<string[]>([]);
-
   // Partial nonce (random UUID/number generated on each device)
   const [partialNonce, setPartialNonce] = useState<string>('');
-
   // Peer Connections (for duo: 1 peer, for trio: 2 peers)
   const [peerConnectionDetails1, setPeerConnectionDetails1] =
     useState<string>('');
@@ -97,12 +108,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     useState<boolean>(false);
   const [peerInputValidating2, setPeerInputValidating2] =
     useState<boolean>(false);
-
   // Session (generated deterministically)
   const [sessionID, setSessionID] = useState<string>('');
   const [sessionKey, setSessionKey] = useState<string>('');
   const [chaincode, setChaincode] = useState<string>('');
-
   // Progress
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState('');
@@ -127,32 +136,20 @@ const MobileNostrPairing = ({navigation}: any) => {
   const [isPreparing, setIsPreparing] = useState(false);
   const [isPrepared, setIsPrepared] = useState(false);
   const [prepCounter, setPrepCounter] = useState(0);
-  const progressAnimation = useRef(new Animated.Value(0)).current;
-  const progressAnimationLoop = useRef<Animated.CompositeAnimation | null>(
-    null,
-  );
-
+  const progressAnimation = useSharedValue(0);
   // Backup state
   const [isBackupModalVisible, setIsBackupModalVisible] = useState(false);
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [passwordVisible, setPasswordVisible] = useState(false);
-  const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
-  const [passwordStrength, setPasswordStrength] = useState(0);
-  const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
   const [backupChecks, setBackupChecks] = useState({
     deviceOne: false,
     deviceTwo: false,
     deviceThree: false,
   });
-
   // Keyshare mapping (based on sorted npubs)
   const [keyshareMapping, setKeyshareMapping] = useState<{
     keyshare1?: {npub: string; deviceName: string; isLocal: boolean};
     keyshare2?: {npub: string; deviceName: string; isLocal: boolean};
     keyshare3?: {npub: string; deviceName: string; isLocal: boolean};
   }>({});
-
   // Send mode: device selection (for trio mode)
   const [selectedPeerNpub, setSelectedPeerNpub] = useState<string>('');
   const [sendModeDevices, setSendModeDevices] = useState<
@@ -162,7 +159,6 @@ const MobileNostrPairing = ({navigation}: any) => {
       isLocal: boolean;
     }>
   >([]);
-
   // QR Scanner / QR Share
   const [isQRScannerVisible, setIsQRScannerVisible] = useState(false);
   const [scanningForPeer, setScanningForPeer] = useState<1 | 2>(1);
@@ -171,7 +167,6 @@ const MobileNostrPairing = ({navigation}: any) => {
   const [showRelayConfig, setShowRelayConfig] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
   const connectionQrRef = useRef<any>(null);
-
   // Connection details for sharing (hex encoded)
   const connectionDetails = React.useMemo(() => {
     if (!localNpub || !deviceName || !partialNonce) {
@@ -186,7 +181,6 @@ const MobileNostrPairing = ({navigation}: any) => {
     }
     return hex;
   }, [localNpub, deviceName, partialNonce]);
-
   // Load default relays on mount (from cache if available, otherwise fetch dynamically)
   useEffect(() => {
     const loadRelays = async () => {
@@ -214,7 +208,6 @@ const MobileNostrPairing = ({navigation}: any) => {
     };
     loadRelays();
   }, []);
-
   // Update relays when input changes (support both comma and newline separation)
   useEffect(() => {
     const parsed = relaysInput
@@ -223,7 +216,6 @@ const MobileNostrPairing = ({navigation}: any) => {
       .filter(Boolean);
     setRelays(parsed);
   }, [relaysInput]);
-
   // Clear all cache when entering wallet setup mode (not signing mode)
   useEffect(() => {
     const clearCacheForSetup = async () => {
@@ -234,12 +226,10 @@ const MobileNostrPairing = ({navigation}: any) => {
           // Clear LocalCache
           await LocalCache.clear();
           dbg('LocalCache cleared successfully');
-
           // Clear stale EncryptedStorage items (but keep keyshare if it exists for signing)
           // We clear btcPub as it will be regenerated with the new keyshare
           await EncryptedStorage.removeItem('btcPub');
           dbg('Cleared stale btcPub from EncryptedStorage');
-
           // Clear WalletService cache
           try {
             await LocalCache.removeItem('walletCache');
@@ -247,7 +237,6 @@ const MobileNostrPairing = ({navigation}: any) => {
           } catch (error) {
             dbg('Error clearing WalletService cache:', error);
           }
-
           dbg('=== MobileNostrPairing: Cache clearing completed');
         } catch (error) {
           dbg('Error clearing cache in MobileNostrPairing:', error);
@@ -256,7 +245,6 @@ const MobileNostrPairing = ({navigation}: any) => {
     };
     clearCacheForSetup();
   }, [setupMode]);
-
   // Initialize device name and generate keypair on mount (only for keygen mode)
   useEffect(() => {
     const initialize = async () => {
@@ -281,7 +269,6 @@ const MobileNostrPairing = ({navigation}: any) => {
     };
     initialize();
   }, [isSendBitcoin, isSignPSBT]);
-
   // Generate session params when peer connections are ready
   useEffect(() => {
     if (localNpub && deviceName && partialNonce) {
@@ -322,7 +309,6 @@ const MobileNostrPairing = ({navigation}: any) => {
     isSendBitcoin,
     isSignPSBT,
   ]);
-
   // Parse PSBT details when PSBT is available
   useEffect(() => {
     const parsePSBT = async () => {
@@ -332,7 +318,6 @@ const MobileNostrPairing = ({navigation}: any) => {
           const detailsJson = await BBMTLibNativeModule.parsePSBTDetails(
             route.params.psbtBase64,
           );
-
           if (
             detailsJson.startsWith('error') ||
             detailsJson.includes('failed')
@@ -341,7 +326,6 @@ const MobileNostrPairing = ({navigation}: any) => {
             setPsbtDetails(null);
             return;
           }
-
           const details = JSON.parse(detailsJson);
           setPsbtDetails({
             inputs: details.inputs || [],
@@ -364,10 +348,8 @@ const MobileNostrPairing = ({navigation}: any) => {
         setPsbtDetails(null);
       }
     };
-
     parsePSBT();
   }, [isSignPSBT, route.params?.psbtBase64]);
-
   // Check if all conditions are met to enable start keygen button
   // (requires preparams ready AND manual confirmation that other devices are ready)
   useEffect(() => {
@@ -402,17 +384,14 @@ const MobileNostrPairing = ({navigation}: any) => {
     peerDeviceName2,
     isTrio,
   ]);
-
   // Toggle function for manual "other devices ready" confirmation
   const toggleKeygenReady = () => {
     setIsKeygenReady(!isKeygenReady);
   };
-
   const toggleKeysignReady = () => {
     HapticFeedback.medium();
     setIsKeysignReady(!isKeysignReady);
   };
-
   // Listen to native module events for progress tracking
   useEffect(() => {
     const eventEmitter = new NativeEventEmitter(BBMTLibNativeModule);
@@ -441,9 +420,6 @@ const MobileNostrPairing = ({navigation}: any) => {
             );
             setProgress(Math.round((100 * msg.step) / keygenSteps));
             dbg('keygen_hook_info:', msg.info);
-            const statusDot =
-              msg.step % 3 === 0 ? '.' : msg.step % 3 === 1 ? '..' : '...';
-            setStatus('Processing cryptographic operations' + statusDot);
           }
         } else if (msg.type === 'btc_send') {
           if (msg.done) {
@@ -460,9 +436,6 @@ const MobileNostrPairing = ({navigation}: any) => {
             });
           }
           dbg('btc_send_hook_info:', msg.info);
-          const statusDot =
-            msg.step % 3 === 0 ? '.' : msg.step % 3 === 1 ? '..' : '...';
-          setStatus('Processing cryptographic operations' + statusDot);
         } else if (msg.type === 'keysign') {
           const prgUTXO = (utxoIndex - 1) * utxoRange;
           const progressValue =
@@ -481,22 +454,29 @@ const MobileNostrPairing = ({navigation}: any) => {
             'time',
             new Date(msg.time),
           );
-          setProgress(progressValue);
           dbg('keysign_hook_info:', msg.info);
-          const statusDot =
-            msg.step % 3 === 0 ? '.' : msg.step % 3 === 1 ? '..' : '...';
-          setStatus('Processing cryptographic operations' + statusDot);
+          if (progressValue > 0) {
+            setProgress(progressValue);
+          }
+          if (progressValue > 100) {
+            setProgress(100);
+          }
           if (msg.done) {
+            utxoIndex = 0;
+            utxoCount = 0;
+            utxoRange = 0;
             setProgress(100);
             setMpcDone(true);
           }
         }
+        const statusDot =
+          msg.step % 3 === 0 ? '.' : msg.step % 3 === 1 ? '..' : '...';
+        setStatus('Processing cryptographic operations' + statusDot);
       } catch {
         // If parsing fails, it might be a log message, just log it
         dbg('TSS log:', message);
       }
     };
-
     const subscription: EmitterSubscription = eventEmitter.addListener(
       Platform.OS === 'android' ? 'BBMT_DROID' : 'BBMT_APPLE',
       (event: any) => {
@@ -507,16 +487,13 @@ const MobileNostrPairing = ({navigation}: any) => {
         }
       },
     );
-
     return () => {
       subscription.remove();
     };
   }, [isTrio]);
-
   // Load keyshare and derive device info in send mode
   useEffect(() => {
     if (!isSendBitcoin && !isSignPSBT) return;
-
     const loadKeyshareData = async () => {
       try {
         const keyshareJSON = await EncryptedStorage.getItem('keyshare');
@@ -525,14 +502,12 @@ const MobileNostrPairing = ({navigation}: any) => {
           setSendModeDevices([]);
           return;
         }
-
         const keyshare = JSON.parse(keyshareJSON);
         if (!keyshare.keygen_committee_keys || !keyshare.local_party_key) {
           dbg('Keyshare missing required fields');
           setSendModeDevices([]);
           return;
         }
-
         // Determine if trio mode based on number of devices in keyshare
         const numDevices = keyshare.keygen_committee_keys?.length || 0;
         const isTrioMode = numDevices === 3;
@@ -544,14 +519,11 @@ const MobileNostrPairing = ({navigation}: any) => {
           numDevices,
           'devices)',
         );
-
         // Get local npub from keyshare
         const localNpubFromKeyshare = keyshare.nostr_npub || '';
-
         // Get local nsec from keyshare
         // The nsec might be stored as hex-encoded bytes OR already in bech32 format
         const nsecFromKeyshare = keyshare.nsec || '';
-
         if (nsecFromKeyshare) {
           // Check if it's already in bech32 format
           if (nsecFromKeyshare.startsWith('nsec1')) {
@@ -569,7 +541,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                 'Decoded nsec from hex:',
                 decodedNsec.substring(0, 20) + '...',
               );
-
               // Verify it's a valid nsec format
               if (decodedNsec.startsWith('nsec1')) {
                 setLocalNsec(decodedNsec);
@@ -587,27 +558,22 @@ const MobileNostrPairing = ({navigation}: any) => {
         } else {
           dbg('Warning: No nsec found in keyshare');
         }
-
         // Set local npub if available
         if (localNpubFromKeyshare) {
           setLocalNpub(localNpubFromKeyshare);
         }
-
         // Sort keygen_committee_keys to match the order used for keyshare labels
         const sortedKeys = [...keyshare.keygen_committee_keys].sort();
-
         // Build device list IMMEDIATELY with available data
         const devices: Array<{
           keyshareLabel: string;
           npub: string;
           isLocal: boolean;
         }> = [];
-
         for (let i = 0; i < sortedKeys.length; i++) {
           const hexKey = sortedKeys[i];
           const isLocal = hexKey === keyshare.local_party_key;
           const keyshareLabel = `KeyShare${i + 1}`;
-
           let npub = '';
           if (isLocal) {
             // Use local npub if available, otherwise use shortened hex
@@ -623,24 +589,20 @@ const MobileNostrPairing = ({navigation}: any) => {
               '...' +
               hexKey.substring(hexKey.length - 8);
           }
-
           devices.push({
             keyshareLabel,
             npub,
             isLocal,
           });
         }
-
         // Set devices immediately so UI can render
         setSendModeDevices(devices);
         dbg('Send mode devices loaded (initial):', devices);
-
         // Now update npubs for other devices asynchronously
         const updatedDevices = [...devices];
         for (let i = 0; i < sortedKeys.length; i++) {
           const hexKey = sortedKeys[i];
           const isLocal = hexKey === keyshare.local_party_key;
-
           if (!isLocal) {
             try {
               // Validate hex key format before calling hexToNpub
@@ -652,7 +614,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                 );
                 continue;
               }
-
               const result = await BBMTLibNativeModule.hexToNpub(hexKey);
               if (
                 result &&
@@ -667,7 +628,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                 );
                 // Update state with new npub
                 setSendModeDevices([...updatedDevices]);
-
                 // If this device was selected (by placeholder), update selectedPeerNpub to full npub
                 // Use a callback to access current selectedPeerNpub state
                 setSelectedPeerNpub(current => {
@@ -695,16 +655,13 @@ const MobileNostrPairing = ({navigation}: any) => {
         setSendModeDevices([]);
       }
     };
-
     loadKeyshareData();
   }, [isSendBitcoin, isSignPSBT]);
-
   // Auto-select peer in duo mode, or first peer in trio mode (deterministic)
   // Only auto-selects if no selection exists - never overrides user's manual selection
   useEffect(() => {
     if ((isSendBitcoin || isSignPSBT) && sendModeDevices.length > 0) {
       const otherDevices = sendModeDevices.filter(d => !d.isLocal);
-
       // Only auto-select if no peer is currently selected
       if (!selectedPeerNpub) {
         if (isTrio && otherDevices.length >= 2) {
@@ -739,7 +696,6 @@ const MobileNostrPairing = ({navigation}: any) => {
       }
     }
   }, [isSendBitcoin, isSignPSBT, isTrio, sendModeDevices, selectedPeerNpub]);
-
   // Initialize network immediately when component loads (for send Bitcoin mode)
   useEffect(() => {
     const initializeNetwork = async () => {
@@ -750,7 +706,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         setCurrentNetwork(cachedNetwork);
         return;
       }
-
       dbg('=== MobileNostrPairing: Received route params ===', {
         network: route.params?.network,
         derivationPath: route.params?.derivationPath,
@@ -759,20 +714,16 @@ const MobileNostrPairing = ({navigation}: any) => {
         satoshiAmount: route.params?.satoshiAmount,
         allParams: route.params,
       });
-
       // CRITICAL: In send mode, ALL parameters MUST come from route params (no fallbacks)
       if (!route.params.network || route.params.network.trim() === '') {
         dbg('ERROR: Network missing from route params in send mode');
         return;
       }
-
       // ALWAYS use route params - no fallbacks
       const netForNative = route.params.network.trim();
       const netForDisplay =
         netForNative === 'testnet3' ? 'testnet' : netForNative;
-
       setCurrentNetwork(netForDisplay);
-
       // Also set derivation path immediately if available from route params
       if (
         route.params.derivationPath &&
@@ -784,7 +735,6 @@ const MobileNostrPairing = ({navigation}: any) => {
           route.params.derivationPath,
         );
       }
-
       dbg(
         'MobileNostrPairing: Initialized network for display:',
         netForDisplay,
@@ -793,16 +743,13 @@ const MobileNostrPairing = ({navigation}: any) => {
         ')',
       );
     };
-
     initializeNetwork();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSendBitcoin, route.params?.network, route.params?.derivationPath]);
-
   // Compute from address for send transactions
   useEffect(() => {
     const computeFromAddress = async () => {
       if (!isSendBitcoin || !route.params) return;
-
       try {
         // CRITICAL: In send mode, ALL parameters MUST come from route params (no fallbacks)
         // This ensures consistency between devices and prevents mismatches
@@ -827,21 +774,16 @@ const MobileNostrPairing = ({navigation}: any) => {
           setFromAddress('');
           return;
         }
-
         const keyshareJSON = await EncryptedStorage.getItem('keyshare');
         if (!keyshareJSON) return;
-
         const keyshare = JSON.parse(keyshareJSON);
-
         // ALWAYS use route params - no fallbacks
         const netForNative = route.params.network.trim();
         const addressTypeToUse = route.params.addressType.trim();
         const path = route.params.derivationPath.trim();
-
         // Normalize for display only: 'testnet3' -> 'testnet'
         const netForDisplay =
           netForNative === 'testnet3' ? 'testnet' : netForNative;
-
         dbg(
           '=== MobileNostrPairing: Using route params ONLY (no fallbacks) ===',
           {
@@ -850,21 +792,18 @@ const MobileNostrPairing = ({navigation}: any) => {
             derivationPath: path,
           },
         );
-
         // Derive the public key and address
         const publicKey = await BBMTLibNativeModule.derivePubkey(
           keyshare.pub_key,
           keyshare.chain_code_hex,
           path,
         );
-
         // Use original network format for native module (requires 'testnet3' not 'testnet')
         const derivedAddress = await BBMTLibNativeModule.btcAddress(
           publicKey,
           netForNative,
           addressTypeToUse,
         );
-
         setFromAddress(derivedAddress);
         setCurrentDerivationPath(path);
         setCurrentNetwork(netForDisplay);
@@ -880,7 +819,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         setFromAddress('');
       }
     };
-
     computeFromAddress();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -890,7 +828,6 @@ const MobileNostrPairing = ({navigation}: any) => {
     route.params?.network,
     route.params?.addressType,
   ]);
-
   const generateLocalKeypair = async () => {
     try {
       const keypairJSON = await BBMTLibNativeModule.nostrKeypair();
@@ -913,7 +850,6 @@ const MobileNostrPairing = ({navigation}: any) => {
       Alert.alert('Error', 'Failed to generate Nostr keypair');
     }
   };
-
   // Helper function to shorten npub for display
   const shortenNpub = (
     npub: string,
@@ -927,7 +863,6 @@ const MobileNostrPairing = ({navigation}: any) => {
       npub.length - endLen,
     )}`;
   };
-
   // Helper function to format connection details for display
   const formatConnectionDisplay = (
     npub: string,
@@ -938,7 +873,6 @@ const MobileNostrPairing = ({navigation}: any) => {
     }
     return `${deviceNameValue}@${shortenNpub(npub)}`;
   };
-
   const parseConnectionDetails = async (
     input: string,
   ): Promise<{
@@ -948,12 +882,10 @@ const MobileNostrPairing = ({navigation}: any) => {
   } | null> => {
     const trimmed = input.trim();
     dbg('parseConnectionDetails: input =', trimmed.substring(0, 50) + '...');
-
     if (!trimmed) {
       dbg('parseConnectionDetails: empty input');
       return null;
     }
-
     // Try to decode as hex first
     let decoded = '';
     try {
@@ -979,10 +911,8 @@ const MobileNostrPairing = ({navigation}: any) => {
       dbg('parseConnectionDetails: error decoding hex:', error);
       return null;
     }
-
     const parts = decoded.split(':');
     dbg('parseConnectionDetails: split parts count =', parts.length);
-
     if (parts.length !== 3) {
       dbg(
         'parseConnectionDetails: invalid format - expected 3 parts (npub:deviceName:partialNonce), got',
@@ -990,16 +920,13 @@ const MobileNostrPairing = ({navigation}: any) => {
       );
       return null;
     }
-
     let [npub, peerDeviceName, peerPartialNonce] = parts;
     let trimmedNpub = npub.trim();
     const trimmedDeviceName = peerDeviceName.trim();
     const trimmedNonce = peerPartialNonce.trim();
-
     dbg('parseConnectionDetails: npub =', trimmedNpub.substring(0, 20) + '...');
     dbg('parseConnectionDetails: deviceName =', trimmedDeviceName);
     dbg('parseConnectionDetails: partialNonce =', trimmedNonce);
-
     // Check if it's a hex string (64 hex characters) and try to convert to npub
     if (!trimmedNpub.startsWith('npub1')) {
       // Check if it's a hex string
@@ -1027,22 +954,18 @@ const MobileNostrPairing = ({navigation}: any) => {
         return null;
       }
     }
-
     if (trimmedNpub.length < 10) {
       dbg('parseConnectionDetails: invalid npub - too short');
       return null;
     }
-
     if (trimmedDeviceName.length === 0) {
       dbg('parseConnectionDetails: invalid device name - empty');
       return null;
     }
-
     if (trimmedNonce.length === 0) {
       dbg('parseConnectionDetails: invalid partialNonce - empty');
       return null;
     }
-
     dbg(
       'parseConnectionDetails: valid! npub =',
       trimmedNpub.substring(0, 20) + '...',
@@ -1057,17 +980,13 @@ const MobileNostrPairing = ({navigation}: any) => {
       partialNonce: trimmedNonce,
     };
   };
-
   const handlePeerConnectionInput = async (input: string, peerNum: 1 | 2) => {
     dbg(`handlePeerConnectionInput: peerNum=${peerNum}, input="${input}"`);
-
     const setValidating =
       peerNum === 1 ? setPeerInputValidating1 : setPeerInputValidating2;
     const setError = peerNum === 1 ? setPeerInputError1 : setPeerInputError2;
-
     // Clear previous error
     setError('');
-
     // If input is empty, clear everything
     if (!input.trim()) {
       dbg(
@@ -1086,15 +1005,11 @@ const MobileNostrPairing = ({navigation}: any) => {
       }
       return;
     }
-
     // Set validating state
     setValidating(true);
-
     // Small delay to show validation state
     await new Promise(resolve => setTimeout(resolve, 300));
-
     const parsed = await parseConnectionDetails(input);
-
     if (parsed) {
       dbg(
         `handlePeerConnectionInput: peerNum=${peerNum}, VALID - npub=${parsed.npub.substring(
@@ -1102,12 +1017,10 @@ const MobileNostrPairing = ({navigation}: any) => {
           20,
         )}..., deviceName=${parsed.deviceName}`,
       );
-
       // Check for duplicate npubs
       const isDuplicateLocal = parsed.npub === localNpub;
       const isDuplicatePeer1 = peerNum !== 1 && parsed.npub === peerNpub1;
       const isDuplicatePeer2 = peerNum !== 2 && parsed.npub === peerNpub2;
-
       if (isDuplicateLocal || isDuplicatePeer1 || isDuplicatePeer2) {
         let duplicateMsg = 'This device is already connected.';
         if (isDuplicateLocal) {
@@ -1128,7 +1041,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         }
         return;
       }
-
       if (peerNum === 1) {
         setPeerNpub1(parsed.npub);
         setPeerDeviceName1(parsed.deviceName);
@@ -1142,16 +1054,13 @@ const MobileNostrPairing = ({navigation}: any) => {
         setPeerConnectionDetails2(input.trim());
         setPeerInputError2('');
       }
-
       HapticFeedback.light();
     } else {
       dbg(`handlePeerConnectionInput: peerNum=${peerNum}, INVALID`);
-
       // Check if it's a hex string
       const hexPattern = /^[0-9a-fA-F]{64}$/;
       const parts = input.trim().split(':');
       const firstPart = parts[0]?.trim() || '';
-
       let errorMsg = '';
       if (hexPattern.test(firstPart)) {
         errorMsg =
@@ -1164,10 +1073,8 @@ const MobileNostrPairing = ({navigation}: any) => {
       } else {
         errorMsg = 'Invalid format. Expected: npub1...:DeviceName';
       }
-
       dbg(`handlePeerConnectionInput: peerNum=${peerNum}, error="${errorMsg}"`);
       setError(errorMsg);
-
       // Clear the input text and peer data
       if (peerNum === 1) {
         setPeerNpub1('');
@@ -1181,17 +1088,14 @@ const MobileNostrPairing = ({navigation}: any) => {
         setPeerConnectionDetails2('');
       }
     }
-
     setValidating(false);
   };
-
   const generateKeygenSessionParams = async () => {
     try {
       // Collect all npubs and device names
       // IMPORTANT: Trim whitespace and ensure consistent format
       const allNpubs: string[] = [];
       const allDeviceNames: string[] = [];
-
       // Add local npub (trimmed)
       if (localNpub && localNpub.trim()) {
         allNpubs.push(localNpub.trim());
@@ -1199,7 +1103,6 @@ const MobileNostrPairing = ({navigation}: any) => {
       if (deviceName && deviceName.trim()) {
         allDeviceNames.push(deviceName.trim());
       }
-
       // Add peer 1 (trimmed)
       if (peerNpub1 && peerNpub1.trim()) {
         allNpubs.push(peerNpub1.trim());
@@ -1207,7 +1110,6 @@ const MobileNostrPairing = ({navigation}: any) => {
       if (peerDeviceName1 && peerDeviceName1.trim()) {
         allDeviceNames.push(peerDeviceName1.trim());
       }
-
       // Add peer 2 for trio (trimmed)
       if (isTrio && peerNpub2 && peerNpub2.trim()) {
         allNpubs.push(peerNpub2.trim());
@@ -1215,7 +1117,6 @@ const MobileNostrPairing = ({navigation}: any) => {
       if (isTrio && peerDeviceName2 && peerDeviceName2.trim()) {
         allDeviceNames.push(peerDeviceName2.trim());
       }
-
       // Validate we have the correct number of npubs
       const expectedNpubs = isTrio ? 3 : 2;
       if (allNpubs.length !== expectedNpubs) {
@@ -1249,7 +1150,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         dbg('isTrio:', isTrio);
         return; // Don't generate session params if we don't have all npubs
       }
-
       // Additional validation for trio mode: ensure all 3 npubs are unique
       if (isTrio && allNpubs.length === 3) {
         const uniqueNpubs = new Set(allNpubs);
@@ -1259,11 +1159,9 @@ const MobileNostrPairing = ({navigation}: any) => {
           return;
         }
       }
-
       // Sort alphabetically - CRITICAL: must be same order on all devices
       const npubsSorted = [...allNpubs].sort().join(',');
       const deviceNamesSorted = [...allDeviceNames].sort().join(',');
-
       // Collect all partial nonces (local + peers)
       const allPartialNonces: string[] = [];
       if (partialNonce) {
@@ -1275,10 +1173,8 @@ const MobileNostrPairing = ({navigation}: any) => {
       if (isTrio && peerNonce2) {
         allPartialNonces.push(peerNonce2);
       }
-
       // Sort nonces and join as CSV
       const fullNonce = [...allPartialNonces].sort().join(',');
-
       // Log the exact inputs for session ID calculation (for debugging)
       dbg('=== SESSION ID CALCULATION ===');
       dbg('Mode:', isTrio ? 'TRIO' : 'DUO');
@@ -1299,25 +1195,21 @@ const MobileNostrPairing = ({navigation}: any) => {
         'Session ID input string:',
         `${npubsSorted},${deviceNamesSorted},${fullNonce}`,
       );
-
       // Generate session ID
       const sessionIDHash = await BBMTLibNativeModule.sha256(
         `${npubsSorted},${deviceNamesSorted},${fullNonce}`,
       );
       setSessionID(sessionIDHash);
-
       // Generate session key
       const sessionKeyHash = await BBMTLibNativeModule.sha256(
         `${npubsSorted},${sessionIDHash}`,
       );
       setSessionKey(sessionKeyHash);
-
       // Generate chaincode
       const chaincodeHash = await BBMTLibNativeModule.sha256(
         `${sessionIDHash},${sessionKeyHash}`,
       );
       setChaincode(chaincodeHash);
-
       dbg('Generated session params:', {
         sessionID: sessionIDHash.substring(0, 16) + '...',
         sessionKey: sessionKeyHash.substring(0, 16) + '...',
@@ -1331,14 +1223,11 @@ const MobileNostrPairing = ({navigation}: any) => {
       Alert.alert('Error', 'Failed to generate session parameters');
     }
   };
-
   const startKeygen = async () => {
     if (!canStartKeygen) return;
-
     setIsPairing(true);
     setProgress(0);
     setStatus('Starting key generation...');
-
     try {
       // Prepare parties npubs CSV (sorted)
       // IMPORTANT: Must use the same npubs and same sorting as session ID generation
@@ -1352,7 +1241,6 @@ const MobileNostrPairing = ({navigation}: any) => {
       if (isTrio && peerNpub2 && peerNpub2.trim()) {
         allNpubs.push(peerNpub2.trim());
       }
-
       // Validate we have the correct number
       const expectedNpubs = isTrio ? 3 : 2;
       if (allNpubs.length !== expectedNpubs) {
@@ -1362,10 +1250,8 @@ const MobileNostrPairing = ({navigation}: any) => {
           } mode, but got ${allNpubs.length}`,
         );
       }
-
       // Sort alphabetically (same as session ID generation)
       const partiesNpubsCSV = allNpubs.sort().join(',');
-
       dbg('=== START KEYGEN ===');
       dbg('Mode:', isTrio ? 'TRIO' : 'DUO');
       dbg(
@@ -1376,7 +1262,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         'partiesNpubsCSV (sorted, all npubs):',
         partiesNpubsCSV.split(',').map(n => n.substring(0, 30) + '...'),
       );
-
       // Calculate expected peers (all npubs except local)
       const expectedPeers = allNpubs.filter(n => {
         const trimmedN = n.trim();
@@ -1392,10 +1277,8 @@ const MobileNostrPairing = ({navigation}: any) => {
         expectedPeers.length,
         isTrio ? '(should be 2 for trio)' : '(should be 1 for duo)',
       );
-
       dbg('sessionID:', sessionID.substring(0, 16) + '...');
       dbg('sessionKey:', sessionKey.substring(0, 16) + '...');
-
       if (isTrio && expectedPeers.length !== 2) {
         dbg(
           '⚠️ WARNING: In trio mode, expected 2 peers but got',
@@ -1407,13 +1290,10 @@ const MobileNostrPairing = ({navigation}: any) => {
           'peers. Make sure all 3 devices have all npubs connected!',
         );
       }
-
       // Prepare relays CSV
       const relaysCSV = relays.join(',');
-
       // Save relays to cache
       await LocalCache.setItem('nostr_relays', relaysCSV);
-
       // Log detailed info for debugging trio mode
       dbg('Starting Nostr keygen with:', {
         relays: relaysCSV,
@@ -1425,7 +1305,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         sessionKey: sessionKey.substring(0, 16) + '...',
         chaincode: chaincode.substring(0, 16) + '...',
       });
-
       // Log which npubs will be sent to Go backend
       const allPartiesList = partiesNpubsCSV.split(',');
       dbg('=== GO BACKEND INPUT ===');
@@ -1453,7 +1332,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         'peers to publish "ready" events',
       );
       dbg('=== END GO BACKEND INPUT ===');
-
       // Call native module
       let keyshareJSON = await BBMTLibNativeModule.nostrMpcTssSetup(
         relaysCSV,
@@ -1464,7 +1342,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         chaincode,
         ppmFile,
       );
-
       // Validate keyshare and map keyshare positions
       let keyshare: any;
       try {
@@ -1477,7 +1354,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         dbg('Error parsing keyshare:', error);
         throw new Error('Invalid keyshare received');
       }
-
       // Map keyshare positions based on sorted npubs for UI display
       const sortedNpubs = allNpubs.sort();
       const mapping: {
@@ -1485,14 +1361,12 @@ const MobileNostrPairing = ({navigation}: any) => {
         keyshare2?: {npub: string; deviceName: string; isLocal: boolean};
         keyshare3?: {npub: string; deviceName: string; isLocal: boolean};
       } = {};
-
       // Map npubs to keyshare positions using keygen_committee_keys order
       // We need to match npubs to their corresponding hex keys in keygen_committee_keys
       // For now, we'll use the sorted npubs order which should match the sorted keygen_committee_keys
       sortedNpubs.forEach((npub, index) => {
         const isLocal = npub === localNpub;
         let mappedDeviceName = '';
-
         if (isLocal) {
           mappedDeviceName = deviceName || 'This device';
         } else if (npub === peerNpub1) {
@@ -1502,7 +1376,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         } else {
           mappedDeviceName = `Device ${index + 1}`;
         }
-
         const keyshareKey = `keyshare${index + 1}` as
           | 'keyshare1'
           | 'keyshare2'
@@ -1513,10 +1386,8 @@ const MobileNostrPairing = ({navigation}: any) => {
           isLocal,
         };
       });
-
       setKeyshareMapping(mapping);
       dbg('Keyshare mapping:', mapping);
-
       // Save keyshare (keyshare_position will be calculated on-the-fly when needed)
       await EncryptedStorage.setItem('keyshare', keyshareJSON);
       // New wallet setups are always non-legacy, so no need to reset flag
@@ -1538,21 +1409,20 @@ const MobileNostrPairing = ({navigation}: any) => {
       setIsPairing(false);
     }
   };
-
   const startSendBTC = async () => {
     if (!route.params) {
       Alert.alert('Error', 'Missing transaction parameters');
       return;
     }
-
     setIsPairing(true);
     setProgress(0);
     setStatus('Starting transaction signing...');
-
     // Store original network/API to restore after transaction
     let originalNetwork = '';
     let originalApiUrl = '';
-
+    // Store original WalletService state to restore after balance fetch
+    let originalWalletServiceNetwork = '';
+    let originalWalletServiceApiUrl = '';
     try {
       // Read ALL parameters from route params ONLY (no fallbacks)
       if (!route.params?.network || route.params.network.trim() === '') {
@@ -1585,16 +1455,18 @@ const MobileNostrPairing = ({navigation}: any) => {
       ) {
         throw new Error('Fees are required in route params');
       }
-
       // Extract all params from route
-      const net = route.params.network.trim();
+      // CRITICAL: Normalize network to native format ('testnet3' not 'testnet') for BBMTLib
+      const networkFromParams = route.params.network.trim();
+      const net =
+        networkFromParams === 'testnet' ? 'testnet3' : networkFromParams;
       const addressTypeToUse = route.params.addressType.trim();
       const path = route.params.derivationPath.trim();
       const toAddress = route.params.toAddress.trim();
       const satoshiAmount = route.params.satoshiAmount.trim();
       const satoshiFees = route.params.satoshiFees.trim();
-
       dbg('MobileNostrPairing: Using route params ONLY:', {
+        networkFromParams,
         network: net,
         addressType: addressTypeToUse,
         derivationPath: path,
@@ -1602,7 +1474,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         satoshiAmount,
         satoshiFees,
       });
-
       // Store original network/API
       originalNetwork = (await LocalCache.getItem('network')) || 'mainnet';
       const cachedApi = await LocalCache.getItem(`api_${originalNetwork}`);
@@ -1613,8 +1484,8 @@ const MobileNostrPairing = ({navigation}: any) => {
             ? 'https://mempool.space/testnet/api'
             : 'https://mempool.space/api';
       }
-
       // Set network and API in BBMTLib for this transaction
+      // Use normalized network (native format) for API lookup and BBMTLib
       let apiUrl = await LocalCache.getItem(`api_${net}`);
       if (!apiUrl) {
         apiUrl =
@@ -1624,15 +1495,28 @@ const MobileNostrPairing = ({navigation}: any) => {
       }
       await BBMTLibNativeModule.setBtcNetwork(net);
       await BBMTLibNativeModule.setAPI(net, apiUrl);
+      // CRITICAL: Update LocalCache 'api' key so WalletService.getWalletBalance uses correct API
+      // This ensures balance fetch uses the network from route params, not device's current network
+      await LocalCache.setItem('api', apiUrl);
+      // CRITICAL: Temporarily update WalletService internal state so getWalletBalance uses correct network
+      // This is needed because getWalletBalance uses this.currentNetwork for address validation
+      const walletService = WalletService.getInstance();
+      originalWalletServiceNetwork = (walletService as any).currentNetwork || '';
+      originalWalletServiceApiUrl = (walletService as any).currentApiUrl || '';
+      (walletService as any).currentNetwork = net;
+      (walletService as any).currentApiUrl = apiUrl;
       dbg('MobileNostrPairing: Set network and API in BBMTLib:', net, apiUrl);
-
+      dbg('MobileNostrPairing: Temporarily updated WalletService network state:', {
+        from: originalWalletServiceNetwork,
+        to: net,
+        apiUrl,
+      });
       // Get keyshare and nsec
       const keyshareJSON = await EncryptedStorage.getItem('keyshare');
       if (!keyshareJSON) {
         throw new Error('Keyshare not found');
       }
       const keyshare = JSON.parse(keyshareJSON);
-
       let nsecToUse = localNsec;
       if (!nsecToUse || !nsecToUse.startsWith('nsec1')) {
         const nsecFromKeyshare = keyshare.nsec || '';
@@ -1651,7 +1535,6 @@ const MobileNostrPairing = ({navigation}: any) => {
           throw new Error('nsec not found in keyshare');
         }
       }
-
       // Derive from address using route params
       const publicKey = await BBMTLibNativeModule.derivePubkey(
         keyshare.pub_key,
@@ -1663,16 +1546,22 @@ const MobileNostrPairing = ({navigation}: any) => {
         net,
         addressTypeToUse,
       );
-
       // Get balance for sessionFlag calculation
+      // WalletService now has correct network state for this call
       const balance = await WalletService.getInstance().getWalletBalance(
         senderAddress,
         0,
         0,
         false,
       );
+      // Restore WalletService internal state immediately after balance fetch
+      (walletService as any).currentNetwork = originalWalletServiceNetwork;
+      (walletService as any).currentApiUrl = originalWalletServiceApiUrl;
+      dbg('MobileNostrPairing: Restored WalletService network state:', {
+        network: originalWalletServiceNetwork,
+        apiUrl: originalWalletServiceApiUrl,
+      });
       const balanceSats = Big(balance.btc).times(1e8).toFixed(0);
-
       // Get all npubs from keyshare for sessionFlag calculation
       const allNpubsFromKeyshare: string[] = [];
       const sortedKeys = [...keyshare.keygen_committee_keys].sort();
@@ -1694,14 +1583,12 @@ const MobileNostrPairing = ({navigation}: any) => {
           dbg('Error converting hex to npub:', error);
         }
       }
-
       const npubsSorted = [...allNpubsFromKeyshare].sort().join(',');
       if (npubsSorted.length === 0 || allNpubsFromKeyshare.length < 2) {
         throw new Error(
           `Failed to get all npubs from keyshare. Got ${allNpubsFromKeyshare.length} npubs.`,
         );
       }
-
       // Prepare parties npubs CSV for the actual signing (only participating devices)
       // IMPORTANT: Use the full npubs from allNpubsFromKeyshare (already converted from hex)
       // This ensures we use the same npubs that were used for session ID calculation
@@ -1714,7 +1601,6 @@ const MobileNostrPairing = ({navigation}: any) => {
             (localNpub && n.startsWith(localNpub.substring(0, 20)))
           );
         }) || localNpub; // Fallback to state if not found
-
       const allNpubs = [localNpubFromKeyshare];
       if (isTrio) {
         // For trio, use selected peer - find it by matching device in sendModeDevices
@@ -1728,7 +1614,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                 d.npub.startsWith(selectedPeerNpub.substring(0, 20))) ||
               (d.npub && selectedPeerNpub.startsWith(d.npub.substring(0, 20))),
           );
-
           if (selectedDevice) {
             // Find the corresponding hex key in keyshare by keyshareLabel
             // Use the same sortedKeys from above (already sorted)
@@ -1737,10 +1622,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                 selectedDevice.keyshareLabel.replace('KeyShare', ''),
                 10,
               ) - 1;
-
             if (selectedIndex >= 0 && selectedIndex < sortedKeys.length) {
               const selectedHexKey = sortedKeys[selectedIndex];
-
               // Find the full npub in allNpubsFromKeyshare that corresponds to this hex key
               // We need to convert the hex key to npub and find it, or match by index
               // Since allNpubsFromKeyshare is built from sortedKeys in the same order, we can use index
@@ -1801,7 +1684,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                 (selectedPeerNpub.startsWith('npub1') &&
                   n.startsWith(selectedPeerNpub.substring(0, 20))),
             );
-
             if (fullPeerNpub && fullPeerNpub !== localNpubFromKeyshare) {
               allNpubs.push(fullPeerNpub);
               dbg(
@@ -1837,10 +1719,8 @@ const MobileNostrPairing = ({navigation}: any) => {
         }
       }
       const partiesNpubsCSV = allNpubs.sort().join(',');
-
       // Prepare relays CSV
       const relaysCSV = relays.join(',');
-
       // Call MPC send BTC
       const txId = await BBMTLibNativeModule.nostrMpcSendBTC(
         relaysCSV,
@@ -1856,13 +1736,11 @@ const MobileNostrPairing = ({navigation}: any) => {
         satoshiAmount,
         satoshiFees,
       );
-
       // Validate txId
       const validTxID = /^[a-fA-F0-9]{64}$/.test(txId);
       if (!validTxID) {
         throw new Error(txId || 'Invalid transaction ID');
       }
-
       // Save pending transaction
       const pendingTxs = JSON.parse(
         (await LocalCache.getItem(`${senderAddress}-pendingTxs`)) || '{}',
@@ -1884,7 +1762,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         `${senderAddress}-pendingTxs`,
         JSON.stringify(pendingTxs),
       );
-
       // Navigate to home (same as MobilesPairing.tsx)
       navigation.dispatch(
         CommonActions.reset({
@@ -1892,7 +1769,6 @@ const MobileNostrPairing = ({navigation}: any) => {
           routes: [{name: 'Home', params: {txId}}],
         }),
       );
-
       setMpcDone(true);
     } catch (error: any) {
       dbg('Send BTC error:', error);
@@ -1905,10 +1781,18 @@ const MobileNostrPairing = ({navigation}: any) => {
         try {
           await BBMTLibNativeModule.setBtcNetwork(originalNetwork);
           await BBMTLibNativeModule.setAPI(originalNetwork, originalApiUrl);
-          // Restore WalletService internal state
-          const walletService = WalletService.getInstance();
-          (walletService as any).currentNetwork = originalNetwork;
-          (walletService as any).currentApiUrl = originalApiUrl;
+          // Restore LocalCache 'api' key to original network's API
+          await LocalCache.setItem('api', originalApiUrl);
+          // Restore WalletService internal state (in case it wasn't restored earlier due to error)
+          if (originalWalletServiceNetwork && originalWalletServiceApiUrl) {
+            const walletService = WalletService.getInstance();
+            (walletService as any).currentNetwork = originalWalletServiceNetwork;
+            (walletService as any).currentApiUrl = originalWalletServiceApiUrl;
+            dbg(
+              'MobileNostrPairing: Restored WalletService network in finally block:',
+              originalWalletServiceNetwork,
+            );
+          }
           dbg(
             'MobileNostrPairing: Restored original network:',
             originalNetwork,
@@ -1925,13 +1809,11 @@ const MobileNostrPairing = ({navigation}: any) => {
       setIsPairing(false);
     }
   };
-
   const startSignPSBT = async () => {
     if (!route.params?.psbtBase64) {
       Alert.alert('Error', 'Missing PSBT data');
       return;
     }
-
     if (!isKeysignReady) {
       Alert.alert(
         'Not Ready',
@@ -1939,19 +1821,15 @@ const MobileNostrPairing = ({navigation}: any) => {
       );
       return;
     }
-
     setIsPairing(true);
     setProgress(0);
     setStatus('Starting PSBT signing...');
-
     try {
       const keyshareJSON = await EncryptedStorage.getItem('keyshare');
       if (!keyshareJSON) {
         throw new Error('Keyshare not found');
       }
-
       const keyshare = JSON.parse(keyshareJSON);
-
       // Get nsec from keyshare
       let nsecToUse = localNsec;
       if (!nsecToUse || !nsecToUse.startsWith('nsec1')) {
@@ -1964,7 +1842,6 @@ const MobileNostrPairing = ({navigation}: any) => {
             } else {
               decodedNsec = hexToString(nsecFromKeyshare);
             }
-
             if (decodedNsec.startsWith('nsec1')) {
               nsecToUse = decodedNsec;
               setLocalNsec(decodedNsec);
@@ -1978,11 +1855,9 @@ const MobileNostrPairing = ({navigation}: any) => {
           throw new Error('nsec not found in keyshare');
         }
       }
-
       if (!nsecToUse || !nsecToUse.startsWith('nsec1')) {
         throw new Error('Invalid nsec: must be in bech32 format (nsec1...)');
       }
-
       // Get all npubs from keyshare for session ID
       const allNpubsFromKeyshare: string[] = [];
       const sortedKeys = [...keyshare.keygen_committee_keys].sort();
@@ -2004,13 +1879,10 @@ const MobileNostrPairing = ({navigation}: any) => {
           dbg('Error converting hex to npub:', error);
         }
       }
-
       const npubsSorted = [...allNpubsFromKeyshare].sort().join(',');
-
       if (npubsSorted.length === 0 || allNpubsFromKeyshare.length < 2) {
         throw new Error('Failed to get all npubs from keyshare');
       }
-
       // Find local npub
       const localNpubFromKeyshare =
         allNpubsFromKeyshare.find(
@@ -2018,7 +1890,6 @@ const MobileNostrPairing = ({navigation}: any) => {
             n === localNpub ||
             (localNpub && n.startsWith(localNpub.substring(0, 20))),
         ) || localNpub;
-
       // Build parties CSV
       const allNpubs = [localNpubFromKeyshare];
       if (isTrio) {
@@ -2074,7 +1945,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         }
       }
       const partiesNpubsCSV = allNpubs.sort().join(',');
-
       const relaysCSV = relays.join(',');
       dbg('Starting Nostr PSBT signing with:', {
         relays: relaysCSV,
@@ -2082,253 +1952,111 @@ const MobileNostrPairing = ({navigation}: any) => {
         npubsSorted: npubsSorted.substring(0, 30) + '...',
         psbtLength: route.params.psbtBase64?.length,
       });
-
       // Call native module for PSBT signing
-      const signedPsbt = await BBMTLibNativeModule.nostrMpcSignPSBT(
+      await BBMTLibNativeModule.nostrMpcSignPSBT(
         relaysCSV,
         nsecToUse,
         partiesNpubsCSV,
         npubsSorted,
         keyshareJSON,
         route.params.psbtBase64,
-      );
+      )
+        .then(async (signedPsbt: any) => {
+          if (
+            !signedPsbt ||
+            signedPsbt.includes('error') ||
+            signedPsbt.includes('failed')
+          ) {
+            Alert.alert(
+              'Operation Error',
+              `Could not sign PSBT.\n${String(signedPsbt)}`,
+            );
+            dbg(localNpub, 'PSBT signing error', String(signedPsbt));
+          } else {
+            dbg(localNpub, 'PSBT signed successfully');
+          }
+          // Check user's wallet mode preference before navigating
+          let targetRoute = 'Home';
 
-      // Validate result
-      if (
-        !signedPsbt ||
-        signedPsbt.includes('error') ||
-        signedPsbt.includes('failed')
-      ) {
-        throw new Error(signedPsbt || 'PSBT signing failed');
-      }
-
-      dbg('PSBT signed successfully, length:', signedPsbt.length);
-
-      // Check user's wallet mode preference before navigating
-      let targetRoute = 'Home';
-      try {
-        const walletMode =
-          (await EncryptedStorage.getItem('wallet_mode')) || 'full';
-        targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
-        dbg(
-          'PSBT signing complete: Navigating to',
-          targetRoute,
-          'based on wallet_mode:',
-          walletMode,
-        );
-      } catch (error) {
-        dbg('Error loading wallet_mode after PSBT signing:', error);
-        // Default to 'Home' if there's an error
-      }
-
-      // Navigate to the appropriate screen based on user preference
-      navigation.dispatch(
-        CommonActions.reset({
-          index: 0,
-          routes: [{name: targetRoute, params: {signedPsbt}}],
-        }),
-      );
-
-      setMpcDone(true);
+          const walletMode =
+            (await EncryptedStorage.getItem('wallet_mode')) || 'full';
+          targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
+          dbg(
+            'PSBT signing complete: Navigating to',
+            targetRoute,
+            'based on wallet_mode:',
+            walletMode,
+          );
+          navigation.dispatch(
+            CommonActions.reset({
+              index: 0,
+              routes: [{name: targetRoute, params: {signedPsbt}}],
+            }),
+          );
+          setMpcDone(true);
+        })
+        .catch(async (e: any) => {
+          Alert.alert('Operation Error', `Could not sign PSBT.\n${e?.message}`);
+          dbg(localNpub, 'PSBT signing error', e);
+          // Navigate back to home on error to ensure modal cleanup
+          try {
+            const walletMode =
+              (await EncryptedStorage.getItem('wallet_mode')) || 'full';
+            const targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
+            navigation.dispatch(
+              CommonActions.reset({
+                index: 0,
+                routes: [{name: targetRoute}],
+              }),
+            );
+          } catch (navError) {
+            dbg('Error navigating after PSBT error:', navError);
+          }
+        })
+        .finally(async () => {
+          setMpcDone(true);
+        });
     } catch (error: any) {
       dbg('Sign PSBT error:', error);
       Alert.alert('Error', error?.message || 'PSBT signing failed');
       setStatus('PSBT signing failed');
+      // Navigate back to home on error to ensure modal cleanup
+      try {
+        const walletMode =
+          (await EncryptedStorage.getItem('wallet_mode')) || 'full';
+        const targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
+        navigation.dispatch(
+          CommonActions.reset({
+            index: 0,
+            routes: [{name: targetRoute}],
+          }),
+        );
+      } catch (navError) {
+        dbg('Error navigating after PSBT error:', navError);
+      }
     } finally {
       setIsPairing(false);
     }
   };
-
   // Backup functions
   const allBackupChecked = isTrio
     ? backupChecks.deviceOne &&
       backupChecks.deviceTwo &&
       backupChecks.deviceThree
     : backupChecks.deviceOne && backupChecks.deviceTwo;
-
   const toggleBackedup = (key: keyof typeof backupChecks) => {
     setBackupChecks(prev => ({...prev, [key]: !prev[key]}));
   };
-
   const formatFiat = (price?: string) =>
     new Intl.NumberFormat('en-US', {
       style: 'decimal',
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(Number(price));
-
   const sat2btcStr = (sats?: string | number) =>
     Big(sats || 0)
       .div(1e8)
       .toFixed(8);
-
-  const validatePassword = (pass: string) => {
-    const errors: string[] = [];
-    const rules = {
-      length: pass.length >= 12,
-      uppercase: /[A-Z]/.test(pass),
-      lowercase: /[a-z]/.test(pass),
-      number: /\d/.test(pass),
-      symbol: /[!@#$%^&*(),.?":{}|<>]/.test(pass),
-    };
-
-    if (!rules.length) {
-      errors.push('At least 12 characters');
-    }
-    if (!rules.uppercase) {
-      errors.push('One uppercase letter');
-    }
-    if (!rules.lowercase) {
-      errors.push('One lowercase letter');
-    }
-    if (!rules.number) {
-      errors.push('One number');
-    }
-    if (!rules.symbol) {
-      errors.push('One special character');
-    }
-    setPasswordErrors(errors);
-
-    // Calculate strength (0-4)
-    const strength = Object.values(rules).filter(Boolean).length;
-    setPasswordStrength(strength);
-
-    return errors.length === 0;
-  };
-
-  const handlePasswordChange = (text: string) => {
-    setPassword(text);
-    validatePassword(text);
-  };
-
-  const getPasswordStrengthColor = () => {
-    if (passwordStrength <= 1) {
-      return theme.colors.danger;
-    }
-    if (passwordStrength <= 2) {
-      return theme.colors.warning;
-    }
-    if (passwordStrength <= 3) {
-      return theme.colors.warningLight;
-    }
-    return theme.colors.received;
-  };
-
-  const getPasswordStrengthText = () => {
-    if (passwordStrength <= 1) {
-      return 'Very Weak';
-    }
-    if (passwordStrength <= 2) {
-      return 'Weak';
-    }
-    if (passwordStrength <= 3) {
-      return 'Medium';
-    }
-    return 'Strong';
-  };
-
-  const clearBackupModal = () => {
-    setPassword('');
-    setConfirmPassword('');
-    setPasswordVisible(false);
-    setConfirmPasswordVisible(false);
-    setPasswordStrength(0);
-    setPasswordErrors([]);
-    setIsBackupModalVisible(false);
-  };
-
-  async function backupShare() {
-    if (!validatePassword(password)) {
-      dbg('❌ [BACKUP] Password validation failed');
-      const missingRequirements = passwordErrors.join('\n• ');
-      Alert.alert(
-        'Password Requirements Not Met',
-        `Your password must meet all of the following requirements:\n\n• ${missingRequirements}\n\nPlease update your password and try again.`,
-      );
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      dbg('❌ [BACKUP] Password mismatch');
-      Alert.alert(
-        'Passwords Do Not Match',
-        'The password and confirmation password must be identical. Please check both fields and try again.',
-      );
-      return;
-    }
-
-    try {
-      HapticFeedback.medium();
-
-      const storedKeyshare = await EncryptedStorage.getItem('keyshare');
-      if (storedKeyshare) {
-        const json = JSON.parse(storedKeyshare);
-        const encryptedKeyshare = await BBMTLibNativeModule.aesEncrypt(
-          storedKeyshare,
-          await BBMTLibNativeModule.sha256(password),
-        );
-
-        // Create filename based on pub_key hash and keyshare number
-        if (!json.pub_key) {
-          Alert.alert('Error', 'Keyshare missing pub_key.');
-          return;
-        }
-
-        // Get SHA256 hash of pub_key and take first 4 characters
-        const pubKeyHash = await BBMTLibNativeModule.sha256(json.pub_key);
-        const hashPrefix = pubKeyHash.substring(0, 4).toLowerCase();
-
-        // Extract keyshare number from label (KeyShare1 -> 1, KeyShare2 -> 2, etc.)
-        const keyshareLabel = getKeyshareLabel(json);
-        let keyshareNumber = '1'; // default
-        if (keyshareLabel) {
-          const match = keyshareLabel.match(/KeyShare(\d+)/);
-          if (match) {
-            keyshareNumber = match[1];
-          }
-        } else if (json.keygen_committee_keys && json.local_party_key) {
-          // Fallback: compute from position in sorted keygen_committee_keys
-          const sortedKeys = [...json.keygen_committee_keys].sort();
-          const index = sortedKeys.indexOf(json.local_party_key);
-          if (index >= 0) {
-            keyshareNumber = String(index + 1);
-          }
-        }
-
-        const friendlyFilename = `${hashPrefix}K${keyshareNumber}.share`;
-
-        const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
-        const filePath = `${tempDir}/${friendlyFilename}`;
-
-        await RNFS.writeFile(filePath, encryptedKeyshare, 'base64');
-
-        await Share.open({
-          title: 'Backup Your Keyshare',
-          isNewTask: true,
-          message:
-            'Save this encrypted file securely. It is required for wallet recovery.',
-          url: `file://${filePath}`,
-          type: 'application/octet-stream',
-          filename: friendlyFilename,
-          failOnCancel: false,
-        });
-
-        // Cleanup temp file (best-effort)
-        try {
-          await RNFS.unlink(filePath);
-        } catch {
-          // ignore cleanup errors
-        }
-        clearBackupModal();
-      } else {
-        Alert.alert('Error', 'Invalid keyshare.');
-      }
-    } catch (error) {
-      dbg('Error encrypting or sharing keyshare:', error);
-      Alert.alert('Error', 'Failed to encrypt or share the keyshare.');
-    }
-  }
-
   const copyConnectionDetails = () => {
     Clipboard.setString(connectionDetails);
     HapticFeedback.medium();
@@ -2337,20 +2065,16 @@ const MobileNostrPairing = ({navigation}: any) => {
       '- Pairing data copied.\n- Paste them to other device(s)',
     );
   };
-
   const shareConnectionDetails = async () => {
     HapticFeedback.medium();
-
     if (!connectionDetails) {
       Alert.alert('Error', 'Connection details are not ready yet');
       return;
     }
-
     if (!connectionQrRef.current) {
       Alert.alert('Error', 'QR Code is not ready yet');
       return;
     }
-
     try {
       // Generate base64 from QR component (similar to WalletHome ReceiveModal)
       const base64Data: string = await new Promise((resolve, reject) => {
@@ -2362,15 +2086,12 @@ const MobileNostrPairing = ({navigation}: any) => {
           }
         });
       });
-
       const filePath = `${RNFS.TemporaryDirectoryPath}/boldwallet-connection-details.jpg`;
       const fileExists = await RNFS.exists(filePath);
       if (fileExists) {
         await RNFS.unlink(filePath);
       }
-
       await RNFS.writeFile(filePath, base64Data, 'base64');
-
       await Share.open({
         title: 'Bold Wallet Connection Details',
         message: connectionDetails,
@@ -2379,22 +2100,18 @@ const MobileNostrPairing = ({navigation}: any) => {
         isNewTask: true,
         failOnCancel: false,
       });
-
       // Best-effort cleanup
       await RNFS.unlink(filePath).catch(() => {});
-
       setIsQRModalVisible(false);
     } catch (error: any) {
       dbg('Error sharing connection details (QR + text):', error);
       Alert.alert('Error', 'Failed to share connection QR code');
     }
   };
-
   const showQRModal = () => {
     HapticFeedback.medium();
     setIsQRModalVisible(true);
   };
-
   const handleQRScan = (data: string, peerNum?: 1 | 2) => {
     HapticFeedback.medium();
     setIsQRScannerVisible(false);
@@ -2410,20 +2127,17 @@ const MobileNostrPairing = ({navigation}: any) => {
     );
     handlePeerConnectionInput(data, targetPeer);
   };
-
   const handlePaste = async (peerNum: 1 | 2) => {
     try {
       const text = await Clipboard.getString();
       dbg(`handlePaste: peerNum=${peerNum}, pasted text="${text}"`);
       HapticFeedback.medium();
-
       // Update the input field immediately so user can see what was pasted
       if (peerNum === 1) {
         setPeerConnectionDetails1(text);
       } else {
         setPeerConnectionDetails2(text);
       }
-
       // Then validate the input
       await handlePeerConnectionInput(text, peerNum);
     } catch (error) {
@@ -2431,7 +2145,6 @@ const MobileNostrPairing = ({navigation}: any) => {
       Alert.alert('Error', 'Failed to paste from clipboard');
     }
   };
-
   const clearPeerConnection = (peerNum: 1 | 2) => {
     HapticFeedback.medium();
     if (peerNum === 1) {
@@ -2448,7 +2161,6 @@ const MobileNostrPairing = ({navigation}: any) => {
       setPeerInputError2('');
     }
   };
-
   const deletePreparams = async () => {
     try {
       dbg(`deleting ppmFile: ${ppmFile}`);
@@ -2458,25 +2170,22 @@ const MobileNostrPairing = ({navigation}: any) => {
       dbg('error deleting ppmFile', err);
     }
   };
-
   const prepareDevice = async () => {
     setIsPreparing(true);
     setIsPreParamsReady(false);
     setPrepCounter(0);
-
     const timeoutMinutes = 20;
-
     if (!__DEV__) {
       await deletePreparams();
     } else {
       dbg('preparams dev: Not deleting ppmFile');
     }
-
     try {
       await BBMTLibNativeModule.preparams(ppmFile, String(timeoutMinutes));
       setIsPreParamsReady(true);
       HapticFeedback.medium();
       dbg('Device prepared successfully');
+      setIsPrepared(true);
     } catch (error: any) {
       setIsPreParamsReady(false);
       dbg('Error preparing device:', error);
@@ -2486,7 +2195,6 @@ const MobileNostrPairing = ({navigation}: any) => {
       setPrepCounter(0);
     }
   };
-
   // Increment prep counter when preparing
   useEffect(() => {
     if (isPreparing) {
@@ -2496,7 +2204,6 @@ const MobileNostrPairing = ({navigation}: any) => {
       return () => clearInterval(interval);
     }
   }, [isPreparing]);
-
   // Track elapsed time during keygen and signing
   useEffect(() => {
     if (isPairing) {
@@ -2507,60 +2214,33 @@ const MobileNostrPairing = ({navigation}: any) => {
       return () => clearInterval(interval);
     }
   }, [isPairing]);
-
   // Animation for horizontal progress bar
   useEffect(() => {
     if (isPreparing) {
-      // Stop any existing animation first
-      if (progressAnimationLoop.current) {
-        progressAnimationLoop.current.stop();
-        progressAnimationLoop.current = null;
-      }
-
       // Small delay to ensure modal is mounted before starting animation
       const timeoutId = setTimeout(() => {
         // Reset value before starting new animation (only when modal is mounted)
-        progressAnimation.setValue(0);
-
+        progressAnimation.value = 0;
         // Start new animation loop
-        progressAnimationLoop.current = Animated.loop(
-          Animated.sequence([
-            Animated.timing(progressAnimation, {
-              toValue: 1,
-              duration: 2000,
-              useNativeDriver: false,
-            }),
-            Animated.timing(progressAnimation, {
-              toValue: 0,
-              duration: 2000,
-              useNativeDriver: false,
-            }),
-          ]),
+        progressAnimation.value = withRepeat(
+          withSequence(
+            withTiming(1, {duration: 2000}),
+            withTiming(0, {duration: 2000}),
+          ),
+          -1, // infinite repeat
         );
-        progressAnimationLoop.current.start();
       }, 150);
-
       return () => {
         clearTimeout(timeoutId);
-        if (progressAnimationLoop.current) {
-          progressAnimationLoop.current.stop();
-          progressAnimationLoop.current = null;
-        }
-        // Stop any running animation without setting value
-        progressAnimation.stopAnimation();
+        cancelAnimation(progressAnimation);
       };
     } else {
-      // Stop animation without setting value to avoid warning
-      if (progressAnimationLoop.current) {
-        progressAnimationLoop.current.stop();
-        progressAnimationLoop.current = null;
-      }
-      // Stop any running animation
-      progressAnimation.stopAnimation();
+      // Stop animation
+      cancelAnimation(progressAnimation);
+      progressAnimation.value = 0;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPreparing]);
-
   // Styles
   const styles = StyleSheet.create({
     container: {
@@ -2574,12 +2254,12 @@ const MobileNostrPairing = ({navigation}: any) => {
       padding: 20,
     },
     section: {
+      marginTop: 8,
       marginBottom: 8,
     },
     sectionTitle: {
       fontSize: theme.fontSizes?.xl || 18,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       marginBottom: 12,
     },
@@ -2632,8 +2312,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     peerCheckmark: {
       color: theme.colors.white,
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
     },
     input: {
       borderWidth: 1.5,
@@ -2642,7 +2321,6 @@ const MobileNostrPairing = ({navigation}: any) => {
       paddingHorizontal: 16,
       paddingVertical: 14,
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
       fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       backgroundColor:
@@ -2697,10 +2375,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     deviceInfoSingleLine: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily:
-        theme.fontFamilies?.monospace ||
-        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+      fontFamily: theme.fontFamilies?.monospaceMedium,
       color: theme.colors.text,
       flex: 1,
       textAlign: 'center',
@@ -2724,7 +2399,6 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     hintText: {
       fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
       fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       lineHeight: 18,
@@ -2768,25 +2442,18 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     sendModeDeviceLabel: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily:
-        theme.fontFamilies?.monospace ||
-        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+      fontFamily: theme.fontFamilies?.monospaceBold,
       color: theme.colors.text,
     },
     sendModeDeviceNpub: {
       fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily:
-        theme.fontFamilies?.monospace ||
-        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+      fontFamily: theme.fontFamilies?.monospace,
       color: theme.colors.textSecondary,
       marginLeft: 8,
     },
     sendModeDeviceBadge: {
       fontSize: theme.fontSizes?.xs || 11,
-      fontWeight: (theme.fontWeights?.medium || '500') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.medium,
       color:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
@@ -2817,8 +2484,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     sendModeCheckmark: {
       color: theme.colors.background,
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
     },
     buttonHalf: {
       flex: 0.48,
@@ -2838,8 +2504,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     buttonTextCompact: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
     },
     iconImageCompact: {
       width: 18,
@@ -2885,10 +2550,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     connectionDetailsText: {
       fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily:
-        theme.fontFamilies?.monospace ||
-        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+      fontFamily: theme.fontFamilies?.monospace,
       color: theme.colors.textSecondary,
       marginBottom: 12,
       textAlign: 'center',
@@ -2922,8 +2584,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           ? theme.colors.white
           : theme.colors.text,
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
     },
     buttonTextSecondary: {
       color: theme.colors.secondary,
@@ -2943,8 +2604,6 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     modalSubtitle: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 16,
       textAlign: 'center',
@@ -2964,8 +2623,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     progressPercentage: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       textAlign: 'center',
       marginBottom: 16,
@@ -3004,15 +2662,12 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     finalizingStatusText: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.medium || '500') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.text,
       flex: 1,
     },
     finalizingCountdownText: {
       fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
     },
@@ -3026,8 +2681,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     statusText: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.medium || '500') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.text,
     },
     statusTextSecondary: {
@@ -3039,8 +2693,6 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     progressText: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginTop: 8,
     },
@@ -3076,14 +2728,11 @@ const MobileNostrPairing = ({navigation}: any) => {
           ? theme.colors.white
           : theme.colors.text,
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
     },
     cameraNotFound: {
       color: theme.colors.text,
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
     },
     sessionInfo: {
       marginTop: 12,
@@ -3096,10 +2745,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     sessionInfoText: {
       fontSize: theme.fontSizes?.xs || 11,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily:
-        theme.fontFamilies?.monospace ||
-        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+      fontFamily: theme.fontFamilies?.monospace,
       color: theme.colors.textSecondary,
       marginBottom: 4,
     },
@@ -3133,14 +2779,11 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     qrModalTitle: {
       fontSize: theme.fontSizes?.xl || 18,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
     },
     qrModalDescription: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
       marginTop: 12,
@@ -3158,8 +2801,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     qrModalCloseText: {
       fontSize: theme.fontSizes?.xl || 18,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
     },
     qrModalBody: {
@@ -3177,8 +2819,6 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     sectionSubtitle: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginTop: 4,
     },
@@ -3234,8 +2874,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     stepNumber: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.textSecondary,
     },
     stepNumberCompleted: {
@@ -3255,8 +2894,6 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     stepLabel: {
       fontSize: theme.fontSizes?.xs || 11,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
       flex: 1,
@@ -3271,8 +2908,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     collapsibleHeaderText: {
       fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.textSecondary,
     },
     collapsibleContent: {
@@ -3314,8 +2950,6 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     emptyStateText: {
       fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
       paddingHorizontal: 20,
@@ -3341,15 +2975,12 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     helpTitle: {
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
-      marginBottom: 8,
+      marginBottom: 0,
     },
     helpText: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       lineHeight: 20,
     },
@@ -3381,8 +3012,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     errorText: {
       fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.medium || '500') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.danger,
     },
     validatingIndicator: {
@@ -3393,14 +3023,12 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     validatingText: {
       fontSize: theme.fontSizes?.xl || 18,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.textSecondary,
     },
     checkboxContainer: {
       flexDirection: 'row',
       alignItems: 'center',
-      marginTop: 16,
       paddingVertical: 8,
     },
     checkbox: {
@@ -3427,13 +3055,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     checkboxCheckmark: {
       color: theme.colors.background,
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
     },
     checkboxLabel: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       flex: 1,
     },
@@ -3449,6 +3074,11 @@ const MobileNostrPairing = ({navigation}: any) => {
       shadowOpacity: 0.25,
       shadowRadius: 16,
       elevation: 8,
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
     },
     preparingModalIconContainer: {
       marginBottom: 16,
@@ -3475,16 +3105,13 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     preparingModalTitle: {
       fontSize: theme.fontSizes?.['2xl'] || 20,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       textAlign: 'center',
       marginBottom: 8,
     },
     preparingModalSubtitle: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
       marginBottom: 24,
@@ -3527,14 +3154,11 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     preparingStatusText: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.medium || '500') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.text,
     },
     preparingCountdownText: {
       fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
     },
@@ -3547,8 +3171,8 @@ const MobileNostrPairing = ({navigation}: any) => {
       shadowOffset: {width: 0, height: 2},
       shadowOpacity: 0.1,
       shadowRadius: 8,
-      elevation: 3,
-      borderWidth: 1,
+      elevation: Platform.OS === 'android' ? 2 : 3, // Reduce elevation on Android
+      borderWidth: Platform.OS === 'android' ? 0.5 : 1, // Thinner border on Android to prevent distortion
       borderColor: theme.colors.border,
     },
     backupButton: {
@@ -3576,8 +3200,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           ? theme.colors.background
           : theme.colors.text,
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       textAlign: 'center',
       lineHeight: 22,
     },
@@ -3598,19 +3221,15 @@ const MobileNostrPairing = ({navigation}: any) => {
     backupConfirmationIconText: {
       color: theme.colors.background,
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
     },
     backupConfirmationTitle: {
       fontSize: theme.fontSizes?.xl || 18,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
     },
     backupConfirmationDescription: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       lineHeight: 20,
       marginBottom: 10,
@@ -3636,15 +3255,12 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     backupCheckboxLabel: {
       fontSize: theme.fontSizes?.md || 15,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       marginBottom: 2,
     },
     backupCheckboxHint: {
       fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       fontStyle: 'italic',
     },
@@ -3680,8 +3296,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     checkmark: {
       color: theme.colors.background,
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
     },
     enhancedCheckboxContainer: {
       flexDirection: 'row',
@@ -3705,13 +3320,11 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     enhancedCheckboxLabel: {
       fontSize: theme.fontSizes?.md || 15,
-      fontWeight: (theme.fontWeights?.medium || '500') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.text,
     },
     warningHint: {
       fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
       fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginTop: 2,
@@ -3719,7 +3332,6 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     warningIcon: {
       fontSize: theme.fontSizes?.xl || 18,
-      fontFamily: theme.fontFamilies?.regular,
       marginLeft: 8,
     },
     finalStepHeader: {
@@ -3745,36 +3357,30 @@ const MobileNostrPairing = ({navigation}: any) => {
       flex: 1,
     },
     finalStepTitle: {
-      fontSize: theme.fontSizes?.xl || 18,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
-      marginBottom: 4,
+      marginBottom: 12,
     },
     finalStepDescription: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
       fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
-      marginBottom: 12,
       lineHeight: 20,
     },
     participantsList: {
-      marginTop: 8,
-      marginBottom: 12,
       paddingHorizontal: 12,
-      paddingVertical: 12,
       backgroundColor: theme.colors.cardBackground + '80',
       borderRadius: 8,
       borderWidth: 1,
       borderColor: theme.colors.border + '30',
     },
     participantsListTitle: {
-      fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
+      fontSize: theme.fontSizes?.xl || 18,
       fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       marginBottom: 8,
+      padding: 12,
     },
     participantItem: {
       flexDirection: 'row',
@@ -3783,8 +3389,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     bulletPoint: {
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.primary,
       marginRight: 8,
       marginTop: 2,
@@ -3792,45 +3397,45 @@ const MobileNostrPairing = ({navigation}: any) => {
     participantText: {
       flex: 1,
       fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
       fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
       lineHeight: 18,
     },
     participantLabel: {
       fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
     },
     localDeviceBadge: {
       fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.medium || '500') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.primary,
       fontStyle: 'italic',
     },
     participantNpub: {
       fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily:
-        theme.fontFamilies?.monospace ||
-        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+      fontFamily: theme.fontFamilies?.monospace,
       color: theme.colors.textSecondary,
       marginTop: 2,
     },
     participantDevicesInfo: {
-      marginTop: 12,
-      paddingTop: 12,
-      borderTopWidth: 1,
-      borderTopColor: theme.colors.border + '40',
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.primary + '10',
+      padding: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.border
+          : theme.colors.border + '30',
     },
     participantDevicesInfoTitle: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontSize: theme.fontSizes?.xl || 18,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
-      marginBottom: 10,
+      marginBottom: 8,
     },
     participantDeviceItem: {
       flexDirection: 'row',
@@ -3860,16 +3465,12 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     participantDeviceLabel: {
       fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
     },
     participantDeviceNpub: {
       fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily:
-        theme.fontFamilies?.monospace ||
-        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+      fontFamily: theme.fontFamilies?.monospace,
       color: theme.colors.textSecondary,
       textAlign: 'right',
     },
@@ -3935,8 +3536,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           ? theme.colors.white
           : theme.colors.text,
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
     },
     buttonContent: {
       flexDirection: 'row',
@@ -3963,6 +3563,11 @@ const MobileNostrPairing = ({navigation}: any) => {
       shadowOpacity: 0.3,
       shadowRadius: 20,
       elevation: 10,
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10
+          : theme.colors.whiteOverlay20,
     },
     modalHeader: {
       flexDirection: 'row',
@@ -3980,14 +3585,11 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     modalTitle: {
       fontSize: theme.fontSizes?.['2xl'] || 20,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
     },
     modalDescription: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 20,
       lineHeight: 20,
@@ -3997,8 +3599,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     passwordLabel: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       marginBottom: 8,
     },
@@ -4015,8 +3616,6 @@ const MobileNostrPairing = ({navigation}: any) => {
       flex: 1,
       paddingVertical: 12,
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     eyeButton: {
@@ -4043,8 +3642,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     strengthText: {
       fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
     },
     requirementsContainer: {
       marginTop: 8,
@@ -4052,8 +3650,6 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     requirementText: {
       fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginBottom: 4,
     },
@@ -4093,8 +3689,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     cancelLinkText: {
       color: theme.colors.textSecondary,
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       textDecorationLine: 'underline',
       textAlign: 'center',
       marginTop: 12,
@@ -4117,8 +3712,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     retryLink: {
       color: theme.colors.background,
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       textAlign: 'center',
       marginLeft: 6,
     },
@@ -4140,8 +3734,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     cancelLink: {
       color: theme.colors.secondary,
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       textAlign: 'center',
     },
     transactionItem: {
@@ -4151,8 +3744,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     transactionLabel: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       marginBottom: 2,
       textAlign: 'left',
@@ -4160,15 +3752,13 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     transactionItemLabel: {
       fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.medium || '500') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.textSecondary,
       marginBottom: 4,
     },
     transactionItemValue: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       textAlign: 'right',
     },
@@ -4182,10 +3772,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     addressValue: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily:
-        theme.fontFamilies?.monospace ||
-        (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+      fontFamily: theme.fontFamilies?.monospace,
       color: theme.colors.text,
       textAlign: 'left',
       lineHeight: 14,
@@ -4203,22 +3790,19 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     amountValue: {
       fontSize: theme.fontSizes?.md || 15,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       textAlign: 'left',
       lineHeight: 14,
     },
     fiatValue: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
       fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'right',
       lineHeight: 14,
     },
   });
-
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <KeyboardAvoidingView
@@ -4227,7 +3811,10 @@ const MobileNostrPairing = ({navigation}: any) => {
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled">
+          removeClippedSubviews
+          keyboardShouldPersistTaps="handled"
+          overScrollMode="never"
+          showsVerticalScrollIndicator={false}>
           {/* Hide all previous sections when mpcDone is true */}
           {!mpcDone &&
             (() => {
@@ -4244,27 +3831,25 @@ const MobileNostrPairing = ({navigation}: any) => {
                   peerNpub2 &&
                   peerDeviceName2) ||
                   (!isTrio && peerNpub1 && peerDeviceName1));
-
               return (
                 <>
                   {/* Header */}
                   <View style={styles.section}>
                     <View style={styles.headerRow}>
                       {/* Help button on the left */}
-                      <TouchableOpacity
+                      <Pressable
                         style={styles.helpButton}
                         onPress={() => {
                           HapticFeedback.light();
                           setShowHelpModal(true);
                         }}
-                        activeOpacity={0.7}>
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                         <Image
                           source={require('../assets/about-icon.png')}
                           style={styles.helpIcon}
                           resizeMode="contain"
                         />
-                      </TouchableOpacity>
-
+                      </Pressable>
                       {/* Title in the center */}
                       <View style={styles.headerContent}>
                         {isSendBitcoin || isSignPSBT ? (
@@ -4290,9 +3875,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                             <Text
                               style={{
                                 fontSize: theme.fontSizes?.md || 15,
-                                fontWeight: (theme.fontWeights?.bold ||
-                                  '700') as any,
-                                fontFamily: theme.fontFamilies?.regular,
+                                fontFamily: theme.fontFamilies.bold,
                                 color: theme.colors.text,
                                 textAlign: 'center',
                               }}>
@@ -4308,10 +3891,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                           </Text>
                         )}
                       </View>
-
                       {/* Abort Setup button on the right */}
                       {!mpcDone && !isPairing ? (
-                        <TouchableOpacity
+                        <Pressable
                           style={[styles.cancelSetupButton, {marginLeft: 12}]}
                           onPress={() => {
                             HapticFeedback.light();
@@ -4326,40 +3908,37 @@ const MobileNostrPairing = ({navigation}: any) => {
                               );
                             }
                           }}
-                          activeOpacity={0.7}>
+                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                           <Text style={styles.cancelLink}>
                             {isSendBitcoin || isSignPSBT ? 'Cancel' : 'Abort'}
                           </Text>
-                        </TouchableOpacity>
+                        </Pressable>
                       ) : (
                         <View style={{width: 36}} />
                       )}
                     </View>
                   </View>
-
                   {/* Relay Configuration - Show in send Bitcoin/PSBT mode, right after title */}
                   {(isSendBitcoin || isSignPSBT) && !showFinalStep && (
                     <View style={styles.section}>
-                      <TouchableOpacity
+                      <Pressable
                         style={styles.collapsibleHeader}
                         onPress={() => {
                           HapticFeedback.light();
                           setShowRelayConfig(!showRelayConfig);
                         }}
-                        activeOpacity={0.7}>
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                         <Text style={styles.collapsibleHeaderText}>
                           {showRelayConfig ? '▼' : '▶'} Advanced: Nostr Relays
                           Settings
                         </Text>
-                      </TouchableOpacity>
+                      </Pressable>
                       {showRelayConfig && (
                         <View style={styles.collapsibleContent}>
                           <Text
                             style={{
                               fontSize: theme.fontSizes?.sm || 12,
-                              fontWeight: (theme.fontWeights?.normal ||
-                                '400') as any,
-                              fontFamily: theme.fontFamilies?.regular,
+                              fontFamily: theme.fontFamilies.regular,
                               color: theme.colors.textSecondary,
                               marginBottom: 8,
                             }}>
@@ -4393,7 +3972,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                       )}
                     </View>
                   )}
-
                   {/* PSBT Info Section */}
                   {isSignPSBT && route.params?.psbtBase64 && (
                     <View style={styles.section}>
@@ -4408,9 +3986,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                         <Text
                           style={{
                             fontSize: theme.fontSizes?.base || 14,
-                            fontWeight: (theme.fontWeights?.bold ||
-                              '700') as any,
-                            fontFamily: theme.fontFamilies?.regular,
+                            fontFamily: theme.fontFamilies.bold,
                             color: theme.colors.text,
                             marginBottom: 8,
                             textAlign: 'center',
@@ -4428,9 +4004,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                               <Text
                                 style={{
                                   fontSize: theme.fontSizes?.sm || 12,
-                                  fontWeight: (theme.fontWeights?.normal ||
-                                    '400') as any,
-                                  fontFamily: theme.fontFamilies?.regular,
+                                  fontFamily: theme.fontFamilies.regular,
                                   color: theme.colors.textSecondary,
                                 }}>
                                 Inputs:
@@ -4438,9 +4012,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                               <Text
                                 style={{
                                   fontSize: theme.fontSizes?.sm || 12,
-                                  fontWeight: (theme.fontWeights?.semibold ||
-                                    '600') as any,
-                                  fontFamily: theme.fontFamilies?.regular,
+                                  fontFamily: theme.fontFamilies.bold,
                                   color: theme.colors.text,
                                 }}>
                                 {psbtDetails.inputs.length}
@@ -4455,9 +4027,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                               <Text
                                 style={{
                                   fontSize: theme.fontSizes?.sm || 12,
-                                  fontWeight: (theme.fontWeights?.normal ||
-                                    '400') as any,
-                                  fontFamily: theme.fontFamilies?.regular,
+                                  fontFamily: theme.fontFamilies.regular,
                                   color: theme.colors.textSecondary,
                                 }}>
                                 Outputs:
@@ -4465,9 +4035,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                               <Text
                                 style={{
                                   fontSize: theme.fontSizes?.sm || 12,
-                                  fontWeight: (theme.fontWeights?.semibold ||
-                                    '600') as any,
-                                  fontFamily: theme.fontFamilies?.regular,
+                                  fontFamily: theme.fontFamilies.bold,
                                   color: theme.colors.text,
                                 }}>
                                 {psbtDetails.outputs.length}
@@ -4482,9 +4050,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                               <Text
                                 style={{
                                   fontSize: theme.fontSizes?.sm || 12,
-                                  fontWeight: (theme.fontWeights?.normal ||
-                                    '400') as any,
-                                  fontFamily: theme.fontFamilies?.regular,
+                                  fontFamily: theme.fontFamilies.regular,
                                   color: theme.colors.textSecondary,
                                 }}>
                                 Total Input:
@@ -4492,9 +4058,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                               <Text
                                 style={{
                                   fontSize: theme.fontSizes?.base || 13,
-                                  fontWeight: (theme.fontWeights?.semibold ||
-                                    '600') as any,
-                                  fontFamily: theme.fontFamilies?.regular,
+                                  fontFamily: theme.fontFamilies.bold,
                                   color: theme.colors.text,
                                 }}>
                                 {sat2btcStr(String(psbtDetails.totalInput))} BTC
@@ -4509,9 +4073,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                               <Text
                                 style={{
                                   fontSize: theme.fontSizes?.sm || 12,
-                                  fontWeight: (theme.fontWeights?.normal ||
-                                    '400') as any,
-                                  fontFamily: theme.fontFamilies?.regular,
+                                  fontFamily: theme.fontFamilies.regular,
                                   color: theme.colors.textSecondary,
                                 }}>
                                 Total Output:
@@ -4519,9 +4081,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                               <Text
                                 style={{
                                   fontSize: theme.fontSizes?.base || 13,
-                                  fontWeight: (theme.fontWeights?.semibold ||
-                                    '600') as any,
-                                  fontFamily: theme.fontFamilies?.regular,
+                                  fontFamily: theme.fontFamilies?.bold,
                                   color: theme.colors.text,
                                 }}>
                                 {sat2btcStr(String(psbtDetails.totalOutput))}{' '}
@@ -4537,9 +4097,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                               <Text
                                 style={{
                                   fontSize: theme.fontSizes?.sm || 12,
-                                  fontWeight: (theme.fontWeights?.normal ||
-                                    '400') as any,
-                                  fontFamily: theme.fontFamilies?.regular,
                                   color: theme.colors.textSecondary,
                                 }}>
                                 Fee:
@@ -4547,9 +4104,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                               <Text
                                 style={{
                                   fontSize: theme.fontSizes?.base || 13,
-                                  fontWeight: (theme.fontWeights?.semibold ||
-                                    '600') as any,
-                                  fontFamily: theme.fontFamilies?.regular,
+                                  fontFamily: theme.fontFamilies?.bold,
                                   color: theme.colors.text,
                                 }}>
                                 {sat2btcStr(String(psbtDetails.fee))} BTC
@@ -4567,9 +4122,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   <Text
                                     style={{
                                       fontSize: theme.fontSizes?.xs || 10,
-                                      fontWeight: (theme.fontWeights?.normal ||
-                                        '400') as any,
-                                      fontFamily: theme.fontFamilies?.regular,
                                       color: theme.colors.textSecondary,
                                     }}>
                                     {psbtDetails.derivePaths.length} different
@@ -4582,9 +4134,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                           <Text
                             style={{
                               fontSize: theme.fontSizes?.sm || 12,
-                              fontWeight: (theme.fontWeights?.normal ||
-                                '400') as any,
-                              fontFamily: theme.fontFamilies?.regular,
                               color: theme.colors.text,
                               textAlign: 'center',
                             }}>
@@ -4598,7 +4147,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                       </View>
                     </View>
                   )}
-
                   {/* Send Mode: Device Selection - Show current device and allow selecting one other */}
                   {(isSendBitcoin || isSignPSBT) && (
                     <View style={styles.section}>
@@ -4613,13 +4161,11 @@ const MobileNostrPairing = ({navigation}: any) => {
                         <Text
                           style={{
                             fontSize: theme.fontSizes?.base || 13,
-                            fontWeight: (theme.fontWeights?.bold ||
-                              '700') as any,
-                            fontFamily: theme.fontFamilies?.regular,
+                            fontFamily: theme.fontFamilies?.bold,
                             color: theme.colors.text,
                             marginBottom: 8,
                           }}>
-                          This Device
+                          First Co-Signer
                         </Text>
                         {sendModeDevices.length === 0 ? (
                           <Text
@@ -4635,7 +4181,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                             const otherDevices = sendModeDevices
                               .filter(d => !d.isLocal)
                               .sort((a, b) => a.npub.localeCompare(b.npub));
-
                             return (
                               <>
                                 {/* Current Device */}
@@ -4661,7 +4206,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                         </Text>
                                         <Text
                                           style={styles.sendModeDeviceBadge}>
-                                          This device
+                                          {'>>'} This device
                                         </Text>
                                       </View>
                                       <Text
@@ -4673,7 +4218,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                                     </View>
                                   </View>
                                 )}
-
                                 {/* Select One Other Device */}
                                 {otherDevices.length > 0 && (
                                   <>
@@ -4681,20 +4225,17 @@ const MobileNostrPairing = ({navigation}: any) => {
                                       <Text
                                         style={{
                                           fontSize: theme.fontSizes?.base || 13,
-                                          fontWeight: (theme.fontWeights
-                                            ?.bold || '700') as any,
-                                          fontFamily:
-                                            theme.fontFamilies?.regular,
+                                          fontFamily: theme.fontFamilies?.bold,
                                           color: theme.colors.text,
                                           marginBottom: 8,
                                         }}>
                                         {isTrio
-                                          ? 'Select one device to co-sign:'
-                                          : 'Co-signing device:'}
+                                          ? 'Choose Second Co-signer'
+                                          : 'Second Co-Signer'}
                                       </Text>
                                       {otherDevices.map(dev => {
                                         // In duo mode, use View (not selectable)
-                                        // In trio mode, use TouchableOpacity (selectable)
+                                        // In trio mode, use Pressable (selectable)
                                         if (!isTrio) {
                                           return (
                                             <View
@@ -4746,10 +4287,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                                             </View>
                                           );
                                         }
-
                                         // Trio mode: selectable
                                         return (
-                                          <TouchableOpacity
+                                          <Pressable
                                             key={dev.keyshareLabel}
                                             style={[
                                               styles.sendModeDeviceItem,
@@ -4774,7 +4314,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                                                       '...',
                                               );
                                             }}
-                                            activeOpacity={0.7}>
+                                            android_ripple={{
+                                              color: 'rgba(0,0,0,0.1)',
+                                            }}>
                                             <Image
                                               source={require('../assets/phone-icon.png')}
                                               style={styles.sendModeDeviceIcon}
@@ -4817,7 +4359,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                                 </Text>
                                               )}
                                             </View>
-                                          </TouchableOpacity>
+                                          </Pressable>
                                         );
                                       })}
                                     </View>
@@ -4830,7 +4372,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                       </View>
                     </View>
                   )}
-
                   {/* Step Indicator */}
                   {!isSendBitcoin && !isSignPSBT && (
                     <View style={styles.stepIndicatorContainer}>
@@ -4928,7 +4469,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                       </View>
                     </View>
                   )}
-
                   {/* Local Device Card - Hide when Final Step is shown or in send/sign mode */}
                   {localNpub &&
                     deviceName &&
@@ -4939,13 +4479,11 @@ const MobileNostrPairing = ({navigation}: any) => {
                         <Text
                           style={{
                             fontSize: theme.fontSizes?.base || 14,
-                            fontWeight: (theme.fontWeights?.semibold ||
-                              '600') as any,
-                            fontFamily: theme.fontFamilies?.regular,
+                            fontFamily: theme.fontFamilies?.bold,
                             color: theme.colors.text,
                             marginBottom: 12,
                           }}>
-                          This Device
+                          {'-->'} This Device (Copy or Share QR)
                         </Text>
                         <View
                           style={[
@@ -4968,9 +4506,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                             {deviceName}@{shortenNpub(localNpub, 8, 6)}
                           </Text>
                           <View style={{flexDirection: 'row', gap: 8}}>
-                            <TouchableOpacity
+                            <Pressable
                               onPress={copyConnectionDetails}
-                              activeOpacity={0.7}
+                              android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                               style={{
                                 padding: 8,
                                 backgroundColor:
@@ -4988,10 +4526,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 }}
                                 resizeMode="contain"
                               />
-                            </TouchableOpacity>
-                            <TouchableOpacity
+                            </Pressable>
+                            <Pressable
                               onPress={showQRModal}
-                              activeOpacity={0.7}
+                              android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                               style={{
                                 padding: 8,
                                 backgroundColor:
@@ -5009,27 +4547,24 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 }}
                                 resizeMode="contain"
                               />
-                            </TouchableOpacity>
+                            </Pressable>
                           </View>
                         </View>
                       </View>
                     )}
-
                   {/* Peer Connection 1 - Hide when Final Step is shown or in send/sign mode */}
                   {!showFinalStep && !isSendBitcoin && !isSignPSBT && (
                     <View style={styles.section}>
                       <Text
                         style={{
                           fontSize: theme.fontSizes?.base || 14,
-                          fontWeight: (theme.fontWeights?.semibold ||
-                            '600') as any,
-                          fontFamily: theme.fontFamilies?.regular,
+                          fontFamily: theme.fontFamilies?.bold,
                           color: theme.colors.text,
                           marginBottom: 12,
                         }}>
                         {isTrio
-                          ? 'Step 2: Second Device'
-                          : 'Step 2: Other Device'}
+                          ? 'Next: Scan Second Device'
+                          : '--> Scan Other Device (Paste or Scan QR)'}
                       </Text>
                       <View>
                         <View style={styles.inputWithIcons}>
@@ -5086,36 +4621,36 @@ const MobileNostrPairing = ({navigation}: any) => {
                             </View>
                           )}
                           {peerNpub1 && !peerInputValidating1 && (
-                            <TouchableOpacity
+                            <Pressable
                               style={[
                                 styles.iconButton,
                                 styles.iconButtonCentered,
                               ]}
                               onPress={() => clearPeerConnection(1)}
-                              activeOpacity={0.7}>
+                              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                               <Image
                                 source={require('../assets/delete-icon.png')}
                                 style={styles.iconImage}
                                 resizeMode="contain"
                               />
-                            </TouchableOpacity>
+                            </Pressable>
                           )}
                           {!peerNpub1 && !peerInputValidating1 && (
                             <>
-                              <TouchableOpacity
+                              <Pressable
                                 style={[
                                   styles.iconButton,
                                   styles.iconButtonCentered,
                                 ]}
                                 onPress={() => handlePaste(1)}
-                                activeOpacity={0.7}>
+                                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                                 <Image
                                   source={require('../assets/paste-icon.png')}
                                   style={styles.iconImage}
                                   resizeMode="contain"
                                 />
-                              </TouchableOpacity>
-                              <TouchableOpacity
+                              </Pressable>
+                              <Pressable
                                 style={[
                                   styles.iconButton,
                                   styles.iconButtonCentered,
@@ -5127,13 +4662,13 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   scanningForPeerRef.current = peerNum; // Update ref immediately
                                   setIsQRScannerVisible(true);
                                 }}
-                                activeOpacity={0.7}>
+                                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                                 <Image
                                   source={require('../assets/scan-icon.png')}
                                   style={styles.iconImage}
                                   resizeMode="contain"
                                 />
-                              </TouchableOpacity>
+                              </Pressable>
                             </>
                           )}
                         </View>
@@ -5147,7 +4682,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                       </View>
                     </View>
                   )}
-
                   {/* Peer Connection 2 (Trio only) - Hide when Final Step is shown or in send/sign mode */}
                   {isTrio &&
                     !showFinalStep &&
@@ -5157,9 +4691,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                         <Text
                           style={{
                             fontSize: theme.fontSizes?.base || 14,
-                            fontWeight: (theme.fontWeights?.semibold ||
-                              '600') as any,
-                            fontFamily: theme.fontFamilies?.regular,
+                            fontFamily: theme.fontFamilies?.bold,
                             color: theme.colors.text,
                             marginBottom: 12,
                           }}>
@@ -5221,36 +4753,36 @@ const MobileNostrPairing = ({navigation}: any) => {
                               </View>
                             )}
                             {peerNpub2 && !peerInputValidating2 && (
-                              <TouchableOpacity
+                              <Pressable
                                 style={[
                                   styles.iconButton,
                                   styles.iconButtonCentered,
                                 ]}
                                 onPress={() => clearPeerConnection(2)}
-                                activeOpacity={0.7}>
+                                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                                 <Image
                                   source={require('../assets/delete-icon.png')}
                                   style={styles.iconImage}
                                   resizeMode="contain"
                                 />
-                              </TouchableOpacity>
+                              </Pressable>
                             )}
                             {!peerNpub2 && !peerInputValidating2 && (
                               <>
-                                <TouchableOpacity
+                                <Pressable
                                   style={[
                                     styles.iconButton,
                                     styles.iconButtonCentered,
                                   ]}
                                   onPress={() => handlePaste(2)}
-                                  activeOpacity={0.7}>
+                                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                                   <Image
                                     source={require('../assets/paste-icon.png')}
                                     style={styles.iconImage}
                                     resizeMode="contain"
                                   />
-                                </TouchableOpacity>
-                                <TouchableOpacity
+                                </Pressable>
+                                <Pressable
                                   style={[
                                     styles.iconButton,
                                     styles.iconButtonCentered,
@@ -5262,13 +4794,13 @@ const MobileNostrPairing = ({navigation}: any) => {
                                     scanningForPeerRef.current = peerNum; // Update ref immediately
                                     setIsQRScannerVisible(true);
                                   }}
-                                  activeOpacity={0.7}>
+                                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                                   <Image
                                     source={require('../assets/scan-icon.png')}
                                     style={styles.iconImage}
                                     resizeMode="contain"
                                   />
-                                </TouchableOpacity>
+                                </Pressable>
                               </>
                             )}
                           </View>
@@ -5282,7 +4814,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                         </View>
                       </View>
                     )}
-
                   {/* Prepare Device Section - Hide in send/sign mode */}
                   {!isSendBitcoin &&
                     !isSignPSBT &&
@@ -5296,49 +4827,34 @@ const MobileNostrPairing = ({navigation}: any) => {
                       peerDeviceName2) ||
                       (!isTrio && peerNpub1 && peerDeviceName1)) && (
                       <View style={styles.section}>
-                        <View style={styles.card}>
-                          <TouchableOpacity
-                            style={[
-                              styles.button,
-                              (isPreparing || !isPrepared) &&
-                                styles.buttonDisabled,
-                            ]}
-                            onPress={prepareDevice}
-                            disabled={isPreparing || !isPrepared}
-                            activeOpacity={0.8}>
-                            <Image
-                              source={require('../assets/prepare-icon.png')}
-                              style={styles.iconPrepare}
-                              resizeMode="contain"
-                            />
-                            <Text style={styles.buttonText}>
-                              {isPreparing ? 'Preparing...' : 'Prepare Device'}
-                            </Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.checkboxContainer}
-                            disabled={isPreparing}
-                            onPress={() => {
-                              HapticFeedback.light();
-                              setIsPrepared(!isPrepared);
-                            }}>
-                            <View
-                              style={[
-                                styles.checkbox,
-                                isPrepared && styles.checkboxChecked,
-                              ]}>
-                              {isPrepared && (
-                                <Text style={styles.checkboxCheckmark}>✓</Text>
-                              )}
-                            </View>
-                            <Text style={styles.checkboxLabel}>
-                              Keep app open during setup
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
+                        <Text
+                          style={{
+                            fontSize: theme.fontSizes?.base || 14,
+                            fontFamily: theme.fontFamilies?.bold,
+                            color: theme.colors.text,
+                            marginBottom: 12,
+                          }}>
+                          {'-->'} Keep app open during preparation
+                        </Text>
+                        <Pressable
+                          style={[
+                            styles.button,
+                            isPreparing && styles.buttonDisabled,
+                          ]}
+                          onPress={prepareDevice}
+                          disabled={isPreparing}
+                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                          <Image
+                            source={require('../assets/prepare-icon.png')}
+                            style={styles.iconPrepare}
+                            resizeMode="contain"
+                          />
+                          <Text style={styles.buttonText}>
+                            {isPreparing ? 'Preparing...' : 'Prepare Device'}
+                          </Text>
+                        </Pressable>
                       </View>
                     )}
-
                   {/* Preparing Modal */}
                   {isPreparing && (
                     <Modal transparent={true} visible={isPreparing}>
@@ -5354,39 +4870,29 @@ const MobileNostrPairing = ({navigation}: any) => {
                               />
                             </View>
                           </View>
-
                           {/* Header Text */}
                           <Text style={styles.preparingModalTitle}>
                             Preparing Device
                           </Text>
-
                           {/* Subtext */}
                           <Text style={styles.preparingModalSubtitle}>
                             Could take a while, given device specs. Do not leave
                             the app during setup.
                           </Text>
-
                           {/* Loading Indicator */}
                           <View style={styles.preparingProgressContainer}>
                             <View style={styles.preparingProgressTrack}>
-                              <Animated.View
-                                style={[
-                                  styles.preparingProgressBar,
-                                  {
-                                    backgroundColor:
-                                      theme.colors.background === '#ffffff'
-                                        ? theme.colors.primary
-                                        : theme.colors.bitcoinOrange,
-                                    width: progressAnimation.interpolate({
-                                      inputRange: [0, 1],
-                                      outputRange: ['0%', '100%'],
-                                    }),
-                                  },
-                                ]}
+                              <ProgressAnimatedView
+                                style={styles.preparingProgressBar}
+                                progressAnimation={progressAnimation}
+                                backgroundColor={
+                                  theme.colors.background === '#ffffff'
+                                    ? theme.colors.primary
+                                    : theme.colors.bitcoinOrange
+                                }
                               />
                             </View>
                           </View>
-
                           {/* Status and Countdown */}
                           <View style={styles.preparingStatusContainer}>
                             <View style={styles.preparingStatusRow}>
@@ -5403,7 +4909,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                       </View>
                     </Modal>
                   )}
-
                   {/* Help Modal */}
                   <Modal
                     visible={showHelpModal}
@@ -5414,18 +4919,21 @@ const MobileNostrPairing = ({navigation}: any) => {
                       <View style={styles.qrModalContent}>
                         <View style={styles.qrModalHeader}>
                           <Text style={styles.qrModalTitle}>How It Works</Text>
-                          <TouchableOpacity
+                          <Pressable
                             style={styles.qrModalCloseButton}
                             onPress={() => {
                               HapticFeedback.medium();
                               setShowHelpModal(false);
                             }}
-                            activeOpacity={0.7}>
+                            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                             <Text style={styles.qrModalCloseText}>✕</Text>
-                          </TouchableOpacity>
+                          </Pressable>
                         </View>
                         <ScrollView
                           style={styles.helpModalBody}
+                          removeClippedSubviews
+                          keyboardShouldPersistTaps="handled"
+                          overScrollMode="never"
                           showsVerticalScrollIndicator={false}>
                           <View style={styles.helpSection}>
                             <View
@@ -5540,17 +5048,16 @@ const MobileNostrPairing = ({navigation}: any) => {
                               <Text style={styles.helpTitle}>Tips</Text>
                             </View>
                             <Text style={styles.helpText}>
-                              • QR scanning is the easiest method{'\n'}• Make
-                              sure all devices are online{'\n'}• The process
-                              takes 1-2 minutes
-                              {'\n'}• Keep devices close together
+                              • Make sure all devices are ready{'\n'}• Your
+                              internet connection must be stable{'\n'}• The
+                              could take up 1-2 minutes
+                              {'\n'}• Keep app open during setup
                             </Text>
                           </View>
                         </ScrollView>
                       </View>
                     </View>
                   </Modal>
-
                   {/* Final Step - Check other devices are prepared */}
                   {!isSendBitcoin &&
                     !isSignPSBT &&
@@ -5564,62 +5071,14 @@ const MobileNostrPairing = ({navigation}: any) => {
                       peerNpub2 &&
                       peerDeviceName2) ||
                       (!isTrio && peerNpub1 && peerDeviceName1)) && (
-                      <View style={styles.section}>
-                        <View style={styles.informationCard}>
-                          <View style={styles.finalStepHeader}>
-                            <View style={styles.finalStepIconContainer}>
-                              <View
-                                style={
-                                  isTrio
-                                    ? styles.threeDevicesContainer
-                                    : styles.twoPhonesContainer
-                                }>
-                                <Image
-                                  source={require('../assets/phone-icon.png')}
-                                  style={[
-                                    styles.finalStepPhoneIcon,
-                                    styles.firstPhone,
-                                  ]}
-                                  resizeMode="contain"
-                                />
-                                <Image
-                                  source={require('../assets/phone-icon.png')}
-                                  style={[
-                                    styles.finalStepPhoneIcon,
-                                    styles.secondPhone,
-                                  ]}
-                                  resizeMode="contain"
-                                />
-                                {isTrio && (
-                                  <Image
-                                    source={require('../assets/phone-icon.png')}
-                                    style={[
-                                      styles.finalStepPhoneIcon,
-                                      styles.thirdPhone,
-                                    ]}
-                                    resizeMode="contain"
-                                  />
-                                )}
-                              </View>
-                            </View>
-                            <View style={styles.finalStepTextContainer}>
-                              <Text style={styles.finalStepTitle}>
-                                Final Step
-                              </Text>
-                              <Text style={styles.finalStepDescription}>
-                                Make sure{' '}
-                                {isTrio ? 'all devices' : 'both devices'}{' '}
-                                preparation step is complete.
-                              </Text>
-                            </View>
-                          </View>
-
+                      <>
+                        <View style={styles.section}>
+                          <Text style={styles.finalStepTitle}>
+                            {'-->'} Final Step
+                          </Text>
                           {/* Participants Device Information */}
                           {Object.keys(keyshareMapping).length > 0 && (
                             <View style={styles.participantsList}>
-                              <Text style={styles.participantsListTitle}>
-                                Participants:
-                              </Text>
                               {keyshareMapping.keyshare1 && (
                                 <View style={styles.participantItem}>
                                   <Text style={styles.bulletPoint}>•</Text>
@@ -5694,101 +5153,128 @@ const MobileNostrPairing = ({navigation}: any) => {
                               )}
                             </View>
                           )}
-
-                          <TouchableOpacity
-                            style={[
-                              styles.enhancedCheckboxContainer,
-                              isKeygenReady &&
-                                styles.enhancedCheckboxContainerChecked,
-                            ]}
-                            onPress={() => {
-                              HapticFeedback.medium();
-                              toggleKeygenReady();
-                            }}>
-                            <View
-                              style={[
-                                styles.enhancedCheckbox,
-                                isKeygenReady && styles.enhancedCheckboxChecked,
-                              ]}>
-                              {isKeygenReady && (
-                                <Text style={styles.checkmark}>✓</Text>
-                              )}
-                            </View>
-                            <View style={styles.checkboxTextContainer}>
-                              <Text style={styles.enhancedCheckboxLabel}>
-                                All devices are ready
-                              </Text>
-                            </View>
-                          </TouchableOpacity>
-
-                          {/* Participant Devices Info */}
-                          <View style={styles.participantDevicesInfo}>
-                            <Text style={styles.participantDevicesInfoTitle}>
-                              Participants:
-                            </Text>
-                            {(() => {
-                              // Collect all participants
-                              const participants: Array<{
-                                npub: string;
-                                deviceName: string;
-                              }> = [];
-
-                              if (localNpub && deviceName) {
-                                participants.push({
-                                  npub: localNpub,
-                                  deviceName: deviceName,
-                                });
-                              }
-                              if (peerNpub1 && peerDeviceName1) {
-                                participants.push({
-                                  npub: peerNpub1,
-                                  deviceName: peerDeviceName1,
-                                });
-                              }
-                              if (isTrio && peerNpub2 && peerDeviceName2) {
-                                participants.push({
-                                  npub: peerNpub2,
-                                  deviceName: peerDeviceName2,
-                                });
-                              }
-
-                              // Sort by npub
-                              participants.sort((a, b) =>
-                                a.npub.localeCompare(b.npub),
-                              );
-
-                              return participants.map((participant, index) => (
-                                <View
-                                  key={index}
-                                  style={styles.participantDeviceItem}>
-                                  <View style={styles.participantDeviceLeft}>
-                                    <Image
-                                      source={require('../assets/phone-icon.png')}
-                                      style={styles.participantDeviceIcon}
-                                      resizeMode="contain"
-                                    />
-                                    <Text style={styles.participantDeviceLabel}>
-                                      {participant.deviceName}
-                                    </Text>
-                                  </View>
-                                  <Text style={styles.participantDeviceNpub}>
-                                    {shortenNpub(participant.npub, 8, 6)}
+                          {/* Participant Devices Info - without container */}
+                          {(() => {
+                            // Collect all participants
+                            const participants: Array<{
+                              npub: string;
+                              deviceName: string;
+                            }> = [];
+                            if (localNpub && deviceName) {
+                              participants.push({
+                                npub: localNpub,
+                                deviceName: deviceName,
+                              });
+                            }
+                            if (peerNpub1 && peerDeviceName1) {
+                              participants.push({
+                                npub: peerNpub1,
+                                deviceName: peerDeviceName1,
+                              });
+                            }
+                            if (isTrio && peerNpub2 && peerDeviceName2) {
+                              participants.push({
+                                npub: peerNpub2,
+                                deviceName: peerDeviceName2,
+                              });
+                            }
+                            // Sort by npub
+                            participants.sort((a, b) =>
+                              a.npub.localeCompare(b.npub),
+                            );
+                            return participants.map((participant, index) => (
+                              <View
+                                key={index}
+                                style={styles.participantDeviceItem}>
+                                <View style={styles.participantDeviceLeft}>
+                                  <Image
+                                    source={require('../assets/phone-icon.png')}
+                                    style={styles.participantDeviceIcon}
+                                    resizeMode="contain"
+                                  />
+                                  <Text style={styles.participantDeviceLabel}>
+                                    {participant.npub === localNpub
+                                      ? 'This device'
+                                      : participant.deviceName}
                                   </Text>
                                 </View>
-                              ));
-                            })()}
-                          </View>
+                                <Text style={styles.participantDeviceNpub}>
+                                  {shortenNpub(participant.npub, 8, 6)}
+                                </Text>
+                              </View>
+                            ));
+                          })()}
                         </View>
-                      </View>
+                        {/* All devices ready checkbox and Start button - outside Final Step card */}
+                        {!isPairing && !mpcDone && isPrepared && (
+                          <>
+                            <Pressable
+                              style={[styles.enhancedCheckboxContainer]}
+                              onPress={() => {
+                                HapticFeedback.medium();
+                                toggleKeygenReady();
+                              }}>
+                              <View
+                                style={[
+                                  styles.enhancedCheckbox,
+                                  isKeygenReady &&
+                                    styles.enhancedCheckboxChecked,
+                                ]}>
+                                {isKeygenReady && (
+                                  <Text style={styles.checkmark}>✓</Text>
+                                )}
+                              </View>
+                              <View style={styles.checkboxTextContainer}>
+                                <Text style={styles.enhancedCheckboxLabel}>
+                                  All devices are ready.
+                                </Text>
+                                <Text style={styles.warningHint}>
+                                  Do not leave the app during setup.
+                                </Text>
+                              </View>
+                            </Pressable>
+                            <Pressable
+                              style={[
+                                styles.button,
+                                !canStartKeygen && styles.buttonDisabled,
+                              ]}
+                              onPress={startKeygen}
+                              disabled={!canStartKeygen}
+                              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                              <View style={styles.buttonContent}>
+                                <Image
+                                  source={require('../assets/key-icon.png')}
+                                  style={styles.buttonIcon}
+                                  resizeMode="contain"
+                                />
+                                <Text style={styles.buttonText}>
+                                  {(() => {
+                                    // For keygen, determine if local npub is first in sorted order
+                                    const allNpubs = [localNpub];
+                                    if (peerNpub1) allNpubs.push(peerNpub1);
+                                    if (isTrio && peerNpub2)
+                                      allNpubs.push(peerNpub2);
+                                    const sortedNpubs = allNpubs.sort();
+                                    const isKeyShare1 =
+                                      sortedNpubs[0] === localNpub;
+                                    return isKeyShare1
+                                      ? 'Start Key Generation'
+                                      : 'Join Key Generation';
+                                  })()}
+                                </Text>
+                              </View>
+                            </Pressable>
+                          </>
+                        )}
+                      </>
                     )}
-
                   {/* Readiness Checkbox for PSBT Signing */}
                   {isSignPSBT && !isPairing && !mpcDone && (
                     <View style={styles.section}>
-                      <TouchableOpacity
+                      <Pressable
                         style={styles.checkboxContainer}
                         onPress={toggleKeysignReady}
-                        activeOpacity={0.7}>
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                         <View
                           style={[
                             styles.checkbox,
@@ -5801,10 +5287,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                         <Text style={styles.checkboxLabel}>
                           Keep this app open during signing ⚠️
                         </Text>
-                      </TouchableOpacity>
+                      </Pressable>
                     </View>
                   )}
-
                   {/* Transaction Summary - Show in send mode before button */}
                   {isSendBitcoin && !isPairing && !mpcDone && route.params && (
                     <View style={styles.section}>
@@ -5837,9 +5322,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                             <Text
                               style={{
                                 fontSize: theme.fontSizes?.xs || 10,
-                                fontWeight: (theme.fontWeights?.bold ||
-                                  '700') as any,
-                                fontFamily: theme.fontFamilies?.regular,
+                                fontFamily: theme.fontFamilies?.bold,
                                 color:
                                   theme.colors.background === '#ffffff'
                                     ? theme.colors.primary
@@ -5887,8 +5370,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 <Text
                                   style={{
                                     fontSize: theme.fontSizes?.xs || 10,
-                                    fontWeight: (theme.fontWeights?.normal || '400') as any,
-                                    fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+                                    fontFamily: theme.fontFamilies?.monospace,
                                     fontStyle: 'italic',
                                     color: theme.colors.textSecondary,
                                     marginLeft: 6,
@@ -5934,7 +5416,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                             </Text>
                           </View>
                         </View>
-
                         <View
                           style={[
                             styles.transactionItem,
@@ -5968,7 +5449,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                             </Text>
                           </View>
                         </View>
-
                         <View
                           style={[
                             styles.transactionItem,
@@ -6005,40 +5485,46 @@ const MobileNostrPairing = ({navigation}: any) => {
                       </View>
                     </View>
                   )}
-
-                  {/* Start Button */}
-                  {!isPairing && !mpcDone && (
-                    <View style={styles.section}>
-                      <TouchableOpacity
-                        style={[
-                          styles.button,
-                          (isSendBitcoin || isSignPSBT
-                            ? !localNpub ||
-                              sendModeDevices.length === 0 ||
-                              (isTrio && !selectedPeerNpub) ||
-                              (isSignPSBT && !isKeysignReady)
-                            : !canStartKeygen) && styles.buttonDisabled,
-                        ]}
-                        onPress={
-                          isSignPSBT
-                            ? startSignPSBT
-                            : isSendBitcoin
-                            ? startSendBTC
-                            : startKeygen
-                        }
-                        disabled={
-                          isSendBitcoin || isSignPSBT
-                            ? !localNpub ||
-                              sendModeDevices.length === 0 ||
-                              (isTrio && !selectedPeerNpub) ||
-                              (isSignPSBT && !isKeysignReady)
-                            : !canStartKeygen
-                        }
-                        activeOpacity={0.8}>
-                        <View style={styles.buttonContent}>
-                          {(isSendBitcoin ||
-                            isSignPSBT ||
-                            !(isSendBitcoin || isSignPSBT)) && (
+                  {/* Start Button - Only for send/sign modes (keygen button is inside Final Step) */}
+                  {!isPairing &&
+                    !mpcDone &&
+                    (isSendBitcoin || isSignPSBT) && (
+                      <View style={styles.section}>
+                        <Pressable
+                          style={[
+                            styles.button,
+                            (isSendBitcoin || isSignPSBT
+                              ? !localNpub ||
+                                sendModeDevices.length === 0 ||
+                                // Ensure all npubs are fully converted (not placeholder hex values)
+                                sendModeDevices.some(
+                                  d => !d.npub || !d.npub.startsWith('npub1'),
+                                ) ||
+                                (isTrio && !selectedPeerNpub) ||
+                                (isSignPSBT && !isKeysignReady)
+                              : !canStartKeygen) && styles.buttonDisabled,
+                          ]}
+                          onPress={
+                            isSignPSBT
+                              ? startSignPSBT
+                              : isSendBitcoin
+                              ? startSendBTC
+                              : startKeygen
+                          }
+                          disabled={
+                            isSendBitcoin || isSignPSBT
+                              ? !localNpub ||
+                                sendModeDevices.length === 0 ||
+                                // Ensure all npubs are fully converted (not placeholder hex values)
+                                sendModeDevices.some(
+                                  d => !d.npub || !d.npub.startsWith('npub1'),
+                                ) ||
+                                (isTrio && !selectedPeerNpub) ||
+                                (isSignPSBT && !isKeysignReady)
+                              : !canStartKeygen
+                          }
+                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                          <View style={styles.buttonContent}>
                             <Image
                               source={
                                 isSendBitcoin || isSignPSBT
@@ -6048,46 +5534,45 @@ const MobileNostrPairing = ({navigation}: any) => {
                               style={styles.buttonIcon}
                               resizeMode="contain"
                             />
-                          )}
-                          <Text style={styles.buttonText}>
-                            {isSendBitcoin || isSignPSBT
-                              ? (() => {
-                                  // Determine if local device is KeyShare1
-                                  const localDevice = sendModeDevices.find(
-                                    d => d.isLocal,
-                                  );
-                                  const isKeyShare1 =
-                                    localDevice?.keyshareLabel === 'KeyShare1';
-                                  return isKeyShare1
-                                    ? isSignPSBT
-                                      ? 'Start PSBT Signing'
-                                      : 'Start Co-Signing'
-                                    : isSignPSBT
-                                    ? 'Join PSBT Signing'
-                                    : 'Join Co-Signing';
-                                })()
-                              : (() => {
-                                  // For keygen, determine if local npub is first in sorted order
-                                  const allNpubs = [localNpub];
-                                  if (peerNpub1) allNpubs.push(peerNpub1);
-                                  if (isTrio && peerNpub2)
-                                    allNpubs.push(peerNpub2);
-                                  const sortedNpubs = allNpubs.sort();
-                                  const isKeyShare1 =
-                                    sortedNpubs[0] === localNpub;
-                                  return isKeyShare1
-                                    ? 'Start Key Generation'
-                                    : 'Join Key Generation';
-                                })()}
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
-                    </View>
-                  )}
+                            <Text style={styles.buttonText}>
+                              {isSendBitcoin || isSignPSBT
+                                ? (() => {
+                                    // Determine if local device is KeyShare1
+                                    const localDevice = sendModeDevices.find(
+                                      d => d.isLocal,
+                                    );
+                                    const isKeyShare1 =
+                                      localDevice?.keyshareLabel ===
+                                      'KeyShare1';
+                                    return isKeyShare1
+                                      ? isSignPSBT
+                                        ? 'Start PSBT Signing'
+                                        : 'Start Co-Signing'
+                                      : isSignPSBT
+                                      ? 'Join PSBT Signing'
+                                      : 'Join Co-Signing';
+                                  })()
+                                : (() => {
+                                    // For keygen, determine if local npub is first in sorted order
+                                    const allNpubs = [localNpub];
+                                    if (peerNpub1) allNpubs.push(peerNpub1);
+                                    if (isTrio && peerNpub2)
+                                      allNpubs.push(peerNpub2);
+                                    const sortedNpubs = allNpubs.sort();
+                                    const isKeyShare1 =
+                                      sortedNpubs[0] === localNpub;
+                                    return isKeyShare1
+                                      ? 'Start Key Generation'
+                                      : 'Join Key Generation';
+                                  })()}
+                            </Text>
+                          </View>
+                        </Pressable>
+                      </View>
+                    )}
                 </>
               );
             })()}
-
           {/* Keygen Modal - Similar to MobilesPairing */}
           {isPairing && !isSendBitcoin && !isSignPSBT && (
             <Modal transparent={true} visible={isPairing} animationType="fade">
@@ -6103,16 +5588,13 @@ const MobileNostrPairing = ({navigation}: any) => {
                       />
                     </View>
                   </View>
-
                   {/* Header Text */}
                   <Text style={styles.modalTitle}>Finalizing Your Wallet</Text>
-
                   {/* Subtext */}
                   <Text style={styles.modalSubtitle}>
                     Securing your wallet with advanced cryptography. Please stay
                     in the app...
                   </Text>
-
                   {/* Progress Container */}
                   <View style={styles.progressContainer}>
                     {/* Circular Progress */}
@@ -6125,7 +5607,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                       color={theme.colors.primary}
                       style={styles.progressCircle}
                     />
-
                     {/* Progress Percentage */}
                     <View style={styles.progressTextWrapper}>
                       <Text style={styles.progressPercentage}>
@@ -6133,14 +5614,11 @@ const MobileNostrPairing = ({navigation}: any) => {
                       </Text>
                     </View>
                   </View>
-
                   {/* Status and Countdown */}
                   <View style={styles.statusContainer}>
                     <View style={styles.statusRow}>
                       <View style={styles.statusIndicator} />
-                      <Text style={styles.finalizingStatusText}>
-                        {status || 'Processing cryptographic operations'}
-                      </Text>
+                      <Text style={styles.finalizingStatusText}>{status}</Text>
                     </View>
                     <Text style={styles.finalizingCountdownText}>
                       Time elapsed: {prepCounter} seconds
@@ -6150,7 +5628,6 @@ const MobileNostrPairing = ({navigation}: any) => {
               </View>
             </Modal>
           )}
-
           {/* Co-Signing Modal - Similar to MobilesPairing send_btc and sign_psbt */}
           {isPairing && (isSendBitcoin || isSignPSBT) && (
             <Modal transparent={true} visible={isPairing} animationType="fade">
@@ -6166,20 +5643,17 @@ const MobileNostrPairing = ({navigation}: any) => {
                       />
                     </View>
                   </View>
-
                   {/* Header Text */}
                   <Text style={styles.modalTitle}>
                     {isSignPSBT
                       ? 'PSBT Co-Signing'
                       : 'Co-Signing Your Transaction'}
                   </Text>
-
                   {/* Subtext */}
                   <Text style={styles.modalSubtitle}>
                     Securing your transaction with multi-party cryptography.
                     Please stay in the app...
                   </Text>
-
                   {/* Progress Container */}
                   <View style={styles.progressContainer}>
                     {/* Circular Progress */}
@@ -6192,7 +5666,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                       color={theme.colors.primary}
                       style={styles.progressCircle}
                     />
-
                     {/* Progress Percentage */}
                     <View style={styles.progressTextWrapper}>
                       <Text style={styles.progressPercentage}>
@@ -6200,14 +5673,11 @@ const MobileNostrPairing = ({navigation}: any) => {
                       </Text>
                     </View>
                   </View>
-
                   {/* Status and Countdown */}
                   <View style={styles.statusContainer}>
                     <View style={styles.statusRow}>
                       <View style={styles.statusIndicator} />
-                      <Text style={styles.finalizingStatusText}>
-                        {status || 'Processing multi-party signature'}
-                      </Text>
+                      <Text style={styles.finalizingStatusText}>{status}</Text>
                     </View>
                     <Text style={styles.finalizingCountdownText}>
                       Time elapsed: {prepCounter} seconds
@@ -6217,7 +5687,6 @@ const MobileNostrPairing = ({navigation}: any) => {
               </View>
             </Modal>
           )}
-
           {/* Success and Backup UI - Only show for keygen, not for send BTC or sign PSBT */}
           {mpcDone && !isSendBitcoin && !isSignPSBT && (
             <>
@@ -6244,7 +5713,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                       style={[
                         styles.statusText,
                         {
-                          fontWeight: (theme.fontWeights?.bold || '700') as any,
+                          fontFamily: theme.fontFamilies?.bold,
                           fontSize: theme.fontSizes?.['2xl'] || 20,
                         },
                       ]}>
@@ -6255,7 +5724,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                     style={[
                       styles.statusText,
                       {
-                        fontWeight: (theme.fontWeights?.normal || '400') as any,
                         fontSize: theme.fontSizes?.md || 15,
                         color: theme.colors.textSecondary,
                       },
@@ -6264,8 +5732,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                     backup in different locations to prevent single points of
                     failure.
                   </Text>
-
-                  <TouchableOpacity
+                  <Pressable
                     style={styles.backupButton}
                     onPress={() => {
                       HapticFeedback.medium();
@@ -6288,10 +5755,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                           : 'Keyshare'}
                       </Text>
                     </View>
-                  </TouchableOpacity>
+                  </Pressable>
                 </View>
               </View>
-
               {/* Backup Confirmation */}
               <View style={styles.section}>
                 <View style={styles.informationCard}>
@@ -6307,7 +5773,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                     Verify that {isTrio ? 'all devices' : 'both devices'} have
                     successfully backed up their keyshares.
                   </Text>
-
                   <View style={styles.backupConfirmationContainer}>
                     {(() => {
                       // Build device list based on keyshare mapping (sorted order)
@@ -6338,7 +5803,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                       }
                       return devices;
                     })().map(item => (
-                      <TouchableOpacity
+                      <Pressable
                         key={item.key}
                         style={[
                           styles.enhancedBackupCheckbox,
@@ -6381,11 +5846,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                           ]}
                           resizeMode="contain"
                         />
-                      </TouchableOpacity>
+                      </Pressable>
                     ))}
                   </View>
-
-                  <TouchableOpacity
+                  <Pressable
                     style={
                       allBackupChecked
                         ? styles.proceedButtonOn
@@ -6396,7 +5860,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                       navigation.dispatch(
                         CommonActions.reset({
                           index: 0,
-                          routes: [{name: 'Home'}],
+                          routes: [{name: 'User Preferences'}],
                         }),
                       );
                     }}
@@ -6414,14 +5878,13 @@ const MobileNostrPairing = ({navigation}: any) => {
                       />
                       <Text style={styles.pairButtonText}>Continue</Text>
                     </View>
-                  </TouchableOpacity>
+                  </Pressable>
                 </View>
               </View>
             </>
           )}
         </ScrollView>
       </KeyboardAvoidingView>
-
       {/* QR Scanner Modal */}
       <QRScanner
         visible={isQRScannerVisible}
@@ -6431,7 +5894,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         title="Scan Connection QR"
         subtitle="Point camera at the connection QR from the other device"
       />
-
       {/* QR Code Modal */}
       <Modal
         visible={isQRModalVisible}
@@ -6442,15 +5904,15 @@ const MobileNostrPairing = ({navigation}: any) => {
           <View style={styles.qrModalContent}>
             <View style={styles.qrModalHeader}>
               <Text style={styles.qrModalTitle}>Connection Details</Text>
-              <TouchableOpacity
+              <Pressable
                 style={styles.qrModalCloseButton}
                 onPress={() => {
                   HapticFeedback.medium();
                   setIsQRModalVisible(false);
                 }}
-                activeOpacity={0.7}>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <Text style={styles.qrModalCloseText}>✕</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
             <View style={styles.qrModalBody}>
               <View style={styles.qrContainer}>
@@ -6465,7 +5927,7 @@ const MobileNostrPairing = ({navigation}: any) => {
               <Text style={styles.connectionDetailsText}>
                 {shortenNpub(connectionDetails)}
               </Text>
-              <TouchableOpacity
+              <Pressable
                 style={{
                   backgroundColor:
                     theme.colors.background === '#ffffff'
@@ -6480,7 +5942,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                   gap: 8,
                 }}
                 onPress={shareConnectionDetails}
-                activeOpacity={0.8}>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <Image
                   source={require('../assets/share-icon.png')}
                   style={styles.iconShare}
@@ -6492,204 +5954,21 @@ const MobileNostrPairing = ({navigation}: any) => {
                       theme.colors.background === '#ffffff'
                         ? theme.colors.white
                         : theme.colors.text,
-                    fontWeight: (theme.fontWeights?.semibold || '600') as any,
+                    fontFamily: theme.fontFamilies?.bold,
                     fontSize: theme.fontSizes?.lg || 16,
-                    fontFamily: theme.fontFamilies?.regular,
                   }}>
                   Share
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </View>
         </View>
       </Modal>
-
       {/* Backup Modal */}
-      <Modal
+      <BackupKeyshareModal
         visible={isBackupModalVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={clearBackupModal}>
-        <KeyboardAvoidingView
-          style={{flex: 1}}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            activeOpacity={1}
-            onPress={() => {
-              HapticFeedback.light();
-              Keyboard.dismiss();
-            }}>
-            <TouchableOpacity
-              style={styles.modalContent}
-              activeOpacity={1}
-              onPress={() => {
-                HapticFeedback.light();
-              }}>
-              <View style={styles.modalHeader}>
-                <Image
-                  source={require('../assets/backup-icon.png')}
-                  style={styles.modalIcon}
-                  resizeMode="contain"
-                />
-                <Text style={styles.modalTitle}>Backup Keyshare</Text>
-              </View>
-              <Text style={styles.modalDescription}>
-                Create an encrypted backup of your keyshare, protected by a
-                strong password.
-              </Text>
-
-              <View style={styles.passwordContainer}>
-                <Text style={styles.passwordLabel}>Set a Password</Text>
-                <View style={styles.passwordInputContainer}>
-                  <TextInput
-                    style={styles.passwordInput}
-                    placeholder="Enter a strong password"
-                    placeholderTextColor={theme.colors.textSecondary + '80'}
-                    secureTextEntry={!passwordVisible}
-                    value={password}
-                    onChangeText={handlePasswordChange}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                  <TouchableOpacity
-                    style={styles.eyeButton}
-                    onPress={() => {
-                      HapticFeedback.medium();
-                      setPasswordVisible(!passwordVisible);
-                    }}>
-                    <Image
-                      source={
-                        passwordVisible
-                          ? require('../assets/eye-off-icon.png')
-                          : require('../assets/eye-on-icon.png')
-                      }
-                      style={styles.eyeIcon}
-                      resizeMode="contain"
-                    />
-                  </TouchableOpacity>
-                </View>
-
-                {/* Password Strength Indicator */}
-                {password.length > 0 && (
-                  <View style={styles.strengthContainer}>
-                    <View style={styles.strengthBar}>
-                      <View
-                        style={[
-                          styles.strengthFill,
-                          {
-                            width: `${(passwordStrength / 4) * 100}%`,
-                            backgroundColor: getPasswordStrengthColor(),
-                          },
-                        ]}
-                      />
-                    </View>
-                    <Text
-                      style={[
-                        styles.strengthText,
-                        {color: getPasswordStrengthColor()},
-                      ]}>
-                      {getPasswordStrengthText()}
-                    </Text>
-                  </View>
-                )}
-
-                {/* Password Requirements */}
-                {passwordErrors.length > 0 && (
-                  <View style={styles.requirementsContainer}>
-                    {passwordErrors.map((error, index) => (
-                      <Text key={index} style={styles.requirementText}>
-                        • {error}
-                      </Text>
-                    ))}
-                  </View>
-                )}
-              </View>
-
-              <View style={styles.passwordContainer}>
-                <Text style={styles.passwordLabel}>Confirm Password</Text>
-                <View style={styles.passwordInputContainer}>
-                  <TextInput
-                    style={[
-                      styles.passwordInput,
-                      confirmPassword.length > 0 &&
-                        password !== confirmPassword &&
-                        styles.errorInput,
-                    ]}
-                    placeholder="Confirm your password"
-                    placeholderTextColor={theme.colors.textSecondary + '80'}
-                    secureTextEntry={!confirmPasswordVisible}
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                  <TouchableOpacity
-                    style={styles.eyeButton}
-                    onPress={() => {
-                      HapticFeedback.medium();
-                      setConfirmPasswordVisible(!confirmPasswordVisible);
-                    }}>
-                    <Image
-                      source={
-                        confirmPasswordVisible
-                          ? require('../assets/eye-off-icon.png')
-                          : require('../assets/eye-on-icon.png')
-                      }
-                      style={styles.eyeIcon}
-                      resizeMode="contain"
-                    />
-                  </TouchableOpacity>
-                </View>
-                {confirmPassword.length > 0 && password !== confirmPassword && (
-                  <Text style={styles.errorText}>Passwords do not match</Text>
-                )}
-              </View>
-
-              <View style={styles.modalActions}>
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.cancelButton]}
-                  onPress={() => {
-                    HapticFeedback.medium();
-                    clearBackupModal();
-                  }}>
-                  <Text style={styles.buttonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.modalButton,
-                    styles.confirmButton,
-                    (!password ||
-                      !confirmPassword ||
-                      password !== confirmPassword ||
-                      passwordStrength < 3) &&
-                      styles.disabledButton,
-                  ]}
-                  onPress={() => {
-                    HapticFeedback.medium();
-                    backupShare();
-                  }}
-                  disabled={
-                    !password ||
-                    !confirmPassword ||
-                    password !== confirmPassword ||
-                    passwordStrength < 3
-                  }>
-                  <View style={styles.buttonContent}>
-                    <Image
-                      source={require('../assets/upload-icon.png')}
-                      style={styles.buttonIcon}
-                      resizeMode="contain"
-                    />
-                    <Text style={styles.buttonText}>Backup</Text>
-                  </View>
-                </TouchableOpacity>
-              </View>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </KeyboardAvoidingView>
-      </Modal>
+        onClose={() => setIsBackupModalVisible(false)}
+      />
     </SafeAreaView>
   );
 };

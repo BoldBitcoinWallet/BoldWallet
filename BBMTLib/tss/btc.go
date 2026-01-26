@@ -84,7 +84,17 @@ func GetNetwork() (string, error) {
 
 // FetchUTXOs fetches UTXOs for a given address
 // The mempool.space API returns both confirmed and unconfirmed UTXOs by default
-func FetchUTXOs(address string) ([]UTXO, error) {
+func FetchUTXOs(address string) (result []UTXO, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in FetchUTXOs: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic) fetching UTXOs: %v", r)
+			result = nil
+		}
+	}()
+
 	url := fmt.Sprintf("%s/address/%s/utxo", _api_url, address)
 	Logf("Fetching UTXOs from endpoint: %s", url)
 	resp, err := http.Get(url)
@@ -179,7 +189,18 @@ func TotalUTXO(address string) (result string, err error) {
 	return fmt.Sprintf("%d", total), nil
 }
 
-func FetchUTXODetails(txID string, vout uint32) (*wire.TxOut, bool, error) {
+func FetchUTXODetails(txID string, vout uint32) (result *wire.TxOut, isWitnessResult bool, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in FetchUTXODetails: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic) fetching UTXO details: %v", r)
+			result = nil
+			isWitnessResult = false
+		}
+	}()
+
 	url := fmt.Sprintf("%s/tx/%s", _api_url, txID)
 	Logf("Fetching UTXO details from endpoint: %s", url)
 	resp, err := http.Get(url)
@@ -199,16 +220,26 @@ func FetchUTXODetails(txID string, vout uint32) (*wire.TxOut, bool, error) {
 		return nil, false, fmt.Errorf("failed to parse transaction response: %w", err)
 	}
 
-	if vout < uint32(len(txData.Vout)) {
-		scriptBytes, err := hex.DecodeString(txData.Vout[vout].Scriptpubkey)
-		if err != nil {
-			return nil, false, fmt.Errorf("failed to decode scriptpubkey: %w", err)
-		}
-		isWitness := txscript.IsWitnessProgram(scriptBytes)
-		return &wire.TxOut{PkScript: scriptBytes, Value: txData.Vout[vout].Value}, isWitness, nil
+	// Check if vout index is valid
+	if len(txData.Vout) == 0 {
+		return nil, false, fmt.Errorf("transaction %s has no outputs", txID)
+	}
+	if vout >= uint32(len(txData.Vout)) {
+		return nil, false, fmt.Errorf("invalid vout %d for txID %s (transaction has %d outputs)", vout, txID, len(txData.Vout))
 	}
 
-	return nil, false, fmt.Errorf("invalid vout for txID %s", txID)
+	// Safely access the vout
+	voutData := txData.Vout[vout]
+	if voutData.Scriptpubkey == "" {
+		return nil, false, fmt.Errorf("empty scriptpubkey for txID %s vout %d", txID, vout)
+	}
+
+	scriptBytes, err := hex.DecodeString(voutData.Scriptpubkey)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to decode scriptpubkey: %w", err)
+	}
+	isWitness := txscript.IsWitnessProgram(scriptBytes)
+	return &wire.TxOut{PkScript: scriptBytes, Value: voutData.Value}, isWitness, nil
 }
 
 func RecommendedFees(feeType string) (int, error) {
@@ -303,7 +334,18 @@ func postTxOnce(rawTxHex string) (string, error) {
 }
 
 // SelectUTXOs selects the optimal set of UTXOs based on the strategy
-func SelectUTXOs(utxos []UTXO, totalAmount int64, strategy string) ([]UTXO, int64, error) {
+func SelectUTXOs(utxos []UTXO, totalAmount int64, strategy string) (result []UTXO, totalSelectedResult int64, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in SelectUTXOs: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic) selecting UTXOs: %v", r)
+			result = nil
+			totalSelectedResult = 0
+		}
+	}()
+
 	// Sort UTXOs based on the strategy
 	switch strategy {
 	case "smallest":
@@ -558,7 +600,11 @@ func SendBitcoin(wifKey, publicKey, senderAddress, receiverAddress string, previ
 
 	// Add all inputs
 	for _, utxo := range selectedUTXOs {
-		hash, _ := chainhash.NewHashFromStr(utxo.TxID)
+		hash, err := chainhash.NewHashFromStr(utxo.TxID)
+		if err != nil {
+			Logf("Error parsing UTXO TxID %s: %v", utxo.TxID, err)
+			return "", fmt.Errorf("invalid UTXO transaction ID %s: %w", utxo.TxID, err)
+		}
 		outPoint := wire.NewOutPoint(hash, utxo.Vout)
 		tx.AddTxIn(wire.NewTxIn(outPoint, nil, nil))
 		Logf("Selected UTXOs: %+v", utxo)
@@ -798,7 +844,11 @@ func MpcSendBTC(
 
 	mpcHook("adding inputs", session, utxoSession, utxoIndex, utxoCount, false)
 	for _, utxo := range selectedUTXOs {
-		hash, _ := chainhash.NewHashFromStr(utxo.TxID)
+		hash, err := chainhash.NewHashFromStr(utxo.TxID)
+		if err != nil {
+			Logf("Error parsing UTXO TxID %s: %v", utxo.TxID, err)
+			return "", fmt.Errorf("invalid UTXO transaction ID %s: %w", utxo.TxID, err)
+		}
 		outPoint := wire.NewOutPoint(hash, utxo.Vout)
 		// Create input with RBF enabled (nSequence = 0xfffffffd)
 		txIn := wire.NewTxIn(outPoint, nil, nil)
@@ -845,7 +895,11 @@ func MpcSendBTC(
 		if err != nil {
 			return "", fmt.Errorf("failed to fetch UTXO details for input %d: %w", i, err)
 		}
-		hash, _ := chainhash.NewHashFromStr(utxo.TxID)
+		hash, err := chainhash.NewHashFromStr(utxo.TxID)
+		if err != nil {
+			Logf("Error parsing UTXO TxID %s: %v", utxo.TxID, err)
+			return "", fmt.Errorf("invalid UTXO transaction ID %s for input %d: %w", utxo.TxID, i, err)
+		}
 		outPoint := wire.OutPoint{Hash: *hash, Index: utxo.Vout}
 		prevOuts[outPoint] = txOut
 	}
@@ -1627,8 +1681,12 @@ func ReplaceTransaction(
 
 	// Add all inputs from the original transaction
 	var totalInputValue int64
-	for _, vin := range txData.Vin {
-		hash, _ := chainhash.NewHashFromStr(vin.TxID)
+	for i, vin := range txData.Vin {
+		hash, err := chainhash.NewHashFromStr(vin.TxID)
+		if err != nil {
+			Logf("Error parsing input %d TxID %s: %v", i, vin.TxID, err)
+			return "", fmt.Errorf("invalid transaction ID %s for input %d: %w", vin.TxID, i, err)
+		}
 		outPoint := wire.NewOutPoint(hash, vin.Vout)
 		txIn := wire.NewTxIn(outPoint, nil, nil)
 		txIn.Sequence = 0xfffffffd // Enable RBF
@@ -1691,7 +1749,11 @@ func ReplaceTransaction(
 		if err != nil {
 			return "", fmt.Errorf("failed to fetch UTXO details for input %d: %w", i, err)
 		}
-		hash, _ := chainhash.NewHashFromStr(vin.TxID)
+		hash, err := chainhash.NewHashFromStr(vin.TxID)
+		if err != nil {
+			Logf("Error parsing input %d TxID %s: %v", i, vin.TxID, err)
+			return "", fmt.Errorf("invalid transaction ID %s for input %d: %w", vin.TxID, i, err)
+		}
 		outPoint := wire.OutPoint{Hash: *hash, Index: vin.Vout}
 		prevOuts[outPoint] = txOut
 	}

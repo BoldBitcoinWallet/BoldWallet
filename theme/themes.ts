@@ -2,11 +2,12 @@
  * Theme Definitions
  * Light and dark theme color palettes and styling
  */
-
-import {Platform} from 'react-native';
 import type {Theme} from './types';
-
-// Shared font sizes across themes
+/**
+ * Shared font sizes across themes
+ * These sizes are consistent across iOS and Android to ensure visual parity.
+ * Always use theme.fontSizes?.X || fallback pattern in components.
+ */
 const fontSizes = {
   xs: 10,
   sm: 12,
@@ -22,7 +23,6 @@ const fontSizes = {
   large: 16,
   extraLarge: 18,
 };
-
 // Shared font weights across themes
 const fontWeights = {
   normal: '400',
@@ -30,13 +30,30 @@ const fontWeights = {
   semibold: '600',
   bold: '700',
 };
-
-// Shared font families across themes
+/**
+ * Shared font families across themes - Inter + JetBrains Mono for professional Bitcoin wallet
+ * 
+ * IMPORTANT: These fonts are used on BOTH iOS and Android for consistency.
+ * Inter fonts embed weight in the family name (Inter-Regular, Inter-Medium, Inter-SemiBold).
+ * 
+ * CRITICAL: Never use fontWeight property with these font families.
+ * Use the appropriate family directly: regular (400), medium (500), or bold (600/700).
+ * 
+ * This ensures identical appearance across iOS and Android platforms.
+ */
 const fontFamilies = {
-  regular: Platform.OS === 'ios' ? 'System' : 'Roboto',
-  monospace: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  regular: 'Inter-Regular',      // Weight 400 - Body text, labels
+  medium: 'Inter-Medium',         // Weight 500 - Buttons, emphasized text
+  bold: 'Inter-SemiBold',         // Weight 600 - Headers, important CTAs
+  monospace: 'JetBrainsMono-Regular',      // Weight 400 - Bitcoin addresses, hashes
+  monospaceMedium: 'JetBrainsMono-Medium', // Weight 500 - Medium monospace
+  monospaceBold: 'JetBrainsMono-Bold',     // Weight 700 - Bold monospace
+  // Legacy support - maps to new font names
+  inter: 'Inter-Regular',
+  jetbrainsMono: 'JetBrainsMono-Regular',
+  roboto: 'Inter-Regular',
+  robotoMono: 'JetBrainsMono-Regular',
 };
-
 // Shared spacing across themes
 const spacing = {
   small: 8,
@@ -44,14 +61,12 @@ const spacing = {
   large: 20,
   extraLarge: 30,
 };
-
 // Shared border radius across themes
 const borderRadius = {
   small: 8,
   medium: 10,
   large: 12,
 };
-
 /**
  * Light theme - preserves current color palette
  * Exact match to original lightPolished theme
@@ -83,9 +98,17 @@ export const lightTheme: Theme = {
     warning: '#FFA500',
     warningLight: '#FFD700',
     warningAccent: '#FF6B35',
+    warningBg: '#FFF3CD', // Light yellow background for warning containers
+    warningBorder: '#FFC107', // Amber border for warning containers
+    warningText: '#856404', // Dark amber text for warning containers
     success: '#34C759',
     successLight: '#66BB6A',
     skeletonGray: '#e9ecef',
+    // Switch component colors - using palette colors
+    switchTrackFalse: '#cbd5e1', // Use disabled color from palette
+    switchTrackTrue: '#34C759', // Use success color from palette
+    switchThumb: '#fff', // Use white from palette
+    switchIosBackground: '#cbd5e1', // Use disabled color for iOS
     // Overlay colors for glassmorphism effects
     blackOverlay05: 'rgba(0, 0, 0, 0.05)',
     blackOverlay06: 'rgba(0, 0, 0, 0.06)',
@@ -132,7 +155,6 @@ export const lightTheme: Theme = {
     },
   },
 };
-
 /**
  * Dark theme - optimized color choices for dark mode
  */
@@ -163,9 +185,17 @@ export const darkTheme: Theme = {
     warning: '#FFA500', // Orange for warnings
     warningLight: '#FFD700', // Lighter orange
     warningAccent: '#FF6B35', // Accent orange
+    warningBg: '#3D2F00', // Dark amber background for warning containers in dark mode
+    warningBorder: '#FFA000', // Amber border for warning containers in dark mode
+    warningText: '#FFC107', // Amber text for warning containers in dark mode
     success: '#34C759', // iOS success green
     successLight: '#66BB6A', // Lighter success green
     skeletonGray: '#2a2a2a', // Dark gray for skeleton loaders in dark mode
+    // Switch component colors - using palette colors
+    switchTrackFalse: '#424242', // Use disabled color from palette
+    switchTrackTrue: '#34C759', // Use success color from palette
+    switchThumb: '#FFFFFF', // Use white from palette
+    switchIosBackground: '#424242', // Use disabled color for iOS
     // Overlay colors for glassmorphism effects (same values for dark mode)
     blackOverlay05: 'rgba(0, 0, 0, 0.05)',
     blackOverlay06: 'rgba(0, 0, 0, 0.06)',
@@ -212,7 +242,6 @@ export const darkTheme: Theme = {
     },
   },
 };
-
 /**
  * Legacy themes for backward compatibility
  */
@@ -245,9 +274,17 @@ export const themes = {
       warning: '#FFA500',
       warningLight: '#FFD700',
       warningAccent: '#FF6B35',
+      warningBg: '#FFF3CD', // Light yellow background for warning containers
+      warningBorder: '#FFC107', // Amber border for warning containers
+      warningText: '#856404', // Dark amber text for warning containers
       success: '#34C759',
       successLight: '#66BB6A',
       skeletonGray: '#e9ecef',
+      // Switch component colors - using palette colors
+      switchTrackFalse: '#cbd5e1', // Use disabled color from palette
+      switchTrackTrue: '#34C759', // Use success color from palette
+      switchThumb: '#fff', // Use white from palette
+      switchIosBackground: '#cbd5e1', // Use disabled color for iOS
       // Overlay colors for glassmorphism effects
       blackOverlay05: 'rgba(0, 0, 0, 0.05)',
       blackOverlay06: 'rgba(0, 0, 0, 0.06)',
@@ -272,4 +309,3 @@ export const themes = {
   },
   dark: darkTheme,
 };
-

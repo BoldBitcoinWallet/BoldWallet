@@ -4,7 +4,7 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   Alert,
   NativeModules,
   Modal,
@@ -24,9 +24,7 @@ import LegalModal from '../components/LegalModal';
 import TransportModeSelector from '../components/TransportModeSelector';
 import LocalCache from '../services/LocalCache';
 import {useUser} from '../context/UserContext';
-
 const {BBMTLibNativeModule} = NativeModules;
-
 const ShowcaseScreen = ({navigation}: any) => {
   const [modalVisible, setModalVisible] = useState(false);
   const [password, setPassword] = useState('');
@@ -45,11 +43,9 @@ const ShowcaseScreen = ({navigation}: any) => {
   const [passwordVisible, setPasswordVisible] = useState(false);
   const {theme} = useTheme();
   const {setActiveNetwork} = useUser();
-
   const fadeAnim = useRef(new Animated.Value(0.6)).current;
   const connectorAnim = useRef(new Animated.Value(0)).current;
   const connectorLoopRef = useRef(null as Animated.CompositeAnimation | null);
-
   // Clear all app cache on component mount (wallet import screen)
   useEffect(() => {
     const clearAllCache = async () => {
@@ -58,12 +54,10 @@ const ShowcaseScreen = ({navigation}: any) => {
         // Clear LocalCache
         await LocalCache.clear();
         dbg('LocalCache cleared successfully');
-
         // Clear stale EncryptedStorage items (but keep keyshare if it exists)
         // We clear btcPub as it will be regenerated with the imported keyshare
         await EncryptedStorage.removeItem('btcPub');
         dbg('Cleared stale btcPub from EncryptedStorage');
-
         // Clear WalletService cache
         try {
           await LocalCache.removeItem('walletCache');
@@ -71,7 +65,6 @@ const ShowcaseScreen = ({navigation}: any) => {
         } catch (error) {
           dbg('Error clearing WalletService cache:', error);
         }
-
         dbg('=== ShowcaseScreen: Cache clearing completed');
       } catch (err) {
         dbg('Error clearing app cache:', err);
@@ -79,7 +72,6 @@ const ShowcaseScreen = ({navigation}: any) => {
     };
     clearAllCache();
   }, []);
-
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
@@ -98,7 +90,6 @@ const ShowcaseScreen = ({navigation}: any) => {
       ]),
     ).start();
   }, [fadeAnim]);
-
   useEffect(() => {
     // Start/stop the connector ping-pong animation based on selection and modal visibility
     if (isModeModalVisible && selectedMode) {
@@ -127,39 +118,31 @@ const ShowcaseScreen = ({navigation}: any) => {
       connectorAnim.setValue(0);
     }
   }, [isModeModalVisible, selectedMode, connectorAnim]);
-
   // Reset selection each time the mode modal opens
   useEffect(() => {
     if (isModeModalVisible) {
       setSelectedMode(null);
     }
   }, [isModeModalVisible]);
-
   const handleContentUri = async (uri: any) => {
     try {
       const localFilePath = `${RNFS.DocumentDirectoryPath}/tempFile.txt`;
-
       // Check if the file already exists and delete it if it does
       if (await RNFS.exists(localFilePath)) {
         await RNFS.unlink(localFilePath);
       }
-
       // Copy the file to a local path
       await RNFS.copyFile(uri, localFilePath);
-
       // Read the file content as base64
       const content = await RNFS.readFile(localFilePath, 'base64');
-
       // Clean up the temporary file
       await RNFS.unlink(localFilePath);
-
       return content;
     } catch (_error) {
       dbg('Error handling content URI:', _error);
       return '';
     }
   };
-
   // Handle the restore wallet process
   const handleRestoreWallet = async () => {
     try {
@@ -167,7 +150,6 @@ const ShowcaseScreen = ({navigation}: any) => {
         type: [DocumentPicker.types.allFiles],
       });
       const uri = `${res.uri}`;
-
       let content = await handleContentUri(uri);
       setFileContent(content);
       setModalVisible(true);
@@ -180,7 +162,6 @@ const ShowcaseScreen = ({navigation}: any) => {
       }
     }
   };
-
   const handlePasswordSubmit = async () => {
     try {
       const decryptedKeyshare = await BBMTLibNativeModule.aesDecrypt(
@@ -201,7 +182,6 @@ const ShowcaseScreen = ({navigation}: any) => {
           dbg('Error parsing keyshare:', error);
           throw 'Error: Invalid keyshare';
         }
-
         await EncryptedStorage.setItem('keyshare', decryptedKeyshare);
         // Reset legacy wallet modal flag for new wallet
         // If legacy wallet, set to "no" (show modal); if not legacy, set to "yes" (won't show anyway)
@@ -210,21 +190,19 @@ const ShowcaseScreen = ({navigation}: any) => {
           'legacyWalletModalDoNotRemind',
           isLegacy ? 'no' : 'yes',
         );
-
         // CRITICAL: Always reset network to mainnet on keyshare import
         // This ensures a clean state and proper address derivation for the new wallet
         dbg('=== Keyshare imported: Resetting network to mainnet');
         await setActiveNetwork('mainnet');
         dbg('=== Network reset to mainnet, UserContext will refresh addresses');
-
         setModalVisible(false);
         setPassword('');
-        dbg('Opening Home');
+        dbg('Navigating to User Preferences');
         setTimeout(() => {
           navigation.dispatch(
             CommonActions.reset({
               index: 0,
-              routes: [{name: 'Home'}],
+              routes: [{name: 'User Preferences'}],
             }),
           );
         }, 1000);
@@ -234,14 +212,12 @@ const ShowcaseScreen = ({navigation}: any) => {
       Alert.alert('Error', 'Failed to import the file');
     }
   };
-
   const handleCloseModal = () => {
     HapticFeedback.medium();
     setModalVisible(false);
     setPassword('');
     setIsPasswordFocused(false);
   };
-
   const styles = StyleSheet.create({
     container: {
       flex: 1,
@@ -261,8 +237,7 @@ const ShowcaseScreen = ({navigation}: any) => {
     },
     heroTitle: {
       fontSize: theme.fontSizes?.['3xl'] || 28,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       marginTop: 16,
       textAlign: 'center',
@@ -271,8 +246,7 @@ const ShowcaseScreen = ({navigation}: any) => {
     },
     heroSubtitle: {
       fontSize: theme.fontSizes?.['2xl'] || 20,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
@@ -280,12 +254,11 @@ const ShowcaseScreen = ({navigation}: any) => {
       textAlign: 'center',
       lineHeight: 28,
       paddingHorizontal: 20,
-      marginBottom: 8,
+      marginBottom: 16,
     },
     heroTagline: {
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.medium || '500') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.textSecondary,
       textAlign: 'center',
       lineHeight: 22,
@@ -346,14 +319,12 @@ const ShowcaseScreen = ({navigation}: any) => {
     ctaButtonText: {
       color: theme.colors.white,
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
     },
     ctaButtonSecondaryText: {
       color: theme.colors.text,
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
     },
     ctaButtonIconContainer: {
       flexDirection: 'row',
@@ -391,8 +362,6 @@ const ShowcaseScreen = ({navigation}: any) => {
     },
     termsText: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       textAlign: 'left',
       color: theme.colors.textSecondary,
       marginLeft: 8,
@@ -403,11 +372,11 @@ const ShowcaseScreen = ({navigation}: any) => {
     },
     termsLink: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.background === '#ffffff'
-        ? theme.colors.accent
-        : theme.colors.bitcoinOrange,
+      fontFamily: theme.fontFamilies?.bold,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.accent
+          : theme.colors.bitcoinOrange,
       textDecorationLine: 'underline',
     },
     checkboxContainer: {
@@ -430,14 +399,19 @@ const ShowcaseScreen = ({navigation}: any) => {
       justifyContent: 'center',
     },
     checkboxChecked: {
-      backgroundColor: theme.colors.background === '#ffffff' ? theme.colors.primary : theme.colors.bitcoinOrange,
-      borderColor: theme.colors.background === '#ffffff' ? theme.colors.primary : theme.colors.bitcoinOrange,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     checkmark: {
       color: theme.colors.background,
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
     },
     // Enhanced Modal Styles
     modalOverlay: {
@@ -457,6 +431,11 @@ const ShowcaseScreen = ({navigation}: any) => {
       shadowRadius: 20,
       elevation: 10,
       overflow: 'hidden',
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10
+          : theme.colors.whiteOverlay20,
     },
     modalHeader: {
       flexDirection: 'row',
@@ -466,12 +445,14 @@ const ShowcaseScreen = ({navigation}: any) => {
       paddingTop: 24,
       paddingBottom: 16,
       borderBottomWidth: 1,
-      borderBottomColor: 'rgba(0,0,0,0.05)',
+      borderBottomColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10
+          : theme.colors.whiteOverlay20,
     },
     modalTitle: {
       fontSize: theme.fontSizes?.xl || 18,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       marginLeft: 12,
       color: theme.colors.text,
       flex: 1,
@@ -490,8 +471,7 @@ const ShowcaseScreen = ({navigation}: any) => {
     },
     closeButtonText: {
       fontSize: theme.fontSizes?.['2xl'] || 20,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
     },
     modalBody: {
@@ -500,8 +480,7 @@ const ShowcaseScreen = ({navigation}: any) => {
     },
     modalSubtitle: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.medium || '500') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.secondary,
       marginBottom: 20,
       textAlign: 'left',
@@ -511,8 +490,7 @@ const ShowcaseScreen = ({navigation}: any) => {
     },
     passwordInputLabel: {
       fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       marginBottom: 10,
       paddingHorizontal: 4,
@@ -524,16 +502,16 @@ const ShowcaseScreen = ({navigation}: any) => {
     },
     passwordInput: {
       borderWidth: 1.5,
-      borderColor: theme.colors.background === '#ffffff'
-        ? theme.colors.accent
-        : theme.colors.bitcoinOrange,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.accent
+          : theme.colors.bitcoinOrange,
       borderRadius: 12,
       paddingHorizontal: 16,
       paddingRight: 50,
       paddingVertical: 14,
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.medium || '500') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.text,
       backgroundColor: 'rgba(0,0,0,0.02)',
       flex: 1,
@@ -581,23 +559,20 @@ const ShowcaseScreen = ({navigation}: any) => {
     },
     modalActionButtonText: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       letterSpacing: 0.3,
     },
     modalCancelButtonText: {
       color: theme.colors.text,
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.medium || '500') as any,
-      fontFamily: theme.fontFamilies?.regular,
     },
     modalSubmitButtonText: {
-      color: theme.colors.background === '#ffffff'
-        ? theme.colors.background
-        : theme.colors.white,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.background
+          : theme.colors.white,
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
     },
     modalHeaderIconImage: {
       width: 20,
@@ -627,16 +602,13 @@ const ShowcaseScreen = ({navigation}: any) => {
     },
     modeHintTitle: {
       fontSize: theme.fontSizes?.md || 15,
-      fontWeight: (theme.fontWeights?.medium || '500') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.text,
       textAlign: 'left',
       alignSelf: 'flex-start',
     },
     modeHintLine: {
       fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginTop: 6,
       textAlign: 'left',
@@ -644,8 +616,6 @@ const ShowcaseScreen = ({navigation}: any) => {
     },
     modeHintLineCentered: {
       fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginTop: 6,
       textAlign: 'center',
@@ -752,8 +722,7 @@ const ShowcaseScreen = ({navigation}: any) => {
           ? theme.colors.background
           : theme.colors.text,
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       textAlign: 'center',
     },
     modeSelectedCheck: {
@@ -782,8 +751,7 @@ const ShowcaseScreen = ({navigation}: any) => {
     modeContinueButtonText: {
       color: theme.colors.white,
       fontSize: theme.fontSizes?.md || 15,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
     },
     modeOptionDesc: {
       color:
@@ -793,8 +761,6 @@ const ShowcaseScreen = ({navigation}: any) => {
       opacity: 0.9,
       textAlign: 'center',
       fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       marginTop: 6,
       lineHeight: 18,
     },
@@ -819,20 +785,24 @@ const ShowcaseScreen = ({navigation}: any) => {
     modeSelectedHintIcon: {
       width: 20,
       height: 20,
-      tintColor: theme.colors.background === '#ffffff' ? theme.colors.primary : theme.colors.text,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.text,
     },
     modeSelectedHintText: {
-      color: theme.colors.background === '#ffffff' ? theme.colors.primary : theme.colors.text,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.text,
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       textAlign: 'left',
       flex: 1,
       flexWrap: 'wrap',
       maxWidth: '100%',
     },
     modeSelectedHintTextBold: {
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
+      fontFamily: theme.fontFamilies?.bold,
     },
     // Setup Guide Hint Styles - Subtle
     setupGuideHint: {
@@ -859,8 +829,7 @@ const ShowcaseScreen = ({navigation}: any) => {
     },
     setupGuideHintText: {
       fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.medium || '500') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.medium,
       color:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
@@ -872,10 +841,14 @@ const ShowcaseScreen = ({navigation}: any) => {
           : theme.colors.bitcoinOrange + '80',
     },
   });
-
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContainer}
+        removeClippedSubviews
+        keyboardShouldPersistTaps="handled"
+        overScrollMode="never"
+        showsVerticalScrollIndicator={false}>
         <View style={styles.heroSection}>
           <Animated.View style={[styles.logoContainer, {opacity: fadeAnim}]}>
             <Image
@@ -891,11 +864,10 @@ const ShowcaseScreen = ({navigation}: any) => {
           </Text>
         </View>
       </ScrollView>
-
       <View style={styles.bottomActions}>
         <View style={styles.termsContainer}>
           <View style={styles.termsRow}>
-            <TouchableOpacity
+            <Pressable
               style={styles.checkboxContainer}
               onPress={() => {
                 HapticFeedback.medium();
@@ -908,7 +880,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                 ]}>
                 {agreeToTerms && <Text style={styles.checkmark}>✓</Text>}
               </View>
-            </TouchableOpacity>
+            </Pressable>
             <Text style={styles.termsText}>
               I agree to the{' '}
               <Text
@@ -922,9 +894,8 @@ const ShowcaseScreen = ({navigation}: any) => {
               </Text>
             </Text>
           </View>
-
           <View style={styles.termsRow}>
-            <TouchableOpacity
+            <Pressable
               style={styles.checkboxContainer}
               onPress={() => {
                 HapticFeedback.medium();
@@ -937,7 +908,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                 ]}>
                 {agreeToPrivacy && <Text style={styles.checkmark}>✓</Text>}
               </View>
-            </TouchableOpacity>
+            </Pressable>
             <Text style={styles.termsText}>
               I agree to the{' '}
               <Text
@@ -953,7 +924,7 @@ const ShowcaseScreen = ({navigation}: any) => {
           </View>
         </View>
         <View style={styles.ctaButtons}>
-          <TouchableOpacity
+          <Pressable
             style={[
               styles.ctaButtonPrimary,
               (!agreeToTerms || !agreeToPrivacy) && styles.disabledButton,
@@ -976,8 +947,8 @@ const ShowcaseScreen = ({navigation}: any) => {
               />
               <Text style={styles.ctaButtonText}>Setup New Wallet</Text>
             </View>
-          </TouchableOpacity>
-          <TouchableOpacity
+          </Pressable>
+          <Pressable
             style={[
               styles.ctaButtonSecondary,
               (!agreeToTerms || !agreeToPrivacy) && styles.disabledButton,
@@ -1000,10 +971,9 @@ const ShowcaseScreen = ({navigation}: any) => {
                 Restore Existing Wallet
               </Text>
             </View>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       </View>
-
       {/* Enhanced Password Prompt Modal */}
       <Modal
         transparent={true}
@@ -1019,14 +989,13 @@ const ShowcaseScreen = ({navigation}: any) => {
                 style={styles.modalHeaderIconImage}
               />
               <Text style={styles.modalTitle}>Restore Keyshare</Text>
-              <TouchableOpacity
+              <Pressable
                 style={styles.closeButton}
                 onPress={handleCloseModal}
-                activeOpacity={0.7}>
+                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <Text style={styles.closeButtonText}>✕</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
-
             {/* Modal Body */}
             <View style={styles.modalBody}>
               {/* Password Input */}
@@ -1046,7 +1015,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                     onFocus={() => setIsPasswordFocused(true)}
                     onBlur={() => setIsPasswordFocused(false)}
                   />
-                  <TouchableOpacity
+                  <Pressable
                     style={styles.eyeButton}
                     onPress={() => {
                       HapticFeedback.light();
@@ -1061,16 +1030,15 @@ const ShowcaseScreen = ({navigation}: any) => {
                       style={styles.eyeIcon}
                       resizeMode="contain"
                     />
-                  </TouchableOpacity>
+                  </Pressable>
                 </View>
               </View>
-
               {/* Action Buttons */}
               <View style={styles.modalActions}>
-                <TouchableOpacity
+                <Pressable
                   style={[styles.modalActionButton, styles.modalCancelButton]}
                   onPress={handleCloseModal}
-                  activeOpacity={0.7}>
+                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                   <Text
                     style={[
                       styles.modalActionButtonText,
@@ -1078,15 +1046,14 @@ const ShowcaseScreen = ({navigation}: any) => {
                     ]}>
                     Cancel
                   </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
+                </Pressable>
+                <Pressable
                   style={[styles.modalActionButton, styles.modalSubmitButton]}
                   onPress={() => {
                     HapticFeedback.medium();
                     handlePasswordSubmit();
                   }}
-                  activeOpacity={0.8}>
+                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                   <Image
                     source={require('../assets/key-icon.png')}
                     style={styles.buttonIcon}
@@ -1099,13 +1066,12 @@ const ShowcaseScreen = ({navigation}: any) => {
                     ]}>
                     Import
                   </Text>
-                </TouchableOpacity>
+                </Pressable>
               </View>
             </View>
           </View>
         </View>
       </Modal>
-
       {/* Legal Modal */}
       <LegalModal
         visible={isLegalModalVisible}
@@ -1115,7 +1081,6 @@ const ShowcaseScreen = ({navigation}: any) => {
         }}
         type={legalModalType}
       />
-
       {/* Transport Mode Selector */}
       <TransportModeSelector
         visible={isTransportModalVisible}
@@ -1155,7 +1120,6 @@ const ShowcaseScreen = ({navigation}: any) => {
         title="Select Pairing Method"
         description="Choose how to connect with other devices"
       />
-
       {/* Mode Selection Modal */}
       <Modal
         transparent={true}
@@ -1170,20 +1134,19 @@ const ShowcaseScreen = ({navigation}: any) => {
                 style={styles.modalHeaderIconImage}
               />
               <Text style={styles.modalTitle}>Choose Your Setup</Text>
-              <TouchableOpacity
+              <Pressable
                 style={styles.closeButton}
                 onPress={() => {
                   HapticFeedback.medium();
                   setIsModeModalVisible(false);
                 }}
-                activeOpacity={0.7}>
+                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <Text style={styles.closeButtonText}>✕</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
-
             <View style={styles.modalBody}>
               <View style={styles.modeOptionsContainer}>
-                <TouchableOpacity
+                <Pressable
                   style={[
                     styles.modeOptionCard,
                     styles.modeOptionCardPrimary,
@@ -1193,7 +1156,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                     HapticFeedback.medium();
                     setSelectedMode('duo');
                   }}
-                  activeOpacity={0.8}>
+                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                   <View style={styles.modeOptionContent}>
                     <View style={styles.modeIconWrapper}>
                       {selectedMode === 'duo' && (
@@ -1262,9 +1225,8 @@ const ShowcaseScreen = ({navigation}: any) => {
                       Duo
                     </Text>
                   </View>
-                </TouchableOpacity>
-
-                <TouchableOpacity
+                </Pressable>
+                <Pressable
                   style={[
                     styles.modeOptionCard,
                     styles.modeOptionCardPrimary,
@@ -1274,7 +1236,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                     HapticFeedback.medium();
                     setSelectedMode('trio');
                   }}
-                  activeOpacity={0.8}>
+                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                   <View style={styles.modeOptionContent}>
                     <View style={styles.modeIconWrapper}>
                       {selectedMode === 'trio' && (
@@ -1363,9 +1325,8 @@ const ShowcaseScreen = ({navigation}: any) => {
                       Trio
                     </Text>
                   </View>
-                </TouchableOpacity>
+                </Pressable>
               </View>
-
               {selectedMode && (
                 <View style={styles.modeSelectedHint}>
                   <View style={styles.modeSelectedHintRow}>
@@ -1394,11 +1355,10 @@ const ShowcaseScreen = ({navigation}: any) => {
                   </View>
                 </View>
               )}
-
               {/* Setup Guide Video Hint - Subtle */}
               {selectedMode && (
                 <View style={styles.setupGuideHint}>
-                  <TouchableOpacity
+                  <Pressable
                     style={styles.setupGuideHintTouchable}
                     onPress={() => {
                       HapticFeedback.medium();
@@ -1409,7 +1369,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                         dbg('Error opening URL:', err);
                       });
                     }}
-                    activeOpacity={0.7}>
+                    android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                     <View style={styles.setupGuideHintRow}>
                       <Image
                         source={require('../assets/start-icon.png')}
@@ -1420,11 +1380,10 @@ const ShowcaseScreen = ({navigation}: any) => {
                         🎥 Watch setup guide →
                       </Text>
                     </View>
-                  </TouchableOpacity>
+                  </Pressable>
                 </View>
               )}
-
-              <TouchableOpacity
+              <Pressable
                 style={[
                   styles.modalSubmitButton,
                   styles.modeContinueButton,
@@ -1437,11 +1396,11 @@ const ShowcaseScreen = ({navigation}: any) => {
                   setIsTransportModalVisible(true);
                 }}
                 disabled={!selectedMode}
-                activeOpacity={0.8}>
+                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <Text style={styles.modeContinueButtonText}>
                   Continue to Pair Devices →
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </View>
         </View>
@@ -1449,5 +1408,4 @@ const ShowcaseScreen = ({navigation}: any) => {
     </View>
   );
 };
-
 export default ShowcaseScreen;

@@ -1,9 +1,7 @@
 import RNFS from 'react-native-fs';
 import {dbg} from '../utils';
-
 class LocalCache {
   static baseDir = `${RNFS.DocumentDirectoryPath}/.cache`;
-
   // Ensure .cache directory exists
   static async ensureCacheDir() {
     try {
@@ -29,14 +27,12 @@ class LocalCache {
       }
     }
   }
-
   // Encode key to hex for safe filenames
   static hex(key: string) {
     return Array.from(new TextEncoder().encode(key))
       .map(byte => byte.toString(16).padStart(2, '0'))
       .join('');
   }
-
   // Always ensure dir exists before returning path
   static async getFilePath(key: string): Promise<string> {
     try {
@@ -47,7 +43,6 @@ class LocalCache {
       throw err; // Re-throw to handle in calling methods
     }
   }
-
   static async setItem(key: string, value: string) {
     try {
       const path = await this.getFilePath(key);
@@ -56,7 +51,6 @@ class LocalCache {
       dbg(`LocalCache setItem error [${key}]:`, err);
     }
   }
-
   static async getItem(key: string) {
     try {
       const path = await this.getFilePath(key);
@@ -70,7 +64,6 @@ class LocalCache {
       return null;
     }
   }
-
   static async removeItem(key: string) {
     try {
       const path = await this.getFilePath(key);
@@ -82,7 +75,6 @@ class LocalCache {
       dbg(`LocalCache removeItem error [${key}]:`, err);
     }
   }
-
   static async usageSize(): Promise<{fileCount: number; mb: string}> {
     try {
       const files = await RNFS.readDir(this.baseDir);
@@ -96,7 +88,6 @@ class LocalCache {
       return {fileCount: 0, mb: '0.00 MB'}; // in MB
     }
   }
-
   static async clear() {
     try {
       const files = await RNFS.readDir(this.baseDir);
@@ -117,5 +108,4 @@ class LocalCache {
     }
   }
 }
-
 export default LocalCache;

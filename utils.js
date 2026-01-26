@@ -1,6 +1,7 @@
 import {Platform} from 'react-native';
 import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 import LocalCache from './services/LocalCache';
+import {isDebugLoggingEnabled} from './App';
 
 let ips = [];
 
@@ -18,8 +19,9 @@ export const getPinnedRemoteIP = () => (ips.length ? ips[ips.length - 1] : '');
 export const getPinnedRemoteIPs = () => [...ips];
 
 export const dbg = (message, ...optionalParams) => {
-  // Disable debug logging in production builds to prevent information leakage
-  if (!__DEV__) {
+  // Disable debug logging by default (even in __DEV__)
+  // Only enable if explicitly toggled via debug setting in WalletSettings
+  if (!isDebugLoggingEnabled()) {
     return;
   }
   let args = optionalParams.length === 0 ? '' : optionalParams;
@@ -292,8 +294,7 @@ export const formatBTC = (btcAmount, options = {}) => {
   // Split into whole and decimal parts
   const [wholePart, decimalPart = ''] = amountStr.split('.');
 
-  // Use thin space (U+2009) as thousand separator - narrower than regular space
-  const thinSpace = '\u200A\u200A';
+  const thinSpace = ',';
 
   // Format whole part: standard thousand separators (every 3 digits from right) using thin space
   const formattedWhole = Number(wholePart).toLocaleString('en-US').replace(/,/g, thinSpace);
@@ -398,8 +399,12 @@ export const formatSats = (satsAmount) => {
     return '0';
   }
 
-  // Use thin space (U+2009) as thousand separator
-  const thinSpace = ' \u200A';
+  // Handle zero amount explicitly
+  if (amount === 0) {
+    return '0';
+  }
+
+  const thinSpace = ',';
   return Math.floor(amount).toLocaleString('en-US').replace(/,/g, thinSpace);
 };
 

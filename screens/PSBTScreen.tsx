@@ -5,7 +5,7 @@ import {
   StyleSheet,
   Image,
   ScrollView,
-  TouchableOpacity,
+  Pressable,
   Alert,
   Animated,
 } from 'react-native';
@@ -32,9 +32,8 @@ import SignedPSBTModal from './SignedPSBTModal';
 import {WalletService} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
 import CurrencySelector from '../components/CurrencySelector';
-
+import {createStyles as createGlobalStyles} from '../components/Styles';
 const {BBMTLibNativeModule} = NativeModules;
-
 interface KeyshareInfoForPsbt {
   outputDescriptors: {
     legacy: string;
@@ -42,21 +41,26 @@ interface KeyshareInfoForPsbt {
     segwitCompatible: string;
   };
 }
-
 type RouteParams = {
   signedPsbt?: string;
 };
-
 const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
   const {theme} = useTheme();
   const styles = createStyles(theme);
+  const globalStyles = createGlobalStyles(theme);
+
+  // Helper function to format long strings: first 8 chars ... last 8 chars
+  const formatLongString = useCallback((value: string): string => {
+    if (!value || value.length <= 16) return value;
+    return `${value.substring(0, 8)}...${value.substring(value.length - 8)}`;
+  }, []);
+
   const {
     activeNetwork: network,
     activeAddressType: addressType,
     activeApiProvider: apiBase,
   } = useUser();
-
   const [keyshareInfo, setKeyshareInfo] = useState<KeyshareInfoForPsbt | null>(
     null,
   );
@@ -80,17 +84,14 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const [priceData, setPriceData] = useState<{[key: string]: number}>({});
   const [isCurrencySelectorVisible, setIsCurrencySelectorVisible] =
     useState(false);
-
   // Animation for Bold Connect collapsible section
   const rotationAnim = useRef(
     new Animated.Value(isWatchWalletExpanded ? 1 : 0),
   ).current;
-
   // Animation for Sign PSBT collapsible section
   const psbtRotationAnim = useRef(
     new Animated.Value(isPSBTSectionExpanded ? 1 : 0),
   ).current;
-
   useEffect(() => {
     Animated.timing(rotationAnim, {
       toValue: isWatchWalletExpanded ? 1 : 0,
@@ -98,7 +99,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       useNativeDriver: true,
     }).start();
   }, [isWatchWalletExpanded, rotationAnim]);
-
   useEffect(() => {
     Animated.timing(psbtRotationAnim, {
       toValue: isPSBTSectionExpanded ? 1 : 0,
@@ -106,37 +106,32 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       useNativeDriver: true,
     }).start();
   }, [isPSBTSectionExpanded, psbtRotationAnim]);
-
   const rotateInterpolate = rotationAnim.interpolate({
     inputRange: [0, 1],
     outputRange: ['0deg', '90deg'],
   });
-
   const psbtRotateInterpolate = psbtRotationAnim.interpolate({
     inputRange: [0, 1],
     outputRange: ['0deg', '90deg'],
   });
-
-  const handleToggleWatchWallet = () => {
+  const handleToggleWatchWallet = useCallback(() => {
     HapticFeedback.light();
-    Animated.timing(rotationAnim, {
-      toValue: isWatchWalletExpanded ? 0 : 1,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
-    setIsWatchWalletExpanded(prev => !prev);
-  };
-
-  const handleTogglePSBTSection = () => {
+    const newValue = !isWatchWalletExpanded;
+    setIsWatchWalletExpanded(newValue);
+    // Close other section if opening this one
+    if (newValue) {
+      setIsPSBTSectionExpanded(false);
+    }
+  }, [isWatchWalletExpanded]);
+  const handleTogglePSBTSection = useCallback(() => {
     HapticFeedback.light();
-    Animated.timing(psbtRotationAnim, {
-      toValue: isPSBTSectionExpanded ? 0 : 1,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
-    setIsPSBTSectionExpanded(prev => !prev);
-  };
-
+    const newValue = !isPSBTSectionExpanded;
+    setIsPSBTSectionExpanded(newValue);
+    // Close other section if opening this one
+    if (newValue) {
+      setIsWatchWalletExpanded(false);
+    }
+  }, [isPSBTSectionExpanded]);
   const loadKeyshareInfo = useCallback(async () => {
     try {
       const keyshareJSON = await EncryptedStorage.getItem('keyshare');
@@ -144,11 +139,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
         setKeyshareInfo(null);
         return;
       }
-
       const keyshare = JSON.parse(keyshareJSON);
       const pubKey = keyshare.pub_key || '';
       const chainCode = keyshare.chain_code_hex || '';
-
       // Generate output descriptors for all address types using utility function
       const descriptors = await generateAllOutputDescriptors(
         BBMTLibNativeModule,
@@ -157,13 +150,11 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
         network,
         keyshare.created_at,
       );
-
       const outputDescriptors = {
         legacy: descriptors.legacy,
         segwitNative: descriptors.segwitNative,
         segwitCompatible: descriptors.segwitCompatible,
       };
-
       setKeyshareInfo({
         outputDescriptors,
       });
@@ -172,7 +163,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       setKeyshareInfo(null);
     }
   }, [network]);
-
   // Check for signedPsbt in route params and show modal
   useEffect(() => {
     const signedPsbtParam = route.params?.signedPsbt;
@@ -183,7 +173,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       navigation.setParams({signedPsbt: undefined});
     }
   }, [route.params?.signedPsbt, navigation]);
-
   // Share helper for exporting text as a small file (descriptor)
   const shareTextAsFile = useCallback(
     async (text: string, filename: string, title: string) => {
@@ -191,14 +180,11 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       try {
         const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
         const filePath = `${tempDir}/${filename}`;
-
         const fileExists = await RNFS.exists(filePath);
         if (fileExists) {
           await RNFS.unlink(filePath);
         }
-
         await RNFS.writeFile(filePath, text, 'utf8');
-
         await Share.open({
           title,
           message: title,
@@ -208,7 +194,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
           isNewTask: true,
           failOnCancel: false,
         });
-
         try {
           await RNFS.unlink(filePath);
         } catch {}
@@ -220,11 +205,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     },
     [],
   );
-
   const handleCopyOutputDescriptor = useCallback(
     (type: 'legacy' | 'segwitNative' | 'segwitCompatible') => {
-      const descriptor =
-        keyshareInfo?.outputDescriptors[type] || '';
+      const descriptor = keyshareInfo?.outputDescriptors[type] || '';
       if (!descriptor) return;
       HapticFeedback.light();
       Clipboard.setString(descriptor);
@@ -232,8 +215,8 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
         type === 'legacy'
           ? 'Legacy'
           : type === 'segwitNative'
-            ? 'Native SegWit'
-            : 'Nested SegWit';
+          ? 'Native SegWit'
+          : 'Nested SegWit';
       Toast.show({
         type: 'success',
         text1: 'Copied',
@@ -242,11 +225,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     },
     [keyshareInfo],
   );
-
   const handleShareOutputDescriptor = useCallback(
     (type: 'legacy' | 'segwitNative' | 'segwitCompatible') => {
-      const descriptor =
-        keyshareInfo?.outputDescriptors[type] || '';
+      const descriptor = keyshareInfo?.outputDescriptors[type] || '';
       if (!descriptor) return;
       const now = new Date();
       const month = now.toLocaleDateString('en-US', {month: 'short'});
@@ -258,18 +239,16 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
         type === 'legacy'
           ? 'legacy'
           : type === 'segwitNative'
-            ? 'segwit-native'
-            : 'segwit-compatible';
+          ? 'segwit-native'
+          : 'segwit-compatible';
       const filename = `output-descriptor-${typeLabel}.${month}${day}.${year}.${hours}${minutes}.txt`;
       shareTextAsFile(descriptor, filename, 'Share Output Descriptor');
     },
     [keyshareInfo, shareTextAsFile],
   );
-
   const handleShowOutputDescriptorQR = useCallback(
     (type: 'legacy' | 'segwitNative' | 'segwitCompatible') => {
-      const descriptor =
-        keyshareInfo?.outputDescriptors[type] || '';
+      const descriptor = keyshareInfo?.outputDescriptors[type] || '';
       if (!descriptor) return;
       HapticFeedback.light();
       setSelectedDescriptorType(type);
@@ -277,14 +256,12 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     },
     [keyshareInfo],
   );
-
   // Handle PSBT signing - same logic as WalletHome
   // Note: The actual signing functions extract derivation paths from PSBT's Bip32Derivation internally
   const handlePSBTSign = useCallback(
     async (psbtBase64: string, _derivePath?: string) => {
       // The actual PSBT signing will extract paths from PSBT's Bip32Derivation field
       // derivePath parameter is kept for API compatibility but not used
-
       // Check if keyshare supports Nostr (has nostr_npub)
       try {
         const keyshareJSON = await EncryptedStorage.getItem('keyshare');
@@ -292,7 +269,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
           const keyshare = JSON.parse(keyshareJSON);
           const hasNostrSupport =
             keyshare.nostr_npub && keyshare.nostr_npub.trim() !== '';
-
           if (!hasNostrSupport) {
             // Keyshare was generated with local mode, navigate directly to Devices Pairing
             navigation.dispatch(
@@ -312,7 +288,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('PSBTScreen: Error checking keyshare for Nostr support:', error);
         // Continue to show transport selector if check fails
       }
-
       // Store params and show transport selector
       setPendingPSBTParams({psbtBase64});
       setTimeout(() => {
@@ -321,15 +296,14 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     },
     [addressType, navigation],
   );
-
   const navigateToPSBTSigning = useCallback(
     (transport: 'local' | 'nostr') => {
       if (!pendingPSBTParams) return;
-
       const {psbtBase64} = pendingPSBTParams;
-
       const routeName =
         transport === 'local' ? 'Devices Pairing' : 'Nostr Connect';
+      // For PSBT signing, network is not strictly required (extracted from app state in MobilesPairing),
+      // but we pass it for consistency. Derivation path is extracted from PSBT's Bip32Derivation.
       navigation.dispatch(
         CommonActions.navigate({
           name: routeName,
@@ -337,14 +311,14 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
             mode: 'sign_psbt',
             addressType,
             psbtBase64,
+            network: network || 'mainnet', // Pass network for consistency (not strictly required for PSBT)
           },
         }),
       );
       setPendingPSBTParams(null);
     },
-    [pendingPSBTParams, addressType, navigation],
+    [pendingPSBTParams, addressType, navigation, network],
   );
-
   const headerLeft = React.useCallback(
     () => (
       <HeaderPriceButton
@@ -355,17 +329,14 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     ),
     [btcPrice, selectedCurrency],
   );
-
   const headerTitle = React.useCallback(
     () => <HeaderNetworkProvider network={network} apiBase={apiBase} />,
     [network, apiBase],
   );
-
   const headerRight = React.useCallback(
     () => <HeaderRightButton navigation={navigation} />,
     [navigation],
   );
-
   useEffect(() => {
     navigation.setOptions({
       headerRight,
@@ -374,11 +345,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       headerTitleAlign: 'center',
     });
   }, [navigation, headerRight, headerLeft, headerTitle]);
-
   useEffect(() => {
     loadKeyshareInfo();
   }, [loadKeyshareInfo]);
-
   // Fetch bitcoin price and initialize currency
   useEffect(() => {
     const fetchPrice = async () => {
@@ -401,7 +370,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     };
     fetchPrice();
   }, []);
-
   const handleCurrencySelect = async (currency: {code: string}) => {
     setSelectedCurrency(currency.code);
     await LocalCache.setItem('currency', currency.code);
@@ -410,7 +378,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       setBtcPrice(formattedPrice);
     }
   };
-
   // Handle section expansion based on PSBT mode toggle state
   useEffect(() => {
     const checkPSBTModeState = async () => {
@@ -418,7 +385,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
         const isFirstVisit = await EncryptedStorage.getItem(
           'psbt_mode_first_visit',
         );
-        
         if (isFirstVisit === 'true') {
           // First visit after toggle: both sections closed
           setIsWatchWalletExpanded(false);
@@ -439,22 +405,25 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     };
     checkPSBTModeState();
   }, []);
-
   return (
     <SafeAreaView style={styles.screenContainer} edges={['left', 'right']}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}>
+        contentContainerStyle={styles.scrollContent}
+        removeClippedSubviews
+        keyboardShouldPersistTaps="handled"
+        overScrollMode="never"
+        showsVerticalScrollIndicator={false}>
         {keyshareInfo && (
           <View
             style={[
               styles.watchWalletCard,
               isWatchWalletExpanded && styles.watchWalletCardExpanded,
             ]}>
-            <TouchableOpacity
+            <Pressable
               style={styles.watchWalletHeaderRow}
               onPress={handleToggleWatchWallet}
-              activeOpacity={0.7}
+              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
               accessible={true}
               accessibilityRole="button"
               accessibilityLabel={`Bold Wallet Connect section, ${
@@ -465,11 +434,13 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
               } Bold Connect section`}>
               <View style={styles.watchWalletHeaderContent}>
                 <Image
-                  source={require('../assets/bind-icon.png')}
+                  source={require('../assets/descriptor-icon.png')}
                   style={styles.watchWalletIcon}
                   resizeMode="contain"
                 />
-                <Text style={styles.watchWalletTitle}>Bold Connect | Watch-only</Text>
+                <Text style={styles.watchWalletTitle}>
+                  Watch-Wallet • Export
+                </Text>
               </View>
               <Animated.Text
                 style={[
@@ -481,8 +452,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 ]}>
                 ▶
               </Animated.Text>
-            </TouchableOpacity>
-
+            </Pressable>
             {/* Collapsible content - only rendered when expanded */}
             {isWatchWalletExpanded && (
               <View
@@ -492,160 +462,169 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 ]}>
                 <Text style={styles.watchWalletSubtitle}>
                   Bold acts as your multi-party Bitcoin signer. Create
-                  transactions in a watch-only compatible wallet like Sparrow or Electrum and sign them securely via
-                  PSBT.
+                  transactions in a watch-only compatible wallet like Sparrow or
+                  Electrum and sign them securely via PSBT.
                 </Text>
                 <Text style={styles.watchWalletWarning}>
-                  ⚠️ Note: Taproot is not supported. Only Legacy, Native SegWit, and Nested SegWit address types are supported.
+                  ⚠️ Note: Taproot is not supported. Only Legacy, Native SegWit,
+                  and Nested SegWit address types are supported.
                 </Text>
-                <Text style={styles.watchWalletHint}>
-                  Import using one of the details below:
-                </Text>
-
                 {/* Output Descriptors - One row per address type */}
                 {keyshareInfo.outputDescriptors.legacy && (
-                  <View style={styles.watchWalletDetailRow}>
-                    <Text style={styles.watchWalletDetailLabel}>
+                  <View
+                    style={[
+                      globalStyles.watchWalletItem,
+                      !keyshareInfo.outputDescriptors.segwitNative &&
+                        !keyshareInfo.outputDescriptors.segwitCompatible &&
+                        globalStyles.watchWalletItemLast,
+                    ]}>
+                    <Text style={globalStyles.watchWalletItemLabel}>
                       Output Descriptor (Legacy)
                     </Text>
-                    <View style={styles.watchWalletValueContainer}>
-                      <Text
-                        style={styles.watchWalletValueText}
-                        numberOfLines={1}
-                        ellipsizeMode="tail">
-                        {keyshareInfo.outputDescriptors.legacy || 'N/A'}
-                      </Text>
-                      <View style={styles.watchWalletButtonsRow}>
-                        <TouchableOpacity
-                          onPress={() => handleCopyOutputDescriptor('legacy')}
-                          style={styles.watchWalletIconButton}
-                          activeOpacity={0.7}>
-                          <Image
-                            source={require('../assets/copy-icon.png')}
-                            style={styles.watchWalletIconButtonIcon}
-                          />
-                        </TouchableOpacity>
-                        <TouchableOpacity
+                    <View style={globalStyles.watchWalletItemValueContainer}>
+                      <Pressable
+                        onPress={() => handleCopyOutputDescriptor('legacy')}
+                        style={globalStyles.keyshareKeyContainerBadge}
+                        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                        <Image
+                          source={require('../assets/copy-icon.png')}
+                          style={globalStyles.keyshareBadgeCopyIcon}
+                        />
+                        <Text
+                          style={globalStyles.keyshareKeyTextClickable}
+                          numberOfLines={1}>
+                          {formatLongString(
+                            keyshareInfo.outputDescriptors.legacy || 'N/A',
+                          )}
+                        </Text>
+                      </Pressable>
+                      <View style={globalStyles.keyshareButtonsRow}>
+                        <Pressable
                           onPress={() => handleShareOutputDescriptor('legacy')}
-                          style={styles.watchWalletIconButton}
-                          activeOpacity={0.7}>
+                          style={globalStyles.keyshareCopyButton}
+                          android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                           <Image
                             source={require('../assets/share-icon.png')}
-                            style={styles.watchWalletIconButtonIcon}
+                            style={globalStyles.keyshareCopyIcon}
                           />
-                        </TouchableOpacity>
-                        <TouchableOpacity
+                        </Pressable>
+                        <Pressable
                           onPress={() => handleShowOutputDescriptorQR('legacy')}
-                          style={styles.watchWalletIconButton}
-                          activeOpacity={0.7}>
+                          style={globalStyles.keyshareCopyButton}
+                          android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                           <Image
                             source={require('../assets/qr-icon.png')}
-                            style={styles.watchWalletIconButtonIcon}
+                            style={globalStyles.keyshareCopyIcon}
                           />
-                        </TouchableOpacity>
+                        </Pressable>
                       </View>
                     </View>
                   </View>
                 )}
-
                 {keyshareInfo.outputDescriptors.segwitNative && (
-                  <View style={styles.watchWalletDetailRow}>
-                    <Text style={styles.watchWalletDetailLabel}>
+                  <View
+                    style={[
+                      globalStyles.watchWalletItem,
+                      !keyshareInfo.outputDescriptors.segwitCompatible &&
+                        globalStyles.watchWalletItemLast,
+                    ]}>
+                    <Text style={globalStyles.watchWalletItemLabel}>
                       Output Descriptor (Native SegWit)
                     </Text>
-                    <View style={styles.watchWalletValueContainer}>
-                      <Text
-                        style={styles.watchWalletValueText}
-                        numberOfLines={1}
-                        ellipsizeMode="tail">
-                        {keyshareInfo.outputDescriptors.segwitNative || 'N/A'}
-                      </Text>
-                      <View style={styles.watchWalletButtonsRow}>
-                        <TouchableOpacity
-                          onPress={() =>
-                            handleCopyOutputDescriptor('segwitNative')
-                          }
-                          style={styles.watchWalletIconButton}
-                          activeOpacity={0.7}>
-                          <Image
-                            source={require('../assets/copy-icon.png')}
-                            style={styles.watchWalletIconButtonIcon}
-                          />
-                        </TouchableOpacity>
-                        <TouchableOpacity
+                    <View style={globalStyles.watchWalletItemValueContainer}>
+                      <Pressable
+                        onPress={() =>
+                          handleCopyOutputDescriptor('segwitNative')
+                        }
+                        style={globalStyles.keyshareKeyContainerBadge}
+                        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                        <Image
+                          source={require('../assets/copy-icon.png')}
+                          style={globalStyles.keyshareBadgeCopyIcon}
+                        />
+                        <Text
+                          style={globalStyles.keyshareKeyTextClickable}
+                          numberOfLines={1}>
+                          {formatLongString(
+                            keyshareInfo.outputDescriptors.segwitNative || 'N/A',
+                          )}
+                        </Text>
+                      </Pressable>
+                      <View style={globalStyles.keyshareButtonsRow}>
+                        <Pressable
                           onPress={() =>
                             handleShareOutputDescriptor('segwitNative')
                           }
-                          style={styles.watchWalletIconButton}
-                          activeOpacity={0.7}>
+                          style={globalStyles.keyshareCopyButton}
+                          android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                           <Image
                             source={require('../assets/share-icon.png')}
-                            style={styles.watchWalletIconButtonIcon}
+                            style={globalStyles.keyshareCopyIcon}
                           />
-                        </TouchableOpacity>
-                        <TouchableOpacity
+                        </Pressable>
+                        <Pressable
                           onPress={() =>
                             handleShowOutputDescriptorQR('segwitNative')
                           }
-                          style={styles.watchWalletIconButton}
-                          activeOpacity={0.7}>
+                          style={globalStyles.keyshareCopyButton}
+                          android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                           <Image
                             source={require('../assets/qr-icon.png')}
-                            style={styles.watchWalletIconButtonIcon}
+                            style={globalStyles.keyshareCopyIcon}
                           />
-                        </TouchableOpacity>
+                        </Pressable>
                       </View>
                     </View>
                   </View>
                 )}
-
                 {keyshareInfo.outputDescriptors.segwitCompatible && (
-                  <View style={styles.watchWalletDetailRow}>
-                    <Text style={styles.watchWalletDetailLabel}>
+                  <View style={globalStyles.watchWalletItem}>
+                    <Text style={globalStyles.watchWalletItemLabel}>
                       Output Descriptor (Nested SegWit)
                     </Text>
-                    <View style={styles.watchWalletValueContainer}>
-                      <Text
-                        style={styles.watchWalletValueText}
-                        numberOfLines={1}
-                        ellipsizeMode="tail">
-                        {keyshareInfo.outputDescriptors.segwitCompatible ||
-                          'N/A'}
-                      </Text>
-                      <View style={styles.watchWalletButtonsRow}>
-                        <TouchableOpacity
-                          onPress={() =>
-                            handleCopyOutputDescriptor('segwitCompatible')
-                          }
-                          style={styles.watchWalletIconButton}
-                          activeOpacity={0.7}>
-                          <Image
-                            source={require('../assets/copy-icon.png')}
-                            style={styles.watchWalletIconButtonIcon}
-                          />
-                        </TouchableOpacity>
-                        <TouchableOpacity
+                    <View style={globalStyles.watchWalletItemValueContainer}>
+                      <Pressable
+                        onPress={() =>
+                          handleCopyOutputDescriptor('segwitCompatible')
+                        }
+                        style={globalStyles.keyshareKeyContainerBadge}
+                        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                        <Image
+                          source={require('../assets/copy-icon.png')}
+                          style={globalStyles.keyshareBadgeCopyIcon}
+                        />
+                        <Text
+                          style={globalStyles.keyshareKeyTextClickable}
+                          numberOfLines={1}>
+                          {formatLongString(
+                            keyshareInfo.outputDescriptors.segwitCompatible ||
+                              'N/A',
+                          )}
+                        </Text>
+                      </Pressable>
+                      <View style={globalStyles.keyshareButtonsRow}>
+                        <Pressable
                           onPress={() =>
                             handleShareOutputDescriptor('segwitCompatible')
                           }
-                          style={styles.watchWalletIconButton}
-                          activeOpacity={0.7}>
+                          style={globalStyles.keyshareCopyButton}
+                          android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                           <Image
                             source={require('../assets/share-icon.png')}
-                            style={styles.watchWalletIconButtonIcon}
+                            style={globalStyles.keyshareCopyIcon}
                           />
-                        </TouchableOpacity>
-                        <TouchableOpacity
+                        </Pressable>
+                        <Pressable
                           onPress={() =>
                             handleShowOutputDescriptorQR('segwitCompatible')
                           }
-                          style={styles.watchWalletIconButton}
-                          activeOpacity={0.7}>
+                          style={globalStyles.keyshareCopyButton}
+                          android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                           <Image
                             source={require('../assets/qr-icon.png')}
-                            style={styles.watchWalletIconButtonIcon}
+                            style={globalStyles.keyshareCopyIcon}
                           />
-                        </TouchableOpacity>
+                        </Pressable>
                       </View>
                     </View>
                   </View>
@@ -654,17 +633,16 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
             )}
           </View>
         )}
-
         {/* Sign PSBT Section - Collapsible */}
         <View
           style={[
             styles.psbtSectionCard,
             isPSBTSectionExpanded && styles.psbtSectionCardExpanded,
           ]}>
-          <TouchableOpacity
+          <Pressable
             style={styles.psbtSectionHeaderRow}
             onPress={handleTogglePSBTSection}
-            activeOpacity={0.7}
+            android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
             accessible={true}
             accessibilityRole="button"
             accessibilityLabel={`Sign PSBT section, ${
@@ -679,7 +657,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 style={styles.psbtSectionIcon}
                 resizeMode="contain"
               />
-              <Text style={styles.psbtSectionTitle}>Bold Cosign | PSBT Signer</Text>
+              <Text style={styles.psbtSectionTitle}>
+                Bold Cosigner • PSBT Signer
+              </Text>
             </View>
             <Animated.Text
               style={[
@@ -691,17 +671,12 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
               ]}>
               ▶
             </Animated.Text>
-          </TouchableOpacity>
-
+          </Pressable>
           {/* Collapsible content - only rendered when expanded */}
           {isPSBTSectionExpanded && (
             <View style={styles.psbtSectionContent}>
               <View style={styles.psbtBodyContainer}>
                 <PSBTLoader
-                  // We don't show fiat conversions here, so rate/symbol can be neutral
-                  btcRate={0}
-                  currencySymbol="$"
-                  network={network}
                   onClose={() => {
                     // In PSBT screen, Cancel should only reset the loader state,
                     // not navigate away from this screen.
@@ -709,9 +684,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   disableCancelWhenEmpty={true}
                   useOverlay={false}
                   onSign={handlePSBTSign}
-                  btcPrice={btcPrice}
-                  selectedCurrency={selectedCurrency}
-                  onCurrencyPress={() => setIsCurrencySelectorVisible(true)}
                 />
               </View>
             </View>
@@ -736,8 +708,8 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
           selectedDescriptorType === 'legacy'
             ? 'Legacy'
             : selectedDescriptorType === 'segwitNative'
-              ? 'Native SegWit'
-              : 'Nested SegWit'
+            ? 'Native SegWit'
+            : 'Nested SegWit'
         })`}
         value={
           selectedDescriptorType && keyshareInfo?.outputDescriptors
@@ -777,7 +749,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     </SafeAreaView>
   );
 };
-
 const createStyles = (theme: any) =>
   StyleSheet.create({
     screenContainer: {
@@ -828,32 +799,23 @@ const createStyles = (theme: any) =>
     },
     watchWalletTitle: {
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
     },
     watchWalletSubtitle: {
       fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       lineHeight: 18,
       color: theme.colors.textSecondary,
       marginBottom: 8,
     },
     watchWalletWarning: {
-      fontSize: theme.fontSizes?.xs || 11,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontSize: theme.fontSizes?.sm || 12,
       lineHeight: 16,
       color: theme.colors.textSecondary,
-      marginTop: 8,
-      marginBottom: 8,
       fontStyle: 'italic',
     },
     watchWalletHint: {
       fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       lineHeight: 16,
       color: theme.colors.textSecondary,
       textDecorationLine: 'underline',
@@ -862,16 +824,16 @@ const createStyles = (theme: any) =>
     },
     watchWalletExpandIcon: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
     },
     watchWalletContent: {
       paddingHorizontal: 0,
       paddingVertical: 0,
       borderTopWidth: 1,
-      borderTopColor: theme.colors.background === '#ffffff'
-        ? (theme.colors.accent || theme.colors.primary)
-        : theme.colors.bitcoinOrange,
+      borderTopColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.accent || theme.colors.primary
+          : theme.colors.bitcoinOrange,
       overflow: 'hidden',
     },
     watchWalletContentExpanded: {
@@ -888,8 +850,7 @@ const createStyles = (theme: any) =>
     },
     watchWalletDetailLabel: {
       fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.textSecondary,
       width: 140,
       flexShrink: 0,
@@ -907,8 +868,7 @@ const createStyles = (theme: any) =>
       flex: 1,
       flexShrink: 1,
       fontSize: theme.fontSizes?.xs || 11,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.monospace || 'monospace',
+      fontFamily: theme.fontFamilies?.monospace,
       color: theme.colors.text,
       minWidth: 0,
     },
@@ -972,22 +932,21 @@ const createStyles = (theme: any) =>
     },
     psbtSectionTitle: {
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
     },
     psbtSectionExpandIcon: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
     },
     psbtSectionContent: {
       paddingHorizontal: 0,
       paddingVertical: 0,
       borderTopWidth: 1,
-      borderTopColor: theme.colors.background === '#ffffff'
-        ? (theme.colors.accent || theme.colors.primary)
-        : theme.colors.bitcoinOrange,
+      borderTopColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.accent || theme.colors.primary
+          : theme.colors.bitcoinOrange,
       overflow: 'hidden',
     },
     psbtBodyContainer: {
@@ -996,5 +955,4 @@ const createStyles = (theme: any) =>
       padding: 12,
     },
   });
-
 export default PSBTScreen;

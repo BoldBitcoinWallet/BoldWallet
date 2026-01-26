@@ -1,5 +1,162 @@
 # Changelog
 
+## [2.1.12] - 2026-01-25
+
+### Added
+- **Custom Font System**: Professional typography with Inter and JetBrains Mono fonts
+  - Inter font family for UI text (Regular, Medium, SemiBold weights)
+  - JetBrains Mono font family for technical content like Bitcoin addresses (Regular, Medium, Bold weights)
+  - New font system with proper font family mappings and weight-to-family conversion
+  - Font comparison and verification components for testing and validation
+  - Automated font download scripts and comprehensive documentation
+  - Font assets properly linked for both iOS and Android platforms
+  - Enhanced typography consistency across all screens and components
+- **Mempool Privacy Configuration**: New user preference screen for enhanced privacy
+  - Custom mempool.space API endpoint configuration during wallet setup
+  - Privacy-focused feature to reduce third-party tracking of Bitcoin addresses
+  - API endpoint validation with automatic URL normalization
+  - Option to skip configuration and use default public mempool servers
+  - Settings integration for changing API endpoint after wallet creation
+  - Educational information about privacy benefits of self-hosted mempool servers
+- **Comprehensive Icon Asset Library**: Added 50+ new icon assets for improved UI consistency
+  - Icons for settings, actions, network status, and wallet features
+  - Theme-aware icon support with inverted variants for dark mode
+  - Consistent icon styling across all screens and components
+- **User Preference Screen**: New onboarding screen for privacy configuration
+  - Clean, professional UI with privacy-focused messaging
+  - API endpoint input with validation and error handling
+  - Skip option for users who prefer default settings
+  - Integrated into app navigation flow
+- **Settings: Wallet Balance Formatting Option**: New user preference for balance display formatting
+  - Toggle between raw numbers and formatted display with thousand separators
+  - Better readability for large Bitcoin amounts and satoshi values
+  - Preference persists across app sessions
+  - Enhanced visual clarity for decimal precision verification
+- **Settings: Dev Debug Mode (Advanced)**: Developer-focused debugging features
+  - Hidden developer debug section accessible via build number (7 clicks on Android)
+  - Debug logging toggle for logcat visibility (Android only)
+  - Session-only debug logging that resets on app restart
+  - Visual progress indicator with badge and toast notifications
+  - Enhanced UI with status indicators and card-based layout
+  - Warning messages for sensitive information handling
+
+### Changed
+- **Typography System Refactoring**: Complete font system overhaul
+  - Migrated from system fonts to custom Inter and JetBrains Mono fonts
+  - New `theme/fonts.ts` module with font utilities and mappings
+  - Font weight to font family mapping for proper font selection
+  - Enhanced font style creation with theme integration
+  - All components updated to use new font system
+- **Component Font Updates**: Updated all components to use new font families
+  - TransactionList, TransactionDetailsModal, TransactionListSkeleton with Inter fonts
+  - WalletSkeleton, Header, CurrencySelector with updated typography
+  - QRScanner components with monospace font for addresses
+  - TransportModeSelector, CacheIndicator, and other UI components
+  - Consistent font usage across all screens
+- **Screen Refactoring**: Improved code organization and font integration
+  - MobileNostrPairing, MobilesPairing screens with font updates
+  - PSBTModal, PSBTScreen with enhanced typography
+  - SendBitcoinModal, ReceiveModal, SignedPSBTModal with font improvements
+  - WalletHome, WalletSettings, ShowcaseScreen with updated fonts
+  - LoadingScreen with theme-aware font support
+- **Asset Organization**: Better asset management and organization
+  - New assets directory structure with organized icon assets
+  - Font assets properly linked via manifest files
+  - Improved asset loading and caching
+- **Font Normalizations (iOS and Android)**: Enhanced cross-platform font consistency
+  - Improved font rendering consistency across iOS and Android platforms
+  - Better font weight mapping and family selection
+  - Optimized font loading and caching
+  - Enhanced monospace font rendering for technical content
+- **Nostr Pairing UI Flow Simplification**: Streamlined device pairing experience
+  - Simplified pairing flow with clearer step indicators
+  - Reduced UI complexity and improved user guidance
+  - Better error messaging and recovery paths
+  - Enhanced visual feedback during pairing process
+- **Enhanced Device Keyshare Modal Info Optimization**: Improved keyshare information display
+  - Enhanced wallet information display with better organization
+  - Clearer capabilities and feature indicators
+  - Bold Web Extension connector information
+  - Watch Wallet Export with output descriptor support
+  - Better visual hierarchy and information architecture
+- **Better Network Handling**: Improved network error management
+  - Reduced annoying UI error alerts for network issues
+  - Background API retry logic with exponential backoff
+  - Better error recovery and user feedback
+  - Graceful degradation when network is unavailable
+  - Improved timeout handling and connection management
+- **React Native Performance Optimization and Refactoring**: Enhanced app performance
+  - Code refactoring for better maintainability
+  - Performance optimizations across components and screens
+  - Reduced re-renders and improved state management
+  - Better memory management and resource cleanup
+  - Optimized asset loading and caching
+- **Nostr/TSS Performance and Stability Enhancements**: Improved reliability
+  - Enhanced Nostr transport layer performance
+  - Better TSS library stability and error handling
+  - Improved session management and recovery
+  - Optimized message processing and chunk handling
+  - Enhanced panic recovery and error logging
+
+### Fixed
+- **Font Consistency Issues**: Fixed inconsistent font rendering across platforms
+  - Proper font family mapping for iOS and Android
+  - Fixed font weight issues with correct font file selection
+  - Improved monospace font rendering for Bitcoin addresses
+  - Better font fallback handling
+- **Code Cleanup**: Removed unused code and contexts
+  - Removed unused NetworkContext, UserContext, WalletContext files
+  - Cleaned up unused components and utilities
+  - Removed deprecated useQRScanner hook
+  - Improved code organization and maintainability
+- **Co-Signing Timeout Fix**: Fixed transaction co-signing timeout issues
+  - Added validation to ensure all npubs are fully converted before enabling co-signing button
+  - Prevents session ID mismatch between devices during pre-agreement phase
+  - Button now properly disabled until all device npubs are loaded and converted from hex format
+  - Fixes timeout issues when Android and iOS devices have different session IDs
+- **Final Step UI Improvements**: Enhanced Final Step section UI and layout
+  - Removed card container wrapper for cleaner layout
+  - Moved "All devices ready" checkbox and "Start Key Generation" button to appropriate sections
+  - Improved spacing and visual hierarchy in Final Step section
+  - Better participant device information display
+  - Updated typography for participant titles
+- **Dev Debug Section UI/UX**: Enhanced developer tools interface
+  - Improved visual design with card-based layout
+  - Better status indicators and feedback
+  - Enhanced button styling and interactions
+  - Improved accessibility and user experience
+
+### Technical Details
+- **Font System**: New `theme/fonts.ts` module with comprehensive font utilities
+  - Font family mappings for Inter and JetBrains Mono
+  - Weight-to-family conversion for proper font selection
+  - Font style creation utilities with theme integration
+  - Platform-specific font handling
+- **Font Assets**: Added font files for both iOS and Android
+  - Inter-Regular.ttf, Inter-Medium.ttf, Inter-SemiBold.ttf
+  - JetBrainsMono-Regular.ttf, JetBrainsMono-Medium.ttf, JetBrainsMono-Bold.ttf
+  - Proper font linking via link-assets-manifest.json files
+- **User Preference Screen**: New screen component for privacy configuration
+  - API endpoint validation with timeout handling
+  - URL normalization and validation logic
+  - Integration with UserContext for API provider management
+- **Asset Management**: 50+ new icon assets added
+  - Icons organized in assets/assets/assets/ directory
+  - Theme-aware icon variants for light and dark modes
+- **Files Changed**: 144 files changed with 6,026 insertions and 3,817 deletions
+- **Components Updated**: All major components updated for new font system
+- **Screens Updated**: All screens updated with font improvements and privacy features
+- **Build System**: Updated iOS Xcode project and Android build configuration for font assets
+- **Dev Debug Implementation**: New developer tools section in WalletSettings
+  - Build number click tracking with visual feedback
+  - Session-based debug logging toggle
+  - Enhanced UI components with status indicators
+- **Performance Improvements**: Multiple optimization passes
+  - Component refactoring for better performance
+  - State management optimizations
+  - Network handling improvements
+- **Native Libraries**: Updated TSS framework binaries for iOS and Android
+
 ## [2.1.11] - 2026-01-12
 
 ### Changed

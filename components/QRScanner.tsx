@@ -1,20 +1,11 @@
 import React, {useState, useEffect, useRef} from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Modal,
-  Platform,
-} from 'react-native';
+import {View, Text, Pressable, StyleSheet, Modal, Platform} from 'react-native';
 import {useTheme} from '../theme';
 import {dbg} from '../utils';
-
 // iOS-specific imports (only imported when needed)
 let Camera: any = null;
 let useCameraDevice: any = null;
 let useCodeScanner: any = null;
-
 if (Platform.OS === 'ios') {
   try {
     const visionCamera = require('react-native-vision-camera');
@@ -22,26 +13,23 @@ if (Platform.OS === 'ios') {
     useCameraDevice = visionCamera.useCameraDevice;
     useCodeScanner = visionCamera.useCodeScanner;
   } catch (e) {
-    console.warn('Vision camera not available:', e);
+    dbg('Vision camera not available:', e);
   }
 }
-
 // Android-specific import
 let BarcodeZxingScan: any = null;
 if (Platform.OS === 'android') {
   try {
     BarcodeZxingScan = require('rn-barcode-zxing-scan').default;
   } catch (e) {
-    console.warn('BarcodeZxingScan not available:', e);
+    dbg('BarcodeZxingScan not available:', e);
   }
 }
-
 export interface QRProgress {
   received: number;
   total: number;
   percentage?: number;
 }
-
 export interface QRScannerProps {
   visible: boolean;
   onClose: () => void;
@@ -53,7 +41,6 @@ export interface QRScannerProps {
   progress?: QRProgress;
   closeButtonText?: string;
 }
-
 // iOS QR Scanner Component (uses vision-camera)
 const IOSQRScanner: React.FC<QRScannerProps> = ({
   visible,
@@ -79,7 +66,6 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
       }
     },
   });
-
   const styles = StyleSheet.create({
     scannerContainer: {
       flex: 1,
@@ -104,16 +90,19 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
     },
     scannerTitle: {
       fontSize: theme.fontSizes?.['2xl'] || 20,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.white,
+      backgroundColor: theme.colors.blackOverlay30,
+      borderRadius: 12,
+      padding: 12,
       marginBottom: 8,
     },
     scannerSubtitle: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.white + 'B3', // ~70% opacity
+      color: theme.colors.white,
+      backgroundColor: theme.colors.blackOverlay30,
+      borderRadius: 12,
+      padding: 12,
       textAlign: 'center',
       paddingHorizontal: 20,
     },
@@ -141,8 +130,7 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
     },
     closeScannerButtonText: {
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.textOnPrimary || theme.colors.white,
     },
     cameraNotFoundContainer: {
@@ -153,21 +141,16 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
     },
     cameraNotFoundText: {
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.white,
       marginBottom: 8,
     },
     cameraNotFoundSubtext: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.white + 'B3', // ~70% opacity
       textAlign: 'center',
       paddingHorizontal: 20,
     },
   });
-
   if (!device || !codeScanner) {
     return (
       <Modal
@@ -180,17 +163,16 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
           <Text style={styles.cameraNotFoundSubtext}>
             Please check camera permissions in Settings
           </Text>
-          <TouchableOpacity
+          <Pressable
             style={styles.closeScannerButton}
             onPress={onClose}
-            activeOpacity={0.7}>
+            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
             <Text style={styles.closeScannerButtonText}>{closeButtonText}</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       </Modal>
     );
   }
-
   const isAnimatedQR = showProgress && progress && progress.total > 1;
   const progressPercent = isAnimatedQR
     ? Math.min(
@@ -200,8 +182,8 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
       )
     : 0;
   const isComplete = isAnimatedQR && progress.received >= progress.total;
-
-  const displayTitle = title || (isAnimatedQR ? 'Scanning Animated QR...' : 'Scan QR Code');
+  const displayTitle =
+    title || (isAnimatedQR ? 'Scanning Animated QR...' : 'Scan QR Code');
   const displaySubtitle =
     subtitle ||
     (isAnimatedQR
@@ -209,7 +191,6 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
         ? 'Processing...'
         : `Keep scanning animated QR: ${progressPercent}%`
       : 'Point camera at the QR code to scan');
-
   return (
     <Modal
       visible={visible}
@@ -238,17 +219,16 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
             )}
           </View>
         )}
-        <TouchableOpacity
+        <Pressable
           style={styles.closeScannerButton}
           onPress={onClose}
-          activeOpacity={0.7}>
+          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
           <Text style={styles.closeScannerButtonText}>{closeButtonText}</Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
     </Modal>
   );
 };
-
 // Android QR Scanner Component (uses BarcodeZxingScan)
 const AndroidQRScanner: React.FC<QRScannerProps> = ({
   visible,
@@ -265,7 +245,6 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
   const [_isScanning, setIsScanning] = useState(false);
   const scanSubscriptionRef = useRef<any>(null);
   const isScanningRef = useRef(false);
-
   const styles = StyleSheet.create({
     scannerContainer: {
       flex: 1,
@@ -292,15 +271,12 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
     },
     scannerTitle: {
       fontSize: theme.fontSizes?.['2xl'] || 20,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.white,
       marginBottom: 8,
     },
     scannerSubtitle: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.white + 'B3', // ~70% opacity
       textAlign: 'center',
       paddingHorizontal: 20,
@@ -329,12 +305,10 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
     },
     closeScannerButtonText: {
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.textOnPrimary || theme.colors.white,
     },
   });
-
   // Handle scanner close - properly stop scanner and cleanup
   const handleClose = () => {
     if (mode === 'continuous' && isScanningRef.current && BarcodeZxingScan) {
@@ -350,7 +324,6 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
     }
     onClose();
   };
-
   // Handle continuous scanning for Android
   useEffect(() => {
     if (visible && mode === 'continuous' && BarcodeZxingScan) {
@@ -367,12 +340,14 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
               return;
             }
             if (event.data) {
-              dbg('Android: Continuous scan result:', event.data.substring(0, 50));
+              dbg(
+                'Android: Continuous scan result:',
+                event.data.substring(0, 50),
+              );
               onScan(event.data);
             }
           },
         );
-
         BarcodeZxingScan.showQrReaderContinuous((error: any, data: any) => {
           if (error) {
             dbg('Android: Continuous scan error:', error);
@@ -407,7 +382,6 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
         scanSubscriptionRef.current = null;
       }
     }
-
     return () => {
       // Cleanup on unmount or when dependencies change
       if (scanSubscriptionRef.current) {
@@ -423,16 +397,19 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
       }
     };
   }, [visible, mode, onScan, showProgress, title]);
-
   // Handle single scan - native scanner handles its own UI and back button
   useEffect(() => {
-    if (visible && mode === 'single' && BarcodeZxingScan && !isScanningRef.current) {
+    if (
+      visible &&
+      mode === 'single' &&
+      BarcodeZxingScan &&
+      !isScanningRef.current
+    ) {
       // For single mode, native scanner opens its own activity
       // Set custom status message before opening scanner (if supported)
       if (subtitle && BarcodeZxingScan.setStatusMessage) {
         BarcodeZxingScan.setStatusMessage(subtitle);
       }
-      
       // It handles back button itself, we just need to handle the result
       BarcodeZxingScan.showQrReader((error: any, data: any) => {
         // Scanner closed (either via back button or scan completed)
@@ -465,7 +442,6 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
       }
     }
   }, [visible, mode, onScan, onClose, subtitle]);
-
   const isAnimatedQR = showProgress && progress && progress.total > 1;
   const progressPercent = isAnimatedQR
     ? Math.min(
@@ -475,8 +451,8 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
       )
     : 0;
   const isComplete = isAnimatedQR && progress.received >= progress.total;
-
-  const displayTitle = title || (isAnimatedQR ? 'Scanning Animated QR...' : 'Scan QR Code');
+  const displayTitle =
+    title || (isAnimatedQR ? 'Scanning Animated QR...' : 'Scan QR Code');
   const displaySubtitle =
     subtitle ||
     (isAnimatedQR
@@ -484,7 +460,6 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
         ? 'Processing...'
         : `Keep scanning animated QR: ${progressPercent}%`
       : 'Point camera at the QR code to scan');
-
   // For continuous mode, show UI overlay
   if (mode === 'continuous' && visible) {
     return (
@@ -508,29 +483,26 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
               )}
             </View>
           )}
-          <TouchableOpacity
+          <Pressable
             style={styles.closeScannerButton}
             onPress={handleClose}
-            activeOpacity={0.7}>
+            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
             <Text style={styles.closeScannerButtonText}>{closeButtonText}</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       </Modal>
     );
   }
-
   // For single mode, native scanner handles UI - return null (modal is just a container)
   // The native activity will handle its own UI and back button
   return null;
 };
-
 // Main QRScanner component - routes to platform-specific implementation
-const QRScanner: React.FC<QRScannerProps> = (props) => {
+const QRScanner: React.FC<QRScannerProps> = props => {
   if (Platform.OS === 'ios') {
     return <IOSQRScanner {...props} />;
   } else {
     return <AndroidQRScanner {...props} />;
   }
 };
-
 export default QRScanner;

@@ -44,15 +44,19 @@ type LocalStateAccessorImp struct {
 var (
 	statusMap        = make(map[string]Status)
 	statusLog        = make(map[string][]Status)
+	statusMutex      sync.RWMutex // Mutex to protect concurrent access to statusMap and statusLog
 	encryptionKey    = ""
 	decryptionKey    = ""
 	localStateMemory = ""
+	keyMutex         sync.RWMutex // Mutex to protect concurrent access to encryptionKey, decryptionKey, and localStateMemory
 	keyGenTimeout    = 120
 	keySignTimeout   = 60
 	msgFetchTimeout  = 70
 )
 
 func SessionState(session string) string {
+	statusMutex.RLock()
+	defer statusMutex.RUnlock()
 	status, exists := statusMap[session]
 	if !exists {
 		return "{}" // Return an empty state if session doesn't exist
@@ -71,12 +75,15 @@ func SessionState(session string) string {
 }
 
 func ClearSessionLog(session string) {
+	statusMutex.Lock()
+	defer statusMutex.Unlock()
 	delete(statusMap, session)
 	delete(statusLog, session)
 }
 
 func SessionLog(session string) string {
-
+	statusMutex.RLock()
+	defer statusMutex.RUnlock()
 	statuses, exists := statusLog[session]
 	if !exists {
 		return "[]"
@@ -109,10 +116,14 @@ func stringJoin(parts []string, delimiter string) string {
 }
 
 func getStatus(session string) Status {
+	statusMutex.RLock()
+	defer statusMutex.RUnlock()
 	return statusMap[session]
 }
 
 func setSeqNo(session, info string, step, seqNo int) {
+	statusMutex.Lock()
+	defer statusMutex.Unlock()
 	status := statusMap[session]
 	status.Time = int(time.Now().Unix())
 	status.Step = step
@@ -126,6 +137,8 @@ func setSeqNo(session, info string, step, seqNo int) {
 }
 
 func setIndex(session, info string, step, index int) {
+	statusMutex.Lock()
+	defer statusMutex.Unlock()
 	status := statusMap[session]
 	status.Time = int(time.Now().Unix())
 	status.Step = step
@@ -139,6 +152,7 @@ func setIndex(session, info string, step, index int) {
 }
 
 func setStep(session, info string, step int) {
+	statusMutex.Lock()
 	status := statusMap[session]
 	status.Step = step
 	status.Info = info
@@ -148,16 +162,19 @@ func setStep(session, info string, step int) {
 		statusLog[session] = []Status{}
 	}
 	statusLog[session] = append(statusLog[session], status)
+	statusMutex.Unlock()
 	Hook(SessionState(session))
 }
 
 func setStatus(session string, status Status) {
+	statusMutex.Lock()
 	status.Time = int(time.Now().Unix())
 	statusMap[session] = status
 	if _, exists := statusLog[session]; !exists {
 		statusLog[session] = []Status{}
 	}
 	statusLog[session] = append(statusLog[session], status)
+	statusMutex.Unlock()
 	Hook(SessionState(session))
 }
 
@@ -182,12 +199,14 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 		return "", fmt.Errorf("either a session key, either both enc/dec keys")
 	}
 
+	keyMutex.Lock()
 	encryptionKey = encKey
 	decryptionKey = decKey
+	localStateMemory = ""
+	keyMutex.Unlock()
 
 	status := Status{Step: 0, SeqNo: 0, Index: 0, Info: "initializing...", Type: "keygen", Done: false, Time: 0}
 	setStatus(session, status)
-	localStateMemory = ""
 
 	Logln("BBMTLog", "start joinSession", session, "...")
 
@@ -248,8 +267,10 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 		close(endCh)
 		return "", fmt.Errorf("fail to generate ECDSA key: %w", err)
 	}
+	keyMutex.Lock()
 	localState := localStateMemory
 	localStateMemory = ""
+	keyMutex.Unlock()
 	Logln("BBMTLog", "ECDSA keygen response ok")
 	status = getStatus(session)
 	status.Step++
@@ -301,13 +322,14 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 		return "", fmt.Errorf("either a session key, either both enc/dec keys")
 	}
 
+	keyMutex.Lock()
 	encryptionKey = encKey
 	decryptionKey = decKey
+	localStateMemory = ""
+	keyMutex.Unlock()
 
 	status := Status{Step: 0, SeqNo: 0, Index: 0, Info: "initializing...", Type: "keysign", Done: false, Time: 0}
 	setStatus(session, status)
-
-	localStateMemory = ""
 
 	Logln("BBMTLog", "start joinSession", session, "...")
 	status.Step++
@@ -531,10 +553,15 @@ func (m *MessengerImp) Send(from, to, body string) error {
 		if err != nil {
 			return fmt.Errorf("fail to encrypt message: %w", err)
 		}
-	} else if len(encryptionKey) > 0 {
-		payload, err = EciesEncrypt(body, encryptionKey)
-		if err != nil {
-			return fmt.Errorf("fail to ECIES-encrypt message: %w", err)
+	} else {
+		keyMutex.RLock()
+		encKey := encryptionKey
+		keyMutex.RUnlock()
+		if len(encKey) > 0 {
+			payload, err = EciesEncrypt(body, encKey)
+			if err != nil {
+				return fmt.Errorf("fail to ECIES-encrypt message: %w", err)
+			}
 		}
 	}
 
@@ -616,7 +643,9 @@ func (l *LocalStateAccessorImp) GetLocalState(keyshare string) (string, error) {
 }
 
 func (l *LocalStateAccessorImp) SaveLocalState(pubKey, localState string) error {
+	keyMutex.Lock()
 	localStateMemory = localState
+	keyMutex.Unlock()
 	return nil
 }
 
@@ -911,11 +940,16 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 						Logln("BBMTLog", "Failed to decrypt message:", err)
 						continue
 					}
-				} else if len(decryptionKey) > 0 {
-					body, err = EciesDecrypt(message.Body, decryptionKey)
-					if err != nil {
-						Logln("BBMTLog", "Failed to decrypt ECIES message:", err)
-						continue
+				} else {
+					keyMutex.RLock()
+					decKey := decryptionKey
+					keyMutex.RUnlock()
+					if len(decKey) > 0 {
+						body, err = EciesDecrypt(message.Body, decKey)
+						if err != nil {
+							Logln("BBMTLog", "Failed to decrypt ECIES message:", err)
+							continue
+						}
 					}
 				}
 

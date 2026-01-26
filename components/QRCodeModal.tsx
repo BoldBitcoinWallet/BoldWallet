@@ -1,11 +1,25 @@
-import React, {useCallback, useRef} from 'react';
+import React, {useCallback, useRef, useMemo} from 'react';
+// iOS CoreText-safe line break helper for crypto descriptors
+const IOS_WORD_JOINER = '\u2060';
+
+const formatForIOSLineBreaks = (value: string) =>
+  value
+    .replace(/\//g, `${IOS_WORD_JOINER}/${IOS_WORD_JOINER}`)
+    .replace(/\[/g, `${IOS_WORD_JOINER}[`)
+    .replace(/\]/g, `]${IOS_WORD_JOINER}`)
+    .replace(/\(/g, `${IOS_WORD_JOINER}(`)
+    .replace(/\)/g, `)${IOS_WORD_JOINER}`);
+
 import {
   Modal,
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   Image,
   Alert,
+  ScrollView,
+  Platform,
+  Dimensions,
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import Share from 'react-native-share';
@@ -13,7 +27,8 @@ import * as RNFS from 'react-native-fs';
 import {HapticFeedback} from '../utils';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
-
+import Toast from 'react-native-toast-message';
+import {createToastConfig} from '../utils/toastConfig';
 interface QRCodeModalProps {
   visible: boolean;
   onClose: () => void;
@@ -24,7 +39,6 @@ interface QRCodeModalProps {
   topRightClose?: boolean;
   nonDismissible?: boolean;
 }
-
 const QRCodeModal: React.FC<QRCodeModalProps> = ({
   visible,
   onClose,
@@ -38,7 +52,15 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
   const {theme} = useTheme();
   const styles = createStyles(theme);
   const qrRef = useRef<any>(null);
-
+  const screenWidth = Dimensions.get('window').width;
+  const modalMaxWidth = 320;
+  const containerWidth = Math.min(screenWidth - 48, modalMaxWidth - 48); // Account for padding
+  
+  // Memoize style to avoid re-creation on every render
+  const valueTextStyle = useMemo(
+    () => [styles.qrModalValueText, { width: containerWidth - 24 }],
+    [containerWidth, styles.qrModalValueText]
+  );
   // Share QR code as image file
   const shareQRAsFile = useCallback(
     async (filename: string, shareTitle: string) => {
@@ -48,7 +70,6 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
           Alert.alert('Error', 'QR Code is not ready yet');
           return;
         }
-
         const base64Data: string = await new Promise((resolve, reject) => {
           qrRef.current.toDataURL((data: string) => {
             if (data) {
@@ -58,15 +79,12 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
             }
           });
         });
-
         const filePath = `${RNFS.TemporaryDirectoryPath}/${filename}`;
         const fileExists = await RNFS.exists(filePath);
         if (fileExists) {
           await RNFS.unlink(filePath);
         }
-
         await RNFS.writeFile(filePath, base64Data, 'base64');
-
         await Share.open({
           title: shareTitle,
           message: shareTitle,
@@ -75,7 +93,6 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
           isNewTask: true,
           failOnCancel: false,
         });
-
         await RNFS.unlink(filePath).catch(() => {});
       } catch (error: any) {
         if (error?.message !== 'User did not share') {
@@ -85,7 +102,6 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
     },
     [],
   );
-
   const handleShare = useCallback(() => {
     const now = new Date();
     const month = now.toLocaleDateString('en-US', {month: 'short'});
@@ -93,10 +109,8 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
     const year = now.getFullYear();
     const hours = now.getHours().toString().padStart(2, '0');
     const minutes = now.getMinutes().toString().padStart(2, '0');
-    
     let filename = `qr-code.${month}${day}.${year}.${hours}${minutes}.jpg`;
     let shareTitle = 'Share QR Code';
-    
     if (network) {
       if (title.includes('xpub') || title.includes('tpub')) {
         filename = `${network === 'mainnet' ? 'xpub' : 'tpub'}-qr.${month}${day}.${year}.${hours}${minutes}.jpg`;
@@ -106,38 +120,33 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
         shareTitle = 'Share Output Descriptor QR Code';
       }
     }
-    
     shareQRAsFile(filename, shareTitle);
   }, [network, title, shareQRAsFile]);
-
   const handleClose = useCallback(() => {
     HapticFeedback.light();
     onClose();
   }, [onClose]);
-
   return (
     <Modal
       visible={visible}
       transparent={true}
       animationType="fade"
       onRequestClose={nonDismissible ? () => {} : handleClose}>
-      <TouchableOpacity
+      <Pressable
         style={styles.modalOverlay}
-        onPress={nonDismissible ? undefined : handleClose}
-        activeOpacity={1}>
-        <TouchableOpacity
-          activeOpacity={1}
+        onPress={nonDismissible ? undefined : handleClose}>
+        <Pressable
           onPress={e => e.stopPropagation()}>
           <View style={styles.qrModalContent}>
             {topRightClose ? (
               <View style={styles.qrModalHeader}>
                 <Text style={styles.qrModalHeaderTitle}>{title}</Text>
-                <TouchableOpacity
+                <Pressable
                   onPress={handleClose}
                   style={styles.qrModalTopRightCloseButton}
-                  activeOpacity={0.7}>
+                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                   <Text style={styles.qrModalTopRightCloseText}>✕</Text>
-                </TouchableOpacity>
+                </Pressable>
               </View>
             ) : (
               <Text style={styles.qrModalTitle}>{title}</Text>
@@ -155,19 +164,46 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
                 />
               )}
             </View>
+            {value && showShareButton && (
+              <View style={[styles.qrModalValueContainer, {width: containerWidth}]}>
+                <ScrollView
+                  removeClippedSubviews
+                  keyboardShouldPersistTaps="handled"
+                  overScrollMode="never"
+                  showsVerticalScrollIndicator={false}
+                  nestedScrollEnabled={true}
+                  contentContainerStyle={styles.qrModalValueScrollContent}
+                  bounces={false}>
+                  <Text
+                    style={valueTextStyle}
+                    selectable={true}
+                    numberOfLines={0}
+                    allowFontScaling={false}
+                    {...(Platform.OS === 'android' && {
+                      // @ts-ignore - textBreakStrategy is Android-only and not in types
+                      textBreakStrategy: 'highQuality',
+                    })}>
+                    {Platform.OS === 'ios'
+                      ? formatForIOSLineBreaks(value)
+                      : value}
+                  </Text>
+                </ScrollView>
+              </View>
+            )}
             {showShareButton ? (
               <View
                 style={[
                   styles.qrModalButtonsContainer,
                   topRightClose && styles.qrModalButtonsContainerCentered,
                 ]}>
-                <TouchableOpacity
+                <Pressable
                   style={[
                     styles.qrModalCloseButton,
                     styles.qrModalShareButton,
                     topRightClose && styles.qrModalShareButtonSingle,
                   ]}
-                  onPress={handleShare}>
+                  onPress={handleShare}
+                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                   <Image
                     source={require('../assets/share-icon.png')}
                     style={styles.qrModalShareIcon}
@@ -179,32 +215,36 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
                     ]}>
                     Share
                   </Text>
-                </TouchableOpacity>
+                </Pressable>
                 {!topRightClose && (
-                  <TouchableOpacity
+                  <Pressable
                     style={[
                       styles.qrModalCloseButton,
                       styles.qrModalCloseButtonWithMargin,
                     ]}
-                    onPress={handleClose}>
+                    onPress={handleClose}
+                    android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                     <Text style={styles.qrModalCloseButtonText}>Close</Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 )}
               </View>
             ) : (
               !topRightClose && (
-                <TouchableOpacity
+                <Pressable
                   style={styles.qrModalCloseButton}
-                  onPress={handleClose}>
+                  onPress={handleClose}
+                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                   <Text style={styles.qrModalCloseButtonText}>Close</Text>
-                </TouchableOpacity>
+                </Pressable>
               )
             )}
           </View>
-        </TouchableOpacity>
-      </TouchableOpacity>
+        </Pressable>
+      </Pressable>
+      <View style={styles.toastContainer}>
+        <Toast config={createToastConfig(theme)} />
+      </View>
     </Modal>
   );
 };
-
 export default QRCodeModal;

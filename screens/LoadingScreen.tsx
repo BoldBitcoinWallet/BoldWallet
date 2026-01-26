@@ -4,7 +4,7 @@ import {
   Text,
   ActivityIndicator,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   Image,
   Animated,
   Easing,
@@ -12,10 +12,8 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useTheme} from '../theme';
 import {HapticFeedback} from '../utils';
-
 const LoadingScreen = ({onRetry}: any) => {
   const {theme} = useTheme();
-
   const [loading, setLoading] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0.6)).current;
   const buttonScale = useRef(new Animated.Value(1)).current;
@@ -41,14 +39,12 @@ const LoadingScreen = ({onRetry}: any) => {
   });
   const turbulenceRef = useRef(0); // increases briefly on tap
   const emitterRef = useRef<number | null>(null);
-
   const handlePress = async () => {
     HapticFeedback.medium();
     setLoading(true);
     await onRetry();
     setLoading(false);
   };
-
   const handlePressIn = () => {
     Animated.spring(buttonScale, {
       toValue: 0.97,
@@ -70,7 +66,6 @@ const LoadingScreen = ({onRetry}: any) => {
       }),
     ]).start();
   };
-
   const handlePressOut = () => {
     Animated.spring(buttonScale, {
       toValue: 1,
@@ -92,7 +87,6 @@ const LoadingScreen = ({onRetry}: any) => {
       }),
     ]).start();
   };
-
   const createFountain = (count: number = 2, intensity: number = 1) => {
     // Continuous vapor-like emission from the logo center
     const newParticles: Array<{
@@ -105,7 +99,6 @@ const LoadingScreen = ({onRetry}: any) => {
       duration: number;
       size: number;
     }> = [];
-
     for (let i = 0; i < count; i++) {
       // Start positions jittered by turbulence for better separation
       const originJitterX =
@@ -126,9 +119,7 @@ const LoadingScreen = ({onRetry}: any) => {
           Math.floor(3 * turbulenceRef.current),
       });
     }
-
     setParticles(prev => [...prev, ...newParticles]);
-
     // Animate each particle along a gentle upward drift with slight jitter
     newParticles.forEach(p => {
       // Mostly vertical, slight horizontal jitter; amplified by turbulence
@@ -139,10 +130,8 @@ const LoadingScreen = ({onRetry}: any) => {
       const dx = (Math.random() - 0.5) * (baseSpread + extraSpread);
       const distance = (160 + Math.random() * 220) * (1 + 0.6 * turbulence);
       const dy = -distance; // upward
-
       const rotateTo = ((Math.random() * 60 - 30) * Math.PI) / 180; // small rotation
       const scaleTo = 0.9 + Math.random() * 0.4;
-
       Animated.parallel(
         [
           Animated.timing(p.x, {
@@ -183,7 +172,6 @@ const LoadingScreen = ({onRetry}: any) => {
       });
     });
   };
-
   const handleLogoPress = () => {
     HapticFeedback.light();
     // Stronger turbulence boost that decays more slowly
@@ -201,7 +189,6 @@ const LoadingScreen = ({onRetry}: any) => {
       }
     }, 160);
   };
-
   const startLogoTouch = () => {
     HapticFeedback.light();
     if (emitterRef.current != null) {
@@ -221,7 +208,6 @@ const LoadingScreen = ({onRetry}: any) => {
       createFountain(2, 1);
     }, 140) as unknown as number;
   };
-
   const endLogoTouch = () => {
     if (emitterRef.current != null) {
       clearInterval(emitterRef.current as unknown as number);
@@ -245,9 +231,7 @@ const LoadingScreen = ({onRetry}: any) => {
       }
     }, 120);
   };
-
   // Emission now happens on logo touch only
-
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
@@ -266,7 +250,6 @@ const LoadingScreen = ({onRetry}: any) => {
       ]),
     ).start();
   }, [fadeAnim]);
-
   // Subtle fingerprint pulse when idle
   useEffect(() => {
     if (loading) {
@@ -292,7 +275,6 @@ const LoadingScreen = ({onRetry}: any) => {
     loop.start();
     return () => loop.stop();
   }, [iconPulse, loading]);
-
   const styles = StyleSheet.create({
     container: {
       flex: 1,
@@ -354,8 +336,7 @@ const LoadingScreen = ({onRetry}: any) => {
     },
     buttonText: {
       fontSize: theme.fontSizes?.xl || 18,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.primary,
       marginLeft: 12,
       letterSpacing: 0.5,
@@ -386,8 +367,7 @@ const LoadingScreen = ({onRetry}: any) => {
     },
     versionText: {
       fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.medium || '500') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.textSecondary,
       opacity: 0.8,
       marginBottom: 8,
@@ -429,8 +409,7 @@ const LoadingScreen = ({onRetry}: any) => {
     },
     loadingText: {
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.white,
       marginLeft: 12,
     },
@@ -439,11 +418,11 @@ const LoadingScreen = ({onRetry}: any) => {
       backgroundColor: theme.colors.background,
     },
   });
-
   // Use simple background color instead of gradient, especially in dark mode
-  const isDarkMode = theme.colors.background === '#121212' || theme.colors.background.includes('12');
+  const isDarkMode =
+    theme.colors.background === '#121212' ||
+    theme.colors.background.includes('12');
   const backgroundColor = isDarkMode ? '#1A1A1A' : theme.colors.background;
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={[styles.container, {backgroundColor}]}>
@@ -488,9 +467,8 @@ const LoadingScreen = ({onRetry}: any) => {
                 );
               })}
             </View>
-
-            <TouchableOpacity
-              activeOpacity={0.9}
+            <Pressable
+              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
               onPress={handleLogoPress}
               onPressIn={startLogoTouch}
               onPressOut={endLogoTouch}
@@ -501,13 +479,13 @@ const LoadingScreen = ({onRetry}: any) => {
                 <Image
                   style={[styles.storeIcon]}
                   source={
-                    theme.colors.background === '#121212' || theme.colors.background.includes('12')
-                      ? require('../assets/bold-icon-inverted.png') // Use inverted icon in dark mode
-                      : require('../assets/bold-icon.png') // Original icon in light mode
+                    theme.colors.background === '#ffffff'
+                      ? require('../assets/bold-icon.png') // Original icon in light mode
+                      : require('../assets/bold-icon-inverted.png') // Use inverted icon in dark mode
                   }
                 />
               </Animated.View>
-            </TouchableOpacity>
+            </Pressable>
           </Animated.View>
         </View>
         <View style={styles.bottomContainer}>
@@ -519,13 +497,13 @@ const LoadingScreen = ({onRetry}: any) => {
             ]}>
             {/* Floating drop shadow to emphasize FAB look */}
             <View style={styles.dropShadow} />
-            <TouchableOpacity
+            <Pressable
               style={[styles.button, loading && styles.buttonDisabled]}
               onPress={handlePress}
               onPressIn={handlePressIn}
               onPressOut={handlePressOut}
               disabled={loading}
-              activeOpacity={0.85}
+              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
               accessibilityRole="button"
               accessibilityLabel="Unlock with biometrics"
               accessibilityHint="Double tap to authenticate and unlock"
@@ -555,12 +533,11 @@ const LoadingScreen = ({onRetry}: any) => {
                   </View>
                 </>
               )}
-            </TouchableOpacity>
+            </Pressable>
           </Animated.View>
         </View>
       </View>
     </SafeAreaView>
   );
 };
-
 export default LoadingScreen;

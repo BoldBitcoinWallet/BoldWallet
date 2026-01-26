@@ -31,33 +31,65 @@ import {NativeModules} from 'react-native';
 import {dbg, pinRemoteIP, getPinnedRemoteIPs} from './utils';
 import MobilesPairing from './screens/MobilesPairing';
 import MobileNostrPairing from './screens/MobileNostrPairing';
+import UserPreferenceScreen from './screens/UserPreferenceScreen';
 import {CustomHeader} from './components/Header';
-
+import Toast from 'react-native-toast-message';
+import {createToastConfig} from './utils/toastConfig';
 // Initialize react-native-screens for Fabric compatibility
 enableScreens(true);
-
 const {BBMTLibNativeModule} = NativeModules;
 const Stack = createNativeStackNavigator();
+
+// Debug logging state (session-only, not persisted)
+// Default: false (logs suppressed even in __DEV__)
+// This is a module-level variable that can be set from WalletSettings
+let debugLoggingEnabledRef = {current: false};
+
+// Store original console methods before they get disabled
+const originalConsole = {
+  log: console.log,
+  warn: console.warn,
+  error: console.error,
+  debug: console.debug,
+  info: console.info,
+  trace: console.trace,
+};
+
+// Export functions to control debug logging from other modules
+export const setDebugLoggingEnabled = (enabled: boolean) => {
+  debugLoggingEnabledRef.current = enabled;
+};
+
+export const isDebugLoggingEnabled = () => {
+  return debugLoggingEnabledRef.current;
+};
 const rnBiometrics = new ReactNativeBiometrics({allowDeviceCredentials: true});
 const zeroconf = new Zeroconf();
 const zeroOut = new Zeroconf();
-
 // Custom header components with configurable height
 const HomeHeader = (props: any) => <CustomHeader {...props} height={60} />;
 const PSBTHeader = (props: any) => <CustomHeader {...props} height={60} />;
 const SettingsHeader = (props: any) => <CustomHeader {...props} height={60} />;
 const WelcomeHeader = (props: any) => <CustomHeader {...props} height={60} />;
-const DevicesPairingHeader = (props: any) => <CustomHeader {...props} height={60} />;
-const NostrConnectHeader = (props: any) => <CustomHeader {...props} height={60} />;
-
+const DevicesPairingHeader = (props: any) => (
+  <CustomHeader {...props} height={60} />
+);
+const NostrConnectHeader = (props: any) => (
+  <CustomHeader {...props} height={60} />
+);
 const App = () => {
   const [initialRoute, setInitialRoute] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-
+  // Initialize debug logging state from module-level ref
+  const [debugLoggingEnabled, setDebugLoggingEnabledState] = useState(
+    debugLoggingEnabledRef.current,
+  );
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener('app:reload', async () => {
       //dbg('App: Received app:reload event');
       setIsAuthenticated(false);
+      // Update debug logging state from ref
+      setDebugLoggingEnabledState(debugLoggingEnabledRef.current);
       // Re-check wallet state after reload to ensure correct initial route
       try {
         const keyshare = await EncryptedStorage.getItem('keyshare');
@@ -74,7 +106,6 @@ const App = () => {
     });
     return () => sub.remove();
   }, []);
-
   useEffect(() => {
     initializeHaptics();
     const checkWallet = async () => {
@@ -97,7 +128,6 @@ const App = () => {
     };
     checkWallet();
   }, []);
-
   useEffect(() => {
     try {
       dbg('publishing service...');
@@ -130,7 +160,6 @@ const App = () => {
       dbg('error publishing service', e);
     }
   }, []);
-
   useEffect(() => {
     try {
       dbg('scanning for mDNS Services');
@@ -177,13 +206,20 @@ const App = () => {
       dbg('error scanning mDNS', e);
     }
   }, []);
-
   useEffect(() => {
     let subscription: EmitterSubscription | undefined;
-    if (!__DEV__) {
+    // Sync ref with state to ensure consistency
+    debugLoggingEnabledRef.current = debugLoggingEnabled;
+    // Always disable logging by default (even in __DEV__)
+    // Only enable if explicitly toggled via debug setting
+    if (!__DEV__ && !debugLoggingEnabled) {
       BBMTLibNativeModule.disableLogging('ok')
         .then((feedback: any) => {
           if (feedback === 'ok') {
+            // Restore console methods temporarily to log the message
+            console.log = originalConsole.log;
+            console.log('[DEBUG] Logging disabled');
+            // Now disable console methods
             console.log = () => {};
             console.warn = () => {};
             console.error = () => {};
@@ -195,9 +231,23 @@ const App = () => {
           }
         })
         .catch((e: Error) => {
-          dbg('error while disabling logging', e);
+          // Restore console.log temporarily to log the error
+          console.log = originalConsole.log;
+          console.log('error while disabling logging', e);
+          // Disable again
+          console.log = () => {};
         });
     } else {
+      // Restore original console methods first (they might be disabled from previous state)
+      console.log = originalConsole.log;
+      console.warn = originalConsole.warn;
+      console.error = originalConsole.error;
+      console.debug = originalConsole.debug;
+      console.info = originalConsole.info;
+      console.trace = originalConsole.trace;
+      // Now we can log the enabled message
+      console.log('[DEBUG] Logging enabled');
+      // Debug logging enabled - set up native log listeners
       const logEmitter = new NativeEventEmitter(BBMTLibNativeModule);
       if (Platform.OS === 'android') {
         logEmitter.removeAllListeners('BBMT_DROID');
@@ -215,20 +265,17 @@ const App = () => {
     return () => {
       subscription?.remove();
     };
-  }, []);
-
+  }, [debugLoggingEnabled]);
   const authenticateUser = async () => {
     try {
       dbg('Starting authentication...');
       const {available, biometryType} = await rnBiometrics.isSensorAvailable();
       dbg('Biometric available:', available, 'Type:', biometryType);
-
       if (!available) {
         dbg('No biometric available, skipping authentication');
         setIsAuthenticated(true);
         return;
       }
-
       if (
         available &&
         (biometryType === BiometryTypes.TouchID ||
@@ -240,7 +287,6 @@ const App = () => {
           promptMessage: 'Authenticate to access your wallet',
           fallbackPromptMessage: 'Use your device passcode to unlock',
         });
-
         if (success) {
           dbg('Biometric authentication successful');
           setIsAuthenticated(true);
@@ -265,7 +311,6 @@ const App = () => {
         const {success} = await rnBiometrics.simplePrompt({
           promptMessage: 'Enter your device passcode to unlock',
         });
-
         if (success) {
           dbg('Device passcode authentication successful');
           setIsAuthenticated(true);
@@ -296,12 +341,10 @@ const App = () => {
       }
     }
   };
-
   const handleRetryAuthentication = async () => {
     setIsAuthenticated(false);
     await authenticateUser();
   };
-
   if (initialRoute === null || !isAuthenticated) {
     dbg(
       'Rendering LoadingScreen - initialRoute:',
@@ -319,9 +362,7 @@ const App = () => {
       </ErrorBoundary>
     );
   }
-
   dbg('Rendering main navigation with initialRoute:', initialRoute);
-
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
@@ -332,98 +373,114 @@ const App = () => {
     </ErrorBoundary>
   );
 };
-
 const AppContent = ({initialRoute}: {initialRoute: string | null}) => {
   const {theme} = useTheme();
-
   const dynamicStyles = {
     navigationContainer: {
       ...styles.navigationContainer,
       backgroundColor: theme.colors.background,
     },
   };
-
   return (
     <UserProvider>
       <WalletProvider>
         <View style={dynamicStyles.navigationContainer}>
-                <NavigationContainer>
-                  <Stack.Navigator
-                    initialRouteName={initialRoute || undefined}
-                    screenOptions={{
-                      headerShown: false,
-                      headerTitleAlign: 'left',
-                    }}>
-                    <Stack.Screen
-                      name="PSBT"
-                      component={PSBTScreen}
-                      options={{
-                        headerShown: true,
-                        headerLeft: () => null,
-                        headerTitle: '',
-                        headerTitleAlign: 'left',
-                        header: PSBTHeader,
-                      }}
-                    />
-                    <Stack.Screen
-                      name="Home"
-                      component={WalletHome}
-                      options={{
-                        headerShown: true,
-                        headerLeft: () => null,
-                        headerTitle: '',
-                        headerTitleAlign: 'left',
-                        header: HomeHeader,
-                      }}
-                    />
-                    <Stack.Screen
-                      name="Welcome"
-                      component={ShowcaseScreen}
-                      options={{
-                        header: WelcomeHeader,
-                        title: 'Welcome',
-                      }}
-                    />
-                    <Stack.Screen
-                      name="Settings"
-                      component={WalletSettings}
-                      options={{
-                        headerShown: true,
-                        header: SettingsHeader,
-                        title: 'Settings',
-                      }}
-                    />
-                    <Stack.Screen
-                      name="Devices Pairing"
-                      component={MobilesPairing}
-                      options={{
-                        headerShown: true,
-                        header: DevicesPairingHeader,
-                        title: 'Devices Pairing',
-                      }}
-                    />
-                    <Stack.Screen
-                      name="Nostr Connect"
-                      component={MobileNostrPairing}
-                      options={{
-                        headerShown: true,
-                        header: NostrConnectHeader,
-                        title: 'Nostr Connect',
-                      }}
-                    />
-                  </Stack.Navigator>
-                </NavigationContainer>
-              </View>
-            </WalletProvider>
-          </UserProvider>
+          <NavigationContainer>
+            <Stack.Navigator
+              initialRouteName={initialRoute || undefined}
+              screenOptions={{
+                headerShown: false,
+                headerTitleAlign: 'left',
+              }}>
+              <Stack.Screen
+                name="PSBT"
+                component={PSBTScreen}
+                options={{
+                  headerShown: true,
+                  headerLeft: () => null,
+                  headerTitle: '',
+                  headerTitleAlign: 'left',
+                  header: PSBTHeader,
+                }}
+              />
+              <Stack.Screen
+                name="Home"
+                component={WalletHome}
+                options={{
+                  headerShown: true,
+                  headerLeft: () => null,
+                  headerTitle: '',
+                  headerTitleAlign: 'left',
+                  header: HomeHeader,
+                }}
+              />
+              <Stack.Screen
+                name="Welcome"
+                component={ShowcaseScreen}
+                options={{
+                  header: WelcomeHeader,
+                  title: 'Welcome',
+                }}
+              />
+              <Stack.Screen
+                name="Settings"
+                component={WalletSettings}
+                options={{
+                  headerShown: true,
+                  header: SettingsHeader,
+                  title: 'Settings',
+                }}
+              />
+              <Stack.Screen
+                name="Devices Pairing"
+                component={MobilesPairing}
+                options={{
+                  headerShown: true,
+                  header: DevicesPairingHeader,
+                  title: 'Devices Pairing',
+                }}
+              />
+              <Stack.Screen
+                name="Nostr Connect"
+                component={MobileNostrPairing}
+                options={{
+                  headerShown: true,
+                  header: NostrConnectHeader,
+                  title: 'Nostr Connect',
+                }}
+              />
+              <Stack.Screen
+                name="User Preferences"
+                component={UserPreferenceScreen}
+                options={{
+                  headerShown: false,
+                  title: 'User Preferences',
+                }}
+              />
+            </Stack.Navigator>
+          </NavigationContainer>
+          <View style={styles.toastWrapper}>
+            <Toast config={createToastConfig(theme)} />
+          </View>
+        </View>
+      </WalletProvider>
+    </UserProvider>
   );
 };
-
 const styles = StyleSheet.create({
   navigationContainer: {
     flex: 1,
     // backgroundColor will be set dynamically based on theme
   },
+  toastWrapper: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 99999,
+    elevation: 99999,
+    pointerEvents: 'box-none',
+  },
 });
-
 export default App;

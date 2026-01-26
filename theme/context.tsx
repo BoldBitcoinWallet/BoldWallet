@@ -2,7 +2,6 @@
  * Theme Context and Provider
  * React context for theme management
  */
-
 import React, {
   createContext,
   useContext,
@@ -17,25 +16,21 @@ import LocalCache from '../services/LocalCache';
 import {dbg} from '../utils';
 import type {Theme, ThemeMode, ThemeContextValue} from './types';
 import {lightTheme, darkTheme} from './themes';
-
 // Default context value - ensures theme always exists
 const defaultContextValue: ThemeContextValue = {
   theme: lightTheme,
   themeMode: 'os',
   setThemeMode: async (_mode: ThemeMode) => {
-    console.warn('setThemeMode called outside ThemeProvider');
+    dbg('setThemeMode called outside ThemeProvider');
   },
   toggleTheme: async (_isCrypto?: boolean) => {
-    console.warn('toggleTheme called outside ThemeProvider');
+    dbg('toggleTheme called outside ThemeProvider');
   },
 };
-
 const ThemeContext = createContext<ThemeContextValue>(defaultContextValue);
-
 interface ThemeProviderProps {
   children: ReactNode;
 }
-
 /**
  * ThemeProvider - Provides theme context to the app
  * Handles theme mode persistence and system theme detection
@@ -46,12 +41,10 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({children}) => {
     Appearance.getColorScheme() || 'light';
   const [systemColorScheme, setSystemColorScheme] =
     useState<ColorSchemeName>(initialSystemScheme);
-
   // Default to dark theme to prevent white flash for dark mode users
   // This will be corrected when storage loads
   const [themeMode, setThemeModeState] = useState<ThemeMode>('dark');
   const [theme, setTheme] = useState<Theme>(() => darkTheme);
-
   // Listen to system color scheme changes
   useEffect(() => {
     const subscription = Appearance.addChangeListener(
@@ -61,7 +54,6 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({children}) => {
     );
     return () => subscription?.remove();
   }, []);
-
   // Determine effective theme based on mode
   const getEffectiveTheme = useCallback(
     (
@@ -80,7 +72,6 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({children}) => {
     },
     [systemColorScheme],
   );
-
   // Load theme mode from storage IMMEDIATELY and update theme right away
   useEffect(() => {
     const loadThemeMode = async () => {
@@ -123,7 +114,6 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({children}) => {
     // Load immediately, don't wait
     loadThemeMode();
   }, [getEffectiveTheme, initialSystemScheme]);
-
   // Update theme when mode or system color scheme changes
   useEffect(() => {
     const effectiveTheme = getEffectiveTheme(themeMode);
@@ -131,7 +121,6 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({children}) => {
     const effectiveScheme = systemColorScheme || 'light';
     dbg('Theme updated:', themeMode, 'effective:', effectiveScheme);
   }, [themeMode, systemColorScheme, getEffectiveTheme]);
-
   const setThemeMode = useCallback(
     async (mode: ThemeMode) => {
       setThemeModeState(mode);
@@ -144,7 +133,6 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({children}) => {
     },
     [],
   );
-
   // Legacy support for toggleTheme
   const toggleTheme = useCallback(
     async (_isCrypto?: boolean) => {
@@ -153,7 +141,6 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({children}) => {
     },
     [setThemeMode],
   );
-
   // Memoize context value to prevent unnecessary re-renders
   const contextValue = useMemo<ThemeContextValue>(
     () => ({
@@ -164,39 +151,32 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({children}) => {
     }),
     [theme, themeMode, setThemeMode, toggleTheme],
   );
-
   return (
     <ThemeContext.Provider value={contextValue}>
       {children}
     </ThemeContext.Provider>
   );
 };
-
 /**
  * useTheme hook - Access theme context
  * @returns Theme context value
  */
 export const useTheme = (): ThemeContextValue => {
   const context = useContext(ThemeContext);
-
   // If context is null/undefined (shouldn't happen with default value, but safety check)
   if (!context) {
-    console.warn('useTheme called outside ThemeProvider, using default theme');
+    dbg('useTheme called outside ThemeProvider, using default theme');
     return defaultContextValue;
   }
-
   // Ensure theme always exists to prevent "Property 'theme' doesn't exist" errors
   if (!context.theme) {
-    console.warn(
-      'Theme context missing theme property, using lightTheme fallback',
-    );
+    dbg('Theme context missing theme property, using lightTheme fallback');
     return {
       ...defaultContextValue,
       ...context,
       theme: lightTheme,
     };
   }
-
   // Ensure all required properties exist
   return {
     theme: context.theme ?? lightTheme,
@@ -205,4 +185,3 @@ export const useTheme = (): ThemeContextValue => {
     toggleTheme: context.toggleTheme ?? defaultContextValue.toggleTheme,
   };
 };
-

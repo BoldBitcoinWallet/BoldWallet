@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Text,
-  TouchableOpacity,
+  Pressable,
   View as RNView,
   StyleSheet,
   Platform,
@@ -15,26 +15,21 @@ import {useTheme} from '../theme';
 import {createStyles} from './Styles';
 import {HapticFeedback, presentFiat} from '../utils';
 import type {NativeStackHeaderProps} from '@react-navigation/native-stack';
-
 interface HeaderPriceButtonProps {
   btcPrice?: string;
   selectedCurrency?: string;
   onCurrencyPress?: () => void;
 }
-
 interface HeaderNetworkProviderProps {
   network?: string;
   apiBase?: string;
 }
-
 export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
   network,
   apiBase,
 }) => {
   const {theme} = useTheme();
-
   const isDarkMode = theme.colors.background !== '#ffffff';
-
   // Single bordered container for both network and provider - 2 lines layout
   const containerStyle: any = {
     flexDirection: 'column',
@@ -59,7 +54,6 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
     position: 'relative', // Enable absolute positioning for children
     overflow: 'hidden', // Clip badge to container border radius
   };
-
   const networkBadgeStyle: any = {
     position: 'absolute',
     top: 0, // Align with container top
@@ -67,20 +61,16 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
     right: 0, // Align with container right
     backgroundColor: isDarkMode
       ? theme.colors.border + '80'
-      : theme.colors.blackOverlay10,
+      : theme.colors.blackOverlay05,
     paddingHorizontal: 6,
-    height: 17, // Slightly taller for better visibility
+    height: 17,
     justifyContent: 'center',
     alignItems: 'center',
     flexShrink: 0,
-    borderTopLeftRadius: 10,
-    borderTopRightRadius: 10,
   };
-
   const networkBadgeTextStyle: any = {
     fontSize: theme.fontSizes?.xs || 8,
-    fontWeight: (theme.fontWeights?.bold || '700') as any,
-    fontFamily: theme.fontFamilies?.regular,
+    fontFamily: theme.fontFamilies?.bold,
     color:
       theme.colors.background === '#ffffff'
         ? theme.colors.secondary
@@ -88,11 +78,8 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
     letterSpacing: 0.2,
     lineHeight: 10,
   };
-
   const providerTextStyle: any = {
     fontSize: theme.fontSizes?.xs || 9,
-    fontWeight: (theme.fontWeights?.normal || '400') as any,
-    fontFamily: theme.fontFamilies?.regular,
     color: theme.colors.textSecondary,
     flexShrink: 1, // Allow text to shrink
     textAlign: 'center',
@@ -100,15 +87,12 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
     top: '50%',
     marginTop: 2,
   };
-
   const cleanProviderUrl = apiBase
     ? apiBase.replace('https://', '').replace('/api', '').replace(/\/+$/, '')
     : 'Loading...';
-
   if (!network && !apiBase) {
     return null;
   }
-
   return (
     <View style={containerStyle}>
       {network && (
@@ -130,14 +114,12 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
     </View>
   );
 };
-
 export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
   btcPrice,
   selectedCurrency,
   onCurrencyPress,
 }) => {
   const {theme} = useTheme();
-
   const priceButtonStyle: any = {
     flexDirection: 'row',
     alignItems: 'center',
@@ -164,54 +146,45 @@ export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
     shadowRadius: 3,
     elevation: Platform.OS === 'android' ? 0 : 1,
   };
-
   const headerBtcLogoStyle: any = {
     width: 20,
     height: 20,
     resizeMode: 'contain',
   };
-
   const headerBtcPriceStyle: any = {
     fontSize: theme.fontSizes?.sm || 12,
-    fontWeight: (theme.fontWeights?.semibold || '600') as any,
-    fontFamily: theme.fontFamilies?.regular,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.text,
     lineHeight: 14,
   };
-
   const headerCurrencyBadgeStyle: any = {
     fontSize: theme.fontSizes?.xs || 10,
-    fontWeight: (theme.fontWeights?.semibold || '600') as any,
-    fontFamily: theme.fontFamilies?.regular,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.textSecondary,
     lineHeight: 12,
   };
-
   const priceTextContainerStyle: any = {
     flexDirection: 'column',
     alignItems: 'flex-start',
     justifyContent: 'center',
   };
-
   if (btcPrice === undefined || !onCurrencyPress) {
     return null;
   }
-
   const containerStyle: any = {
     paddingLeft: 16,
     paddingTop: 12,
     paddingBottom: 12,
   };
-
   return (
     <RNView style={containerStyle}>
-      <TouchableOpacity
+      <Pressable
         style={priceButtonStyle}
         onPress={() => {
           HapticFeedback.light();
           onCurrencyPress();
         }}
-        activeOpacity={0.7}
+        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
         accessible={true}
         accessibilityRole="button"
         accessibilityLabel={`Bitcoin price: ${
@@ -230,18 +203,16 @@ export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
             <Text style={headerCurrencyBadgeStyle}>{selectedCurrency}</Text>
           )}
         </View>
-      </TouchableOpacity>
+      </Pressable>
     </RNView>
   );
 };
-
 interface HeaderRightButtonProps {
   navigation: any;
   btcPrice?: string;
   selectedCurrency?: string;
   onCurrencyPress?: () => void;
 }
-
 export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
   navigation,
   btcPrice,
@@ -250,7 +221,6 @@ export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
 }) => {
   const {theme} = useTheme();
   const styles = createStyles(theme);
-
   const headerButtonsContainer: any = {
     flexDirection: 'row',
     alignItems: 'center',
@@ -262,7 +232,6 @@ export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
     paddingLeft: 16,
     minHeight: 60,
   };
-
   // Keep the price pill visually symmetric with the right-side buttons cluster.
   // Each right button is 36px wide and there is a 16px gap between them:
   // cluster width = 36 * 2 + 16 = 88. Add a small buffer for internal padding.
@@ -270,20 +239,17 @@ export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
   const buttonsGap = Number(headerButtonsContainer.gap ?? 16);
   const rightClusterWidth = settingsBtnWidth * 2 + buttonsGap;
   const priceMinWidth = rightClusterWidth + 8; // ~96px target footprint
-
   const priceButtonStyle: any = {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor:
-      theme.colors.background === '#ffffff' ||
-      theme.colors.background.includes('ffffff')
+      theme.colors.background === '#ffffff'
         ? theme.colors.blackOverlay06 // Light mode background
         : theme.colors.cardBackground, // Dark mode background
     borderWidth: 4,
     borderColor:
-      theme.colors.background === '#ffffff' ||
-      theme.colors.background.includes('ffffff')
+      theme.colors.background === '#ffffff'
         ? theme.colors.blackOverlay10 // Light mode border
         : theme.colors.border + '80', // Dark mode border
     paddingHorizontal: 16,
@@ -297,40 +263,32 @@ export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
     shadowRadius: 3,
     elevation: Platform.OS === 'android' ? 0 : 1,
   };
-
   const headerBtcLogoStyle: any = {
     width: 20,
     height: 20,
     resizeMode: 'contain',
     // No tint - keep Bitcoin logo as is in both light and dark mode
   };
-
   const headerBtcPriceStyle: any = {
     fontSize: theme.fontSizes?.sm || 12,
-    fontWeight: (theme.fontWeights?.semibold || '600') as any,
-    fontFamily: theme.fontFamilies?.regular,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.text,
     lineHeight: 14,
   };
-
   const headerCurrencyBadgeStyle: any = {
     fontSize: theme.fontSizes?.xs || 10,
-    fontWeight: (theme.fontWeights?.semibold || '600') as any,
-    fontFamily: theme.fontFamilies?.regular,
+    fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.textSecondary,
     lineHeight: 12,
   };
-
   const priceTextContainerStyle: any = {
     flexDirection: 'column',
     alignItems: 'flex-start',
     justifyContent: 'center',
   };
-
   const isDarkMode =
     theme.colors.background === '#121212' ||
     theme.colors.background.includes('12');
-
   const settingsButtonStyle: any = {
     ...styles.settingsButton,
     backgroundColor: isDarkMode
@@ -341,17 +299,16 @@ export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
       ? theme.colors.border + '80'
       : theme.colors.blackOverlay10,
   };
-
   return (
     <RNView style={headerButtonsContainer}>
       {btcPrice !== undefined && onCurrencyPress && (
-        <TouchableOpacity
+        <Pressable
           style={priceButtonStyle}
           onPress={() => {
             HapticFeedback.light();
             onCurrencyPress();
           }}
-          activeOpacity={0.7}
+          android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
           accessible={true}
           accessibilityRole="button"
           accessibilityLabel={`Bitcoin price: ${
@@ -370,15 +327,15 @@ export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
               <Text style={headerCurrencyBadgeStyle}>{selectedCurrency}</Text>
             )}
           </View>
-        </TouchableOpacity>
+        </Pressable>
       )}
-      <TouchableOpacity
+      <Pressable
         style={settingsButtonStyle}
         onPress={() => {
           HapticFeedback.light();
           DeviceEventEmitter.emit('app:reload');
         }}
-        activeOpacity={0.7}
+        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
         accessible={true}
         accessibilityRole="button"
         accessibilityLabel="Lock wallet"
@@ -387,27 +344,26 @@ export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
           source={require('../assets/locker-icon.png')}
           style={styles.settingsLogo}
         />
-      </TouchableOpacity>
-      <TouchableOpacity
+      </Pressable>
+      <Pressable
         style={settingsButtonStyle}
         onPress={() => {
           HapticFeedback.light();
           navigation.navigate('Settings');
-        }}>
+        }}
+        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
         <Image
           source={require('../assets/settings-icon.png')}
           style={styles.settingsLogo}
         />
-      </TouchableOpacity>
+      </Pressable>
     </RNView>
   );
 };
-
 export const HeaderTitle: React.FC<{title?: string}> = () => {
   const {theme} = useTheme();
   const styles = createStyles(theme);
   const route = useRoute();
-
   // Map route names to display titles
   const getTitle = () => {
     const routeName = route.name;
@@ -419,19 +375,15 @@ export const HeaderTitle: React.FC<{title?: string}> = () => {
       'Devices Pairing': 'Devices Pairing',
       'Nostr Connect': 'Nostr Connect',
     };
-
     return titleMap[routeName] || '';
   };
-
   const displayTitle = getTitle();
   const isEmpty = !displayTitle || displayTitle.trim().length === 0;
-
   // Use inverted icon in dark mode
   const isDarkMode = theme.colors.background !== '#ffffff';
   const iconSource = isDarkMode
     ? require('../assets/icon-inverted.png') // Use inverted icon in dark mode
     : require('../assets/icon.png'); // Original icon in light mode
-
   // Center the container when title is empty
   const containerStyle = isEmpty
     ? [
@@ -439,12 +391,10 @@ export const HeaderTitle: React.FC<{title?: string}> = () => {
         {justifyContent: 'center' as const, paddingLeft: 0},
       ]
     : styles.headerTitleContainer;
-
   // Remove marginRight from logo when title is empty
   const logoStyle = isEmpty
     ? [styles.headerLogo, {marginRight: 0}]
     : styles.headerLogo;
-
   return (
     <View style={containerStyle}>
       <Image source={iconSource} style={logoStyle} />
@@ -452,7 +402,6 @@ export const HeaderTitle: React.FC<{title?: string}> = () => {
     </View>
   );
 };
-
 /**
  * Custom header component that allows controlling header height
  * @param height - Desired header height in pixels (default: 60)
@@ -462,12 +411,10 @@ export const CustomHeader: React.FC<
 > = ({options, route, navigation, height = 60}) => {
   const insets = useSafeAreaInsets();
   const {theme} = useTheme();
-
   // Use headerLeft and headerRight from options if provided
   // If headerLeft is not provided and can go back, show default back button
   const canGoBack = navigation.canGoBack();
   let headerLeft: React.ReactNode = null;
-
   if (options.headerLeft !== undefined) {
     // headerLeft was explicitly set (could be a function or component)
     headerLeft =
@@ -478,26 +425,25 @@ export const CustomHeader: React.FC<
     // No headerLeft was set, but we can go back - show default back button
     const headerStyles = createCustomHeaderStyles(theme);
     headerLeft = (
-      <TouchableOpacity
+      <Pressable
         onPress={() => {
           HapticFeedback.light();
           navigation.goBack();
         }}
         style={headerStyles.backButton}
+        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
         accessible={true}
         accessibilityRole="button"
         accessibilityLabel="Go back">
         <Text style={headerStyles.backButtonText}>←</Text>
-      </TouchableOpacity>
+      </Pressable>
     );
   }
-
   const headerRight = options.headerRight
     ? typeof options.headerRight === 'function'
       ? options.headerRight({canGoBack: navigation.canGoBack()})
       : options.headerRight
     : null;
-
   // Get headerTitle - handle function, component, or string
   let headerTitle: React.ReactNode = null;
   if (options.headerTitle) {
@@ -514,13 +460,11 @@ export const CustomHeader: React.FC<
     // Only use route name as fallback if there's no headerLeft
     headerTitle = route.name;
   }
-
   // Don't render center title if it's empty string or null/undefined
   const shouldRenderCenterTitle =
     headerTitle &&
     headerTitle !== '' &&
     (typeof headerTitle !== 'string' || headerTitle.trim().length > 0);
-
   const isDarkMode =
     theme.colors.background === '#121212' ||
     theme.colors.background.includes('12');
@@ -533,9 +477,7 @@ export const CustomHeader: React.FC<
       : isDarkMode
       ? theme.colors.cardBackground
       : theme.colors.background;
-
   const headerStyles = createCustomHeaderStyles(theme);
-
   // Determine what to render in the center
   let centerContent: React.ReactNode = null;
   if (shouldRenderCenterTitle) {
@@ -546,7 +488,6 @@ export const CustomHeader: React.FC<
       centerContent = headerTitle;
     }
   }
-
   return (
     <View
       style={[
@@ -569,7 +510,6 @@ export const CustomHeader: React.FC<
     </View>
   );
 };
-
 const createCustomHeaderStyles = (theme: any) =>
   StyleSheet.create({
     container: {
@@ -607,8 +547,6 @@ const createCustomHeaderStyles = (theme: any) =>
     },
     backButtonText: {
       fontSize: theme.fontSizes?.['3xl'] || 24,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
   });

@@ -1,14 +1,12 @@
 import React, {useMemo} from 'react';
-import {View, StyleSheet, Animated, Dimensions} from 'react-native';
+import {View, StyleSheet, Animated, Dimensions, Platform} from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useTheme} from '../theme';
-
 const {width} = Dimensions.get('window');
-
 interface ShimmerEffectProps {
   style: any;
   translateX: Animated.AnimatedInterpolation<string | number>;
 }
-
 const ShimmerEffect: React.FC<ShimmerEffectProps & {dynamicStyles?: any}> = ({
   style,
   translateX,
@@ -19,7 +17,6 @@ const ShimmerEffect: React.FC<ShimmerEffectProps & {dynamicStyles?: any}> = ({
   const shimmerColor = isDarkMode
     ? theme.colors.disabled + '60'
     : '#e9ecef';
-
   return (
     <View style={[style, styles.shimmerWrapper]}>
       <Animated.View
@@ -34,12 +31,10 @@ const ShimmerEffect: React.FC<ShimmerEffectProps & {dynamicStyles?: any}> = ({
     </View>
   );
 };
-
 interface TransactionSkeletonItemProps {
   translateX: Animated.AnimatedInterpolation<string | number>;
   dynamicStyles?: any;
 }
-
 const TransactionSkeletonItem: React.FC<TransactionSkeletonItemProps> = ({
   translateX,
   dynamicStyles,
@@ -66,21 +61,21 @@ const TransactionSkeletonItem: React.FC<TransactionSkeletonItemProps> = ({
           dynamicStyles={dynamicStyles}
         />
       </View>
-
       {/* Address row */}
       <View style={styles.addressRow}>
-        <ShimmerEffect
-          style={styles.addressSkeleton}
-          translateX={translateX}
-          dynamicStyles={dynamicStyles}
-        />
+        <View style={styles.addressContainer}>
+          <ShimmerEffect
+            style={styles.addressSkeleton}
+            translateX={translateX}
+            dynamicStyles={dynamicStyles}
+          />
+        </View>
         <ShimmerEffect
           style={styles.usdAmountSkeleton}
           translateX={translateX}
           dynamicStyles={dynamicStyles}
         />
       </View>
-
       {/* Bottom row with transaction ID and timestamp */}
       <View style={styles.transactionRow}>
         <View style={styles.txIdContainer}>
@@ -104,11 +99,17 @@ const TransactionSkeletonItem: React.FC<TransactionSkeletonItemProps> = ({
     </View>
   );
 };
+interface TransactionListSkeletonProps {
+  /** If true, removes container padding (used when wrapped in transactionListContainer) */
+  noContainerPadding?: boolean;
+}
 
-const TransactionListSkeleton: React.FC = () => {
+const TransactionListSkeleton: React.FC<TransactionListSkeletonProps> = ({
+  noContainerPadding = false,
+}) => {
   const {theme} = useTheme();
+  const insets = useSafeAreaInsets();
   const animatedValue = useMemo(() => new Animated.Value(0), []);
-
   React.useEffect(() => {
     const startAnimation = () => {
       Animated.loop(
@@ -126,118 +127,131 @@ const TransactionListSkeleton: React.FC = () => {
         ]),
       ).start();
     };
-
     startAnimation();
     return () => {
       animatedValue.stopAnimation();
     };
   }, [animatedValue]);
-
   const translateX = animatedValue.interpolate({
     inputRange: [0, 1],
     outputRange: [-width * 1.2, width * 1.2],
   });
-
-  // Ensure we never use white background in dark mode
-  const isDarkMode =
-    theme.colors.background === '#121212' ||
-    theme.colors.background.includes('12');
-  const containerBg = isDarkMode
-    ? theme.colors.background
-    : theme.colors.background;
+  // Match the exact styling from TransactionList
+  const isDarkMode = theme.colors.background === '#ffffff' ? false : true;
   const itemBg = isDarkMode ? theme.colors.cardBackground : '#ffffff';
   const borderColor = isDarkMode
     ? theme.colors.border + '40'
-    : theme.colors.blackOverlay03;
+    : theme.colors.blackOverlay05;
   const shimmerColor = isDarkMode
     ? theme.colors.disabled + '60'
     : '#e9ecef';
-
   const dynamicStyles = {
     container: {
       ...styles.container,
-      backgroundColor: containerBg,
+      backgroundColor: theme.colors.background,
     },
     transactionItem: {
       ...styles.transactionItem,
       backgroundColor: itemBg,
       borderColor: borderColor,
+      elevation: 1,
+      shadowColor: theme.colors.shadowColor,
+      shadowOffset: {width: 0, height: 1},
+      shadowOpacity: 0.05,
+      shadowRadius: 1,
     },
     gradient: {
       ...styles.gradient,
       backgroundColor: shimmerColor,
     },
   };
-
+  // Match the safe area style from TransactionList (only if not wrapped)
+  const safeAreaStyle = noContainerPadding
+    ? {}
+    : {
+        paddingTop: Platform.OS === 'android' ? 0 : insets.top,
+        paddingLeft: insets.left,
+        paddingRight: insets.right,
+      };
   return (
-    <View style={dynamicStyles.container}>
-      {[1, 2, 3, 4].map(i => (
-        <TransactionSkeletonItem
-          key={i}
-          translateX={translateX}
-          dynamicStyles={dynamicStyles}
-        />
-      ))}
+    <View style={[dynamicStyles.container, safeAreaStyle]}>
+      <View style={styles.listContent}>
+        {[1, 2, 3, 4].map(i => (
+          <TransactionSkeletonItem
+            key={i}
+            translateX={translateX}
+            dynamicStyles={dynamicStyles}
+          />
+        ))}
+      </View>
     </View>
   );
 };
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 0,
-    // backgroundColor will be set dynamically based on theme
+    // No horizontal padding - matches TransactionList container
+    // No margin - spacing handled by parent transactionListContainer
+  },
+  listContent: {
+    flexGrow: 1,
+    paddingBottom: 20, // Match listContent paddingBottom from TransactionList
+    // No horizontal padding - items are full width
   },
   transactionItem: {
-    padding: 16,
-    marginVertical: 4,
-    borderRadius: 12,
-    // backgroundColor and borderColor will be set dynamically based on theme
+    padding: 10, // Match TransactionList transactionItem padding
+    marginVertical: 3, // Match TransactionList transactionItem marginVertical
+    borderRadius: 10, // Match TransactionList transactionItem borderRadius
     borderWidth: 1,
-    // borderColor will be set dynamically
+    // backgroundColor and borderColor set dynamically
+    // elevation and shadow set dynamically
   },
   transactionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: 4,
+    marginVertical: 2, // Match TransactionList transactionRow marginVertical
   },
   addressRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: 6,
+    marginVertical: 2, // Match TransactionList addressRow marginVertical
+  },
+  addressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   statusContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   statusIconSkeleton: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    marginRight: 6,
+    width: 20, // Match statusIcon width
+    height: 20, // Match statusIcon height
+    borderRadius: 10,
+    marginRight: 8, // Match statusIcon marginRight
   },
   statusTextSkeleton: {
     width: 70,
-    height: 16,
+    height: 16, // Match status fontSize (lg = 16)
     borderRadius: 8,
   },
   amountSkeleton: {
     width: 120,
-    height: 24,
+    height: 24, // Approximate for monospace amount text
     borderRadius: 12,
   },
   addressSkeleton: {
     flex: 1,
-    height: 18,
+    height: 18, // Approximate for address text
     borderRadius: 9,
-    marginRight: 10,
+    marginRight: 4, // Match address marginRight
   },
   usdAmountSkeleton: {
     width: 80,
-    height: 18,
+    height: 18, // Approximate for fiatAmount text
     borderRadius: 9,
   },
   txIdContainer: {
@@ -245,19 +259,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   linkIconSkeleton: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    marginRight: 6,
+    width: 16, // Match linkIcon width
+    height: 16, // Match linkIcon height
+    borderRadius: 8,
+    marginRight: 4, // Match linkIcon marginRight
   },
   txIdSkeleton: {
     width: 100,
-    height: 14,
+    height: 14, // Approximate for txId text
     borderRadius: 7,
   },
   timestampSkeleton: {
     width: 90,
-    height: 14,
+    height: 14, // Match timestamp fontSize (xs = 11, but visually ~14)
     borderRadius: 7,
   },
   shimmerWrapper: {
@@ -275,5 +289,4 @@ const styles = StyleSheet.create({
     // Background color will be set dynamically
   },
 });
-
 export default TransactionListSkeleton;

@@ -20,6 +20,9 @@ var dataCache = cache.New(5*time.Minute, 10*time.Minute)
 // Mutex for safe concurrent operations
 var mutex sync.Mutex
 
+// Mutex for server operations
+var serverMutex sync.Mutex
+
 // Session structure
 type Session struct {
 	SessionID    string   `json:"sessionID"`
@@ -292,9 +295,15 @@ func RunRelay(port string) (result string, err error) {
 		}
 	}()
 
-	if server != nil {
+	// Stop existing server if any (unlock before calling to avoid deadlock)
+	serverMutex.Lock()
+	hasServer := server != nil
+	serverMutex.Unlock()
+
+	if hasServer {
 		StopRelay()
 	}
+
 	time.Sleep(time.Second)
 	go func() {
 		defer func() {
@@ -304,7 +313,9 @@ func RunRelay(port string) (result string, err error) {
 				Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
 			}
 		}()
+		serverMutex.Lock()
 		server = listen(port)
+		serverMutex.Unlock()
 	}()
 	return "ok", nil
 }
@@ -320,6 +331,8 @@ func StopRelay() (result string, err error) {
 		}
 	}()
 
+	serverMutex.Lock()
+	defer serverMutex.Unlock()
 	if server == nil {
 		return "already_closed", nil
 	}

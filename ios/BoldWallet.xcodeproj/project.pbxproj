@@ -16,9 +16,18 @@
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		13B07FC11A68108700A75B9A /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 13B07FB71A68108700A75B9A /* main.m */; };
 		1ABCB642E4FCF5C4C49303D9 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
+		1FD85668A3994D67A8FF0A57 /* JetBrainsMono-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 34569E8685A24EFC9192BB1B /* JetBrainsMono-Bold.ttf */; };
+		3C8750B47CB94DDC98668ED5 /* Inter-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 23977D372C25405D9D315FD8 /* Inter-SemiBold.ttf */; };
 		6B8FAFA776B56AAC8C1DECA1 /* libPods-BoldWallet-BoldWalletTests.a in Frameworks */ = {isa = PBXBuildFile; fileRef = CF244333124C48401EA96FBE /* libPods-BoldWallet-BoldWalletTests.a */; };
+		72A78896E8254226A777315E /* download_fonts.sh in Resources */ = {isa = PBXBuildFile; fileRef = 71EF9461FC3348E583D2841A /* download_fonts.sh */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
+		82399A5964C44448953DE7B2 /* setup_fonts.sh in Resources */ = {isa = PBXBuildFile; fileRef = D90219E7622D406C8DE13D09 /* setup_fonts.sh */; };
+		97D0EA93E5E444DCAEAA316D /* Inter-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D0ECD961405C400BBD93B045 /* Inter-Regular.ttf */; };
+		9E496C24AB40471EBC8BBCF6 /* JetBrainsMono-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1481E072924B47C4B1EAD887 /* JetBrainsMono-Regular.ttf */; };
+		A7BEE39BEEAF4F089CA47860 /* Inter-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1594077544924158A9AAAA27 /* Inter-Medium.ttf */; };
 		ABFD1A7D0A9C1E3B52BE4826 /* libPods-BoldWallet.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 42B71AC30DBE14FE7026BFF1 /* libPods-BoldWallet.a */; };
+		B45690F427A049ACA62B5720 /* download_fonts.md in Resources */ = {isa = PBXBuildFile; fileRef = 6462EB0D3AF140DE98970BB5 /* download_fonts.md */; };
+		EB82B2233CF24510A230A956 /* JetBrainsMono-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 0B628FC831DA4FCB82826E0F /* JetBrainsMono-Medium.ttf */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -53,6 +62,7 @@
 		0440EA692D48369D00FE370B /* BBMTLibNativeModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BBMTLibNativeModule.m; sourceTree = "<group>"; };
 		0440EA6A2D48369D00FE370B /* BBMTLibNativeModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BBMTLibNativeModule.swift; sourceTree = "<group>"; };
 		0440EA6D2D4836D600FE370B /* BoldWallet-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "BoldWallet-Bridging-Header.h"; sourceTree = "<group>"; };
+		0B628FC831DA4FCB82826E0F /* JetBrainsMono-Medium.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "JetBrainsMono-Medium.ttf"; path = "../assets/fonts/JetBrainsMono-Medium.ttf"; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* BoldWallet.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BoldWallet.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FAF1A68108700A75B9A /* AppDelegate.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = AppDelegate.h; path = BoldWallet/AppDelegate.h; sourceTree = "<group>"; };
 		13B07FB01A68108700A75B9A /* AppDelegate.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = AppDelegate.mm; path = BoldWallet/AppDelegate.mm; sourceTree = "<group>"; };
@@ -60,13 +70,21 @@
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = BoldWallet/Info.plist; sourceTree = "<group>"; };
 		13B07FB71A68108700A75B9A /* main.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = main.m; path = BoldWallet/main.m; sourceTree = "<group>"; };
 		13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = PrivacyInfo.xcprivacy; path = BoldWallet/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		1481E072924B47C4B1EAD887 /* JetBrainsMono-Regular.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "JetBrainsMono-Regular.ttf"; path = "../assets/fonts/JetBrainsMono-Regular.ttf"; sourceTree = "<group>"; };
+		1594077544924158A9AAAA27 /* Inter-Medium.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Inter-Medium.ttf"; path = "../assets/fonts/Inter-Medium.ttf"; sourceTree = "<group>"; };
+		23977D372C25405D9D315FD8 /* Inter-SemiBold.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Inter-SemiBold.ttf"; path = "../assets/fonts/Inter-SemiBold.ttf"; sourceTree = "<group>"; };
+		34569E8685A24EFC9192BB1B /* JetBrainsMono-Bold.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "JetBrainsMono-Bold.ttf"; path = "../assets/fonts/JetBrainsMono-Bold.ttf"; sourceTree = "<group>"; };
 		42B71AC30DBE14FE7026BFF1 /* libPods-BoldWallet.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-BoldWallet.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		4C25CA2D5706ED5DDAD0669F /* Pods-BoldWallet.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-BoldWallet.release.xcconfig"; path = "Target Support Files/Pods-BoldWallet/Pods-BoldWallet.release.xcconfig"; sourceTree = "<group>"; };
+		6462EB0D3AF140DE98970BB5 /* download_fonts.md */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = download_fonts.md; path = ../assets/fonts/download_fonts.md; sourceTree = "<group>"; };
+		71EF9461FC3348E583D2841A /* download_fonts.sh */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = text.script.sh; name = download_fonts.sh; path = ../assets/fonts/download_fonts.sh; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = BoldWallet/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		A935B50B1AE989023F72F0C6 /* Pods-BoldWallet-BoldWalletTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-BoldWallet-BoldWalletTests.release.xcconfig"; path = "Target Support Files/Pods-BoldWallet-BoldWalletTests/Pods-BoldWallet-BoldWalletTests.release.xcconfig"; sourceTree = "<group>"; };
 		B30564DE79120A5C03ECEF22 /* Pods-BoldWallet.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-BoldWallet.debug.xcconfig"; path = "Target Support Files/Pods-BoldWallet/Pods-BoldWallet.debug.xcconfig"; sourceTree = "<group>"; };
 		CF244333124C48401EA96FBE /* libPods-BoldWallet-BoldWalletTests.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-BoldWallet-BoldWalletTests.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		D0ECD961405C400BBD93B045 /* Inter-Regular.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Inter-Regular.ttf"; path = "../assets/fonts/Inter-Regular.ttf"; sourceTree = "<group>"; };
 		D8C01CCFA4229A770E5C486B /* Pods-BoldWallet-BoldWalletTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-BoldWallet-BoldWalletTests.debug.xcconfig"; path = "Target Support Files/Pods-BoldWallet-BoldWalletTests/Pods-BoldWallet-BoldWalletTests.debug.xcconfig"; sourceTree = "<group>"; };
+		D90219E7622D406C8DE13D09 /* setup_fonts.sh */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = text.script.sh; name = setup_fonts.sh; path = ../assets/fonts/setup_fonts.sh; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -152,6 +170,7 @@
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
 				BBD78D7AC51CEA395F1C20DB /* Pods */,
+				84A3B1A37B7B44C89570B781 /* Resources */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -165,6 +184,22 @@
 				00E356EE1AD99517003FC87E /* BoldWalletTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		84A3B1A37B7B44C89570B781 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				1594077544924158A9AAAA27 /* Inter-Medium.ttf */,
+				34569E8685A24EFC9192BB1B /* JetBrainsMono-Bold.ttf */,
+				1481E072924B47C4B1EAD887 /* JetBrainsMono-Regular.ttf */,
+				D0ECD961405C400BBD93B045 /* Inter-Regular.ttf */,
+				0B628FC831DA4FCB82826E0F /* JetBrainsMono-Medium.ttf */,
+				23977D372C25405D9D315FD8 /* Inter-SemiBold.ttf */,
+				D90219E7622D406C8DE13D09 /* setup_fonts.sh */,
+				71EF9461FC3348E583D2841A /* download_fonts.sh */,
+				6462EB0D3AF140DE98970BB5 /* download_fonts.md */,
+			);
+			name = Resources;
 			sourceTree = "<group>";
 		};
 		BBD78D7AC51CEA395F1C20DB /* Pods */ = {
@@ -277,6 +312,15 @@
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				1ABCB642E4FCF5C4C49303D9 /* PrivacyInfo.xcprivacy in Resources */,
+				A7BEE39BEEAF4F089CA47860 /* Inter-Medium.ttf in Resources */,
+				1FD85668A3994D67A8FF0A57 /* JetBrainsMono-Bold.ttf in Resources */,
+				9E496C24AB40471EBC8BBCF6 /* JetBrainsMono-Regular.ttf in Resources */,
+				97D0EA93E5E444DCAEAA316D /* Inter-Regular.ttf in Resources */,
+				EB82B2233CF24510A230A956 /* JetBrainsMono-Medium.ttf in Resources */,
+				3C8750B47CB94DDC98668ED5 /* Inter-SemiBold.ttf in Resources */,
+				82399A5964C44448953DE7B2 /* setup_fonts.sh in Resources */,
+				72A78896E8254226A777315E /* download_fonts.sh in Resources */,
+				B45690F427A049ACA62B5720 /* download_fonts.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -307,13 +351,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet/Pods-BoldWallet-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet/Pods-BoldWallet-resources-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -372,13 +412,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet-BoldWalletTests/Pods-BoldWallet-BoldWalletTests-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet-BoldWalletTests/Pods-BoldWallet-BoldWalletTests-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -393,13 +429,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet/Pods-BoldWallet-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet/Pods-BoldWallet-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -414,13 +446,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet-BoldWalletTests/Pods-BoldWallet-BoldWalletTests-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet-BoldWalletTests/Pods-BoldWallet-BoldWalletTests-resources-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -534,7 +562,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CLANG_ENABLE_MODULES = YES;
-				CURRENT_PROJECT_VERSION = 44;
+				CURRENT_PROJECT_VERSION = 45;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 2G529K765N;
 				ENABLE_BITCODE = NO;
@@ -548,7 +576,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.1.11;
+				MARKETING_VERSION = 2.1.12;
 				ONLY_ACTIVE_ARCH = NO;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -572,7 +600,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CLANG_ENABLE_MODULES = YES;
-				CURRENT_PROJECT_VERSION = 44;
+				CURRENT_PROJECT_VERSION = 45;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 2G529K765N;
 				ENABLE_TESTABILITY = NO;
@@ -585,7 +613,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.1.11;
+				MARKETING_VERSION = 2.1.12;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -672,7 +700,10 @@
 					"-DFOLLY_CFG_NO_COROUTINES=1",
 					"-DFOLLY_HAVE_CLOCK_GETTIME=1",
 				);
-				OTHER_LDFLAGS = "$(inherited)  ";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					" ",
+				);
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
@@ -744,7 +775,10 @@
 					"-DFOLLY_CFG_NO_COROUTINES=1",
 					"-DFOLLY_HAVE_CLOCK_GETTIME=1",
 				);
-				OTHER_LDFLAGS = "$(inherited)  ";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					" ",
+				);
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;

@@ -1,0 +1,41 @@
+{
+  "migIndex": 1,
+  "data": [
+    {
+      "path": "assets/fonts/Inter-Medium.ttf",
+      "sha1": "c1d25d8c10adb45a970e71c387bbd6380f10992d"
+    },
+    {
+      "path": "assets/fonts/setup_fonts.sh",
+      "sha1": "8bb2b02998d96aac8718155a668f017092f2c7ce"
+    },
+    {
+      "path": "assets/fonts/JetBrainsMono-Bold.ttf",
+      "sha1": "e4a40100c03620c97845f1b64521593dfac5624a"
+    },
+    {
+      "path": "assets/fonts/JetBrainsMono-Regular.ttf",
+      "sha1": "107329e2c9a229038ccec64a7ef57448b1943df8"
+    },
+    {
+      "path": "assets/fonts/download_fonts.sh",
+      "sha1": "164abd7fe95737f14012a57f176b655ecff4231a"
+    },
+    {
+      "path": "assets/fonts/download_fonts.md",
+      "sha1": "dbd69ac915d8900b00a7f388c8a787285fbcf79f"
+    },
+    {
+      "path": "assets/fonts/Inter-Regular.ttf",
+      "sha1": "6e3430f906a4b42b4b63fd8f33e498a43d9f8d84"
+    },
+    {
+      "path": "assets/fonts/JetBrainsMono-Medium.ttf",
+      "sha1": "b46831c7c07c6cbbdc3a73e5636423d4de54d7d1"
+    },
+    {
+      "path": "assets/fonts/Inter-SemiBold.ttf",
+      "sha1": "b4bdaf6bdd6a479b46c452a7bbae13f5cb2079bf"
+    }
+  ]
+}

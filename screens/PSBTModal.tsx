@@ -3,7 +3,7 @@ import {
   View,
   Text,
   Modal,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   Image,
   ScrollView,
@@ -18,11 +18,9 @@ import QRScanner from '../components/QRScanner';
 import BarcodeZxingScan from 'rn-barcode-zxing-scan';
 // @ts-ignore - bc-ur types (Buffer polyfill is in polyfills.js)
 import {URDecoder} from '@ngraveio/bc-ur';
-import {dbg, HapticFeedback, presentFiat} from '../utils';
+import {dbg, HapticFeedback} from '../utils';
 import {useTheme} from '../theme';
-
 const {BBMTLibNativeModule} = NativeModules;
-
 // PSBT details structure (will be populated when parsing is implemented)
 interface PSBTDetails {
   inputs: Array<{
@@ -39,13 +37,8 @@ interface PSBTDetails {
   totalOutput: number;
   derivePaths: string[]; // Derivation path for each input (indexed array)
 }
-
 // UR (Uniform Resource) animated QR support for large PSBTs
-
 export interface PSBTLoaderProps {
-  btcRate?: number; // BTC to fiat rate
-  currencySymbol?: string; // e.g., "$", "€"
-  network?: string; // Network: 'mainnet' or 'testnet3'
   onClose: () => void;
   onSign: (psbtBase64: string) => void;
   // When true, disables the Cancel button until a PSBT is loaded.
@@ -58,29 +51,16 @@ export interface PSBTLoaderProps {
   useOverlay?: boolean;
   // Optional middle button to render between Cancel and Co-Sign buttons
   middleButton?: React.ReactNode;
-  // Bitcoin price button props
-  btcPrice?: string;
-  selectedCurrency?: string;
-  onCurrencyPress?: () => void;
 }
-
 export interface PSBTModalProps extends PSBTLoaderProps {
   visible: boolean;
 }
-
-
 export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
-  btcRate = 0,
-  currencySymbol = '$',
-  network = 'mainnet',
   onClose,
   onSign,
   disableCancelWhenEmpty = false,
   useOverlay = true,
   middleButton,
-  btcPrice,
-  selectedCurrency,
-  onCurrencyPress,
 }) => {
   const {theme} = useTheme();
   const [psbtBase64, setPsbtBase64] = useState<string | null>(null);
@@ -90,7 +70,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isAndroidScanning, setIsAndroidScanning] = useState(false); // For Android continuous scanning modal
   const isCancelDisabled = disableCancelWhenEmpty && !psbtBase64;
-
   // UR (Uniform Resource) animated QR state - using bc-ur library
   const urDecoderRef = useRef<any>(null);
   const isScanningRef = useRef<boolean>(false); // Track if we're actively scanning (Android)
@@ -103,7 +82,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
     received: number;
     percentage: number;
   } | null>(null);
-
   // Debug: Log isScanningRef periodically when scanning
   useEffect(() => {
     if (Platform.OS === 'android' && isAndroidScanning) {
@@ -115,11 +93,9 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
           isAndroidScanning,
         );
       }, 3000); // Log every 3 seconds when scanning
-
       return () => clearInterval(interval);
     }
   }, [isAndroidScanning]);
-
   // Update progress text overlay in Android zxing activity when urProgress changes
   // This updates the native scanner's progress overlay (not a modal)
   useEffect(() => {
@@ -138,7 +114,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
       BarcodeZxingScan.updateProgressText('');
     }
   }, [urProgress, isAndroidScanning]);
-
   // Reset state when modal closes
   const handleClose = useCallback(() => {
     setPsbtBase64(null);
@@ -161,7 +136,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
     setUrProgress(null);
     onClose();
   }, [onClose]);
-
   // Reset UR state when scanner closes
   const handleScannerClose = useCallback(() => {
     setIsScannerVisible(false);
@@ -178,29 +152,23 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
     urDecoderRef.current = null;
     setUrProgress(null);
   }, []);
-
   // Parse PSBT and extract details using native module
   const parsePSBT = useCallback(async (base64Data: string) => {
     setIsLoading(true);
     setError(null);
-
     try {
       dbg('PSBT Base64 length:', base64Data.length);
-
       // Use native module to parse PSBT details
       const detailsJson = await BBMTLibNativeModule.parsePSBTDetails(
         base64Data,
       );
       dbg('Native PSBT parse result:', detailsJson.substring(0, 200));
-
       // Check for error response
       if (detailsJson.startsWith('error') || detailsJson.includes('failed')) {
         throw new Error(detailsJson);
       }
-
       // Parse the JSON response
       const parsed = JSON.parse(detailsJson);
-
       const details: PSBTDetails = {
         inputs: parsed.inputs || [],
         outputs: parsed.outputs || [],
@@ -209,7 +177,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
         totalOutput: parsed.totalOutput || 0,
         derivePaths: parsed.derivePaths || parsed.derivePathPerInput || [], // Per-input derivation paths
       };
-
       dbg('PSBT details:', {
         inputCount: details.inputs.length,
         outputCount: details.outputs.length,
@@ -218,7 +185,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
         fee: details.fee,
         derivePaths: details.derivePaths,
       });
-
       setPsbtBase64(base64Data);
       setPsbtDetails(details);
       // Use most common derivation path for initial display/navigation
@@ -236,7 +202,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
       setIsLoading(false);
     }
   }, []);
-
   // Handle file upload
   const handleUploadFile = useCallback(async () => {
     HapticFeedback.light();
@@ -245,10 +210,8 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
         type: [DocumentPicker.types.allFiles],
         copyTo: 'cachesDirectory',
       });
-
       const file = result[0];
       dbg('Selected file:', file.name, file.type);
-
       if (file.fileCopyUri) {
         const fileContent = await RNFS.readFile(
           file.fileCopyUri.replace('file://', ''),
@@ -269,44 +232,36 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
       }
     }
   }, [parsePSBT]);
-
   // Process UR QR code using bc-ur library (supports fountain codes)
   const processURCode = useCallback(
     (data: string): {isUR: boolean; complete: boolean; psbtBase64?: string} => {
       const lowerData = data.toLowerCase();
-
       // Check if it's a UR code
       if (!lowerData.startsWith('ur:')) {
         return {isUR: false, complete: false};
       }
-
       // Check if it's a PSBT type
       const urType = lowerData.split('/')[0].substring(3);
       if (urType !== 'psbt' && urType !== 'crypto-psbt') {
         dbg('Not a PSBT UR, type:', urType);
         return {isUR: true, complete: false};
       }
-
       try {
         // Initialize decoder if needed
         if (!urDecoderRef.current) {
           urDecoderRef.current = new URDecoder();
           dbg('Created new URDecoder');
         }
-
         // Feed the QR data to the decoder
         // UR decoder uses fountain codes - it can reconstruct from any subset of frames
         // Duplicate frames are automatically handled by the decoder
         urDecoderRef.current.receivePart(data.toLowerCase());
-
         // Get progress
         const progress = urDecoderRef.current.getProgress();
         const estimatedPercentComplete = Math.round(
           urDecoderRef.current.estimatedPercentComplete() * 100,
         );
-
         dbg(`UR progress: ${estimatedPercentComplete}%, received: ${progress}`);
-
         // Update progress - use percentage directly for more accurate display
         // On iOS, ensure we always update even if the value seems the same
         // to trigger re-renders for progress bar
@@ -315,16 +270,13 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
           received: estimatedPercentComplete,
           percentage: estimatedPercentComplete,
         });
-
         HapticFeedback.light();
-
         // Check if complete
         if (urDecoderRef.current.isComplete()) {
           dbg('UR decoder reports complete');
           if (urDecoderRef.current.isSuccess()) {
             const ur = urDecoderRef.current.resultUR();
             dbg('UR complete! Type:', ur.type);
-
             // Get the CBOR payload
             const cborPayload = ur.decodeCBOR();
             dbg(
@@ -333,7 +285,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
               'length:',
               cborPayload?.length,
             );
-
             // The CBOR payload should be the raw PSBT bytes
             let psbtBytes: Uint8Array;
             if (cborPayload instanceof Uint8Array) {
@@ -347,9 +298,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
               dbg('Unknown CBOR payload format:', cborPayload);
               return {isUR: true, complete: false};
             }
-
             dbg('PSBT bytes length:', psbtBytes.length);
-
             // Verify PSBT magic bytes (psbt = 0x70736274)
             if (
               psbtBytes.length > 4 &&
@@ -363,11 +312,9 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                 String.fromCharCode.apply(null, Array.from(psbtBytes)),
               );
               dbg('PSBT base64 length:', base64.length);
-
               // Reset decoder
               urDecoderRef.current = null;
               setUrProgress(null);
-
               return {isUR: true, complete: true, psbtBase64: base64};
             } else {
               dbg(
@@ -378,12 +325,10 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
           } else {
             dbg('UR decoding failed:', urDecoderRef.current.resultError());
           }
-
           // Reset on failure
           urDecoderRef.current = null;
           setUrProgress(null);
         }
-
         return {isUR: true, complete: false};
       } catch (e: any) {
         dbg('UR processing error:', e.message || e);
@@ -395,7 +340,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
     },
     [],
   );
-
   // Process scanned QR data (handles both plain base64 and UR format)
   const processScannedData = useCallback(
     async (data: string, shouldContinueScanning?: () => void) => {
@@ -405,10 +349,8 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
         'isScanningRef:',
         isScanningRef.current,
       );
-
       // Check if it's UR format
       const urResult = processURCode(data);
-
       if (urResult.isUR) {
         if (urResult.complete && urResult.psbtBase64) {
           // Complete! Stop scanning and parse
@@ -447,7 +389,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
         }
         return;
       }
-
       // Not UR format - could be:
       // 1. Plain base64 PSBT (single scan) - stop and parse
       // 2. Random QR code (not a PSBT) - ignore and keep scanning in continuous mode
@@ -490,14 +431,12 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
     },
     [processURCode, parsePSBT],
   );
-
   // Helper function to set up the event listener for continuous scanning
   // Called every time we start a scan to ensure listener is fresh and active
   const setupEventListener = useCallback(() => {
     if (Platform.OS !== 'android') {
       return;
     }
-
     // Remove existing listener if any
     if (continuousScanSubscriptionRef.current) {
       dbg(
@@ -506,9 +445,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
       continuousScanSubscriptionRef.current.remove();
       continuousScanSubscriptionRef.current = null;
     }
-
     dbg('Android: Setting up EventEmitter listener for continuous scanning');
-
     const subscription = DeviceEventEmitter.addListener(
       'BarcodeZxingScanContinuous',
       (event: {data?: string; error?: string}) => {
@@ -527,7 +464,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
           'eventKeys:',
           Object.keys(event),
         );
-
         if (event.error) {
           // Error or cancellation
           dbg('Android scan error:', event.error);
@@ -539,17 +475,14 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
           BarcodeZxingScan.updateProgressText('');
           return;
         }
-
         if (event.data) {
           dbg(
             'Android: Processing event with data:',
             event.data.substring(0, 50) + '...',
           );
-
           // CRITICAL: Simplified logic - if we receive an event, process it UNLESS
           // we explicitly know the scan was completed and stopped
           // The session ID helps, but if scanner is open and we get events, process them
-
           // Only reject if BOTH conditions are true: not scanning AND session ID is 0
           // This means the scan was explicitly stopped and we're not in a new session
           if (!currentIsScanning && currentSessionId === 0) {
@@ -560,7 +493,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
             // Don't stop scanner here - it might already be stopped
             return;
           }
-
           // If we get here, we should process the event
           // Re-enable scanning state if needed (handles race conditions)
           if (!currentIsScanning) {
@@ -572,7 +504,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
             isScanningRef.current = true;
             setIsAndroidScanning(true);
           }
-
           // CRITICAL: Ensure UR decoder is initialized for this scan session
           // Initialize decoder when we receive the first UR frame
           if (
@@ -582,7 +513,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
             dbg('Android: Initializing new UR decoder for scan session');
             urDecoderRef.current = new URDecoder();
           }
-
           // If decoder exists but we're getting non-UR data, reset decoder for new scan
           if (
             urDecoderRef.current &&
@@ -594,7 +524,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
             urDecoderRef.current = null;
             setUrProgress(null);
           }
-
           dbg('Android scanned QR frame:', event.data.substring(0, 50) + '...');
           // Process the scanned data - the scanner stays open for next frame
           // Use the latest processScannedData via closure, but also ensure refs are current
@@ -610,11 +539,9 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
         }
       },
     );
-
     continuousScanSubscriptionRef.current = subscription;
     dbg('Android: EventEmitter listener set up successfully');
   }, [processScannedData]);
-
   // Cleanup listener on component unmount
   useEffect(() => {
     return () => {
@@ -625,7 +552,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
       }
     };
   }, []);
-
   // Android continuous scanning function - uses native continuous scanning
   // The scanner stays open and sends results via EventEmitter until UR is complete
   const startAndroidContinuousScan = useCallback(() => {
@@ -633,31 +559,26 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
       dbg('Android: Already scanning, ignoring duplicate call');
       return; // Already scanning
     }
-
     // CRITICAL: Set up event listener every time we start a scan
     // This ensures the listener is fresh and active for each scan session
     dbg('Android: Setting up event listener for new scan');
     setupEventListener();
-
     // CRITICAL: Reset decoder and progress FIRST
     // This ensures clean state for subsequent scans
     urDecoderRef.current = null;
     setUrProgress(null);
     // Clear any progress text from previous scan
     BarcodeZxingScan.updateProgressText('');
-
     // CRITICAL: Increment session ID BEFORE setting scanning flags
     // This ensures events are associated with the correct session
     scanSessionIdRef.current = (scanSessionIdRef.current || 0) + 1;
     const currentSessionId = scanSessionIdRef.current;
     dbg('Android: Starting new scan session, sessionId:', currentSessionId);
-
     // CRITICAL: Set scanning flags BEFORE starting scanner
     // This ensures event listener processes events correctly
     dbg('Android: Setting isScanningRef to true BEFORE starting scanner');
     isScanningRef.current = true;
     setIsAndroidScanning(true);
-
     dbg(
       'Android: Starting continuous scan for animated QR, sessionId:',
       currentSessionId,
@@ -668,7 +589,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
       'listenerActive:',
       !!continuousScanSubscriptionRef.current,
     );
-
     // Use the new continuous scanning API that keeps the activity open
     // The callback is only invoked once to acknowledge scanner start
     // Subsequent results come via EventEmitter
@@ -681,7 +601,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
         'isScanningRef:',
         isScanningRef.current,
       );
-
       if (scanError) {
         // Error starting scanner
         dbg('Android: Failed to start scanner:', scanError);
@@ -694,7 +613,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
         }
         return;
       }
-
       // Scanner started successfully - results will come via EventEmitter
       if (data === 'SCANNER_STARTED') {
         // Verify this is still the current session (not a stale callback)
@@ -724,17 +642,14 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
       }
     });
   }, [setupEventListener]); // Include setupEventListener to ensure we have the latest version
-
   // Handle QR scan button press
   const handleScanQR = useCallback(() => {
     HapticFeedback.light();
-
     // Reset all state when starting a new scan
     setError(null); // Clear any previous errors
     setIsLoading(false); // Clear loading state
     setPsbtBase64(null); // Clear any previous PSBT data
     setPsbtDetails(null); // Clear PSBT details
-
     // Ensure any previous scan is fully stopped before starting a new one
     if (Platform.OS === 'android') {
       // Always stop any existing scan first to ensure clean state
@@ -748,7 +663,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
         urDecoderRef.current = null;
         setUrProgress(null);
         BarcodeZxingScan.updateProgressText('');
-
         // Add a small delay to ensure native scanner is fully stopped
         // before starting a new scan (fixes Android subsequent scan issue)
         // NOTE: Don't reset sessionId to 0 here - let the new scan set it
@@ -770,7 +684,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
       setIsScannerVisible(true);
     }
   }, [startAndroidContinuousScan, isAndroidScanning]);
-
   // Handle sign button
   const handleSign = useCallback(() => {
     HapticFeedback.medium();
@@ -780,7 +693,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
       onSign(psbtBase64);
     }
   }, [psbtBase64, onSign]);
-
   // Format satoshis to BTC string (compact)
   const formatBTC = (sats: number): string => {
     const btc = sats / 100000000;
@@ -790,320 +702,238 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
     }
     return btc.toFixed(8) + ' BTC';
   };
-
-  // Format satoshis to fiat string
-  const formatFiat = (sats: number): string => {
-    if (!btcRate || btcRate === 0) {
-      return '';
-    }
-    const btc = sats / 100000000;
-    const fiat = btc * btcRate;
-    return `${currencySymbol}${fiat.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
-  };
-
   const styles = createStyles(theme);
-
   // Handler for QR scan results (wraps processScannedData for new QRScanner component)
-  const handleQRScan = useCallback((data: string) => {
-    dbg('QR Scanner: Scanned data:', data.substring(0, 50) + '...');
-
-    // CRITICAL: Ensure UR decoder is initialized for this scan session
-    // This ensures progress tracking works correctly
-    if (
-      !urDecoderRef.current &&
-      data.toLowerCase().startsWith('ur:')
-    ) {
-      dbg('QR Scanner: Initializing new UR decoder for scan session');
-      urDecoderRef.current = new URDecoder();
-    }
-
-    // Use processScannedData to handle both plain PSBT and UR format
-    processScannedData(data);
-  }, [processScannedData]);
-
+  const handleQRScan = useCallback(
+    (data: string) => {
+      dbg('QR Scanner: Scanned data:', data.substring(0, 50) + '...');
+      // CRITICAL: Ensure UR decoder is initialized for this scan session
+      // This ensures progress tracking works correctly
+      if (!urDecoderRef.current && data.toLowerCase().startsWith('ur:')) {
+        dbg('QR Scanner: Initializing new UR decoder for scan session');
+        urDecoderRef.current = new URDecoder();
+      }
+      // Use processScannedData to handle both plain PSBT and UR format
+      processScannedData(data);
+    },
+    [processScannedData],
+  );
   return (
     <View style={useOverlay ? styles.modalOverlay : undefined}>
       <View style={useOverlay ? styles.modalContent : styles.embeddedContent}>
-          {/* Header */}
-          <View style={styles.headerRow}>
-            {btcPrice !== undefined && onCurrencyPress && (
-              <TouchableOpacity
-                style={styles.priceButton}
-                onPress={() => {
-                  HapticFeedback.light();
-                  onCurrencyPress();
-                }}
-                activeOpacity={0.7}
-                accessible={true}
-                accessibilityRole="button"
-                accessibilityLabel={`Bitcoin price: ${
-                  btcPrice ? presentFiat(btcPrice) : '-'
-                } ${selectedCurrency || ''}`}
-                accessibilityHint="Double tap to change currency">
-                <Image
-                  source={require('../assets/bitcoin-logo.png')}
-                  style={styles.priceButtonIcon}
-                />
-                <View style={styles.priceTextContainer}>
-                  <Text style={styles.priceText}>
-                    {btcPrice ? presentFiat(btcPrice) : '-'}
-                  </Text>
-                  {selectedCurrency && (
-                    <Text style={styles.priceCurrencyBadge}>
-                      {selectedCurrency}
-                    </Text>
-                  )}
-                </View>
-              </TouchableOpacity>
-            )}
-            <View style={styles.networkBadge}>
-              <Text style={styles.networkBadgeText}>
-                {network === 'mainnet' ? 'MAINNET' : 'TESTNET'}
-              </Text>
-            </View>
+        {/* Description */}
+        <Text style={styles.description}>
+          Import a Partially Signed Bitcoin Transaction (PSBT) from Sparrow or
+          another wallet to co-sign accordingly, with your wallet's keyshares.
+        </Text>
+        {/* Import buttons */}
+        {!psbtBase64 && (
+          <View style={styles.importButtonsContainer}>
+            <Pressable
+              style={styles.importButton}
+              onPress={handleUploadFile}
+              disabled={isLoading}>
+              <Image
+                source={require('../assets/upload-icon.png')}
+                style={styles.importButtonIcon}
+              />
+              <Text style={styles.importButtonText}>Load PSBT File</Text>
+            </Pressable>
+            <Pressable
+              style={styles.importButton}
+              onPress={handleScanQR}
+              disabled={isLoading}>
+              <Image
+                source={require('../assets/scan-icon.png')}
+                style={styles.importButtonIcon}
+              />
+              <Text style={styles.importButtonText}>Scan PSBT QR</Text>
+            </Pressable>
           </View>
-
-          {/* Description */}
-          <Text style={styles.description}>
-            Import a Partially Signed Bitcoin Transaction (PSBT) from Sparrow or
-            another wallet to sign with your keyshare on.
-          </Text>
-
-          {/* Import buttons */}
-          {!psbtBase64 && (
-            <View style={styles.importButtonsContainer}>
-              <TouchableOpacity
-                style={styles.importButton}
-                onPress={handleUploadFile}
-                disabled={isLoading}>
-                <Image
-                  source={require('../assets/upload-icon.png')}
-                  style={styles.importButtonIcon}
-                />
-                <Text style={styles.importButtonText}>Load PSBT File</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.importButton}
-                onPress={handleScanQR}
-                disabled={isLoading}>
-                <Image
-                  source={require('../assets/scan-icon.png')}
-                  style={styles.importButtonIcon}
-                />
-                <Text style={styles.importButtonText}>Scan PSBT QR</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* Loading indicator */}
-          {isLoading && (
-            <View style={styles.loadingContainer}>
-              <Text style={styles.loadingText}>Parsing PSBT...</Text>
-            </View>
-          )}
-
-          {/* Error message */}
-          {error && (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{error}</Text>
-              <TouchableOpacity
-                style={styles.retryButton}
-                onPress={() => {
-                  setError(null);
-                  setPsbtBase64(null);
-                  setPsbtDetails(null);
-                }}>
-                <Text style={styles.retryButtonText}>Try Again</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* PSBT Details - Sparrow-style Visual Flow */}
-          {psbtDetails && psbtBase64 && !error && (
-            <ScrollView
-              style={styles.detailsContainer}
-              showsVerticalScrollIndicator={false}>
-              {/* Transaction Flow Diagram - Vertical Mobile-Friendly Layout */}
-              <View style={styles.transactionFlow}>
-                {/* Inputs Section */}
-                <View style={styles.flowSection}>
-                  <Text style={styles.flowSectionTitle}>Inputs</Text>
-                  {psbtDetails.inputs.map((input, index) => {
-                    const derivePath = psbtDetails.derivePaths[index] || 'N/A';
-                    return (
-                      <View key={index} style={styles.flowItem}>
-                        <View style={styles.flowItemContent}>
-                          <View style={styles.flowItemHeader}>
-                            <Image
-                              source={require('../assets/in-icon.png')}
-                              style={styles.flowIcon}
-                              resizeMode="contain"
-                            />
-                            <View style={styles.flowItemInfo}>
-                              <Text
-                                style={styles.flowItemLabel}
-                                numberOfLines={1}
-                                ellipsizeMode="middle">
-                                {input.txid.slice(0, 8)}...
-                                {input.txid.slice(-6)}:{input.vout}
-                              </Text>
-                              <Text
-                                style={styles.flowItemPath}
-                                numberOfLines={1}>
-                                {derivePath}
-                              </Text>
-                            </View>
-                          </View>
-                          <View style={styles.flowAmount}>
-                            <Text style={styles.flowAmountBTC}>
-                              {formatBTC(input.amount)}
-                            </Text>
-                            {btcRate > 0 && (
-                              <Text style={styles.flowAmountFiat}>
-                                {formatFiat(input.amount)}
-                              </Text>
-                            )}
-                          </View>
-                        </View>
-                        {/* Flow line connector */}
-                        {index < psbtDetails.inputs.length - 1 && (
-                          <View style={styles.flowConnectorVertical} />
-                        )}
-                      </View>
-                    );
-                  })}
-                </View>
-
-                {/* Transaction Hub (Center Arrow) */}
-                <View style={styles.transactionHubVertical}>
-                  <View style={styles.hubArrow}>
-                    <Text style={styles.hubArrowText}>↓</Text>
-                  </View>
-                  <View style={styles.hubLabel}>
-                    <Text style={styles.hubLabelText}>Transaction</Text>
-                  </View>
-                </View>
-
-                {/* Outputs Section */}
-                <View style={styles.flowSection}>
-                  <Text style={styles.flowSectionTitle}>Outputs</Text>
-                  {psbtDetails.outputs.map((output, index) => {
-                    // Determine output type: change (likely if small amount), recipient, or fee
-                    const isLikelyChange =
-                      output.amount < psbtDetails.totalInput * 0.1; // Heuristic: small outputs are often change
-
-                    let outputIcon = require('../assets/bitcoin-icon.png');
-                    let outputType = 'recipient';
-
-                    if (isLikelyChange) {
-                      outputIcon = require('../assets/consolidate-icon.png');
-                      outputType = 'change';
-                    }
-
-                    return (
-                      <View key={index} style={styles.flowItem}>
-                        <View style={styles.flowItemContent}>
-                          <View style={styles.flowItemHeader}>
-                            <Image
-                              source={outputIcon}
-                              style={styles.flowIcon}
-                              resizeMode="contain"
-                            />
-                            <View style={styles.flowItemInfo}>
-                              <Text
-                                style={styles.flowItemLabel}
-                                numberOfLines={1}
-                                ellipsizeMode="middle">
-                                {output.address.slice(0, 8) +
-                                  '...' +
-                                  output.address.slice(-6)}
-                              </Text>
-                              {outputType === 'change' && (
-                                <Text style={styles.flowItemType}>Change</Text>
-                              )}
-                            </View>
-                          </View>
-                          <View style={styles.flowAmount}>
-                            <Text style={styles.flowAmountBTC}>
-                              {formatBTC(output.amount)}
-                            </Text>
-                            {btcRate > 0 && (
-                              <Text style={styles.flowAmountFiat}>
-                                {formatFiat(output.amount)}
-                              </Text>
-                            )}
-                          </View>
-                        </View>
-                        {/* Flow line connector */}
-                        {index < psbtDetails.outputs.length - 1 && (
-                          <View style={styles.flowConnectorVertical} />
-                        )}
-                      </View>
-                    );
-                  })}
-
-                  {/* Fee as separate item */}
-                  {psbtDetails.fee > 0 && (
-                    <View style={styles.flowItem}>
+        )}
+        {/* Loading indicator */}
+        {isLoading && (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Parsing PSBT...</Text>
+          </View>
+        )}
+        {/* Error message */}
+        {error && (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>{error}</Text>
+            <Pressable
+              style={styles.retryButton}
+              onPress={() => {
+                setError(null);
+                setPsbtBase64(null);
+                setPsbtDetails(null);
+              }}>
+              <Text style={styles.retryButtonText}>Try Again</Text>
+            </Pressable>
+          </View>
+        )}
+        {/* PSBT Details - Sparrow-style Visual Flow */}
+        {psbtDetails && psbtBase64 && !error && (
+          <ScrollView
+            style={styles.detailsContainer}
+            removeClippedSubviews
+            keyboardShouldPersistTaps="handled"
+            overScrollMode="never"
+            showsVerticalScrollIndicator={true}
+            nestedScrollEnabled={true}
+            scrollEnabled={true}>
+            {/* Transaction Flow Diagram - Vertical Mobile-Friendly Layout */}
+            <View style={styles.transactionFlow}>
+              {/* Inputs Section */}
+              <View style={styles.flowSection}>
+                <Text style={styles.flowSectionTitle}>Inputs</Text>
+                {psbtDetails.inputs.map((input, index) => {
+                  const derivePath = psbtDetails.derivePaths[index] || 'N/A';
+                  return (
+                    <View key={index} style={styles.flowItem}>
                       <View style={styles.flowItemContent}>
                         <View style={styles.flowItemHeader}>
                           <Image
-                            source={require('../assets/send-icon.png')}
+                            source={require('../assets/in-icon.png')}
                             style={styles.flowIcon}
                             resizeMode="contain"
                           />
                           <View style={styles.flowItemInfo}>
-                            <Text style={styles.flowItemLabel}>Fee</Text>
+                            <Text
+                              style={styles.flowItemLabel}
+                              numberOfLines={1}
+                              ellipsizeMode="middle">
+                              {input.txid.slice(0, 8)}...
+                              {input.txid.slice(-6)}:{input.vout}
+                            </Text>
+                            <Text style={styles.flowItemPath} numberOfLines={1}>
+                              {derivePath}
+                            </Text>
                           </View>
                         </View>
                         <View style={styles.flowAmount}>
                           <Text style={styles.flowAmountBTC}>
-                            {formatBTC(psbtDetails.fee)}
+                            {formatBTC(input.amount)}
                           </Text>
-                          {btcRate > 0 && (
-                            <Text style={styles.flowAmountFiat}>
-                              {formatFiat(psbtDetails.fee)}
-                            </Text>
-                          )}
                         </View>
                       </View>
+                      {/* Flow line connector */}
+                      {index < psbtDetails.inputs.length - 1 && (
+                        <View style={styles.flowConnectorVertical} />
+                      )}
                     </View>
-                  )}
+                  );
+                })}
+              </View>
+              {/* Transaction Hub (Center Arrow) */}
+              <View style={styles.transactionHubVertical}>
+                <View style={styles.hubArrow}>
+                  <Text style={styles.hubArrowText}>↓</Text>
+                </View>
+                <View style={styles.hubLabel}>
+                  <Text style={styles.hubLabelText}>Transaction</Text>
                 </View>
               </View>
-
-              {/* Summary Bar */}
-              <View style={styles.summaryBar}>
-                <View style={styles.summaryBarContent}>
-                  <Text style={styles.summaryBarText} numberOfLines={2}>
-                    {psbtDetails.inputs.length} input
-                    {psbtDetails.inputs.length !== 1 ? 's' : ''} →{' '}
-                    {psbtDetails.outputs.length} output
-                    {psbtDetails.outputs.length !== 1 ? 's' : ''} •{' '}
-                    {formatBTC(psbtDetails.totalOutput + psbtDetails.fee)} total
-                  </Text>
-                  {psbtDetails.derivePaths.length > 0 && (
-                    <Text style={styles.summaryBarPath} numberOfLines={1}>
-                      Path: {psbtDetails.derivePaths.join(', ')}
-                    </Text>
-                  )}
-                </View>
-                <View style={styles.summaryBarBadge}>
-                  <Text style={styles.summaryBarBadgeText}>
-                    {Math.round(psbtBase64.length / 1024)} KB
-                  </Text>
-                </View>
+              {/* Outputs Section */}
+              <View style={styles.flowSection}>
+                <Text style={styles.flowSectionTitle}>Outputs</Text>
+                {psbtDetails.outputs.map((output, index) => {
+                  // Determine output type: change (likely if small amount), recipient, or fee
+                  const isLikelyChange =
+                    output.amount < psbtDetails.totalInput * 0.1; // Heuristic: small outputs are often change
+                  let outputIcon = require('../assets/bitcoin-icon.png');
+                  let outputType = 'recipient';
+                  if (isLikelyChange) {
+                    outputIcon = require('../assets/consolidate-icon.png');
+                    outputType = 'change';
+                  }
+                  return (
+                    <View key={index} style={styles.flowItem}>
+                      <View style={styles.flowItemContent}>
+                        <View style={styles.flowItemHeader}>
+                          <Image
+                            source={outputIcon}
+                            style={styles.flowIcon}
+                            resizeMode="contain"
+                          />
+                          <View style={styles.flowItemInfo}>
+                            <Text
+                              style={styles.flowItemLabel}
+                              numberOfLines={1}
+                              ellipsizeMode="middle">
+                              {output.address.slice(0, 8) +
+                                '...' +
+                                output.address.slice(-6)}
+                            </Text>
+                            {outputType === 'change' && (
+                              <Text style={styles.flowItemType}>Change</Text>
+                            )}
+                          </View>
+                        </View>
+                        <View style={styles.flowAmount}>
+                          <Text style={styles.flowAmountBTC}>
+                            {formatBTC(output.amount)}
+                          </Text>
+                        </View>
+                      </View>
+                      {/* Flow line connector */}
+                      {index < psbtDetails.outputs.length - 1 && (
+                        <View style={styles.flowConnectorVertical} />
+                      )}
+                    </View>
+                  );
+                })}
+                {/* Fee as separate item */}
+                {psbtDetails.fee > 0 && (
+                  <View style={styles.flowItem}>
+                    <View style={styles.flowItemContent}>
+                      <View style={styles.flowItemHeader}>
+                        <Image
+                          source={require('../assets/send-icon.png')}
+                          style={styles.flowIcon}
+                          resizeMode="contain"
+                        />
+                        <View style={styles.flowItemInfo}>
+                          <Text style={styles.flowItemLabel}>Fee</Text>
+                        </View>
+                      </View>
+                      <View style={styles.flowAmount}>
+                        <Text style={styles.flowAmountBTC}>
+                          {formatBTC(psbtDetails.fee)}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                )}
               </View>
-            </ScrollView>
-          )}
-
+            </View>
+            {/* Summary Bar */}
+            <View style={styles.summaryBar}>
+              <View style={styles.summaryBarContent}>
+                <Text style={styles.summaryBarText} numberOfLines={2}>
+                  {psbtDetails.inputs.length} input
+                  {psbtDetails.inputs.length !== 1 ? 's' : ''} →{' '}
+                  {psbtDetails.outputs.length} output
+                  {psbtDetails.outputs.length !== 1 ? 's' : ''} •{' '}
+                  {formatBTC(psbtDetails.totalOutput + psbtDetails.fee)} total
+                </Text>
+                {psbtDetails.derivePaths.length > 0 && (
+                  <Text style={styles.summaryBarPath} numberOfLines={1}>
+                    Path: {psbtDetails.derivePaths.join(', ')}
+                  </Text>
+                )}
+              </View>
+              <View style={styles.summaryBarBadge}>
+                <Text style={styles.summaryBarBadgeText}>
+                  {Math.round(psbtBase64.length / 1024)} KB
+                </Text>
+              </View>
+            </View>
+          </ScrollView>
+        )}
         {/* Action buttons */}
         <View style={styles.actionButtonsContainer}>
-          <TouchableOpacity
+          <Pressable
             style={[
               styles.cancelButton,
               isCancelDisabled && styles.cancelButtonDisabled,
@@ -1117,15 +947,11 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
               ]}>
               Cancel
             </Text>
-          </TouchableOpacity>
-
+          </Pressable>
           {middleButton && (
-            <View style={styles.middleButtonContainer}>
-              {middleButton}
-            </View>
+            <View style={styles.middleButtonContainer}>{middleButton}</View>
           )}
-
-          <TouchableOpacity
+          <Pressable
             style={[
               styles.signButton,
               !psbtBase64 && styles.signButtonDisabled,
@@ -1146,9 +972,8 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
               ]}>
               Co-Sign
             </Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
-
         {/* QR Scanner Modal */}
         <QRScanner
           visible={isScannerVisible}
@@ -1163,7 +988,9 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                 : `Keep scanning animated QR: ${Math.min(
                     100,
                     urProgress.percentage ||
-                      Math.round((urProgress.received / urProgress.total) * 100),
+                      Math.round(
+                        (urProgress.received / urProgress.total) * 100,
+                      ),
                   )}%`
               : 'Point camera at the PSBT QR code to scan'
           }
@@ -1175,36 +1002,20 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
     </View>
   );
 };
-
-const PSBTModal: React.FC<PSBTModalProps> = ({
-  visible,
-  btcRate = 0,
-  currencySymbol = '$',
-  network = 'mainnet',
-  onClose,
-  onSign,
-}) => {
+const PSBTModal: React.FC<PSBTModalProps> = ({visible, onClose, onSign}) => {
   if (!visible) {
     return null;
   }
-
   return (
     <Modal
       visible={visible}
       transparent={true}
       animationType="fade"
       onRequestClose={() => {}}>
-      <PSBTLoader
-        btcRate={btcRate}
-        currencySymbol={currencySymbol}
-        network={network}
-        onClose={onClose}
-        onSign={onSign}
-      />
+      <PSBTLoader onClose={onClose} onSign={onSign} />
     </Modal>
   );
 };
-
 const createStyles = (theme: any) =>
   StyleSheet.create({
     modalOverlay: {
@@ -1227,6 +1038,11 @@ const createStyles = (theme: any) =>
       shadowOpacity: 0.3,
       shadowRadius: 8,
       elevation: 8,
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
     },
     // Embedded version used on the dedicated PSBT screen (no overlay)
     // No border/shadow here since it's inside a collapsible section that already has borders
@@ -1237,81 +1053,8 @@ const createStyles = (theme: any) =>
       width: '100%',
       overflow: 'hidden',
     },
-    headerRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 12,
-    },
-    networkBadge: {
-      backgroundColor: theme.colors.background,
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-    },
-    networkBadgeText: {
-      fontSize: theme.fontSizes?.xs || 10,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.text,
-      letterSpacing: 0.5,
-    },
-    priceButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 6,
-      backgroundColor:
-        theme.colors.background === '#121212' ||
-        theme.colors.background.includes('12')
-          ? theme.colors.cardBackground
-          : theme.colors.shadowColor + '0F', // ~6% opacity
-      borderWidth: 1,
-      borderColor:
-        theme.colors.background === '#121212' ||
-        theme.colors.background.includes('12')
-          ? theme.colors.border + '80'
-          : theme.colors.shadowColor + '1A', // ~10% opacity
-      paddingHorizontal: 14,
-      paddingVertical: 0,
-      borderRadius: 10,
-      height: 36,
-      minWidth: 90,
-      shadowOffset: {width: 0, height: 1},
-      shadowOpacity: 0.05,
-      shadowRadius: 3,
-      elevation: Platform.OS === 'android' ? 0 : 1,
-    },
-    priceButtonIcon: {
-      width: 20,
-      height: 20,
-      resizeMode: 'contain',
-    },
-    priceTextContainer: {
-      flexDirection: 'column',
-      alignItems: 'flex-start',
-      justifyContent: 'center',
-    },
-    priceText: {
-      fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.text,
-      lineHeight: 14,
-    },
-    priceCurrencyBadge: {
-      fontSize: theme.fontSizes?.xs || 10,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.textSecondary,
-      lineHeight: 12,
-    },
     description: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       lineHeight: 20,
       marginBottom: 16,
@@ -1339,8 +1082,7 @@ const createStyles = (theme: any) =>
     },
     importButtonText: {
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
     },
     loadingContainer: {
@@ -1349,8 +1091,6 @@ const createStyles = (theme: any) =>
     },
     loadingText: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
     },
     errorContainer: {
@@ -1362,8 +1102,6 @@ const createStyles = (theme: any) =>
     },
     errorText: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.danger,
       textAlign: 'center',
       marginBottom: 12,
@@ -1376,13 +1114,13 @@ const createStyles = (theme: any) =>
     },
     retryButtonText: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.white,
     },
     detailsContainer: {
-      maxHeight: 400,
+      maxHeight: Platform.OS === 'android' ? 500 : 400,
       marginBottom: 16,
+      flexGrow: 0,
     },
     summaryHeader: {
       flexDirection: 'row',
@@ -1392,8 +1130,6 @@ const createStyles = (theme: any) =>
     },
     summaryLabel: {
       fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
     },
     psbtSizeBadge: {
@@ -1404,8 +1140,7 @@ const createStyles = (theme: any) =>
     },
     psbtSizeText: {
       fontSize: theme.fontSizes?.xs || 11,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.success,
     },
     detailsSection: {
@@ -1413,8 +1148,7 @@ const createStyles = (theme: any) =>
     },
     detailsSectionTitle: {
       fontSize: theme.fontSizes?.xs || 10,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.textSecondary,
       marginBottom: 6,
       textTransform: 'uppercase',
@@ -1436,8 +1170,7 @@ const createStyles = (theme: any) =>
     },
     inputTxidText: {
       fontSize: theme.fontSizes?.xs || 11,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+      fontFamily: theme.fontFamilies?.monospace,
       color: theme.colors.text,
       marginBottom: 4,
     },
@@ -1448,16 +1181,17 @@ const createStyles = (theme: any) =>
     },
     derivePathLabel: {
       fontSize: theme.fontSizes?.xs || 9,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.textSecondary,
       marginRight: 6,
     },
     derivePathText: {
       fontSize: theme.fontSizes?.xs || 10,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
-      color: theme.colors.primary,
+      fontFamily: theme.fontFamilies?.monospace,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
       flex: 1,
     },
     outputRow: {
@@ -1472,8 +1206,7 @@ const createStyles = (theme: any) =>
     },
     addressText: {
       fontSize: theme.fontSizes?.xs || 11,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+      fontFamily: theme.fontFamilies?.monospace,
       color: theme.colors.text,
       flex: 1,
       marginRight: 8,
@@ -1488,8 +1221,7 @@ const createStyles = (theme: any) =>
     },
     derivePathSummaryLabel: {
       fontSize: theme.fontSizes?.xs || 10,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.textSecondary,
       marginBottom: 4,
       textTransform: 'uppercase',
@@ -1497,14 +1229,14 @@ const createStyles = (theme: any) =>
     },
     derivePathSummaryText: {
       fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
-      color: theme.colors.primary,
+      fontFamily: theme.fontFamilies?.monospaceMedium,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     derivePathNote: {
       fontSize: theme.fontSizes?.xs || 9,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginTop: 4,
       fontStyle: 'italic',
@@ -1519,8 +1251,7 @@ const createStyles = (theme: any) =>
     },
     flowSectionTitle: {
       fontSize: theme.fontSizes?.xs || 10,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.textSecondary,
       marginBottom: 12,
       textTransform: 'uppercase',
@@ -1552,21 +1283,20 @@ const createStyles = (theme: any) =>
     },
     flowItemLabel: {
       fontSize: theme.fontSizes?.xs || 11,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       marginBottom: 2,
     },
     flowItemPath: {
       fontSize: theme.fontSizes?.xs || 9,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
-      color: theme.colors.primary,
+      fontFamily: theme.fontFamilies?.monospaceMedium,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     flowItemType: {
       fontSize: theme.fontSizes?.xs || 9,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       fontStyle: 'italic',
       marginTop: 2,
@@ -1576,14 +1306,14 @@ const createStyles = (theme: any) =>
     },
     flowAmountBTC: {
       fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.primary,
+      fontFamily: theme.fontFamilies?.bold,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     flowAmountFiat: {
       fontSize: theme.fontSizes?.xs || 9,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginTop: 2,
     },
@@ -1611,8 +1341,7 @@ const createStyles = (theme: any) =>
     },
     hubArrowText: {
       fontSize: theme.fontSizes?.['2xl'] || 20,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.primary,
     },
     hubLabel: {
@@ -1620,8 +1349,7 @@ const createStyles = (theme: any) =>
     },
     hubLabelText: {
       fontSize: theme.fontSizes?.xs || 11,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.textSecondary,
       textTransform: 'uppercase',
       letterSpacing: 0.5,
@@ -1643,16 +1371,17 @@ const createStyles = (theme: any) =>
     },
     summaryBarText: {
       fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       marginBottom: 4,
     },
     summaryBarPath: {
       fontSize: theme.fontSizes?.xs || 10,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.monospace || (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
-      color: theme.colors.primary,
+      fontFamily: theme.fontFamilies?.monospaceMedium,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     summaryBarBadge: {
       backgroundColor: theme.colors.primary + '20',
@@ -1662,8 +1391,7 @@ const createStyles = (theme: any) =>
     },
     summaryBarBadgeText: {
       fontSize: theme.fontSizes?.xs || 10,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.primary,
     },
     amountContainer: {
@@ -1671,14 +1399,11 @@ const createStyles = (theme: any) =>
     },
     amountText: {
       fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.primary,
     },
     fiatText: {
       fontSize: theme.fontSizes?.xs || 10,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginTop: 1,
     },
@@ -1695,8 +1420,6 @@ const createStyles = (theme: any) =>
     },
     feeLabel: {
       fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
     },
     feeValueContainer: {
@@ -1704,14 +1427,10 @@ const createStyles = (theme: any) =>
     },
     feeValue: {
       fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.text,
     },
     feeFiatValue: {
       fontSize: theme.fontSizes?.xs || 10,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
     },
     totalRow: {
@@ -1724,8 +1443,7 @@ const createStyles = (theme: any) =>
     },
     totalLabel: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
     },
     totalValueContainer: {
@@ -1733,14 +1451,11 @@ const createStyles = (theme: any) =>
     },
     totalValue: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.primary,
     },
     totalFiatValue: {
       fontSize: theme.fontSizes?.xs || 11,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       marginTop: 1,
     },
@@ -1765,8 +1480,7 @@ const createStyles = (theme: any) =>
     },
     cancelButtonText: {
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
     },
     cancelButtonDisabled: {
@@ -1778,7 +1492,10 @@ const createStyles = (theme: any) =>
     signButton: {
       flex: 1,
       flexDirection: 'row',
-      backgroundColor: theme.colors.primary,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
       borderRadius: 12,
       paddingVertical: 14,
       alignItems: 'center',
@@ -1799,8 +1516,7 @@ const createStyles = (theme: any) =>
     },
     signButtonText: {
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.white,
     },
     signButtonTextDisabled: {
@@ -1831,15 +1547,12 @@ const createStyles = (theme: any) =>
     },
     scannerTitle: {
       fontSize: theme.fontSizes?.['2xl'] || 20,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.white,
       marginBottom: 8,
     },
     scannerSubtitle: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.white + 'B3', // ~70% opacity
       textAlign: 'center',
       paddingHorizontal: 20,
@@ -1868,8 +1581,7 @@ const createStyles = (theme: any) =>
     },
     closeScannerButtonText: {
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.white,
     },
     cameraNotFound: {
@@ -1878,8 +1590,6 @@ const createStyles = (theme: any) =>
       alignItems: 'center',
       color: theme.colors.white,
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
     },
     // Android scanning progress modal styles
     androidScanModalOverlay: {
@@ -1899,16 +1609,13 @@ const createStyles = (theme: any) =>
     },
     androidScanModalTitle: {
       fontSize: theme.fontSizes?.['2xl'] || 20,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       marginBottom: 12,
       textAlign: 'center',
     },
     androidScanModalSubtitle: {
       fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
       marginBottom: 20,
@@ -1923,10 +1630,8 @@ const createStyles = (theme: any) =>
     },
     androidScanCancelButtonText: {
       fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.white,
     },
   });
-
 export default PSBTModal;

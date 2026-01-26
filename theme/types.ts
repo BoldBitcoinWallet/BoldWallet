@@ -2,9 +2,7 @@
  * Theme Type Definitions
  * Centralized type definitions for the theme system
  */
-
 export type ThemeMode = 'os' | 'light' | 'dark';
-
 export interface ThemeColors {
   primary: string;
   subPrimary: string;
@@ -32,9 +30,17 @@ export interface ThemeColors {
   warning: string;
   warningLight: string;
   warningAccent: string;
+  warningBg: string; // Background color for warning containers
+  warningBorder: string; // Border color for warning containers
+  warningText: string; // Text color for warning containers
   success: string;
   successLight: string;
   skeletonGray: string;
+  // Switch component colors
+  switchTrackFalse: string; // Track color when switch is off
+  switchTrackTrue: string; // Track color when switch is on
+  switchThumb: string; // Thumb/circle color
+  switchIosBackground: string; // iOS specific background color
   // Overlay colors for glassmorphism effects
   blackOverlay05: string; // rgba(0, 0, 0, 0.05)
   blackOverlay06: string; // rgba(0, 0, 0, 0.06)
@@ -59,7 +65,6 @@ export interface ThemeColors {
   dangerOverlay15: string; // rgba(231, 76, 60, 0.15) - danger at 15% opacity
   dangerOverlay40: string; // rgba(231, 76, 60, 0.4) - danger at 40% opacity
 }
-
 export interface ThemeFontSizes {
   xs: number;
   sm: number;
@@ -75,32 +80,34 @@ export interface ThemeFontSizes {
   large: number;
   extraLarge: number;
 }
-
 export interface ThemeFontWeights {
   normal: string;
   medium: string;
   semibold: string;
   bold: string;
 }
-
 export interface ThemeFontFamilies {
   regular: string;
+  medium: string;
+  bold: string;
   monospace: string;
+  monospaceMedium: string;
+  monospaceBold: string;
+  // Legacy support
+  roboto: string;
+  robotoMono: string;
 }
-
 export interface ThemeSpacing {
   small: number;
   medium: number;
   large: number;
   extraLarge: number;
 }
-
 export interface ThemeBorderRadius {
   small: number;
   medium: number;
   large: number;
 }
-
 export interface ThemeShadow {
   shadowColor: string;
   shadowOffset: {width: number; height: number};
@@ -108,12 +115,10 @@ export interface ThemeShadow {
   shadowRadius: number;
   elevation: number;
 }
-
 export interface ThemeShadows {
   light: ThemeShadow;
   medium: ThemeShadow;
 }
-
 export interface Theme {
   colors: ThemeColors;
   fontSizes: ThemeFontSizes;
@@ -123,18 +128,15 @@ export interface Theme {
   borderRadius: ThemeBorderRadius;
   shadow: ThemeShadows;
 }
-
 export interface FontStyleOptions {
   size?: keyof ThemeFontSizes | number;
   weight?: keyof ThemeFontWeights | string;
   family?: keyof ThemeFontFamilies;
   lineHeight?: number;
 }
-
 export interface ThemeContextValue {
   theme: Theme;
   themeMode: ThemeMode;
   setThemeMode: (mode: ThemeMode) => Promise<void>;
   toggleTheme: (isCrypto?: boolean) => Promise<void>;
 }
-

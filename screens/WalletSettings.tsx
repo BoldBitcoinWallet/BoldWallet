@@ -3,15 +3,13 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   TextInput,
   Alert,
   Modal,
   NativeModules,
   Switch,
-  Linking,
   ScrollView,
-  Animated,
   Image,
   Keyboard,
   KeyboardAvoidingView,
@@ -20,20 +18,23 @@ import {
   useWindowDimensions,
   DeviceEventEmitter,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  withTiming,
+  withSpring,
+  useAnimatedStyle,
+  interpolate,
+  runOnJS,
+} from 'react-native-reanimated';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import Share from 'react-native-share';
-import RNFS from 'react-native-fs';
 import EncryptedStorage from 'react-native-encrypted-storage';
 const {BBMTLibNativeModule} = NativeModules;
 import DeviceInfo from 'react-native-device-info';
 import {useUser} from '../context/UserContext';
-
 // Predefined API endpoints
 const MAINNET_APIS = ['https://mempool.space/api'];
 const TESTNET_APIS = ['https://mempool.space/testnet/api'];
-
 const {IconChanger} = NativeModules; // This is fine here, as it's not a Hook
-
 import {
   dbg,
   HapticFeedback,
@@ -46,8 +47,11 @@ import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
 import LegalModal from '../components/LegalModal';
+import BackupKeyshareModal from '../components/BackupKeyshareModal';
 import {fetchDynamicAPIEndpoints, getNostrRelays} from '../utils';
-
+import FontComparisonScreen from '../components/FontComparisonScreen';
+import {setDebugLoggingEnabled, isDebugLoggingEnabled} from '../App';
+import Toast from 'react-native-toast-message';
 interface CollapsibleSectionProps {
   title: string;
   children: React.ReactNode;
@@ -56,7 +60,6 @@ interface CollapsibleSectionProps {
   styles: any;
   theme: any;
 }
-
 const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   title,
   children,
@@ -65,36 +68,24 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   styles,
   theme,
 }) => {
-  const rotationAnim = useRef(new Animated.Value(isExpanded ? 1 : 0)).current;
-
+  const rotationAnim = useSharedValue(isExpanded ? 1 : 0);
   useEffect(() => {
     // Sync rotation with isExpanded on mount or prop change
-    Animated.timing(rotationAnim, {
-      toValue: isExpanded ? 1 : 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
+    rotationAnim.value = withTiming(isExpanded ? 1 : 0, {duration: 200});
   }, [isExpanded, rotationAnim]);
-
-  const rotateInterpolate = rotationAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '90deg'],
+  const rotateAnimatedStyle = useAnimatedStyle(() => {
+    const rotation = interpolate(rotationAnim.value, [0, 1], [0, 90]);
+    return {
+      transform: [{rotate: `${rotation}deg`}],
+    };
   });
-
   const handlePress = () => {
     HapticFeedback.light();
-
     // Animate rotation immediately
-    Animated.timing(rotationAnim, {
-      toValue: isExpanded ? 0 : 1,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
-
+    rotationAnim.value = withTiming(isExpanded ? 0 : 1, {duration: 200});
     // Toggle content
     onToggle();
   };
-
   const animatedStyle = useMemo(
     () => ({
       opacity: isExpanded ? 1 : 0,
@@ -104,14 +95,13 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
     }),
     [isExpanded],
   );
-
   return (
     <View
       style={[styles.collapsibleSection, isExpanded && styles.sectionExpanded]}>
-      <TouchableOpacity
+      <Pressable
         style={styles.sectionHeader}
         onPress={handlePress}
-        activeOpacity={0.7}
+        android_ripple={{color: 'rgba(0,0,0,0.1)'}}
         accessible={true}
         accessibilityRole="button"
         accessibilityLabel={`${title} section, ${
@@ -131,15 +121,14 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
         <Animated.Text
           style={[
             styles.expandIcon,
+            rotateAnimatedStyle,
             {
-              transform: [{rotate: rotateInterpolate}],
               color: theme.colors.text,
             },
           ]}>
           ▶
         </Animated.Text>
-      </TouchableOpacity>
-
+      </Pressable>
       {/* Always render content, collapse with opacity/scale animation */}
       <Animated.View style={[styles.sectionContent, animatedStyle]}>
         {children}
@@ -147,7 +136,6 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
     </View>
   );
 };
-
 // API Endpoint Autocomplete Component
 interface APIAutocompleteProps {
   value: string;
@@ -156,7 +144,6 @@ interface APIAutocompleteProps {
   styles: any;
   theme: any;
 }
-
 const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
   value,
   onChangeText,
@@ -174,29 +161,23 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
   const searchInputRef = useRef<TextInput>(null);
   const flatListRef = useRef<FlatList<string>>(null);
   const {height} = useWindowDimensions();
-  const modalAnimation = useRef(new Animated.Value(0)).current;
-
+  const modalAnimation = useSharedValue(0);
   const reversedOptions = useMemo(
     () => [...filteredOptions].reverse(),
     [filteredOptions],
   );
-
   // Get the appropriate API list - filter by network
   const [predefinedAPIs, setPredefinedAPIs] = useState<string[]>([]);
   const [isLoadingPredefinedAPIs, setIsLoadingPredefinedAPIs] = useState(false);
   const lastLoadedNetworkRef = useRef<string | null>(null);
-
   // Load API lists - restrict testnet to only the hardcoded endpoint
   useEffect(() => {
     const currentNetwork = isTestnet ? 'testnet' : 'mainnet';
-
     // Only load if network changed
     if (lastLoadedNetworkRef.current === currentNetwork) {
       return; // Already loaded for this network
     }
-
     if (isLoadingPredefinedAPIs) return;
-
     const loadAPIList = async () => {
       setIsLoadingPredefinedAPIs(true);
       try {
@@ -220,11 +201,9 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
         setIsLoadingPredefinedAPIs(false);
       }
     };
-
     loadAPIList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTestnet]);
-
   // Fetch dynamic APIs - load when in mainnet mode and not already loaded
   const dynamicAPIsLoadingRef = useRef(false);
   useEffect(() => {
@@ -232,17 +211,14 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
     if (isTestnet) {
       return;
     }
-
     // If already loading or already have dynamic APIs, don't reload
     if (isLoadingAPIs || dynamicAPIs.length > 0) {
       return;
     }
-
     // Prevent multiple simultaneous load attempts
     if (dynamicAPIsLoadingRef.current) {
       return;
     }
-
     const loadDynamicAPIs = async () => {
       dynamicAPIsLoadingRef.current = true;
       setIsLoadingAPIs(true);
@@ -259,10 +235,8 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
         dynamicAPIsLoadingRef.current = false;
       }
     };
-
     loadDynamicAPIs();
   }, [isTestnet, dynamicAPIs.length, isLoadingAPIs]);
-
   // Compute available APIs based on network - use useMemo to prevent unnecessary recalculations
   const availableAPIs = useMemo(() => {
     if (isTestnet) {
@@ -277,7 +251,6 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
       return [...new Set(filtered)];
     }
   }, [isTestnet, predefinedAPIs, dynamicAPIs]);
-
   // Filter options based on search query - only update when search query or available APIs change
   useEffect(() => {
     if (searchQuery.trim() === '') {
@@ -289,12 +262,10 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
       setFilteredOptions(filtered);
     }
   }, [searchQuery, availableAPIs]);
-
   // Reset search query when network changes
   useEffect(() => {
     setSearchQuery('');
   }, [isTestnet]);
-
   // Handle keyboard appearance - modal adjusts via KeyboardAvoidingView
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener(
@@ -306,72 +277,60 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
         }, 100);
       },
     );
-
     return () => {
       keyboardDidShowListener.remove();
     };
   }, []);
-
   const handleTextChange = (text: string) => {
     onChangeText(text);
   };
-
   const handleFocus = () => {
     setIsFocused(true);
   };
-
   const handleBlur = () => {
     setIsFocused(false);
   };
-
   const openModal = () => {
     // Prevent modal opening in testnet mode
     if (isTestnet) return;
-
     HapticFeedback.light();
     // The filtered options will be set by the useEffect that handles API options
     setSearchQuery('');
     setIsModalVisible(true);
     inputRef.current?.blur();
     // Reset and animate modal entrance
-    modalAnimation.setValue(0);
-    Animated.spring(modalAnimation, {
-      toValue: 1,
-      useNativeDriver: true,
-      tension: 65,
-      friction: 11,
-    }).start();
+    modalAnimation.value = 0;
+    modalAnimation.value = withSpring(1, {
+      damping: 11,
+      stiffness: 65,
+    });
   };
-
   const closeModal = () => {
     HapticFeedback.light();
     // Animate modal exit
-    Animated.timing(modalAnimation, {
-      toValue: 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start(() => {
+    const finishCallback = () => {
       setIsModalVisible(false);
       setSearchQuery('');
+    };
+    modalAnimation.value = withTiming(0, {duration: 200}, () => {
+      runOnJS(finishCallback)();
     });
   };
-
   const selectOption = async (option: string) => {
     dbg('selectOption called with:', option);
     HapticFeedback.selection();
     await onChangeText(option);
     closeModal();
   };
-
   const getNetworkIcon = (api: string) => {
-    return api.toLowerCase().includes('testnet') ? '🧪' : '🌐';
+    return api.toLowerCase().includes('testnet')
+      ? require('../assets/testnet-icon.png')
+      : require('../assets/mainnet-icon.png');
   };
-
   const renderApiItem = ({item}: {item: string}) => {
     const isSelected = item === value;
-
     return (
-      <TouchableOpacity
+      <Pressable
         key={item}
         style={[
           styles.apiModalItem,
@@ -379,15 +338,24 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
           isSelected && styles.apiModalItemSelected,
         ]}
         onPress={() => selectOption(item)}
-        activeOpacity={0.7}>
-        <Text style={styles.apiModalItemIcon}>{getNetworkIcon(item)}</Text>
+        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+        <Image
+          source={getNetworkIcon(item)}
+          style={styles.apiModalItemIcon}
+          resizeMode="contain"
+        />
         <Text
           style={[
             styles.apiModalItemText,
             {color: theme.colors.text},
             isSelected && [
               styles.apiModalItemTextSelected,
-              {color: theme.colors.primary},
+              {
+                color:
+                  theme.colors.background === '#ffffff'
+                    ? theme.colors.primary
+                    : theme.colors.bitcoinOrange,
+              },
             ],
           ]}
           numberOfLines={1}
@@ -403,10 +371,9 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
             <Text style={styles.apiModalItemCheck}>✓</Text>
           </View>
         )}
-      </TouchableOpacity>
+      </Pressable>
     );
   };
-
   const renderListEmpty = () => {
     if (isLoadingAPIs && !isTestnet) {
       return (
@@ -421,7 +388,6 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
         </View>
       );
     }
-
     return (
       <View style={styles.apiModalEmpty}>
         <Text
@@ -434,7 +400,6 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
       </View>
     );
   };
-
   const getInputContainerStyle = () => {
     const baseStyle = [styles.apiInputContainer];
     if (isFocused) {
@@ -442,7 +407,14 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
     }
     return baseStyle;
   };
-
+  // Animated style for modal
+  const modalAnimatedStyle = useAnimatedStyle(() => {
+    const translateY = interpolate(modalAnimation.value, [0, 1], [100, 0]);
+    return {
+      opacity: modalAnimation.value,
+      transform: [{translateY}],
+    };
+  });
   return (
     <>
       <View style={styles.apiAutocompleteContainer}>
@@ -462,10 +434,14 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
               autoCorrect={false}
               editable={!isTestnet}
             />
-            <TouchableOpacity
+            <Pressable
               style={styles.apiDropdownButton}
-              onPress={isTestnet ? undefined : openModal}
-              activeOpacity={isTestnet ? 1 : 0.6}
+              onPress={() => {
+                if (!isTestnet) {
+                  openModal();
+                }
+              }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}
               disabled={isTestnet}>
               <Text
                 style={[
@@ -478,11 +454,10 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                 ]}>
                 ▼
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
       </View>
-
       <Modal
         visible={isModalVisible}
         transparent={true}
@@ -492,31 +467,21 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
           style={styles.apiModalKeyboardView}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={0}>
-          <TouchableOpacity
+          <Pressable
             style={styles.apiModalBackdrop}
-            activeOpacity={1}
             onPress={() => {
               Keyboard.dismiss();
               closeModal();
             }}>
-            <TouchableOpacity
-              activeOpacity={1}
-              onPress={e => e.stopPropagation()}>
+            <Pressable
+              onPress={e => {
+                e.stopPropagation();
+              }}>
               <Animated.View
                 style={[
                   styles.apiModalContent,
-                  {
-                    maxHeight: height * 0.8,
-                    opacity: modalAnimation,
-                    transform: [
-                      {
-                        translateY: modalAnimation.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [100, 0],
-                        }),
-                      },
-                    ],
-                  },
+                  {maxHeight: height * 0.8},
+                  modalAnimatedStyle,
                 ]}>
                 <View
                   style={[
@@ -541,13 +506,13 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                         Select Mempool.Space Provider
                       </Text>
                     </View>
-                    <TouchableOpacity
+                    <Pressable
                       onPress={closeModal}
                       style={[
                         styles.apiModalCloseButton,
                         {backgroundColor: theme.colors.cardBackground},
                       ]}
-                      activeOpacity={0.6}>
+                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                       <Text
                         style={[
                           styles.apiModalCloseText,
@@ -555,7 +520,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                         ]}>
                         ✕
                       </Text>
-                    </TouchableOpacity>
+                    </Pressable>
                   </View>
                 </View>
                 <View style={styles.apiModalListWrapper}>
@@ -606,7 +571,11 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                         borderColor: theme.colors.border,
                       },
                     ]}>
-                    <Text style={styles.apiModalSearchIcon}>🔍</Text>
+                    <Image
+                      source={require('../assets/search-icon.png')}
+                      style={styles.apiModalSearchIcon}
+                      resizeMode="contain"
+                    />
                     <TextInput
                       ref={searchInputRef}
                       style={[
@@ -624,10 +593,10 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                       blurOnSubmit={false}
                     />
                     {searchQuery.length > 0 && (
-                      <TouchableOpacity
+                      <Pressable
                         onPress={() => setSearchQuery('')}
                         style={styles.apiModalSearchClear}
-                        activeOpacity={0.6}>
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                         <Text
                           style={[
                             styles.apiModalSearchClearText,
@@ -635,26 +604,25 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                           ]}>
                           ✕
                         </Text>
-                      </TouchableOpacity>
+                      </Pressable>
                     )}
                   </View>
                 </View>
               </Animated.View>
-            </TouchableOpacity>
-          </TouchableOpacity>
+            </Pressable>
+          </Pressable>
         </KeyboardAvoidingView>
       </Modal>
     </>
   );
 };
-
 // Helper function to get section icons
 const getSectionIcon = (title: string): any => {
   switch (title.toLowerCase()) {
     case 'theme':
       return require('../assets/theme-icon.png');
-    case 'network':
-      return require('../assets/network-icon.png');
+    case 'network providers':
+      return require('../assets/api-icon.png');
     case 'security':
       return require('../assets/backup-icon.png');
     case 'advanced':
@@ -673,11 +641,14 @@ const getSectionIcon = (title: string): any => {
       return require('../assets/spy-icon.png');
     case 'wallet mode':
       return require('../assets/mode-icon.png');
+    case 'font testing':
+      return require('../assets/font-icon.png');
+    case 'balance display':
+      return require('../assets/numbers-icon.png');
     default:
       return require('../assets/advanced-icon.png');
   }
 };
-
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   // Use UserContext for reactive network and API state
   const {setActiveNetwork, setActiveApiProvider} = useUser();
@@ -685,8 +656,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     'default' | 'alternative' | 'loading'
   >('loading');
   const [deleteInput, setDeleteInput] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [isModalResetVisible, setIsModalResetVisible] = useState(false);
   const [isBackupModalVisible, setIsBackupModalVisible] = useState(false);
@@ -698,27 +667,28 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [nostrRelays, setNostrRelays] = useState<string>('');
   const [pendingNostrRelays, setPendingNostrRelays] = useState<string>('');
   const [walletMode, setWalletMode] = useState<'full' | 'psbt'>('full');
-
   const [hasNostr, setHasNostr] = useState(false);
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
   const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
     'terms',
   );
-  const [passwordVisible, setPasswordVisible] = useState(false);
-  const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
   const [hapticsEnabled, setHapticsEnabledState] = useState(true);
+  const [balanceFormattingEnabled, setBalanceFormattingEnabledState] =
+    useState(false); // Default to raw numbers (not formatted)
   const [isApiInfoVisible, setIsApiInfoVisible] = useState(false);
-
-  // Password validation states
-  const [passwordStrength, setPasswordStrength] = useState(0);
-  const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
-
+  const [debugLoggingEnabled, setDebugLoggingEnabledState] = useState(false);
+  const [devDebugEnabled, setDevDebugEnabled] = useState(false);
+  // Click tracking for build number (7 clicks to enable dev mode)
+  const [buildNumberClickCount, setBuildNumberClickCount] = useState(0);
+  const buildNumberClickCountRef = useRef(0);
+  const buildNumberClickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // Collapsible states
   const [expandedSections, setExpandedSections] = useState<{
     [key: string]: boolean;
   }>({
     theme: false,
     haptics: false,
+    displayFormat: false,
     backup: false,
     advanced: false,
     nostr: false,
@@ -728,95 +698,21 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     appIcon: false,
     devicePairing: false,
     walletMode: false,
+    fontTesting: false,
+    devDebug: false,
   });
-
   const {theme, themeMode, setThemeMode} = useTheme();
+  // Force re-render on Android when theme changes
+  const [themeUpdateKey, setThemeUpdateKey] = useState(0);
   const [appVersion, setAppVersion] = useState('');
   const [buildNumber, setBuildNumber] = useState('');
   const [usageSize, setUsageSize] = useState<{fileCount: number; mb: string}>({
     fileCount: 0,
     mb: '0.00 MB',
   });
-  // Password validation functions
-  const validatePassword = (pass: string) => {
-    const errors: string[] = [];
-    const checks = {
-      length: pass.length >= 12,
-      uppercase: /[A-Z]/.test(pass),
-      lowercase: /[a-z]/.test(pass),
-      number: /\d/.test(pass),
-      symbol: /[!@#$%^&*(),.?":{}|<>]/.test(pass),
-    };
-
-    if (!checks.length) {
-      errors.push('12+ characters');
-    }
-    if (!checks.uppercase) {
-      errors.push('Uppercase letter (A-Z)');
-    }
-    if (!checks.lowercase) {
-      errors.push('Lowercase letter (a-z)');
-    }
-    if (!checks.number) {
-      errors.push('Number (0-9)');
-    }
-    if (!checks.symbol) {
-      errors.push('Special character (!@#$...)');
-    }
-
-    setPasswordErrors(errors);
-
-    // Calculate strength (0-4)
-    const strength = Object.values(checks).filter(Boolean).length;
-    setPasswordStrength(strength);
-
-    return errors.length === 0;
-  };
-
-  const getPasswordStrengthText = () => {
-    if (passwordStrength <= 1) {
-      return 'Very Weak';
-    }
-    if (passwordStrength <= 2) {
-      return 'Weak';
-    }
-    if (passwordStrength <= 3) {
-      return 'Medium';
-    }
-    return 'Strong';
-  };
-
-  const getPasswordStrengthColor = () => {
-    if (passwordStrength <= 1) {
-      return theme.colors.danger;
-    }
-    if (passwordStrength <= 2) {
-      return theme.colors.background === '#ffffff'
-        ? theme.colors.accent
-        : theme.colors.bitcoinOrange;
-    }
-    if (passwordStrength <= 3) {
-      return theme.colors.background === '#ffffff'
-        ? theme.colors.accent
-        : theme.colors.bitcoinOrange;
-    }
-    return theme.colors.received;
-  };
-
-  const clearBackupModal = () => {
-    setPassword('');
-    setConfirmPassword('');
-    setPasswordVisible(false);
-    setConfirmPasswordVisible(false);
-    setPasswordStrength(0);
-    setPasswordErrors([]);
-    setIsBackupModalVisible(false);
-  };
-
   const toggleSection = (section: string) => {
     // Haptic feedback for section toggle
     HapticFeedback.light();
-
     setExpandedSections(prev => {
       const newState = Object.keys(prev).reduce((acc, key) => {
         acc[key] = false; // Close all sections
@@ -826,7 +722,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       return newState;
     });
   };
-
   useEffect(() => {
     setAppVersion(DeviceInfo.getVersion());
     setBuildNumber(DeviceInfo.getBuildNumber());
@@ -834,7 +729,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     LocalCache.usageSize().then(size => {
       setUsageSize(size);
     });
-
     // Load wallet mode preference (default to full mode)
     EncryptedStorage.getItem('wallet_mode')
       .then(mode => {
@@ -848,8 +742,44 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('Error loading wallet_mode from storage:', error);
         setWalletMode('full');
       });
+    // Load balance formatting preference (default to disabled - raw numbers)
+    EncryptedStorage.getItem('balance_formatting_enabled')
+      .then(enabled => {
+        if (enabled === null || enabled === undefined) {
+          // Default to false (raw numbers, not formatted)
+          setBalanceFormattingEnabledState(false);
+        } else {
+          setBalanceFormattingEnabledState(enabled === 'true');
+        }
+      })
+      .catch(error => {
+        dbg('Error loading balance_formatting_enabled from storage:', error);
+        setBalanceFormattingEnabledState(false);
+      });
+    // Initialize debug logging state from module-level ref
+    setDebugLoggingEnabledState(isDebugLoggingEnabled());
+    // Load dev debug enabled preference
+    EncryptedStorage.getItem('devDebugEnabled')
+      .then(enabled => {
+        if (enabled === 'true') {
+          setDevDebugEnabled(true);
+        } else {
+          setDevDebugEnabled(false);
+        }
+      })
+      .catch(error => {
+        dbg('Error loading devDebugEnabled from storage:', error);
+        setDevDebugEnabled(false);
+      });
+    // Cleanup timeout on unmount
+    return () => {
+      if (buildNumberClickTimeoutRef.current) {
+        clearTimeout(buildNumberClickTimeoutRef.current);
+      }
+      buildNumberClickCountRef.current = 0;
+      setBuildNumberClickCount(0);
+    };
   }, []);
-
   // Load saved icon preference on component mount
   useEffect(() => {
     const loadIconPreference = async () => {
@@ -864,14 +794,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           setSelectedIcon('default');
         }
       } catch (error) {
-        console.warn('Error loading icon preference:', error);
+        dbg('Error loading icon preference:', error);
         setSelectedIcon('default');
       }
     };
-
     loadIconPreference();
   }, []);
-
   useEffect(() => {
     EncryptedStorage.getItem('keyshare').then(ks => {
       try {
@@ -882,25 +810,21 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         // Get keyshare label (KeyShare1/2/3) or fallback to local_party_key
         const keyshareLabel = getKeyshareLabel(json);
         setParty(keyshareLabel || json.local_party_key || '');
-
         // Only show Nostr settings when the keyshare contains an npub
         setHasNostr(!!json.nostr_npub);
       } catch (error) {
         dbg('Failed to parse keyshare for settings screen:', error);
       }
     });
-
     // Load network and corresponding cached API
     LocalCache.getItem('network').then(async net => {
       dbg('=== Loading settings for network:', net);
       setIsTestnet(net !== 'mainnet');
       // Clear any pending API changes when switching networks
       setPendingAPI('');
-
       // Try to get the cached API for this network
       const cachedApi = await LocalCache.getItem(`api_${net}`);
       dbg(`Cached API for ${net}:`, cachedApi);
-
       if (cachedApi) {
         setBaseAPI(cachedApi);
         setPendingAPI(cachedApi); // Initialize pending API to current API
@@ -915,7 +839,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         // Fallback to current API or default
         const currentApi = await LocalCache.getItem('api');
         dbg('Current API (fallback):', currentApi);
-
         if (currentApi) {
           setBaseAPI(currentApi);
           setPendingAPI(currentApi); // Initialize pending API to current API
@@ -952,17 +875,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       setPendingNostrRelays(relaysForDisplay);
     });
   }, []);
-
   const toggleNetwork = async (value: boolean) => {
     // Haptic feedback for network toggle
     HapticFeedback.light();
     dbg('=== Network toggle started:', value ? 'testnet' : 'mainnet');
     const newNetwork = value ? 'testnet3' : 'mainnet';
     const networkName = value ? 'Testnet' : 'Mainnet';
-    const networkIcon = value ? '🧪' : '🌐';
-
     await setActiveNetwork(newNetwork);
-
     // Check user's wallet mode preference before navigating
     let targetRoute = 'Home';
     try {
@@ -977,30 +896,27 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       dbg('Error loading wallet_mode during network toggle:', error);
       // Default to 'Home' if there's an error
     }
-
     // Navigate to the appropriate screen based on user preference
     navigation.reset({index: 0, routes: [{name: targetRoute}]});
-
     // Show brief feedback alert after a brief delay to ensure navigation completes
     setTimeout(() => {
       // warn user if test net bitcoin is not real
       // add i understand button to the alert
       if (newNetwork === 'mainnet') {
         Alert.alert(
-          `${networkIcon} Switched to ${networkName}`,
+          `Switched to ${networkName}`,
           'Mainnet Bitcoin is the real Bitcoin. It is the main network for all Bitcoin transactions.',
           [{text: 'I understand', onPress: () => {}}],
         );
       } else {
         Alert.alert(
-          `${networkIcon} Switched to ${networkName}`,
+          `Switched to ${networkName}`,
           'Testnet Bitcoin is not real Bitcoin. It is a test network for developers to test their applications. Do not use it for real transactions.',
           [{text: 'I understand', onPress: () => {}}],
         );
       }
     }, 300);
   };
-
   const resetAPI = async () => {
     dbg('resetAPI called');
     const net = await LocalCache.getItem('network');
@@ -1009,10 +925,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         ? 'https://mempool.space/api' // MAINNET_APIS[0]
         : 'https://mempool.space/testnet/api'; // TESTNET_APIS[0]
     dbg('Resetting to default API for network:', net, 'API:', api);
-
     // Clear pending API selection and set to new API
     setPendingAPI(api);
-
     // Update local state
     setBaseAPI(api);
     dbg('Local state updated with API:', api);
@@ -1042,37 +956,29 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       Alert.alert('Success', 'API endpoint reset to default!');
     }, 300);
   };
-
   const normalizeAPIUrl = (url: string): string => {
     if (!url || url.trim() === '') {
       return url;
     }
-    
     // Trim whitespace
     let normalized = url.trim();
-    
     // Remove trailing slashes
     normalized = normalized.replace(/\/+$/, '');
-    
     // Check if it ends with /api (case-insensitive)
     const apiPattern = /\/api$/i;
     if (!apiPattern.test(normalized)) {
       // If it doesn't end with /api, append it
       normalized = normalized + '/api';
     }
-    
     return normalized;
   };
-
   const validateAPIEndpoint = async (api: string): Promise<boolean> => {
     try {
       const testUrl = `${api.replace(/\/$/, '')}/blocks/tip/hash`;
       dbg('Testing API endpoint:', testUrl);
-
       // Create AbortController for timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-
       const response = await fetch(testUrl, {
         method: 'GET',
         headers: {
@@ -1080,23 +986,18 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         },
         signal: controller.signal,
       });
-
       clearTimeout(timeoutId);
-
       if (!response.ok) {
         dbg('API validation failed: HTTP', response.status);
         return false;
       }
-
       const blockHash = await response.text();
       // Check if response looks like a valid block hash (64 character hex string)
       const isValidBlockHash = /^[a-f0-9]{64}$/i.test(blockHash.trim());
-
       if (!isValidBlockHash) {
         dbg('API validation failed: Invalid block hash format:', blockHash);
         return false;
       }
-
       dbg('API validation successful:', blockHash);
       return true;
     } catch (error) {
@@ -1104,18 +1005,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       return false;
     }
   };
-
   const saveAPI = async (api: string) => {
     if (!api || api.trim() === '') {
       Alert.alert('Error', 'Please select a valid API endpoint.');
       return;
     }
-
     // Normalize the URL to ensure it ends with /api
     const normalizedApi = normalizeAPIUrl(api);
     dbg('Original API URL:', api);
     dbg('Normalized API URL:', normalizedApi);
-
     setIsAPISaving(true);
     try {
       // Validate the API endpoint first (using normalized URL)
@@ -1127,7 +1025,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         );
         return;
       }
-
       // Update API via UserContext (using normalized URL)
       await setActiveApiProvider(normalizedApi);
       // Update local state (using normalized URL)
@@ -1146,12 +1043,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       setIsAPISaving(false);
     }
   };
-
   const handleAPISelection = (api: string) => {
     // Just update the pending API selection - don't save immediately
     setPendingAPI(api);
   };
-
   const handleResetWallet = async () => {
     if (deleteInput.trim().toLowerCase() === 'delete my wallet') {
       try {
@@ -1178,1136 +1073,1194 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       );
     }
   };
-
-  const handleBackupWallet = async () => {
-    if (!validatePassword(password)) {
-      const missingRequirements = passwordErrors.join('\n• ');
-      Alert.alert(
-        'Password Requirements Not Met',
-        `Your password must meet all of the following requirements:\n\n• ${missingRequirements}\n\nPlease update your password and try again.`,
-      );
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      Alert.alert(
-        'Passwords Do Not Match',
-        'The password and confirmation password must be identical. Please check both fields and try again.',
-      );
-      return;
-    }
-
-    try {
-      HapticFeedback.medium();
-
-      const storedKeyshare = await EncryptedStorage.getItem('keyshare');
-      if (storedKeyshare) {
-        const json = JSON.parse(storedKeyshare);
-        const encryptedKeyshare = await BBMTLibNativeModule.aesEncrypt(
-          storedKeyshare,
-          await BBMTLibNativeModule.sha256(password),
-        );
-
-        // Create filename based on pub_key hash and keyshare number
-        if (!json.pub_key) {
-          Alert.alert('Error', 'Keyshare missing pub_key.');
-          return;
-        }
-        
-        // Get SHA256 hash of pub_key and take first 4 characters
-        const pubKeyHash = await BBMTLibNativeModule.sha256(json.pub_key);
-        const hashPrefix = pubKeyHash.substring(0, 4).toLowerCase();
-        
-        // Extract keyshare number from label (KeyShare1 -> 1, KeyShare2 -> 2, etc.)
-        const keyshareLabel = getKeyshareLabel(json);
-        let keyshareNumber = '1'; // default
-        if (keyshareLabel) {
-          const match = keyshareLabel.match(/KeyShare(\d+)/);
-          if (match) {
-            keyshareNumber = match[1];
-          }
-        } else if (json.keygen_committee_keys && json.local_party_key) {
-          // Fallback: compute from position in sorted keygen_committee_keys
-          const sortedKeys = [...json.keygen_committee_keys].sort();
-          const index = sortedKeys.indexOf(json.local_party_key);
-          if (index >= 0) {
-            keyshareNumber = String(index + 1);
-          }
-        }
-        
-        const friendlyFilename = `${hashPrefix}K${keyshareNumber}.share`;
-
-        const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
-        const filePath = `${tempDir}/${friendlyFilename}`;
-
-        await RNFS.writeFile(filePath, encryptedKeyshare, 'base64');
-
-        await Share.open({
-          title: 'Backup Your Keyshare',
-          isNewTask: true,
-          message:
-            'Save this encrypted file securely. It is required for wallet recovery.',
-          url: `file://${filePath}`,
-          type: 'application/octet-stream',
-          filename: friendlyFilename,
-          failOnCancel: false,
-        });
-
-        // Cleanup temp file (best-effort)
-        try {
-          await RNFS.unlink(filePath);
-        } catch {
-          // ignore cleanup errors
-        }
-        clearBackupModal();
-      } else {
-        Alert.alert('Error', 'Invalid keyshare.');
-      }
-    } catch (error) {
-      dbg('Error encrypting or sharing keyshare:', error);
-      Alert.alert('Error', 'Failed to encrypt or share the keyshare.');
-    }
-  };
-
-  const handlePasswordChange = (text: string) => {
-    setPassword(text);
-    if (text.length > 0) {
-      validatePassword(text);
-    } else {
-      setPasswordStrength(0);
-      setPasswordErrors([]);
-    }
-  };
-
   const handleToggleHaptics = (value: boolean) => {
     HapticFeedback.light();
     setHapticsEnabledState(value);
     setHapticsEnabled(value);
   };
-
-  const styles = StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: theme.colors.background,
-    },
-    scrollView: {
-      flex: 1,
-    },
-    scrollContent: {
-      flexGrow: 1,
-      padding: 16,
-      paddingBottom: 24,
-    },
-    header: {
-      paddingHorizontal: 16,
-      borderBottomWidth: 1,
-      borderBottomColor: theme.colors.border,
-    },
-    headerTitle: {
-      fontSize: theme.fontSizes?.['3xl'] || 28,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.text,
-      textAlign: 'center',
-    },
-    collapsibleSection: {
-      marginBottom: 10,
-      backgroundColor: theme.colors.cardBackground,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      overflow: 'hidden',
-      shadowColor: theme.colors.shadowColor,
-      shadowOffset: {width: 0, height: 1},
-      shadowOpacity: 0.1,
-      shadowRadius: 2,
-      elevation: 2,
-    },
-    sectionHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      padding: 12,
-      backgroundColor: theme.colors.cardBackground,
-    },
-    sectionHeaderContent: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      flex: 1,
-    },
-    sectionIcon: {
-      width: 20,
-      height: 20,
-      marginRight: 8,
-      tintColor: theme.colors.text,
-    },
-    sectionHeaderTitle: {
-      fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.text,
-    },
-    expandIcon: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
-    },
-    sectionContent: {
-      paddingHorizontal: 12,
-      borderTopWidth: 1,
-      borderTopColor: theme.colors.background === '#ffffff'
-        ? theme.colors.accent
-        : theme.colors.bitcoinOrange,
-    },
-    toggleContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 12,
-      paddingHorizontal: 4,
-    },
-    toggleLabel: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.text,
-    },
-    toggleDescription: {
-      fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.textSecondary,
-      marginBottom: 12,
-    },
-    appIconHintRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    appIconSpyIcon: {
-      width: 28,
-      height: 28,
-      marginRight: 10,
-    },
-    appIconHintTextContainer: {
-      flex: 1,
-    },
-    appIconHintTitle: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.text,
-      marginBottom: 2,
-    },
-    appIconHintSubtitle: {
-      fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.textSecondary,
-      lineHeight: 16,
-    },
-    inputAPI: {
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      borderRadius: 6,
-      padding: 10,
-      fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      backgroundColor: theme.colors.background,
-      color: theme.colors.text,
-      marginBottom: 8,
-      flex: 1,
-    },
-    apiAutocompleteContainer: {
-      position: 'relative',
-      marginBottom: 8,
-    },
-    apiInputContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      borderRadius: 8,
-      backgroundColor: theme.colors.background,
-      minHeight: 44,
-      shadowColor: theme.colors.shadowColor,
-      shadowOffset: {width: 0, height: 1},
-      shadowOpacity: 0.05,
-      shadowRadius: 2,
-      elevation: 1,
-    },
-    apiInputContainerFocused: {
-      borderColor: theme.colors.primary,
-      shadowColor: theme.colors.primary,
-      shadowOffset: {width: 0, height: 0},
-      shadowOpacity: 0.2,
-      shadowRadius: 4,
-      elevation: 3,
-    },
-    apiTextInput: {
-      flex: 1,
-      paddingHorizontal: 12,
-      paddingVertical: 12,
-      fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.text,
-      backgroundColor: 'transparent',
-    },
-    apiDropdownButton: {
-      paddingHorizontal: 12,
-      paddingVertical: 12,
-      justifyContent: 'center',
-      alignItems: 'center',
-      borderLeftWidth: 1,
-      borderLeftColor: theme.colors.border,
-    },
-    apiDropdownIcon: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
-    },
-    apiInputRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-    },
-    apiInputWithButton: {
-      flex: 1,
-    },
-    apiSaveButton: {
-      backgroundColor: theme.colors.primary,
-      paddingHorizontal: 16,
-      paddingVertical: 12,
-      borderRadius: 8,
-      minHeight: 44,
-      justifyContent: 'center',
-      alignItems: 'center',
-      shadowColor: theme.colors.shadowColor,
-      shadowOffset: {width: 0, height: 1},
-      shadowOpacity: 0.1,
-      shadowRadius: 2,
-      elevation: 2,
-    },
-    apiSaveButtonDisabled: {
-      backgroundColor: theme.colors.disabled,
-      shadowOpacity: 0.05,
-    },
-    apiSaveButtonText: {
-      color: theme.colors.textOnPrimary,
-      fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
-    },
-    apiSaveButtonTextDisabled: {
-      color: theme.colors.textSecondary,
-    },
-    apiSaveButtonContainer: {
-      marginTop: 8,
-      alignItems: 'flex-start',
-    },
-    apiNetworkInfoContainer: {
-      marginTop: 8,
-      marginBottom: 12,
-      padding: 12,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderStyle: 'dashed',
-      borderColor: theme.colors.border,
-    },
-    apiNetworkModeRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      marginBottom: 8,
-    },
-    apiNetworkModeBadge: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingHorizontal: 10,
-      paddingVertical: 8,
-      borderRadius: 6,
-      gap: 6,
-      minHeight: 36,
-    },
-    apiNetworkModeBadgeTestnet: {
-      backgroundColor: theme.colors.warning + '26', // ~15% opacity
-      borderWidth: 1,
-      borderColor: theme.colors.warning + '4D', // ~30% opacity
-    },
-    apiNetworkModeBadgeMainnet: {
-      backgroundColor: theme.colors.received + '26', // ~15% opacity
-      borderWidth: 1,
-      borderColor: theme.colors.received + '4D', // ~30% opacity
-    },
-    apiNetworkModeIcon: {
-      fontSize: theme.fontSizes?.lg || 16,
-      fontFamily: theme.fontFamilies?.regular,
-    },
-    apiNetworkModeText: {
-      fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      letterSpacing: 0.2,
-    },
-    apiNetworkModeTextTestnet: {
-      color: theme.colors.background === '#ffffff'
-        ? theme.colors.accent
-        : theme.colors.bitcoinOrange,
-    },
-    apiNetworkModeTextMainnet: {
-      color: theme.colors.received,
-    },
-    apiInfoButton: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingHorizontal: 10,
-      paddingVertical: 8,
-      borderRadius: 6,
-      backgroundColor: theme.colors.background,
-      borderWidth: 1,
-      borderColor: theme.colors.primary,
-      gap: 6,
-      minHeight: 36,
-    },
-    apiInfoButtonIcon: {
-      width: 14,
-      height: 14,
-      tintColor: theme.colors.text, // Use text color for better visibility in dark mode
-    },
-    apiInfoButtonText: {
-      fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.primary,
-    },
-    apiNetworkDescription: {
-      fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      lineHeight: 16,
-      marginTop: 4,
-    },
-    apiNetworkDescriptionTestnet: {
-      color: theme.colors.textSecondary,
-    },
-    apiNetworkDescriptionMainnet: {
-      color: theme.colors.textSecondary,
-    },
-    apiActionButtonsRow: {
-      flexDirection: 'row',
-      gap: 12,
-      marginTop: 8,
-      alignItems: 'stretch',
-    },
-    apiActionButton: {
-      flex: 1,
-      minHeight: 44,
-      height: 44,
-    },
-    apiModalContainer: {
-      flex: 1,
-      justifyContent: 'flex-end',
-    },
-    apiModalKeyboardView: {
-      flex: 1,
-      justifyContent: 'flex-end',
-    },
-    apiModalBackdrop: {
-      flex: 1,
-      backgroundColor: theme.colors.modalBackdrop,
-      justifyContent: 'flex-end',
-    },
-    apiModalContent: {
-      backgroundColor: theme.colors.background,
-      borderTopLeftRadius: 10,
-      borderTopRightRadius: 10,
-      paddingBottom: Platform.OS === 'ios' ? 17 : 10,
-      paddingTop: 5,
-      shadowColor: theme.colors.shadowColor,
-      shadowOffset: {width: 0, height: -4},
-      shadowOpacity: 0.2,
-      shadowRadius: 12,
-      elevation: 20,
-      flexDirection: 'column',
-    },
-    apiModalListWrapper: {
-      height: 300,
-      flexShrink: 0,
-    },
-    apiModalFlatList: {
-      flex: 1,
-    },
-    apiModalListContainer: {
-      minHeight: 200,
-      paddingBottom: 20,
-    },
-    apiModalHeader: {
-      paddingTop: 12,
-      paddingBottom: 12,
-      borderBottomWidth: 1,
-    },
-    apiModalHeaderTop: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      paddingHorizontal: 20,
-      paddingBottom: 0,
-    },
-    apiModalFooter: {
-      paddingHorizontal: 16,
-      paddingTop: 16,
-      paddingBottom: Platform.OS === 'ios' ? 32 : 24,
-    },
-    apiModalTitle: {
-      fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      letterSpacing: -0.5,
-    },
-    apiModalHeaderTitleContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      flex: 1,
-    },
-    apiModalHeaderIcon: {
-      width: 20,
-      height: 20,
-      marginRight: 10,
-    },
-    apiModalCloseButton: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    apiModalCloseText: {
-      fontSize: theme.fontSizes?.xl || 18,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
-    },
-    apiModalSearchContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginHorizontal: 16,
-      marginTop: 8,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      borderRadius: 12,
-      borderWidth: 1,
-    },
-    apiModalSearchIcon: {
-      fontSize: theme.fontSizes?.lg || 16,
-      fontFamily: theme.fontFamilies?.regular,
-      marginRight: 8,
-    },
-    apiModalSearchInput: {
-      flex: 1,
-      fontSize: theme.fontSizes?.md || 15,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      padding: 0,
-      margin: 0,
-    },
-    apiModalSearchClear: {
-      padding: 4,
-      marginLeft: 8,
-    },
-    apiModalSearchClearText: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
-    },
-    apiModalListContent: {
-      paddingTop: 4,
-      paddingBottom: 4,
-    },
-    apiModalItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 16,
-      paddingVertical: 14,
-      marginHorizontal: 16,
-      marginVertical: 0,
-      borderRadius: 0,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      minHeight: 56,
-    },
-    apiModalItemSelected: {
-      backgroundColor: theme.colors.cardBackground,
-    },
-    apiModalItemIcon: {
-      fontSize: theme.fontSizes?.xl || 18,
-      fontFamily: theme.fontFamilies?.regular,
-      marginRight: 12,
-    },
-    apiModalItemText: {
-      flex: 1,
-      fontSize: theme.fontSizes?.md || 15,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      lineHeight: 20,
-      letterSpacing: -0.2,
-    },
-    apiModalItemTextSelected: {
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-    },
-    apiModalItemCheckContainer: {
-      width: 24,
-      height: 24,
-      borderRadius: 12,
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginLeft: 8,
-    },
-    apiModalItemCheck: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.white,
-    },
-    apiModalLoading: {
-      padding: 48,
-      alignItems: 'center',
-    },
-    apiModalLoadingText: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      fontStyle: 'italic',
-    },
-    apiModalEmpty: {
-      padding: 48,
-      alignItems: 'center',
-    },
-    apiModalEmptyText: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      fontStyle: 'italic',
-    },
-    button: {
-      paddingVertical: 10,
-      borderRadius: 6,
-      alignItems: 'center',
-      marginTop: 6,
-    },
-    deleteButton: {
-      backgroundColor: theme.colors.background === '#ffffff'
-        ? theme.colors.accent
-        : theme.colors.bitcoinOrange,
-    },
-    backupButton: {
-      backgroundColor: theme.colors.primary,
-      marginBottom: 16, // Add spacing after backup button before delete section
-    },
-    resetButton: {
-      backgroundColor: theme.colors.background === '#ffffff'
-        ? theme.colors.accent
-        : theme.colors.bitcoinOrange,
-    },
-    buttonText: {
-      color: theme.colors.textOnPrimary,
-      fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
-    },
-    apiItem: {
-      marginTop: 0, // Section padding handles first element spacing
-      marginBottom: 0, // Consistent spacing
-    },
-    apiName: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.text, // Use text color for better readability in dark mode
-      marginBottom: 4,
-    },
-    apiDescription: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.textSecondary,
-      lineHeight: 20,
-      marginBottom: 6,
-    },
-    linkText: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.text, // Use text color for better readability in dark mode
-      textDecorationLine: 'underline',
-      textDecorationColor: theme.colors.text, // Match underline color
-    },
-    aboutInfoRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      paddingVertical: 12,
-      paddingHorizontal: 4,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: theme.colors.border,
-    },
-    aboutLabel: {
-      fontSize: theme.fontSizes?.md || 15,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.text,
-      letterSpacing: -0.2,
-    },
-    aboutValue: {
-      fontSize: theme.fontSizes?.md || 15,
-      fontWeight: (theme.fontWeights?.medium || '500') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.textSecondary,
-      letterSpacing: -0.2,
-    },
-    aboutSection: {
-      marginTop: 20,
-      padding: 16,
-      backgroundColor: theme.colors.cardBackground,
-      borderRadius: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: theme.colors.border,
-    },
-    aboutSectionHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 10,
-    },
-    aboutSectionIcon: {
-      width: 20,
-      height: 20,
-      marginRight: 10,
-      tintColor: theme.colors.text,
-    },
-    aboutSectionTitle: {
-      fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.text,
-      letterSpacing: -0.3,
-    },
-    aboutSectionDescription: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.textSecondary,
-      lineHeight: 22,
-      letterSpacing: -0.1,
-    },
-    aboutLinkText: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.text, // Use text color for better readability in dark mode
-      textDecorationLine: 'underline',
-      textDecorationColor: theme.colors.text, // Match underline color
-    },
-    termsLink: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.text, // Use text color for better readability in dark mode
-      textDecorationLine: 'underline',
-      textDecorationColor: theme.colors.text, // Match underline color
-      marginTop: 8,
-    },
-    modalOverlay: {
-      flex: 1,
-      backgroundColor: theme.colors.modalBackdrop,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    modalContent: {
-      backgroundColor: theme.colors.background,
-      padding: 20,
-      borderRadius: 8,
-      width: '80%',
-    },
-    modalHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginBottom: 16,
-    },
-    modalIcon: {
-      width: 24,
-      height: 24,
-      marginRight: 10,
-      tintColor: theme.colors.text, // Use text color for better visibility in dark mode
-    },
-    modalTitle: {
-      fontSize: theme.fontSizes?.['2xl'] || 20,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.text,
-    },
-    modalDescription: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.textSecondary,
-      marginBottom: 20,
-      textAlign: 'center',
-    },
-    passwordContainer: {
-      marginBottom: 12,
-    },
-    passwordLabel: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.text,
-      marginBottom: 4,
-    },
-    passwordInputContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      borderRadius: 6,
-    },
-    passwordInput: {
-      flex: 1,
-      padding: 10,
-      fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.text,
-    },
-    eyeButton: {
-      padding: 10,
-    },
-    eyeIcon: {
-      width: 20,
-      height: 20,
-      tintColor: theme.colors.text,
-    },
-    passwordHint: {
-      fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.textSecondary,
-    },
-    modalActions: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      marginTop: 20,
-      gap: 12,
-    },
-    modalButton: {
-      flex: 1,
-      paddingVertical: 14,
-      borderRadius: 8,
-      alignItems: 'center',
-    },
-    cancelButton: {
-      backgroundColor: theme.colors.secondary,
-    },
-    confirmButton: {
-      backgroundColor: theme.colors.background === '#ffffff'
-        ? theme.colors.accent
-        : theme.colors.bitcoinOrange,
-    },
-    disabledButton: {
-      backgroundColor: theme.colors.disabled,
-    },
-    apiInfoModalContent: {
-      backgroundColor: theme.colors.background,
-      borderRadius: 16,
-      width: '85%',
-      maxWidth: 400,
-      shadowColor: theme.colors.shadowColor,
-      shadowOffset: {width: 0, height: 4},
-      shadowOpacity: 0.3,
-      shadowRadius: 12,
-      elevation: 20,
-    },
-    apiInfoModalHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: 20,
-      paddingTop: 20,
-      paddingBottom: 16,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: theme.colors.border,
-    },
-    apiInfoModalIconContainer: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: theme.colors.cardBackground,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    apiInfoModalIcon: {
-      fontSize: theme.fontSizes?.['2xl'] || 20,
-      fontFamily: theme.fontFamilies?.regular,
-    },
-    apiInfoModalTitle: {
-      flex: 1,
-      fontSize: theme.fontSizes?.xl || 18,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.text,
-      marginLeft: 12,
-      letterSpacing: -0.3,
-    },
-    apiInfoModalCloseButton: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      backgroundColor: theme.colors.cardBackground,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    apiInfoModalCloseText: {
-      fontSize: theme.fontSizes?.xl || 18,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.textSecondary,
-    },
-    apiInfoModalBody: {
-      padding: 20,
-    },
-    apiInfoSection: {
-      marginBottom: 20,
-    },
-    apiInfoSectionRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 8,
-    },
-    apiInfoSectionIcon: {
-      fontSize: theme.fontSizes?.['2xl'] || 20,
-      fontFamily: theme.fontFamilies?.regular,
-      marginRight: 10,
-    },
-    apiInfoSectionTitle: {
-      fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.text,
-      letterSpacing: -0.2,
-    },
-    apiInfoSectionText: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.textSecondary,
-      lineHeight: 22,
-      letterSpacing: -0.1,
-      marginLeft: 30,
-    },
-    apiInfoModalButton: {
-      marginHorizontal: 20,
-      marginBottom: 20,
-      paddingVertical: 14,
-      borderRadius: 12,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    apiInfoModalButtonText: {
-      fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      letterSpacing: -0.2,
-    },
-    networkOption: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    networkIcon: {
-      width: 20,
-      height: 20,
-      marginRight: 8,
-      tintColor: theme.colors.text, // Use text color for visibility in dark mode
-    },
-    input: {
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      borderRadius: 8,
-      padding: 14,
-      marginBottom: 16,
-      textAlign: 'center',
-      fontSize: theme.fontSizes?.lg || 16,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.text,
-      backgroundColor: theme.colors.cardBackground,
-    },
-    halfOpacity: {
-      opacity: 0.5,
-    },
-    strengthContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginTop: 8,
-      marginBottom: 8,
-    },
-    strengthBar: {
-      flex: 1,
-      height: 8,
-      backgroundColor: theme.colors.border,
-      borderRadius: 4,
-      marginRight: 12,
-      overflow: 'hidden',
-    },
-    strengthFill: {
-      height: '100%',
-      borderRadius: 4,
-    },
-    strengthText: {
-      fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.bold || '700') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      minWidth: 60,
-      textAlign: 'right',
-      color: theme.colors.textSecondary,
-    },
-    requirementsContainer: {
-      marginTop: 4,
-    },
-    requirementText: {
-      fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.medium || '500') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.warningAccent,
-    },
-    nostrRelaysInput: {
-      minHeight: 120,
-      textAlignVertical: 'top',
-      textAlign: 'left', // Align text entries to the left
-      paddingTop: 12,
-      backgroundColor: theme.colors.cardBackground,
-    },
-    errorInput: {
-      borderColor: theme.colors.danger,
-    },
-    errorText: {
-      color: theme.colors.danger,
-      fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      marginTop: 4,
-    },
-    buttonContent: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    buttonIcon: {
-      width: 20,
-      height: 20,
-      marginRight: 12,
-      tintColor: theme.colors.white,
-    },
-    flexContainer: {
-      flex: 1,
-    },
-    whiteTint: {
-      tintColor: theme.colors.white,
-    },
-    networkStatusContainer: {
-      marginBottom: 8,
-    },
-    networkStatusTitle: {
-      fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      marginBottom: 2,
-    },
-    networkStatusText: {
-      fontSize: theme.fontSizes?.sm || 12,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
-    },
-    appIconCheckStatesButton: {
-      marginBottom: 10,
-      backgroundColor: theme.colors.secondary,
-    },
-    walletModeRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 12,
-      paddingHorizontal: 4,
-    },
-    walletModeLabel: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.text,
-    },
-    walletModeDescription: {
-      fontSize: theme.fontSizes?.base || 13,
-      fontWeight: (theme.fontWeights?.normal || '400') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.textSecondary,
-      marginBottom: 12,
-    },
-    themeOptionContainer: {
-      gap: 8,
-      marginBottom: 8,
-    },
-    themeOption: {
-      backgroundColor: theme.colors.background,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      padding: 12,
-      marginBottom: 4,
-    },
-    themeOptionSelected: {
-      borderColor: theme.colors.background === '#ffffff'
-        ? theme.colors.accent
-        : theme.colors.bitcoinOrange,
-      borderWidth: 2,
-      backgroundColor: theme.colors.cardBackground,
-    },
-    themeOptionContent: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    },
-    themeOptionLabel: {
-      fontSize: theme.fontSizes?.md || 15,
-      fontWeight: (theme.fontWeights?.medium || '500') as any,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.text,
-    },
-    themeOptionLabelSelected: {
-      fontWeight: (theme.fontWeights?.semibold || '600') as any,
-      color: theme.colors.background === '#ffffff'
-        ? theme.colors.accent
-        : theme.colors.bitcoinOrange,
-    },
-    themeOptionCheck: {
-      width: 18,
-      height: 18,
-      tintColor: theme.colors.background === '#ffffff'
-        ? theme.colors.accent
-        : theme.colors.bitcoinOrange,
-    },
-  });
-
+  const handleToggleBalanceFormatting = async (value: boolean) => {
+    HapticFeedback.light();
+    setBalanceFormattingEnabledState(value);
+    try {
+      await EncryptedStorage.setItem(
+        'balance_formatting_enabled',
+        value.toString(),
+      );
+    } catch (error) {
+      dbg('Error saving balance_formatting_enabled:', error);
+    }
+  };
+  const handleToggleDebugLogging = (value: boolean) => {
+    HapticFeedback.light();
+    setDebugLoggingEnabledState(value);
+    // Update module-level ref
+    setDebugLoggingEnabled(value);
+    // Reload the app to apply the change
+    DeviceEventEmitter.emit('app:reload');
+  };
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        container: {
+          flex: 1,
+          backgroundColor: theme.colors.background,
+        },
+        scrollView: {
+          flex: 1,
+        },
+        scrollContent: {
+          flexGrow: 1,
+          padding: 16,
+          paddingBottom: 24,
+        },
+        header: {
+          paddingHorizontal: 16,
+          borderBottomWidth: 1,
+          borderBottomColor: theme.colors.border,
+        },
+        headerTitle: {
+          fontSize: theme.fontSizes?.['3xl'] || 28,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+          textAlign: 'center',
+        },
+        collapsibleSection: {
+          marginBottom: 10,
+          backgroundColor: theme.colors.cardBackground,
+          borderRadius: 8,
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+          overflow: 'hidden',
+          shadowColor: theme.colors.shadowColor,
+          shadowOffset: {width: 0, height: 1},
+          shadowOpacity: 0.1,
+          shadowRadius: 2,
+          elevation: 2,
+        },
+        sectionHeader: {
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: 12,
+          backgroundColor: theme.colors.cardBackground,
+        },
+        sectionHeaderContent: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          flex: 1,
+        },
+        sectionIcon: {
+          width: 20,
+          height: 20,
+          marginRight: 8,
+          tintColor: theme.colors.text,
+        },
+        sectionHeaderTitle: {
+          fontSize: theme.fontSizes?.lg || 16,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+        },
+        expandIcon: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+        },
+        sectionContent: {
+          paddingHorizontal: 12,
+          borderTopWidth: 1,
+          borderTopColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.accent
+              : theme.colors.bitcoinOrange,
+        },
+        toggleContainer: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 12,
+          paddingHorizontal: 4,
+        },
+        toggleLabel: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+        },
+        toggleDescription: {
+          fontSize: theme.fontSizes?.base || 13,
+          color: theme.colors.textSecondary,
+          marginTop: 12,
+          textAlign: 'center',
+          marginBottom: 12,
+        },
+        warningContainer: {
+          padding: 12,
+          borderRadius: 8,
+          borderWidth: 1,
+          marginBottom: 16,
+          marginTop: 8,
+        },
+        warningText: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          marginBottom: 8,
+          textAlign: 'center',
+        },
+        warningDescription: {
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: theme.fontFamilies?.regular,
+          lineHeight: 18,
+          textAlign: 'left',
+        },
+        hintText: {
+          fontSize: theme.fontSizes?.base || 13,
+          fontFamily: theme.fontFamilies?.regular,
+          color: theme.colors.textSecondary,
+          lineHeight: 18,
+          textAlign: 'left' as const,
+        },
+        hintBold: {
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+        },
+        hintAmount: {
+          fontFamily: theme.fontFamilies?.monospaceBold,
+          color: theme.colors.text,
+        },
+        hintSpacing: {
+          marginBottom: 12,
+        },
+        appIconHintRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+        },
+        appIconSpyIcon: {
+          width: 28,
+          height: 28,
+          marginRight: 10,
+        },
+        appIconHintTextContainer: {
+          flex: 1,
+        },
+        appIconHintTitle: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+          marginBottom: 2,
+        },
+        appIconHintSubtitle: {
+          fontSize: theme.fontSizes?.sm || 12,
+          color: theme.colors.textSecondary,
+          lineHeight: 16,
+        },
+        inputAPI: {
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+          borderRadius: 6,
+          padding: 10,
+          fontSize: theme.fontSizes?.base || 13,
+          backgroundColor: theme.colors.background,
+          color: theme.colors.text,
+          marginBottom: 8,
+          flex: 1,
+        },
+        apiAutocompleteContainer: {
+          position: 'relative',
+          marginBottom: 8,
+        },
+        apiInputContainer: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+          borderRadius: 8,
+          backgroundColor: theme.colors.background,
+          minHeight: 44,
+          shadowColor: theme.colors.shadowColor,
+          shadowOffset: {width: 0, height: 1},
+          shadowOpacity: 0.05,
+          shadowRadius: 2,
+          elevation: 1,
+        },
+        apiInputContainerFocused: {
+          borderColor: theme.colors.primary,
+          shadowColor: theme.colors.primary,
+          shadowOffset: {width: 0, height: 0},
+          shadowOpacity: 0.2,
+          shadowRadius: 4,
+          elevation: 3,
+        },
+        apiTextInput: {
+          flex: 1,
+          paddingHorizontal: 12,
+          paddingVertical: 12,
+          fontSize: theme.fontSizes?.base || 14,
+          color: theme.colors.text,
+          backgroundColor: 'transparent',
+        },
+        apiDropdownButton: {
+          paddingHorizontal: 12,
+          paddingVertical: 12,
+          justifyContent: 'center',
+          alignItems: 'center',
+          borderLeftWidth: 1,
+          borderLeftColor: theme.colors.border,
+        },
+        apiDropdownIcon: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+        },
+        apiInputRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 8,
+        },
+        apiInputWithButton: {
+          flex: 1,
+        },
+        apiSaveButton: {
+          backgroundColor: theme.colors.primary,
+          paddingHorizontal: 16,
+          paddingVertical: 12,
+          borderRadius: 8,
+          minHeight: 44,
+          justifyContent: 'center',
+          alignItems: 'center',
+          shadowColor: theme.colors.shadowColor,
+          shadowOffset: {width: 0, height: 1},
+          shadowOpacity: 0.1,
+          shadowRadius: 2,
+          elevation: 2,
+        },
+        apiSaveButtonDisabled: {
+          backgroundColor: theme.colors.disabled,
+          shadowOpacity: 0.05,
+        },
+        apiSaveButtonText: {
+          color: theme.colors.textOnPrimary,
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          textAlign: 'center',
+        },
+        apiSaveButtonTextDisabled: {
+          color: theme.colors.textSecondary,
+        },
+        apiSaveButtonContainer: {
+          marginTop: 8,
+          alignItems: 'flex-start',
+        },
+        apiNetworkInfoContainer: {
+          marginTop: 8,
+          marginBottom: 12,
+          padding: 12,
+          borderRadius: 8,
+          borderWidth: 1,
+          borderStyle: 'dashed',
+          borderColor: theme.colors.border,
+        },
+        apiNetworkModeRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 8,
+          marginBottom: 8,
+        },
+        apiNetworkModeBadge: {
+          flex: 1,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingHorizontal: 10,
+          paddingVertical: 8,
+          borderRadius: 6,
+          gap: 6,
+          minHeight: 36,
+        },
+        apiNetworkModeBadgeTestnet: {
+          backgroundColor: theme.colors.warning + '26', // ~15% opacity
+          borderWidth: 1,
+          borderColor: theme.colors.warning + '4D', // ~30% opacity
+        },
+        apiNetworkModeBadgeMainnet: {
+          backgroundColor: theme.colors.received + '26', // ~15% opacity
+          borderWidth: 1,
+          borderColor: theme.colors.received + '4D', // ~30% opacity
+        },
+        apiNetworkModeIcon: {
+          width: 16,
+          height: 16,
+          marginRight: 6,
+        },
+        apiNetworkModeText: {
+          fontSize: theme.fontSizes?.base || 13,
+          fontFamily: theme.fontFamilies?.bold,
+          letterSpacing: 0.2,
+        },
+        apiNetworkModeTextTestnet: {
+          color:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.accent
+              : theme.colors.text,
+        },
+        apiNetworkModeTextMainnet: {
+          color: theme.colors.received,
+        },
+        apiInfoButton: {
+          flex: 1,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingHorizontal: 10,
+          paddingVertical: 8,
+          borderRadius: 6,
+          backgroundColor: theme.colors.background,
+          borderWidth: 1,
+          borderColor: theme.colors.primary,
+          gap: 6,
+          minHeight: 40,
+        },
+        apiInfoButtonIcon: {
+          width: 14,
+          height: 14,
+          tintColor: theme.colors.text, // Use text color for better visibility in dark mode
+        },
+        apiInfoButtonText: {
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: theme.fontFamilies?.bold,
+          color:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.primary
+              : theme.colors.text,
+        },
+        apiNetworkDescription: {
+          fontSize: theme.fontSizes?.sm || 12,
+          lineHeight: 16,
+          marginTop: 4,
+        },
+        apiNetworkDescriptionTestnet: {
+          color: theme.colors.textSecondary,
+        },
+        apiNetworkDescriptionMainnet: {
+          color: theme.colors.textSecondary,
+        },
+        apiActionButtonsRow: {
+          flexDirection: 'row',
+          gap: 12,
+          marginTop: 8,
+          alignItems: 'stretch',
+        },
+        apiActionButton: {
+          flex: 1,
+          minHeight: 44,
+          height: 44,
+        },
+        apiModalContainer: {
+          flex: 1,
+          justifyContent: 'flex-end',
+        },
+        apiModalKeyboardView: {
+          flex: 1,
+          justifyContent: 'flex-end',
+        },
+        apiModalBackdrop: {
+          flex: 1,
+          backgroundColor: theme.colors.modalBackdrop,
+          justifyContent: 'flex-end',
+        },
+        apiModalContent: {
+          backgroundColor: theme.colors.background,
+          borderTopLeftRadius: 10,
+          borderTopRightRadius: 10,
+          paddingBottom: Platform.OS === 'ios' ? 17 : 10,
+          paddingTop: 5,
+          shadowColor: theme.colors.shadowColor,
+          shadowOffset: {width: 0, height: -4},
+          shadowOpacity: 0.2,
+          shadowRadius: 12,
+          elevation: 20,
+          flexDirection: 'column',
+          borderTopWidth: 1,
+          borderLeftWidth: 1,
+          borderRightWidth: 1,
+          borderColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+              : theme.colors.whiteOverlay20, // Dark mode: subtle light border
+        },
+        apiModalListWrapper: {
+          height: 300,
+          flexShrink: 0,
+        },
+        apiModalFlatList: {
+          flex: 1,
+        },
+        apiModalListContainer: {
+          minHeight: 200,
+          paddingBottom: 20,
+        },
+        apiModalHeader: {
+          paddingTop: 12,
+          paddingBottom: 12,
+          borderBottomWidth: 1,
+          borderBottomColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+              : theme.colors.whiteOverlay20, // Dark mode: subtle light border
+        },
+        apiModalHeaderTop: {
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          paddingHorizontal: 20,
+          paddingBottom: 0,
+        },
+        apiModalFooter: {
+          paddingHorizontal: 16,
+          paddingTop: 16,
+          paddingBottom: Platform.OS === 'ios' ? 32 : 24,
+        },
+        apiModalTitle: {
+          fontSize: theme.fontSizes?.lg || 16,
+          fontFamily: theme.fontFamilies?.bold,
+          letterSpacing: -0.5,
+        },
+        apiModalHeaderTitleContainer: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          flex: 1,
+        },
+        apiModalHeaderIcon: {
+          width: 20,
+          height: 20,
+          marginRight: 10,
+        },
+        apiModalCloseButton: {
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        apiModalCloseText: {
+          fontSize: theme.fontSizes?.xl || 18,
+          fontFamily: theme.fontFamilies?.bold,
+        },
+        apiModalSearchContainer: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginHorizontal: 16,
+          marginTop: 8,
+          paddingHorizontal: 12,
+          paddingVertical: 10,
+          borderRadius: 12,
+          borderWidth: 1,
+        },
+        apiModalSearchIcon: {
+          width: 16,
+          height: 16,
+          marginRight: 8,
+          tintColor: theme.colors.text,
+        },
+        apiModalSearchInput: {
+          flex: 1,
+          fontSize: theme.fontSizes?.md || 15,
+          padding: 0,
+          margin: 0,
+        },
+        apiModalSearchClear: {
+          padding: 4,
+          marginLeft: 8,
+        },
+        apiModalSearchClearText: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+        },
+        apiModalListContent: {
+          paddingTop: 4,
+          paddingBottom: 4,
+        },
+        apiModalItem: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 16,
+          paddingVertical: 14,
+          marginHorizontal: 16,
+          marginVertical: 0,
+          borderRadius: 0,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          minHeight: 56,
+        },
+        apiModalItemSelected: {
+          backgroundColor: theme.colors.cardBackground,
+        },
+        apiModalItemIcon: {
+          width: 18,
+          height: 18,
+          marginRight: 12,
+          tintColor: theme.colors.text,
+        },
+        apiModalItemText: {
+          flex: 1,
+          fontSize: theme.fontSizes?.md || 15,
+          lineHeight: 20,
+          letterSpacing: -0.2,
+        },
+        apiModalItemTextSelected: {
+          fontFamily: theme.fontFamilies?.bold,
+        },
+        apiModalItemCheckContainer: {
+          width: 24,
+          height: 24,
+          borderRadius: 12,
+          justifyContent: 'center',
+          alignItems: 'center',
+          marginLeft: 8,
+        },
+        apiModalItemCheck: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.white,
+        },
+        apiModalLoading: {
+          padding: 48,
+          alignItems: 'center',
+        },
+        apiModalLoadingText: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontStyle: 'italic',
+        },
+        apiModalEmpty: {
+          padding: 48,
+          alignItems: 'center',
+        },
+        apiModalEmptyText: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontStyle: 'italic',
+        },
+        button: {
+          paddingVertical: 10,
+          borderRadius: 6,
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginTop: 6,
+        },
+        deleteButton: {
+          backgroundColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.accent
+              : theme.colors.bitcoinOrange,
+        },
+        backupButton: {
+          backgroundColor: theme.colors.primary,
+          marginBottom: 16, // Add spacing after backup button before delete section
+        },
+        resetButton: {
+          backgroundColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.accent
+              : theme.colors.bitcoinOrange,
+        },
+        buttonText: {
+          color: theme.colors.textOnPrimary,
+          fontSize: theme.fontSizes?.lg || 16,
+          fontFamily: theme.fontFamilies?.bold,
+          textAlign: 'center',
+        },
+        apiItem: {
+          marginTop: 0, // Section padding handles first element spacing
+          marginBottom: 0, // Consistent spacing
+        },
+        apiName: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text, // Use text color for better readability in dark mode
+          marginBottom: 4,
+        },
+        apiDescription: {
+          fontSize: theme.fontSizes?.base || 14,
+          color: theme.colors.textSecondary,
+          lineHeight: 20,
+          marginBottom: 6,
+        },
+        linkText: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text, // Use text color for better readability in dark mode
+          textDecorationLine: 'underline',
+          textDecorationColor: theme.colors.text, // Match underline color
+        },
+        aboutInfoRow: {
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          paddingVertical: 12,
+          paddingHorizontal: 4,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: theme.colors.border,
+        },
+        aboutLabel: {
+          fontSize: theme.fontSizes?.md || 15,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+          letterSpacing: -0.2,
+        },
+        aboutValue: {
+          fontSize: theme.fontSizes?.md || 15,
+          fontFamily: theme.fontFamilies?.medium,
+          color: theme.colors.textSecondary,
+          letterSpacing: -0.2,
+        },
+        buildNumberContainer: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
+        },
+        buildNumberBadge: {
+          minWidth: 24,
+          height: 24,
+          borderRadius: 12,
+          backgroundColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.primary
+              : theme.colors.bitcoinOrange,
+          justifyContent: 'center',
+          alignItems: 'center',
+          paddingHorizontal: 8,
+        },
+        buildNumberBadgeText: {
+          fontSize: theme.fontSizes?.xs || 11,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.white,
+        },
+        debugLoggingCard: {
+          backgroundColor: theme.colors.cardBackground,
+          borderRadius: 12,
+          padding: 16,
+          marginTop: 12,
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+        },
+        debugLoggingHeader: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 12,
+        },
+        debugLoggingTitle: {
+          fontSize: theme.fontSizes?.md || 15,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+        },
+        debugLoggingStatus: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
+        },
+        debugLoggingStatusDot: {
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+        },
+        debugLoggingStatusText: {
+          fontSize: theme.fontSizes?.xs || 11,
+          fontFamily: theme.fontFamilies?.medium,
+          textTransform: 'uppercase',
+          letterSpacing: 0.5,
+        },
+        disableDevModeButton: {
+          backgroundColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.accent
+              : theme.colors.bitcoinOrange,
+          borderRadius: 12,
+          paddingVertical: 14,
+          paddingHorizontal: 20,
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexDirection: 'row',
+          gap: 8,
+          marginTop: 20,
+          shadowColor: theme.colors.danger,
+          shadowOffset: {width: 0, height: 2},
+          shadowOpacity: 0.2,
+          shadowRadius: 4,
+          elevation: 3,
+        },
+        disableDevModeButtonText: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.white,
+        },
+        aboutSection: {
+          marginTop: 20,
+          padding: 16,
+          backgroundColor: theme.colors.cardBackground,
+          borderRadius: 12,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: theme.colors.border,
+        },
+        aboutSectionHeader: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginBottom: 10,
+        },
+        aboutSectionIcon: {
+          width: 20,
+          height: 20,
+          marginRight: 10,
+          tintColor: theme.colors.text,
+        },
+        aboutSectionTitle: {
+          fontSize: theme.fontSizes?.lg || 16,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+          letterSpacing: -0.3,
+        },
+        aboutSectionDescription: {
+          fontSize: theme.fontSizes?.base || 14,
+          color: theme.colors.textSecondary,
+          lineHeight: 22,
+          letterSpacing: -0.1,
+        },
+        aboutLinkText: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text, // Use text color for better readability in dark mode
+          textDecorationLine: 'underline',
+          textDecorationColor: theme.colors.text, // Match underline color
+        },
+        termsLink: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text, // Use text color for better readability in dark mode
+          textDecorationLine: 'underline',
+          textDecorationColor: theme.colors.text, // Match underline color
+          marginTop: 8,
+        },
+        modalOverlay: {
+          flex: 1,
+          backgroundColor: theme.colors.modalBackdrop,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        modalContent: {
+          backgroundColor: theme.colors.background,
+          padding: 20,
+          borderRadius: 8,
+          width: '80%',
+          borderWidth: 1,
+          borderColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+              : theme.colors.whiteOverlay20, // Dark mode: subtle light border
+        },
+        modalHeader: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: 16,
+        },
+        modalIcon: {
+          width: 24,
+          height: 24,
+          marginRight: 10,
+          tintColor: theme.colors.text, // Use text color for better visibility in dark mode
+        },
+        modalTitle: {
+          fontSize: theme.fontSizes?.['2xl'] || 20,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+        },
+        modalDescription: {
+          fontSize: theme.fontSizes?.base || 14,
+          color: theme.colors.textSecondary,
+          marginBottom: 20,
+          textAlign: 'center',
+        },
+        passwordContainer: {
+          marginBottom: 12,
+        },
+        passwordLabel: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+          marginBottom: 4,
+        },
+        passwordInputContainer: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+          borderRadius: 6,
+        },
+        passwordInput: {
+          flex: 1,
+          padding: 10,
+          fontSize: theme.fontSizes?.base || 13,
+          color: theme.colors.text,
+        },
+        eyeButton: {
+          padding: 10,
+        },
+        eyeIcon: {
+          width: 20,
+          height: 20,
+          tintColor: theme.colors.text,
+        },
+        passwordHint: {
+          fontSize: theme.fontSizes?.sm || 12,
+          color: theme.colors.textSecondary,
+        },
+        modalActions: {
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          marginTop: 20,
+          gap: 12,
+        },
+        modalButton: {
+          flex: 1,
+          paddingVertical: 14,
+          borderRadius: 8,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        cancelButton: {
+          backgroundColor: theme.colors.secondary,
+        },
+        cancelButtonText: {
+          color:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.white
+              : theme.colors.text,
+          fontSize: theme.fontSizes?.lg || 16,
+          fontFamily: theme.fontFamilies?.bold,
+          textAlign: 'center',
+        },
+        confirmButton: {
+          backgroundColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.accent
+              : theme.colors.bitcoinOrange,
+        },
+        confirmButtonText: {
+          color: theme.colors.white,
+          fontSize: theme.fontSizes?.lg || 16,
+          fontFamily: theme.fontFamilies?.bold,
+          textAlign: 'center',
+        },
+        disabledButton: {
+          backgroundColor: theme.colors.disabled,
+        },
+        disabledButtonText: {
+          color: theme.colors.disabledText || theme.colors.textSecondary,
+          fontSize: theme.fontSizes?.lg || 16,
+          fontFamily: theme.fontFamilies?.bold,
+          textAlign: 'center',
+        },
+        apiInfoModalContent: {
+          backgroundColor: theme.colors.background,
+          borderRadius: 16,
+          width: '85%',
+          maxWidth: 400,
+          shadowColor: theme.colors.shadowColor,
+          shadowOffset: {width: 0, height: 4},
+          shadowOpacity: 0.3,
+          shadowRadius: 12,
+          elevation: 20,
+          borderWidth: 1,
+          borderColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.blackOverlay10 // Light mode: subtle dark border
+              : theme.colors.whiteOverlay20, // Dark mode: subtle light border
+        },
+        apiInfoModalHeader: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: 20,
+          paddingTop: 20,
+          paddingBottom: 16,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: theme.colors.border,
+        },
+        apiInfoModalIconContainer: {
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          backgroundColor: theme.colors.cardBackground,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        apiInfoModalIcon: {
+          width: 20,
+          height: 20,
+          tintColor: theme.colors.text,
+        },
+        apiInfoModalTitle: {
+          flex: 1,
+          fontSize: theme.fontSizes?.xl || 18,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+          marginLeft: 12,
+          letterSpacing: -0.3,
+        },
+        apiInfoModalCloseButton: {
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          backgroundColor: theme.colors.cardBackground,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        apiInfoModalCloseText: {
+          fontSize: theme.fontSizes?.xl || 18,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.textSecondary,
+        },
+        apiInfoModalBody: {
+          padding: 20,
+        },
+        apiInfoSection: {
+          marginBottom: 20,
+        },
+        apiInfoSectionRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginBottom: 8,
+        },
+        apiInfoSectionIcon: {
+          width: 20,
+          height: 20,
+          marginRight: 10,
+          tintColor: theme.colors.text,
+        },
+        apiInfoSectionTitle: {
+          fontSize: theme.fontSizes?.lg || 16,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+          letterSpacing: -0.2,
+        },
+        apiInfoSectionText: {
+          fontSize: theme.fontSizes?.base || 14,
+          color: theme.colors.textSecondary,
+          lineHeight: 22,
+          letterSpacing: -0.1,
+          marginLeft: 30,
+        },
+        apiInfoModalButton: {
+          marginHorizontal: 20,
+          marginBottom: 20,
+          paddingVertical: 14,
+          borderRadius: 12,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        apiInfoModalButtonText: {
+          fontSize: theme.fontSizes?.lg || 16,
+          fontFamily: theme.fontFamilies?.bold,
+          letterSpacing: -0.2,
+          textAlign: 'center',
+        },
+        networkOption: {
+          flexDirection: 'row',
+          alignItems: 'center',
+        },
+        networkIcon: {
+          width: 20,
+          height: 20,
+          marginRight: 8,
+          tintColor: theme.colors.text, // Use text color for visibility in dark mode
+        },
+        input: {
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+          borderRadius: 8,
+          padding: 14,
+          marginBottom: 16,
+          textAlign: 'center',
+          fontSize: theme.fontSizes?.lg || 16,
+          color: theme.colors.text,
+          backgroundColor: theme.colors.cardBackground,
+        },
+        halfOpacity: {
+          opacity: 0.5,
+        },
+        strengthContainer: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginTop: 8,
+          marginBottom: 8,
+        },
+        strengthBar: {
+          flex: 1,
+          height: 8,
+          backgroundColor: theme.colors.border,
+          borderRadius: 4,
+          marginRight: 12,
+          overflow: 'hidden',
+        },
+        strengthFill: {
+          height: '100%',
+          borderRadius: 4,
+        },
+        strengthText: {
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: theme.fontFamilies?.bold,
+          minWidth: 60,
+          textAlign: 'right',
+          color: theme.colors.textSecondary,
+        },
+        requirementsContainer: {
+          marginTop: 4,
+        },
+        requirementText: {
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: theme.fontFamilies?.medium,
+          color: theme.colors.warningAccent,
+        },
+        nostrRelaysInput: {
+          minHeight: 120,
+          textAlignVertical: 'top',
+          textAlign: 'left', // Align text entries to the left
+          paddingTop: 12,
+          backgroundColor: theme.colors.cardBackground,
+        },
+        errorInput: {
+          borderColor: theme.colors.danger,
+        },
+        errorText: {
+          color: theme.colors.danger,
+          fontSize: theme.fontSizes?.sm || 12,
+          marginTop: 4,
+        },
+        buttonContent: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        buttonIcon: {
+          width: 20,
+          height: 20,
+          marginRight: 12,
+          tintColor: theme.colors.white,
+        },
+        buttonIconOnColored: {
+          width: 20,
+          height: 20,
+          marginRight: 12,
+          tintColor: theme.colors.white,
+        },
+        buttonIconOnSecondary: {
+          width: 20,
+          height: 20,
+          marginRight: 12,
+          tintColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.white
+              : theme.colors.text,
+        },
+        flexContainer: {
+          flex: 1,
+        },
+        whiteTint: {
+          tintColor: theme.colors.white,
+        },
+        networkStatusContainer: {
+          marginBottom: 8,
+        },
+        networkStatusTitle: {
+          fontSize: theme.fontSizes?.sm || 12,
+          marginBottom: 2,
+        },
+        networkStatusText: {
+          fontSize: theme.fontSizes?.sm || 12,
+        },
+        appIconCheckStatesButton: {
+          marginBottom: 10,
+          backgroundColor: theme.colors.secondary,
+        },
+        walletModeRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 12,
+          paddingHorizontal: 4,
+        },
+        walletModeLabel: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+        },
+        walletModeDescription: {
+          fontSize: theme.fontSizes?.base || 13,
+          color: theme.colors.textSecondary,
+          marginBottom: 12,
+        },
+        themeOptionContainer: {
+          gap: 8,
+          marginBottom: 8,
+        },
+        themeOption: {
+          backgroundColor: theme.colors.background,
+          borderRadius: 8,
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+          padding: 12,
+          marginBottom: 4,
+        },
+        themeOptionSelected: {
+          borderColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.accent
+              : theme.colors.bitcoinOrange,
+          borderWidth: 2,
+          backgroundColor: theme.colors.cardBackground,
+        },
+        themeOptionContent: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        },
+        themeOptionLabel: {
+          fontSize: theme.fontSizes?.md || 15,
+          fontFamily: theme.fontFamilies?.medium,
+          color: theme.colors.text,
+        },
+        themeOptionLabelSelected: {
+          fontFamily: theme.fontFamilies?.bold,
+          color:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.accent
+              : theme.colors.bitcoinOrange,
+        },
+        themeOptionCheck: {
+          width: 18,
+          height: 18,
+          tintColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.accent
+              : theme.colors.bitcoinOrange,
+        },
+      }),
+    [theme],
+  );
+  // Force re-render on Android when theme changes
+  useEffect(() => {
+    setThemeUpdateKey(prev => prev + 1);
+  }, [theme.colors.background, themeMode]);
   return (
-    <SafeAreaView style={styles.container} edges={['left', 'right']}>
+    <SafeAreaView
+      style={styles.container}
+      edges={['left', 'right']}
+      key={themeUpdateKey}>
       <ScrollView
+        key={themeUpdateKey}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={true}
+        removeClippedSubviews
         keyboardShouldPersistTaps="handled"
+        overScrollMode="never"
+        showsVerticalScrollIndicator={false}
         nestedScrollEnabled={true}
         bounces={true}
-        scrollEventThrottle={16}
-        overScrollMode="auto">
+        scrollEventThrottle={16}>
         {/* Theme Section - First for better UX */}
         <CollapsibleSection
           title="Theme"
@@ -2316,10 +2269,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           styles={styles}
           theme={theme}>
           <Text style={styles.toggleDescription}>
-            Choose your preferred color theme. OS Default follows your system settings.
+            Choose your preferred color theme. OS Default follows your system
+            settings.
           </Text>
           <View style={styles.themeOptionContainer}>
-            <TouchableOpacity
+            <Pressable
               style={[
                 styles.themeOption,
                 themeMode === 'os' && styles.themeOptionSelected,
@@ -2328,7 +2282,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 HapticFeedback.light();
                 setThemeMode('os');
               }}
-              activeOpacity={0.7}>
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
               <View style={styles.themeOptionContent}>
                 <Text
                   style={[
@@ -2345,8 +2299,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   />
                 )}
               </View>
-            </TouchableOpacity>
-            <TouchableOpacity
+            </Pressable>
+            <Pressable
               style={[
                 styles.themeOption,
                 themeMode === 'light' && styles.themeOptionSelected,
@@ -2355,7 +2309,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 HapticFeedback.light();
                 setThemeMode('light');
               }}
-              activeOpacity={0.7}>
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
               <View style={styles.themeOptionContent}>
                 <Text
                   style={[
@@ -2372,8 +2326,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   />
                 )}
               </View>
-            </TouchableOpacity>
-            <TouchableOpacity
+            </Pressable>
+            <Pressable
               style={[
                 styles.themeOption,
                 themeMode === 'dark' && styles.themeOptionSelected,
@@ -2382,7 +2336,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 HapticFeedback.light();
                 setThemeMode('dark');
               }}
-              activeOpacity={0.7}>
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
               <View style={styles.themeOptionContent}>
                 <Text
                   style={[
@@ -2399,10 +2353,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   />
                 )}
               </View>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </CollapsibleSection>
-
         {/* Haptics Section */}
         <CollapsibleSection
           title="Haptics"
@@ -2416,20 +2369,67 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <View style={styles.toggleContainer}>
             <Text style={styles.toggleLabel}>Haptics Off</Text>
             <Switch
-              trackColor={{
-                true: theme.colors.primary,
-                false: theme.colors.secondary,
-              }}
-              thumbColor={theme.colors.background === '#ffffff'
-                ? theme.colors.accent
-                : theme.colors.bitcoinOrange}
               onValueChange={handleToggleHaptics}
               value={hapticsEnabled}
+              trackColor={{
+                false: theme.colors.switchTrackFalse,
+                true: theme.colors.switchTrackTrue,
+              }}
+              thumbColor={theme.colors.switchThumb}
+              ios_backgroundColor={theme.colors.switchIosBackground}
             />
             <Text style={styles.toggleLabel}>Haptics On</Text>
           </View>
         </CollapsibleSection>
+        {/* Display Format Section */}
+        <CollapsibleSection
+          title="Balance Display"
+          isExpanded={expandedSections.displayFormat}
+          onToggle={() => toggleSection('displayFormat')}
+          styles={styles}
+          theme={theme}>
+          <Text style={styles.hintText}>
+            Bitcoin uses <Text style={styles.hintBold}>8 decimal places</Text>{' '}
+            for full accuracy.
+          </Text>
 
+          <Text style={[styles.hintText, styles.hintSpacing]}>
+            <Text style={styles.hintAmount}>1 BTC</Text> ={' '}
+            <Text style={styles.hintAmount}>100,000,000 satoshis (sats)</Text>
+          </Text>
+
+          <Text style={[styles.hintText, styles.hintSpacing]}>
+            You can choose how your balance is shown:
+          </Text>
+
+          <Text style={[styles.hintText, styles.hintSpacing]}>
+            <Text style={styles.hintBold}>Formatted:</Text> Thousand separators
+            make large numbers easier to read and verify decimal precision.
+            Example: <Text style={styles.hintAmount}>1,234.56,789,010 ₿</Text>{' '}
+            or <Text style={styles.hintAmount}>123,456,789,010 sats</Text>
+          </Text>
+
+          <Text style={[styles.hintText, styles.hintSpacing]}>
+            <Text style={styles.hintBold}>Raw Numbers:</Text> Exact values
+            without separators. Example:{' '}
+            <Text style={styles.hintAmount}>1234.56789 ₿</Text> or{' '}
+            <Text style={styles.hintAmount}>123456789000 sats</Text>
+          </Text>
+          <View style={styles.toggleContainer}>
+            <Text style={styles.toggleLabel}>Raw Numbers</Text>
+            <Switch
+              onValueChange={handleToggleBalanceFormatting}
+              value={balanceFormattingEnabled}
+              trackColor={{
+                false: theme.colors.switchTrackFalse,
+                true: theme.colors.switchTrackTrue,
+              }}
+              thumbColor={theme.colors.switchThumb}
+              ios_backgroundColor={theme.colors.switchIosBackground}
+            />
+            <Text style={styles.toggleLabel}>Formatted</Text>
+          </View>
+        </CollapsibleSection>
         {/* App Icon Section - Android Only */}
         {Platform.OS === 'android' && (
           <CollapsibleSection
@@ -2455,18 +2455,17 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             <View style={styles.toggleContainer}>
               <Text style={styles.toggleLabel}>Bold Wallet</Text>
               <Switch
+                value={selectedIcon === 'alternative'}
                 trackColor={{
-                  true: theme.colors.primary,
-                  false: theme.colors.secondary,
+                  false: theme.colors.switchTrackFalse,
+                  true: theme.colors.switchTrackTrue,
                 }}
-                thumbColor={theme.colors.background === '#ffffff'
-                ? theme.colors.accent
-                : theme.colors.bitcoinOrange}
+                thumbColor={theme.colors.switchThumb}
+                ios_backgroundColor={theme.colors.switchIosBackground}
                 onValueChange={async value => {
                   try {
                     HapticFeedback.light();
                     const newIcon = value ? 'alternative' : 'default';
-
                     // Check if IconChanger module is available
                     if (!IconChanger || !IconChanger.changeIcon) {
                       Alert.alert(
@@ -2476,19 +2475,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                       );
                       return;
                     }
-
                     // Update UI state
                     setSelectedIcon(newIcon);
-
                     // Save preference
                     await EncryptedStorage.setItem(
                       'app_icon_preference',
                       newIcon,
                     );
-
                     // Change the icon
                     await IconChanger.changeIcon(newIcon);
-
                     // Show success message
                     const iconName =
                       newIcon === 'alternative' ? 'QuickCalc' : 'Bold Wallet';
@@ -2498,11 +2493,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                       [{text: 'OK'}],
                     );
                   } catch (error: any) {
-                    console.error('Error changing icon:', error);
-
+                    dbg('Error changing icon:', error);
                     // Revert UI state on error
                     setSelectedIcon(value ? 'default' : 'alternative');
-
                     Alert.alert(
                       'Error',
                       error?.message ||
@@ -2511,14 +2504,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     );
                   }
                 }}
-                value={selectedIcon === 'alternative'}
                 disabled={selectedIcon === 'loading'}
               />
               <Text style={styles.toggleLabel}>QuickCalc</Text>
             </View>
           </CollapsibleSection>
         )}
-
         {/* Wallet Mode Section */}
         <CollapsibleSection
           title="Wallet Mode"
@@ -2534,13 +2525,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <View style={styles.walletModeRow}>
             <Text style={styles.walletModeLabel}>Full Mode</Text>
             <Switch
+              value={walletMode === 'psbt'}
               trackColor={{
-                true: theme.colors.primary,
-                false: theme.colors.secondary,
+                false: theme.colors.switchTrackFalse,
+                true: theme.colors.switchTrackTrue,
               }}
-              thumbColor={theme.colors.background === '#ffffff'
-                ? theme.colors.accent
-                : theme.colors.bitcoinOrange}
+              thumbColor={theme.colors.switchThumb}
+              ios_backgroundColor={theme.colors.switchIosBackground}
               onValueChange={async value => {
                 HapticFeedback.light();
                 const mode = value ? 'psbt' : 'full';
@@ -2563,12 +2554,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   routes: [{name: mode === 'psbt' ? 'PSBT' : 'Home'}],
                 });
               }}
-              value={walletMode === 'psbt'}
             />
             <Text style={styles.walletModeLabel}>PSBT Only</Text>
           </View>
         </CollapsibleSection>
-
         {/* Security Section */}
         <CollapsibleSection
           title="Security"
@@ -2577,33 +2566,32 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           styles={styles}
           theme={theme}>
           <Text style={styles.apiName}>Backup Wallet Keyshare</Text>
-
-          <TouchableOpacity
+          <Pressable
             style={[styles.button, styles.backupButton]}
             onPress={() => {
               HapticFeedback.light();
               setIsBackupModalVisible(true);
-            }}>
+            }}
+            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
             <View style={styles.buttonContent}>
               <Image
                 source={require('../assets/upload-icon.png')}
-                style={styles.buttonIcon}
+                style={[styles.buttonIcon, styles.whiteTint]}
                 resizeMode="contain"
               />
               <Text style={styles.buttonText}>Backup {party}</Text>
             </View>
-          </TouchableOpacity>
-
+          </Pressable>
           <View style={styles.apiItem}>
             <Text style={styles.apiName}>Delete Wallet Keyshare</Text>
           </View>
-
-          <TouchableOpacity
+          <Pressable
             style={[styles.button, styles.deleteButton]}
             onPress={() => {
               HapticFeedback.light();
               setIsModalResetVisible(true);
-            }}>
+            }}
+            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
             <View style={styles.buttonContent}>
               <Image
                 source={require('../assets/delete-icon.png')}
@@ -2612,7 +2600,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               />
               <Text style={styles.buttonText}>Delete {party}</Text>
             </View>
-          </TouchableOpacity>
+          </Pressable>
         </CollapsibleSection>
         {/* Network Providers Section */}
         <CollapsibleSection
@@ -2632,15 +2620,14 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               <Text style={styles.toggleLabel}>Mainnet</Text>
             </View>
             <Switch
-              trackColor={{
-                true: theme.colors.primary,
-                false: theme.colors.secondary,
-              }}
-              thumbColor={theme.colors.background === '#ffffff'
-                ? theme.colors.accent
-                : theme.colors.bitcoinOrange}
               onValueChange={toggleNetwork}
               value={isTestnet}
+              trackColor={{
+                false: theme.colors.switchTrackFalse,
+                true: theme.colors.switchTrackTrue,
+              }}
+              thumbColor={theme.colors.switchThumb}
+              ios_backgroundColor={theme.colors.switchIosBackground}
             />
             <View style={styles.networkOption}>
               <Image
@@ -2651,7 +2638,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               <Text style={styles.toggleLabel}>Testnet3</Text>
             </View>
           </View>
-
           {/* Network mode indicator and info */}
           <View style={styles.apiNetworkInfoContainer}>
             <View style={styles.apiNetworkModeRow}>
@@ -2662,9 +2648,24 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     ? styles.apiNetworkModeBadgeTestnet
                     : styles.apiNetworkModeBadgeMainnet,
                 ]}>
-                <Text style={styles.apiNetworkModeIcon}>
-                  {isTestnet ? '🔒' : '🌐'}
-                </Text>
+                <Image
+                  source={
+                    isTestnet
+                      ? require('../assets/locker-icon.png')
+                      : require('../assets/privacy-icon.png')
+                  }
+                  style={[
+                    styles.apiNetworkModeIcon,
+                    {
+                      tintColor: isTestnet
+                        ? theme.colors.background === '#ffffff'
+                          ? theme.colors.accent
+                          : theme.colors.bitcoinOrange
+                        : theme.colors.received,
+                    },
+                  ]}
+                  resizeMode="contain"
+                />
                 <Text
                   style={[
                     styles.apiNetworkModeText,
@@ -2676,20 +2677,20 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 </Text>
               </View>
               {!isTestnet && (
-                <TouchableOpacity
+                <Pressable
                   style={styles.apiInfoButton}
                   onPress={() => {
                     HapticFeedback.light();
                     setIsApiInfoVisible(true);
                   }}
-                  activeOpacity={0.7}>
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                   <Image
                     source={require('../assets/about-icon.png')}
                     style={styles.apiInfoButtonIcon}
                     resizeMode="contain"
                   />
                   <Text style={styles.apiInfoButtonText}>Change Provider?</Text>
-                </TouchableOpacity>
+                </Pressable>
               )}
             </View>
             <Text
@@ -2704,7 +2705,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 : 'Mainnet Providers are customizable.'}
             </Text>
           </View>
-
           <APIAutocomplete
             value={pendingAPI || baseAPI}
             onChangeText={handleAPISelection}
@@ -2712,12 +2712,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             styles={styles}
             theme={theme}
           />
-
           {/* Action buttons side by side */}
           <View style={styles.apiActionButtonsRow}>
             {/* Test & Save button - always show in mainnet, disabled when no changes */}
             {!isTestnet && (
-              <TouchableOpacity
+              <Pressable
                 style={[
                   styles.button,
                   styles.backupButton,
@@ -2730,23 +2729,28 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   HapticFeedback.light();
                   saveAPI(pendingAPI);
                 }}
-                disabled={isAPISaving || !pendingAPI || pendingAPI === baseAPI}>
+                disabled={isAPISaving || !pendingAPI || pendingAPI === baseAPI}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <View style={styles.buttonContent}>
                   <Image
                     source={require('../assets/check-icon.png')}
                     style={[styles.buttonIcon, styles.whiteTint]}
                     resizeMode="contain"
                   />
-                  <Text style={styles.buttonText}>
+                  <Text
+                    style={[
+                      styles.buttonText,
+                      (isAPISaving || !pendingAPI || pendingAPI === baseAPI) &&
+                        styles.disabledButtonText,
+                    ]}>
                     {isAPISaving ? 'Verifying...' : 'Verify & Save'}
                   </Text>
                 </View>
-              </TouchableOpacity>
+              </Pressable>
             )}
-
             {/* Reset Default API button - only show in mainnet */}
             {!isTestnet && (
-              <TouchableOpacity
+              <Pressable
                 style={[
                   styles.button,
                   styles.resetButton,
@@ -2755,7 +2759,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 onPress={() => {
                   HapticFeedback.light();
                   resetAPI();
-                }}>
+                }}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <View style={styles.buttonContent}>
                   <Image
                     source={require('../assets/refresh-icon.png')}
@@ -2764,7 +2769,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   />
                   <Text style={styles.buttonText}>Defaults</Text>
                 </View>
-              </TouchableOpacity>
+              </Pressable>
             )}
           </View>
         </CollapsibleSection>
@@ -2798,7 +2803,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               numberOfLines={6}
             />
             <View style={styles.apiActionButtonsRow}>
-              <TouchableOpacity
+              <Pressable
                 style={[
                   styles.button,
                   styles.backupButton,
@@ -2845,17 +2850,26 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 }}
                 disabled={
                   !pendingNostrRelays || pendingNostrRelays === nostrRelays
-                }>
+                }
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <View style={styles.buttonContent}>
                   <Image
                     source={require('../assets/check-icon.png')}
                     style={[styles.buttonIcon, styles.whiteTint]}
                     resizeMode="contain"
                   />
-                  <Text style={styles.buttonText}>Save Relays</Text>
+                  <Text
+                    style={[
+                      styles.buttonText,
+                      (!pendingNostrRelays ||
+                        pendingNostrRelays === nostrRelays) &&
+                        styles.disabledButtonText,
+                    ]}>
+                    Save Relays
+                  </Text>
                 </View>
-              </TouchableOpacity>
-              <TouchableOpacity
+              </Pressable>
+              <Pressable
                 style={[
                   styles.button,
                   styles.resetButton,
@@ -2869,7 +2883,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   // Convert CSV to newline-separated for multiline display
                   const relaysForDisplay = relaysCSV.split(',').join('\n');
                   setPendingNostrRelays(relaysForDisplay);
-                }}>
+                }}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <View style={styles.buttonContent}>
                   <Image
                     source={require('../assets/refresh-icon.png')}
@@ -2878,7 +2893,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   />
                   <Text style={styles.buttonText}>Defaults</Text>
                 </View>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </CollapsibleSection>
         )}
@@ -2896,7 +2911,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               Clear cached balances and history.
             </Text>
           </View>
-          <TouchableOpacity
+          <Pressable
             style={[styles.button, styles.deleteButton]}
             onPress={async () => {
               HapticFeedback.light();
@@ -2912,7 +2927,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   'Failed to clear cache. Please try again.',
                 );
               }
-            }}>
+            }}
+            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
             <View style={styles.buttonContent}>
               <Image
                 source={require('../assets/delete-icon.png')}
@@ -2923,8 +2939,125 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 Clear Cache ({usageSize.mb})
               </Text>
             </View>
-          </TouchableOpacity>
+          </Pressable>
         </CollapsibleSection>
+
+        {/* Dev Debug Section - Only visible on Android if enabled via build number clicks */}
+        {Platform.OS === 'android' && devDebugEnabled && (
+          <CollapsibleSection
+            title="Dev Debug"
+            isExpanded={expandedSections.devDebug}
+            onToggle={() => toggleSection('devDebug')}
+            styles={styles}
+            theme={theme}>
+            <View
+              style={[
+                styles.warningContainer,
+                {
+                  backgroundColor: theme.colors.warningBg,
+                  borderColor: theme.colors.warningBorder,
+                },
+              ]}>
+              <Text
+                style={[styles.warningText, {color: theme.colors.warningText}]}>
+                ⚠️ Developers Only
+              </Text>
+              <Text
+                style={[
+                  styles.warningDescription,
+                  {color: theme.colors.warningText},
+                ]}>
+                Debug logs may contain sensitive information. Use only on
+                trusted devices, and only if you know what you are doing. View
+                detailed logs in logcat (Android only, requires USB debugging).
+                Session-only setting - resets on app restart.
+              </Text>
+            </View>
+            {/* Enhanced Debug Logging Card */}
+            <View style={styles.debugLoggingCard}>
+              <View style={styles.debugLoggingHeader}>
+                <Text style={styles.debugLoggingTitle}>Debug Logging</Text>
+                <View style={styles.debugLoggingStatus}>
+                  <View
+                    style={[
+                      styles.debugLoggingStatusDot,
+                      {
+                        backgroundColor: debugLoggingEnabled
+                          ? theme.colors.success
+                          : theme.colors.textSecondary,
+                      },
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      styles.debugLoggingStatusText,
+                      {
+                        color: debugLoggingEnabled
+                          ? theme.colors.success
+                          : theme.colors.textSecondary,
+                      },
+                    ]}>
+                    {debugLoggingEnabled ? 'Active' : 'Inactive'}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.toggleContainer}>
+                <Text style={styles.toggleLabel}>Enable Logging</Text>
+                <Switch
+                  onValueChange={handleToggleDebugLogging}
+                  value={debugLoggingEnabled}
+                  trackColor={{
+                    false: theme.colors.switchTrackFalse,
+                    true: theme.colors.switchTrackTrue,
+                  }}
+                  thumbColor={theme.colors.switchThumb}
+                  ios_backgroundColor={theme.colors.switchIosBackground}
+                />
+              </View>
+            </View>
+
+            {/* Enhanced Disable Dev Mode Button */}
+            <Pressable
+              style={styles.disableDevModeButton}
+              onPress={() => {
+                HapticFeedback.medium();
+                Alert.alert(
+                  'Disable Dev Mode',
+                  'Are you sure you want to hide the Dev Debug section? You can enable it again by clicking the build number 7 times.',
+                  [
+                    {
+                      text: 'Cancel',
+                      style: 'cancel',
+                    },
+                    {
+                      text: 'Disable',
+                      style: 'destructive',
+                      onPress: () => {
+                        setDevDebugEnabled(false);
+                        EncryptedStorage.setItem(
+                          'devDebugEnabled',
+                          'false',
+                        ).catch(error => {
+                          dbg('Error saving devDebugEnabled:', error);
+                        });
+                        Toast.show({
+                          type: 'info',
+                          text1: 'Dev Mode Disabled',
+                          text2: 'Dev Debug section is now hidden',
+                          position: 'top',
+                        });
+                      },
+                    },
+                  ],
+                );
+              }}
+              android_ripple={{color: 'rgba(255,255,255,0.2)'}}>
+              <Text style={styles.disableDevModeButtonText}>
+                Disable Dev Mode
+              </Text>
+            </Pressable>
+          </CollapsibleSection>
+        )}
 
         {/* Legal Section */}
         <CollapsibleSection
@@ -2936,7 +3069,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <Text style={styles.toggleDescription}>
             Terms of Service and Privacy Policy
           </Text>
-
           <Text
             style={styles.termsLink}
             onPress={() => {
@@ -2946,7 +3078,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             }}>
             Read Terms of Use
           </Text>
-
           <Text
             style={styles.termsLink}
             onPress={() => {
@@ -2970,241 +3101,126 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           </View>
           <View style={styles.aboutInfoRow}>
             <Text style={styles.aboutLabel}>Build Number</Text>
-            <Text style={styles.aboutValue}>{buildNumber}</Text>
-          </View>
-
-          <View style={styles.aboutSection}>
-            <View style={styles.aboutSectionHeader}>
-              <Image
-                source={require('../assets/api-icon.png')}
-                style={styles.aboutSectionIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.aboutSectionTitle}>Mempool.Space</Text>
-            </View>
-            <Text style={styles.aboutSectionDescription}>
-              Used for balances, history, transactions, and fees.{'\n'}Learn
-              more:{' '}
-              <Text
-                style={styles.aboutLinkText}
-                onPress={() => {
-                  HapticFeedback.light();
-                  Linking.openURL('https://mempool.space/docs/api/rest');
-                }}>
-                API Docs
-              </Text>
-            </Text>
-          </View>
-
-          <View style={styles.aboutSection}>
-            <View style={styles.aboutSectionHeader}>
-              <Image
-                source={require('../assets/privacy-icon.png')}
-                style={styles.aboutSectionIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.aboutSectionTitle}>Data & Security</Text>
-            </View>
-            <Text style={styles.aboutSectionDescription}>
-              We collect no personal data and run no backend. Keys and signing
-              operations happen solely on your devices. Connecting to your own
-              Self‑hosted mempool servers and devices can improve privacy and
-              control over your data. Without any third-party involvement or
-              data collection.
-            </Text>
-          </View>
-        </CollapsibleSection>
-      </ScrollView>
-
-      {/* Modals */}
-      <Modal
-        visible={isBackupModalVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setIsBackupModalVisible(false)}>
-        <KeyboardAvoidingView
-          style={styles.flexContainer}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            activeOpacity={1}
-            onPress={() => {
-              // Dismiss keyboard when tapping outside
-              Keyboard.dismiss();
-            }}>
-            <TouchableOpacity
-              style={styles.modalContent}
-              activeOpacity={1}
+            <Pressable
               onPress={() => {
-                // Prevent modal from closing when tapping inside
-              }}>
-              <View style={styles.modalHeader}>
-                <Image
-                  source={require('../assets/backup-icon.png')}
-                  style={styles.modalIcon}
-                  resizeMode="contain"
-                />
-                <Text style={styles.modalTitle}>Backup Keyshare</Text>
-              </View>
+                HapticFeedback.light();
+                // Only enable on Android (iOS prod builds don't support logs)
+                if (Platform.OS !== 'android') {
+                  return;
+                }
 
-              <Text style={styles.apiDescription}>
-                Store your keyshares in separate private locations e.g. cloud,
-                emails, external drives, etc. Do not keep them together so no
-                one can access them all and steal your funds.
-              </Text>
+                // Check if dev mode is already enabled
+                if (devDebugEnabled) {
+                  Toast.show({
+                    type: 'info',
+                    text1: 'Dev Mode Already Enabled',
+                    text2: 'Developer debug section is already visible',
+                    position: 'top',
+                    visibilityTime: 2000,
+                  });
+                  return;
+                }
 
-              <View style={styles.passwordContainer}>
-                <Text style={styles.passwordLabel}>Set a Password</Text>
-                <View style={styles.passwordInputContainer}>
-                  <TextInput
-                    style={styles.passwordInput}
-                    placeholder="Enter a strong password"
-                    placeholderTextColor={theme.colors.textSecondary + '80'}
-                    secureTextEntry={!passwordVisible}
-                    value={password}
-                    onChangeText={handlePasswordChange}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                  <TouchableOpacity
-                    style={styles.eyeButton}
-                    onPress={() => {
-                      HapticFeedback.light();
-                      setPasswordVisible(!passwordVisible);
-                    }}>
-                    <Image
-                      source={
-                        passwordVisible
-                          ? require('../assets/eye-off-icon.png')
-                          : require('../assets/eye-on-icon.png')
-                      }
-                      style={styles.eyeIcon}
-                      resizeMode="contain"
-                    />
-                  </TouchableOpacity>
+                // Increment click count
+                buildNumberClickCountRef.current += 1;
+                const currentCount = buildNumberClickCountRef.current;
+                setBuildNumberClickCount(currentCount);
+
+                // Clear existing timeout
+                if (buildNumberClickTimeoutRef.current) {
+                  clearTimeout(buildNumberClickTimeoutRef.current);
+                }
+                // Reset count after 3 seconds of inactivity
+                buildNumberClickTimeoutRef.current = setTimeout(() => {
+                  buildNumberClickCountRef.current = 0;
+                  setBuildNumberClickCount(0);
+                }, 3000);
+
+                // Show progress toast starting from 2 clicks
+                if (currentCount >= 2 && currentCount < 7) {
+                  const stepsRemaining = 7 - currentCount;
+                  Toast.show({
+                    type: 'info',
+                    text1: `You're now ${stepsRemaining} step${
+                      stepsRemaining > 1 ? 's' : ''
+                    } to enable dev mode`,
+                    position: 'top',
+                    visibilityTime: 2000,
+                  });
+                }
+
+                // Check if we've reached 7 clicks
+                if (currentCount >= 7) {
+                  // Enable dev debug mode
+                  setDevDebugEnabled(true);
+                  EncryptedStorage.setItem('devDebugEnabled', 'true').catch(
+                    error => {
+                      dbg('Error saving devDebugEnabled:', error);
+                    },
+                  );
+                  // Open devDebug section and close about section
+                  setExpandedSections(prev => ({
+                    ...prev,
+                    about: false,
+                    devDebug: true,
+                  }));
+                  // Show toast
+                  Toast.show({
+                    type: 'success',
+                    text1: 'Dev Mode Enabled',
+                    text2: 'Developer debug section is now visible',
+                    position: 'top',
+                  });
+                  // Reset counter
+                  buildNumberClickCountRef.current = 0;
+                  setBuildNumberClickCount(0);
+                  if (buildNumberClickTimeoutRef.current) {
+                    clearTimeout(buildNumberClickTimeoutRef.current);
+                    buildNumberClickTimeoutRef.current = null;
+                  }
+                }
+              }}
+              style={styles.buildNumberContainer}>
+              {buildNumberClickCount >= 2 ? (
+                <View style={styles.buildNumberBadge}>
+                  <Text style={styles.buildNumberBadgeText}>{buildNumber}</Text>
                 </View>
+              ) : (
+                <Text style={styles.aboutValue}>{buildNumber}</Text>
+              )}
+            </Pressable>
+          </View>
+          <Text style={styles.toggleDescription}>
+            Make sure that your wallet keyshares devices are running the latest
+            version for optimal compatibility and security.
+          </Text>
+        </CollapsibleSection>
 
-                {/* Password Strength Indicator */}
-                {password.length > 0 && (
-                  <View style={styles.strengthContainer}>
-                    <View style={styles.strengthBar}>
-                      <View
-                        style={[
-                          styles.strengthFill,
-                          {
-                            width: `${(passwordStrength / 4) * 100}%`,
-                            backgroundColor: getPasswordStrengthColor(),
-                          },
-                        ]}
-                      />
-                    </View>
-                    <Text
-                      style={[
-                        styles.strengthText,
-                        {color: getPasswordStrengthColor()},
-                      ]}>
-                      {getPasswordStrengthText()}
-                    </Text>
-                  </View>
-                )}
-
-                {/* Password Requirements */}
-                {passwordErrors.length > 0 && (
-                  <View style={styles.requirementsContainer}>
-                    {passwordErrors.map((error, index) => (
-                      <Text key={index} style={styles.requirementText}>
-                        • {error}
-                      </Text>
-                    ))}
-                  </View>
-                )}
-              </View>
-
-              <View style={styles.passwordContainer}>
-                <Text style={styles.passwordLabel}>Confirm Password</Text>
-                <View style={styles.passwordInputContainer}>
-                  <TextInput
-                    style={[
-                      styles.passwordInput,
-                      confirmPassword.length > 0 &&
-                        password !== confirmPassword &&
-                        styles.errorInput,
-                    ]}
-                    placeholder="Confirm your password"
-                    placeholderTextColor={theme.colors.textSecondary + '80'}
-                    secureTextEntry={!confirmPasswordVisible}
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                  <TouchableOpacity
-                    style={styles.eyeButton}
-                    onPress={() => {
-                      HapticFeedback.light();
-                      setConfirmPasswordVisible(!confirmPasswordVisible);
-                    }}>
-                    <Image
-                      source={
-                        confirmPasswordVisible
-                          ? require('../assets/eye-off-icon.png')
-                          : require('../assets/eye-on-icon.png')
-                      }
-                      style={styles.eyeIcon}
-                      resizeMode="contain"
-                    />
-                  </TouchableOpacity>
-                </View>
-                {confirmPassword.length > 0 && password !== confirmPassword && (
-                  <Text style={styles.errorText}>Passwords do not match</Text>
-                )}
-              </View>
-
-              <View style={styles.modalActions}>
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.cancelButton]}
-                  onPress={() => {
-                    HapticFeedback.light();
-                    clearBackupModal();
-                  }}>
-                  <Text style={styles.buttonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.modalButton,
-                    styles.confirmButton,
-                    (!password ||
-                      !confirmPassword ||
-                      password !== confirmPassword ||
-                      passwordStrength < 3) &&
-                      styles.disabledButton,
-                  ]}
-                  onPress={() => {
-                    HapticFeedback.light();
-                    handleBackupWallet();
-                  }}
-                  disabled={
-                    !password ||
-                    !confirmPassword ||
-                    password !== confirmPassword ||
-                    passwordStrength < 3
-                  }>
-                  <View style={styles.buttonContent}>
-                    <Image
-                      source={require('../assets/upload-icon.png')}
-                      style={[styles.buttonIcon, styles.whiteTint]}
-                      resizeMode="contain"
-                    />
-                    <Text style={styles.buttonText}>Backup</Text>
-                  </View>
-                </TouchableOpacity>
-              </View>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </KeyboardAvoidingView>
-      </Modal>
-
+        {/* Font Testing Section - Development Only */}
+        {__DEV__ && (
+          <CollapsibleSection
+            title="Font Testing"
+            isExpanded={expandedSections.fontTesting}
+            onToggle={() => toggleSection('fontTesting')}
+            styles={styles}
+            theme={theme}>
+            <Text style={styles.toggleDescription}>
+              Visual font comparison tool to verify unified fonts across
+              platforms. This section only appears in development builds. Note
+              that rendered fonts may differ from the actual fonts on your
+              device. Also, the font testing section is only visible in
+              development builds.
+            </Text>
+            <FontComparisonScreen />
+          </CollapsibleSection>
+        )}
+      </ScrollView>
+      {/* Modals */}
+      <BackupKeyshareModal
+        visible={isBackupModalVisible}
+        onClose={() => setIsBackupModalVisible(false)}
+        description="Store your keyshares in separate private locations e.g. cloud, emails, external drives, etc. Do not keep them together so no one can access them all and steal your funds."
+      />
       <Modal
         visible={isModalResetVisible}
         transparent={true}
@@ -3233,15 +3249,16 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               onChangeText={setDeleteInput}
             />
             <View style={styles.modalActions}>
-              <TouchableOpacity
+              <Pressable
                 style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => {
                   HapticFeedback.light();
                   setIsModalResetVisible(false);
-                }}>
-                <Text style={styles.buttonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+                }}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
                 style={[
                   styles.modalButton,
                   styles.confirmButton,
@@ -3251,16 +3268,20 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   HapticFeedback.light();
                   handleResetWallet();
                 }}
-                disabled={isDeleting}>
-                <Text style={styles.buttonText}>
+                disabled={isDeleting}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                <Text
+                  style={[
+                    styles.confirmButtonText,
+                    isDeleting && styles.disabledButtonText,
+                  ]}>
                   {isDeleting ? 'Deleting...' : 'Delete'}
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </View>
         </View>
       </Modal>
-
       <LegalModal
         visible={isLegalModalVisible}
         onClose={() => {
@@ -3269,42 +3290,46 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         }}
         type={legalModalType}
       />
-
       {/* API Info Modal */}
       <Modal
         visible={isApiInfoVisible}
         transparent={true}
         animationType="fade"
         onRequestClose={() => setIsApiInfoVisible(false)}>
-        <TouchableOpacity
+        <Pressable
           style={styles.modalOverlay}
-          activeOpacity={1}
           onPress={() => setIsApiInfoVisible(false)}>
-          <TouchableOpacity
-            activeOpacity={1}
-            onPress={e => e.stopPropagation()}>
+          <Pressable onPress={e => e.stopPropagation()}>
             <View style={styles.apiInfoModalContent}>
               <View style={styles.apiInfoModalHeader}>
                 <View style={styles.apiInfoModalIconContainer}>
-                  <Text style={styles.apiInfoModalIcon}>🔒</Text>
+                  <Image
+                    source={require('../assets/api-icon.png')}
+                    style={styles.apiInfoModalIcon}
+                    resizeMode="contain"
+                  />
                 </View>
                 <Text style={styles.apiInfoModalTitle}>
                   Mempool.Space Providers
                 </Text>
-                <TouchableOpacity
+                <Pressable
                   style={styles.apiInfoModalCloseButton}
                   onPress={() => {
                     HapticFeedback.light();
                     setIsApiInfoVisible(false);
                   }}
-                  activeOpacity={0.6}>
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                   <Text style={styles.apiInfoModalCloseText}>✕</Text>
-                </TouchableOpacity>
+                </Pressable>
               </View>
               <View style={styles.apiInfoModalBody}>
                 <View style={styles.apiInfoSection}>
                   <View style={styles.apiInfoSectionRow}>
-                    <Text style={styles.apiInfoSectionIcon}>🌐</Text>
+                    <Image
+                      source={require('../assets/privacy-icon.png')}
+                      style={styles.apiInfoSectionIcon}
+                      resizeMode="contain"
+                    />
                     <Text style={styles.apiInfoSectionTitle}>
                       Privacy & Control
                     </Text>
@@ -3316,7 +3341,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 </View>
                 <View style={styles.apiInfoSection}>
                   <View style={styles.apiInfoSectionRow}>
-                    <Text style={styles.apiInfoSectionIcon}>🔍</Text>
+                    <Image
+                      source={require('../assets/eye-on-icon.png')}
+                      style={styles.apiInfoSectionIcon}
+                      resizeMode="contain"
+                    />
                     <Text style={styles.apiInfoSectionTitle}>
                       Reduce Tracking
                     </Text>
@@ -3328,7 +3357,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 </View>
                 <View style={styles.apiInfoSection}>
                   <View style={styles.apiInfoSectionRow}>
-                    <Text style={styles.apiInfoSectionIcon}>⚙️</Text>
+                    <Image
+                      source={require('../assets/info-icon.png')}
+                      style={styles.apiInfoSectionIcon}
+                      resizeMode="contain"
+                    />
                     <Text style={styles.apiInfoSectionTitle}>How to Use</Text>
                   </View>
                   <Text style={styles.apiInfoSectionText}>
@@ -3337,7 +3370,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   </Text>
                 </View>
               </View>
-              <TouchableOpacity
+              <Pressable
                 style={[
                   styles.apiInfoModalButton,
                   {backgroundColor: theme.colors.primary},
@@ -3346,7 +3379,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   HapticFeedback.light();
                   setIsApiInfoVisible(false);
                 }}
-                activeOpacity={0.8}>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <Text
                   style={[
                     styles.apiInfoModalButtonText,
@@ -3354,13 +3387,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   ]}>
                   Got it
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
+          </Pressable>
+        </Pressable>
       </Modal>
     </SafeAreaView>
   );
 };
-
 export default WalletSettings;
