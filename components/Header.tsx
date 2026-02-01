@@ -33,7 +33,6 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
 }) => {
   const {theme} = useTheme();
   const styles = createStyles(theme);
-  const isDarkMode = theme.colors.background !== '#ffffff';
   const cleanProviderUrl = apiBase
     ? apiBase.replace('https://', '').replace('/api', '').replace(/\/+$/, '')
     : 'Loading...';
@@ -51,114 +50,178 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
     return null;
   }
   const showLeftContent = hasProvider || hasNetwork;
-  // Colors from v2.1.12: pill border, network strip bg, provider/main bg
-  const pillBorder = isDarkMode
+  const isMainnet = networkLabel === 'MAINNET';
+  const isDarkMode =
+    theme.colors.background === '#121212' ||
+    theme.colors.background.includes('12');
+  // Theme-aware: match HeaderPriceButton container (cardBackground / blackOverlay06 + border)
+  const containerBg = isDarkMode
+    ? theme.colors.cardBackground
+    : theme.colors.blackOverlay06;
+  const containerBorderColor = isDarkMode
     ? theme.colors.border + '80'
     : theme.colors.blackOverlay10;
-  const part1Bg = isDarkMode
-    ? theme.colors.border + '80'
-    : theme.colors.blackOverlay05;
-  const part2Bg = isDarkMode
-    ? theme.colors.cardBackground
+  // Network: same base as provider but visibly darker (light = cardBackground, dark = border)
+  const networkBg = isDarkMode
+    ? theme.colors.border
     : theme.colors.cardBackground;
+  const providerBg = containerBg;
+  const providerTextColor = isMainnet
+    ? theme.colors.primary
+    : theme.colors.secondary;
+  const segmentDividerColor = theme.colors.border;
+  const pillHeight = 36;
+  const innerHeight = pillHeight - 2; // content height inside 1px border
+  const innerRadius = 9;
   const containerStyle: any = {
     flexDirection: 'row',
     alignItems: 'stretch',
-    height: 36,
-    minWidth: showLeftContent ? 160 : 56,
-    maxWidth: 280,
+    height: pillHeight,
+    minWidth: showLeftContent ? 100 : 56,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: pillBorder,
+    borderColor: containerBorderColor,
+    backgroundColor: containerBg,
     overflow: 'hidden',
-    backgroundColor: part2Bg,
   };
   const leftContentStyle: any = {
-    flex: 1,
-    minWidth: 0,
+    flexShrink: 0,
+    justifyContent: 'center',
   };
-  const innerColumnStyle: any = {
-    flex: 1,
-    flexDirection: 'column',
-    height: 36,
+  const rowWrapStyle: any = {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    height: innerHeight,
   };
-  const partBase: any = {
-    height: 18,
+  const providerSegmentStyle: any = {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-start',
-    paddingHorizontal: 10,
-  };
-  const part1Style: any = { ...partBase, backgroundColor: part1Bg };
-  const part2Style: any = { ...partBase, backgroundColor: part2Bg };
-  const providerTextStyle: any = {
-    fontSize: theme.fontSizes?.xs || 9,
-    fontFamily: theme.fontFamilies?.medium,
-    color: theme.colors.textSecondary,
+    height: innerHeight,
+    paddingLeft: 12,
+    paddingRight: 10,
     flexShrink: 1,
-    maxWidth: 264,
-    textAlign: 'left',
-  };
-  const networkBadgeTextStyle: any = {
-    fontSize: theme.fontSizes?.xs || 8,
-    fontFamily: theme.fontFamilies?.bold,
-    color:
-      theme.colors.background === '#ffffff'
-        ? theme.colors.secondary
-        : theme.colors.text,
-    letterSpacing: 0.2,
+    minWidth: 150,
+    backgroundColor: providerBg,
+    borderTopLeftRadius: innerRadius,
+    borderBottomLeftRadius: innerRadius,
+    overflow: 'hidden',
+    ...(hasProvider && !hasNetwork
+      ? {borderTopRightRadius: innerRadius, borderBottomRightRadius: innerRadius}
+      : {}),
   };
   const dividerStyle: any = {
     width: 1,
-    backgroundColor: pillBorder,
+    backgroundColor: segmentDividerColor,
     alignSelf: 'stretch',
+  };
+  const networkSegmentStyle: any = {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: innerHeight,
+    paddingLeft: 10,
+    paddingRight: 12,
+    flexShrink: 0,
+    backgroundColor: networkBg,
+    borderTopRightRadius: innerRadius,
+    borderBottomRightRadius: innerRadius,
+    overflow: 'hidden',
+    ...(!hasProvider && hasNetwork
+      ? {borderTopLeftRadius: innerRadius, borderBottomLeftRadius: innerRadius}
+      : {}),
+  };
+  const segmentIconStyle: any = {
+    width: 14,
+    height: 14,
+    resizeMode: 'contain',
+    marginRight: 5,
+  };
+  const providerTextWrapStyle: any = {
+    flex: 1,
+    width: '128',
+    justifyContent: 'center',
+  };
+  const providerTextStyle: any = {
+    fontSize: theme.fontSizes?.xs || 10,
+    fontFamily: theme.fontFamilies?.medium,
+    color: providerTextColor,
+    textAlign: 'left',
+  };
+  const providerIconStyle: any = {
+    ...segmentIconStyle,
+    tintColor: providerTextColor,
+  };
+  const networkTextStyle: any = {
+    fontSize: theme.fontSizes?.xs || 10,
+    fontFamily: theme.fontFamilies?.bold,
+    color: theme.colors.text,
+    letterSpacing: 0.3,
+    marginLeft: 4,
+    flexShrink: 0,
+  };
+  const networkIconStyle: any = {
+    ...segmentIconStyle,
+    tintColor: theme.colors.text,
   };
   const settingsStripStyle: any = {
     width: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: part2Bg,
+    backgroundColor: providerBg,
   };
   const leftContent = showLeftContent ? (
-    <View style={innerColumnStyle}>
-      <View style={part1Style}>
-        {hasNetwork ? (
-          <Text
-            style={networkBadgeTextStyle}
-            numberOfLines={1}
-            ellipsizeMode="tail">
-            {networkLabel}
-          </Text>
-        ) : null}
-      </View>
-      <View style={part2Style}>
-        {hasProvider ? (
-          <Text
-            style={providerTextStyle}
-            numberOfLines={1}
-            ellipsizeMode="tail">
-            {providerHost}
-          </Text>
-        ) : null}
-      </View>
+    <View style={rowWrapStyle}>
+      {hasProvider ? (
+        <View style={providerSegmentStyle}>
+          <Image
+            source={require('../assets/api-icon.png')}
+            style={providerIconStyle}
+          />
+          <View style={providerTextWrapStyle}>
+            <Text
+              style={providerTextStyle}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.5}>
+              {providerHost}
+            </Text>
+          </View>
+        </View>
+      ) : null}
+      {hasProvider && hasNetwork ? <View style={dividerStyle} /> : null}
+      {hasNetwork ? (
+        <View style={networkSegmentStyle}>
+          <Image
+            source={
+              isMainnet
+                ? require('../assets/mainnet-icon.png')
+                : require('../assets/testnet-icon.png')
+            }
+            style={networkIconStyle}
+          />
+          <Text style={networkTextStyle}>{networkLabel}</Text>
+        </View>
+      ) : null}
     </View>
   ) : null;
-  const leftWrapped = onPress && showLeftContent ? (
-    <Pressable
-      style={leftContentStyle}
-      onPress={() => {
-        HapticFeedback.light();
-        onPress();
-      }}
-      android_ripple={{ color: 'rgba(0,0,0,0.08)' }}
-      accessible={true}
-      accessibilityRole="button"
-      accessibilityLabel={`Provider: ${providerHost}. Network: ${networkLabel}. Double tap to open settings.`}>
-      {leftContent}
-    </Pressable>
-  ) : (
-    <View style={leftContentStyle}>{leftContent}</View>
-  );
+  const leftWrapped =
+    onPress && showLeftContent ? (
+      <Pressable
+        style={leftContentStyle}
+        onPress={() => {
+          HapticFeedback.light();
+          onPress();
+        }}
+        android_ripple={{color: 'rgba(0,0,0,0.08)'}}
+        accessible={true}
+        accessibilityRole="button"
+        accessibilityLabel={`Provider: ${providerHost}. Network: ${networkLabel}. Double tap to open settings.`}>
+        {leftContent}
+      </Pressable>
+    ) : (
+      <View style={leftContentStyle}>{leftContent}</View>
+    );
   const rightStrip = onSettingsPress ? (
     <>
       <View style={dividerStyle} />
@@ -168,7 +231,7 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
           HapticFeedback.light();
           onSettingsPress();
         }}
-        android_ripple={{ color: 'rgba(0,0,0,0.08)' }}
+        android_ripple={{color: 'rgba(0,0,0,0.08)'}}
         accessible={true}
         accessibilityRole="button"
         accessibilityLabel="Settings"
@@ -238,9 +301,6 @@ export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
     paddingTop: 12,
     paddingBottom: 12,
   };
-  const currencySymbol = selectedCurrency
-    ? getCurrencySymbol(selectedCurrency)
-    : '';
   return (
     <RNView style={containerStyle}>
       <Pressable
@@ -249,7 +309,7 @@ export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
           HapticFeedback.light();
           onCurrencyPress();
         }}
-        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
+        android_ripple={{color: 'rgba(0,0,0,0.1)'}}
         accessible={true}
         accessibilityRole="button"
         accessibilityLabel={`Bitcoin price: ${
@@ -261,7 +321,8 @@ export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
           style={headerBtcLogoStyle}
         />
         <Text style={headerBtcPriceStyle}>
-          {btcPrice ? presentFiat(btcPrice) : '-'} {selectedCurrency || ''}
+          {btcPrice ? presentFiat(btcPrice) : '-'}{' '}
+          {getCurrencySymbol(selectedCurrency) || ''}
         </Text>
       </Pressable>
     </RNView>
@@ -306,9 +367,11 @@ export const HeaderTitle: React.FC<{title?: string}> = () => {
   const getTitle = () => {
     const routeName = route.name;
     const titleMap: Record<string, string> = {
-      Home: 'Home',
+      Device: 'Device',
+      Wallet: 'Home',
       PSBT: 'PSBT',
       Settings: '',
+      Home: 'Home',
       Welcome: 'Welcome',
       'Devices Pairing': 'Devices Pairing',
       'Nostr Connect': 'Nostr Connect',
@@ -369,7 +432,7 @@ export const CustomHeader: React.FC<
           navigation.goBack();
         }}
         style={headerStyles.backButton}
-        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
+        android_ripple={{color: 'rgba(0,0,0,0.1)'}}
         accessible={true}
         accessibilityRole="button"
         accessibilityLabel="Go back">
@@ -468,7 +531,7 @@ const createCustomHeaderStyles = (theme: any) =>
       alignItems: 'flex-start',
     },
     center: {
-      flex: 2,
+      flex: 1,
       alignItems: 'center',
       justifyContent: 'center',
     },

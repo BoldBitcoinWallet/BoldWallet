@@ -36,7 +36,7 @@ import * as Progress from 'react-native-progress';
 import {CommonActions, RouteProp, useRoute} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Big from 'big.js';
-import {dbg, HapticFeedback, getNostrRelays, hexToString} from '../utils';
+import {dbg, HapticFeedback, getNostrRelays, hexToString, getResetToMainTabsWallet} from '../utils';
 import {useTheme} from '../theme';
 import LocalCache from '../services/LocalCache';
 import {WalletService} from '../services/WalletService';
@@ -1762,12 +1762,9 @@ const MobileNostrPairing = ({navigation}: any) => {
         `${senderAddress}-pendingTxs`,
         JSON.stringify(pendingTxs),
       );
-      // Navigate to home (same as MobilesPairing.tsx)
+      // Navigate to Wallet tab with txId
       navigation.dispatch(
-        CommonActions.reset({
-          index: 0,
-          routes: [{name: 'Home', params: {txId}}],
-        }),
+        CommonActions.reset(getResetToMainTabsWallet({txId})),
       );
       setMpcDone(true);
     } catch (error: any) {
@@ -1975,39 +1972,18 @@ const MobileNostrPairing = ({navigation}: any) => {
           } else {
             dbg(localNpub, 'PSBT signed successfully');
           }
-          // Check user's wallet mode preference before navigating
-          let targetRoute = 'Home';
-
-          const walletMode =
-            (await EncryptedStorage.getItem('wallet_mode')) || 'full';
-          targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
-          dbg(
-            'PSBT signing complete: Navigating to',
-            targetRoute,
-            'based on wallet_mode:',
-            walletMode,
-          );
+          dbg('PSBT signing complete: Navigating to Wallet tab with signedPsbt');
           navigation.dispatch(
-            CommonActions.reset({
-              index: 0,
-              routes: [{name: targetRoute, params: {signedPsbt}}],
-            }),
+            CommonActions.reset(getResetToMainTabsWallet({signedPsbt})),
           );
           setMpcDone(true);
         })
         .catch(async (e: any) => {
           Alert.alert('Operation Error', `Could not sign PSBT.\n${e?.message}`);
           dbg(localNpub, 'PSBT signing error', e);
-          // Navigate back to home on error to ensure modal cleanup
           try {
-            const walletMode =
-              (await EncryptedStorage.getItem('wallet_mode')) || 'full';
-            const targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
             navigation.dispatch(
-              CommonActions.reset({
-                index: 0,
-                routes: [{name: targetRoute}],
-              }),
+              CommonActions.reset(getResetToMainTabsWallet()),
             );
           } catch (navError) {
             dbg('Error navigating after PSBT error:', navError);
@@ -2020,16 +1996,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       dbg('Sign PSBT error:', error);
       Alert.alert('Error', error?.message || 'PSBT signing failed');
       setStatus('PSBT signing failed');
-      // Navigate back to home on error to ensure modal cleanup
       try {
-        const walletMode =
-          (await EncryptedStorage.getItem('wallet_mode')) || 'full';
-        const targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
         navigation.dispatch(
-          CommonActions.reset({
-            index: 0,
-            routes: [{name: targetRoute}],
-          }),
+          CommonActions.reset(getResetToMainTabsWallet()),
         );
       } catch (navError) {
         dbg('Error navigating after PSBT error:', navError);

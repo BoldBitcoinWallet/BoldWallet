@@ -40,7 +40,7 @@ import {
 } from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Big from 'big.js';
-import {dbg, getPinnedRemoteIPs, HapticFeedback, hexToString} from '../utils';
+import {dbg, getPinnedRemoteIPs, HapticFeedback, hexToString, getResetToMainTabsWallet} from '../utils';
 import {useTheme} from '../theme';
 import {waitMS, WalletService} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
@@ -843,23 +843,9 @@ const MobilesPairing = ({navigation}: any) => {
             } else {
               dbg(partyID, 'PSBT signed successfully');
             }
-            // Check user's wallet mode preference before navigating
-            let targetRoute = 'Home';
-
-            const walletMode =
-              (await EncryptedStorage.getItem('wallet_mode')) || 'full';
-            targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
-            dbg(
-              'PSBT signing complete: Navigating to',
-              targetRoute,
-              'based on wallet_mode:',
-              walletMode,
-            );
+            dbg('PSBT signing complete: Navigating to Wallet tab with signedPsbt');
             navigation.dispatch(
-              CommonActions.reset({
-                index: 0,
-                routes: [{name: targetRoute, params: {signedPsbt}}],
-              }),
+              CommonActions.reset(getResetToMainTabsWallet({signedPsbt})),
             );
             setMpcDone(true);
           })
@@ -941,10 +927,7 @@ const MobilesPairing = ({navigation}: any) => {
               JSON.stringify(pendingTxs),
             );
             navigation.dispatch(
-              CommonActions.reset({
-                index: 0,
-                routes: [{name: 'Home', params: {txId}}],
-              }),
+              CommonActions.reset(getResetToMainTabsWallet({txId})),
             );
             setMpcDone(true);
           })

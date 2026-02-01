@@ -2,10 +2,13 @@
 import React, {useEffect, useState} from 'react';
 import {NavigationContainer} from '@react-navigation/native';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
+import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {enableScreens} from 'react-native-screens';
+import {Image} from 'react-native';
 import ShowcaseScreen from './screens/ShowcaseScreen';
 import WalletHome from './screens/WalletHome';
 import PSBTScreen from './screens/PSBTScreen';
+import DeviceScreen from './screens/DeviceScreen';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import LoadingScreen from './screens/LoadingScreen';
 import Zeroconf, {ImplType} from 'react-native-zeroconf';
@@ -14,8 +17,11 @@ import DeviceInfo from 'react-native-device-info';
 import {ThemeProvider, useTheme} from './theme';
 import {WalletProvider} from './context/WalletContext';
 import {UserProvider} from './context/UserContext';
-import {SafeAreaProvider} from 'react-native-safe-area-context';
-import {initializeHaptics} from './utils';
+import {
+  SafeAreaProvider,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
+import {initializeHaptics, HapticFeedback} from './utils';
 import ErrorBoundary from './components/ErrorBoundary';
 import {
   Alert,
@@ -25,6 +31,7 @@ import {
   DeviceEventEmitter,
   View,
   StyleSheet,
+  Pressable,
 } from 'react-native';
 import WalletSettings from './screens/WalletSettings';
 import {NativeModules} from 'react-native';
@@ -39,6 +46,7 @@ import {createToastConfig} from './utils/toastConfig';
 enableScreens(true);
 const {BBMTLibNativeModule} = NativeModules;
 const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
 
 // Debug logging state (session-only, not persisted)
 // Default: false (logs suppressed even in __DEV__)
@@ -77,6 +85,166 @@ const DevicesPairingHeader = (props: any) => (
 const NostrConnectHeader = (props: any) => (
   <CustomHeader {...props} height={60} />
 );
+const DeviceHeader = (props: any) => <CustomHeader {...props} height={60} />;
+
+const tabBarIcons = {
+  Device: require('./assets/key-icon.png'),
+  Wallet: require('./assets/wallet-icon.png'),
+  PSBT: require('./assets/cosign-icon.png'),
+  Settings: require('./assets/settings-icon.png'),
+};
+
+const TabBarIcon = ({
+  name,
+  color,
+  size = 24,
+}: {
+  name: keyof typeof tabBarIcons;
+  color: string;
+  size?: number;
+}) => (
+  <Image
+    source={tabBarIcons[name]}
+    style={{width: size, height: size, tintColor: color}}
+    resizeMode="contain"
+  />
+);
+
+const TabBarIconDevice = (props: {color: string; size?: number}) => (
+  <TabBarIcon name="Device" color={props.color} size={props.size ?? 24} />
+);
+const TabBarIconWallet = (props: {color: string; size?: number}) => (
+  <TabBarIcon name="Wallet" color={props.color} size={props.size ?? 24} />
+);
+const TabBarIconPSBT = (props: {color: string; size?: number}) => (
+  <TabBarIcon name="PSBT" color={props.color} size={props.size ?? 24} />
+);
+const TabBarIconSettings = (props: {color: string; size?: number}) => (
+  <TabBarIcon name="Settings" color={props.color} size={props.size ?? 24} />
+);
+
+const MainTabs = () => {
+  const {theme} = useTheme();
+  const insets = useSafeAreaInsets();
+  const isDarkMode =
+    theme.colors.background === '#121212' ||
+    theme.colors.background.includes('12');
+  const lockFabOverlayStyle = {
+    position: 'absolute' as const,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    top: 0,
+    zIndex: 999,
+    elevation: 8,
+    backgroundColor: 'transparent',
+    pointerEvents: 'box-none' as const,
+  };
+  const lockFabStyle = {
+    position: 'absolute' as const,
+    right: 20 + insets.right,
+    bottom: 64 + insets.bottom,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    backgroundColor: isDarkMode
+      ? theme.colors.cardBackground
+      : theme.colors.blackOverlay06,
+    borderWidth: 1,
+    borderColor: isDarkMode
+      ? theme.colors.border + '80'
+      : theme.colors.blackOverlay10,
+    shadowColor: theme.colors.shadowColor || '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+    zIndex: 1000,
+  };
+  const lockFabIconStyle = {
+    width: 24,
+    height: 24,
+    tintColor: theme.colors.text,
+    opacity: 0.9,
+    resizeMode: 'contain' as const,
+  };
+  return (
+    <View style={{flex: 1}}>
+      <Tab.Navigator
+        initialRouteName="Wallet"
+        screenOptions={{
+          headerShown: true,
+          headerLeft: () => null,
+          headerTitle: '',
+          headerTitleAlign: 'left',
+          tabBarStyle: {
+            backgroundColor: theme.colors.background,
+            borderTopColor: theme.colors.border + '40',
+          },
+          tabBarActiveTintColor: theme.colors.primary || theme.colors.text,
+          tabBarInactiveTintColor: theme.colors.textSecondary,
+        }}>
+        <Tab.Screen
+          name="Device"
+          component={DeviceScreen}
+          options={{
+            header: DeviceHeader,
+            tabBarLabel: 'Device',
+            tabBarIcon: TabBarIconDevice,
+          }}
+        />
+        <Tab.Screen
+          name="Wallet"
+          component={WalletHome}
+          options={{
+            header: HomeHeader,
+            tabBarLabel: 'Wallet',
+            tabBarIcon: TabBarIconWallet,
+          }}
+        />
+        <Tab.Screen
+          name="PSBT"
+          component={PSBTScreen}
+          options={{
+            header: PSBTHeader,
+            tabBarLabel: 'PSBT',
+            tabBarIcon: TabBarIconPSBT,
+          }}
+        />
+        <Tab.Screen
+          name="Settings"
+          component={WalletSettings}
+          options={{
+            header: SettingsHeader,
+            tabBarLabel: 'Settings',
+            tabBarIcon: TabBarIconSettings,
+          }}
+        />
+      </Tab.Navigator>
+      <View style={lockFabOverlayStyle}>
+        <Pressable
+          style={lockFabStyle}
+          onPress={() => {
+            HapticFeedback.light();
+            DeviceEventEmitter.emit('app:reload');
+          }}
+          android_ripple={{color: 'rgba(0,0,0,0.1)'}}
+          accessible={true}
+          accessibilityRole="button"
+          accessibilityLabel="Lock wallet"
+          accessibilityHint="Double tap to lock the wallet">
+          <Image
+            source={require('./assets/locker-icon.png')}
+            style={lockFabIconStyle}
+          />
+        </Pressable>
+      </View>
+    </View>
+  );
+};
+
 const App = () => {
   const [initialRoute, setInitialRoute] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -93,12 +261,8 @@ const App = () => {
       // Re-check wallet state after reload to ensure correct initial route
       try {
         const keyshare = await EncryptedStorage.getItem('keyshare');
-        let route: string = 'Welcome';
-        if (keyshare && keyshare.length > 0) {
-          const walletMode =
-            (await EncryptedStorage.getItem('wallet_mode')) || 'full';
-          route = walletMode === 'psbt' ? 'PSBT' : 'Home';
-        }
+        const route =
+          keyshare && keyshare.length > 0 ? 'MainTabs' : 'Welcome';
         setInitialRoute(route);
       } catch {
         setInitialRoute('Welcome');
@@ -112,13 +276,8 @@ const App = () => {
       try {
         const keyshare = await EncryptedStorage.getItem('keyshare');
         dbg('initializeApp keyshare found', !!keyshare);
-        let route: string = 'Welcome';
-        if (keyshare && keyshare.length > 0) {
-          // Default to Home unless user explicitly chose PSBT mode
-          const walletMode =
-            (await EncryptedStorage.getItem('wallet_mode')) || 'full';
-          route = walletMode === 'psbt' ? 'PSBT' : 'Home';
-        }
+        const route =
+          keyshare && keyshare.length > 0 ? 'MainTabs' : 'Welcome';
         dbg('Setting initial route to:', route);
         setInitialRoute(route);
       } catch (error) {
@@ -393,26 +552,9 @@ const AppContent = ({initialRoute}: {initialRoute: string | null}) => {
                 headerTitleAlign: 'left',
               }}>
               <Stack.Screen
-                name="PSBT"
-                component={PSBTScreen}
-                options={{
-                  headerShown: true,
-                  headerLeft: () => null,
-                  headerTitle: '',
-                  headerTitleAlign: 'left',
-                  header: PSBTHeader,
-                }}
-              />
-              <Stack.Screen
-                name="Home"
-                component={WalletHome}
-                options={{
-                  headerShown: true,
-                  headerLeft: () => null,
-                  headerTitle: '',
-                  headerTitleAlign: 'left',
-                  header: HomeHeader,
-                }}
+                name="MainTabs"
+                component={MainTabs}
+                options={{headerShown: false}}
               />
               <Stack.Screen
                 name="Welcome"
@@ -420,15 +562,6 @@ const AppContent = ({initialRoute}: {initialRoute: string | null}) => {
                 options={{
                   header: WelcomeHeader,
                   title: 'Welcome',
-                }}
-              />
-              <Stack.Screen
-                name="Settings"
-                component={WalletSettings}
-                options={{
-                  headerShown: true,
-                  header: SettingsHeader,
-                  title: 'Settings',
                 }}
               />
               <Stack.Screen

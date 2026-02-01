@@ -1,15 +1,15 @@
 import React, {useCallback, useState, useEffect} from 'react';
 import {
-  Modal,
   View,
   Text,
   Pressable,
   Image,
   ScrollView,
   Alert,
-  Dimensions,
   NativeModules,
+  StyleSheet,
 } from 'react-native';
+import {SafeAreaView} from 'react-native-safe-area-context';
 import Animated, {
   useSharedValue,
   withTiming,
@@ -43,30 +43,35 @@ interface KeyshareInfo {
     segwitCompatible: string;
   };
 }
-interface KeyshareModalProps {
-  visible: boolean;
-  onClose: () => void;
+interface KeyshareInfoContentProps {
   keyshareInfo: KeyshareInfo | null;
   network: 'mainnet' | 'testnet';
-  onShowOutputDescriptorQR?: () => void;
-  onShowNpubQR?: () => void; // Deprecated - kept for backward compatibility
 }
-const KeyshareModal: React.FC<KeyshareModalProps> = ({
-  visible,
-  onClose,
+const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   keyshareInfo,
   network,
 }) => {
   const {theme} = useTheme();
   const styles = createStyles(theme);
+  const screenStyles = React.useMemo(
+    () =>
+      StyleSheet.create({
+        safeArea: {flex: 1, backgroundColor: theme.colors.background},
+        scrollView: {flex: 1},
+        scrollContent: {
+          paddingHorizontal: 16,
+          paddingTop: 16,
+          paddingBottom: 24,
+        },
+      }),
+    [theme.colors.background],
+  );
 
   // Helper function to format long strings: first 8 chars ... last 8 chars
   const formatLongString = (value: string): string => {
     if (!value || value.length <= 16) return value;
     return `${value.substring(0, 8)}...${value.substring(value.length - 8)}`;
   };
-  const screenHeight = Dimensions.get('window').height;
-  const scrollViewHeight = screenHeight * 0.5;
   const [isOutputDescriptorQrVisible, setIsOutputDescriptorQrVisible] =
     useState(false);
   const [selectedDescriptorType, setSelectedDescriptorType] = useState<
@@ -469,47 +474,22 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
 
 
   return (
-    <Modal
-      visible={visible}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={() => {}}>
-      <View style={styles.modalOverlay}>
-        <View
-          onStartShouldSetResponder={() => false}
-          onMoveShouldSetResponder={() => false}>
-          <View style={styles.modalContentCompact}>
-            <View style={styles.modalHeaderRowCompact}>
-              <Image
-                source={require('../assets/key-icon.png')}
-                style={styles.modalHeaderIconCompact}
-              />
-              <Text style={styles.modalHeaderTitleCompact}>
-                Device Keyshare
-              </Text>
-              <Pressable
-                onPress={() => {
-                  HapticFeedback.light();
-                  onClose();
-                }}
-                style={styles.keyshareModalCloseButton}
-                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                <Text style={styles.keyshareModalCloseText}>✕</Text>
-              </Pressable>
-            </View>
-            <ScrollView
-              style={[styles.keyshareModalBody, {maxHeight: scrollViewHeight}]}
-              contentContainerStyle={styles.keyshareModalBodyContent}
-              removeClippedSubviews
-              keyboardShouldPersistTaps="handled"
-              overScrollMode="never"
-              showsVerticalScrollIndicator={false}
-              nestedScrollEnabled={true}
-              scrollEnabled={true}
-              bounces={false}
-              scrollEventThrottle={16}
-              directionalLockEnabled={true}
-              alwaysBounceVertical={false}>
+    <SafeAreaView
+      style={screenStyles.safeArea}
+      edges={['left', 'right', 'bottom']}>
+      <ScrollView
+        style={screenStyles.scrollView}
+        contentContainerStyle={screenStyles.scrollContent}
+        removeClippedSubviews
+        keyboardShouldPersistTaps="handled"
+        overScrollMode="never"
+        showsVerticalScrollIndicator={false}
+        nestedScrollEnabled={true}
+        scrollEnabled={true}
+        bounces={false}
+        scrollEventThrottle={16}
+        directionalLockEnabled={true}
+        alwaysBounceVertical={false}>
               {keyshareInfo ? (
                 <>
                   {/* Wallet Information Container */}
@@ -1077,10 +1057,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                   </Text>
                 </View>
               )}
-            </ScrollView>
-          </View>
-        </View>
-      </View>
+      </ScrollView>
       {/* QR Code Modal for Output Descriptors */}
       <QRCodeModal
         visible={isOutputDescriptorQrVisible}
@@ -1134,7 +1111,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
       <View style={styles.toastContainer}>
         <Toast config={createToastConfig(theme)} />
       </View>
-    </Modal>
+    </SafeAreaView>
   );
 };
-export default KeyshareModal;
+export default KeyshareInfoContent;

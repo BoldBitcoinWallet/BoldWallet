@@ -1,0 +1,7 @@
+# Generated / build output
+bundle.js
+*.bundle.js
+node_modules/
+android/
+ios/
+*.lock

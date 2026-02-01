@@ -10,7 +10,7 @@ import {
   PermissionsAndroid,
   Linking,
   ActivityIndicator,
-  DeviceEventEmitter,
+  StyleSheet,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -24,7 +24,7 @@ import {
   useRoute,
   RouteProp,
 } from '@react-navigation/native';
-import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
+import {SafeAreaView} from 'react-native-safe-area-context';
 import {AppState} from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import SendBitcoinModal from './SendBitcoinModal';
@@ -34,13 +34,8 @@ import {CommonActions} from '@react-navigation/native';
 import Big from 'big.js';
 import ReceiveModal from './ReceiveModal';
 import SignedPSBTModal from './SignedPSBTModal';
-import PSBTModal from './PSBTModal';
-import KeyshareModal from '../components/KeyshareModal';
-import QRCodeModal from '../components/QRCodeModal';
 import LegacyWalletModal from '../components/LegacyWalletModal';
-import AddressTypeModal from '../components/AddressTypeModal';
 import {
-  capitalizeWords,
   dbg,
   presentFiat,
   formatBTC,
@@ -50,8 +45,8 @@ import {
   getKeyshareLabel,
   getDerivePathForNetwork,
   isLegacyWallet,
-  generateAllOutputDescriptors,
   decodeSendBitcoinQR,
+  getResetToMainTabsWallet,
 } from '../utils';
 import {validate as validateBitcoinAddress} from 'bitcoin-address-validation';
 import {useTheme} from '../theme';
@@ -67,12 +62,21 @@ import {
   CacheIndicatorHandle,
 } from '../components/CacheIndicator';
 import {
-  HeaderRightButton,
   HeaderPriceButton,
+  HeaderNetworkProvider,
 } from '../components/Header';
 import LocalCache from '../services/LocalCache';
 const {BBMTLibNativeModule} = NativeModules;
-const keyIcon = require('../assets/key-icon.png');
+
+const headerRightContainerStyle = StyleSheet.create({
+  container: {
+    paddingTop: 12,
+    paddingBottom: 12,
+    paddingRight: 16,
+    paddingLeft: 8,
+    justifyContent: 'center',
+  },
+});
 type RouteParams = {
   txId?: string;
   signedPsbt?: string;
@@ -95,17 +99,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [scannedAddressType, setScannedAddressType] = useState<string>(''); // Address type from scanned QR code
   const [scannedNetwork, setScannedNetwork] = useState<string>(''); // Network from scanned QR code
   const [computedFromAddress, setComputedFromAddress] = useState<string>(''); // Computed from address for send transaction
-  // PSBT signing state
-  const [isPSBTTransportModalVisible, setIsPSBTTransportModalVisible] =
-    useState<boolean>(false);
-  const [pendingPSBTParams, setPendingPSBTParams] = useState<{
-    psbtBase64: string;
-  } | null>(null);
   const [btcPrice, setBtcPrice] = useState<string>('');
   const [btcRate, setBtcRate] = useState(0);
   const [balanceBTC, setBalanceBTC] = useState<string>('0.00000000');
   const [balanceFiat, setBalanceFiat] = useState<string>('0');
-  const [party, setParty] = useState<string>('');
+  const [_party, setParty] = useState<string>('');
   const [isBlurred, setIsBlurred] = useState<boolean>(false);
   const [showSats, setShowSats] = useState<boolean>(false); // Toggle between BTC and Satoshis
   const [balanceFormattingEnabled, setBalanceFormattingEnabled] =
@@ -113,16 +111,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [isReceiveModalVisible, setIsReceiveModalVisible] = useState(false);
   const [isSignedPSBTModalVisible, setIsSignedPSBTModalVisible] =
     useState(false);
-  const [isPSBTModalVisible, setIsPSBTModalVisible] = useState(false);
   const [signedPsbt, setSignedPsbt] = useState<string | null>(null);
   // Additional state variables needed by fetchData
   const [_pendingSent, _setPendingSent] = useState(0);
-  const [isAddressTypeModalVisible, setIsAddressTypeModalVisible] =
-    React.useState(false);
   const [isLegacyWalletModalVisible, setIsLegacyWalletModalVisible] =
     React.useState(false);
-  const [legacyAddress, setLegacyAddress] = React.useState('');
-  const [segwitAddress, setSegwitAddress] = React.useState('');
+  const [_legacyAddress, setLegacyAddress] = React.useState('');
+  const [_segwitAddress, setSegwitAddress] = React.useState('');
   const [addressType, setAddressType] = React.useState('');
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
   const [isSending, setIsSending] = useState<boolean>(false);
@@ -140,7 +135,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [isQRScannerVisible, setIsQRScannerVisible] = useState(false);
   const [scannedFromQR, setScannedFromQR] = useState(false); // Track if data came from QR scan
   const [priceData, setPriceData] = useState<{[key: string]: number}>({});
-  const [segwitCompatibleAddress, setSegwitCompatibleAddress] =
+  const [_segwitCompatibleAddress, setSegwitCompatibleAddress] =
     React.useState('');
   const [initialTransactions, setInitialTransactions] = useState<any[]>([]);
   // Animation and visual feedback states
@@ -174,7 +169,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     activeNetwork,
     activeAddressType: userAddressType,
     activeAddress: userActiveAddress,
-    setActiveAddressType,
     activeApiProvider: apiBase,
     activeNetwork: network,
     legacyMainnetAddress: uxLegacyMainnet,
@@ -954,10 +948,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           stackTrace: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
         },
       );
-      // Reset modal states when returning to this screen
-      setIsPSBTModalVisible(false);
-      setIsPSBTTransportModalVisible(false);
-      setPendingPSBTParams(null);
       // Full re-initialization when returning from settings
       // This ensures everything is properly set up for the current network
       if (network && apiBase) {
@@ -1028,26 +1018,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   ]);
   // No periodic check needed - NetworkContext is the single source of truth
   const cacheIndicatorRef = useRef<CacheIndicatorHandle>(null);
-  const [isPartyModalVisible, setIsPartyModalVisible] = useState(false);
-  const [keyshareInfo, setKeyshareInfo] = useState<{
-    label: string;
-    supportsLocal: boolean;
-    supportsNostr: boolean;
-    type: 'duo' | 'trio';
-    pubKey: string;
-    chainCode: string;
-    fingerprint: string;
-    outputDescriptors?: {
-      legacy: string;
-      segwitNative: string;
-      segwitCompatible: string;
-    };
-    npub: string | null;
-    createdAt?: number | null;
-  } | null>(null);
-  const [isNpubQrVisible, setIsNpubQrVisible] = useState(false);
   const {theme} = useTheme();
-  const insets = useSafeAreaInsets();
   const isDarkMode =
     theme.colors.background === '#121212' ||
     theme.colors.background.includes('12');
@@ -1065,46 +1036,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         ? theme.colors.whiteOverlay25 // Match eye and sats button border color in dark mode
         : theme.colors.whiteOverlay15, // Original light mode border
     },
-    lockFab: {
-      position: 'absolute' as const,
-      right: 16 + insets.right,
-      bottom: 16 + insets.bottom,
-      width: 56,
-      height: 56,
-      borderRadius: 28,
-      alignItems: 'center' as const,
-      justifyContent: 'center' as const,
-      backgroundColor: isDarkMode
-        ? theme.colors.cardBackground
-        : theme.colors.blackOverlay06,
-      borderWidth: 1,
-      borderColor: isDarkMode
-        ? theme.colors.border + '80'
-        : theme.colors.blackOverlay10,
-      shadowColor: theme.colors.shadowColor || '#000',
-      shadowOffset: {width: 0, height: 2},
-      shadowOpacity: 0.15,
-      shadowRadius: 4,
-      elevation: 4,
-      zIndex: 1000,
-    },
-    lockFabIcon: {
-      width: 24,
-      height: 24,
-      tintColor: theme.colors.text,
-      opacity: 0.9,
-      resizeMode: 'contain' as const,
-    },
-    lockFabOverlay: {
-      position: 'absolute' as const,
-      right: 0,
-      bottom: 0,
-      left: 0,
-      top: 0,
-      zIndex: 999,
-      elevation: 8,
-      pointerEvents: 'box-none' as const,
-    },
   };
   const headerLeft = React.useCallback(
     () => (
@@ -1118,13 +1049,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   );
   const headerRight = React.useCallback(
     () => (
-      <HeaderRightButton
-        navigation={navigation}
-        network={network}
-        apiBase={apiBase}
-      />
+      <View style={headerRightContainerStyle.container}>
+        <HeaderNetworkProvider network={network} apiBase={apiBase} />
+      </View>
     ),
-    [navigation, network, apiBase],
+    [network, apiBase],
   );
   useEffect(() => {
     navigation.setOptions({
@@ -1136,7 +1065,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         backgroundColor: theme.colors.background,
       },
     });
-  }, [navigation, headerRight, headerLeft, theme.colors.background]);
+  }, [navigation, headerLeft, headerRight, theme.colors.background]);
   const requestCameraPermission = async () => {
     if (Platform.OS === 'android') {
       try {
@@ -1332,12 +1261,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           ks = JSON.parse(jks);
         } catch (error) {
           dbg('Error parsing keyshare:', error);
-          navigation.reset({index: 0, routes: [{name: 'Home'}]});
+          navigation.reset(getResetToMainTabsWallet());
           return;
         }
         if (!ks.pub_key || !ks.chain_code_hex || !ks.local_party_key) {
           dbg('Invalid pub_key or chain_code_hex or local_party_key');
-          navigation.reset({index: 0, routes: [{name: 'Home'}]});
+          navigation.reset(getResetToMainTabsWallet());
           return;
         }
         // Get current address type for derivation path
@@ -1492,17 +1421,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     };
     init();
   }, [showErrorToast, isInitialized, address, navigation, network]);
-  const handleAddressTypeChange = async (type: string) => {
-    try {
-      dbg('WalletHome: Starting address type change to:', type);
-      setIsAddressTypeModalVisible(false);
-      await setActiveAddressType(type as any);
-      navigation.reset({index: 0, routes: [{name: 'Home'}]});
-    } catch (error) {
-      dbg('WalletHome: Error changing address type:', error);
-      showErrorToast('Failed to change address type. Please try again.');
-    }
-  };
   // Remove the old interval effect since we're handling it in CacheIndicator now
   // Initial data fetch only when initialized and address is set
   useEffect(() => {
@@ -1526,85 +1444,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     setIsBlurred(blurr);
     LocalCache.setItem('balanceHidden', blurr ? 'true' : 'false');
   };
-  const loadKeyshareInfo = useCallback(async () => {
-    try {
-      const keyshareJSON = await EncryptedStorage.getItem('keyshare');
-      if (!keyshareJSON) {
-        setKeyshareInfo(null);
-        return;
-      }
-      const keyshare = JSON.parse(keyshareJSON);
-      const pubKey = keyshare.pub_key || '';
-      const chainCode = keyshare.chain_code_hex || '';
-      const nostrNpub = keyshare.nostr_npub || null;
-      const supportsNostr = !!(nostrNpub && nostrNpub.trim() !== '');
-      const supportsLocal = true; // Always supported
-      // Calculate fingerprint (SHA256 hash of pub_key)
-      let fingerprint = 'N/A';
-      if (pubKey) {
-        try {
-          const pubKeyHash = await BBMTLibNativeModule.sha256(pubKey);
-          // Use first 8 characters as fingerprint (like filename hash prefix)
-          fingerprint = pubKeyHash.substring(0, 8).toLowerCase();
-        } catch (error) {
-          dbg('Error calculating fingerprint:', error);
-        }
-      }
-      // Determine type: duo (2 devices) or trio (3 devices)
-      const committeeKeys = keyshare.keygen_committee_keys || [];
-      const type = committeeKeys.length === 3 ? 'trio' : 'duo';
-      // Determine label: if Nostr, use sorted order; otherwise use generic
-      let label = 'KeyShare1';
-      if (
-        supportsNostr &&
-        keyshare.local_party_key &&
-        committeeKeys.length > 0
-      ) {
-        // Sort committee keys to match the ordering used in keygen
-        const sortedKeys = [...committeeKeys].sort();
-        const localIndex = sortedKeys.findIndex(
-          key => key === keyshare.local_party_key,
-        );
-        if (localIndex >= 0) {
-          label = `KeyShare${localIndex + 1}`;
-        }
-      }
-      // Generate output descriptors for Sparrow and other wallets using utility function
-      const descriptors = await generateAllOutputDescriptors(
-        BBMTLibNativeModule,
-        pubKey,
-        chainCode,
-        network,
-        keyshare.created_at,
-        addressType || 'segwit-native',
-      );
-      const outputDescriptors = {
-        legacy: descriptors.legacy,
-        segwitNative: descriptors.segwitNative,
-        segwitCompatible: descriptors.segwitCompatible,
-      };
-      setKeyshareInfo({
-        label,
-        supportsLocal,
-        supportsNostr,
-        type,
-        pubKey,
-        chainCode,
-        fingerprint,
-        outputDescriptors,
-        npub: nostrNpub,
-        createdAt: keyshare.created_at || null,
-      });
-    } catch (error) {
-      dbg('Error loading keyshare info:', error);
-      setKeyshareInfo(null);
-    }
-  }, [network, addressType]);
-  useEffect(() => {
-    if (isPartyModalVisible) {
-      loadKeyshareInfo();
-    }
-  }, [isPartyModalVisible, loadKeyshareInfo]);
   const handleSend = async (
     to: string,
     amountSats: Big,
@@ -1990,95 +1829,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     HapticFeedback.medium();
     setIsQRScannerVisible(true);
   }, []);
-  // Handle PSBT signing - similar to handleSend (kept for compatibility with PSBT flows)
-  const handlePSBTSign = async (psbtBase64: string, derivePath?: string) => {
-    setIsPSBTModalVisible(false);
-    // Use provided derivation path or default to current address type
-    if (!derivePath) {
-      const jks = await EncryptedStorage.getItem('keyshare');
-      if (jks) {
-        const ks = JSON.parse(jks);
-        const currentAddressType =
-          (await LocalCache.getItem('addressType')) || 'segwit-native';
-        // Check if this is a legacy wallet (created before migration timestamp)
-        const useLegacyPath = isLegacyWallet(ks.created_at);
-        derivePath = getDerivePathForNetwork(
-          network,
-          currentAddressType,
-          useLegacyPath,
-        );
-      }
-    }
-    const psbtDerivePath =
-      derivePath || getDerivePathForNetwork(network, 'segwit-native', true);
-    // Check if keyshare supports Nostr (has nostr_npub)
-    try {
-      const keyshareJSON = await EncryptedStorage.getItem('keyshare');
-      if (keyshareJSON) {
-        const keyshare = JSON.parse(keyshareJSON);
-        const hasNostrSupport =
-          keyshare.nostr_npub && keyshare.nostr_npub.trim() !== '';
-        if (!hasNostrSupport) {
-          // Keyshare was generated with local mode, navigate directly to MobilesPairing
-          navigation.dispatch(
-            CommonActions.navigate({
-              name: 'Devices Pairing',
-              params: {
-                mode: 'sign_psbt',
-                addressType,
-                psbtBase64,
-                derivePath: psbtDerivePath,
-              },
-            }),
-          );
-          return;
-        }
-      }
-    } catch (error) {
-      dbg('Error checking keyshare for Nostr support:', error);
-      // Continue to show transport selector if check fails
-    }
-    // Store params and show transport selector
-    setPendingPSBTParams({psbtBase64});
-    setTimeout(() => {
-      setIsPSBTTransportModalVisible(true);
-    }, 300);
-  };
-  const navigateToPSBTSigning = (transport: 'local' | 'nostr') => {
-    if (!pendingPSBTParams) return;
-    const {psbtBase64} = pendingPSBTParams;
-    const routeName =
-      transport === 'local' ? 'Devices Pairing' : 'Nostr Connect';
-    // Reset modal state before navigating
-    setIsPSBTModalVisible(false);
-    setIsPSBTTransportModalVisible(false);
-    // For PSBT signing, network is not strictly required (extracted from app state),
-    // but we pass it for consistency. Derivation path is extracted from PSBT's Bip32Derivation.
-    navigation.dispatch(
-      CommonActions.navigate({
-        name: routeName,
-        params: {
-          mode: 'sign_psbt',
-          addressType,
-          psbtBase64,
-          network: network || 'mainnet', // Pass network for consistency (not strictly required for PSBT)
-        },
-      }),
-    );
-    setPendingPSBTParams(null);
-  };
-  const getAddressTypeIcon = () => {
-    switch (addressType) {
-      case 'legacy':
-        return require('../assets/bricks-icon.png');
-      case 'segwit-native':
-        return require('../assets/dna-icon.png');
-      case 'segwit-compatible':
-        return require('../assets/recycle-icon.png');
-      default:
-        return require('../assets/bricks-icon.png');
-    }
-  };
   // Animated style for balance update
   const balanceAnimatedStyle = useAnimatedStyle(() => ({
     opacity: balanceUpdateAnimation.value,
@@ -2091,108 +1841,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <View style={styles.contentContainer}>
         <View style={styles.walletHeader}>
-          <View style={[styles.partyContainer, styles.rowFullWidth]}>
-            <Pressable
-              style={[
-                styles.addressTypeContainer,
-                styles.addressTypeClickable,
-                styles.flexOneMinWidthZero,
-              ]}
-              onPress={async () => {
-                HapticFeedback.light();
-                // Load keyshare info before showing modal
-                await loadKeyshareInfo();
-                setIsPartyModalVisible(true);
-              }}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
-              accessibilityLabel={`Device: ${capitalizeWords(party)}`}
-              accessibilityHint="Double tap to view device details and keyshare information"
-              accessibilityRole="button">
-              <View style={styles.columnCenter}>
-                <View style={styles.rowCenterMarginTop2}>
-                  <Image source={keyIcon} style={styles.networkIcon} />
-                  <Text
-                    style={styles.partyValue}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.5}>
-                    {capitalizeWords(party)}
-                  </Text>
-                </View>
-              </View>
-            </Pressable>
-            <Pressable
-              style={[
-                styles.addressTypeContainer,
-                styles.addressTypeClickable,
-                styles.flexOneMinWidthZero,
-              ]}
-              onPress={() => {
-                HapticFeedback.light();
-                setIsPSBTModalVisible(true);
-              }}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
-              accessibilityLabel="Sign PSBT with Sparrow"
-              accessibilityHint="Double tap to sign a Partially Signed Bitcoin Transaction"
-              accessibilityRole="button">
-              <View style={styles.columnCenter}>
-                <View style={styles.rowCenterMarginTop2}>
-                  <Image
-                    source={require('../assets/cosign-icon.png')}
-                    style={styles.networkIcon}
-                  />
-                  <Text
-                    style={styles.partyValue}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.5}>
-                    Sign • PSBT
-                  </Text>
-                </View>
-              </View>
-            </Pressable>
-            <Pressable
-              style={[
-                styles.addressTypeContainer,
-                styles.addressTypeClickable,
-                styles.flexOneMinWidthZero,
-              ]}
-              onPress={() => {
-                HapticFeedback.light();
-                setIsAddressTypeModalVisible(true);
-              }}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
-              accessibilityLabel={`Address Type: ${
-                addressType === 'segwit-compatible'
-                  ? 'Nested SegWit'
-                  : addressType === 'segwit-native'
-                  ? 'Native SegWit'
-                  : 'Legacy'
-              }`}
-              accessibilityHint="Double tap to change address format"
-              accessibilityRole="button">
-              <View style={styles.columnCenter}>
-                <View style={styles.rowCenterMarginTop2}>
-                  <Image
-                    source={getAddressTypeIcon()}
-                    style={styles.addressTypeIcon}
-                    resizeMode="contain"
-                  />
-                  <Text
-                    style={styles.partyValue}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.5}>
-                    {addressType === 'segwit-compatible'
-                      ? 'Nested SegWit'
-                      : addressType === 'segwit-native'
-                      ? 'Native SegWit'
-                      : 'Legacy'}
-                  </Text>
-                </View>
-              </View>
-            </Pressable>
-          </View>
           <View style={styles.balanceContainer}>
             {/* Eye icon on left */}
             <Pressable
@@ -2522,15 +2170,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         title="Scan Send Bitcoin QR"
         subtitle="Point camera to Sending Device QR"
       />
-      <AddressTypeModal
-        visible={isAddressTypeModalVisible}
-        onClose={() => setIsAddressTypeModalVisible(false)}
-        addressType={addressType}
-        legacyAddress={legacyAddress}
-        segwitAddress={segwitAddress}
-        segwitCompatibleAddress={segwitCompatibleAddress}
-        onSelectAddressType={handleAddressTypeChange}
-      />
       <LegacyWalletModal
         visible={isLegacyWalletModalVisible}
         onCancel={() => setIsLegacyWalletModalVisible(false)}
@@ -2607,25 +2246,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           onClose={() => setIsReceiveModalVisible(false)}
         />
       )}
-      {/* PSBT Signing Modal (overlay) */}
-      <PSBTModal
-        visible={isPSBTModalVisible}
-        onClose={() => setIsPSBTModalVisible(false)}
-        onSign={handlePSBTSign}
-      />
-      {/* PSBT Transport Mode Selector */}
-      <TransportModeSelector
-        visible={isPSBTTransportModalVisible}
-        onClose={() => {
-          HapticFeedback.medium();
-          setIsPSBTTransportModalVisible(false);
-          setPendingPSBTParams(null);
-        }}
-        onSelect={(transport: 'local' | 'nostr') => {
-          navigateToPSBTSigning(transport);
-          setIsPSBTTransportModalVisible(false);
-        }}
-      />
       {/* Signed PSBT Modal */}
       {signedPsbt && (
         <SignedPSBTModal
@@ -2638,45 +2258,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           }}
         />
       )}
-      {/* Keyshare Modal */}
-      <KeyshareModal
-        visible={isPartyModalVisible}
-        onClose={() => setIsPartyModalVisible(false)}
-        keyshareInfo={keyshareInfo}
-        network={network as 'mainnet' | 'testnet'}
-        onShowOutputDescriptorQR={() => {}}
-        onShowNpubQR={() => setIsNpubQrVisible(true)}
-      />
-      {/* QR Code Modals */}
-      <QRCodeModal
-        visible={isNpubQrVisible}
-        onClose={() => {
-          setIsNpubQrVisible(false);
-          setTimeout(() => setIsPartyModalVisible(true), 300);
-        }}
-        title="Nostr Public Key"
-        value={keyshareInfo?.npub || ''}
-        showShareButton={false}
-      />
-      {/* Lock wallet FAB - bottom right (wrapper ensures it stays on top) */}
-      <View style={styles.lockFabOverlay}>
-        <Pressable
-          style={styles.lockFab}
-          onPress={() => {
-            HapticFeedback.light();
-            DeviceEventEmitter.emit('app:reload');
-          }}
-          android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
-          accessible={true}
-          accessibilityRole="button"
-          accessibilityLabel="Lock wallet"
-          accessibilityHint="Double tap to lock the wallet">
-          <Image
-            source={require('../assets/locker-icon.png')}
-            style={styles.lockFabIcon}
-          />
-        </Pressable>
-      </View>
     </SafeAreaView>
   );
 };

@@ -12,9 +12,8 @@ import {
   Image,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {CommonActions} from '@react-navigation/native';
 import {useTheme} from '../theme';
-import {dbg, HapticFeedback} from '../utils';
+import {dbg, HapticFeedback, getResetToMainTabsWallet} from '../utils';
 import {useUser} from '../context/UserContext';
 
 const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
@@ -128,22 +127,12 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
 
   const handleSkip = () => {
     HapticFeedback.medium();
-    navigation.dispatch(
-      CommonActions.reset({
-        index: 0,
-        routes: [{name: 'Home'}],
-      }),
-    );
+    navigation.reset(getResetToMainTabsWallet());
   };
 
   const handleProceed = () => {
     HapticFeedback.medium();
-    navigation.dispatch(
-      CommonActions.reset({
-        index: 0,
-        routes: [{name: 'Home'}],
-      }),
-    );
+    navigation.reset(getResetToMainTabsWallet());
   };
 
   const styles = StyleSheet.create({

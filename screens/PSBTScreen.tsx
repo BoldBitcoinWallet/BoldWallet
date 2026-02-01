@@ -15,7 +15,6 @@ import {NativeModules} from 'react-native';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {
-  HeaderRightButton,
   HeaderPriceButton,
   HeaderNetworkProvider,
 } from '../components/Header';
@@ -329,22 +328,22 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     ),
     [btcPrice, selectedCurrency],
   );
-  const headerTitle = React.useCallback(
-    () => <HeaderNetworkProvider network={network} apiBase={apiBase} />,
-    [network, apiBase],
-  );
   const headerRight = React.useCallback(
-    () => <HeaderRightButton navigation={navigation} />,
-    [navigation],
+    () => (
+      <View style={styles.headerRightContainer}>
+        <HeaderNetworkProvider network={network} apiBase={apiBase} />
+      </View>
+    ),
+    [network, apiBase, styles.headerRightContainer],
   );
   useEffect(() => {
     navigation.setOptions({
       headerRight,
       headerLeft,
-      headerTitle,
+      headerTitle: () => null,
       headerTitleAlign: 'center',
     });
-  }, [navigation, headerRight, headerLeft, headerTitle]);
+  }, [navigation, headerRight, headerLeft]);
   useEffect(() => {
     loadKeyshareInfo();
   }, [loadKeyshareInfo]);
@@ -751,6 +750,13 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
 };
 const createStyles = (theme: any) =>
   StyleSheet.create({
+    headerRightContainer: {
+      paddingTop: 12,
+      paddingBottom: 12,
+      paddingRight: 16,
+      paddingLeft: 8,
+      justifyContent: 'center',
+    },
     screenContainer: {
       flex: 1,
       backgroundColor: theme.colors.background,

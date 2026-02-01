@@ -18,6 +18,49 @@ export const getPinnedRemoteIP = () => (ips.length ? ips[ips.length - 1] : '');
 
 export const getPinnedRemoteIPs = () => [...ips];
 
+/**
+ * Reset navigation config to MainTabs with Wallet tab selected.
+ * Use with navigation.reset(getResetToMainTabsWallet()) or navigation.reset(getResetToMainTabsWallet({ signedPsbt: '...' })).
+ */
+export const getResetToMainTabsWallet = (params = {}) => ({
+  index: 0,
+  routes: [
+    {
+      name: 'MainTabs',
+      state: {
+        routes: [
+          {name: 'Device'},
+          {name: 'Wallet', params},
+          {name: 'PSBT'},
+          {name: 'Settings'},
+        ],
+        index: 1,
+      },
+    },
+  ],
+});
+
+/**
+ * Reset navigation config to MainTabs with PSBT tab selected.
+ */
+export const getResetToMainTabsPSBT = () => ({
+  index: 0,
+  routes: [
+    {
+      name: 'MainTabs',
+      state: {
+        routes: [
+          {name: 'Device'},
+          {name: 'Wallet'},
+          {name: 'PSBT'},
+          {name: 'Settings'},
+        ],
+        index: 2,
+      },
+    },
+  ],
+});
+
 export const dbg = (message, ...optionalParams) => {
   // Disable debug logging by default (even in __DEV__)
   // Only enable if explicitly toggled via debug setting in WalletSettings
