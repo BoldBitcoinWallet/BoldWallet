@@ -1,5 +1,5 @@
 // App.tsx
-import React, {useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useState} from 'react';
 import {NavigationContainer} from '@react-navigation/native';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
@@ -30,6 +30,7 @@ import {
   Platform,
   DeviceEventEmitter,
   View,
+  Text,
   StyleSheet,
   Pressable,
 } from 'react-native';
@@ -87,6 +88,8 @@ const NostrConnectHeader = (props: any) => (
 );
 const DeviceHeader = (props: any) => <CustomHeader {...props} height={60} />;
 
+const TAB_BAR_ICON_SIZE = 22;
+
 const tabBarIcons = {
   Device: require('./assets/key-icon.png'),
   Wallet: require('./assets/wallet-icon.png'),
@@ -97,7 +100,7 @@ const tabBarIcons = {
 const TabBarIcon = ({
   name,
   color,
-  size = 24,
+  size = TAB_BAR_ICON_SIZE,
 }: {
   name: keyof typeof tabBarIcons;
   color: string;
@@ -111,24 +114,84 @@ const TabBarIcon = ({
 );
 
 const TabBarIconDevice = (props: {color: string; size?: number}) => (
-  <TabBarIcon name="Device" color={props.color} size={props.size ?? 24} />
+  <TabBarIcon
+    name="Device"
+    color={props.color}
+    size={props.size ?? TAB_BAR_ICON_SIZE}
+  />
 );
 const TabBarIconWallet = (props: {color: string; size?: number}) => (
-  <TabBarIcon name="Wallet" color={props.color} size={props.size ?? 24} />
+  <TabBarIcon
+    name="Wallet"
+    color={props.color}
+    size={props.size ?? TAB_BAR_ICON_SIZE}
+  />
 );
 const TabBarIconPSBT = (props: {color: string; size?: number}) => (
-  <TabBarIcon name="PSBT" color={props.color} size={props.size ?? 24} />
+  <TabBarIcon
+    name="PSBT"
+    color={props.color}
+    size={props.size ?? TAB_BAR_ICON_SIZE}
+  />
 );
 const TabBarIconSettings = (props: {color: string; size?: number}) => (
-  <TabBarIcon name="Settings" color={props.color} size={props.size ?? 24} />
+  <TabBarIcon
+    name="Settings"
+    color={props.color}
+    size={props.size ?? TAB_BAR_ICON_SIZE}
+  />
 );
+
+const tabBarStyles = StyleSheet.create({
+  mainTabsContainer: {flex: 1},
+  tabBarButtonInner: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activeTabBgLight: {backgroundColor: 'rgba(0,0,0,0.06)'},
+  activeTabBgDark: {backgroundColor: 'rgba(255,255,255,0.08)'},
+  tabBarIcon: {
+    width: TAB_BAR_ICON_SIZE,
+    height: TAB_BAR_ICON_SIZE,
+    marginBottom: 2,
+  },
+  tabBarLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  tabBarLabelWrapper: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  tabBarItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
+
+type TabBarButtonProps = Record<string, unknown> & {isDarkMode?: boolean};
+
+const TabBarButton = (props: TabBarButtonProps) => {
+  const {style, accessibilityState, isDarkMode, ...rest} = props;
+  const selected = (accessibilityState as {selected?: boolean})?.selected;
+  const activeBg =
+    isDarkMode === true
+      ? tabBarStyles.activeTabBgDark
+      : tabBarStyles.activeTabBgLight;
+  return (
+    <View style={[style as object, selected && activeBg]}>
+      <Pressable {...(rest as object)} style={tabBarStyles.tabBarButtonInner} />
+    </View>
+  );
+};
 
 const MainTabs = () => {
   const {theme} = useTheme();
   const insets = useSafeAreaInsets();
-  const isDarkMode =
-    theme.colors.background === '#121212' ||
-    theme.colors.background.includes('12');
+  const isDarkMode = theme.colors.background !== '#ffffff';
   const lockFabOverlayStyle = {
     position: 'absolute' as const,
     right: 0,
@@ -142,8 +205,8 @@ const MainTabs = () => {
   };
   const lockFabStyle = {
     position: 'absolute' as const,
-    right: 20 + insets.right,
-    bottom: 64 + insets.bottom,
+    right: 30 + insets.right,
+    bottom: 80 + insets.bottom,
     width: 56,
     height: 56,
     borderRadius: 28,
@@ -170,8 +233,14 @@ const MainTabs = () => {
     opacity: 0.9,
     resizeMode: 'contain' as const,
   };
+  const renderTabBarButton = useCallback(
+    (props: Record<string, unknown>) => (
+      <TabBarButton {...props} isDarkMode={isDarkMode} />
+    ),
+    [isDarkMode],
+  );
   return (
-    <View style={{flex: 1}}>
+    <View style={tabBarStyles.mainTabsContainer}>
       <Tab.Navigator
         initialRouteName="Wallet"
         screenOptions={{
@@ -181,10 +250,30 @@ const MainTabs = () => {
           headerTitleAlign: 'left',
           tabBarStyle: {
             backgroundColor: theme.colors.background,
-            borderTopColor: theme.colors.border + '40',
+            borderTopWidth: 1,
+            borderTopColor: isDarkMode
+              ? theme.colors.border + 'CC'
+              : theme.colors.border + '60',
           },
-          tabBarActiveTintColor: theme.colors.primary || theme.colors.text,
+          tabBarActiveTintColor: isDarkMode
+            ? theme.colors.text
+            : theme.colors.primary || theme.colors.text,
           tabBarInactiveTintColor: theme.colors.textSecondary,
+          tabBarIconStyle: tabBarStyles.tabBarIcon,
+          tabBarLabelStyle: tabBarStyles.tabBarLabel,
+          tabBarItemStyle: tabBarStyles.tabBarItem,
+          tabBarAllowFontScaling: false,
+          tabBarButton: renderTabBarButton,
+          tabBarLabel: ({color, children}) => (
+            <View style={tabBarStyles.tabBarLabelWrapper}>
+              <Text
+                style={[tabBarStyles.tabBarLabel, {color}]}
+                numberOfLines={1}
+              >
+                {children}
+              </Text>
+            </View>
+          ),
         }}>
         <Tab.Screen
           name="Device"
@@ -261,8 +350,7 @@ const App = () => {
       // Re-check wallet state after reload to ensure correct initial route
       try {
         const keyshare = await EncryptedStorage.getItem('keyshare');
-        const route =
-          keyshare && keyshare.length > 0 ? 'MainTabs' : 'Welcome';
+        const route = keyshare && keyshare.length > 0 ? 'MainTabs' : 'Welcome';
         setInitialRoute(route);
       } catch {
         setInitialRoute('Welcome');
@@ -276,8 +364,7 @@ const App = () => {
       try {
         const keyshare = await EncryptedStorage.getItem('keyshare');
         dbg('initializeApp keyshare found', !!keyshare);
-        const route =
-          keyshare && keyshare.length > 0 ? 'MainTabs' : 'Welcome';
+        const route = keyshare && keyshare.length > 0 ? 'MainTabs' : 'Welcome';
         dbg('Setting initial route to:', route);
         setInitialRoute(route);
       } catch (error) {

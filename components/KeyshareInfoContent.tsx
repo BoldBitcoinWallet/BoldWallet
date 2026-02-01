@@ -46,10 +46,13 @@ interface KeyshareInfo {
 interface KeyshareInfoContentProps {
   keyshareInfo: KeyshareInfo | null;
   network: 'mainnet' | 'testnet';
+  /** When provided, "Go to Wallet Settings > Security" becomes clickable and opens Settings with this section expanded (e.g. 'backup' for Security). */
+  onOpenSettingsSection?: (section: string) => void;
 }
 const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   keyshareInfo,
   network,
+  onOpenSettingsSection,
 }) => {
   const {theme} = useTheme();
   const styles = createStyles(theme);
@@ -81,7 +84,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   const [pairingPubkeys, setPairingPubkeys] = useState<string>('');
   const [isPairingPubkeysQrVisible, setIsPairingPubkeysQrVisible] =
     useState(false);
-  const [isWalletInfoExpanded, setIsWalletInfoExpanded] = useState(false);
+  const [isWalletInfoExpanded, setIsWalletInfoExpanded] = useState(true);
   const [isCapabilitiesExpanded, setIsCapabilitiesExpanded] = useState(false);
   const [isBoldExtensionExpanded, setIsBoldExtensionExpanded] = useState(false);
   const [isWatchWalletExpanded, setIsWatchWalletExpanded] = useState(false);
@@ -528,7 +531,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                         <View style={styles.walletInfoContent}>
                           <View style={styles.walletInfoRow}>
                             <Text style={styles.keyshareDetailLabel}>
-                              Wallet ID
+                              Fingerprint
                             </Text>
                             <Pressable
                               onPress={handleWalletIdPress}
@@ -548,7 +551,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                           </View>
                           <View style={styles.walletInfoRow}>
                             <Text style={styles.keyshareDetailLabel}>
-                              Wallet Type
+                              Keyshares
                             </Text>
                             <Pressable
                               onPress={handleWalletTypePress}
@@ -611,10 +614,37 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                               </View>
                             )}
                         </View>
-                        <Text style={styles.walletInfoHint}>
-                          Go to Wallet Settings &gt; Security to backup your
-                          keyshare
-                        </Text>
+                        {onOpenSettingsSection ? (
+                          <Pressable
+                            onPress={() => {
+                              HapticFeedback.light();
+                              onOpenSettingsSection('backup');
+                            }}
+                            android_ripple={{color: 'rgba(0,0,0,0.1)'}}
+                            accessible={true}
+                            accessibilityRole="link"
+                            accessibilityLabel="Open Settings Security section to backup keyshare">
+                            <Text
+                              style={[
+                                styles.walletInfoHint,
+                                {
+                                  fontSize: theme.fontSizes?.base || 14,
+                                  color:
+                                    theme.colors.background === '#121212' ||
+                                    theme.colors.background.includes('12')
+                                      ? theme.colors.secondary
+                                      : theme.colors.primary,
+                                  textDecorationLine: 'underline',
+                                },
+                              ]}>
+                              Settings &gt; Security to backup keyshare
+                            </Text>
+                          </Pressable>
+                        ) : (
+                          <Text style={styles.walletInfoHint}>
+                            Settings &gt; Security to backup keyshare
+                          </Text>
+                        )}
                       </Animated.View>
                     )}
                   </View>

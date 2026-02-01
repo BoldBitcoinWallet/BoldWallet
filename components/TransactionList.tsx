@@ -660,7 +660,7 @@ const TransactionList = React.forwardRef<
       },
       listContent: {
         flexGrow: 1,
-        paddingBottom: 20,
+        paddingBottom: 8 + insets.bottom,
       },
       transactionItem: {
         padding: 10,

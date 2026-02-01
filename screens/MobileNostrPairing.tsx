@@ -36,7 +36,13 @@ import * as Progress from 'react-native-progress';
 import {CommonActions, RouteProp, useRoute} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Big from 'big.js';
-import {dbg, HapticFeedback, getNostrRelays, hexToString, getResetToMainTabsWallet} from '../utils';
+import {
+  dbg,
+  HapticFeedback,
+  getNostrRelays,
+  hexToString,
+  getResetToMainTabsWallet,
+} from '../utils';
 import {useTheme} from '../theme';
 import LocalCache from '../services/LocalCache';
 import {WalletService} from '../services/WalletService';
@@ -1501,16 +1507,20 @@ const MobileNostrPairing = ({navigation}: any) => {
       // CRITICAL: Temporarily update WalletService internal state so getWalletBalance uses correct network
       // This is needed because getWalletBalance uses this.currentNetwork for address validation
       const walletService = WalletService.getInstance();
-      originalWalletServiceNetwork = (walletService as any).currentNetwork || '';
+      originalWalletServiceNetwork =
+        (walletService as any).currentNetwork || '';
       originalWalletServiceApiUrl = (walletService as any).currentApiUrl || '';
       (walletService as any).currentNetwork = net;
       (walletService as any).currentApiUrl = apiUrl;
       dbg('MobileNostrPairing: Set network and API in BBMTLib:', net, apiUrl);
-      dbg('MobileNostrPairing: Temporarily updated WalletService network state:', {
-        from: originalWalletServiceNetwork,
-        to: net,
-        apiUrl,
-      });
+      dbg(
+        'MobileNostrPairing: Temporarily updated WalletService network state:',
+        {
+          from: originalWalletServiceNetwork,
+          to: net,
+          apiUrl,
+        },
+      );
       // Get keyshare and nsec
       const keyshareJSON = await EncryptedStorage.getItem('keyshare');
       if (!keyshareJSON) {
@@ -1783,7 +1793,8 @@ const MobileNostrPairing = ({navigation}: any) => {
           // Restore WalletService internal state (in case it wasn't restored earlier due to error)
           if (originalWalletServiceNetwork && originalWalletServiceApiUrl) {
             const walletService = WalletService.getInstance();
-            (walletService as any).currentNetwork = originalWalletServiceNetwork;
+            (walletService as any).currentNetwork =
+              originalWalletServiceNetwork;
             (walletService as any).currentApiUrl = originalWalletServiceApiUrl;
             dbg(
               'MobileNostrPairing: Restored WalletService network in finally block:',
@@ -1972,7 +1983,9 @@ const MobileNostrPairing = ({navigation}: any) => {
           } else {
             dbg(localNpub, 'PSBT signed successfully');
           }
-          dbg('PSBT signing complete: Navigating to Wallet tab with signedPsbt');
+          dbg(
+            'PSBT signing complete: Navigating to Wallet tab with signedPsbt',
+          );
           navigation.dispatch(
             CommonActions.reset(getResetToMainTabsWallet({signedPsbt})),
           );
@@ -1997,9 +2010,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       Alert.alert('Error', error?.message || 'PSBT signing failed');
       setStatus('PSBT signing failed');
       try {
-        navigation.dispatch(
-          CommonActions.reset(getResetToMainTabsWallet()),
-        );
+        navigation.dispatch(CommonActions.reset(getResetToMainTabsWallet()));
       } catch (navError) {
         dbg('Error navigating after PSBT error:', navError);
       }
@@ -3887,8 +3898,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                       )}
                     </View>
                   </View>
-                  {/* Relay Configuration - Show in send Bitcoin/PSBT mode, right after title */}
-                  {(isSendBitcoin || isSignPSBT) && !showFinalStep && (
+                  {/* Relay Configuration - Show in setup and send/PSBT mode, right after title */}
+                  {!showFinalStep && (
                     <View style={styles.section}>
                       <Pressable
                         style={styles.collapsibleHeader}
@@ -4826,7 +4837,12 @@ const MobileNostrPairing = ({navigation}: any) => {
                     )}
                   {/* Preparing Modal */}
                   {isPreparing && (
-                    <Modal transparent={true} visible={isPreparing}>
+                    <Modal
+                      transparent={true}
+                      visible={isPreparing}
+                      onRequestClose={
+                        () => {} /* non-dismissible: block Android back */
+                      }>
                       <View style={styles.modalOverlay}>
                         <View style={styles.preparingModalContent}>
                           {/* Icon Container */}
@@ -5455,96 +5471,99 @@ const MobileNostrPairing = ({navigation}: any) => {
                     </View>
                   )}
                   {/* Start Button - Only for send/sign modes (keygen button is inside Final Step) */}
-                  {!isPairing &&
-                    !mpcDone &&
-                    (isSendBitcoin || isSignPSBT) && (
-                      <View style={styles.section}>
-                        <Pressable
-                          style={[
-                            styles.button,
-                            (isSendBitcoin || isSignPSBT
-                              ? !localNpub ||
-                                sendModeDevices.length === 0 ||
-                                // Ensure all npubs are fully converted (not placeholder hex values)
-                                sendModeDevices.some(
-                                  d => !d.npub || !d.npub.startsWith('npub1'),
-                                ) ||
-                                (isTrio && !selectedPeerNpub) ||
-                                (isSignPSBT && !isKeysignReady)
-                              : !canStartKeygen) && styles.buttonDisabled,
-                          ]}
-                          onPress={
-                            isSignPSBT
-                              ? startSignPSBT
-                              : isSendBitcoin
-                              ? startSendBTC
-                              : startKeygen
-                          }
-                          disabled={
-                            isSendBitcoin || isSignPSBT
-                              ? !localNpub ||
-                                sendModeDevices.length === 0 ||
-                                // Ensure all npubs are fully converted (not placeholder hex values)
-                                sendModeDevices.some(
-                                  d => !d.npub || !d.npub.startsWith('npub1'),
-                                ) ||
-                                (isTrio && !selectedPeerNpub) ||
-                                (isSignPSBT && !isKeysignReady)
-                              : !canStartKeygen
-                          }
-                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                          <View style={styles.buttonContent}>
-                            <Image
-                              source={
-                                isSendBitcoin || isSignPSBT
-                                  ? require('../assets/cosign-icon.png')
-                                  : require('../assets/key-icon.png')
-                              }
-                              style={styles.buttonIcon}
-                              resizeMode="contain"
-                            />
-                            <Text style={styles.buttonText}>
-                              {isSendBitcoin || isSignPSBT
-                                ? (() => {
-                                    // Determine if local device is KeyShare1
-                                    const localDevice = sendModeDevices.find(
-                                      d => d.isLocal,
-                                    );
-                                    const isKeyShare1 =
-                                      localDevice?.keyshareLabel ===
-                                      'KeyShare1';
-                                    return isKeyShare1
-                                      ? isSignPSBT
-                                        ? 'Start PSBT Signing'
-                                        : 'Start Co-Signing'
-                                      : isSignPSBT
-                                      ? 'Join PSBT Signing'
-                                      : 'Join Co-Signing';
-                                  })()
-                                : (() => {
-                                    // For keygen, determine if local npub is first in sorted order
-                                    const allNpubs = [localNpub];
-                                    if (peerNpub1) allNpubs.push(peerNpub1);
-                                    if (isTrio && peerNpub2)
-                                      allNpubs.push(peerNpub2);
-                                    const sortedNpubs = allNpubs.sort();
-                                    const isKeyShare1 =
-                                      sortedNpubs[0] === localNpub;
-                                    return isKeyShare1
-                                      ? 'Start Key Generation'
-                                      : 'Join Key Generation';
-                                  })()}
-                            </Text>
-                          </View>
-                        </Pressable>
-                      </View>
-                    )}
+                  {!isPairing && !mpcDone && (isSendBitcoin || isSignPSBT) && (
+                    <View style={styles.section}>
+                      <Pressable
+                        style={[
+                          styles.button,
+                          (isSendBitcoin || isSignPSBT
+                            ? !localNpub ||
+                              sendModeDevices.length === 0 ||
+                              // Ensure all npubs are fully converted (not placeholder hex values)
+                              sendModeDevices.some(
+                                d => !d.npub || !d.npub.startsWith('npub1'),
+                              ) ||
+                              (isTrio && !selectedPeerNpub) ||
+                              (isSignPSBT && !isKeysignReady)
+                            : !canStartKeygen) && styles.buttonDisabled,
+                        ]}
+                        onPress={
+                          isSignPSBT
+                            ? startSignPSBT
+                            : isSendBitcoin
+                            ? startSendBTC
+                            : startKeygen
+                        }
+                        disabled={
+                          isSendBitcoin || isSignPSBT
+                            ? !localNpub ||
+                              sendModeDevices.length === 0 ||
+                              // Ensure all npubs are fully converted (not placeholder hex values)
+                              sendModeDevices.some(
+                                d => !d.npub || !d.npub.startsWith('npub1'),
+                              ) ||
+                              (isTrio && !selectedPeerNpub) ||
+                              (isSignPSBT && !isKeysignReady)
+                            : !canStartKeygen
+                        }
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                        <View style={styles.buttonContent}>
+                          <Image
+                            source={
+                              isSendBitcoin || isSignPSBT
+                                ? require('../assets/cosign-icon.png')
+                                : require('../assets/key-icon.png')
+                            }
+                            style={styles.buttonIcon}
+                            resizeMode="contain"
+                          />
+                          <Text style={styles.buttonText}>
+                            {isSendBitcoin || isSignPSBT
+                              ? (() => {
+                                  // Determine if local device is KeyShare1
+                                  const localDevice = sendModeDevices.find(
+                                    d => d.isLocal,
+                                  );
+                                  const isKeyShare1 =
+                                    localDevice?.keyshareLabel === 'KeyShare1';
+                                  return isKeyShare1
+                                    ? isSignPSBT
+                                      ? 'Start PSBT Signing'
+                                      : 'Start Co-Signing'
+                                    : isSignPSBT
+                                    ? 'Join PSBT Signing'
+                                    : 'Join Co-Signing';
+                                })()
+                              : (() => {
+                                  // For keygen, determine if local npub is first in sorted order
+                                  const allNpubs = [localNpub];
+                                  if (peerNpub1) allNpubs.push(peerNpub1);
+                                  if (isTrio && peerNpub2)
+                                    allNpubs.push(peerNpub2);
+                                  const sortedNpubs = allNpubs.sort();
+                                  const isKeyShare1 =
+                                    sortedNpubs[0] === localNpub;
+                                  return isKeyShare1
+                                    ? 'Start Key Generation'
+                                    : 'Join Key Generation';
+                                })()}
+                          </Text>
+                        </View>
+                      </Pressable>
+                    </View>
+                  )}
                 </>
               );
             })()}
           {/* Keygen Modal - Similar to MobilesPairing */}
           {isPairing && !isSendBitcoin && !isSignPSBT && (
-            <Modal transparent={true} visible={isPairing} animationType="fade">
+            <Modal
+              transparent={true}
+              visible={isPairing}
+              animationType="fade"
+              onRequestClose={
+                () => {} /* non-dismissible: block Android back */
+              }>
               <View style={styles.modalOverlay}>
                 <View style={styles.modalContent}>
                   {/* Icon Container */}
@@ -5599,7 +5618,13 @@ const MobileNostrPairing = ({navigation}: any) => {
           )}
           {/* Co-Signing Modal - Similar to MobilesPairing send_btc and sign_psbt */}
           {isPairing && (isSendBitcoin || isSignPSBT) && (
-            <Modal transparent={true} visible={isPairing} animationType="fade">
+            <Modal
+              transparent={true}
+              visible={isPairing}
+              animationType="fade"
+              onRequestClose={
+                () => {} /* non-dismissible: block Android back */
+              }>
               <View style={styles.modalOverlay}>
                 <View style={styles.modalContent}>
                   {/* Icon Container */}

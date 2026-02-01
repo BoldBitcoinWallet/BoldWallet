@@ -1011,7 +1011,7 @@ const PSBTModal: React.FC<PSBTModalProps> = ({visible, onClose, onSign}) => {
       visible={visible}
       transparent={true}
       animationType="fade"
-      onRequestClose={() => {}}>
+      onRequestClose={onClose}>
       <PSBTLoader onClose={onClose} onSign={onSign} />
     </Modal>
   );

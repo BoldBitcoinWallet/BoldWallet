@@ -3537,7 +3537,10 @@ const MobilesPairing = ({navigation}: any) => {
                         </Pressable>
                         {/* Show Countdown Timer During Pairing */}
                         {isPreparing && (
-                          <Modal transparent={true} visible={isPreparing}>
+                          <Modal
+                            transparent={true}
+                            visible={isPreparing}
+                            onRequestClose={() => {} /* non-dismissible: block Android back */}>
                             <View style={styles.modalOverlay}>
                               <View style={styles.modalContent}>
                                 {/* Icon Container */}
@@ -3675,7 +3678,8 @@ const MobilesPairing = ({navigation}: any) => {
                         <Modal
                           transparent={true}
                           visible={doingMPC}
-                          animationType="fade">
+                          animationType="fade"
+                          onRequestClose={() => {} /* non-dismissible: block Android back */}>
                           <View style={styles.modalOverlay}>
                             <View style={styles.modalContent}>
                               {/* Icon Container */}
@@ -4400,7 +4404,8 @@ const MobilesPairing = ({navigation}: any) => {
                     <Modal
                       transparent={true}
                       visible={doingMPC}
-                      animationType="fade">
+                      animationType="fade"
+                      onRequestClose={() => {} /* non-dismissible: block Android back */}>
                       <View style={styles.modalOverlay}>
                         <View style={styles.modalContent}>
                           {/* Icon Container */}

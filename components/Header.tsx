@@ -55,9 +55,7 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
   }
   const showLeftContent = hasProvider || hasNetwork;
   const isMainnet = networkLabel === 'MAINNET';
-  const isDarkMode =
-    theme.colors.background === '#121212' ||
-    theme.colors.background.includes('12');
+  const isDarkMode = theme.colors.background !== '#ffffff';
   // Theme-aware: match HeaderPriceButton container (cardBackground / blackOverlay06 + border)
   const containerBg = isDarkMode
     ? theme.colors.cardBackground
@@ -277,7 +275,7 @@ export const HeaderProvider: React.FC<HeaderProviderProps> = ({apiBase}) => {
   if (!hasProvider) {
     return null;
   }
-  const isDarkMode = theme.colors.background !== '#FFFFFF';
+  const isDarkMode = theme.colors.background !== '#ffffff';
   const containerBg = isDarkMode
     ? theme.colors.cardBackground
     : theme.colors.blackOverlay06;
@@ -379,13 +377,15 @@ export const HeaderNetwork: React.FC<HeaderNetworkProps> = ({
     return null;
   }
   const isMainnet = networkLabel === 'MAINNET';
-  const isDarkMode =
-    theme.colors.background === '#121212' ||
-    theme.colors.background.includes('12');
+  const isDarkMode = theme.colors.background !== '#ffffff';
   const containerBorderColor = isDarkMode
     ? theme.colors.border + '80'
     : theme.colors.blackOverlay10;
-  const networkBg = isMainnet ? theme.colors.primary : theme.colors.secondary;
+  const networkBg = isMainnet
+    ? theme.colors.primary
+    : isDarkMode
+    ? theme.colors.bitcoinOrange
+    : theme.colors.accent;
   const pillHeight = 36;
   const innerRadius = 9;
   const containerStyle: any = {
@@ -456,22 +456,19 @@ export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
   onCurrencyPress,
 }) => {
   const {theme} = useTheme();
+  const isDarkMode = theme.colors.background !== '#ffffff';
   const priceButtonStyle: any = {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor:
-      theme.colors.background === '#121212' ||
-      theme.colors.background.includes('12')
-        ? theme.colors.cardBackground
-        : theme.colors.blackOverlay06, // Light mode background
+    backgroundColor: isDarkMode
+      ? theme.colors.cardBackground
+      : theme.colors.blackOverlay06, // Light mode background
     borderWidth: 1,
-    borderColor:
-      theme.colors.background === '#121212' ||
-      theme.colors.background.includes('12')
-        ? theme.colors.border + '80'
-        : theme.colors.blackOverlay10, // Light mode border
+    borderColor: isDarkMode
+      ? theme.colors.border + '80'
+      : theme.colors.blackOverlay10, // Light mode border
     paddingHorizontal: 14,
     paddingVertical: 0,
     borderRadius: 10,
@@ -628,9 +625,9 @@ export const HeaderTitle: React.FC<{title?: string}> = () => {
   const getTitle = () => {
     const routeName = route.name;
     const titleMap: Record<string, string> = {
-      Device: 'Device',
+      Device: '',
       Wallet: 'Home',
-      PSBT: 'PSBT',
+      PSBT: '',
       Settings: '',
       Home: 'Home',
       Welcome: 'Welcome',
@@ -727,9 +724,7 @@ export const CustomHeader: React.FC<
     headerTitle &&
     headerTitle !== '' &&
     (typeof headerTitle !== 'string' || headerTitle.trim().length > 0);
-  const isDarkMode =
-    theme.colors.background === '#121212' ||
-    theme.colors.background.includes('12');
+  const isDarkMode = theme.colors.background !== '#ffffff';
   const headerBgColor =
     options.headerStyle &&
     typeof options.headerStyle === 'object' &&

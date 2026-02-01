@@ -131,7 +131,11 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
       visible={visible}
       transparent={true}
       animationType="fade"
-      onRequestClose={nonDismissible ? () => {} : handleClose}>
+      onRequestClose={
+        nonDismissible
+          ? () => {} /* block Android back: do not close when non-dismissible */
+          : handleClose
+      }>
       <Pressable
         style={styles.modalOverlay}
         onPress={nonDismissible ? undefined : handleClose}>

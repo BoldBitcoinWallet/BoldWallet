@@ -122,7 +122,11 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
     setDoNotRemind(prev => !prev);
   };
   return (
-    <Modal visible={visible} transparent={true} animationType="fade">
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={onCancel}>
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeaderRow}>

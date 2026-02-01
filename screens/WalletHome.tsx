@@ -1010,9 +1010,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   // No periodic check needed - NetworkContext is the single source of truth
   const cacheIndicatorRef = useRef<CacheIndicatorHandle>(null);
   const {theme} = useTheme();
-  const isDarkMode =
-    theme.colors.background === '#121212' ||
-    theme.colors.background.includes('12');
+  const isDarkMode = theme.colors.background !== '#ffffff';
   const styles = {
     ...createStyles(theme),
     sendButtonDisabled: {
@@ -1046,7 +1044,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     () => (
       <HeaderNetwork
         network={network}
-        onPress={() => navigation.navigate('Settings')}
+        onPress={() =>
+          navigation.navigate('Settings', {expandSection: 'advanced'})
+        }
       />
     ),
     [network, navigation],
@@ -1060,8 +1060,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       headerStyle: {
         backgroundColor: theme.colors.background,
       },
+      headerTitleContainerStyle: {
+        flex: 1,
+        minWidth: 0,
+        marginHorizontal: 0,
+      },
     });
-  }, [navigation, headerLeft, headerTitle, headerRight, theme.colors.background]);
+  }, [
+    navigation,
+    headerLeft,
+    headerTitle,
+    headerRight,
+    theme.colors.background,
+  ]);
   const requestCameraPermission = async () => {
     if (Platform.OS === 'android') {
       try {
@@ -1489,7 +1500,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               // Use computed values from handleSend (sender device)
               // Compute derivation path if not already set
               addressTypeToUse = addressType || 'segwit-native';
-              if (!currentDerivationPath || currentDerivationPath.trim() === '') {
+              if (
+                !currentDerivationPath ||
+                currentDerivationPath.trim() === ''
+              ) {
                 // Compute derivation path inline
                 const useLegacyPath = isLegacyWallet(keyshare.created_at);
                 const normalizedNetwork =
@@ -1834,7 +1848,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     return <WalletSkeleton />;
   }
   return (
-    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <View style={styles.contentContainer}>
         <View style={styles.walletHeader}>
           <View style={styles.balanceContainer}>
@@ -1845,7 +1859,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 handleBlurred();
               }}
               style={styles.balanceEyeIcon}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}
               accessibilityLabel={isBlurred ? 'Show balance' : 'Hide balance'}
               accessibilityRole="button">
               <Image
@@ -1878,7 +1892,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                         HapticFeedback.light();
                         handleBlurred();
                       }}
-                      android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
+                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                       accessibilityLabel={`Bitcoin balance: ${
                         isBlurred
                           ? 'hidden'
@@ -1919,14 +1933,18 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                               : '********* ₿'
                             : showSats
                             ? (() => {
-                                const balanceNum = parseFloat(balanceBTC || '0');
+                                const balanceNum = parseFloat(
+                                  balanceBTC || '0',
+                                );
                                 if (balanceNum === 0) return '0 sats';
                                 return balanceFormattingEnabled
                                   ? `${formatSats(balanceNum * 1e8)} sats`
                                   : `${Math.floor(balanceNum * 1e8)} sats`;
                               })()
                             : (() => {
-                                const balanceNum = parseFloat(balanceBTC || '0');
+                                const balanceNum = parseFloat(
+                                  balanceBTC || '0',
+                                );
                                 if (balanceNum === 0) return '0 ₿';
                                 return balanceFormattingEnabled
                                   ? `${formatBTC(balanceBTC, {
@@ -1942,7 +1960,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   </Animated.View>
                   {btcRate > 0 && (
                     <Animated.View
-                      style={[styles.balanceRowWithMargin, balanceAnimatedStyle]}
+                      style={[
+                        styles.balanceRowWithMargin,
+                        balanceAnimatedStyle,
+                      ]}
                       pointerEvents="box-none">
                       <Pressable
                         style={styles.balanceTouchable}
@@ -1950,12 +1971,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                           HapticFeedback.light();
                           handleBlurred();
                         }}
-                        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                         accessibilityLabel={`Fiat balance: ${
                           isBlurred
                             ? 'hidden'
                             : (() => {
-                                const fiatValue = balanceFiat === '-' ? '0' : balanceFiat;
+                                const fiatValue =
+                                  balanceFiat === '-' ? '0' : balanceFiat;
                                 return balanceFormattingEnabled
                                   ? `${getCurrencySymbol(
                                       selectedCurrency,
@@ -1983,7 +2005,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                             {isBlurred
                               ? `${getCurrencySymbol(selectedCurrency)} ******`
                               : (() => {
-                                  const fiatValue = balanceFiat === '-' ? '0' : balanceFiat;
+                                  const fiatValue =
+                                    balanceFiat === '-' ? '0' : balanceFiat;
                                   return balanceFormattingEnabled
                                     ? `${getCurrencySymbol(
                                         selectedCurrency,
@@ -2008,7 +2031,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   setShowSats(!showSats);
                 }}
                 style={styles.balanceUnitToggle}
-                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                 accessibilityLabel={`Switch to ${
                   showSats ? 'BTC' : 'Satoshis'
                 }`}
@@ -2057,7 +2080,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 setIsSendModalVisible(true);
               }}
               disabled={isCheckingBalanceForSend}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}
               hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
               accessibilityLabel={
                 isCheckingBalanceForSend ? 'Checking balance' : 'Send Bitcoin'
@@ -2083,7 +2106,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             <Pressable
               style={[styles.actionButton, styles.addressTypeModalButton]}
               onPress={handleScanQRForSend}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}
               hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
               accessibilityLabel="Scan QR code"
               accessibilityHint="Double tap to scan QR code for sending Bitcoin"
@@ -2105,7 +2128,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 HapticFeedback.medium();
                 setIsReceiveModalVisible(true);
               }}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}
               hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
               accessibilityLabel="Receive Bitcoin"
               accessibilityHint="Double tap to view your Bitcoin address and QR code"

@@ -14,11 +14,6 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 import {NativeModules} from 'react-native';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
-import {
-  HeaderPriceButton,
-  HeaderProvider,
-  HeaderNetwork,
-} from '../components/Header';
 import {PSBTLoader} from './PSBTModal';
 import {dbg, HapticFeedback, generateAllOutputDescriptors} from '../utils';
 import {CommonActions, useRoute, RouteProp} from '@react-navigation/native';
@@ -319,37 +314,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     },
     [pendingPSBTParams, addressType, navigation, network],
   );
-  const headerLeft = React.useCallback(
-    () => (
-      <HeaderPriceButton
-        btcPrice={btcPrice}
-        selectedCurrency={selectedCurrency}
-        onCurrencyPress={() => setIsCurrencySelectorVisible(true)}
-      />
-    ),
-    [btcPrice, selectedCurrency],
-  );
-  const headerTitle = React.useCallback(
-    () => <HeaderProvider apiBase={apiBase} />,
-    [apiBase],
-  );
-  const headerRight = React.useCallback(
-    () => (
-      <HeaderNetwork
-        network={network}
-        onPress={() => navigation.navigate('Settings')}
-      />
-    ),
-    [network, navigation],
-  );
-  useEffect(() => {
-    navigation.setOptions({
-      headerLeft,
-      headerTitle,
-      headerRight,
-      headerTitleAlign: 'center',
-    });
-  }, [navigation, headerLeft, headerTitle, headerRight]);
   useEffect(() => {
     loadKeyshareInfo();
   }, [loadKeyshareInfo]);
@@ -444,7 +408,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   resizeMode="contain"
                 />
                 <Text style={styles.watchWalletTitle}>
-                  Watch-Wallet • Export
+                  Watch Wallet Export
                 </Text>
               </View>
               <Animated.Text
@@ -663,7 +627,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 resizeMode="contain"
               />
               <Text style={styles.psbtSectionTitle}>
-                Bold Cosigner • PSBT Signer
+                Bold PSBT Signer
               </Text>
             </View>
             <Animated.Text

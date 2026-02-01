@@ -278,8 +278,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     },
     txIdContainer: {
       backgroundColor:
-        theme.colors.background === '#121212' ||
-        theme.colors.background.includes('12')
+        theme.colors.background !== '#ffffff'
           ? theme.colors.cardBackground // Use cardBackground in dark mode
           : theme.colors.blackOverlay03, // Light mode background
       padding: 12,
@@ -287,8 +286,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       flex: 1,
       borderWidth: 1,
       borderColor:
-        theme.colors.background === '#121212' ||
-        theme.colors.background.includes('12')
+        theme.colors.background !== '#ffffff'
           ? theme.colors.border + '40' // More visible border in dark mode
           : theme.colors.blackOverlay06, // Light mode border
       marginRight: 12,
@@ -336,25 +334,21 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     },
     statusBadgeConfirmed: {
       backgroundColor:
-        theme.colors.background === '#121212' ||
-        theme.colors.background.includes('12')
+        theme.colors.background !== '#ffffff'
           ? (theme.colors.received || '#66BB6A') + '26' // Dark mode with opacity
           : theme.colors.receivedOverlay15, // Light mode
       borderColor:
-        theme.colors.background === '#121212' ||
-        theme.colors.background.includes('12')
+        theme.colors.background !== '#ffffff'
           ? (theme.colors.received || '#66BB6A') + '80' // More visible border in dark mode
           : theme.colors.receivedOverlay40, // Light mode
     },
     statusBadgePending: {
       backgroundColor:
-        theme.colors.background === '#121212' ||
-        theme.colors.background.includes('12')
+        theme.colors.background !== '#ffffff'
           ? theme.colors.bitcoinOrange + '26' // Dark mode with opacity - use bitcoin orange
           : theme.colors.dangerOverlay15, // Light mode
       borderColor:
-        theme.colors.background === '#121212' ||
-        theme.colors.background.includes('12')
+        theme.colors.background !== '#ffffff'
           ? theme.colors.bitcoinOrange + '80' // More visible border in dark mode - use bitcoin orange
           : theme.colors.dangerOverlay40, // Light mode
     },
@@ -375,7 +369,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                 onClose();
               }}
               style={styles.closeButton}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
               <Text style={styles.closeButtonText}>✕</Text>
             </Pressable>
           </View>
@@ -457,7 +451,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                             HapticFeedback.light();
                             Linking.openURL(addressExplorerLink);
                           }}
-                          android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                           <Text style={[styles.txId, styles.clickableText]}>
                             {addrWithAmount.address}
                           </Text>
@@ -492,7 +486,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                     HapticFeedback.light();
                     Linking.openURL(explorerLink);
                   }}
-                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                   <Text style={[styles.txId, styles.clickableText]}>
                     {transaction.txid}
                   </Text>

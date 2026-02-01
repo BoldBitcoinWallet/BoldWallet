@@ -420,8 +420,7 @@ const LoadingScreen = ({onRetry}: any) => {
   });
   // Use simple background color instead of gradient, especially in dark mode
   const isDarkMode =
-    theme.colors.background === '#121212' ||
-    theme.colors.background.includes('12');
+    theme.colors.background !== '#ffffff';
   const backgroundColor = isDarkMode ? '#1A1A1A' : theme.colors.background;
   return (
     <SafeAreaView style={styles.safeArea}>

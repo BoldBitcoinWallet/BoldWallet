@@ -53,6 +53,10 @@ import {fetchDynamicAPIEndpoints, getNostrRelays} from '../utils';
 import FontComparisonScreen from '../components/FontComparisonScreen';
 import {setDebugLoggingEnabled, isDebugLoggingEnabled} from '../App';
 import Toast from 'react-native-toast-message';
+import {useRoute, RouteProp} from '@react-navigation/native';
+
+type SettingsParams = {expandSection?: string};
+
 interface CollapsibleSectionProps {
   title: string;
   children: React.ReactNode;
@@ -651,6 +655,7 @@ const getSectionIcon = (title: string): any => {
   }
 };
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
+  const route = useRoute<RouteProp<{params: SettingsParams}, 'params'>>();
   // Use UserContext for reactive network and API state
   const {setActiveNetwork, setActiveApiProvider, setActiveAddressType, activeAddressType} = useUser();
   const [selectedIcon, setSelectedIcon] = useState<
@@ -722,6 +727,18 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       return newState;
     });
   };
+  // Expand section when opened from header network button (e.g. expandSection: 'advanced' for Network Providers)
+  useEffect(() => {
+    const section = route.params?.expandSection;
+    const validSections = new Set([
+      'theme', 'haptics', 'displayFormat', 'backup', 'advanced', 'nostr',
+      'about', 'legal', 'storage', 'appIcon', 'devicePairing', 'addressType',
+      'fontTesting', 'devDebug',
+    ]);
+    if (section && validSections.has(section)) {
+      setExpandedSections(prev => ({...prev, [section]: true}));
+    }
+  }, [route.params?.expandSection]);
   useEffect(() => {
     setAppVersion(DeviceInfo.getVersion());
     setBuildNumber(DeviceInfo.getBuildNumber());

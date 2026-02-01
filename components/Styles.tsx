@@ -408,6 +408,7 @@ export const createStyles = (theme: Theme): Styles => ({
   },
   walletHeader: {
     padding: 8,
+    paddingTop: 0,
     backgroundColor:
       theme.colors.background === '#ffffff'
         ? theme.colors.primaryOverlay95 // Increased opacity for better contrast in light mode
@@ -952,8 +953,7 @@ export const createStyles = (theme: Theme): Styles => ({
     shadowRadius: 1,
     borderWidth: 1,
     borderColor:
-      theme.colors.background === '#121212' ||
-      theme.colors.background.includes('12')
+      theme.colors.background !== '#ffffff'
         ? theme.colors.whiteOverlay15 // Glassy border in dark mode
         : theme.colors.blackOverlay05, // Original light mode border
   },
@@ -1014,6 +1014,7 @@ export const createStyles = (theme: Theme): Styles => ({
     marginBottom: 0,
     padding: 16,
     paddingTop: 0, // CacheIndicator already has marginBottom: 16
+    paddingBottom: 8, // Tighter bottom so list isn’t too far from safe area
     backgroundColor: theme.colors.background,
     position: 'relative',
     zIndex: 1,
@@ -1547,10 +1548,7 @@ export const createStyles = (theme: Theme): Styles => ({
     paddingVertical: 8,
     minHeight: 32,
     borderRadius: 8,
-    backgroundColor:
-      theme.colors.background === '#ffffff'
-        ? theme.colors.primary + '15'
-        : theme.colors.whiteOverlay10,
+    backgroundColor: theme.colors.primary + '05',
     borderWidth: 1,
     borderColor:
       theme.colors.background === '#ffffff'
