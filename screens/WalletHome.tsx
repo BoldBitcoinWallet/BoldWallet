@@ -10,7 +10,6 @@ import {
   PermissionsAndroid,
   Linking,
   ActivityIndicator,
-  StyleSheet,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -63,20 +62,12 @@ import {
 } from '../components/CacheIndicator';
 import {
   HeaderPriceButton,
-  HeaderNetworkProvider,
+  HeaderProvider,
+  HeaderNetwork,
 } from '../components/Header';
 import LocalCache from '../services/LocalCache';
 const {BBMTLibNativeModule} = NativeModules;
 
-const headerRightContainerStyle = StyleSheet.create({
-  container: {
-    paddingTop: 12,
-    paddingBottom: 12,
-    paddingRight: 16,
-    paddingLeft: 8,
-    justifyContent: 'center',
-  },
-});
 type RouteParams = {
   txId?: string;
   signedPsbt?: string;
@@ -1047,25 +1038,30 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     ),
     [btcPrice, selectedCurrency],
   );
+  const headerTitle = React.useCallback(
+    () => <HeaderProvider apiBase={apiBase} />,
+    [apiBase],
+  );
   const headerRight = React.useCallback(
     () => (
-      <View style={headerRightContainerStyle.container}>
-        <HeaderNetworkProvider network={network} apiBase={apiBase} />
-      </View>
+      <HeaderNetwork
+        network={network}
+        onPress={() => navigation.navigate('Settings')}
+      />
     ),
-    [network, apiBase],
+    [network, navigation],
   );
   useEffect(() => {
     navigation.setOptions({
-      headerRight,
       headerLeft,
-      headerTitle: () => null,
+      headerTitle,
+      headerRight,
       headerTitleAlign: 'center',
       headerStyle: {
         backgroundColor: theme.colors.background,
       },
     });
-  }, [navigation, headerLeft, headerRight, theme.colors.background]);
+  }, [navigation, headerLeft, headerTitle, headerRight, theme.colors.background]);
   const requestCameraPermission = async () => {
     if (Platform.OS === 'android') {
       try {

@@ -25,6 +25,10 @@ interface HeaderNetworkProviderProps {
   onPress?: () => void;
   onSettingsPress?: () => void;
 }
+
+/** Shared width for price (left) and network (right) buttons so they match. */
+export const SIDE_BUTTON_WIDTH = 90;
+
 export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
   network,
   apiBase,
@@ -70,14 +74,16 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
     ? theme.colors.primary
     : theme.colors.secondary;
   const segmentDividerColor = theme.colors.border;
-  const pillHeight = 36;
-  const innerHeight = pillHeight - 2; // content height inside 1px border
+  const pillHeight = 46;
+  const innerHeight = pillHeight - 2;
   const innerRadius = 9;
+  const rowHeight = Math.floor(innerHeight / 2);
   const containerStyle: any = {
     flexDirection: 'row',
     alignItems: 'stretch',
     height: pillHeight,
-    minWidth: showLeftContent ? 100 : 56,
+    minWidth: !showLeftContent && onSettingsPress ? 56 : undefined,
+    alignSelf: 'flex-start',
     borderRadius: 10,
     borderWidth: 1,
     borderColor: containerBorderColor,
@@ -88,47 +94,51 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
     flexShrink: 0,
     justifyContent: 'center',
   };
-  const rowWrapStyle: any = {
-    flexDirection: 'row',
-    alignItems: 'stretch',
+  const stackWrapStyle: any = {
+    flexDirection: 'column',
     height: innerHeight,
-  };
-  const providerSegmentStyle: any = {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    height: innerHeight,
-    paddingLeft: 12,
-    paddingRight: 10,
-    flexShrink: 1,
-    minWidth: 150,
-    backgroundColor: providerBg,
-    borderTopLeftRadius: innerRadius,
-    borderBottomLeftRadius: innerRadius,
-    overflow: 'hidden',
-    ...(hasProvider && !hasNetwork
-      ? {borderTopRightRadius: innerRadius, borderBottomRightRadius: innerRadius}
-      : {}),
-  };
-  const dividerStyle: any = {
-    width: 1,
-    backgroundColor: segmentDividerColor,
-    alignSelf: 'stretch',
   };
   const networkSegmentStyle: any = {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: innerHeight,
-    paddingLeft: 10,
-    paddingRight: 12,
-    flexShrink: 0,
+    height: rowHeight,
+    paddingHorizontal: 10,
     backgroundColor: networkBg,
+    borderTopLeftRadius: innerRadius,
     borderTopRightRadius: innerRadius,
-    borderBottomRightRadius: innerRadius,
     overflow: 'hidden',
     ...(!hasProvider && hasNetwork
-      ? {borderTopLeftRadius: innerRadius, borderBottomLeftRadius: innerRadius}
+      ? {
+          borderBottomLeftRadius: innerRadius,
+          borderBottomRightRadius: innerRadius,
+        }
+      : {}),
+  };
+  const horizontalDividerStyle: any = {
+    height: 1,
+    backgroundColor: segmentDividerColor,
+    alignSelf: 'stretch',
+  };
+  const verticalDividerStyle: any = {
+    width: 1,
+    backgroundColor: segmentDividerColor,
+    alignSelf: 'stretch',
+  };
+  const providerSegmentStyle: any = {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    height: rowHeight,
+    paddingLeft: 10,
+    paddingRight: 10,
+    flexShrink: 1,
+    backgroundColor: providerBg,
+    borderBottomLeftRadius: innerRadius,
+    borderBottomRightRadius: innerRadius,
+    overflow: 'hidden',
+    ...(hasProvider && !hasNetwork
+      ? {borderTopLeftRadius: innerRadius, borderTopRightRadius: innerRadius}
       : {}),
   };
   const segmentIconStyle: any = {
@@ -139,7 +149,6 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
   };
   const providerTextWrapStyle: any = {
     flex: 1,
-    width: '128',
     justifyContent: 'center',
   };
   const providerTextStyle: any = {
@@ -171,7 +180,23 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
     backgroundColor: providerBg,
   };
   const leftContent = showLeftContent ? (
-    <View style={rowWrapStyle}>
+    <View style={stackWrapStyle}>
+      {hasNetwork ? (
+        <View style={networkSegmentStyle}>
+          <Image
+            source={
+              isMainnet
+                ? require('../assets/mainnet-icon.png')
+                : require('../assets/testnet-icon.png')
+            }
+            style={networkIconStyle}
+          />
+          <Text style={networkTextStyle}>{networkLabel}</Text>
+        </View>
+      ) : null}
+      {hasProvider && hasNetwork ? (
+        <View style={horizontalDividerStyle} />
+      ) : null}
       {hasProvider ? (
         <View style={providerSegmentStyle}>
           <Image
@@ -187,20 +212,6 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
               {providerHost}
             </Text>
           </View>
-        </View>
-      ) : null}
-      {hasProvider && hasNetwork ? <View style={dividerStyle} /> : null}
-      {hasNetwork ? (
-        <View style={networkSegmentStyle}>
-          <Image
-            source={
-              isMainnet
-                ? require('../assets/mainnet-icon.png')
-                : require('../assets/testnet-icon.png')
-            }
-            style={networkIconStyle}
-          />
-          <Text style={networkTextStyle}>{networkLabel}</Text>
         </View>
       ) : null}
     </View>
@@ -224,7 +235,7 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
     );
   const rightStrip = onSettingsPress ? (
     <>
-      <View style={dividerStyle} />
+      <View style={verticalDividerStyle} />
       <Pressable
         style={settingsStripStyle}
         onPress={() => {
@@ -250,6 +261,182 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
     </View>
   );
 };
+
+interface HeaderProviderProps {
+  apiBase?: string;
+}
+export const HeaderProvider: React.FC<HeaderProviderProps> = ({apiBase}) => {
+  const {theme} = useTheme();
+  const cleanProviderUrl = apiBase
+    ? apiBase.replace('https://', '').replace('/api', '').replace(/\/+$/, '')
+    : '';
+  const providerHost = cleanProviderUrl.includes('/')
+    ? cleanProviderUrl.split('/')[0]
+    : cleanProviderUrl;
+  const hasProvider = Boolean(providerHost && providerHost !== 'Loading...');
+  if (!hasProvider) {
+    return null;
+  }
+  const isDarkMode = theme.colors.background !== '#FFFFFF';
+  const containerBg = isDarkMode
+    ? theme.colors.cardBackground
+    : theme.colors.blackOverlay06;
+  const containerBorderColor = isDarkMode
+    ? theme.colors.border + '80'
+    : theme.colors.blackOverlay10;
+  const providerTextColor = theme.colors.text;
+  const pillHeight = 36;
+  const innerRadius = 9;
+  const containerStyle: any = {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    flex: 1,
+    alignSelf: 'stretch',
+    height: pillHeight,
+    paddingLeft: 10,
+    paddingRight: 10,
+    borderRadius: innerRadius,
+    borderWidth: 1,
+    borderColor: containerBorderColor,
+    backgroundColor: containerBg,
+    overflow: 'hidden',
+  };
+  const providerTextWrapStyle: any = {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+    overflow: 'hidden',
+  };
+  const providerTextStyle: any = {
+    fontSize: theme.fontSizes?.xs || 10,
+    fontFamily: theme.fontFamilies?.medium,
+    color: providerTextColor,
+  };
+  const providerIconStyle: any = {
+    width: 14,
+    height: 14,
+    marginRight: 5,
+    tintColor: providerTextColor,
+  };
+  const wrapperStyle: any = {
+    paddingTop: 12,
+    paddingBottom: 12,
+    justifyContent: 'center',
+    flex: 1,
+    alignSelf: 'stretch',
+  };
+  return (
+    <View style={wrapperStyle}>
+      <View style={containerStyle}>
+        <Image
+          source={require('../assets/api-icon.png')}
+          style={providerIconStyle}
+        />
+        <View style={providerTextWrapStyle}>
+          <Text
+            style={providerTextStyle}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.3}
+            ellipsizeMode="tail">
+            {providerHost}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+};
+
+interface HeaderNetworkProps {
+  network?: string;
+  onPress?: () => void;
+}
+export const HeaderNetwork: React.FC<HeaderNetworkProps> = ({
+  network,
+  onPress,
+}) => {
+  const {theme} = useTheme();
+  const networkLabel = network
+    ? network === 'mainnet'
+      ? 'MAINNET'
+      : 'TESTNET'
+    : '';
+  if (!networkLabel) {
+    return null;
+  }
+  const isMainnet = networkLabel === 'MAINNET';
+  const isDarkMode =
+    theme.colors.background === '#121212' ||
+    theme.colors.background.includes('12');
+  const containerBorderColor = isDarkMode
+    ? theme.colors.border + '80'
+    : theme.colors.blackOverlay10;
+  const networkBg = isMainnet ? theme.colors.primary : theme.colors.secondary;
+  const pillHeight = 36;
+  const innerRadius = 9;
+  const containerStyle: any = {
+    width: SIDE_BUTTON_WIDTH,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: pillHeight,
+    borderRadius: innerRadius,
+    borderWidth: 1,
+    borderColor: containerBorderColor,
+    backgroundColor: networkBg,
+    overflow: 'hidden',
+  };
+  const textStyle: any = {
+    fontSize: theme.fontSizes?.xs || 10,
+    fontFamily: theme.fontFamilies?.bold,
+    color: theme.colors.textOnPrimary,
+    letterSpacing: 0.3,
+    marginLeft: 4,
+  };
+  const networkIconStyle: any = {
+    width: 14,
+    height: 14,
+    tintColor: theme.colors.textOnPrimary,
+  };
+  const networkWrapperStyle: any = {
+    width: SIDE_BUTTON_WIDTH,
+    paddingTop: 12,
+    paddingBottom: 12,
+    marginRight: 16,
+  };
+  const content = (
+    <View style={containerStyle}>
+      <Image
+        source={
+          isMainnet
+            ? require('../assets/mainnet-icon.png')
+            : require('../assets/testnet-icon.png')
+        }
+        style={networkIconStyle}
+      />
+      <Text style={textStyle}>{networkLabel}</Text>
+    </View>
+  );
+  if (onPress) {
+    return (
+      <Pressable
+        onPress={() => {
+          HapticFeedback.light();
+          onPress();
+        }}
+        android_ripple={{color: 'rgba(0,0,0,0.1)'}}
+        accessible={true}
+        accessibilityRole="button"
+        accessibilityLabel={`Network: ${networkLabel}. Double tap to open settings.`}
+        style={networkWrapperStyle}>
+        {content}
+      </Pressable>
+    );
+  }
+  return <RNView style={networkWrapperStyle}>{content}</RNView>;
+};
+
 export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
   btcPrice,
   selectedCurrency,
@@ -297,9 +484,11 @@ export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
     return null;
   }
   const containerStyle: any = {
+    width: SIDE_BUTTON_WIDTH,
     paddingLeft: 16,
     paddingTop: 12,
     paddingBottom: 12,
+    justifyContent: 'center',
   };
   return (
     <RNView style={containerStyle}>
@@ -328,6 +517,65 @@ export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
     </RNView>
   );
 };
+
+interface HeaderPriceProviderNetworkProps {
+  btcPrice?: string;
+  selectedCurrency?: string;
+  onCurrencyPress?: () => void;
+  network?: string;
+  apiBase?: string;
+  onSettingsPress?: () => void;
+}
+export const HeaderPriceProviderNetwork: React.FC<
+  HeaderPriceProviderNetworkProps
+> = ({
+  btcPrice,
+  selectedCurrency,
+  onCurrencyPress,
+  network,
+  apiBase,
+  onSettingsPress,
+}) => {
+  const barStyle: any = {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    flex: 1,
+    paddingHorizontal: 8,
+  };
+  const leftSlotStyle: any = {
+    width: SIDE_BUTTON_WIDTH,
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
+  };
+  const middleSlotStyle: any = {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  };
+  const rightSlotStyle: any = {
+    width: SIDE_BUTTON_WIDTH,
+    alignItems: 'flex-end',
+    justifyContent: 'flex-start',
+  };
+  return (
+    <View style={barStyle}>
+      <View style={leftSlotStyle}>
+        <HeaderPriceButton
+          btcPrice={btcPrice}
+          selectedCurrency={selectedCurrency}
+          onCurrencyPress={onCurrencyPress}
+        />
+      </View>
+      <View style={middleSlotStyle}>
+        <HeaderProvider apiBase={apiBase} />
+      </View>
+      <View style={rightSlotStyle}>
+        <HeaderNetwork network={network} onPress={onSettingsPress} />
+      </View>
+    </View>
+  );
+};
+
 interface HeaderRightButtonProps {
   navigation: any;
   network?: string;

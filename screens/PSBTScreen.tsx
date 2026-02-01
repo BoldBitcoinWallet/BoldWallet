@@ -16,7 +16,8 @@ import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {
   HeaderPriceButton,
-  HeaderNetworkProvider,
+  HeaderProvider,
+  HeaderNetwork,
 } from '../components/Header';
 import {PSBTLoader} from './PSBTModal';
 import {dbg, HapticFeedback, generateAllOutputDescriptors} from '../utils';
@@ -328,22 +329,27 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     ),
     [btcPrice, selectedCurrency],
   );
+  const headerTitle = React.useCallback(
+    () => <HeaderProvider apiBase={apiBase} />,
+    [apiBase],
+  );
   const headerRight = React.useCallback(
     () => (
-      <View style={styles.headerRightContainer}>
-        <HeaderNetworkProvider network={network} apiBase={apiBase} />
-      </View>
+      <HeaderNetwork
+        network={network}
+        onPress={() => navigation.navigate('Settings')}
+      />
     ),
-    [network, apiBase, styles.headerRightContainer],
+    [network, navigation],
   );
   useEffect(() => {
     navigation.setOptions({
-      headerRight,
       headerLeft,
-      headerTitle: () => null,
+      headerTitle,
+      headerRight,
       headerTitleAlign: 'center',
     });
-  }, [navigation, headerRight, headerLeft]);
+  }, [navigation, headerLeft, headerTitle, headerRight]);
   useEffect(() => {
     loadKeyshareInfo();
   }, [loadKeyshareInfo]);
