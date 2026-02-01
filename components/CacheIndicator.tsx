@@ -172,6 +172,9 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
             resizeMode="contain"
           />
           <Text
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.5}
             style={{
               color: isRefreshing
                 ? theme.colors.textSecondary
@@ -188,6 +191,9 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
         {!isRefreshing && (
           <View style={styles.timeContainer}>
             <Text
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.5}
               style={[
                 createStyles(theme).cacheText,
                 {color: theme.colors.textSecondary},

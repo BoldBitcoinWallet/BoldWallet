@@ -8,9 +8,9 @@ import {
   Alert,
   Platform,
   PermissionsAndroid,
-  Modal,
   Linking,
   ActivityIndicator,
+  DeviceEventEmitter,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -24,7 +24,7 @@ import {
   useRoute,
   RouteProp,
 } from '@react-navigation/native';
-import {SafeAreaView} from 'react-native-safe-area-context';
+import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import {AppState} from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import SendBitcoinModal from './SendBitcoinModal';
@@ -38,10 +38,10 @@ import PSBTModal from './PSBTModal';
 import KeyshareModal from '../components/KeyshareModal';
 import QRCodeModal from '../components/QRCodeModal';
 import LegacyWalletModal from '../components/LegacyWalletModal';
+import AddressTypeModal from '../components/AddressTypeModal';
 import {
   capitalizeWords,
   dbg,
-  shorten,
   presentFiat,
   formatBTC,
   formatSats,
@@ -69,7 +69,6 @@ import {
 import {
   HeaderRightButton,
   HeaderPriceButton,
-  HeaderNetworkProvider,
 } from '../components/Header';
 import LocalCache from '../services/LocalCache';
 const {BBMTLibNativeModule} = NativeModules;
@@ -1048,6 +1047,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   } | null>(null);
   const [isNpubQrVisible, setIsNpubQrVisible] = useState(false);
   const {theme} = useTheme();
+  const insets = useSafeAreaInsets();
   const isDarkMode =
     theme.colors.background === '#121212' ||
     theme.colors.background.includes('12');
@@ -1065,6 +1065,46 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         ? theme.colors.whiteOverlay25 // Match eye and sats button border color in dark mode
         : theme.colors.whiteOverlay15, // Original light mode border
     },
+    lockFab: {
+      position: 'absolute' as const,
+      right: 16 + insets.right,
+      bottom: 16 + insets.bottom,
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      alignItems: 'center' as const,
+      justifyContent: 'center' as const,
+      backgroundColor: isDarkMode
+        ? theme.colors.cardBackground
+        : theme.colors.blackOverlay06,
+      borderWidth: 1,
+      borderColor: isDarkMode
+        ? theme.colors.border + '80'
+        : theme.colors.blackOverlay10,
+      shadowColor: theme.colors.shadowColor || '#000',
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: 0.15,
+      shadowRadius: 4,
+      elevation: 4,
+      zIndex: 1000,
+    },
+    lockFabIcon: {
+      width: 24,
+      height: 24,
+      tintColor: theme.colors.text,
+      opacity: 0.9,
+      resizeMode: 'contain' as const,
+    },
+    lockFabOverlay: {
+      position: 'absolute' as const,
+      right: 0,
+      bottom: 0,
+      left: 0,
+      top: 0,
+      zIndex: 999,
+      elevation: 8,
+      pointerEvents: 'box-none' as const,
+    },
   };
   const headerLeft = React.useCallback(
     () => (
@@ -1076,22 +1116,27 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     ),
     [btcPrice, selectedCurrency],
   );
-  const headerTitle = React.useCallback(
-    () => <HeaderNetworkProvider network={network} apiBase={apiBase} />,
-    [network, apiBase],
-  );
   const headerRight = React.useCallback(
-    () => <HeaderRightButton navigation={navigation} />,
-    [navigation],
+    () => (
+      <HeaderRightButton
+        navigation={navigation}
+        network={network}
+        apiBase={apiBase}
+      />
+    ),
+    [navigation, network, apiBase],
   );
   useEffect(() => {
     navigation.setOptions({
       headerRight,
       headerLeft,
-      headerTitle,
+      headerTitle: () => null,
       headerTitleAlign: 'center',
+      headerStyle: {
+        backgroundColor: theme.colors.background,
+      },
     });
-  }, [navigation, headerRight, headerLeft, headerTitle]);
+  }, [navigation, headerRight, headerLeft, theme.colors.background]);
   const requestCameraPermission = async () => {
     if (Platform.OS === 'android') {
       try {
@@ -2064,13 +2109,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               accessibilityHint="Double tap to view device details and keyshare information"
               accessibilityRole="button">
               <View style={styles.columnCenter}>
-                <Text style={styles.partyLabel}>Device</Text>
                 <View style={styles.rowCenterMarginTop2}>
                   <Image source={keyIcon} style={styles.networkIcon} />
                   <Text
                     style={styles.partyValue}
                     numberOfLines={1}
-                    adjustsFontSizeToFit>
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.5}>
                     {capitalizeWords(party)}
                   </Text>
                 </View>
@@ -2091,12 +2136,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               accessibilityHint="Double tap to sign a Partially Signed Bitcoin Transaction"
               accessibilityRole="button">
               <View style={styles.columnCenter}>
-                <Text
-                  style={styles.partyLabel}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit>
-                  Sign • PSBT
-                </Text>
                 <View style={styles.rowCenterMarginTop2}>
                   <Image
                     source={require('../assets/cosign-icon.png')}
@@ -2105,8 +2144,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   <Text
                     style={styles.partyValue}
                     numberOfLines={1}
-                    adjustsFontSizeToFit>
-                    Sparrow
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.5}>
+                    Sign • PSBT
                   </Text>
                 </View>
               </View>
@@ -2132,12 +2172,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               accessibilityHint="Double tap to change address format"
               accessibilityRole="button">
               <View style={styles.columnCenter}>
-                <Text
-                  style={styles.partyLabel}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit>
-                  Address Type
-                </Text>
                 <View style={styles.rowCenterMarginTop2}>
                   <Image
                     source={getAddressTypeIcon()}
@@ -2147,7 +2181,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   <Text
                     style={styles.partyValue}
                     numberOfLines={1}
-                    adjustsFontSizeToFit>
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.5}>
                     {addressType === 'segwit-compatible'
                       ? 'Nested SegWit'
                       : addressType === 'segwit-native'
@@ -2487,128 +2522,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         title="Scan Send Bitcoin QR"
         subtitle="Point camera to Sending Device QR"
       />
-      <Modal
+      <AddressTypeModal
         visible={isAddressTypeModalVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setIsAddressTypeModalVisible(false)}>
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => {
-            HapticFeedback.light();
-            setIsAddressTypeModalVisible(false);
-          }}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeaderRow}>
-              <Image
-                source={require('../assets/bitcoin-icon.png')}
-                style={styles.modalHeaderIcon}
-              />
-              <Text style={styles.modalHeaderTitle}>Select Address Format</Text>
-            </View>
-            <Pressable
-              style={[
-                styles.addressTypeButton,
-                addressType === 'legacy' && styles.addressTypeButtonSelected,
-              ]}
-              onPress={() => {
-                HapticFeedback.selection();
-                handleAddressTypeChange('legacy');
-              }}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
-              <Image
-                source={require('../assets/bricks-icon.png')}
-                style={styles.modalAddressTypeIcon}
-                resizeMode="contain"
-              />
-              <View style={styles.addressTypeContent}>
-                <Text style={styles.addressTypeLabel} numberOfLines={1}>
-                  Legacy (P2PKH)
-                </Text>
-                <Text style={styles.addressTypeValue}>
-                  {shorten(legacyAddress, 6)}
-                </Text>
-              </View>
-              {addressType === 'legacy' && (
-                <Image
-                  source={require('../assets/check-icon.png')}
-                  style={styles.modalOptionCheckIcon}
-                  resizeMode="contain"
-                />
-              )}
-            </Pressable>
-            <Pressable
-              style={[
-                styles.addressTypeButton,
-                addressType === 'segwit-native' &&
-                  styles.addressTypeButtonSelected,
-              ]}
-              onPress={() => {
-                HapticFeedback.selection();
-                handleAddressTypeChange('segwit-native');
-              }}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
-              <Image
-                source={require('../assets/dna-icon.png')}
-                style={styles.modalAddressTypeIcon}
-                resizeMode="contain"
-              />
-              <View style={styles.addressTypeContent}>
-                <Text style={styles.addressTypeLabel} numberOfLines={1}>
-                  Native SegWit (Bech32)
-                </Text>
-                <View style={styles.addressTypeLabelRow}>
-                  <Text style={styles.addressTypeValue} numberOfLines={1}>
-                    {shorten(segwitAddress, 6)}
-                  </Text>
-                  <View style={styles.recommendBadge}>
-                    <Text style={styles.recommendBadgeText}>Recommended</Text>
-                  </View>
-                </View>
-              </View>
-              {addressType === 'segwit-native' && (
-                <Image
-                  source={require('../assets/check-icon.png')}
-                  style={styles.modalOptionCheckIcon}
-                  resizeMode="contain"
-                />
-              )}
-            </Pressable>
-            <Pressable
-              style={[
-                styles.addressTypeButton,
-                addressType === 'segwit-compatible' &&
-                  styles.addressTypeButtonSelected,
-              ]}
-              onPress={() => {
-                HapticFeedback.selection();
-                handleAddressTypeChange('segwit-compatible');
-              }}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
-              <Image
-                source={require('../assets/recycle-icon.png')}
-                style={styles.modalAddressTypeIcon}
-                resizeMode="contain"
-              />
-              <View style={styles.addressTypeContent}>
-                <Text style={styles.addressTypeLabel} numberOfLines={1}>
-                  Nested SegWit (P2SH)
-                </Text>
-                <Text style={styles.addressTypeValue}>
-                  {shorten(segwitCompatibleAddress, 6)}
-                </Text>
-              </View>
-              {addressType === 'segwit-compatible' && (
-                <Image
-                  source={require('../assets/check-icon.png')}
-                  style={styles.modalOptionCheckIcon}
-                  resizeMode="contain"
-                />
-              )}
-            </Pressable>
-          </View>
-        </Pressable>
-      </Modal>
+        onClose={() => setIsAddressTypeModalVisible(false)}
+        addressType={addressType}
+        legacyAddress={legacyAddress}
+        segwitAddress={segwitAddress}
+        segwitCompatibleAddress={segwitCompatibleAddress}
+        onSelectAddressType={handleAddressTypeChange}
+      />
       <LegacyWalletModal
         visible={isLegacyWalletModalVisible}
         onCancel={() => setIsLegacyWalletModalVisible(false)}
@@ -2736,6 +2658,25 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         value={keyshareInfo?.npub || ''}
         showShareButton={false}
       />
+      {/* Lock wallet FAB - bottom right (wrapper ensures it stays on top) */}
+      <View style={styles.lockFabOverlay}>
+        <Pressable
+          style={styles.lockFab}
+          onPress={() => {
+            HapticFeedback.light();
+            DeviceEventEmitter.emit('app:reload');
+          }}
+          android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
+          accessible={true}
+          accessibilityRole="button"
+          accessibilityLabel="Lock wallet"
+          accessibilityHint="Double tap to lock the wallet">
+          <Image
+            source={require('../assets/locker-icon.png')}
+            style={styles.lockFabIcon}
+          />
+        </Pressable>
+      </View>
     </SafeAreaView>
   );
 };

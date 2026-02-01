@@ -8,12 +8,11 @@ import {
 } from 'react-native';
 import {Image} from 'react-native';
 import {View} from 'react-native';
-import {DeviceEventEmitter} from 'react-native';
 import {useRoute} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
-import {HapticFeedback, presentFiat} from '../utils';
+import {HapticFeedback, presentFiat, getCurrencySymbol} from '../utils';
 import type {NativeStackHeaderProps} from '@react-navigation/native-stack';
 interface HeaderPriceButtonProps {
   btcPrice?: string;
@@ -23,96 +22,128 @@ interface HeaderPriceButtonProps {
 interface HeaderNetworkProviderProps {
   network?: string;
   apiBase?: string;
+  onPress?: () => void;
 }
 export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
   network,
   apiBase,
+  onPress,
 }) => {
   const {theme} = useTheme();
   const isDarkMode = theme.colors.background !== '#ffffff';
-  // Single bordered container for both network and provider - 2 lines layout
+  const cleanProviderUrl = apiBase
+    ? apiBase.replace('https://', '').replace('/api', '').replace(/\/+$/, '')
+    : 'Loading...';
+  const networkLabel = network
+    ? network === 'mainnet'
+      ? 'MAINNET'
+      : 'TESTNET'
+    : '';
+  const hasProvider = Boolean(cleanProviderUrl);
+  const hasNetwork = Boolean(networkLabel);
+  if (!hasProvider && !hasNetwork) {
+    return null;
+  }
+  const pillBorder = isDarkMode
+    ? theme.colors.border + '80'
+    : theme.colors.blackOverlay10;
+  // Part 1 (top 50%): distinct background – clearly different from part 2
+  const part1Bg = isDarkMode
+    ? theme.colors.whiteOverlay15
+    : theme.colors.blackOverlay10;
+  // Part 2 (bottom 50%)
+  const part2Bg = isDarkMode
+    ? theme.colors.whiteOverlay08
+    : theme.colors.blackOverlay05;
   const containerStyle: any = {
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    gap: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 0,
+    height: 36,
+    minWidth: 160,
+    maxWidth: 280,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: isDarkMode
-      ? theme.colors.border + '80'
-      : theme.colors.blackOverlay10,
-    backgroundColor: isDarkMode
-      ? theme.colors.cardBackground
-      : theme.colors.blackOverlay06,
-    height: 36, // Match price button and lock button height
-    maxWidth: 140, // Reduced to prevent overlap with left/right buttons
-    flexShrink: 1, // Allow shrinking if needed
-    flexGrow: 0, // Don't grow beyond maxWidth
-    alignSelf: 'center', // Center within parent
-    position: 'relative', // Enable absolute positioning for children
-    overflow: 'hidden', // Clip badge to container border radius
+    borderColor: pillBorder,
+    overflow: 'hidden',
+  };
+  const innerColumnStyle: any = {
+    flex: 1,
+    flexDirection: 'column',
+    height: 36,
+  };
+  // Each part exactly 18px (50%); content centered vertical + horizontal
+  const partBase: any = {
+    height: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  };
+  const part1Style: any = { ...partBase, backgroundColor: part1Bg };
+  const part2Style: any = { ...partBase, backgroundColor: part2Bg };
+  const providerTextStyle: any = {
+    fontSize: theme.fontSizes?.xs || 9,
+    fontFamily: theme.fontFamilies?.medium,
+    color: theme.colors.textSecondary,
+    flexShrink: 1,
+    maxWidth: 264,
+    textAlign: 'center',
   };
   const networkBadgeStyle: any = {
-    position: 'absolute',
-    top: 0, // Align with container top
-    left: 0, // Align with container left
-    right: 0, // Align with container right
-    backgroundColor: isDarkMode
-      ? theme.colors.border + '80'
-      : theme.colors.blackOverlay05,
-    paddingHorizontal: 6,
-    height: 17,
-    justifyContent: 'center',
+    flexDirection: 'row',
     alignItems: 'center',
-    flexShrink: 0,
+    justifyContent: 'center',
+    gap: 3,
   };
   const networkBadgeTextStyle: any = {
     fontSize: theme.fontSizes?.xs || 8,
     fontFamily: theme.fontFamilies?.bold,
-    color:
-      theme.colors.background === '#ffffff'
-        ? theme.colors.secondary
-        : theme.colors.text,
-    letterSpacing: 0.2,
-    lineHeight: 10,
-  };
-  const providerTextStyle: any = {
-    fontSize: theme.fontSizes?.xs || 9,
     color: theme.colors.textSecondary,
-    flexShrink: 1, // Allow text to shrink
-    textAlign: 'center',
-    maxWidth: 120, // Limit provider text width to prevent overflow
-    top: '50%',
-    marginTop: 2,
+    letterSpacing: 0.2,
   };
-  const cleanProviderUrl = apiBase
-    ? apiBase.replace('https://', '').replace('/api', '').replace(/\/+$/, '')
-    : 'Loading...';
-  if (!network && !apiBase) {
-    return null;
-  }
-  return (
-    <View style={containerStyle}>
-      {network && (
-        <View style={networkBadgeStyle}>
-          <Text style={networkBadgeTextStyle}>
-            {network === 'mainnet' ? 'MAINNET' : 'TESTNET'}
+  const dotStyle: any = {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: theme.colors.textSecondary,
+  };
+  const content = (
+    <View style={innerColumnStyle}>
+      <View style={part1Style}>
+        {hasNetwork ? (
+          <View style={networkBadgeStyle}>
+            <View style={dotStyle} />
+            <Text style={networkBadgeTextStyle}>{networkLabel}</Text>
+          </View>
+        ) : null}
+      </View>
+      <View style={part2Style}>
+        {hasProvider ? (
+          <Text
+            style={providerTextStyle}
+            numberOfLines={1}
+            ellipsizeMode="middle">
+            {cleanProviderUrl}
           </Text>
-        </View>
-      )}
-      {apiBase && (
-        <Text
-          style={providerTextStyle}
-          adjustsFontSizeToFit={true}
-          numberOfLines={1}
-          minimumFontScale={0.7}>
-          {cleanProviderUrl}
-        </Text>
-      )}
+        ) : null}
+      </View>
     </View>
   );
+  if (onPress) {
+    return (
+      <Pressable
+        style={containerStyle}
+        onPress={() => {
+          HapticFeedback.light();
+          onPress();
+        }}
+        android_ripple={{ color: 'rgba(0,0,0,0.08)' }}
+        accessible={true}
+        accessibilityRole="button"
+        accessibilityLabel={`Provider: ${cleanProviderUrl}. Network: ${networkLabel}. Double tap to open settings.`}>
+        {content}
+      </Pressable>
+    );
+  }
+  return <View style={containerStyle}>{content}</View>;
 };
 export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
   btcPrice,
@@ -157,16 +188,11 @@ export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
     color: theme.colors.text,
     lineHeight: 14,
   };
-  const headerCurrencyBadgeStyle: any = {
+  const headerCurrencySymbolStyle: any = {
     fontSize: theme.fontSizes?.xs || 10,
     fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.textSecondary,
-    lineHeight: 12,
-  };
-  const priceTextContainerStyle: any = {
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-    justifyContent: 'center',
+    lineHeight: 14,
   };
   if (btcPrice === undefined || !onCurrencyPress) {
     return null;
@@ -176,6 +202,9 @@ export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
     paddingTop: 12,
     paddingBottom: 12,
   };
+  const currencySymbol = selectedCurrency
+    ? getCurrencySymbol(selectedCurrency)
+    : '';
   return (
     <RNView style={containerStyle}>
       <Pressable
@@ -195,29 +224,22 @@ export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
           source={require('../assets/bitcoin-logo.png')}
           style={headerBtcLogoStyle}
         />
-        <View style={priceTextContainerStyle}>
-          <Text style={headerBtcPriceStyle}>
-            {btcPrice ? presentFiat(btcPrice) : '-'}
-          </Text>
-          {selectedCurrency && (
-            <Text style={headerCurrencyBadgeStyle}>{selectedCurrency}</Text>
-          )}
-        </View>
+        <Text style={headerBtcPriceStyle}>
+          {btcPrice ? presentFiat(btcPrice) : '-'} {currencySymbol}
+        </Text>
       </Pressable>
     </RNView>
   );
 };
 interface HeaderRightButtonProps {
   navigation: any;
-  btcPrice?: string;
-  selectedCurrency?: string;
-  onCurrencyPress?: () => void;
+  network?: string;
+  apiBase?: string;
 }
 export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
   navigation,
-  btcPrice,
-  selectedCurrency,
-  onCurrencyPress,
+  network,
+  apiBase,
 }) => {
   const {theme} = useTheme();
   const styles = createStyles(theme);
@@ -225,66 +247,12 @@ export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: 16,
+    gap: 12,
     paddingTop: 12,
     paddingBottom: 12,
     paddingRight: 16,
     paddingLeft: 16,
     minHeight: 60,
-  };
-  // Keep the price pill visually symmetric with the right-side buttons cluster.
-  // Each right button is 36px wide and there is a 16px gap between them:
-  // cluster width = 36 * 2 + 16 = 88. Add a small buffer for internal padding.
-  const settingsBtnWidth = Number(styles.settingsButton?.width ?? 36);
-  const buttonsGap = Number(headerButtonsContainer.gap ?? 16);
-  const rightClusterWidth = settingsBtnWidth * 2 + buttonsGap;
-  const priceMinWidth = rightClusterWidth + 8; // ~96px target footprint
-  const priceButtonStyle: any = {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor:
-      theme.colors.background === '#ffffff'
-        ? theme.colors.blackOverlay06 // Light mode background
-        : theme.colors.cardBackground, // Dark mode background
-    borderWidth: 4,
-    borderColor:
-      theme.colors.background === '#ffffff'
-        ? theme.colors.blackOverlay10 // Light mode border
-        : theme.colors.border + '80', // Dark mode border
-    paddingHorizontal: 16,
-    paddingVertical: 0,
-    borderRadius: 10,
-    height: 36,
-    minWidth: priceMinWidth,
-    maxWidth: 140, // avoid over-expansion when currency codes are long
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: Platform.OS === 'android' ? 0 : 1,
-  };
-  const headerBtcLogoStyle: any = {
-    width: 20,
-    height: 20,
-    resizeMode: 'contain',
-    // No tint - keep Bitcoin logo as is in both light and dark mode
-  };
-  const headerBtcPriceStyle: any = {
-    fontSize: theme.fontSizes?.sm || 12,
-    fontFamily: theme.fontFamilies?.bold,
-    color: theme.colors.text,
-    lineHeight: 14,
-  };
-  const headerCurrencyBadgeStyle: any = {
-    fontSize: theme.fontSizes?.xs || 10,
-    fontFamily: theme.fontFamilies?.bold,
-    color: theme.colors.textSecondary,
-    lineHeight: 12,
-  };
-  const priceTextContainerStyle: any = {
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-    justifyContent: 'center',
   };
   const isDarkMode =
     theme.colors.background === '#121212' ||
@@ -301,57 +269,23 @@ export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
   };
   return (
     <RNView style={headerButtonsContainer}>
-      {btcPrice !== undefined && onCurrencyPress && (
-        <Pressable
-          style={priceButtonStyle}
-          onPress={() => {
-            HapticFeedback.light();
-            onCurrencyPress();
-          }}
-          android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
-          accessible={true}
-          accessibilityRole="button"
-          accessibilityLabel={`Bitcoin price: ${
-            btcPrice ? presentFiat(btcPrice) : '-'
-          } ${selectedCurrency || ''}`}
-          accessibilityHint="Double tap to change currency">
-          <Image
-            source={require('../assets/bitcoin-logo.png')}
-            style={headerBtcLogoStyle}
-          />
-          <View style={priceTextContainerStyle}>
-            <Text style={headerBtcPriceStyle}>
-              {btcPrice ? presentFiat(btcPrice) : '-'}
-            </Text>
-            {selectedCurrency && (
-              <Text style={headerCurrencyBadgeStyle}>{selectedCurrency}</Text>
-            )}
-          </View>
-        </Pressable>
-      )}
-      <Pressable
-        style={settingsButtonStyle}
-        onPress={() => {
-          HapticFeedback.light();
-          DeviceEventEmitter.emit('app:reload');
-        }}
-        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
-        accessible={true}
-        accessibilityRole="button"
-        accessibilityLabel="Lock wallet"
-        accessibilityHint="Double tap to lock the wallet">
-        <Image
-          source={require('../assets/locker-icon.png')}
-          style={styles.settingsLogo}
+      {(network || apiBase) && (
+        <HeaderNetworkProvider
+          network={network}
+          apiBase={apiBase}
+          onPress={() => navigation.navigate('Settings')}
         />
-      </Pressable>
+      )}
       <Pressable
         style={settingsButtonStyle}
         onPress={() => {
           HapticFeedback.light();
           navigation.navigate('Settings');
         }}
-        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
+        accessible={true}
+        accessibilityRole="button"
+        accessibilityLabel="Settings">
         <Image
           source={require('../assets/settings-icon.png')}
           style={styles.settingsLogo}
