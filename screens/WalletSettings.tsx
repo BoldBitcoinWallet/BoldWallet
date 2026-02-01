@@ -657,7 +657,14 @@ const getSectionIcon = (title: string): any => {
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const route = useRoute<RouteProp<{params: SettingsParams}, 'params'>>();
   // Use UserContext for reactive network and API state
-  const {setActiveNetwork, setActiveApiProvider, setActiveAddressType, activeAddressType} = useUser();
+  const {
+    setActiveNetwork,
+    setActiveApiProvider,
+    setActiveAddressType,
+    activeAddressType,
+    balanceFormattingEnabled,
+    setBalanceFormattingEnabled,
+  } = useUser();
   const [selectedIcon, setSelectedIcon] = useState<
     'default' | 'alternative' | 'loading'
   >('loading');
@@ -678,8 +685,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     'terms',
   );
   const [hapticsEnabled, setHapticsEnabledState] = useState(true);
-  const [balanceFormattingEnabled, setBalanceFormattingEnabledState] =
-    useState(false); // Default to raw numbers (not formatted)
   const [isApiInfoVisible, setIsApiInfoVisible] = useState(false);
   const [debugLoggingEnabled, setDebugLoggingEnabledState] = useState(false);
   const [devDebugEnabled, setDevDebugEnabled] = useState(false);
@@ -746,20 +751,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     LocalCache.usageSize().then(size => {
       setUsageSize(size);
     });
-    // Load balance formatting preference (default to disabled - raw numbers)
-    EncryptedStorage.getItem('balance_formatting_enabled')
-      .then(enabled => {
-        if (enabled === null || enabled === undefined) {
-          // Default to false (raw numbers, not formatted)
-          setBalanceFormattingEnabledState(false);
-        } else {
-          setBalanceFormattingEnabledState(enabled === 'true');
-        }
-      })
-      .catch(error => {
-        dbg('Error loading balance_formatting_enabled from storage:', error);
-        setBalanceFormattingEnabledState(false);
-      });
     // Initialize debug logging state from module-level ref
     setDebugLoggingEnabledState(isDebugLoggingEnabled());
     // Load dev debug enabled preference
@@ -1068,17 +1059,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     setHapticsEnabledState(value);
     setHapticsEnabled(value);
   };
-  const handleToggleBalanceFormatting = async (value: boolean) => {
+  const handleToggleBalanceFormatting = (value: boolean) => {
     HapticFeedback.light();
-    setBalanceFormattingEnabledState(value);
-    try {
-      await EncryptedStorage.setItem(
-        'balance_formatting_enabled',
-        value.toString(),
-      );
-    } catch (error) {
-      dbg('Error saving balance_formatting_enabled:', error);
-    }
+    setBalanceFormattingEnabled(value);
   };
   const handleToggleDebugLogging = (value: boolean) => {
     HapticFeedback.light();

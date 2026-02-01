@@ -9,8 +9,9 @@ import {
   Linking,
 } from 'react-native';
 import {useTheme} from '../theme';
+import {useUser} from '../context/UserContext';
 import moment from 'moment';
-import {HapticFeedback, dbg} from '../utils';
+import {HapticFeedback, dbg, formatBitcoinDisplay} from '../utils';
 interface TransactionDetailsModalProps {
   visible: boolean;
   onClose: () => void;
@@ -45,6 +46,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   isBlurred = false,
 }) => {
   const {theme} = useTheme();
+  const {showSats, balanceFormattingEnabled} = useUser();
   const [currentBlockHeight, setCurrentBlockHeight] = React.useState<
     number | null
   >(null);
@@ -87,14 +89,6 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   if (!transaction || !status || !amounts) {
     return null;
   }
-  const formatBtcAmount = (amount: number) => {
-    if (typeof amount !== 'number' || !Number.isFinite(amount)) {
-      return '0.00000000';
-    }
-    const formatted = amount.toFixed(8);
-    const [whole, decimal] = formatted.split('.');
-    return `${Number(whole).toLocaleString()}.${decimal}`;
-  };
   const getFiatAmount = (btcAmount: number) => {
     if (!btcRate || btcRate <= 0) {
       return '0.00';
@@ -417,12 +411,15 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
               )}
               {isSent &&
                 hasValidSent &&
-                renderDetailRow('Sent', `${formatBtcAmount(amounts.sent)} BTC`)}
+                renderDetailRow(
+                  'Sent',
+                  formatBitcoinDisplay(amounts.sent, {inSats: showSats, formatted: balanceFormattingEnabled}),
+                )}
               {!isSent &&
                 hasValidReceived &&
                 renderDetailRow(
                   'Received',
-                  `${formatBtcAmount(amounts.received)} BTC`,
+                  formatBitcoinDisplay(amounts.received, {inSats: showSats, formatted: balanceFormattingEnabled}),
                 )}
               {hasValidAmount &&
                 renderDetailRow(
@@ -462,8 +459,10 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                           <Text style={styles.addressAmount}>
                             {isBlurred
                               ? '***'
-                              : formatBtcAmount(addrWithAmount.amount)}{' '}
-                            BTC
+                              : formatBitcoinDisplay(addrWithAmount.amount, {
+                                  inSats: showSats,
+                                  formatted: balanceFormattingEnabled,
+                                })}
                           </Text>
                           {!isBlurred && btcRate > 0 && (
                             <Text style={styles.addressAmountFiat}>
@@ -505,9 +504,10 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                 Number.isFinite(transaction.fee) &&
                 renderDetailRow(
                   'Fee',
-                  `${formatBtcAmount(
-                    transaction.fee / 1e8,
-                  )} BTC (${getCurrencySymbol(selectedCurrency)}${getFiatAmount(
+                  `${formatBitcoinDisplay(transaction.fee / 1e8, {
+                    inSats: showSats,
+                    formatted: balanceFormattingEnabled,
+                  })} (${getCurrencySymbol(selectedCurrency)}${getFiatAmount(
                     transaction.fee / 1e8,
                   )})`,
                 )}

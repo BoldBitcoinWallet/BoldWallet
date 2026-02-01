@@ -18,8 +18,9 @@ import QRScanner from '../components/QRScanner';
 import BarcodeZxingScan from 'rn-barcode-zxing-scan';
 // @ts-ignore - bc-ur types (Buffer polyfill is in polyfills.js)
 import {URDecoder} from '@ngraveio/bc-ur';
-import {dbg, HapticFeedback} from '../utils';
+import {dbg, HapticFeedback, formatBitcoinDisplay} from '../utils';
 import {useTheme} from '../theme';
+import {useUser} from '../context/UserContext';
 const {BBMTLibNativeModule} = NativeModules;
 // PSBT details structure (will be populated when parsing is implemented)
 interface PSBTDetails {
@@ -63,6 +64,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
   middleButton,
 }) => {
   const {theme} = useTheme();
+  const {showSats, balanceFormattingEnabled} = useUser();
   const [psbtBase64, setPsbtBase64] = useState<string | null>(null);
   const [psbtDetails, setPsbtDetails] = useState<PSBTDetails | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -693,15 +695,9 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
       onSign(psbtBase64);
     }
   }, [psbtBase64, onSign]);
-  // Format satoshis to BTC string (compact)
-  const formatBTC = (sats: number): string => {
-    const btc = sats / 100000000;
-    // Show fewer decimals for readability, but keep precision for small amounts
-    if (btc >= 0.01) {
-      return btc.toFixed(6) + ' BTC';
-    }
-    return btc.toFixed(8) + ' BTC';
-  };
+  // Follow global BTC/sats toggle: ₿ for sats (< 1 BTC) or X.XXXX BTC
+  const formatBtcDisplay = (sats: number): string =>
+    formatBitcoinDisplay(sats / 1e8, {inSats: showSats, formatted: balanceFormattingEnabled});
   const styles = createStyles(theme);
   // Handler for QR scan results (wraps processScannedData for new QRScanner component)
   const handleQRScan = useCallback(
@@ -813,7 +809,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                         </View>
                         <View style={styles.flowAmount}>
                           <Text style={styles.flowAmountBTC}>
-                            {formatBTC(input.amount)}
+                            {formatBtcDisplay(input.amount)}
                           </Text>
                         </View>
                       </View>
@@ -872,7 +868,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                         </View>
                         <View style={styles.flowAmount}>
                           <Text style={styles.flowAmountBTC}>
-                            {formatBTC(output.amount)}
+                            {formatBtcDisplay(output.amount)}
                           </Text>
                         </View>
                       </View>
@@ -899,7 +895,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                       </View>
                       <View style={styles.flowAmount}>
                         <Text style={styles.flowAmountBTC}>
-                          {formatBTC(psbtDetails.fee)}
+                          {formatBtcDisplay(psbtDetails.fee)}
                         </Text>
                       </View>
                     </View>
@@ -915,7 +911,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                   {psbtDetails.inputs.length !== 1 ? 's' : ''} →{' '}
                   {psbtDetails.outputs.length} output
                   {psbtDetails.outputs.length !== 1 ? 's' : ''} •{' '}
-                  {formatBTC(psbtDetails.totalOutput + psbtDetails.fee)} total
+                  {formatBtcDisplay(psbtDetails.totalOutput + psbtDetails.fee)} total
                 </Text>
                 {psbtDetails.derivePaths.length > 0 && (
                   <Text style={styles.summaryBarPath} numberOfLines={1}>

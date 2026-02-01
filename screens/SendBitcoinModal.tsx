@@ -21,8 +21,14 @@ import QRScanner from '../components/QRScanner';
 import Clipboard from '@react-native-clipboard/clipboard';
 import debounce from 'lodash/debounce';
 import Big from 'big.js';
-import {dbg, HapticFeedback, decodeSendBitcoinQR} from '../utils';
+import {
+  dbg,
+  HapticFeedback,
+  decodeSendBitcoinQR,
+  formatBitcoinDisplay,
+} from '../utils';
 import {useTheme} from '../theme';
+import {useUser} from '../context/UserContext';
 import LocalCache from '../services/LocalCache';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {validate as validateBitcoinAddress} from 'bitcoin-address-validation';
@@ -62,6 +68,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   const [_activeInput, setActiveInput] = useState<'btc' | 'usd' | null>(null);
   const [feeStrategy, setFeeStrategy] = useState('1hr');
   const {theme} = useTheme();
+  const {showSats, balanceFormattingEnabled} = useUser();
   const styles = StyleSheet.create({
     feeStrategyContainer: {
       marginBottom: 8,
@@ -619,9 +626,10 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
           `Address and amount have been filled from the QR code.\n\nAddress: ${decoded.toAddress.substring(
             0,
             10,
-          )}...\nAmount: ${amountBTC.toFixed(
-            8,
-          )} BTC\n\nPlease review and confirm.`,
+          )}...\nAmount: ${formatBitcoinDisplay(amountBTC.toNumber(), {
+            inSats: showSats,
+            formatted: balanceFormattingEnabled,
+          })}\n\nPlease review and confirm.`,
         );
       } else {
         // It's a regular Bitcoin address - just set the address
@@ -635,7 +643,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
         }
       }
     },
-    [btcToFiatRate],
+    [btcToFiatRate, showSats, balanceFormattingEnabled],
   );
   const handleFeeStrategyChange = (value: string) => {
     HapticFeedback.selection();
@@ -711,7 +719,10 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
             </View>
             <View style={styles.feeAmountContainer}>
               <Text style={styles.feeAmount}>
-                {estimatedFee.div(E8).toFixed(8)} BTC
+                {formatBitcoinDisplay(estimatedFee.div(E8).toNumber(), {
+                  inSats: showSats,
+                  formatted: balanceFormattingEnabled,
+                })}
               </Text>
               <Text style={styles.feeAmountUsd}>
                 ({selectedCurrency}{' '}
@@ -802,7 +813,10 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                         Available Balance
                       </Text>
                       <Text style={styles.balanceCardBtc}>
-                        {walletBalance.toFixed(8)} BTC
+                        {formatBitcoinDisplay(walletBalance.toNumber(), {
+                          inSats: showSats,
+                          formatted: balanceFormattingEnabled,
+                        })}
                       </Text>
                       <Text style={styles.balanceCardFiat}>
                         ~{selectedCurrency}{' '}
@@ -835,7 +849,11 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     {amountExceedsBalance && (
                       <Text style={styles.errorText}>
                         Amount exceeds wallet balance (
-                        {walletBalance.toFixed(8)} BTC)
+                        {formatBitcoinDisplay(walletBalance.toNumber(), {
+                          inSats: showSats,
+                          formatted: balanceFormattingEnabled,
+                        })}
+                        )
                       </Text>
                     )}
                   </View>

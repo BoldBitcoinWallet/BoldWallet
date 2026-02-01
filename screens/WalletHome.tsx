@@ -37,8 +37,7 @@ import LegacyWalletModal from '../components/LegacyWalletModal';
 import {
   dbg,
   presentFiat,
-  formatBTC,
-  formatSats,
+  formatBitcoinDisplay,
   getCurrencySymbol,
   HapticFeedback,
   getKeyshareLabel,
@@ -96,9 +95,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [balanceFiat, setBalanceFiat] = useState<string>('0');
   const [_party, setParty] = useState<string>('');
   const [isBlurred, setIsBlurred] = useState<boolean>(false);
-  const [showSats, setShowSats] = useState<boolean>(false); // Toggle between BTC and Satoshis
-  const [balanceFormattingEnabled, setBalanceFormattingEnabled] =
-    useState<boolean>(false); // Default to raw numbers (not formatted)
   const [isReceiveModalVisible, setIsReceiveModalVisible] = useState(false);
   const [isSignedPSBTModalVisible, setIsSignedPSBTModalVisible] =
     useState(false);
@@ -168,6 +164,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     legacyTestnetAddress: uxLegacyTestnet,
     segwitNativeTestnetAddress: uxSegwitTestnet,
     segwitCompatibleTestnetAddress: uxSegwitCompTestnet,
+    showSats,
+    setShowSats: setShowSatsGlobal,
+    balanceFormattingEnabled,
   } = useUser();
   // Keep local state in sync with UserContext
   useEffect(() => {
@@ -1118,37 +1117,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     LocalCache.getItem('balanceHidden').then(hidden => {
       setIsBlurred(hidden === 'true');
     });
-    // Load balance formatting preference (default to disabled - raw numbers)
-    EncryptedStorage.getItem('balance_formatting_enabled')
-      .then(enabled => {
-        if (enabled === null || enabled === undefined) {
-          setBalanceFormattingEnabled(false);
-        } else {
-          setBalanceFormattingEnabled(enabled === 'true');
-        }
-      })
-      .catch(error => {
-        dbg('Error loading balance_formatting_enabled:', error);
-        setBalanceFormattingEnabled(false);
-      });
   });
   // Simplified focus effect - just refresh data when screen comes into focus
   useFocusEffect(
     useCallback(() => {
       dbg('=== Home screen focused, refreshing data');
-      // Reload balance formatting preference when returning from settings
-      EncryptedStorage.getItem('balance_formatting_enabled')
-        .then(enabled => {
-          if (enabled === null || enabled === undefined) {
-            setBalanceFormattingEnabled(false);
-          } else {
-            setBalanceFormattingEnabled(enabled === 'true');
-          }
-        })
-        .catch(error => {
-          dbg('Error loading balance_formatting_enabled:', error);
-          setBalanceFormattingEnabled(false);
-        });
       // Simple refresh - the NetworkContext should have the correct state
       if (network && apiBase && !isReinitInProgressRef.current) {
         dbg('Focus - Refreshing address and data for network:', network);
@@ -1896,21 +1869,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                       accessibilityLabel={`Bitcoin balance: ${
                         isBlurred
                           ? 'hidden'
-                          : showSats
-                          ? (() => {
-                              const balanceNum = parseFloat(balanceBTC || '0');
-                              if (balanceNum === 0) return '0 sats';
-                              return balanceFormattingEnabled
-                                ? `${formatSats(balanceNum * 1e8)} sats`
-                                : `${Math.floor(balanceNum * 1e8)} sats`;
-                            })()
-                          : (() => {
-                              const balanceNum = parseFloat(balanceBTC || '0');
-                              if (balanceNum === 0) return '0 ₿';
-                              return balanceFormattingEnabled
-                                ? `${formatBTC(balanceBTC)} ₿`
-                                : `${balanceNum.toFixed(8)} ₿`;
-                            })()
+                          : formatBitcoinDisplay(balanceBTC || '0', {
+                              inSats: showSats,
+                              formatted: balanceFormattingEnabled,
+                            })
                       }`}
                       accessibilityHint="Double tap to toggle balance visibility"
                       accessibilityRole="button">
@@ -1929,31 +1891,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                           allowFontScaling={true}>
                           {isBlurred
                             ? showSats
-                              ? '********* sats'
-                              : '********* ₿'
-                            : showSats
-                            ? (() => {
-                                const balanceNum = parseFloat(
-                                  balanceBTC || '0',
-                                );
-                                if (balanceNum === 0) return '0 sats';
-                                return balanceFormattingEnabled
-                                  ? `${formatSats(balanceNum * 1e8)} sats`
-                                  : `${Math.floor(balanceNum * 1e8)} sats`;
-                              })()
-                            : (() => {
-                                const balanceNum = parseFloat(
-                                  balanceBTC || '0',
-                                );
-                                if (balanceNum === 0) return '0 ₿';
-                                return balanceFormattingEnabled
-                                  ? `${formatBTC(balanceBTC, {
-                                      compact: false,
-                                      maxDecimals: 8,
-                                      showTrailingZeros: true,
-                                    })} ₿`
-                                  : `${balanceNum.toFixed(8)} ₿`;
-                              })()}
+                              ? '********* ₿'
+                              : '********* BTC'
+                            : formatBitcoinDisplay(balanceBTC || '0', {
+                                inSats: showSats,
+                                formatted: balanceFormattingEnabled,
+                              })}
                         </Text>
                       )}
                     </Pressable>
@@ -2028,16 +1971,16 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               <Pressable
                 onPress={() => {
                   HapticFeedback.light();
-                  setShowSats(!showSats);
+                  setShowSatsGlobal(!showSats);
                 }}
                 style={styles.balanceUnitToggle}
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                 accessibilityLabel={`Switch to ${
-                  showSats ? 'BTC' : 'Satoshis'
+                  showSats ? 'BTC' : 'sats'
                 }`}
                 accessibilityRole="button">
                 <Text style={styles.balanceUnitToggleText}>
-                  {showSats ? '₿' : 'sats'}
+                  {showSats ? '₿' : 'BTC'}
                 </Text>
               </Pressable>
             </View>

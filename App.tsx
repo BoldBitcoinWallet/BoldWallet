@@ -203,10 +203,13 @@ const MainTabs = () => {
     backgroundColor: 'transparent',
     pointerEvents: 'box-none' as const,
   };
-  const lockFabStyle = {
+  const lockFabPosition = {
     position: 'absolute' as const,
     right: 30 + insets.right,
     bottom: 80 + insets.bottom,
+    zIndex: 1000,
+  };
+  const lockFabShape = {
     width: 56,
     height: 56,
     borderRadius: 28,
@@ -215,17 +218,50 @@ const MainTabs = () => {
     backgroundColor: isDarkMode
       ? theme.colors.cardBackground
       : theme.colors.blackOverlay06,
-    borderWidth: 1,
+    borderWidth: Platform.OS === 'android' ? 0 : 1,
     borderColor: isDarkMode
       ? theme.colors.border + '80'
       : theme.colors.blackOverlay10,
-    shadowColor: theme.colors.shadowColor || '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 4,
-    zIndex: 1000,
   };
+  const lockFabStyle =
+    Platform.OS === 'android'
+      ? {
+          ...lockFabShape,
+          position: 'absolute' as const,
+          top: 0,
+          left: 0,
+          overflow: 'hidden' as const,
+          elevation: 0,
+        }
+      : {
+          ...lockFabPosition,
+          ...lockFabShape,
+          shadowColor: theme.colors.shadowColor || '#000',
+          shadowOffset: {width: 0, height: 2},
+          shadowOpacity: 0.15,
+          shadowRadius: 4,
+          elevation: 4,
+        };
+  const lockFabWrapperStyle =
+    Platform.OS === 'android'
+      ? {
+          ...lockFabPosition,
+          width: 56,
+          height: 56,
+        }
+      : undefined;
+  const lockFabShadowStyle =
+    Platform.OS === 'android'
+      ? {
+          position: 'absolute' as const,
+          top: -1,
+          left: -1,
+          width: 58,
+          height: 58,
+          borderRadius: 29,
+          backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        }
+      : undefined;
   const lockFabIconStyle = {
     width: 24,
     height: 24,
@@ -313,22 +349,44 @@ const MainTabs = () => {
         />
       </Tab.Navigator>
       <View style={lockFabOverlayStyle}>
-        <Pressable
-          style={lockFabStyle}
-          onPress={() => {
-            HapticFeedback.light();
-            DeviceEventEmitter.emit('app:reload');
-          }}
-          android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-          accessible={true}
-          accessibilityRole="button"
-          accessibilityLabel="Lock wallet"
-          accessibilityHint="Double tap to lock the wallet">
-          <Image
-            source={require('./assets/locker-icon.png')}
-            style={lockFabIconStyle}
-          />
-        </Pressable>
+        {Platform.OS === 'android' && lockFabWrapperStyle && lockFabShadowStyle ? (
+          <View style={lockFabWrapperStyle}>
+            <View style={lockFabShadowStyle} pointerEvents="none" />
+            <Pressable
+              style={lockFabStyle}
+              onPress={() => {
+                HapticFeedback.light();
+                DeviceEventEmitter.emit('app:reload');
+              }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Lock wallet"
+              accessibilityHint="Double tap to lock the wallet">
+              <Image
+                source={require('./assets/locker-icon.png')}
+                style={lockFabIconStyle}
+              />
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable
+            style={lockFabStyle}
+            onPress={() => {
+              HapticFeedback.light();
+              DeviceEventEmitter.emit('app:reload');
+            }}
+            android_ripple={{color: 'rgba(0,0,0,0.1)'}}
+            accessible={true}
+            accessibilityRole="button"
+            accessibilityLabel="Lock wallet"
+            accessibilityHint="Double tap to lock the wallet">
+            <Image
+              source={require('./assets/locker-icon.png')}
+              style={lockFabIconStyle}
+            />
+          </Pressable>
+        )}
       </View>
     </View>
   );
