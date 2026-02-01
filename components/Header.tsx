@@ -23,59 +23,71 @@ interface HeaderNetworkProviderProps {
   network?: string;
   apiBase?: string;
   onPress?: () => void;
+  onSettingsPress?: () => void;
 }
 export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
   network,
   apiBase,
   onPress,
+  onSettingsPress,
 }) => {
   const {theme} = useTheme();
+  const styles = createStyles(theme);
   const isDarkMode = theme.colors.background !== '#ffffff';
   const cleanProviderUrl = apiBase
     ? apiBase.replace('https://', '').replace('/api', '').replace(/\/+$/, '')
     : 'Loading...';
+  const providerHost = cleanProviderUrl.includes('/')
+    ? cleanProviderUrl.split('/')[0]
+    : cleanProviderUrl;
   const networkLabel = network
     ? network === 'mainnet'
       ? 'MAINNET'
       : 'TESTNET'
     : '';
-  const hasProvider = Boolean(cleanProviderUrl);
+  const hasProvider = Boolean(providerHost && providerHost !== 'Loading...');
   const hasNetwork = Boolean(networkLabel);
-  if (!hasProvider && !hasNetwork) {
+  if (!hasProvider && !hasNetwork && !onSettingsPress) {
     return null;
   }
+  const showLeftContent = hasProvider || hasNetwork;
+  // Colors from v2.1.12: pill border, network strip bg, provider/main bg
   const pillBorder = isDarkMode
     ? theme.colors.border + '80'
     : theme.colors.blackOverlay10;
-  // Part 1 (top 50%): distinct background – clearly different from part 2
   const part1Bg = isDarkMode
-    ? theme.colors.whiteOverlay15
-    : theme.colors.blackOverlay10;
-  // Part 2 (bottom 50%)
-  const part2Bg = isDarkMode
-    ? theme.colors.whiteOverlay08
+    ? theme.colors.border + '80'
     : theme.colors.blackOverlay05;
+  const part2Bg = isDarkMode
+    ? theme.colors.cardBackground
+    : theme.colors.cardBackground;
   const containerStyle: any = {
+    flexDirection: 'row',
+    alignItems: 'stretch',
     height: 36,
-    minWidth: 160,
+    minWidth: showLeftContent ? 160 : 56,
     maxWidth: 280,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: pillBorder,
     overflow: 'hidden',
+    backgroundColor: part2Bg,
+  };
+  const leftContentStyle: any = {
+    flex: 1,
+    minWidth: 0,
   };
   const innerColumnStyle: any = {
     flex: 1,
     flexDirection: 'column',
     height: 36,
   };
-  // Each part exactly 18px (50%); content centered vertical + horizontal
   const partBase: any = {
     height: 18,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 8,
+    justifyContent: 'flex-start',
+    paddingHorizontal: 10,
   };
   const part1Style: any = { ...partBase, backgroundColor: part1Bg };
   const part2Style: any = { ...partBase, backgroundColor: part2Bg };
@@ -85,34 +97,38 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
     color: theme.colors.textSecondary,
     flexShrink: 1,
     maxWidth: 264,
-    textAlign: 'center',
-  };
-  const networkBadgeStyle: any = {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
+    textAlign: 'left',
   };
   const networkBadgeTextStyle: any = {
     fontSize: theme.fontSizes?.xs || 8,
     fontFamily: theme.fontFamilies?.bold,
-    color: theme.colors.textSecondary,
+    color:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.secondary
+        : theme.colors.text,
     letterSpacing: 0.2,
   };
-  const dotStyle: any = {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: theme.colors.textSecondary,
+  const dividerStyle: any = {
+    width: 1,
+    backgroundColor: pillBorder,
+    alignSelf: 'stretch',
   };
-  const content = (
+  const settingsStripStyle: any = {
+    width: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: part2Bg,
+  };
+  const leftContent = showLeftContent ? (
     <View style={innerColumnStyle}>
       <View style={part1Style}>
         {hasNetwork ? (
-          <View style={networkBadgeStyle}>
-            <View style={dotStyle} />
-            <Text style={networkBadgeTextStyle}>{networkLabel}</Text>
-          </View>
+          <Text
+            style={networkBadgeTextStyle}
+            numberOfLines={1}
+            ellipsizeMode="tail">
+            {networkLabel}
+          </Text>
         ) : null}
       </View>
       <View style={part2Style}>
@@ -120,30 +136,56 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
           <Text
             style={providerTextStyle}
             numberOfLines={1}
-            ellipsizeMode="middle">
-            {cleanProviderUrl}
+            ellipsizeMode="tail">
+            {providerHost}
           </Text>
         ) : null}
       </View>
     </View>
+  ) : null;
+  const leftWrapped = onPress && showLeftContent ? (
+    <Pressable
+      style={leftContentStyle}
+      onPress={() => {
+        HapticFeedback.light();
+        onPress();
+      }}
+      android_ripple={{ color: 'rgba(0,0,0,0.08)' }}
+      accessible={true}
+      accessibilityRole="button"
+      accessibilityLabel={`Provider: ${providerHost}. Network: ${networkLabel}. Double tap to open settings.`}>
+      {leftContent}
+    </Pressable>
+  ) : (
+    <View style={leftContentStyle}>{leftContent}</View>
   );
-  if (onPress) {
-    return (
+  const rightStrip = onSettingsPress ? (
+    <>
+      <View style={dividerStyle} />
       <Pressable
-        style={containerStyle}
+        style={settingsStripStyle}
         onPress={() => {
           HapticFeedback.light();
-          onPress();
+          onSettingsPress();
         }}
         android_ripple={{ color: 'rgba(0,0,0,0.08)' }}
         accessible={true}
         accessibilityRole="button"
-        accessibilityLabel={`Provider: ${cleanProviderUrl}. Network: ${networkLabel}. Double tap to open settings.`}>
-        {content}
+        accessibilityLabel="Settings"
+        accessibilityHint="Double tap to open settings">
+        <Image
+          source={require('../assets/settings-icon.png')}
+          style={styles.settingsLogo}
+        />
       </Pressable>
-    );
-  }
-  return <View style={containerStyle}>{content}</View>;
+    </>
+  ) : null;
+  return (
+    <View style={containerStyle}>
+      {leftWrapped}
+      {rightStrip}
+    </View>
+  );
 };
 export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
   btcPrice,
@@ -188,12 +230,6 @@ export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
     color: theme.colors.text,
     lineHeight: 14,
   };
-  const headerCurrencySymbolStyle: any = {
-    fontSize: theme.fontSizes?.xs || 10,
-    fontFamily: theme.fontFamilies?.bold,
-    color: theme.colors.textSecondary,
-    lineHeight: 14,
-  };
   if (btcPrice === undefined || !onCurrencyPress) {
     return null;
   }
@@ -225,7 +261,7 @@ export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
           style={headerBtcLogoStyle}
         />
         <Text style={headerBtcPriceStyle}>
-          {btcPrice ? presentFiat(btcPrice) : '-'} {currencySymbol}
+          {btcPrice ? presentFiat(btcPrice) : '-'} {selectedCurrency || ''}
         </Text>
       </Pressable>
     </RNView>
@@ -241,56 +277,24 @@ export const HeaderRightButton: React.FC<HeaderRightButtonProps> = ({
   network,
   apiBase,
 }) => {
-  const {theme} = useTheme();
-  const styles = createStyles(theme);
   const headerButtonsContainer: any = {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: 12,
     paddingTop: 12,
     paddingBottom: 12,
     paddingRight: 16,
     paddingLeft: 16,
     minHeight: 60,
   };
-  const isDarkMode =
-    theme.colors.background === '#121212' ||
-    theme.colors.background.includes('12');
-  const settingsButtonStyle: any = {
-    ...styles.settingsButton,
-    backgroundColor: isDarkMode
-      ? theme.colors.cardBackground
-      : theme.colors.blackOverlay06,
-    borderWidth: 1,
-    borderColor: isDarkMode
-      ? theme.colors.border + '80'
-      : theme.colors.blackOverlay10,
-  };
   return (
     <RNView style={headerButtonsContainer}>
-      {(network || apiBase) && (
-        <HeaderNetworkProvider
-          network={network}
-          apiBase={apiBase}
-          onPress={() => navigation.navigate('Settings')}
-        />
-      )}
-      <Pressable
-        style={settingsButtonStyle}
-        onPress={() => {
-          HapticFeedback.light();
-          navigation.navigate('Settings');
-        }}
-        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
-        accessible={true}
-        accessibilityRole="button"
-        accessibilityLabel="Settings">
-        <Image
-          source={require('../assets/settings-icon.png')}
-          style={styles.settingsLogo}
-        />
-      </Pressable>
+      <HeaderNetworkProvider
+        network={network}
+        apiBase={apiBase}
+        onPress={() => navigation.navigate('Settings')}
+        onSettingsPress={() => navigation.navigate('Settings')}
+      />
     </RNView>
   );
 };
