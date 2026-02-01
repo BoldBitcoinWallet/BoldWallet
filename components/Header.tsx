@@ -290,9 +290,10 @@ export const HeaderProvider: React.FC<HeaderProviderProps> = ({apiBase}) => {
   const containerStyle: any = {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
     flex: 1,
     alignSelf: 'stretch',
+    minWidth: 80,
     height: pillHeight,
     paddingLeft: 10,
     paddingRight: 10,
@@ -302,16 +303,25 @@ export const HeaderProvider: React.FC<HeaderProviderProps> = ({apiBase}) => {
     backgroundColor: containerBg,
     overflow: 'hidden',
   };
+  const innerRowStyle: any = {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    maxWidth: '100%',
+    flexShrink: 1,
+  };
   const providerTextWrapStyle: any = {
     flex: 1,
     minWidth: 0,
     justifyContent: 'center',
+    alignItems: 'center',
     overflow: 'hidden',
   };
   const providerTextStyle: any = {
     fontSize: theme.fontSizes?.xs || 10,
     fontFamily: theme.fontFamilies?.medium,
     color: providerTextColor,
+    textAlign: 'center',
   };
   const providerIconStyle: any = {
     width: 14,
@@ -323,25 +333,28 @@ export const HeaderProvider: React.FC<HeaderProviderProps> = ({apiBase}) => {
     paddingTop: 12,
     paddingBottom: 12,
     justifyContent: 'center',
+    alignItems: 'center',
     flex: 1,
     alignSelf: 'stretch',
   };
   return (
     <View style={wrapperStyle}>
       <View style={containerStyle}>
-        <Image
-          source={require('../assets/api-icon.png')}
-          style={providerIconStyle}
-        />
-        <View style={providerTextWrapStyle}>
-          <Text
-            style={providerTextStyle}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.3}
-            ellipsizeMode="tail">
-            {providerHost}
-          </Text>
+        <View style={innerRowStyle}>
+          <Image
+            source={require('../assets/api-icon.png')}
+            style={providerIconStyle}
+          />
+          <View style={providerTextWrapStyle}>
+            <Text
+              style={providerTextStyle}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.3}
+              ellipsizeMode="tail">
+              {providerHost}
+            </Text>
+          </View>
         </View>
       </View>
     </View>
