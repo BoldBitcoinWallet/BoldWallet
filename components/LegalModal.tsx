@@ -3,7 +3,6 @@ import {
   Modal,
   View,
   Text,
-  Pressable,
   StyleSheet,
   ScrollView,
   useWindowDimensions,
@@ -11,6 +10,7 @@ import {
   Linking,
   Image,
 } from 'react-native';
+import AppPressable from './AppPressable';
 import {useTheme} from '../theme';
 import {dbg} from '../utils';
 interface LegalModalProps {
@@ -221,18 +221,18 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
           <View style={styles.header}>
             <Text style={styles.title}>{titles[type]}</Text>
             <View style={styles.headerActions}>
-              <Pressable
+              <AppPressable
                 onPress={handleRefresh}
                 style={styles.refreshButton}
                 android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <Text style={styles.refreshButtonText}>↻</Text>
-              </Pressable>
-              <Pressable
+              </AppPressable>
+              <AppPressable
                 onPress={onClose}
                 style={styles.closeButton}
                 android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <Text style={styles.closeButtonText}>✕</Text>
-              </Pressable>
+              </AppPressable>
             </View>
           </View>
           <ScrollView
@@ -250,18 +250,18 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
             {error && (
               <View style={styles.errorContainer}>
                 <Text style={styles.errorText}>{error}</Text>
-                <Pressable
+                <AppPressable
                   onPress={handleRefresh}
                   style={styles.retryButton}
                   android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                   <Text style={styles.retryButtonText}>Retry</Text>
-                </Pressable>
+                </AppPressable>
               </View>
             )}
             {content && !loading && !error && (
               <>
                 <Text style={styles.content}>{content}</Text>
-                <Pressable
+                <AppPressable
                   onPress={() =>
                     Linking.openURL('https://boldbitcoinwallet.com#terms')
                   }
@@ -277,7 +277,7 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
                       Terms and Conditions & Privacy Policy
                     </Text>
                   </View>
-                </Pressable>
+                </AppPressable>
               </>
             )}
           </ScrollView>

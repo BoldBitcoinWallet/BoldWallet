@@ -7,8 +7,14 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-const DEFAULT_RIPPLE = { color: 'rgba(0,0,0,0.1)' };
-const STRONG_RIPPLE = { color: 'rgba(0,0,0,0.15)' };
+const DEFAULT_RIPPLE = {
+  color: 'rgba(0,0,0,0.15)',
+  foreground: true,
+};
+const STRONG_RIPPLE = {
+  color: 'rgba(0,0,0,0.2)',
+  foreground: true,
+};
 
 export type AppPressableVariant = 'default' | 'strong' | 'none';
 
@@ -38,7 +44,11 @@ export default function AppPressable({
   const isNone = variant === 'none';
   const ripple = isNone
     ? undefined
-    : android_ripple ?? (variant === 'strong' ? STRONG_RIPPLE : DEFAULT_RIPPLE);
+    : (() => {
+        const r = android_ripple ?? (variant === 'strong' ? STRONG_RIPPLE : DEFAULT_RIPPLE);
+        if (!r || typeof r !== 'object') return r;
+        return { ...r, foreground: true };
+      })();
 
   const mergedStyle: PressableProps['style'] =
     isNone && typeof style !== 'function'
@@ -47,10 +57,14 @@ export default function AppPressable({
           const userResolved = resolveStyle(style, { pressed });
           const base = Array.isArray(userResolved) ? userResolved : [userResolved];
           if (isNone) return base;
-          if (Platform.OS === 'ios' && pressed) {
-            return [...base, { opacity: variant === 'strong' ? 0.6 : 0.7 }];
+          const extra: ViewStyle[] = [];
+          if (Platform.OS === 'android' && ripple) {
+            extra.push({ overflow: 'hidden' });
           }
-          return base;
+          if (Platform.OS === 'ios' && pressed) {
+            extra.push({ opacity: variant === 'strong' ? 0.6 : 0.7 });
+          }
+          return [...base, ...extra];
         };
 
   return (

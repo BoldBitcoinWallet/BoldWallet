@@ -3,7 +3,6 @@ import {
   View,
   Text,
   TextInput,
-  Pressable,
   StyleSheet,
   Modal,
   Alert,
@@ -17,6 +16,7 @@ import {
   ScrollView,
   Linking,
 } from 'react-native';
+import AppPressable from '../components/AppPressable';
 import QRScanner from '../components/QRScanner';
 import Clipboard from '@react-native-clipboard/clipboard';
 import debounce from 'lodash/debounce';
@@ -697,7 +697,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                 overScrollMode="never"
                 showsHorizontalScrollIndicator={false}>
                 {feeStrategies.map(strategy => (
-                  <Pressable
+                  <AppPressable
                     key={strategy.value}
                     style={[
                       styles.feeStrategyButton,
@@ -713,7 +713,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                       ]}>
                       {strategy.label}
                     </Text>
-                  </Pressable>
+                  </AppPressable>
                 ))}
               </ScrollView>
             </View>
@@ -758,12 +758,12 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     />
                     <Text style={styles.title}>Send Bitcoin</Text>
                   </View>
-                  <Pressable
+                  <AppPressable
                     onPress={onClose}
                     style={styles.closeButton}
                     android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                     <Text style={styles.closeButtonText}>✖️</Text>
-                  </Pressable>
+                  </AppPressable>
                 </View>
                 <ScrollView
                   removeClippedSubviews
@@ -784,7 +784,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                       scrollEnabled
                       selectTextOnFocus
                     />
-                    <Pressable
+                    <AppPressable
                       onPress={pasteAddress}
                       style={styles.pasteIconContainer}>
                       <Image
@@ -792,8 +792,8 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                         style={styles.iconImage}
                         resizeMode="contain"
                       />
-                    </Pressable>
-                    <Pressable
+                    </AppPressable>
+                    <AppPressable
                       onPress={() => {
                         HapticFeedback.light();
                         setIsScannerVisible(true);
@@ -804,7 +804,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                         style={styles.iconImage}
                         resizeMode="contain"
                       />
-                    </Pressable>
+                    </AppPressable>
                   </View>
                   {/* Balance Card */}
                   <View style={styles.balanceCard}>
@@ -825,12 +825,12 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                         )}
                       </Text>
                     </View>
-                    <Pressable
+                    <AppPressable
                       onPress={handleMaxClick}
                       style={styles.balanceCardMaxButton}
                       android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                       <Text style={styles.balanceCardMaxButtonText}>Max</Text>
-                    </Pressable>
+                    </AppPressable>
                   </View>
                   <View style={styles.inputContainer}>
                     <Text style={styles.inputLabel}>Amount in BTC (₿)</Text>
@@ -874,7 +874,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                   {renderFeeSection()}
                   {/* Setup Guide Hint */}
                   <View style={styles.setupGuideHint}>
-                    <Pressable
+                    <AppPressable
                       style={styles.setupGuideHintTouchable}
                       onPress={() => {
                         HapticFeedback.medium();
@@ -896,10 +896,10 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                           🎥 Watch Send Bitcoin video guide →
                         </Text>
                       </View>
-                    </Pressable>
+                    </AppPressable>
                   </View>
                   <View style={styles.sendCancelButtons}>
-                    <Pressable
+                    <AppPressable
                       style={[
                         styles.sendButton,
                         (!address ||
@@ -917,8 +917,8 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                       }
                       android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                       <Text style={styles.buttonText}>Send</Text>
-                    </Pressable>
-                    <Pressable
+                    </AppPressable>
+                    <AppPressable
                       style={styles.cancelButton}
                       onPress={() => {
                         HapticFeedback.light();
@@ -926,7 +926,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                       }}
                       android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                       <Text style={styles.buttonText}>Cancel</Text>
-                    </Pressable>
+                    </AppPressable>
                   </View>
                 </ScrollView>
                 <QRScanner

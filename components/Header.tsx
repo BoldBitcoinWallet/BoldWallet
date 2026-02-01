@@ -1,11 +1,11 @@
 import React from 'react';
 import {
   Text,
-  Pressable,
   View as RNView,
   StyleSheet,
   Platform,
 } from 'react-native';
+import AppPressable from './AppPressable';
 import {Image} from 'react-native';
 import {View} from 'react-native';
 import {useRoute} from '@react-navigation/native';
@@ -216,7 +216,7 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
   ) : null;
   const leftWrapped =
     onPress && showLeftContent ? (
-      <Pressable
+      <AppPressable
         style={leftContentStyle}
         onPress={() => {
           HapticFeedback.light();
@@ -227,14 +227,14 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
         accessibilityRole="button"
         accessibilityLabel={`Provider: ${providerHost}. Network: ${networkLabel}. Double tap to open settings.`}>
         {leftContent}
-      </Pressable>
+      </AppPressable>
     ) : (
       <View style={leftContentStyle}>{leftContent}</View>
     );
   const rightStrip = onSettingsPress ? (
     <>
       <View style={verticalDividerStyle} />
-      <Pressable
+      <AppPressable
         style={settingsStripStyle}
         onPress={() => {
           HapticFeedback.light();
@@ -249,7 +249,7 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
           source={require('../assets/settings-icon.png')}
           style={styles.settingsLogo}
         />
-      </Pressable>
+      </AppPressable>
     </>
   ) : null;
   return (
@@ -433,7 +433,7 @@ export const HeaderNetwork: React.FC<HeaderNetworkProps> = ({
   );
   if (onPress) {
     return (
-      <Pressable
+      <AppPressable
         onPress={() => {
           HapticFeedback.light();
           onPress();
@@ -444,7 +444,7 @@ export const HeaderNetwork: React.FC<HeaderNetworkProps> = ({
         accessibilityLabel={`Network: ${networkLabel}. Double tap to open settings.`}
         style={networkWrapperStyle}>
         {content}
-      </Pressable>
+      </AppPressable>
     );
   }
   return <RNView style={networkWrapperStyle}>{content}</RNView>;
@@ -502,7 +502,7 @@ export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
   };
   return (
     <RNView style={containerStyle}>
-      <Pressable
+      <AppPressable
         style={priceButtonStyle}
         onPress={() => {
           HapticFeedback.light();
@@ -523,7 +523,7 @@ export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
           {btcPrice ? presentFiat(btcPrice) : '-'}{' '}
           {getCurrencySymbol(selectedCurrency) || ''}
         </Text>
-      </Pressable>
+      </AppPressable>
     </RNView>
   );
 };
@@ -684,7 +684,7 @@ export const CustomHeader: React.FC<
     // No headerLeft was set, but we can go back - show default back button
     const headerStyles = createCustomHeaderStyles(theme);
     headerLeft = (
-      <Pressable
+      <AppPressable
         onPress={() => {
           HapticFeedback.light();
           navigation.goBack();
@@ -695,7 +695,7 @@ export const CustomHeader: React.FC<
         accessibilityRole="button"
         accessibilityLabel="Go back">
         <Text style={headerStyles.backButtonText}>←</Text>
-      </Pressable>
+      </AppPressable>
     );
   }
   const headerRight = options.headerRight

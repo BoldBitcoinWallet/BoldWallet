@@ -14,9 +14,9 @@ import {
   ActivityIndicator,
   RefreshControl,
   Platform,
-  Pressable,
   Image,
 } from 'react-native';
+import AppPressable from './AppPressable';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import axios from 'axios';
 import Toast from 'react-native-toast-message';
@@ -873,7 +873,7 @@ const TransactionList = React.forwardRef<
           ? getFiatAmount(sent)
           : getFiatAmount(received);
         return (
-          <Pressable
+          <AppPressable
             style={({pressed}) => [
               styles.transactionItem,
               pressed && styles.transactionItemPressed,
@@ -944,7 +944,7 @@ const TransactionList = React.forwardRef<
               </View>
               <Text style={styles.timestamp}>{timestamp}</Text>
             </View>
-          </Pressable>
+          </AppPressable>
         );
       },
       [

@@ -3,12 +3,12 @@ import {
   View,
   Text,
   Modal,
-  Pressable,
   StyleSheet,
   Image,
   Linking,
   Alert,
 } from 'react-native';
+import AppPressable from '../components/AppPressable';
 import QRCode from 'react-native-qrcode-svg';
 import Clipboard from '@react-native-clipboard/clipboard';
 import Share from 'react-native-share';
@@ -288,7 +288,7 @@ const ReceiveModal: React.FC<{
               />
               <Text style={styles.title}>Receive Bitcoin</Text>
             </View>
-            <Pressable
+            <AppPressable
               onPress={() => {
                 HapticFeedback.medium();
                 onClose();
@@ -296,14 +296,14 @@ const ReceiveModal: React.FC<{
               style={styles.closeButton}
               android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
               <Text style={styles.closeButtonText}>✖️</Text>
-            </Pressable>
+            </AppPressable>
           </View>
           <View style={styles.networkBadge}>
             <Text style={styles.networkText}>
               {capitalize(network)} • {formatAddressType(addressType)}
             </Text>
           </View>
-          <Pressable
+          <AppPressable
             style={styles.qrContainer}
             onPress={() => {
               HapticFeedback.medium();
@@ -315,9 +315,9 @@ const ReceiveModal: React.FC<{
               size={200}
               getRef={ref => (qrRef.current = ref)}
             />
-          </Pressable>
+          </AppPressable>
           <View style={styles.addressContainer}>
-            <Pressable
+            <AppPressable
               style={styles.addressTouchable}
               onPress={() => {
                 HapticFeedback.medium();
@@ -347,9 +347,9 @@ const ReceiveModal: React.FC<{
                   <Text style={styles.copyFeedbackText}>Copied!</Text>
                 </View>
               )}
-            </Pressable>
+            </AppPressable>
             <View style={styles.buttonContainer}>
-              <Pressable
+              <AppPressable
                 style={styles.actionButton}
                 onPress={() => {
                   HapticFeedback.medium();
@@ -362,8 +362,8 @@ const ReceiveModal: React.FC<{
                   resizeMode="contain"
                 />
                 <Text style={styles.actionButtonText}>Copy</Text>
-              </Pressable>
-              <Pressable
+              </AppPressable>
+              <AppPressable
                 style={[
                   styles.actionButton,
                   {backgroundColor: theme.colors.secondary},
@@ -379,7 +379,7 @@ const ReceiveModal: React.FC<{
                   resizeMode="contain"
                 />
                 <Text style={styles.actionButtonText}>Share</Text>
-              </Pressable>
+              </AppPressable>
             </View>
           </View>
         </View>

@@ -1,5 +1,63 @@
 # Changelog
 
+## [2.1.13] - 2026-02-01
+
+### Added
+- **Bottom Tab Navigation**: New tab-based navigation for main app areas
+  - Four tabs: Device, Wallet, PSBT, Settings — direct access without drilling through stack
+  - Custom tab bar with theme-aware icons (Device, Wallet, Cosign, Settings)
+  - Floating lock FAB (bottom-right) for quick lock, with platform-specific styling
+  - Main content (Wallet, PSBT, Settings) lives in tabs; pairing flows remain in stack
+- **Device Tab / DeviceScreen**: Dedicated screen for device and keyshare management
+  - New Device tab as first-class destination for keyshare info, backup, and device-related actions
+  - Replaces deep navigation from Wallet/Settings for device operations
+- **Toast Notifications**: App-wide toast feedback
+  - Integrated `react-native-toast-message` with theme-aware `createToastConfig`
+  - Used for copy confirmations, success/error feedback, and debug badges
+  - Toast wrapper in App root with correct z-index and pointer-events
+- **Address Type Modal**: Dedicated modal for address type selection/display
+  - `AddressTypeModal` component for choosing or viewing address type (Legacy, SegWit Native, SegWit Compatible)
+  - Used in WalletHome and flows that depend on address type (e.g. after network change)
+  - Integrates with `updateAddressTypeModal` for network-driven address updates
+- **AppPressable Component**: Reusable pressable for consistent touch UX
+  - New `AppPressable` with variants (default, strong, none) and optional haptic feedback
+  - Replaces `TouchableOpacity` across modals, settings, pairing, and wallet screens
+  - Unified opacity and feedback behavior app-wide
+- **Keyshare UI Refactor**: Backup and info split from legacy KeyshareModal
+  - `BackupKeyshareModal` and `KeyshareInfoContent` for backup and detailed keyshare info
+  - `KeyshareModal.tsx` removed; functionality consolidated into BackupKeyshareModal and KeyshareInfoContent
+  - Clearer separation between “backup” and “info” use cases
+
+### Changed
+- **Navigation Structure**: Stack now wraps MainTabs (Device, Wallet, PSBT, Settings)
+  - Welcome, Devices Pairing, Nostr Connect, and User Preferences remain stack-only
+  - Home/PSBT/Settings moved into tab navigator with per-tab headers
+- **Header / Network Provider**: Network provider row tappable; optional settings callback
+  - `HeaderNetworkProvider` supports `onPress` and `onSettingsPress` for provider/settings access
+  - Side button width standardized (`SIDE_BUTTON_WIDTH`) for layout symmetry
+- **Theme and Controls**: Switch and warning colors aligned with theme
+  - Switch colors use theme palette for light/dark mode
+  - Warning colors consolidated in theme; removed hardcoded values and `warningBg`
+  - WalletSettings styles made reactive to theme changes (fixes Android theme switch)
+- **Debug Logging**: Session-based debug with safe console restore
+  - When enabling debug, original console methods restored before use, then re-applied
+  - Exported `setDebugLoggingEnabled` / `isDebugLoggingEnabled` for WalletSettings
+  - Avoids “logging enabled” message being dropped when console was previously disabled
+
+### Fixed
+- **Network Routing for QR Scanning**: Correct routing when opening QR scanner from different contexts (e.g. Send vs Receive)
+- **Android Exit Button Styling**: Styling and behavior of exit/back button in relevant screens (e.g. pairing/QR) corrected
+- **WalletSettings Theme Reactivity**: Force re-render on Android when theme changes so styles update immediately
+- **TSS / Nostr**: LocalStateNostr type restored; mutex deadlock fixes in Nostr/TSS layer (mpc_nostr, relay, etc.)
+- **Docs**: Removed obsolete `docs/BITCOIN_DISPLAY_PLAN.md`
+
+### Technical Details
+- **Dependencies**: `@react-navigation/bottom-tabs`, `react-native-toast-message` added; `utils/toastConfig.tsx` for theme-aware toast config
+- **New/Refactored Components**: `DeviceScreen`, `AddressTypeModal`, `AppPressable`; `BackupKeyshareModal` + `KeyshareInfoContent`; tab bar icons and `TabBarButton` in App
+- **App.tsx**: MainTabs with tab bar, lock FAB, Toast wrapper; debug logging tied to `debugLoggingEnabledRef` and native log listeners
+- **BBMTLib**: btc.go, hooks.go, interfaces.go, mpc.go, mpc_nostr.go, relay.go, logs.go updates; localstate_nostr cleanup
+- **Version**: 2.1.13 (package.json); build numbers updated for iOS/Android as applicable
+
 ## [2.1.12] - 2026-01-25
 
 ### Added

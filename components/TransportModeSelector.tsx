@@ -3,11 +3,11 @@ import {
   View,
   Text,
   StyleSheet,
-  Pressable,
   Modal,
   Image,
   ScrollView,
 } from 'react-native';
+import AppPressable from './AppPressable';
 import QRCode from 'react-native-qrcode-svg';
 import {useTheme} from '../theme';
 import {HapticFeedback, encodeSendBitcoinQR} from '../utils';
@@ -350,7 +350,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
               style={styles.modalHeaderIconImage}
             />
             <Text style={styles.modalTitle}>{title}</Text>
-            <Pressable
+            <AppPressable
               style={styles.closeButton}
               onPress={() => {
                 HapticFeedback.medium();
@@ -359,7 +359,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
               }}
               android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
               <Text style={styles.closeButtonText}>✕</Text>
-            </Pressable>
+            </AppPressable>
           </View>
           {/* Modal Body */}
           <ScrollView
@@ -406,7 +406,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
               })()}
             <View style={styles.transportOptionsContainer}>
               {/* Local WiFi/Hotspot Option */}
-              <Pressable
+              <AppPressable
                 style={[
                   styles.transportOptionCard,
                   selectedTransport === 'local' &&
@@ -443,9 +443,9 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                     Connect devices on the same network
                   </Text>
                 </View>
-              </Pressable>
+              </AppPressable>
               {/* Nostr Option */}
-              <Pressable
+              <AppPressable
                 style={[
                   styles.transportOptionCard,
                   selectedTransport === 'nostr' &&
@@ -485,7 +485,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                     Connect via decentralized relays
                   </Text>
                 </View>
-              </Pressable>
+              </AppPressable>
             </View>
             {/* Selected Transport Hint */}
             {selectedTransport && description && description.length > 0 && (
@@ -519,7 +519,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
               </View>
             )}
             {/* Continue Button */}
-            <Pressable
+            <AppPressable
               style={[
                 styles.continueButton,
                 !selectedTransport && styles.continueButtonDisabled,
@@ -528,7 +528,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
               disabled={!selectedTransport}
               android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
               <Text style={styles.continueButtonText}>Continue →</Text>
-            </Pressable>
+            </AppPressable>
           </ScrollView>
         </View>
       </View>

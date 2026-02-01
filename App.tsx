@@ -32,8 +32,9 @@ import {
   View,
   Text,
   StyleSheet,
-  Pressable,
+  type GestureResponderEvent,
 } from 'react-native';
+import AppPressable from './components/AppPressable';
 import WalletSettings from './screens/WalletSettings';
 import {NativeModules} from 'react-native';
 import {dbg, pinRemoteIP, getPinnedRemoteIPs} from './utils';
@@ -142,6 +143,8 @@ const TabBarIconSettings = (props: {color: string; size?: number}) => (
   />
 );
 
+const TAB_BAR_BUTTON_BORDER_RADIUS = 12;
+
 const tabBarStyles = StyleSheet.create({
   mainTabsContainer: {flex: 1},
   tabBarButtonInner: {
@@ -149,6 +152,9 @@ const tabBarStyles = StyleSheet.create({
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: TAB_BAR_BUTTON_BORDER_RADIUS,
+    overflow: 'hidden',
+    padding: 12,
   },
   activeTabBgLight: {backgroundColor: 'rgba(0,0,0,0.06)'},
   activeTabBgDark: {backgroundColor: 'rgba(255,255,255,0.08)'},
@@ -172,18 +178,37 @@ const tabBarStyles = StyleSheet.create({
   },
 });
 
+const TabBarLabel = ({color, children}: {color: string; children: string}) => (
+  <View style={tabBarStyles.tabBarLabelWrapper}>
+    <Text style={[tabBarStyles.tabBarLabel, {color}]} numberOfLines={1}>
+      {children}
+    </Text>
+  </View>
+);
+
 type TabBarButtonProps = Record<string, unknown> & {isDarkMode?: boolean};
 
 const TabBarButton = (props: TabBarButtonProps) => {
-  const {style, accessibilityState, isDarkMode, ...rest} = props;
+  const {style, accessibilityState, isDarkMode, onPress, ...rest} = props;
   const selected = (accessibilityState as {selected?: boolean})?.selected;
   const activeBg =
     isDarkMode === true
       ? tabBarStyles.activeTabBgDark
       : tabBarStyles.activeTabBgLight;
+  const handlePress = useCallback(
+    (e: GestureResponderEvent) => {
+      HapticFeedback.selection();
+      (onPress as (e: GestureResponderEvent) => void)?.(e);
+    },
+    [onPress],
+  );
   return (
     <View style={[style as object, selected && activeBg]}>
-      <Pressable {...(rest as object)} style={tabBarStyles.tabBarButtonInner} />
+      <AppPressable
+        {...(rest as object)}
+        onPress={handlePress}
+        style={tabBarStyles.tabBarButtonInner}
+      />
     </View>
   );
 };
@@ -300,16 +325,7 @@ const MainTabs = () => {
           tabBarItemStyle: tabBarStyles.tabBarItem,
           tabBarAllowFontScaling: false,
           tabBarButton: renderTabBarButton,
-          tabBarLabel: ({color, children}) => (
-            <View style={tabBarStyles.tabBarLabelWrapper}>
-              <Text
-                style={[tabBarStyles.tabBarLabel, {color}]}
-                numberOfLines={1}
-              >
-                {children}
-              </Text>
-            </View>
-          ),
+          tabBarLabel: TabBarLabel,
         }}>
         <Tab.Screen
           name="Device"
@@ -349,16 +365,17 @@ const MainTabs = () => {
         />
       </Tab.Navigator>
       <View style={lockFabOverlayStyle}>
-        {Platform.OS === 'android' && lockFabWrapperStyle && lockFabShadowStyle ? (
+        {Platform.OS === 'android' &&
+        lockFabWrapperStyle &&
+        lockFabShadowStyle ? (
           <View style={lockFabWrapperStyle}>
             <View style={lockFabShadowStyle} pointerEvents="none" />
-            <Pressable
+            <AppPressable
               style={lockFabStyle}
               onPress={() => {
                 HapticFeedback.light();
                 DeviceEventEmitter.emit('app:reload');
               }}
-              android_ripple={{color: 'rgba(0,0,0,0.1)'}}
               accessible={true}
               accessibilityRole="button"
               accessibilityLabel="Lock wallet"
@@ -367,16 +384,15 @@ const MainTabs = () => {
                 source={require('./assets/locker-icon.png')}
                 style={lockFabIconStyle}
               />
-            </Pressable>
+            </AppPressable>
           </View>
         ) : (
-          <Pressable
+          <AppPressable
             style={lockFabStyle}
             onPress={() => {
               HapticFeedback.light();
               DeviceEventEmitter.emit('app:reload');
             }}
-            android_ripple={{color: 'rgba(0,0,0,0.1)'}}
             accessible={true}
             accessibilityRole="button"
             accessibilityLabel="Lock wallet"
@@ -385,7 +401,7 @@ const MainTabs = () => {
               source={require('./assets/locker-icon.png')}
               style={lockFabIconStyle}
             />
-          </Pressable>
+          </AppPressable>
         )}
       </View>
     </View>

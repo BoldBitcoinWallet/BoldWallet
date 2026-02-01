@@ -4,7 +4,6 @@ import {
   View,
   Text,
   StyleSheet,
-  Pressable,
   Alert,
   NativeModules,
   Modal,
@@ -15,6 +14,7 @@ import {
   Image,
   Linking,
 } from 'react-native';
+import AppPressable from '../components/AppPressable';
 import DocumentPicker from 'react-native-document-picker';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import RNFS from 'react-native-fs';
@@ -867,7 +867,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       <View style={styles.bottomActions}>
         <View style={styles.termsContainer}>
           <View style={styles.termsRow}>
-            <Pressable
+            <AppPressable
               style={styles.checkboxContainer}
               onPress={() => {
                 HapticFeedback.medium();
@@ -880,7 +880,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                 ]}>
                 {agreeToTerms && <Text style={styles.checkmark}>✓</Text>}
               </View>
-            </Pressable>
+            </AppPressable>
             <Text style={styles.termsText}>
               I agree to the{' '}
               <Text
@@ -895,7 +895,7 @@ const ShowcaseScreen = ({navigation}: any) => {
             </Text>
           </View>
           <View style={styles.termsRow}>
-            <Pressable
+            <AppPressable
               style={styles.checkboxContainer}
               onPress={() => {
                 HapticFeedback.medium();
@@ -908,7 +908,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                 ]}>
                 {agreeToPrivacy && <Text style={styles.checkmark}>✓</Text>}
               </View>
-            </Pressable>
+            </AppPressable>
             <Text style={styles.termsText}>
               I agree to the{' '}
               <Text
@@ -924,7 +924,7 @@ const ShowcaseScreen = ({navigation}: any) => {
           </View>
         </View>
         <View style={styles.ctaButtons}>
-          <Pressable
+          <AppPressable
             style={[
               styles.ctaButtonPrimary,
               (!agreeToTerms || !agreeToPrivacy) && styles.disabledButton,
@@ -947,8 +947,8 @@ const ShowcaseScreen = ({navigation}: any) => {
               />
               <Text style={styles.ctaButtonText}>Setup New Wallet</Text>
             </View>
-          </Pressable>
-          <Pressable
+          </AppPressable>
+          <AppPressable
             style={[
               styles.ctaButtonSecondary,
               (!agreeToTerms || !agreeToPrivacy) && styles.disabledButton,
@@ -971,7 +971,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                 Restore Existing Wallet
               </Text>
             </View>
-          </Pressable>
+          </AppPressable>
         </View>
       </View>
       {/* Enhanced Password Prompt Modal */}
@@ -989,12 +989,12 @@ const ShowcaseScreen = ({navigation}: any) => {
                 style={styles.modalHeaderIconImage}
               />
               <Text style={styles.modalTitle}>Restore Keyshare</Text>
-              <Pressable
+              <AppPressable
                 style={styles.closeButton}
                 onPress={handleCloseModal}
                 android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <Text style={styles.closeButtonText}>✕</Text>
-              </Pressable>
+              </AppPressable>
             </View>
             {/* Modal Body */}
             <View style={styles.modalBody}>
@@ -1015,7 +1015,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                     onFocus={() => setIsPasswordFocused(true)}
                     onBlur={() => setIsPasswordFocused(false)}
                   />
-                  <Pressable
+                  <AppPressable
                     style={styles.eyeButton}
                     onPress={() => {
                       HapticFeedback.light();
@@ -1030,12 +1030,12 @@ const ShowcaseScreen = ({navigation}: any) => {
                       style={styles.eyeIcon}
                       resizeMode="contain"
                     />
-                  </Pressable>
+                  </AppPressable>
                 </View>
               </View>
               {/* Action Buttons */}
               <View style={styles.modalActions}>
-                <Pressable
+                <AppPressable
                   style={[styles.modalActionButton, styles.modalCancelButton]}
                   onPress={handleCloseModal}
                   android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
@@ -1046,8 +1046,8 @@ const ShowcaseScreen = ({navigation}: any) => {
                     ]}>
                     Cancel
                   </Text>
-                </Pressable>
-                <Pressable
+                </AppPressable>
+                <AppPressable
                   style={[styles.modalActionButton, styles.modalSubmitButton]}
                   onPress={() => {
                     HapticFeedback.medium();
@@ -1066,7 +1066,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                     ]}>
                     Import
                   </Text>
-                </Pressable>
+                </AppPressable>
               </View>
             </View>
           </View>
@@ -1134,7 +1134,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                 style={styles.modalHeaderIconImage}
               />
               <Text style={styles.modalTitle}>Choose Your Setup</Text>
-              <Pressable
+              <AppPressable
                 style={styles.closeButton}
                 onPress={() => {
                   HapticFeedback.medium();
@@ -1142,11 +1142,11 @@ const ShowcaseScreen = ({navigation}: any) => {
                 }}
                 android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <Text style={styles.closeButtonText}>✕</Text>
-              </Pressable>
+              </AppPressable>
             </View>
             <View style={styles.modalBody}>
               <View style={styles.modeOptionsContainer}>
-                <Pressable
+                <AppPressable
                   style={[
                     styles.modeOptionCard,
                     styles.modeOptionCardPrimary,
@@ -1225,8 +1225,8 @@ const ShowcaseScreen = ({navigation}: any) => {
                       Duo
                     </Text>
                   </View>
-                </Pressable>
-                <Pressable
+                </AppPressable>
+                <AppPressable
                   style={[
                     styles.modeOptionCard,
                     styles.modeOptionCardPrimary,
@@ -1325,7 +1325,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                       Trio
                     </Text>
                   </View>
-                </Pressable>
+                </AppPressable>
               </View>
               {selectedMode && (
                 <View style={styles.modeSelectedHint}>
@@ -1358,7 +1358,7 @@ const ShowcaseScreen = ({navigation}: any) => {
               {/* Setup Guide Video Hint - Subtle */}
               {selectedMode && (
                 <View style={styles.setupGuideHint}>
-                  <Pressable
+                  <AppPressable
                     style={styles.setupGuideHintTouchable}
                     onPress={() => {
                       HapticFeedback.medium();
@@ -1380,10 +1380,10 @@ const ShowcaseScreen = ({navigation}: any) => {
                         🎥 Watch setup guide →
                       </Text>
                     </View>
-                  </Pressable>
+                  </AppPressable>
                 </View>
               )}
-              <Pressable
+              <AppPressable
                 style={[
                   styles.modalSubmitButton,
                   styles.modeContinueButton,
@@ -1400,7 +1400,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                 <Text style={styles.modeContinueButtonText}>
                   Continue to Pair Devices →
                 </Text>
-              </Pressable>
+              </AppPressable>
             </View>
           </View>
         </View>

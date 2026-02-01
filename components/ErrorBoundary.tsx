@@ -1,5 +1,6 @@
 import React, {Component, ErrorInfo, ReactNode} from 'react';
-import {View, Text, Pressable, StyleSheet} from 'react-native';
+import {View, Text, StyleSheet} from 'react-native';
+import AppPressable from './AppPressable';
 import {ThemeProvider, useTheme} from '../theme';
 import {dbg} from '../utils';
 interface Props {
@@ -68,10 +69,10 @@ const ErrorFallback: React.FC<{error?: Error; resetError: () => void}> = ({
       {__DEV__ && error && (
         <Text style={styles.errorDetails}>{error.message}</Text>
       )}
-      <Pressable style={styles.button} onPress={resetError}
+      <AppPressable style={styles.button} onPress={resetError}
         android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
         <Text style={styles.buttonText}>Try Again</Text>
-      </Pressable>
+      </AppPressable>
     </View>
   );
 };

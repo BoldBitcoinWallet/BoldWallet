@@ -4,10 +4,10 @@ import {
   View,
   Text,
   StyleSheet,
-  Pressable,
   ScrollView,
   Linking,
 } from 'react-native';
+import AppPressable from './AppPressable';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import moment from 'moment';
@@ -357,7 +357,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Transaction Details</Text>
-            <Pressable
+            <AppPressable
               onPress={() => {
                 HapticFeedback.light();
                 onClose();
@@ -365,7 +365,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
               style={styles.closeButton}
               android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
               <Text style={styles.closeButtonText}>✕</Text>
-            </Pressable>
+            </AppPressable>
           </View>
           <ScrollView
             style={styles.scrollContent}
@@ -443,7 +443,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                         <Text style={styles.addressIndex}>{index + 1}.</Text>
                       )}
                       <View style={styles.txIdContainer}>
-                        <Pressable
+                        <AppPressable
                           onPress={() => {
                             HapticFeedback.light();
                             Linking.openURL(addressExplorerLink);
@@ -452,7 +452,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                           <Text style={[styles.txId, styles.clickableText]}>
                             {addrWithAmount.address}
                           </Text>
-                        </Pressable>
+                        </AppPressable>
                       </View>
                       {showAmount && (
                         <View style={styles.addressAmountContainer}>
@@ -480,7 +480,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Transaction ID</Text>
               <View style={styles.txIdContainer}>
-                <Pressable
+                <AppPressable
                   onPress={() => {
                     HapticFeedback.light();
                     Linking.openURL(explorerLink);
@@ -489,7 +489,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                   <Text style={[styles.txId, styles.clickableText]}>
                     {transaction.txid}
                   </Text>
-                </Pressable>
+                </AppPressable>
               </View>
             </View>
             <View style={styles.section}>

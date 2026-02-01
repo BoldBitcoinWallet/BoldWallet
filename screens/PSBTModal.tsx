@@ -3,7 +3,6 @@ import {
   View,
   Text,
   Modal,
-  Pressable,
   StyleSheet,
   Image,
   ScrollView,
@@ -12,6 +11,7 @@ import {
   DeviceEventEmitter,
   EmitterSubscription,
 } from 'react-native';
+import AppPressable from '../components/AppPressable';
 import DocumentPicker from 'react-native-document-picker';
 import * as RNFS from 'react-native-fs';
 import QRScanner from '../components/QRScanner';
@@ -725,7 +725,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
         {/* Import buttons */}
         {!psbtBase64 && (
           <View style={styles.importButtonsContainer}>
-            <Pressable
+            <AppPressable
               style={styles.importButton}
               onPress={handleUploadFile}
               disabled={isLoading}>
@@ -734,8 +734,8 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                 style={styles.importButtonIcon}
               />
               <Text style={styles.importButtonText}>Load PSBT File</Text>
-            </Pressable>
-            <Pressable
+            </AppPressable>
+            <AppPressable
               style={styles.importButton}
               onPress={handleScanQR}
               disabled={isLoading}>
@@ -744,7 +744,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                 style={styles.importButtonIcon}
               />
               <Text style={styles.importButtonText}>Scan PSBT QR</Text>
-            </Pressable>
+            </AppPressable>
           </View>
         )}
         {/* Loading indicator */}
@@ -757,7 +757,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
         {error && (
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>{error}</Text>
-            <Pressable
+            <AppPressable
               style={styles.retryButton}
               onPress={() => {
                 setError(null);
@@ -765,7 +765,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                 setPsbtDetails(null);
               }}>
               <Text style={styles.retryButtonText}>Try Again</Text>
-            </Pressable>
+            </AppPressable>
           </View>
         )}
         {/* PSBT Details - Sparrow-style Visual Flow */}
@@ -929,7 +929,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
         )}
         {/* Action buttons */}
         <View style={styles.actionButtonsContainer}>
-          <Pressable
+          <AppPressable
             style={[
               styles.cancelButton,
               isCancelDisabled && styles.cancelButtonDisabled,
@@ -943,11 +943,11 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
               ]}>
               Cancel
             </Text>
-          </Pressable>
+          </AppPressable>
           {middleButton && (
             <View style={styles.middleButtonContainer}>{middleButton}</View>
           )}
-          <Pressable
+          <AppPressable
             style={[
               styles.signButton,
               !psbtBase64 && styles.signButtonDisabled,
@@ -968,7 +968,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
               ]}>
               Co-Sign
             </Text>
-          </Pressable>
+          </AppPressable>
         </View>
         {/* QR Scanner Modal */}
         <QRScanner

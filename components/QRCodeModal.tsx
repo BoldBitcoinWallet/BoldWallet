@@ -14,13 +14,13 @@ import {
   Modal,
   View,
   Text,
-  Pressable,
   Image,
   Alert,
   ScrollView,
   Platform,
   Dimensions,
 } from 'react-native';
+import AppPressable from './AppPressable';
 import QRCode from 'react-native-qrcode-svg';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
@@ -136,21 +136,21 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
           ? () => {} /* block Android back: do not close when non-dismissible */
           : handleClose
       }>
-      <Pressable
+      <AppPressable
         style={styles.modalOverlay}
         onPress={nonDismissible ? undefined : handleClose}>
-        <Pressable
+        <AppPressable
           onPress={e => e.stopPropagation()}>
           <View style={styles.qrModalContent}>
             {topRightClose ? (
               <View style={styles.qrModalHeader}>
                 <Text style={styles.qrModalHeaderTitle}>{title}</Text>
-                <Pressable
+                <AppPressable
                   onPress={handleClose}
                   style={styles.qrModalTopRightCloseButton}
                   android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                   <Text style={styles.qrModalTopRightCloseText}>✕</Text>
-                </Pressable>
+                </AppPressable>
               </View>
             ) : (
               <Text style={styles.qrModalTitle}>{title}</Text>
@@ -200,7 +200,7 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
                   styles.qrModalButtonsContainer,
                   topRightClose && styles.qrModalButtonsContainerCentered,
                 ]}>
-                <Pressable
+                <AppPressable
                   style={[
                     styles.qrModalCloseButton,
                     styles.qrModalShareButton,
@@ -219,9 +219,9 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
                     ]}>
                     Share
                   </Text>
-                </Pressable>
+                </AppPressable>
                 {!topRightClose && (
-                  <Pressable
+                  <AppPressable
                     style={[
                       styles.qrModalCloseButton,
                       styles.qrModalCloseButtonWithMargin,
@@ -229,22 +229,22 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
                     onPress={handleClose}
                     android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                     <Text style={styles.qrModalCloseButtonText}>Close</Text>
-                  </Pressable>
+                  </AppPressable>
                 )}
               </View>
             ) : (
               !topRightClose && (
-                <Pressable
+                <AppPressable
                   style={styles.qrModalCloseButton}
                   onPress={handleClose}
                   android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                   <Text style={styles.qrModalCloseButtonText}>Close</Text>
-                </Pressable>
+                </AppPressable>
               )
             )}
           </View>
-        </Pressable>
-      </Pressable>
+        </AppPressable>
+      </AppPressable>
       <View style={styles.toastContainer}>
         <Toast config={createToastConfig(theme)} />
       </View>

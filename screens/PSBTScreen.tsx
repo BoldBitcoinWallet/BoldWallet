@@ -5,10 +5,10 @@ import {
   StyleSheet,
   Image,
   ScrollView,
-  Pressable,
   Alert,
   Animated,
 } from 'react-native';
+import AppPressable from '../components/AppPressable';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {NativeModules} from 'react-native';
@@ -389,7 +389,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
               styles.watchWalletCard,
               isWatchWalletExpanded && styles.watchWalletCardExpanded,
             ]}>
-            <Pressable
+            <AppPressable
               style={styles.watchWalletHeaderRow}
               onPress={handleToggleWatchWallet}
               android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
@@ -421,7 +421,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 ]}>
                 ▶
               </Animated.Text>
-            </Pressable>
+            </AppPressable>
             {/* Collapsible content - only rendered when expanded */}
             {isWatchWalletExpanded && (
               <View
@@ -451,7 +451,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                       Output Descriptor (Legacy)
                     </Text>
                     <View style={globalStyles.watchWalletItemValueContainer}>
-                      <Pressable
+                      <AppPressable
                         onPress={() => handleCopyOutputDescriptor('legacy')}
                         style={globalStyles.keyshareKeyContainerBadge}
                         android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
@@ -466,9 +466,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                             keyshareInfo.outputDescriptors.legacy || 'N/A',
                           )}
                         </Text>
-                      </Pressable>
+                      </AppPressable>
                       <View style={globalStyles.keyshareButtonsRow}>
-                        <Pressable
+                        <AppPressable
                           onPress={() => handleShareOutputDescriptor('legacy')}
                           style={globalStyles.keyshareCopyButton}
                           android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
@@ -476,8 +476,8 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                             source={require('../assets/share-icon.png')}
                             style={globalStyles.keyshareCopyIcon}
                           />
-                        </Pressable>
-                        <Pressable
+                        </AppPressable>
+                        <AppPressable
                           onPress={() => handleShowOutputDescriptorQR('legacy')}
                           style={globalStyles.keyshareCopyButton}
                           android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
@@ -485,7 +485,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                             source={require('../assets/qr-icon.png')}
                             style={globalStyles.keyshareCopyIcon}
                           />
-                        </Pressable>
+                        </AppPressable>
                       </View>
                     </View>
                   </View>
@@ -501,7 +501,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                       Output Descriptor (Native SegWit)
                     </Text>
                     <View style={globalStyles.watchWalletItemValueContainer}>
-                      <Pressable
+                      <AppPressable
                         onPress={() =>
                           handleCopyOutputDescriptor('segwitNative')
                         }
@@ -518,9 +518,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                             keyshareInfo.outputDescriptors.segwitNative || 'N/A',
                           )}
                         </Text>
-                      </Pressable>
+                      </AppPressable>
                       <View style={globalStyles.keyshareButtonsRow}>
-                        <Pressable
+                        <AppPressable
                           onPress={() =>
                             handleShareOutputDescriptor('segwitNative')
                           }
@@ -530,8 +530,8 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                             source={require('../assets/share-icon.png')}
                             style={globalStyles.keyshareCopyIcon}
                           />
-                        </Pressable>
-                        <Pressable
+                        </AppPressable>
+                        <AppPressable
                           onPress={() =>
                             handleShowOutputDescriptorQR('segwitNative')
                           }
@@ -541,7 +541,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                             source={require('../assets/qr-icon.png')}
                             style={globalStyles.keyshareCopyIcon}
                           />
-                        </Pressable>
+                        </AppPressable>
                       </View>
                     </View>
                   </View>
@@ -552,7 +552,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                       Output Descriptor (Nested SegWit)
                     </Text>
                     <View style={globalStyles.watchWalletItemValueContainer}>
-                      <Pressable
+                      <AppPressable
                         onPress={() =>
                           handleCopyOutputDescriptor('segwitCompatible')
                         }
@@ -570,9 +570,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                               'N/A',
                           )}
                         </Text>
-                      </Pressable>
+                      </AppPressable>
                       <View style={globalStyles.keyshareButtonsRow}>
-                        <Pressable
+                        <AppPressable
                           onPress={() =>
                             handleShareOutputDescriptor('segwitCompatible')
                           }
@@ -582,8 +582,8 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                             source={require('../assets/share-icon.png')}
                             style={globalStyles.keyshareCopyIcon}
                           />
-                        </Pressable>
-                        <Pressable
+                        </AppPressable>
+                        <AppPressable
                           onPress={() =>
                             handleShowOutputDescriptorQR('segwitCompatible')
                           }
@@ -593,7 +593,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                             source={require('../assets/qr-icon.png')}
                             style={globalStyles.keyshareCopyIcon}
                           />
-                        </Pressable>
+                        </AppPressable>
                       </View>
                     </View>
                   </View>
@@ -608,7 +608,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
             styles.psbtSectionCard,
             isPSBTSectionExpanded && styles.psbtSectionCardExpanded,
           ]}>
-          <Pressable
+          <AppPressable
             style={styles.psbtSectionHeaderRow}
             onPress={handleTogglePSBTSection}
             android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
@@ -640,7 +640,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
               ]}>
               ▶
             </Animated.Text>
-          </Pressable>
+          </AppPressable>
           {/* Collapsible content - only rendered when expanded */}
           {isPSBTSectionExpanded && (
             <View style={styles.psbtSectionContent}>

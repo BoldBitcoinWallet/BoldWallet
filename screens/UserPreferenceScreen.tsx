@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  Pressable,
   TextInput,
   Alert,
   ScrollView,
@@ -11,6 +10,7 @@ import {
   Platform,
   Image,
 } from 'react-native';
+import AppPressable from '../components/AppPressable';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useTheme} from '../theme';
 import {dbg, HapticFeedback, getResetToMainTabsWallet} from '../utils';
@@ -358,7 +358,7 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </View>
 
-          <Pressable
+          <AppPressable
             style={[
               styles.proceedButton,
               (isAPISaving || pendingAPI.trim() === '') &&
@@ -386,14 +386,14 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
             <Text style={styles.proceedButtonText}>
               {isAPISaving ? 'Validating...' : 'Validate and Proceed'}
             </Text>
-          </Pressable>
+          </AppPressable>
 
-          <Pressable
+          <AppPressable
             style={styles.skipButton}
             onPress={handleSkip}
             android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
             <Text style={styles.skipButtonText}>Skip for now</Text>
-          </Pressable>
+          </AppPressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

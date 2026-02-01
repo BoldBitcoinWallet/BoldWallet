@@ -6,7 +6,6 @@ import {
   StyleSheet,
   Alert,
   Image,
-  Pressable,
   Modal,
   TextInput,
   ScrollView,
@@ -15,6 +14,7 @@ import {
   NativeEventEmitter,
   EmitterSubscription,
 } from 'react-native';
+import AppPressable from '../components/AppPressable';
 import Animated, {
   useSharedValue,
   withTiming,
@@ -3817,7 +3817,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                   <View style={styles.section}>
                     <View style={styles.headerRow}>
                       {/* Help button on the left */}
-                      <Pressable
+                      <AppPressable
                         style={styles.helpButton}
                         onPress={() => {
                           HapticFeedback.light();
@@ -3829,7 +3829,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           style={styles.helpIcon}
                           resizeMode="contain"
                         />
-                      </Pressable>
+                      </AppPressable>
                       {/* Title in the center */}
                       <View style={styles.headerContent}>
                         {isSendBitcoin || isSignPSBT ? (
@@ -3873,7 +3873,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                       </View>
                       {/* Abort Setup button on the right */}
                       {!mpcDone && !isPairing ? (
-                        <Pressable
+                        <AppPressable
                           style={[styles.cancelSetupButton, {marginLeft: 12}]}
                           onPress={() => {
                             HapticFeedback.light();
@@ -3892,7 +3892,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           <Text style={styles.cancelLink}>
                             {isSendBitcoin || isSignPSBT ? 'Cancel' : 'Abort'}
                           </Text>
-                        </Pressable>
+                        </AppPressable>
                       ) : (
                         <View style={{width: 36}} />
                       )}
@@ -3901,7 +3901,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                   {/* Relay Configuration - Show in setup and send/PSBT mode, right after title */}
                   {!showFinalStep && (
                     <View style={styles.section}>
-                      <Pressable
+                      <AppPressable
                         style={styles.collapsibleHeader}
                         onPress={() => {
                           HapticFeedback.light();
@@ -3912,7 +3912,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           {showRelayConfig ? '▼' : '▶'} Advanced: Nostr Relays
                           Settings
                         </Text>
-                      </Pressable>
+                      </AppPressable>
                       {showRelayConfig && (
                         <View style={styles.collapsibleContent}>
                           <Text
@@ -4269,7 +4269,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                         }
                                         // Trio mode: selectable
                                         return (
-                                          <Pressable
+                                          <AppPressable
                                             key={dev.keyshareLabel}
                                             style={[
                                               styles.sendModeDeviceItem,
@@ -4339,7 +4339,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                                 </Text>
                                               )}
                                             </View>
-                                          </Pressable>
+                                          </AppPressable>
                                         );
                                       })}
                                     </View>
@@ -4486,7 +4486,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                             {deviceName}@{shortenNpub(localNpub, 8, 6)}
                           </Text>
                           <View style={{flexDirection: 'row', gap: 8}}>
-                            <Pressable
+                            <AppPressable
                               onPress={copyConnectionDetails}
                               android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                               style={{
@@ -4506,8 +4506,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 }}
                                 resizeMode="contain"
                               />
-                            </Pressable>
-                            <Pressable
+                            </AppPressable>
+                            <AppPressable
                               onPress={showQRModal}
                               android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                               style={{
@@ -4527,7 +4527,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 }}
                                 resizeMode="contain"
                               />
-                            </Pressable>
+                            </AppPressable>
                           </View>
                         </View>
                       </View>
@@ -4601,7 +4601,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                             </View>
                           )}
                           {peerNpub1 && !peerInputValidating1 && (
-                            <Pressable
+                            <AppPressable
                               style={[
                                 styles.iconButton,
                                 styles.iconButtonCentered,
@@ -4613,11 +4613,11 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 style={styles.iconImage}
                                 resizeMode="contain"
                               />
-                            </Pressable>
+                            </AppPressable>
                           )}
                           {!peerNpub1 && !peerInputValidating1 && (
                             <>
-                              <Pressable
+                              <AppPressable
                                 style={[
                                   styles.iconButton,
                                   styles.iconButtonCentered,
@@ -4629,8 +4629,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   style={styles.iconImage}
                                   resizeMode="contain"
                                 />
-                              </Pressable>
-                              <Pressable
+                              </AppPressable>
+                              <AppPressable
                                 style={[
                                   styles.iconButton,
                                   styles.iconButtonCentered,
@@ -4648,7 +4648,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   style={styles.iconImage}
                                   resizeMode="contain"
                                 />
-                              </Pressable>
+                              </AppPressable>
                             </>
                           )}
                         </View>
@@ -4733,7 +4733,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                               </View>
                             )}
                             {peerNpub2 && !peerInputValidating2 && (
-                              <Pressable
+                              <AppPressable
                                 style={[
                                   styles.iconButton,
                                   styles.iconButtonCentered,
@@ -4745,11 +4745,11 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   style={styles.iconImage}
                                   resizeMode="contain"
                                 />
-                              </Pressable>
+                              </AppPressable>
                             )}
                             {!peerNpub2 && !peerInputValidating2 && (
                               <>
-                                <Pressable
+                                <AppPressable
                                   style={[
                                     styles.iconButton,
                                     styles.iconButtonCentered,
@@ -4761,8 +4761,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                                     style={styles.iconImage}
                                     resizeMode="contain"
                                   />
-                                </Pressable>
-                                <Pressable
+                                </AppPressable>
+                                <AppPressable
                                   style={[
                                     styles.iconButton,
                                     styles.iconButtonCentered,
@@ -4780,7 +4780,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                     style={styles.iconImage}
                                     resizeMode="contain"
                                   />
-                                </Pressable>
+                                </AppPressable>
                               </>
                             )}
                           </View>
@@ -4816,7 +4816,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           }}>
                           {'-->'} Keep app open during preparation
                         </Text>
-                        <Pressable
+                        <AppPressable
                           style={[
                             styles.button,
                             isPreparing && styles.buttonDisabled,
@@ -4832,7 +4832,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           <Text style={styles.buttonText}>
                             {isPreparing ? 'Preparing...' : 'Prepare Device'}
                           </Text>
-                        </Pressable>
+                        </AppPressable>
                       </View>
                     )}
                   {/* Preparing Modal */}
@@ -4904,7 +4904,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                       <View style={styles.qrModalContent}>
                         <View style={styles.qrModalHeader}>
                           <Text style={styles.qrModalTitle}>How It Works</Text>
-                          <Pressable
+                          <AppPressable
                             style={styles.qrModalCloseButton}
                             onPress={() => {
                               HapticFeedback.medium();
@@ -4912,7 +4912,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                             }}
                             android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                             <Text style={styles.qrModalCloseText}>✕</Text>
-                          </Pressable>
+                          </AppPressable>
                         </View>
                         <ScrollView
                           style={styles.helpModalBody}
@@ -5193,7 +5193,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                         {/* All devices ready checkbox and Start button - outside Final Step card */}
                         {!isPairing && !mpcDone && isPrepared && (
                           <>
-                            <Pressable
+                            <AppPressable
                               style={[styles.enhancedCheckboxContainer]}
                               onPress={() => {
                                 HapticFeedback.medium();
@@ -5217,8 +5217,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   Do not leave the app during setup.
                                 </Text>
                               </View>
-                            </Pressable>
-                            <Pressable
+                            </AppPressable>
+                            <AppPressable
                               style={[
                                 styles.button,
                                 !canStartKeygen && styles.buttonDisabled,
@@ -5248,7 +5248,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   })()}
                                 </Text>
                               </View>
-                            </Pressable>
+                            </AppPressable>
                           </>
                         )}
                       </>
@@ -5256,7 +5256,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                   {/* Readiness Checkbox for PSBT Signing */}
                   {isSignPSBT && !isPairing && !mpcDone && (
                     <View style={styles.section}>
-                      <Pressable
+                      <AppPressable
                         style={styles.checkboxContainer}
                         onPress={toggleKeysignReady}
                         android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -5272,7 +5272,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                         <Text style={styles.checkboxLabel}>
                           Keep this app open during signing ⚠️
                         </Text>
-                      </Pressable>
+                      </AppPressable>
                     </View>
                   )}
                   {/* Transaction Summary - Show in send mode before button */}
@@ -5473,7 +5473,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                   {/* Start Button - Only for send/sign modes (keygen button is inside Final Step) */}
                   {!isPairing && !mpcDone && (isSendBitcoin || isSignPSBT) && (
                     <View style={styles.section}>
-                      <Pressable
+                      <AppPressable
                         style={[
                           styles.button,
                           (isSendBitcoin || isSignPSBT
@@ -5549,7 +5549,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 })()}
                           </Text>
                         </View>
-                      </Pressable>
+                      </AppPressable>
                     </View>
                   )}
                 </>
@@ -5726,7 +5726,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                     backup in different locations to prevent single points of
                     failure.
                   </Text>
-                  <Pressable
+                  <AppPressable
                     style={styles.backupButton}
                     onPress={() => {
                       HapticFeedback.medium();
@@ -5749,7 +5749,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           : 'Keyshare'}
                       </Text>
                     </View>
-                  </Pressable>
+                  </AppPressable>
                 </View>
               </View>
               {/* Backup Confirmation */}
@@ -5797,7 +5797,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                       }
                       return devices;
                     })().map(item => (
-                      <Pressable
+                      <AppPressable
                         key={item.key}
                         style={[
                           styles.enhancedBackupCheckbox,
@@ -5840,10 +5840,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                           ]}
                           resizeMode="contain"
                         />
-                      </Pressable>
+                      </AppPressable>
                     ))}
                   </View>
-                  <Pressable
+                  <AppPressable
                     style={
                       allBackupChecked
                         ? styles.proceedButtonOn
@@ -5872,7 +5872,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                       />
                       <Text style={styles.pairButtonText}>Continue</Text>
                     </View>
-                  </Pressable>
+                  </AppPressable>
                 </View>
               </View>
             </>
@@ -5898,7 +5898,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           <View style={styles.qrModalContent}>
             <View style={styles.qrModalHeader}>
               <Text style={styles.qrModalTitle}>Connection Details</Text>
-              <Pressable
+              <AppPressable
                 style={styles.qrModalCloseButton}
                 onPress={() => {
                   HapticFeedback.medium();
@@ -5906,7 +5906,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                 }}
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <Text style={styles.qrModalCloseText}>✕</Text>
-              </Pressable>
+              </AppPressable>
             </View>
             <View style={styles.qrModalBody}>
               <View style={styles.qrContainer}>
@@ -5921,7 +5921,7 @@ const MobileNostrPairing = ({navigation}: any) => {
               <Text style={styles.connectionDetailsText}>
                 {shortenNpub(connectionDetails)}
               </Text>
-              <Pressable
+              <AppPressable
                 style={{
                   backgroundColor:
                     theme.colors.background === '#ffffff'
@@ -5953,7 +5953,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                   }}>
                   Share
                 </Text>
-              </Pressable>
+              </AppPressable>
             </View>
           </View>
         </View>

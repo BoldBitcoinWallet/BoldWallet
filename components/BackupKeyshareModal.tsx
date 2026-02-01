@@ -3,7 +3,6 @@ import {
   Modal,
   View,
   Text,
-  Pressable,
   Image,
   TextInput,
   KeyboardAvoidingView,
@@ -12,6 +11,7 @@ import {
   Alert,
   StyleSheet,
 } from 'react-native';
+import AppPressable from './AppPressable';
 import {NativeModules} from 'react-native';
 import Share from 'react-native-share';
 import RNFS from 'react-native-fs';
@@ -394,13 +394,13 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
         style={styles.flexContainer}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
-        <Pressable
+        <AppPressable
           style={globalStyles.modalOverlay}
           onPress={() => {
             HapticFeedback.light();
             Keyboard.dismiss();
           }}>
-          <Pressable
+          <AppPressable
             style={globalStyles.modalContent}
             onPress={() => {
               HapticFeedback.light();
@@ -429,7 +429,7 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
-                <Pressable
+                <AppPressable
                   style={styles.eyeButton}
                   onPress={() => {
                     HapticFeedback.light();
@@ -445,7 +445,7 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
                     style={styles.eyeIcon}
                     resizeMode="contain"
                   />
-                </Pressable>
+                </AppPressable>
               </View>
               {/* Password Strength Indicator */}
               {password.length > 0 && (
@@ -499,7 +499,7 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
-                <Pressable
+                <AppPressable
                   style={styles.eyeButton}
                   onPress={() => {
                     HapticFeedback.light();
@@ -515,7 +515,7 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
                     style={styles.eyeIcon}
                     resizeMode="contain"
                   />
-                </Pressable>
+                </AppPressable>
               </View>
               {confirmPassword.length > 0 &&
                 password !== confirmPassword && (
@@ -523,7 +523,7 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
                 )}
             </View>
             <View style={styles.modalActions}>
-              <Pressable
+              <AppPressable
                 style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => {
                   HapticFeedback.light();
@@ -531,8 +531,8 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
                 }}
                 android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <Text style={styles.cancelButtonText}>Cancel</Text>
-              </Pressable>
-              <Pressable
+              </AppPressable>
+              <AppPressable
                 style={[
                   styles.modalButton,
                   styles.confirmButton,
@@ -558,10 +558,10 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
                   />
                   <Text style={styles.buttonTextOnColored}>Backup</Text>
                 </View>
-              </Pressable>
+              </AppPressable>
             </View>
-          </Pressable>
-        </Pressable>
+          </AppPressable>
+        </AppPressable>
       </KeyboardAvoidingView>
     </Modal>
   );

@@ -2,7 +2,6 @@ import React, {useEffect, useState, useCallback, useRef} from 'react';
 import {
   View,
   Text,
-  Pressable,
   NativeModules,
   Image,
   Alert,
@@ -11,6 +10,7 @@ import {
   Linking,
   ActivityIndicator,
 } from 'react-native';
+import AppPressable from '../components/AppPressable';
 import Animated, {
   useSharedValue,
   withTiming,
@@ -1826,7 +1826,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         <View style={styles.walletHeader}>
           <View style={styles.balanceContainer}>
             {/* Eye icon on left */}
-            <Pressable
+            <AppPressable
               onPress={() => {
                 HapticFeedback.light();
                 handleBlurred();
@@ -1847,7 +1847,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   isBlurred ? 'Balance hidden' : 'Balance visible'
                 }
               />
-            </Pressable>
+            </AppPressable>
             {/* Balance content in center */}
             <View style={styles.balanceContentContainer}>
               {balanceError && !isBlurred ? (
@@ -1859,7 +1859,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   <Animated.View
                     style={[styles.balanceRowWithMargin, balanceAnimatedStyle]}
                     pointerEvents="box-none">
-                    <Pressable
+                    <AppPressable
                       style={styles.balanceTouchable}
                       onPress={() => {
                         HapticFeedback.light();
@@ -1899,7 +1899,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                               })}
                         </Text>
                       )}
-                    </Pressable>
+                    </AppPressable>
                   </Animated.View>
                   {btcRate > 0 && (
                     <Animated.View
@@ -1908,7 +1908,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                         balanceAnimatedStyle,
                       ]}
                       pointerEvents="box-none">
-                      <Pressable
+                      <AppPressable
                         style={styles.balanceTouchable}
                         onPress={() => {
                           HapticFeedback.light();
@@ -1960,7 +1960,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                                 })()}
                           </Text>
                         )}
-                      </Pressable>
+                      </AppPressable>
                     </Animated.View>
                   )}
                 </>
@@ -1968,7 +1968,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
             {/* Unit toggle on right - always visible */}
             <View style={styles.balanceUnitToggleContainer}>
-              <Pressable
+              <AppPressable
                 onPress={() => {
                   HapticFeedback.light();
                   setShowSatsGlobal(!showSats);
@@ -1982,11 +1982,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 <Text style={styles.balanceUnitToggleText}>
                   {showSats ? '₿' : 'BTC'}
                 </Text>
-              </Pressable>
+              </AppPressable>
             </View>
           </View>
           <View style={styles.actions}>
-            <Pressable
+            <AppPressable
               style={[
                 styles.actionButton,
                 styles.sendButton,
@@ -2044,9 +2044,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   <Text style={styles.sendButtonText}>Send</Text>
                 </>
               )}
-            </Pressable>
+            </AppPressable>
             {/* Scan QR button replaces lock button in action row */}
-            <Pressable
+            <AppPressable
               style={[styles.actionButton, styles.addressTypeModalButton]}
               onPress={handleScanQRForSend}
               android_ripple={{color: 'rgba(0,0,0,0.1)'}}
@@ -2060,8 +2060,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 resizeMode="contain"
                 accessibilityLabel="Scan QR code icon"
               />
-            </Pressable>
-            <Pressable
+            </AppPressable>
+            <AppPressable
               style={[
                 styles.actionButton,
                 styles.receiveButton,
@@ -2083,7 +2083,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 accessibilityLabel="Receive icon"
               />
               <Text style={styles.receiveButtonText}>Receive</Text>
-            </Pressable>
+            </AppPressable>
           </View>
         </View>
       </View>

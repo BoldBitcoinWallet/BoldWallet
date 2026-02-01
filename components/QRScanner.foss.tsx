@@ -2,11 +2,11 @@ import React, {useState, useEffect, useRef, useCallback} from 'react';
 import {
   View,
   Text,
-  Pressable,
   StyleSheet,
   Modal,
   Platform,
 } from 'react-native';
+import AppPressable from './AppPressable';
 import BarcodeZxingScan from 'rn-barcode-zxing-scan';
 import {useTheme} from '../theme';
 import {dbg} from '../utils';
@@ -261,7 +261,7 @@ const QRScanner: React.FC<QRScannerProps> = ({
               )}
             </View>
           )}
-          <Pressable
+          <AppPressable
             style={styles.closeScannerButton}
             onPress={() => {
               if (isScanning) {
@@ -272,7 +272,7 @@ const QRScanner: React.FC<QRScannerProps> = ({
             }}
             android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
             <Text style={styles.closeScannerButtonText}>{closeButtonText}</Text>
-          </Pressable>
+          </AppPressable>
         </View>
       </Modal>
     );

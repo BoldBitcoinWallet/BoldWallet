@@ -1,5 +1,6 @@
 import React from 'react';
-import {Modal, View, Text, Pressable, Image} from 'react-native';
+import {Modal, View, Text, Image} from 'react-native';
+import AppPressable from './AppPressable';
 import {shorten, HapticFeedback} from '../utils';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
@@ -32,7 +33,7 @@ const AddressTypeModal: React.FC<AddressTypeModalProps> = ({
       transparent={true}
       animationType="fade"
       onRequestClose={onClose}>
-      <Pressable
+      <AppPressable
         style={styles.modalOverlay}
         onPress={() => {
           HapticFeedback.light();
@@ -46,7 +47,7 @@ const AddressTypeModal: React.FC<AddressTypeModalProps> = ({
             />
             <Text style={styles.modalHeaderTitle}>Select Address Type</Text>
           </View>
-          <Pressable
+          <AppPressable
             style={[
               styles.addressTypeButton,
               addressType === 'legacy' && styles.addressTypeButtonSelected,
@@ -76,8 +77,8 @@ const AddressTypeModal: React.FC<AddressTypeModalProps> = ({
                 resizeMode="contain"
               />
             )}
-          </Pressable>
-          <Pressable
+          </AppPressable>
+          <AppPressable
             style={[
               styles.addressTypeButton,
               addressType === 'segwit-native' &&
@@ -113,8 +114,8 @@ const AddressTypeModal: React.FC<AddressTypeModalProps> = ({
                 resizeMode="contain"
               />
             )}
-          </Pressable>
-          <Pressable
+          </AppPressable>
+          <AppPressable
             style={[
               styles.addressTypeButton,
               addressType === 'segwit-compatible' &&
@@ -145,9 +146,9 @@ const AddressTypeModal: React.FC<AddressTypeModalProps> = ({
                 resizeMode="contain"
               />
             )}
-          </Pressable>
+          </AppPressable>
         </View>
-      </Pressable>
+      </AppPressable>
     </Modal>
   );
 };

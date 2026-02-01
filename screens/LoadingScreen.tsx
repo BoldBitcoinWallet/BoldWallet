@@ -4,11 +4,12 @@ import {
   Text,
   ActivityIndicator,
   StyleSheet,
-  Pressable,
   Image,
   Animated,
   Easing,
+  Pressable,
 } from 'react-native';
+import AppPressable from '../components/AppPressable';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useTheme} from '../theme';
 import {HapticFeedback} from '../utils';
@@ -419,8 +420,7 @@ const LoadingScreen = ({onRetry}: any) => {
     },
   });
   // Use simple background color instead of gradient, especially in dark mode
-  const isDarkMode =
-    theme.colors.background !== '#ffffff';
+  const isDarkMode = theme.colors.background !== '#ffffff';
   const backgroundColor = isDarkMode ? '#1A1A1A' : theme.colors.background;
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -467,7 +467,6 @@ const LoadingScreen = ({onRetry}: any) => {
               })}
             </View>
             <Pressable
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
               onPress={handleLogoPress}
               onPressIn={startLogoTouch}
               onPressOut={endLogoTouch}
@@ -502,7 +501,6 @@ const LoadingScreen = ({onRetry}: any) => {
               onPressIn={handlePressIn}
               onPressOut={handlePressOut}
               disabled={loading}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
               accessibilityRole="button"
               accessibilityLabel="Unlock with biometrics"
               accessibilityHint="Double tap to authenticate and unlock"
