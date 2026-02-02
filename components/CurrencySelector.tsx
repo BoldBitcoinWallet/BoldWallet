@@ -3,18 +3,16 @@ import {
   Modal,
   View,
   Text,
-  Pressable,
   StyleSheet,
-  FlatList,
   useWindowDimensions,
   Image,
 } from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import AppPressable from './AppPressable';
 import Animated, {
   useSharedValue,
   withTiming,
-  withSpring,
   useAnimatedStyle,
-  interpolate,
   runOnJS,
 } from 'react-native-reanimated';
 import {useTheme} from '../theme';
@@ -64,31 +62,23 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
 }) => {
   const {theme} = useTheme();
   const {height} = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const modalAnimation = useSharedValue(0);
 
-  // Animate modal on open/close
+  // Animate modal on open/close (fade like other modals)
   useEffect(() => {
     if (visible) {
-      // Reset and animate modal entrance
       modalAnimation.value = 0;
-      modalAnimation.value = withSpring(1, {
-        damping: 11,
-        stiffness: 65,
-      });
+      modalAnimation.value = withTiming(1, {duration: 200});
     } else {
-      // Reset animation when modal closes
       modalAnimation.value = 0;
     }
   }, [visible, modalAnimation]);
 
-  // Animated style for modal
-  const modalAnimatedStyle = useAnimatedStyle(() => {
-    const translateY = interpolate(modalAnimation.value, [0, 1], [100, 0]);
-    return {
-      opacity: modalAnimation.value,
-      transform: [{translateY}],
-    };
-  });
+  // Animated style for modal (fade only)
+  const modalAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: modalAnimation.value,
+  }));
 
   const handleClose = () => {
     HapticFeedback.light();
@@ -109,7 +99,7 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
       symbol: currencySymbols[code] || code,
     }));
   const renderCurrencyItem = ({item}: {item: Currency}) => (
-    <Pressable
+    <AppPressable
       style={[
         styles.currencyItem,
         item.code === currentCurrency && styles.selectedCurrency,
@@ -119,20 +109,20 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
         onSelect(item);
         onClose();
       }}
-      android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
       <Text style={styles.currencyCode}>{item.code}</Text>
       <Text style={styles.currencyName}>{item.name}</Text>
       <Text style={styles.currencySymbol}>{item.symbol}</Text>
-    </Pressable>
+    </AppPressable>
   );
   const styles = StyleSheet.create({
     modalContainer: {
       flex: 1,
       backgroundColor: theme.colors.modalBackdrop,
       justifyContent: 'flex-end',
-      paddingHorizontal: 10,
     },
     modalContent: {
+      maxHeight: height * 0.8,
       backgroundColor: theme.colors.background,
       borderTopLeftRadius: 16,
       borderTopRightRadius: 16,
@@ -151,7 +141,7 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
         theme.colors.background === '#ffffff'
           ? theme.colors.blackOverlay10 // Light mode: subtle dark border
           : theme.colors.whiteOverlay30, // Dark mode: more visible light border
-      paddingBottom: 20,
+      paddingBottom: Math.max(0, insets.bottom),
     },
     header: {
       flexDirection: 'row',
@@ -190,6 +180,9 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
     listContent: {
       padding: 0,
       paddingBottom: 20,
+    },
+    listWrapper: {
+      backgroundColor: theme.colors.background,
     },
     currencyItem: {
       flexDirection: 'row',
@@ -233,12 +226,7 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
       animationType="fade"
       onRequestClose={handleClose}>
       <View style={styles.modalContainer}>
-        <Animated.View
-          style={[
-            styles.modalContent,
-            {maxHeight: height * 0.8},
-            modalAnimatedStyle,
-          ]}>
+        <Animated.View style={[styles.modalContent, modalAnimatedStyle]}>
           <View style={styles.header}>
             <View style={styles.headerTitleContainer}>
               <Image
@@ -248,20 +236,18 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
               />
               <Text style={styles.title}>Select Currency</Text>
             </View>
-            <Pressable
+            <AppPressable
               onPress={handleClose}
               style={styles.closeButton}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
               <Text style={styles.closeButtonText}>✕</Text>
-            </Pressable>
+            </AppPressable>
           </View>
-          <FlatList
-            data={currencies}
-            renderItem={renderCurrencyItem}
-            keyExtractor={item => item.code}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.listContent}
-          />
+          <View style={[styles.listWrapper, styles.listContent]}>
+            {currencies.map(item => (
+              <View key={item.code}>{renderCurrencyItem({item})}</View>
+            ))}
+          </View>
         </Animated.View>
       </View>
     </Modal>

@@ -27,6 +27,12 @@ interface UserContextType {
   setActiveAddressType: (newType: AddressType) => Promise<void>;
   setActiveApiProvider: (newApi: string) => Promise<void>;
   refresh: () => Promise<void>;
+  /** When true, show amounts in sats (₿) for &lt; 1 BTC; when false, show all in BTC (X.XXXX BTC). Toggle in WalletHome; used app-wide. */
+  showSats: boolean;
+  setShowSats: (value: boolean) => Promise<void>;
+  /** When true, use formatted numbers (thousand separators); when false, raw numbers. From Settings > Raw Numbers. */
+  balanceFormattingEnabled: boolean;
+  setBalanceFormattingEnabled: (value: boolean) => Promise<void>;
 }
 const UserContext = createContext<UserContextType | undefined>(undefined);
 export const UserProvider: React.FC<{children: React.ReactNode}> = ({
@@ -49,6 +55,9 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     useState<string>('');
   const [activeAddressType, setActiveAddressTypeState] =
     useState<AddressType>('legacy');
+  const [showSats, setShowSatsState] = useState<boolean>(false);
+  const [balanceFormattingEnabled, setBalanceFormattingEnabledState] =
+    useState<boolean>(false);
   // Compute the currently active address based on active network + address type
   const activeAddress = useMemo(() => {
     const isTestnet = network !== 'mainnet';
@@ -111,6 +120,30 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     };
     syncApi();
   }, [network, apiBase]);
+  // Load Bitcoin display preference (sats vs BTC)
+  useEffect(() => {
+    const loadShowSats = async () => {
+      try {
+        const stored = await EncryptedStorage.getItem('bitcoin_display_sats');
+        setShowSatsState(stored === 'true');
+      } catch {
+        setShowSatsState(false);
+      }
+    };
+    loadShowSats();
+  }, []);
+  // Load balance formatting preference (Settings: Raw Numbers vs Formatted)
+  useEffect(() => {
+    const loadBalanceFormatting = async () => {
+      try {
+        const stored = await EncryptedStorage.getItem('balance_formatting_enabled');
+        setBalanceFormattingEnabledState(stored === 'true');
+      } catch {
+        setBalanceFormattingEnabledState(false);
+      }
+    };
+    loadBalanceFormatting();
+  }, []);
   // Initialize network/api from cache (migrated from NetworkContext)
   useEffect(() => {
     const initializeNetwork = async () => {
@@ -364,6 +397,22 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     },
     [network],
   );
+  const setShowSats = useCallback(async (value: boolean) => {
+    setShowSatsState(value);
+    try {
+      await EncryptedStorage.setItem('bitcoin_display_sats', value ? 'true' : 'false');
+    } catch {
+      // no-op
+    }
+  }, []);
+  const setBalanceFormattingEnabled = useCallback(async (value: boolean) => {
+    setBalanceFormattingEnabledState(value);
+    try {
+      await EncryptedStorage.setItem('balance_formatting_enabled', value ? 'true' : 'false');
+    } catch {
+      // no-op
+    }
+  }, []);
   const value: UserContextType = {
     btcPub,
     legacyMainnetAddress,
@@ -380,6 +429,10 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     setActiveAddressType: handleSetActiveAddressType,
     setActiveApiProvider: handleSetActiveApiProvider,
     refresh,
+    showSats,
+    setShowSats,
+    balanceFormattingEnabled,
+    setBalanceFormattingEnabled,
   };
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 };

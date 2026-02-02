@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  Pressable,
   TextInput,
   Alert,
   ScrollView,
@@ -11,10 +10,10 @@ import {
   Platform,
   Image,
 } from 'react-native';
+import AppPressable from '../components/AppPressable';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {CommonActions} from '@react-navigation/native';
 import {useTheme} from '../theme';
-import {dbg, HapticFeedback} from '../utils';
+import {dbg, HapticFeedback, getResetToMainTabsWallet} from '../utils';
 import {useUser} from '../context/UserContext';
 
 const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
@@ -128,22 +127,12 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
 
   const handleSkip = () => {
     HapticFeedback.medium();
-    navigation.dispatch(
-      CommonActions.reset({
-        index: 0,
-        routes: [{name: 'Home'}],
-      }),
-    );
+    navigation.reset(getResetToMainTabsWallet());
   };
 
   const handleProceed = () => {
     HapticFeedback.medium();
-    navigation.dispatch(
-      CommonActions.reset({
-        index: 0,
-        routes: [{name: 'Home'}],
-      }),
-    );
+    navigation.reset(getResetToMainTabsWallet());
   };
 
   const styles = StyleSheet.create({
@@ -369,7 +358,7 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </View>
 
-          <Pressable
+          <AppPressable
             style={[
               styles.proceedButton,
               (isAPISaving || pendingAPI.trim() === '') &&
@@ -397,14 +386,14 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
             <Text style={styles.proceedButtonText}>
               {isAPISaving ? 'Validating...' : 'Validate and Proceed'}
             </Text>
-          </Pressable>
+          </AppPressable>
 
-          <Pressable
+          <AppPressable
             style={styles.skipButton}
             onPress={handleSkip}
             android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
             <Text style={styles.skipButtonText}>Skip for now</Text>
-          </Pressable>
+          </AppPressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

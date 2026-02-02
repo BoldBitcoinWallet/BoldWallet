@@ -4,13 +4,14 @@ import {
   View,
   Text,
   StyleSheet,
-  Pressable,
   ScrollView,
   Linking,
 } from 'react-native';
+import AppPressable from './AppPressable';
 import {useTheme} from '../theme';
+import {useUser} from '../context/UserContext';
 import moment from 'moment';
-import {HapticFeedback, dbg} from '../utils';
+import {HapticFeedback, dbg, formatBitcoinDisplay} from '../utils';
 interface TransactionDetailsModalProps {
   visible: boolean;
   onClose: () => void;
@@ -45,6 +46,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   isBlurred = false,
 }) => {
   const {theme} = useTheme();
+  const {showSats, balanceFormattingEnabled} = useUser();
   const [currentBlockHeight, setCurrentBlockHeight] = React.useState<
     number | null
   >(null);
@@ -87,14 +89,6 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   if (!transaction || !status || !amounts) {
     return null;
   }
-  const formatBtcAmount = (amount: number) => {
-    if (typeof amount !== 'number' || !Number.isFinite(amount)) {
-      return '0.00000000';
-    }
-    const formatted = amount.toFixed(8);
-    const [whole, decimal] = formatted.split('.');
-    return `${Number(whole).toLocaleString()}.${decimal}`;
-  };
   const getFiatAmount = (btcAmount: number) => {
     if (!btcRate || btcRate <= 0) {
       return '0.00';
@@ -278,8 +272,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     },
     txIdContainer: {
       backgroundColor:
-        theme.colors.background === '#121212' ||
-        theme.colors.background.includes('12')
+        theme.colors.background !== '#ffffff'
           ? theme.colors.cardBackground // Use cardBackground in dark mode
           : theme.colors.blackOverlay03, // Light mode background
       padding: 12,
@@ -287,8 +280,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       flex: 1,
       borderWidth: 1,
       borderColor:
-        theme.colors.background === '#121212' ||
-        theme.colors.background.includes('12')
+        theme.colors.background !== '#ffffff'
           ? theme.colors.border + '40' // More visible border in dark mode
           : theme.colors.blackOverlay06, // Light mode border
       marginRight: 12,
@@ -336,25 +328,21 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     },
     statusBadgeConfirmed: {
       backgroundColor:
-        theme.colors.background === '#121212' ||
-        theme.colors.background.includes('12')
+        theme.colors.background !== '#ffffff'
           ? (theme.colors.received || '#66BB6A') + '26' // Dark mode with opacity
           : theme.colors.receivedOverlay15, // Light mode
       borderColor:
-        theme.colors.background === '#121212' ||
-        theme.colors.background.includes('12')
+        theme.colors.background !== '#ffffff'
           ? (theme.colors.received || '#66BB6A') + '80' // More visible border in dark mode
           : theme.colors.receivedOverlay40, // Light mode
     },
     statusBadgePending: {
       backgroundColor:
-        theme.colors.background === '#121212' ||
-        theme.colors.background.includes('12')
+        theme.colors.background !== '#ffffff'
           ? theme.colors.bitcoinOrange + '26' // Dark mode with opacity - use bitcoin orange
           : theme.colors.dangerOverlay15, // Light mode
       borderColor:
-        theme.colors.background === '#121212' ||
-        theme.colors.background.includes('12')
+        theme.colors.background !== '#ffffff'
           ? theme.colors.bitcoinOrange + '80' // More visible border in dark mode - use bitcoin orange
           : theme.colors.dangerOverlay40, // Light mode
     },
@@ -369,15 +357,15 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Transaction Details</Text>
-            <Pressable
+            <AppPressable
               onPress={() => {
                 HapticFeedback.light();
                 onClose();
               }}
               style={styles.closeButton}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
               <Text style={styles.closeButtonText}>✕</Text>
-            </Pressable>
+            </AppPressable>
           </View>
           <ScrollView
             style={styles.scrollContent}
@@ -423,12 +411,15 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
               )}
               {isSent &&
                 hasValidSent &&
-                renderDetailRow('Sent', `${formatBtcAmount(amounts.sent)} BTC`)}
+                renderDetailRow(
+                  'Sent',
+                  formatBitcoinDisplay(amounts.sent, {inSats: showSats, formatted: balanceFormattingEnabled}),
+                )}
               {!isSent &&
                 hasValidReceived &&
                 renderDetailRow(
                   'Received',
-                  `${formatBtcAmount(amounts.received)} BTC`,
+                  formatBitcoinDisplay(amounts.received, {inSats: showSats, formatted: balanceFormattingEnabled}),
                 )}
               {hasValidAmount &&
                 renderDetailRow(
@@ -452,24 +443,26 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                         <Text style={styles.addressIndex}>{index + 1}.</Text>
                       )}
                       <View style={styles.txIdContainer}>
-                        <Pressable
+                        <AppPressable
                           onPress={() => {
                             HapticFeedback.light();
                             Linking.openURL(addressExplorerLink);
                           }}
-                          android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                           <Text style={[styles.txId, styles.clickableText]}>
                             {addrWithAmount.address}
                           </Text>
-                        </Pressable>
+                        </AppPressable>
                       </View>
                       {showAmount && (
                         <View style={styles.addressAmountContainer}>
                           <Text style={styles.addressAmount}>
                             {isBlurred
                               ? '***'
-                              : formatBtcAmount(addrWithAmount.amount)}{' '}
-                            BTC
+                              : formatBitcoinDisplay(addrWithAmount.amount, {
+                                  inSats: showSats,
+                                  formatted: balanceFormattingEnabled,
+                                })}
                           </Text>
                           {!isBlurred && btcRate > 0 && (
                             <Text style={styles.addressAmountFiat}>
@@ -487,16 +480,16 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Transaction ID</Text>
               <View style={styles.txIdContainer}>
-                <Pressable
+                <AppPressable
                   onPress={() => {
                     HapticFeedback.light();
                     Linking.openURL(explorerLink);
                   }}
-                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                   <Text style={[styles.txId, styles.clickableText]}>
                     {transaction.txid}
                   </Text>
-                </Pressable>
+                </AppPressable>
               </View>
             </View>
             <View style={styles.section}>
@@ -511,9 +504,10 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                 Number.isFinite(transaction.fee) &&
                 renderDetailRow(
                   'Fee',
-                  `${formatBtcAmount(
-                    transaction.fee / 1e8,
-                  )} BTC (${getCurrencySymbol(selectedCurrency)}${getFiatAmount(
+                  `${formatBitcoinDisplay(transaction.fee / 1e8, {
+                    inSats: showSats,
+                    formatted: balanceFormattingEnabled,
+                  })} (${getCurrencySymbol(selectedCurrency)}${getFiatAmount(
                     transaction.fee / 1e8,
                   )})`,
                 )}

@@ -18,6 +18,49 @@ export const getPinnedRemoteIP = () => (ips.length ? ips[ips.length - 1] : '');
 
 export const getPinnedRemoteIPs = () => [...ips];
 
+/**
+ * Reset navigation config to MainTabs with Wallet tab selected.
+ * Use with navigation.reset(getResetToMainTabsWallet()) or navigation.reset(getResetToMainTabsWallet({ signedPsbt: '...' })).
+ */
+export const getResetToMainTabsWallet = (params = {}) => ({
+  index: 0,
+  routes: [
+    {
+      name: 'MainTabs',
+      state: {
+        routes: [
+          {name: 'Device'},
+          {name: 'Wallet', params},
+          {name: 'PSBT'},
+          {name: 'Settings'},
+        ],
+        index: 1,
+      },
+    },
+  ],
+});
+
+/**
+ * Reset navigation config to MainTabs with PSBT tab selected.
+ */
+export const getResetToMainTabsPSBT = () => ({
+  index: 0,
+  routes: [
+    {
+      name: 'MainTabs',
+      state: {
+        routes: [
+          {name: 'Device'},
+          {name: 'Wallet'},
+          {name: 'PSBT'},
+          {name: 'Settings'},
+        ],
+        index: 2,
+      },
+    },
+  ],
+});
+
 export const dbg = (message, ...optionalParams) => {
   // Disable debug logging by default (even in __DEV__)
   // Only enable if explicitly toggled via debug setting in WalletSettings
@@ -406,6 +449,43 @@ export const formatSats = (satsAmount) => {
 
   const thinSpace = ',';
   return Math.floor(amount).toLocaleString('en-US').replace(/,/g, thinSpace);
+};
+
+/**
+ * Cash App–style Bitcoin display: ₿ for sats (< 1 BTC), "X BTC" for 1+ BTC.
+ * @param {string|number} amountBtc - Amount in BTC
+ * @param {{ inSats: boolean, formatted: boolean }} options - inSats: true = show in sats (₿X,XXX when < 1 BTC, X BTC when >= 1); false = show in BTC. formatted: true = thousand separators; false = raw numbers (Settings: Raw Numbers).
+ * @returns {string} Display string (e.g. "₿50,000" or "1.5 BTC" or raw "₿50000" / "0.00050000 BTC")
+ */
+export const formatBitcoinDisplay = (amountBtc, options = {}) => {
+  const {inSats = true, formatted = true} = options;
+  if (amountBtc === undefined || amountBtc === null || amountBtc === '') {
+    return inSats ? '₿0' : '0 BTC';
+  }
+  const amount = parseFloat(String(amountBtc));
+  if (isNaN(amount) || amount < 0) {
+    return inSats ? '₿0' : '0 BTC';
+  }
+  if (amount === 0) {
+    return inSats ? '₿0' : '0 BTC';
+  }
+  if (inSats) {
+    if (amount >= 1) {
+      if (formatted) {
+        return `${formatBTC(amount, {compact: true, maxDecimals: 2})} BTC`;
+      }
+      return `${amount.toFixed(2)} BTC`;
+    }
+    const sats = Math.floor(amount * 1e8);
+    if (formatted) {
+      return `₿${formatSats(sats)}`;
+    }
+    return `₿${sats}`;
+  }
+  if (formatted) {
+    return `${formatBTC(amountBtc, {compact: false, maxDecimals: 8})} BTC`;
+  }
+  return `${amount.toFixed(8)} BTC`;
 };
 
 // Add currency symbol mapping

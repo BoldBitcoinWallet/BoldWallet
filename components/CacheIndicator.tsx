@@ -2,11 +2,11 @@ import React, {useEffect, useState, useRef, forwardRef, useImperativeHandle} fro
 import {
   View,
   Text,
-  Pressable,
   Image,
   Animated,
   StyleSheet,
 } from 'react-native';
+import AppPressable from './AppPressable';
 import {createStyles} from './Styles';
 import {HapticFeedback} from '../utils';
 export interface CacheTimestamp {
@@ -134,7 +134,7 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
     };
     const timeAgo = getTimeAgo(latestTimestamp);
     return (
-      <Pressable
+      <AppPressable
         id="cacheRefresher"
         style={[
           createStyles(theme).cacheIndicator,
@@ -172,6 +172,9 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
             resizeMode="contain"
           />
           <Text
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.5}
             style={{
               color: isRefreshing
                 ? theme.colors.textSecondary
@@ -188,6 +191,9 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
         {!isRefreshing && (
           <View style={styles.timeContainer}>
             <Text
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.5}
               style={[
                 createStyles(theme).cacheText,
                 {color: theme.colors.textSecondary},
@@ -204,7 +210,7 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
             />
           </View>
         )}
-      </Pressable>
+      </AppPressable>
     );
   }
 );

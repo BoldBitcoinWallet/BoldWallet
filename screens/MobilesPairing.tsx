@@ -6,7 +6,6 @@ import {
   StyleSheet,
   Alert,
   Image,
-  Pressable,
   Modal,
   ScrollView,
   Platform,
@@ -15,6 +14,7 @@ import {
   NativeEventEmitter,
   EmitterSubscription,
 } from 'react-native';
+import AppPressable from '../components/AppPressable';
 import Animated, {
   useSharedValue,
   withTiming,
@@ -40,7 +40,7 @@ import {
 } from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Big from 'big.js';
-import {dbg, getPinnedRemoteIPs, HapticFeedback, hexToString} from '../utils';
+import {dbg, getPinnedRemoteIPs, HapticFeedback, hexToString, getResetToMainTabsWallet} from '../utils';
 import {useTheme} from '../theme';
 import {waitMS, WalletService} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
@@ -843,23 +843,9 @@ const MobilesPairing = ({navigation}: any) => {
             } else {
               dbg(partyID, 'PSBT signed successfully');
             }
-            // Check user's wallet mode preference before navigating
-            let targetRoute = 'Home';
-
-            const walletMode =
-              (await EncryptedStorage.getItem('wallet_mode')) || 'full';
-            targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
-            dbg(
-              'PSBT signing complete: Navigating to',
-              targetRoute,
-              'based on wallet_mode:',
-              walletMode,
-            );
+            dbg('PSBT signing complete: Navigating to Wallet tab with signedPsbt');
             navigation.dispatch(
-              CommonActions.reset({
-                index: 0,
-                routes: [{name: targetRoute, params: {signedPsbt}}],
-              }),
+              CommonActions.reset(getResetToMainTabsWallet({signedPsbt})),
             );
             setMpcDone(true);
           })
@@ -941,10 +927,7 @@ const MobilesPairing = ({navigation}: any) => {
               JSON.stringify(pendingTxs),
             );
             navigation.dispatch(
-              CommonActions.reset({
-                index: 0,
-                routes: [{name: 'Home', params: {txId}}],
-              }),
+              CommonActions.reset(getResetToMainTabsWallet({txId})),
             );
             setMpcDone(true);
           })
@@ -2956,7 +2939,7 @@ const MobilesPairing = ({navigation}: any) => {
                   ]}>
                   {title}
                 </Text>
-                <Pressable
+                <AppPressable
                   onPress={() => {
                     HapticFeedback.medium();
                     navigation.dispatch(
@@ -2969,7 +2952,7 @@ const MobilesPairing = ({navigation}: any) => {
                   android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                   style={styles.exitButton}>
                   <Text style={styles.exitButtonText}>Exit Pairing</Text>
-                </Pressable>
+                </AppPressable>
               </View>
             )}
             {/* Checklist Section */}
@@ -2987,7 +2970,7 @@ const MobilesPairing = ({navigation}: any) => {
                 </Text>
                 {!isSendBitcoin && !isSignPSBT && (
                   <>
-                    <Pressable
+                    <AppPressable
                       onPress={() => {
                         HapticFeedback.medium();
                         navigation.dispatch(
@@ -3000,7 +2983,7 @@ const MobilesPairing = ({navigation}: any) => {
                       android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                       style={styles.exitButton}>
                       <Text style={styles.exitButtonText}>Exit Pairing</Text>
-                    </Pressable>
+                    </AppPressable>
                   </>
                 )}
                 <View style={styles.enhancedRequirementsContainer}>
@@ -3039,7 +3022,7 @@ const MobilesPairing = ({navigation}: any) => {
                       hint: 'VPN may break local pairing',
                     },
                   ].map(item => (
-                    <Pressable
+                    <AppPressable
                       key={item.key}
                       style={[
                         styles.enhancedCheckboxContainer,
@@ -3134,7 +3117,7 @@ const MobilesPairing = ({navigation}: any) => {
                           />
                         ) : null}
                       </View>
-                    </Pressable>
+                    </AppPressable>
                   ))}
                 </View>
                 <Text style={styles.pairingHint}>
@@ -3144,7 +3127,7 @@ const MobilesPairing = ({navigation}: any) => {
                 </Text>
                 {/* Pairing Button */}
                 {!isPairing && !peerIP && (
-                  <Pressable
+                  <AppPressable
                     style={
                       allChecked ? styles.pairButtonOn : styles.pairButtonOff
                     }
@@ -3166,7 +3149,7 @@ const MobilesPairing = ({navigation}: any) => {
                       />
                       <Text style={styles.pairButtonText}>Pair Devices</Text>
                     </View>
-                  </Pressable>
+                  </AppPressable>
                 )}
               </View>
             )}
@@ -3325,7 +3308,7 @@ const MobilesPairing = ({navigation}: any) => {
                 {peerIP && (
                   <View style={styles.buttonRow}>
                     {/* Retry button (left) */}
-                    <Pressable
+                    <AppPressable
                       style={[styles.retryButton, styles.buttonFlex]}
                       onPress={() => {
                         HapticFeedback.light();
@@ -3346,10 +3329,10 @@ const MobilesPairing = ({navigation}: any) => {
                         resizeMode="contain"
                       />
                       <Text style={styles.retryLink}>Retry</Text>
-                    </Pressable>
+                    </AppPressable>
                     {/* Cancel button for setup modes (duo/trio) - right */}
                     {!isSendBitcoin && !isSignPSBT && (
-                      <Pressable
+                      <AppPressable
                         style={[styles.cancelSetupButton, styles.buttonFlex]}
                         onPress={() => {
                           HapticFeedback.light();
@@ -3361,7 +3344,7 @@ const MobilesPairing = ({navigation}: any) => {
                           );
                         }}>
                         <Text style={styles.cancelLink}>Cancel</Text>
-                      </Pressable>
+                      </AppPressable>
                     )}
                   </View>
                 )}
@@ -3506,7 +3489,7 @@ const MobilesPairing = ({navigation}: any) => {
                             </Text>
                           </View>
                         </View>
-                        <Pressable
+                        <AppPressable
                           style={styles.checkboxContainer}
                           disabled={isPreparing}
                           onPress={() => {
@@ -3522,8 +3505,8 @@ const MobilesPairing = ({navigation}: any) => {
                           <Text style={styles.checkboxLabel}>
                             Keep app open during setup
                           </Text>
-                        </Pressable>
-                        <Pressable
+                        </AppPressable>
+                        <AppPressable
                           disabled={!isPrepared || isPreparing}
                           style={
                             isPreparing
@@ -3551,10 +3534,13 @@ const MobilesPairing = ({navigation}: any) => {
                               Prepare Device
                             </Text>
                           </View>
-                        </Pressable>
+                        </AppPressable>
                         {/* Show Countdown Timer During Pairing */}
                         {isPreparing && (
-                          <Modal transparent={true} visible={isPreparing}>
+                          <Modal
+                            transparent={true}
+                            visible={isPreparing}
+                            onRequestClose={() => {} /* non-dismissible: block Android back */}>
                             <View style={styles.modalOverlay}>
                               <View style={styles.modalContent}>
                                 {/* Icon Container */}
@@ -3659,7 +3645,7 @@ const MobilesPairing = ({navigation}: any) => {
                           </Text>
                         </View>
                       </View>
-                      <Pressable
+                      <AppPressable
                         style={[
                           styles.enhancedCheckboxContainer,
                           isKeygenReady &&
@@ -3687,12 +3673,13 @@ const MobilesPairing = ({navigation}: any) => {
                           </Text>
                         </View>
                         <Text style={styles.warningIcon}>⚠️</Text>
-                      </Pressable>
+                      </AppPressable>
                       {doingMPC && (
                         <Modal
                           transparent={true}
                           visible={doingMPC}
-                          animationType="fade">
+                          animationType="fade"
+                          onRequestClose={() => {} /* non-dismissible: block Android back */}>
                           <View style={styles.modalOverlay}>
                             <View style={styles.modalContent}>
                               {/* Icon Container */}
@@ -3753,7 +3740,7 @@ const MobilesPairing = ({navigation}: any) => {
                           </View>
                         </Modal>
                       )}
-                      <Pressable
+                      <AppPressable
                         style={
                           isKeygenReady
                             ? styles.clickButton
@@ -3783,7 +3770,7 @@ const MobilesPairing = ({navigation}: any) => {
                             {isMaster ? 'Start' : 'Join'} Setup
                           </Text>
                         </View>
-                      </Pressable>
+                      </AppPressable>
                     </View>
                   </>
                 )}
@@ -3834,7 +3821,7 @@ const MobilesPairing = ({navigation}: any) => {
                         device's backup in different locations to prevent single
                         points of failure.
                       </Text>
-                      <Pressable
+                      <AppPressable
                         style={styles.backupButton}
                         onPress={() => {
                           HapticFeedback.medium();
@@ -3850,7 +3837,7 @@ const MobilesPairing = ({navigation}: any) => {
                             Backup {shareName}
                           </Text>
                         </View>
-                      </Pressable>
+                      </AppPressable>
                     </View>
                   </>
                 )}
@@ -3894,7 +3881,7 @@ const MobilesPairing = ({navigation}: any) => {
                               ]
                             : []),
                         ].map(item => (
-                          <Pressable
+                          <AppPressable
                             key={item.key}
                             style={[
                               styles.enhancedBackupCheckbox,
@@ -3932,10 +3919,10 @@ const MobilesPairing = ({navigation}: any) => {
                               style={styles.backupCheckIcon}
                               resizeMode="contain"
                             />
-                          </Pressable>
+                          </AppPressable>
                         ))}
                       </View>
-                      <Pressable
+                      <AppPressable
                         style={
                           allBackupChecked
                             ? styles.proceedButtonOn
@@ -3964,7 +3951,7 @@ const MobilesPairing = ({navigation}: any) => {
                           />
                           <Text style={styles.pairButtonText}>Continue</Text>
                         </View>
-                      </Pressable>
+                      </AppPressable>
                     </View>
                   </>
                 )}
@@ -4397,7 +4384,7 @@ const MobilesPairing = ({navigation}: any) => {
                       )}
                     </View>
                   )}
-                  <Pressable
+                  <AppPressable
                     style={styles.checkboxContainer}
                     onPress={() => {
                       HapticFeedback.medium();
@@ -4412,12 +4399,13 @@ const MobilesPairing = ({navigation}: any) => {
                     <Text style={styles.checkboxLabel}>
                       Keep this app open during signing ⚠️
                     </Text>
-                  </Pressable>
+                  </AppPressable>
                   {doingMPC && (
                     <Modal
                       transparent={true}
                       visible={doingMPC}
-                      animationType="fade">
+                      animationType="fade"
+                      onRequestClose={() => {} /* non-dismissible: block Android back */}>
                       <View style={styles.modalOverlay}>
                         <View style={styles.modalContent}>
                           {/* Icon Container */}
@@ -4480,7 +4468,7 @@ const MobilesPairing = ({navigation}: any) => {
                       </View>
                     </Modal>
                   )}
-                  <Pressable
+                  <AppPressable
                     style={
                       isKeysignReady
                         ? styles.clickButton
@@ -4508,7 +4496,7 @@ const MobilesPairing = ({navigation}: any) => {
                           : `${isMaster ? 'Start' : 'Join'} Co-Signing`}
                       </Text>
                     </View>
-                  </Pressable>
+                  </AppPressable>
                 </View>
               </>
             )}

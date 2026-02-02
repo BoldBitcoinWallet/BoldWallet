@@ -14,14 +14,21 @@ import {
   ActivityIndicator,
   RefreshControl,
   Platform,
-  Pressable,
   Image,
 } from 'react-native';
+import AppPressable from './AppPressable';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import axios from 'axios';
 import Toast from 'react-native-toast-message';
 import moment from 'moment';
-import {dbg, presentFiat, HapticFeedback, isCanceledError} from '../utils';
+import {
+  dbg,
+  presentFiat,
+  HapticFeedback,
+  isCanceledError,
+  formatBitcoinDisplay,
+} from '../utils';
+import {useUser} from '../context/UserContext';
 import {themes, useTheme as useAppTheme} from '../theme';
 import {COMMON_FONT_CONFIGS} from '../theme/fonts';
 import TransactionListSkeleton from './TransactionListSkeleton';
@@ -76,6 +83,7 @@ const TransactionList = React.forwardRef<
     const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
     const [isDetailsModalVisible, setIsDetailsModalVisible] = useState(false);
     const {theme: appTheme} = useAppTheme();
+    const {showSats, balanceFormattingEnabled} = useUser();
     const insets = useSafeAreaInsets();
     // Add refs to track mounting state and prevent memory leaks
     const isMounted = useRef(true);
@@ -660,7 +668,7 @@ const TransactionList = React.forwardRef<
       },
       listContent: {
         flexGrow: 1,
-        paddingBottom: 20,
+        paddingBottom: 8 + insets.bottom,
       },
       transactionItem: {
         padding: 10,
@@ -840,22 +848,17 @@ const TransactionList = React.forwardRef<
           // Set empty array for received transactions (not used in display)
           relevantAddresses = [];
         }
-        // Format BTC amount with proper precision and grouping
-        const formatBtcAmount = (amount: number) => {
-          const formatted = amount.toFixed(8);
-          const [whole, decimal] = formatted.split('.');
-          return `${Number(whole).toLocaleString()}.${decimal}`;
-        };
+        // Follow global BTC/sats toggle (WalletHome)
         let info = status.includes('Sen')
-          ? `-${formatBtcAmount(sent)} BTC`
-          : `+${formatBtcAmount(received)} BTC`;
+          ? `-${formatBitcoinDisplay(sent, {inSats: showSats, formatted: balanceFormattingEnabled})}`
+          : `+${formatBitcoinDisplay(received, {inSats: showSats, formatted: balanceFormattingEnabled})}`;
         let finalStatus = status;
         let finalIcon = statusIcon;
         if (sent === 0 && received === changeAmount) {
           finalStatus = confirmed
             ? 'Consolidated UTXOs'
             : 'Consolidating UTXOs';
-          info = `+${formatBtcAmount(received)} BTC`;
+          info = `+${formatBitcoinDisplay(received, {inSats: showSats, formatted: balanceFormattingEnabled})}`;
           finalIcon = confirmed ? consolidateIcon : pendingIcon;
         }
         // Calculate amount in selected currency with proper formatting
@@ -870,7 +873,7 @@ const TransactionList = React.forwardRef<
           ? getFiatAmount(sent)
           : getFiatAmount(received);
         return (
-          <Pressable
+          <AppPressable
             style={({pressed}) => [
               styles.transactionItem,
               pressed && styles.transactionItemPressed,
@@ -941,7 +944,7 @@ const TransactionList = React.forwardRef<
               </View>
               <Text style={styles.timestamp}>{timestamp}</Text>
             </View>
-          </Pressable>
+          </AppPressable>
         );
       },
       [

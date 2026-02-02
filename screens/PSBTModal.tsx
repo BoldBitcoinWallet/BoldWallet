@@ -3,7 +3,6 @@ import {
   View,
   Text,
   Modal,
-  Pressable,
   StyleSheet,
   Image,
   ScrollView,
@@ -12,14 +11,16 @@ import {
   DeviceEventEmitter,
   EmitterSubscription,
 } from 'react-native';
+import AppPressable from '../components/AppPressable';
 import DocumentPicker from 'react-native-document-picker';
 import * as RNFS from 'react-native-fs';
 import QRScanner from '../components/QRScanner';
 import BarcodeZxingScan from 'rn-barcode-zxing-scan';
 // @ts-ignore - bc-ur types (Buffer polyfill is in polyfills.js)
 import {URDecoder} from '@ngraveio/bc-ur';
-import {dbg, HapticFeedback} from '../utils';
+import {dbg, HapticFeedback, formatBitcoinDisplay} from '../utils';
 import {useTheme} from '../theme';
+import {useUser} from '../context/UserContext';
 const {BBMTLibNativeModule} = NativeModules;
 // PSBT details structure (will be populated when parsing is implemented)
 interface PSBTDetails {
@@ -63,6 +64,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
   middleButton,
 }) => {
   const {theme} = useTheme();
+  const {showSats, balanceFormattingEnabled} = useUser();
   const [psbtBase64, setPsbtBase64] = useState<string | null>(null);
   const [psbtDetails, setPsbtDetails] = useState<PSBTDetails | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -693,15 +695,9 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
       onSign(psbtBase64);
     }
   }, [psbtBase64, onSign]);
-  // Format satoshis to BTC string (compact)
-  const formatBTC = (sats: number): string => {
-    const btc = sats / 100000000;
-    // Show fewer decimals for readability, but keep precision for small amounts
-    if (btc >= 0.01) {
-      return btc.toFixed(6) + ' BTC';
-    }
-    return btc.toFixed(8) + ' BTC';
-  };
+  // Follow global BTC/sats toggle: ₿ for sats (< 1 BTC) or X.XXXX BTC
+  const formatBtcDisplay = (sats: number): string =>
+    formatBitcoinDisplay(sats / 1e8, {inSats: showSats, formatted: balanceFormattingEnabled});
   const styles = createStyles(theme);
   // Handler for QR scan results (wraps processScannedData for new QRScanner component)
   const handleQRScan = useCallback(
@@ -729,7 +725,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
         {/* Import buttons */}
         {!psbtBase64 && (
           <View style={styles.importButtonsContainer}>
-            <Pressable
+            <AppPressable
               style={styles.importButton}
               onPress={handleUploadFile}
               disabled={isLoading}>
@@ -738,8 +734,8 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                 style={styles.importButtonIcon}
               />
               <Text style={styles.importButtonText}>Load PSBT File</Text>
-            </Pressable>
-            <Pressable
+            </AppPressable>
+            <AppPressable
               style={styles.importButton}
               onPress={handleScanQR}
               disabled={isLoading}>
@@ -748,7 +744,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                 style={styles.importButtonIcon}
               />
               <Text style={styles.importButtonText}>Scan PSBT QR</Text>
-            </Pressable>
+            </AppPressable>
           </View>
         )}
         {/* Loading indicator */}
@@ -761,7 +757,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
         {error && (
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>{error}</Text>
-            <Pressable
+            <AppPressable
               style={styles.retryButton}
               onPress={() => {
                 setError(null);
@@ -769,7 +765,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                 setPsbtDetails(null);
               }}>
               <Text style={styles.retryButtonText}>Try Again</Text>
-            </Pressable>
+            </AppPressable>
           </View>
         )}
         {/* PSBT Details - Sparrow-style Visual Flow */}
@@ -813,7 +809,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                         </View>
                         <View style={styles.flowAmount}>
                           <Text style={styles.flowAmountBTC}>
-                            {formatBTC(input.amount)}
+                            {formatBtcDisplay(input.amount)}
                           </Text>
                         </View>
                       </View>
@@ -872,7 +868,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                         </View>
                         <View style={styles.flowAmount}>
                           <Text style={styles.flowAmountBTC}>
-                            {formatBTC(output.amount)}
+                            {formatBtcDisplay(output.amount)}
                           </Text>
                         </View>
                       </View>
@@ -899,7 +895,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                       </View>
                       <View style={styles.flowAmount}>
                         <Text style={styles.flowAmountBTC}>
-                          {formatBTC(psbtDetails.fee)}
+                          {formatBtcDisplay(psbtDetails.fee)}
                         </Text>
                       </View>
                     </View>
@@ -915,7 +911,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                   {psbtDetails.inputs.length !== 1 ? 's' : ''} →{' '}
                   {psbtDetails.outputs.length} output
                   {psbtDetails.outputs.length !== 1 ? 's' : ''} •{' '}
-                  {formatBTC(psbtDetails.totalOutput + psbtDetails.fee)} total
+                  {formatBtcDisplay(psbtDetails.totalOutput + psbtDetails.fee)} total
                 </Text>
                 {psbtDetails.derivePaths.length > 0 && (
                   <Text style={styles.summaryBarPath} numberOfLines={1}>
@@ -933,7 +929,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
         )}
         {/* Action buttons */}
         <View style={styles.actionButtonsContainer}>
-          <Pressable
+          <AppPressable
             style={[
               styles.cancelButton,
               isCancelDisabled && styles.cancelButtonDisabled,
@@ -947,11 +943,11 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
               ]}>
               Cancel
             </Text>
-          </Pressable>
+          </AppPressable>
           {middleButton && (
             <View style={styles.middleButtonContainer}>{middleButton}</View>
           )}
-          <Pressable
+          <AppPressable
             style={[
               styles.signButton,
               !psbtBase64 && styles.signButtonDisabled,
@@ -972,7 +968,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
               ]}>
               Co-Sign
             </Text>
-          </Pressable>
+          </AppPressable>
         </View>
         {/* QR Scanner Modal */}
         <QRScanner
@@ -1011,7 +1007,7 @@ const PSBTModal: React.FC<PSBTModalProps> = ({visible, onClose, onSign}) => {
       visible={visible}
       transparent={true}
       animationType="fade"
-      onRequestClose={() => {}}>
+      onRequestClose={onClose}>
       <PSBTLoader onClose={onClose} onSign={onSign} />
     </Modal>
   );

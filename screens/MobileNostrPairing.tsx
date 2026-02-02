@@ -6,7 +6,6 @@ import {
   StyleSheet,
   Alert,
   Image,
-  Pressable,
   Modal,
   TextInput,
   ScrollView,
@@ -15,6 +14,7 @@ import {
   NativeEventEmitter,
   EmitterSubscription,
 } from 'react-native';
+import AppPressable from '../components/AppPressable';
 import Animated, {
   useSharedValue,
   withTiming,
@@ -36,7 +36,13 @@ import * as Progress from 'react-native-progress';
 import {CommonActions, RouteProp, useRoute} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Big from 'big.js';
-import {dbg, HapticFeedback, getNostrRelays, hexToString} from '../utils';
+import {
+  dbg,
+  HapticFeedback,
+  getNostrRelays,
+  hexToString,
+  getResetToMainTabsWallet,
+} from '../utils';
 import {useTheme} from '../theme';
 import LocalCache from '../services/LocalCache';
 import {WalletService} from '../services/WalletService';
@@ -1501,16 +1507,20 @@ const MobileNostrPairing = ({navigation}: any) => {
       // CRITICAL: Temporarily update WalletService internal state so getWalletBalance uses correct network
       // This is needed because getWalletBalance uses this.currentNetwork for address validation
       const walletService = WalletService.getInstance();
-      originalWalletServiceNetwork = (walletService as any).currentNetwork || '';
+      originalWalletServiceNetwork =
+        (walletService as any).currentNetwork || '';
       originalWalletServiceApiUrl = (walletService as any).currentApiUrl || '';
       (walletService as any).currentNetwork = net;
       (walletService as any).currentApiUrl = apiUrl;
       dbg('MobileNostrPairing: Set network and API in BBMTLib:', net, apiUrl);
-      dbg('MobileNostrPairing: Temporarily updated WalletService network state:', {
-        from: originalWalletServiceNetwork,
-        to: net,
-        apiUrl,
-      });
+      dbg(
+        'MobileNostrPairing: Temporarily updated WalletService network state:',
+        {
+          from: originalWalletServiceNetwork,
+          to: net,
+          apiUrl,
+        },
+      );
       // Get keyshare and nsec
       const keyshareJSON = await EncryptedStorage.getItem('keyshare');
       if (!keyshareJSON) {
@@ -1762,12 +1772,9 @@ const MobileNostrPairing = ({navigation}: any) => {
         `${senderAddress}-pendingTxs`,
         JSON.stringify(pendingTxs),
       );
-      // Navigate to home (same as MobilesPairing.tsx)
+      // Navigate to Wallet tab with txId
       navigation.dispatch(
-        CommonActions.reset({
-          index: 0,
-          routes: [{name: 'Home', params: {txId}}],
-        }),
+        CommonActions.reset(getResetToMainTabsWallet({txId})),
       );
       setMpcDone(true);
     } catch (error: any) {
@@ -1786,7 +1793,8 @@ const MobileNostrPairing = ({navigation}: any) => {
           // Restore WalletService internal state (in case it wasn't restored earlier due to error)
           if (originalWalletServiceNetwork && originalWalletServiceApiUrl) {
             const walletService = WalletService.getInstance();
-            (walletService as any).currentNetwork = originalWalletServiceNetwork;
+            (walletService as any).currentNetwork =
+              originalWalletServiceNetwork;
             (walletService as any).currentApiUrl = originalWalletServiceApiUrl;
             dbg(
               'MobileNostrPairing: Restored WalletService network in finally block:',
@@ -1975,39 +1983,20 @@ const MobileNostrPairing = ({navigation}: any) => {
           } else {
             dbg(localNpub, 'PSBT signed successfully');
           }
-          // Check user's wallet mode preference before navigating
-          let targetRoute = 'Home';
-
-          const walletMode =
-            (await EncryptedStorage.getItem('wallet_mode')) || 'full';
-          targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
           dbg(
-            'PSBT signing complete: Navigating to',
-            targetRoute,
-            'based on wallet_mode:',
-            walletMode,
+            'PSBT signing complete: Navigating to Wallet tab with signedPsbt',
           );
           navigation.dispatch(
-            CommonActions.reset({
-              index: 0,
-              routes: [{name: targetRoute, params: {signedPsbt}}],
-            }),
+            CommonActions.reset(getResetToMainTabsWallet({signedPsbt})),
           );
           setMpcDone(true);
         })
         .catch(async (e: any) => {
           Alert.alert('Operation Error', `Could not sign PSBT.\n${e?.message}`);
           dbg(localNpub, 'PSBT signing error', e);
-          // Navigate back to home on error to ensure modal cleanup
           try {
-            const walletMode =
-              (await EncryptedStorage.getItem('wallet_mode')) || 'full';
-            const targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
             navigation.dispatch(
-              CommonActions.reset({
-                index: 0,
-                routes: [{name: targetRoute}],
-              }),
+              CommonActions.reset(getResetToMainTabsWallet()),
             );
           } catch (navError) {
             dbg('Error navigating after PSBT error:', navError);
@@ -2020,17 +2009,8 @@ const MobileNostrPairing = ({navigation}: any) => {
       dbg('Sign PSBT error:', error);
       Alert.alert('Error', error?.message || 'PSBT signing failed');
       setStatus('PSBT signing failed');
-      // Navigate back to home on error to ensure modal cleanup
       try {
-        const walletMode =
-          (await EncryptedStorage.getItem('wallet_mode')) || 'full';
-        const targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
-        navigation.dispatch(
-          CommonActions.reset({
-            index: 0,
-            routes: [{name: targetRoute}],
-          }),
-        );
+        navigation.dispatch(CommonActions.reset(getResetToMainTabsWallet()));
       } catch (navError) {
         dbg('Error navigating after PSBT error:', navError);
       }
@@ -3837,7 +3817,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                   <View style={styles.section}>
                     <View style={styles.headerRow}>
                       {/* Help button on the left */}
-                      <Pressable
+                      <AppPressable
                         style={styles.helpButton}
                         onPress={() => {
                           HapticFeedback.light();
@@ -3849,7 +3829,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           style={styles.helpIcon}
                           resizeMode="contain"
                         />
-                      </Pressable>
+                      </AppPressable>
                       {/* Title in the center */}
                       <View style={styles.headerContent}>
                         {isSendBitcoin || isSignPSBT ? (
@@ -3893,7 +3873,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                       </View>
                       {/* Abort Setup button on the right */}
                       {!mpcDone && !isPairing ? (
-                        <Pressable
+                        <AppPressable
                           style={[styles.cancelSetupButton, {marginLeft: 12}]}
                           onPress={() => {
                             HapticFeedback.light();
@@ -3912,16 +3892,16 @@ const MobileNostrPairing = ({navigation}: any) => {
                           <Text style={styles.cancelLink}>
                             {isSendBitcoin || isSignPSBT ? 'Cancel' : 'Abort'}
                           </Text>
-                        </Pressable>
+                        </AppPressable>
                       ) : (
                         <View style={{width: 36}} />
                       )}
                     </View>
                   </View>
-                  {/* Relay Configuration - Show in send Bitcoin/PSBT mode, right after title */}
-                  {(isSendBitcoin || isSignPSBT) && !showFinalStep && (
+                  {/* Relay Configuration - Show in setup and send/PSBT mode, right after title */}
+                  {!showFinalStep && (
                     <View style={styles.section}>
-                      <Pressable
+                      <AppPressable
                         style={styles.collapsibleHeader}
                         onPress={() => {
                           HapticFeedback.light();
@@ -3932,7 +3912,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           {showRelayConfig ? '▼' : '▶'} Advanced: Nostr Relays
                           Settings
                         </Text>
-                      </Pressable>
+                      </AppPressable>
                       {showRelayConfig && (
                         <View style={styles.collapsibleContent}>
                           <Text
@@ -4289,7 +4269,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                         }
                                         // Trio mode: selectable
                                         return (
-                                          <Pressable
+                                          <AppPressable
                                             key={dev.keyshareLabel}
                                             style={[
                                               styles.sendModeDeviceItem,
@@ -4359,7 +4339,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                                 </Text>
                                               )}
                                             </View>
-                                          </Pressable>
+                                          </AppPressable>
                                         );
                                       })}
                                     </View>
@@ -4506,7 +4486,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                             {deviceName}@{shortenNpub(localNpub, 8, 6)}
                           </Text>
                           <View style={{flexDirection: 'row', gap: 8}}>
-                            <Pressable
+                            <AppPressable
                               onPress={copyConnectionDetails}
                               android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                               style={{
@@ -4526,8 +4506,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 }}
                                 resizeMode="contain"
                               />
-                            </Pressable>
-                            <Pressable
+                            </AppPressable>
+                            <AppPressable
                               onPress={showQRModal}
                               android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                               style={{
@@ -4547,7 +4527,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 }}
                                 resizeMode="contain"
                               />
-                            </Pressable>
+                            </AppPressable>
                           </View>
                         </View>
                       </View>
@@ -4621,7 +4601,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                             </View>
                           )}
                           {peerNpub1 && !peerInputValidating1 && (
-                            <Pressable
+                            <AppPressable
                               style={[
                                 styles.iconButton,
                                 styles.iconButtonCentered,
@@ -4633,11 +4613,11 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 style={styles.iconImage}
                                 resizeMode="contain"
                               />
-                            </Pressable>
+                            </AppPressable>
                           )}
                           {!peerNpub1 && !peerInputValidating1 && (
                             <>
-                              <Pressable
+                              <AppPressable
                                 style={[
                                   styles.iconButton,
                                   styles.iconButtonCentered,
@@ -4649,8 +4629,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   style={styles.iconImage}
                                   resizeMode="contain"
                                 />
-                              </Pressable>
-                              <Pressable
+                              </AppPressable>
+                              <AppPressable
                                 style={[
                                   styles.iconButton,
                                   styles.iconButtonCentered,
@@ -4668,7 +4648,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   style={styles.iconImage}
                                   resizeMode="contain"
                                 />
-                              </Pressable>
+                              </AppPressable>
                             </>
                           )}
                         </View>
@@ -4753,7 +4733,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                               </View>
                             )}
                             {peerNpub2 && !peerInputValidating2 && (
-                              <Pressable
+                              <AppPressable
                                 style={[
                                   styles.iconButton,
                                   styles.iconButtonCentered,
@@ -4765,11 +4745,11 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   style={styles.iconImage}
                                   resizeMode="contain"
                                 />
-                              </Pressable>
+                              </AppPressable>
                             )}
                             {!peerNpub2 && !peerInputValidating2 && (
                               <>
-                                <Pressable
+                                <AppPressable
                                   style={[
                                     styles.iconButton,
                                     styles.iconButtonCentered,
@@ -4781,8 +4761,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                                     style={styles.iconImage}
                                     resizeMode="contain"
                                   />
-                                </Pressable>
-                                <Pressable
+                                </AppPressable>
+                                <AppPressable
                                   style={[
                                     styles.iconButton,
                                     styles.iconButtonCentered,
@@ -4800,7 +4780,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                     style={styles.iconImage}
                                     resizeMode="contain"
                                   />
-                                </Pressable>
+                                </AppPressable>
                               </>
                             )}
                           </View>
@@ -4836,7 +4816,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           }}>
                           {'-->'} Keep app open during preparation
                         </Text>
-                        <Pressable
+                        <AppPressable
                           style={[
                             styles.button,
                             isPreparing && styles.buttonDisabled,
@@ -4852,12 +4832,17 @@ const MobileNostrPairing = ({navigation}: any) => {
                           <Text style={styles.buttonText}>
                             {isPreparing ? 'Preparing...' : 'Prepare Device'}
                           </Text>
-                        </Pressable>
+                        </AppPressable>
                       </View>
                     )}
                   {/* Preparing Modal */}
                   {isPreparing && (
-                    <Modal transparent={true} visible={isPreparing}>
+                    <Modal
+                      transparent={true}
+                      visible={isPreparing}
+                      onRequestClose={
+                        () => {} /* non-dismissible: block Android back */
+                      }>
                       <View style={styles.modalOverlay}>
                         <View style={styles.preparingModalContent}>
                           {/* Icon Container */}
@@ -4919,7 +4904,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                       <View style={styles.qrModalContent}>
                         <View style={styles.qrModalHeader}>
                           <Text style={styles.qrModalTitle}>How It Works</Text>
-                          <Pressable
+                          <AppPressable
                             style={styles.qrModalCloseButton}
                             onPress={() => {
                               HapticFeedback.medium();
@@ -4927,7 +4912,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                             }}
                             android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                             <Text style={styles.qrModalCloseText}>✕</Text>
-                          </Pressable>
+                          </AppPressable>
                         </View>
                         <ScrollView
                           style={styles.helpModalBody}
@@ -5208,7 +5193,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                         {/* All devices ready checkbox and Start button - outside Final Step card */}
                         {!isPairing && !mpcDone && isPrepared && (
                           <>
-                            <Pressable
+                            <AppPressable
                               style={[styles.enhancedCheckboxContainer]}
                               onPress={() => {
                                 HapticFeedback.medium();
@@ -5232,8 +5217,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   Do not leave the app during setup.
                                 </Text>
                               </View>
-                            </Pressable>
-                            <Pressable
+                            </AppPressable>
+                            <AppPressable
                               style={[
                                 styles.button,
                                 !canStartKeygen && styles.buttonDisabled,
@@ -5263,7 +5248,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   })()}
                                 </Text>
                               </View>
-                            </Pressable>
+                            </AppPressable>
                           </>
                         )}
                       </>
@@ -5271,7 +5256,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                   {/* Readiness Checkbox for PSBT Signing */}
                   {isSignPSBT && !isPairing && !mpcDone && (
                     <View style={styles.section}>
-                      <Pressable
+                      <AppPressable
                         style={styles.checkboxContainer}
                         onPress={toggleKeysignReady}
                         android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -5287,7 +5272,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                         <Text style={styles.checkboxLabel}>
                           Keep this app open during signing ⚠️
                         </Text>
-                      </Pressable>
+                      </AppPressable>
                     </View>
                   )}
                   {/* Transaction Summary - Show in send mode before button */}
@@ -5486,96 +5471,99 @@ const MobileNostrPairing = ({navigation}: any) => {
                     </View>
                   )}
                   {/* Start Button - Only for send/sign modes (keygen button is inside Final Step) */}
-                  {!isPairing &&
-                    !mpcDone &&
-                    (isSendBitcoin || isSignPSBT) && (
-                      <View style={styles.section}>
-                        <Pressable
-                          style={[
-                            styles.button,
-                            (isSendBitcoin || isSignPSBT
-                              ? !localNpub ||
-                                sendModeDevices.length === 0 ||
-                                // Ensure all npubs are fully converted (not placeholder hex values)
-                                sendModeDevices.some(
-                                  d => !d.npub || !d.npub.startsWith('npub1'),
-                                ) ||
-                                (isTrio && !selectedPeerNpub) ||
-                                (isSignPSBT && !isKeysignReady)
-                              : !canStartKeygen) && styles.buttonDisabled,
-                          ]}
-                          onPress={
-                            isSignPSBT
-                              ? startSignPSBT
-                              : isSendBitcoin
-                              ? startSendBTC
-                              : startKeygen
-                          }
-                          disabled={
-                            isSendBitcoin || isSignPSBT
-                              ? !localNpub ||
-                                sendModeDevices.length === 0 ||
-                                // Ensure all npubs are fully converted (not placeholder hex values)
-                                sendModeDevices.some(
-                                  d => !d.npub || !d.npub.startsWith('npub1'),
-                                ) ||
-                                (isTrio && !selectedPeerNpub) ||
-                                (isSignPSBT && !isKeysignReady)
-                              : !canStartKeygen
-                          }
-                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                          <View style={styles.buttonContent}>
-                            <Image
-                              source={
-                                isSendBitcoin || isSignPSBT
-                                  ? require('../assets/cosign-icon.png')
-                                  : require('../assets/key-icon.png')
-                              }
-                              style={styles.buttonIcon}
-                              resizeMode="contain"
-                            />
-                            <Text style={styles.buttonText}>
-                              {isSendBitcoin || isSignPSBT
-                                ? (() => {
-                                    // Determine if local device is KeyShare1
-                                    const localDevice = sendModeDevices.find(
-                                      d => d.isLocal,
-                                    );
-                                    const isKeyShare1 =
-                                      localDevice?.keyshareLabel ===
-                                      'KeyShare1';
-                                    return isKeyShare1
-                                      ? isSignPSBT
-                                        ? 'Start PSBT Signing'
-                                        : 'Start Co-Signing'
-                                      : isSignPSBT
-                                      ? 'Join PSBT Signing'
-                                      : 'Join Co-Signing';
-                                  })()
-                                : (() => {
-                                    // For keygen, determine if local npub is first in sorted order
-                                    const allNpubs = [localNpub];
-                                    if (peerNpub1) allNpubs.push(peerNpub1);
-                                    if (isTrio && peerNpub2)
-                                      allNpubs.push(peerNpub2);
-                                    const sortedNpubs = allNpubs.sort();
-                                    const isKeyShare1 =
-                                      sortedNpubs[0] === localNpub;
-                                    return isKeyShare1
-                                      ? 'Start Key Generation'
-                                      : 'Join Key Generation';
-                                  })()}
-                            </Text>
-                          </View>
-                        </Pressable>
-                      </View>
-                    )}
+                  {!isPairing && !mpcDone && (isSendBitcoin || isSignPSBT) && (
+                    <View style={styles.section}>
+                      <AppPressable
+                        style={[
+                          styles.button,
+                          (isSendBitcoin || isSignPSBT
+                            ? !localNpub ||
+                              sendModeDevices.length === 0 ||
+                              // Ensure all npubs are fully converted (not placeholder hex values)
+                              sendModeDevices.some(
+                                d => !d.npub || !d.npub.startsWith('npub1'),
+                              ) ||
+                              (isTrio && !selectedPeerNpub) ||
+                              (isSignPSBT && !isKeysignReady)
+                            : !canStartKeygen) && styles.buttonDisabled,
+                        ]}
+                        onPress={
+                          isSignPSBT
+                            ? startSignPSBT
+                            : isSendBitcoin
+                            ? startSendBTC
+                            : startKeygen
+                        }
+                        disabled={
+                          isSendBitcoin || isSignPSBT
+                            ? !localNpub ||
+                              sendModeDevices.length === 0 ||
+                              // Ensure all npubs are fully converted (not placeholder hex values)
+                              sendModeDevices.some(
+                                d => !d.npub || !d.npub.startsWith('npub1'),
+                              ) ||
+                              (isTrio && !selectedPeerNpub) ||
+                              (isSignPSBT && !isKeysignReady)
+                            : !canStartKeygen
+                        }
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                        <View style={styles.buttonContent}>
+                          <Image
+                            source={
+                              isSendBitcoin || isSignPSBT
+                                ? require('../assets/cosign-icon.png')
+                                : require('../assets/key-icon.png')
+                            }
+                            style={styles.buttonIcon}
+                            resizeMode="contain"
+                          />
+                          <Text style={styles.buttonText}>
+                            {isSendBitcoin || isSignPSBT
+                              ? (() => {
+                                  // Determine if local device is KeyShare1
+                                  const localDevice = sendModeDevices.find(
+                                    d => d.isLocal,
+                                  );
+                                  const isKeyShare1 =
+                                    localDevice?.keyshareLabel === 'KeyShare1';
+                                  return isKeyShare1
+                                    ? isSignPSBT
+                                      ? 'Start PSBT Signing'
+                                      : 'Start Co-Signing'
+                                    : isSignPSBT
+                                    ? 'Join PSBT Signing'
+                                    : 'Join Co-Signing';
+                                })()
+                              : (() => {
+                                  // For keygen, determine if local npub is first in sorted order
+                                  const allNpubs = [localNpub];
+                                  if (peerNpub1) allNpubs.push(peerNpub1);
+                                  if (isTrio && peerNpub2)
+                                    allNpubs.push(peerNpub2);
+                                  const sortedNpubs = allNpubs.sort();
+                                  const isKeyShare1 =
+                                    sortedNpubs[0] === localNpub;
+                                  return isKeyShare1
+                                    ? 'Start Key Generation'
+                                    : 'Join Key Generation';
+                                })()}
+                          </Text>
+                        </View>
+                      </AppPressable>
+                    </View>
+                  )}
                 </>
               );
             })()}
           {/* Keygen Modal - Similar to MobilesPairing */}
           {isPairing && !isSendBitcoin && !isSignPSBT && (
-            <Modal transparent={true} visible={isPairing} animationType="fade">
+            <Modal
+              transparent={true}
+              visible={isPairing}
+              animationType="fade"
+              onRequestClose={
+                () => {} /* non-dismissible: block Android back */
+              }>
               <View style={styles.modalOverlay}>
                 <View style={styles.modalContent}>
                   {/* Icon Container */}
@@ -5630,7 +5618,13 @@ const MobileNostrPairing = ({navigation}: any) => {
           )}
           {/* Co-Signing Modal - Similar to MobilesPairing send_btc and sign_psbt */}
           {isPairing && (isSendBitcoin || isSignPSBT) && (
-            <Modal transparent={true} visible={isPairing} animationType="fade">
+            <Modal
+              transparent={true}
+              visible={isPairing}
+              animationType="fade"
+              onRequestClose={
+                () => {} /* non-dismissible: block Android back */
+              }>
               <View style={styles.modalOverlay}>
                 <View style={styles.modalContent}>
                   {/* Icon Container */}
@@ -5732,7 +5726,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                     backup in different locations to prevent single points of
                     failure.
                   </Text>
-                  <Pressable
+                  <AppPressable
                     style={styles.backupButton}
                     onPress={() => {
                       HapticFeedback.medium();
@@ -5755,7 +5749,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           : 'Keyshare'}
                       </Text>
                     </View>
-                  </Pressable>
+                  </AppPressable>
                 </View>
               </View>
               {/* Backup Confirmation */}
@@ -5803,7 +5797,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                       }
                       return devices;
                     })().map(item => (
-                      <Pressable
+                      <AppPressable
                         key={item.key}
                         style={[
                           styles.enhancedBackupCheckbox,
@@ -5846,10 +5840,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                           ]}
                           resizeMode="contain"
                         />
-                      </Pressable>
+                      </AppPressable>
                     ))}
                   </View>
-                  <Pressable
+                  <AppPressable
                     style={
                       allBackupChecked
                         ? styles.proceedButtonOn
@@ -5878,7 +5872,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                       />
                       <Text style={styles.pairButtonText}>Continue</Text>
                     </View>
-                  </Pressable>
+                  </AppPressable>
                 </View>
               </View>
             </>
@@ -5904,7 +5898,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           <View style={styles.qrModalContent}>
             <View style={styles.qrModalHeader}>
               <Text style={styles.qrModalTitle}>Connection Details</Text>
-              <Pressable
+              <AppPressable
                 style={styles.qrModalCloseButton}
                 onPress={() => {
                   HapticFeedback.medium();
@@ -5912,7 +5906,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                 }}
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <Text style={styles.qrModalCloseText}>✕</Text>
-              </Pressable>
+              </AppPressable>
             </View>
             <View style={styles.qrModalBody}>
               <View style={styles.qrContainer}>
@@ -5927,7 +5921,7 @@ const MobileNostrPairing = ({navigation}: any) => {
               <Text style={styles.connectionDetailsText}>
                 {shortenNpub(connectionDetails)}
               </Text>
-              <Pressable
+              <AppPressable
                 style={{
                   backgroundColor:
                     theme.colors.background === '#ffffff'
@@ -5959,7 +5953,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                   }}>
                   Share
                 </Text>
-              </Pressable>
+              </AppPressable>
             </View>
           </View>
         </View>

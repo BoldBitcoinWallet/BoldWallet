@@ -1,11 +1,14 @@
 // App.tsx
-import React, {useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useState} from 'react';
 import {NavigationContainer} from '@react-navigation/native';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
+import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {enableScreens} from 'react-native-screens';
+import {Image} from 'react-native';
 import ShowcaseScreen from './screens/ShowcaseScreen';
 import WalletHome from './screens/WalletHome';
 import PSBTScreen from './screens/PSBTScreen';
+import DeviceScreen from './screens/DeviceScreen';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import LoadingScreen from './screens/LoadingScreen';
 import Zeroconf, {ImplType} from 'react-native-zeroconf';
@@ -14,8 +17,11 @@ import DeviceInfo from 'react-native-device-info';
 import {ThemeProvider, useTheme} from './theme';
 import {WalletProvider} from './context/WalletContext';
 import {UserProvider} from './context/UserContext';
-import {SafeAreaProvider} from 'react-native-safe-area-context';
-import {initializeHaptics} from './utils';
+import {
+  SafeAreaProvider,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
+import {initializeHaptics, HapticFeedback} from './utils';
 import ErrorBoundary from './components/ErrorBoundary';
 import {
   Alert,
@@ -24,8 +30,11 @@ import {
   Platform,
   DeviceEventEmitter,
   View,
+  Text,
   StyleSheet,
+  type GestureResponderEvent,
 } from 'react-native';
+import AppPressable from './components/AppPressable';
 import WalletSettings from './screens/WalletSettings';
 import {NativeModules} from 'react-native';
 import {dbg, pinRemoteIP, getPinnedRemoteIPs} from './utils';
@@ -39,6 +48,7 @@ import {createToastConfig} from './utils/toastConfig';
 enableScreens(true);
 const {BBMTLibNativeModule} = NativeModules;
 const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
 
 // Debug logging state (session-only, not persisted)
 // Default: false (logs suppressed even in __DEV__)
@@ -77,6 +87,327 @@ const DevicesPairingHeader = (props: any) => (
 const NostrConnectHeader = (props: any) => (
   <CustomHeader {...props} height={60} />
 );
+const DeviceHeader = (props: any) => <CustomHeader {...props} height={60} />;
+
+const TAB_BAR_ICON_SIZE = 22;
+
+const tabBarIcons = {
+  Device: require('./assets/key-icon.png'),
+  Wallet: require('./assets/wallet-icon.png'),
+  PSBT: require('./assets/cosign-icon.png'),
+  Settings: require('./assets/settings-icon.png'),
+};
+
+const TabBarIcon = ({
+  name,
+  color,
+  size = TAB_BAR_ICON_SIZE,
+}: {
+  name: keyof typeof tabBarIcons;
+  color: string;
+  size?: number;
+}) => (
+  <Image
+    source={tabBarIcons[name]}
+    style={{width: size, height: size, tintColor: color}}
+    resizeMode="contain"
+  />
+);
+
+const TabBarIconDevice = (props: {color: string; size?: number}) => (
+  <TabBarIcon
+    name="Device"
+    color={props.color}
+    size={props.size ?? TAB_BAR_ICON_SIZE}
+  />
+);
+const TabBarIconWallet = (props: {color: string; size?: number}) => (
+  <TabBarIcon
+    name="Wallet"
+    color={props.color}
+    size={props.size ?? TAB_BAR_ICON_SIZE}
+  />
+);
+const TabBarIconPSBT = (props: {color: string; size?: number}) => (
+  <TabBarIcon
+    name="PSBT"
+    color={props.color}
+    size={props.size ?? TAB_BAR_ICON_SIZE}
+  />
+);
+const TabBarIconSettings = (props: {color: string; size?: number}) => (
+  <TabBarIcon
+    name="Settings"
+    color={props.color}
+    size={props.size ?? TAB_BAR_ICON_SIZE}
+  />
+);
+
+const TAB_BAR_BUTTON_BORDER_RADIUS = 12;
+
+const tabBarStyles = StyleSheet.create({
+  mainTabsContainer: {flex: 1},
+  tabBarButtonInner: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: TAB_BAR_BUTTON_BORDER_RADIUS,
+    overflow: 'hidden',
+    padding: 12,
+  },
+  activeTabBgLight: {backgroundColor: 'rgba(0,0,0,0.06)'},
+  activeTabBgDark: {backgroundColor: 'rgba(255,255,255,0.08)'},
+  tabBarIcon: {
+    width: TAB_BAR_ICON_SIZE,
+    height: TAB_BAR_ICON_SIZE,
+    marginBottom: 2,
+  },
+  tabBarLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  tabBarLabelWrapper: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  tabBarItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
+
+const TabBarLabel = ({color, children}: {color: string; children: string}) => (
+  <View style={tabBarStyles.tabBarLabelWrapper}>
+    <Text style={[tabBarStyles.tabBarLabel, {color}]} numberOfLines={1}>
+      {children}
+    </Text>
+  </View>
+);
+
+type TabBarButtonProps = Record<string, unknown> & {isDarkMode?: boolean};
+
+const TabBarButton = (props: TabBarButtonProps) => {
+  const {style, accessibilityState, isDarkMode, onPress, ...rest} = props;
+  const selected = (accessibilityState as {selected?: boolean})?.selected;
+  const activeBg =
+    isDarkMode === true
+      ? tabBarStyles.activeTabBgDark
+      : tabBarStyles.activeTabBgLight;
+  const handlePress = useCallback(
+    (e: GestureResponderEvent) => {
+      HapticFeedback.selection();
+      (onPress as (e: GestureResponderEvent) => void)?.(e);
+    },
+    [onPress],
+  );
+  return (
+    <View style={[style as object, selected && activeBg]}>
+      <AppPressable
+        {...(rest as object)}
+        onPress={handlePress}
+        style={tabBarStyles.tabBarButtonInner}
+      />
+    </View>
+  );
+};
+
+const MainTabs = () => {
+  const {theme} = useTheme();
+  const insets = useSafeAreaInsets();
+  const isDarkMode = theme.colors.background !== '#ffffff';
+  const lockFabOverlayStyle = {
+    position: 'absolute' as const,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    top: 0,
+    zIndex: 999,
+    elevation: 8,
+    backgroundColor: 'transparent',
+    pointerEvents: 'box-none' as const,
+  };
+  const lockFabPosition = {
+    position: 'absolute' as const,
+    right: 30 + insets.right,
+    bottom: 80 + insets.bottom,
+    zIndex: 1000,
+  };
+  const lockFabShape = {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    backgroundColor: isDarkMode
+      ? theme.colors.cardBackground
+      : theme.colors.blackOverlay06,
+    borderWidth: Platform.OS === 'android' ? 0 : 1,
+    borderColor: isDarkMode
+      ? theme.colors.border + '80'
+      : theme.colors.blackOverlay10,
+  };
+  const lockFabStyle =
+    Platform.OS === 'android'
+      ? {
+          ...lockFabShape,
+          position: 'absolute' as const,
+          top: 0,
+          left: 0,
+          overflow: 'hidden' as const,
+          elevation: 0,
+        }
+      : {
+          ...lockFabPosition,
+          ...lockFabShape,
+          shadowColor: theme.colors.shadowColor || '#000',
+          shadowOffset: {width: 0, height: 2},
+          shadowOpacity: 0.15,
+          shadowRadius: 4,
+          elevation: 4,
+        };
+  const lockFabWrapperStyle =
+    Platform.OS === 'android'
+      ? {
+          ...lockFabPosition,
+          width: 56,
+          height: 56,
+        }
+      : undefined;
+  const lockFabShadowStyle =
+    Platform.OS === 'android'
+      ? {
+          position: 'absolute' as const,
+          top: -1,
+          left: -1,
+          width: 58,
+          height: 58,
+          borderRadius: 29,
+          backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        }
+      : undefined;
+  const lockFabIconStyle = {
+    width: 24,
+    height: 24,
+    tintColor: theme.colors.text,
+    opacity: 0.9,
+    resizeMode: 'contain' as const,
+  };
+  const renderTabBarButton = useCallback(
+    (props: Record<string, unknown>) => (
+      <TabBarButton {...props} isDarkMode={isDarkMode} />
+    ),
+    [isDarkMode],
+  );
+  return (
+    <View style={tabBarStyles.mainTabsContainer}>
+      <Tab.Navigator
+        initialRouteName="Wallet"
+        screenOptions={{
+          headerShown: true,
+          headerLeft: () => null,
+          headerTitle: '',
+          headerTitleAlign: 'left',
+          tabBarStyle: {
+            backgroundColor: theme.colors.background,
+            borderTopWidth: 1,
+            borderTopColor: isDarkMode
+              ? theme.colors.border + 'CC'
+              : theme.colors.border + '60',
+          },
+          tabBarActiveTintColor: isDarkMode
+            ? theme.colors.text
+            : theme.colors.primary || theme.colors.text,
+          tabBarInactiveTintColor: theme.colors.textSecondary,
+          tabBarIconStyle: tabBarStyles.tabBarIcon,
+          tabBarLabelStyle: tabBarStyles.tabBarLabel,
+          tabBarItemStyle: tabBarStyles.tabBarItem,
+          tabBarAllowFontScaling: false,
+          tabBarButton: renderTabBarButton,
+          tabBarLabel: TabBarLabel,
+        }}>
+        <Tab.Screen
+          name="Device"
+          component={DeviceScreen}
+          options={{
+            header: DeviceHeader,
+            tabBarLabel: 'Device',
+            tabBarIcon: TabBarIconDevice,
+          }}
+        />
+        <Tab.Screen
+          name="Wallet"
+          component={WalletHome}
+          options={{
+            header: HomeHeader,
+            tabBarLabel: 'Wallet',
+            tabBarIcon: TabBarIconWallet,
+          }}
+        />
+        <Tab.Screen
+          name="PSBT"
+          component={PSBTScreen}
+          options={{
+            header: PSBTHeader,
+            tabBarLabel: 'PSBT',
+            tabBarIcon: TabBarIconPSBT,
+          }}
+        />
+        <Tab.Screen
+          name="Settings"
+          component={WalletSettings}
+          options={{
+            header: SettingsHeader,
+            tabBarLabel: 'Settings',
+            tabBarIcon: TabBarIconSettings,
+          }}
+        />
+      </Tab.Navigator>
+      <View style={lockFabOverlayStyle}>
+        {Platform.OS === 'android' &&
+        lockFabWrapperStyle &&
+        lockFabShadowStyle ? (
+          <View style={lockFabWrapperStyle}>
+            <View style={lockFabShadowStyle} pointerEvents="none" />
+            <AppPressable
+              style={lockFabStyle}
+              onPress={() => {
+                HapticFeedback.light();
+                DeviceEventEmitter.emit('app:reload');
+              }}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Lock wallet"
+              accessibilityHint="Double tap to lock the wallet">
+              <Image
+                source={require('./assets/locker-icon.png')}
+                style={lockFabIconStyle}
+              />
+            </AppPressable>
+          </View>
+        ) : (
+          <AppPressable
+            style={lockFabStyle}
+            onPress={() => {
+              HapticFeedback.light();
+              DeviceEventEmitter.emit('app:reload');
+            }}
+            accessible={true}
+            accessibilityRole="button"
+            accessibilityLabel="Lock wallet"
+            accessibilityHint="Double tap to lock the wallet">
+            <Image
+              source={require('./assets/locker-icon.png')}
+              style={lockFabIconStyle}
+            />
+          </AppPressable>
+        )}
+      </View>
+    </View>
+  );
+};
+
 const App = () => {
   const [initialRoute, setInitialRoute] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -93,12 +424,7 @@ const App = () => {
       // Re-check wallet state after reload to ensure correct initial route
       try {
         const keyshare = await EncryptedStorage.getItem('keyshare');
-        let route: string = 'Welcome';
-        if (keyshare && keyshare.length > 0) {
-          const walletMode =
-            (await EncryptedStorage.getItem('wallet_mode')) || 'full';
-          route = walletMode === 'psbt' ? 'PSBT' : 'Home';
-        }
+        const route = keyshare && keyshare.length > 0 ? 'MainTabs' : 'Welcome';
         setInitialRoute(route);
       } catch {
         setInitialRoute('Welcome');
@@ -112,13 +438,7 @@ const App = () => {
       try {
         const keyshare = await EncryptedStorage.getItem('keyshare');
         dbg('initializeApp keyshare found', !!keyshare);
-        let route: string = 'Welcome';
-        if (keyshare && keyshare.length > 0) {
-          // Default to Home unless user explicitly chose PSBT mode
-          const walletMode =
-            (await EncryptedStorage.getItem('wallet_mode')) || 'full';
-          route = walletMode === 'psbt' ? 'PSBT' : 'Home';
-        }
+        const route = keyshare && keyshare.length > 0 ? 'MainTabs' : 'Welcome';
         dbg('Setting initial route to:', route);
         setInitialRoute(route);
       } catch (error) {
@@ -393,26 +713,9 @@ const AppContent = ({initialRoute}: {initialRoute: string | null}) => {
                 headerTitleAlign: 'left',
               }}>
               <Stack.Screen
-                name="PSBT"
-                component={PSBTScreen}
-                options={{
-                  headerShown: true,
-                  headerLeft: () => null,
-                  headerTitle: '',
-                  headerTitleAlign: 'left',
-                  header: PSBTHeader,
-                }}
-              />
-              <Stack.Screen
-                name="Home"
-                component={WalletHome}
-                options={{
-                  headerShown: true,
-                  headerLeft: () => null,
-                  headerTitle: '',
-                  headerTitleAlign: 'left',
-                  header: HomeHeader,
-                }}
+                name="MainTabs"
+                component={MainTabs}
+                options={{headerShown: false}}
               />
               <Stack.Screen
                 name="Welcome"
@@ -420,15 +723,6 @@ const AppContent = ({initialRoute}: {initialRoute: string | null}) => {
                 options={{
                   header: WelcomeHeader,
                   title: 'Welcome',
-                }}
-              />
-              <Stack.Screen
-                name="Settings"
-                component={WalletSettings}
-                options={{
-                  headerShown: true,
-                  header: SettingsHeader,
-                  title: 'Settings',
                 }}
               />
               <Stack.Screen

@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  Pressable,
   TextInput,
   Alert,
   Modal,
@@ -18,6 +17,7 @@ import {
   useWindowDimensions,
   DeviceEventEmitter,
 } from 'react-native';
+import AppPressable from '../components/AppPressable';
 import Animated, {
   useSharedValue,
   withTiming,
@@ -42,6 +42,7 @@ import {
   areHapticsEnabled,
   getMainnetAPIList,
   getKeyshareLabel,
+  getResetToMainTabsWallet,
 } from '../utils';
 import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
@@ -52,6 +53,10 @@ import {fetchDynamicAPIEndpoints, getNostrRelays} from '../utils';
 import FontComparisonScreen from '../components/FontComparisonScreen';
 import {setDebugLoggingEnabled, isDebugLoggingEnabled} from '../App';
 import Toast from 'react-native-toast-message';
+import {useRoute, RouteProp} from '@react-navigation/native';
+
+type SettingsParams = {expandSection?: string};
+
 interface CollapsibleSectionProps {
   title: string;
   children: React.ReactNode;
@@ -98,7 +103,7 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   return (
     <View
       style={[styles.collapsibleSection, isExpanded && styles.sectionExpanded]}>
-      <Pressable
+      <AppPressable
         style={styles.sectionHeader}
         onPress={handlePress}
         android_ripple={{color: 'rgba(0,0,0,0.1)'}}
@@ -128,7 +133,7 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
           ]}>
           ▶
         </Animated.Text>
-      </Pressable>
+      </AppPressable>
       {/* Always render content, collapse with opacity/scale animation */}
       <Animated.View style={[styles.sectionContent, animatedStyle]}>
         {children}
@@ -330,7 +335,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
   const renderApiItem = ({item}: {item: string}) => {
     const isSelected = item === value;
     return (
-      <Pressable
+      <AppPressable
         key={item}
         style={[
           styles.apiModalItem,
@@ -371,7 +376,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
             <Text style={styles.apiModalItemCheck}>✓</Text>
           </View>
         )}
-      </Pressable>
+      </AppPressable>
     );
   };
   const renderListEmpty = () => {
@@ -434,7 +439,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
               autoCorrect={false}
               editable={!isTestnet}
             />
-            <Pressable
+            <AppPressable
               style={styles.apiDropdownButton}
               onPress={() => {
                 if (!isTestnet) {
@@ -454,7 +459,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                 ]}>
                 ▼
               </Text>
-            </Pressable>
+            </AppPressable>
           </View>
         </View>
       </View>
@@ -467,13 +472,13 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
           style={styles.apiModalKeyboardView}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={0}>
-          <Pressable
+          <AppPressable
             style={styles.apiModalBackdrop}
             onPress={() => {
               Keyboard.dismiss();
               closeModal();
             }}>
-            <Pressable
+            <AppPressable
               onPress={e => {
                 e.stopPropagation();
               }}>
@@ -506,7 +511,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                         Select Mempool.Space Provider
                       </Text>
                     </View>
-                    <Pressable
+                    <AppPressable
                       onPress={closeModal}
                       style={[
                         styles.apiModalCloseButton,
@@ -520,7 +525,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                         ]}>
                         ✕
                       </Text>
-                    </Pressable>
+                    </AppPressable>
                   </View>
                 </View>
                 <View style={styles.apiModalListWrapper}>
@@ -593,7 +598,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                       blurOnSubmit={false}
                     />
                     {searchQuery.length > 0 && (
-                      <Pressable
+                      <AppPressable
                         onPress={() => setSearchQuery('')}
                         style={styles.apiModalSearchClear}
                         android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -604,13 +609,13 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
                           ]}>
                           ✕
                         </Text>
-                      </Pressable>
+                      </AppPressable>
                     )}
                   </View>
                 </View>
               </Animated.View>
-            </Pressable>
-          </Pressable>
+            </AppPressable>
+          </AppPressable>
         </KeyboardAvoidingView>
       </Modal>
     </>
@@ -650,8 +655,16 @@ const getSectionIcon = (title: string): any => {
   }
 };
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
+  const route = useRoute<RouteProp<{params: SettingsParams}, 'params'>>();
   // Use UserContext for reactive network and API state
-  const {setActiveNetwork, setActiveApiProvider} = useUser();
+  const {
+    setActiveNetwork,
+    setActiveApiProvider,
+    setActiveAddressType,
+    activeAddressType,
+    balanceFormattingEnabled,
+    setBalanceFormattingEnabled,
+  } = useUser();
   const [selectedIcon, setSelectedIcon] = useState<
     'default' | 'alternative' | 'loading'
   >('loading');
@@ -666,15 +679,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [isAPISaving, setIsAPISaving] = useState(false);
   const [nostrRelays, setNostrRelays] = useState<string>('');
   const [pendingNostrRelays, setPendingNostrRelays] = useState<string>('');
-  const [walletMode, setWalletMode] = useState<'full' | 'psbt'>('full');
   const [hasNostr, setHasNostr] = useState(false);
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
   const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
     'terms',
   );
   const [hapticsEnabled, setHapticsEnabledState] = useState(true);
-  const [balanceFormattingEnabled, setBalanceFormattingEnabledState] =
-    useState(false); // Default to raw numbers (not formatted)
   const [isApiInfoVisible, setIsApiInfoVisible] = useState(false);
   const [debugLoggingEnabled, setDebugLoggingEnabledState] = useState(false);
   const [devDebugEnabled, setDevDebugEnabled] = useState(false);
@@ -697,7 +707,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     storage: false,
     appIcon: false,
     devicePairing: false,
-    walletMode: false,
+    addressType: false,
     fontTesting: false,
     devDebug: false,
   });
@@ -722,6 +732,18 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       return newState;
     });
   };
+  // Expand section when opened from header network button (e.g. expandSection: 'advanced' for Network Providers)
+  useEffect(() => {
+    const section = route.params?.expandSection;
+    const validSections = new Set([
+      'theme', 'haptics', 'displayFormat', 'backup', 'advanced', 'nostr',
+      'about', 'legal', 'storage', 'appIcon', 'devicePairing', 'addressType',
+      'fontTesting', 'devDebug',
+    ]);
+    if (section && validSections.has(section)) {
+      setExpandedSections(prev => ({...prev, [section]: true}));
+    }
+  }, [route.params?.expandSection]);
   useEffect(() => {
     setAppVersion(DeviceInfo.getVersion());
     setBuildNumber(DeviceInfo.getBuildNumber());
@@ -729,33 +751,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     LocalCache.usageSize().then(size => {
       setUsageSize(size);
     });
-    // Load wallet mode preference (default to full mode)
-    EncryptedStorage.getItem('wallet_mode')
-      .then(mode => {
-        if (mode === 'psbt') {
-          setWalletMode('psbt');
-        } else {
-          setWalletMode('full');
-        }
-      })
-      .catch(error => {
-        dbg('Error loading wallet_mode from storage:', error);
-        setWalletMode('full');
-      });
-    // Load balance formatting preference (default to disabled - raw numbers)
-    EncryptedStorage.getItem('balance_formatting_enabled')
-      .then(enabled => {
-        if (enabled === null || enabled === undefined) {
-          // Default to false (raw numbers, not formatted)
-          setBalanceFormattingEnabledState(false);
-        } else {
-          setBalanceFormattingEnabledState(enabled === 'true');
-        }
-      })
-      .catch(error => {
-        dbg('Error loading balance_formatting_enabled from storage:', error);
-        setBalanceFormattingEnabledState(false);
-      });
     // Initialize debug logging state from module-level ref
     setDebugLoggingEnabledState(isDebugLoggingEnabled());
     // Load dev debug enabled preference
@@ -882,22 +877,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     const newNetwork = value ? 'testnet3' : 'mainnet';
     const networkName = value ? 'Testnet' : 'Mainnet';
     await setActiveNetwork(newNetwork);
-    // Check user's wallet mode preference before navigating
-    let targetRoute = 'Home';
-    try {
-      targetRoute = walletMode === 'psbt' ? 'PSBT' : 'Home';
-      dbg(
-        'Network toggle: Navigating to',
-        targetRoute,
-        'based on wallet_mode:',
-        walletMode,
-      );
-    } catch (error) {
-      dbg('Error loading wallet_mode during network toggle:', error);
-      // Default to 'Home' if there's an error
-    }
-    // Navigate to the appropriate screen based on user preference
-    navigation.reset({index: 0, routes: [{name: targetRoute}]});
+    dbg('Network toggle: Navigating to Wallet tab');
+    navigation.reset(getResetToMainTabsWallet());
     // Show brief feedback alert after a brief delay to ensure navigation completes
     setTimeout(() => {
       // warn user if test net bitcoin is not real
@@ -950,7 +931,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     await setActiveApiProvider(api);
     dbg('API reset and propagated successfully:', api);
     // Navigate to home after reset
-    navigation.reset({index: 0, routes: [{name: 'Home'}]});
+    navigation.reset(getResetToMainTabsWallet());
     // Show success alert after navigation
     setTimeout(() => {
       Alert.alert('Success', 'API endpoint reset to default!');
@@ -1035,7 +1016,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       Alert.alert('Success', 'API endpoint updated successfully!');
       dbg('=== API saved and propagated successfully:', normalizedApi);
       // Navigate to home after successful save
-      navigation.reset({index: 0, routes: [{name: 'Home'}]});
+      navigation.reset(getResetToMainTabsWallet());
     } catch (error) {
       dbg('Error in saveAPI:', error);
       Alert.alert('Error', 'Failed to save API endpoint. Please try again.');
@@ -1078,17 +1059,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     setHapticsEnabledState(value);
     setHapticsEnabled(value);
   };
-  const handleToggleBalanceFormatting = async (value: boolean) => {
+  const handleToggleBalanceFormatting = (value: boolean) => {
     HapticFeedback.light();
-    setBalanceFormattingEnabledState(value);
-    try {
-      await EncryptedStorage.setItem(
-        'balance_formatting_enabled',
-        value.toString(),
-      );
-    } catch (error) {
-      dbg('Error saving balance_formatting_enabled:', error);
-    }
+    setBalanceFormattingEnabled(value);
   };
   const handleToggleDebugLogging = (value: boolean) => {
     HapticFeedback.light();
@@ -1125,7 +1098,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           textAlign: 'center',
         },
         collapsibleSection: {
-          marginBottom: 10,
+          marginBottom: 6,
           backgroundColor: theme.colors.cardBackground,
           borderRadius: 8,
           borderWidth: 1,
@@ -2193,6 +2166,33 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           color: theme.colors.textSecondary,
           marginBottom: 12,
         },
+        addressTypeOptionsContainer: {
+          gap: 8,
+        },
+        addressTypeOption: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          padding: 12,
+          borderRadius: 8,
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+          backgroundColor: theme.colors.background,
+          gap: 10,
+        },
+        addressTypeOptionSelected: {
+          borderColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.accent
+              : theme.colors.bitcoinOrange,
+          borderWidth: 2,
+          backgroundColor: theme.colors.cardBackground,
+        },
+        addressTypeCheckIcon: {
+          width: 20,
+          height: 20,
+          marginLeft: 'auto',
+          tintColor: theme.colors.primary,
+        },
         themeOptionContainer: {
           gap: 8,
           marginBottom: 8,
@@ -2273,7 +2273,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             settings.
           </Text>
           <View style={styles.themeOptionContainer}>
-            <Pressable
+            <AppPressable
               style={[
                 styles.themeOption,
                 themeMode === 'os' && styles.themeOptionSelected,
@@ -2299,8 +2299,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   />
                 )}
               </View>
-            </Pressable>
-            <Pressable
+            </AppPressable>
+            <AppPressable
               style={[
                 styles.themeOption,
                 themeMode === 'light' && styles.themeOptionSelected,
@@ -2326,8 +2326,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   />
                 )}
               </View>
-            </Pressable>
-            <Pressable
+            </AppPressable>
+            <AppPressable
               style={[
                 styles.themeOption,
                 themeMode === 'dark' && styles.themeOptionSelected,
@@ -2353,7 +2353,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   />
                 )}
               </View>
-            </Pressable>
+            </AppPressable>
           </View>
         </CollapsibleSection>
         {/* Haptics Section */}
@@ -2510,52 +2510,106 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </CollapsibleSection>
         )}
-        {/* Wallet Mode Section */}
+        {/* Address Type Section */}
         <CollapsibleSection
-          title="Wallet Mode"
-          isExpanded={expandedSections.walletMode}
-          onToggle={() => toggleSection('walletMode')}
+          title="Address Type"
+          isExpanded={expandedSections.addressType}
+          onToggle={() => toggleSection('addressType')}
           styles={styles}
           theme={theme}>
           <Text style={styles.walletModeDescription}>
-            Choose the default wallet experience when opening the app. PSBT Mode
-            jumps directly into PSBT signing workflows, while Full Mode opens
-            the main wallet home screen.
+            Choose the receive address format. Native SegWit (bech32) is
+            recommended. Changing this updates your receive address on the
+            Wallet tab.
           </Text>
-          <View style={styles.walletModeRow}>
-            <Text style={styles.walletModeLabel}>Full Mode</Text>
-            <Switch
-              value={walletMode === 'psbt'}
-              trackColor={{
-                false: theme.colors.switchTrackFalse,
-                true: theme.colors.switchTrackTrue,
-              }}
-              thumbColor={theme.colors.switchThumb}
-              ios_backgroundColor={theme.colors.switchIosBackground}
-              onValueChange={async value => {
-                HapticFeedback.light();
-                const mode = value ? 'psbt' : 'full';
-                setWalletMode(mode);
+          <View style={styles.addressTypeOptionsContainer}>
+            <AppPressable
+              style={[
+                styles.addressTypeOption,
+                activeAddressType === 'legacy' && styles.addressTypeOptionSelected,
+              ]}
+              onPress={async () => {
+                HapticFeedback.selection();
                 try {
-                  await EncryptedStorage.setItem('wallet_mode', mode);
-                  // If switching to PSBT mode, set flag for first visit (both sections closed)
-                  if (mode === 'psbt') {
-                    await EncryptedStorage.setItem(
-                      'psbt_mode_first_visit',
-                      'true',
-                    );
-                  }
-                } catch (error) {
-                  dbg('Error saving wallet_mode:', error);
+                  await setActiveAddressType('legacy');
+                  navigation.reset(getResetToMainTabsWallet());
+                } catch (e) {
+                  dbg('Error setting address type:', e);
                 }
-                // Immediately navigate to the selected default screen
-                navigation.reset({
-                  index: 0,
-                  routes: [{name: mode === 'psbt' ? 'PSBT' : 'Home'}],
-                });
               }}
-            />
-            <Text style={styles.walletModeLabel}>PSBT Only</Text>
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+              <Image
+                source={require('../assets/bricks-icon.png')}
+                style={styles.networkIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.toggleLabel}>Legacy (P2PKH)</Text>
+              {activeAddressType === 'legacy' && (
+                <Image
+                  source={require('../assets/check-icon.png')}
+                  style={styles.addressTypeCheckIcon}
+                  resizeMode="contain"
+                />
+              )}
+            </AppPressable>
+            <AppPressable
+              style={[
+                styles.addressTypeOption,
+                activeAddressType === 'segwit-native' && styles.addressTypeOptionSelected,
+              ]}
+              onPress={async () => {
+                HapticFeedback.selection();
+                try {
+                  await setActiveAddressType('segwit-native');
+                  navigation.reset(getResetToMainTabsWallet());
+                } catch (e) {
+                  dbg('Error setting address type:', e);
+                }
+              }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+              <Image
+                source={require('../assets/dna-icon.png')}
+                style={styles.networkIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.toggleLabel}>Native SegWit (bech32)</Text>
+              {activeAddressType === 'segwit-native' && (
+                <Image
+                  source={require('../assets/check-icon.png')}
+                  style={styles.addressTypeCheckIcon}
+                  resizeMode="contain"
+                />
+              )}
+            </AppPressable>
+            <AppPressable
+              style={[
+                styles.addressTypeOption,
+                activeAddressType === 'segwit-compatible' && styles.addressTypeOptionSelected,
+              ]}
+              onPress={async () => {
+                HapticFeedback.selection();
+                try {
+                  await setActiveAddressType('segwit-compatible');
+                  navigation.reset(getResetToMainTabsWallet());
+                } catch (e) {
+                  dbg('Error setting address type:', e);
+                }
+              }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+              <Image
+                source={require('../assets/recycle-icon.png')}
+                style={styles.networkIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.toggleLabel}>Nested SegWit (P2SH-WPKH)</Text>
+              {activeAddressType === 'segwit-compatible' && (
+                <Image
+                  source={require('../assets/check-icon.png')}
+                  style={styles.addressTypeCheckIcon}
+                  resizeMode="contain"
+                />
+              )}
+            </AppPressable>
           </View>
         </CollapsibleSection>
         {/* Security Section */}
@@ -2566,7 +2620,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           styles={styles}
           theme={theme}>
           <Text style={styles.apiName}>Backup Wallet Keyshare</Text>
-          <Pressable
+          <AppPressable
             style={[styles.button, styles.backupButton]}
             onPress={() => {
               HapticFeedback.light();
@@ -2581,11 +2635,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               />
               <Text style={styles.buttonText}>Backup {party}</Text>
             </View>
-          </Pressable>
+          </AppPressable>
           <View style={styles.apiItem}>
             <Text style={styles.apiName}>Delete Wallet Keyshare</Text>
           </View>
-          <Pressable
+          <AppPressable
             style={[styles.button, styles.deleteButton]}
             onPress={() => {
               HapticFeedback.light();
@@ -2600,7 +2654,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               />
               <Text style={styles.buttonText}>Delete {party}</Text>
             </View>
-          </Pressable>
+          </AppPressable>
         </CollapsibleSection>
         {/* Network Providers Section */}
         <CollapsibleSection
@@ -2677,7 +2731,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 </Text>
               </View>
               {!isTestnet && (
-                <Pressable
+                <AppPressable
                   style={styles.apiInfoButton}
                   onPress={() => {
                     HapticFeedback.light();
@@ -2690,7 +2744,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     resizeMode="contain"
                   />
                   <Text style={styles.apiInfoButtonText}>Change Provider?</Text>
-                </Pressable>
+                </AppPressable>
               )}
             </View>
             <Text
@@ -2716,7 +2770,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <View style={styles.apiActionButtonsRow}>
             {/* Test & Save button - always show in mainnet, disabled when no changes */}
             {!isTestnet && (
-              <Pressable
+              <AppPressable
                 style={[
                   styles.button,
                   styles.backupButton,
@@ -2746,11 +2800,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     {isAPISaving ? 'Verifying...' : 'Verify & Save'}
                   </Text>
                 </View>
-              </Pressable>
+              </AppPressable>
             )}
             {/* Reset Default API button - only show in mainnet */}
             {!isTestnet && (
-              <Pressable
+              <AppPressable
                 style={[
                   styles.button,
                   styles.resetButton,
@@ -2769,7 +2823,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   />
                   <Text style={styles.buttonText}>Defaults</Text>
                 </View>
-              </Pressable>
+              </AppPressable>
             )}
           </View>
         </CollapsibleSection>
@@ -2803,7 +2857,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               numberOfLines={6}
             />
             <View style={styles.apiActionButtonsRow}>
-              <Pressable
+              <AppPressable
                 style={[
                   styles.button,
                   styles.backupButton,
@@ -2868,8 +2922,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     Save Relays
                   </Text>
                 </View>
-              </Pressable>
-              <Pressable
+              </AppPressable>
+              <AppPressable
                 style={[
                   styles.button,
                   styles.resetButton,
@@ -2893,7 +2947,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   />
                   <Text style={styles.buttonText}>Defaults</Text>
                 </View>
-              </Pressable>
+              </AppPressable>
             </View>
           </CollapsibleSection>
         )}
@@ -2911,7 +2965,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               Clear cached balances and history.
             </Text>
           </View>
-          <Pressable
+          <AppPressable
             style={[styles.button, styles.deleteButton]}
             onPress={async () => {
               HapticFeedback.light();
@@ -2919,7 +2973,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 await LocalCache.clear();
                 setUsageSize(await LocalCache.usageSize());
                 Alert.alert('Cache Cleared', 'Cache cleared successfully.');
-                navigation.reset({index: 0, routes: [{name: 'Home'}]});
+                navigation.reset(getResetToMainTabsWallet());
               } catch (e) {
                 dbg('Error clearing cache', e);
                 Alert.alert(
@@ -2939,7 +2993,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 Clear Cache ({usageSize.mb})
               </Text>
             </View>
-          </Pressable>
+          </AppPressable>
         </CollapsibleSection>
 
         {/* Dev Debug Section - Only visible on Android if enabled via build number clicks */}
@@ -3017,7 +3071,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
 
             {/* Enhanced Disable Dev Mode Button */}
-            <Pressable
+            <AppPressable
               style={styles.disableDevModeButton}
               onPress={() => {
                 HapticFeedback.medium();
@@ -3055,7 +3109,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               <Text style={styles.disableDevModeButtonText}>
                 Disable Dev Mode
               </Text>
-            </Pressable>
+            </AppPressable>
           </CollapsibleSection>
         )}
 
@@ -3101,7 +3155,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           </View>
           <View style={styles.aboutInfoRow}>
             <Text style={styles.aboutLabel}>Build Number</Text>
-            <Pressable
+            <AppPressable
               onPress={() => {
                 HapticFeedback.light();
                 // Only enable on Android (iOS prod builds don't support logs)
@@ -3188,7 +3242,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               ) : (
                 <Text style={styles.aboutValue}>{buildNumber}</Text>
               )}
-            </Pressable>
+            </AppPressable>
           </View>
           <Text style={styles.toggleDescription}>
             Make sure that your wallet keyshares devices are running the latest
@@ -3249,7 +3303,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               onChangeText={setDeleteInput}
             />
             <View style={styles.modalActions}>
-              <Pressable
+              <AppPressable
                 style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => {
                   HapticFeedback.light();
@@ -3257,8 +3311,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 }}
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <Text style={styles.cancelButtonText}>Cancel</Text>
-              </Pressable>
-              <Pressable
+              </AppPressable>
+              <AppPressable
                 style={[
                   styles.modalButton,
                   styles.confirmButton,
@@ -3277,7 +3331,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   ]}>
                   {isDeleting ? 'Deleting...' : 'Delete'}
                 </Text>
-              </Pressable>
+              </AppPressable>
             </View>
           </View>
         </View>
@@ -3296,10 +3350,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         transparent={true}
         animationType="fade"
         onRequestClose={() => setIsApiInfoVisible(false)}>
-        <Pressable
+        <AppPressable
           style={styles.modalOverlay}
           onPress={() => setIsApiInfoVisible(false)}>
-          <Pressable onPress={e => e.stopPropagation()}>
+          <AppPressable onPress={e => e.stopPropagation()}>
             <View style={styles.apiInfoModalContent}>
               <View style={styles.apiInfoModalHeader}>
                 <View style={styles.apiInfoModalIconContainer}>
@@ -3312,7 +3366,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 <Text style={styles.apiInfoModalTitle}>
                   Mempool.Space Providers
                 </Text>
-                <Pressable
+                <AppPressable
                   style={styles.apiInfoModalCloseButton}
                   onPress={() => {
                     HapticFeedback.light();
@@ -3320,7 +3374,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   }}
                   android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                   <Text style={styles.apiInfoModalCloseText}>✕</Text>
-                </Pressable>
+                </AppPressable>
               </View>
               <View style={styles.apiInfoModalBody}>
                 <View style={styles.apiInfoSection}>
@@ -3370,7 +3424,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   </Text>
                 </View>
               </View>
-              <Pressable
+              <AppPressable
                 style={[
                   styles.apiInfoModalButton,
                   {backgroundColor: theme.colors.primary},
@@ -3387,10 +3441,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   ]}>
                   Got it
                 </Text>
-              </Pressable>
+              </AppPressable>
             </View>
-          </Pressable>
-        </Pressable>
+          </AppPressable>
+        </AppPressable>
       </Modal>
     </SafeAreaView>
   );

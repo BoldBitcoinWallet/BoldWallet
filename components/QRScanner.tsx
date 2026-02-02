@@ -1,5 +1,6 @@
 import React, {useState, useEffect, useRef} from 'react';
-import {View, Text, Pressable, StyleSheet, Modal, Platform} from 'react-native';
+import {View, Text, StyleSheet, Modal, Platform} from 'react-native';
+import AppPressable from './AppPressable';
 import {useTheme} from '../theme';
 import {dbg} from '../utils';
 // iOS-specific imports (only imported when needed)
@@ -163,12 +164,12 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
           <Text style={styles.cameraNotFoundSubtext}>
             Please check camera permissions in Settings
           </Text>
-          <Pressable
+          <AppPressable
             style={styles.closeScannerButton}
             onPress={onClose}
             android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
             <Text style={styles.closeScannerButtonText}>{closeButtonText}</Text>
-          </Pressable>
+          </AppPressable>
         </View>
       </Modal>
     );
@@ -219,12 +220,12 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
             )}
           </View>
         )}
-        <Pressable
+        <AppPressable
           style={styles.closeScannerButton}
           onPress={onClose}
           android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
           <Text style={styles.closeScannerButtonText}>{closeButtonText}</Text>
-        </Pressable>
+        </AppPressable>
       </View>
     </Modal>
   );
@@ -483,12 +484,12 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
               )}
             </View>
           )}
-          <Pressable
+          <AppPressable
             style={styles.closeScannerButton}
             onPress={handleClose}
             android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
             <Text style={styles.closeScannerButtonText}>{closeButtonText}</Text>
-          </Pressable>
+          </AppPressable>
         </View>
       </Modal>
     );

@@ -1,15 +1,15 @@
 import React, {useCallback, useState, useEffect} from 'react';
 import {
-  Modal,
   View,
   Text,
-  Pressable,
   Image,
   ScrollView,
   Alert,
-  Dimensions,
   NativeModules,
+  StyleSheet,
 } from 'react-native';
+import AppPressable from './AppPressable';
+import {SafeAreaView} from 'react-native-safe-area-context';
 import Animated, {
   useSharedValue,
   withTiming,
@@ -43,30 +43,38 @@ interface KeyshareInfo {
     segwitCompatible: string;
   };
 }
-interface KeyshareModalProps {
-  visible: boolean;
-  onClose: () => void;
+interface KeyshareInfoContentProps {
   keyshareInfo: KeyshareInfo | null;
   network: 'mainnet' | 'testnet';
-  onShowOutputDescriptorQR?: () => void;
-  onShowNpubQR?: () => void; // Deprecated - kept for backward compatibility
+  /** When provided, "Go to Wallet Settings > Security" becomes clickable and opens Settings with this section expanded (e.g. 'backup' for Security). */
+  onOpenSettingsSection?: (section: string) => void;
 }
-const KeyshareModal: React.FC<KeyshareModalProps> = ({
-  visible,
-  onClose,
+const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   keyshareInfo,
   network,
+  onOpenSettingsSection,
 }) => {
   const {theme} = useTheme();
   const styles = createStyles(theme);
+  const screenStyles = React.useMemo(
+    () =>
+      StyleSheet.create({
+        safeArea: {flex: 1, backgroundColor: theme.colors.background},
+        scrollView: {flex: 1},
+        scrollContent: {
+          paddingHorizontal: 16,
+          paddingTop: 16,
+          paddingBottom: 24,
+        },
+      }),
+    [theme.colors.background],
+  );
 
   // Helper function to format long strings: first 8 chars ... last 8 chars
   const formatLongString = (value: string): string => {
     if (!value || value.length <= 16) return value;
     return `${value.substring(0, 8)}...${value.substring(value.length - 8)}`;
   };
-  const screenHeight = Dimensions.get('window').height;
-  const scrollViewHeight = screenHeight * 0.5;
   const [isOutputDescriptorQrVisible, setIsOutputDescriptorQrVisible] =
     useState(false);
   const [selectedDescriptorType, setSelectedDescriptorType] = useState<
@@ -76,7 +84,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
   const [pairingPubkeys, setPairingPubkeys] = useState<string>('');
   const [isPairingPubkeysQrVisible, setIsPairingPubkeysQrVisible] =
     useState(false);
-  const [isWalletInfoExpanded, setIsWalletInfoExpanded] = useState(false);
+  const [isWalletInfoExpanded, setIsWalletInfoExpanded] = useState(true);
   const [isCapabilitiesExpanded, setIsCapabilitiesExpanded] = useState(false);
   const [isBoldExtensionExpanded, setIsBoldExtensionExpanded] = useState(false);
   const [isWatchWalletExpanded, setIsWatchWalletExpanded] = useState(false);
@@ -469,52 +477,27 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
 
 
   return (
-    <Modal
-      visible={visible}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={() => {}}>
-      <View style={styles.modalOverlay}>
-        <View
-          onStartShouldSetResponder={() => false}
-          onMoveShouldSetResponder={() => false}>
-          <View style={styles.modalContentCompact}>
-            <View style={styles.modalHeaderRowCompact}>
-              <Image
-                source={require('../assets/key-icon.png')}
-                style={styles.modalHeaderIconCompact}
-              />
-              <Text style={styles.modalHeaderTitleCompact}>
-                Device Keyshare
-              </Text>
-              <Pressable
-                onPress={() => {
-                  HapticFeedback.light();
-                  onClose();
-                }}
-                style={styles.keyshareModalCloseButton}
-                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                <Text style={styles.keyshareModalCloseText}>✕</Text>
-              </Pressable>
-            </View>
-            <ScrollView
-              style={[styles.keyshareModalBody, {maxHeight: scrollViewHeight}]}
-              contentContainerStyle={styles.keyshareModalBodyContent}
-              removeClippedSubviews
-              keyboardShouldPersistTaps="handled"
-              overScrollMode="never"
-              showsVerticalScrollIndicator={false}
-              nestedScrollEnabled={true}
-              scrollEnabled={true}
-              bounces={false}
-              scrollEventThrottle={16}
-              directionalLockEnabled={true}
-              alwaysBounceVertical={false}>
+    <SafeAreaView
+      style={screenStyles.safeArea}
+      edges={['left', 'right', 'bottom']}>
+      <ScrollView
+        style={screenStyles.scrollView}
+        contentContainerStyle={screenStyles.scrollContent}
+        removeClippedSubviews
+        keyboardShouldPersistTaps="handled"
+        overScrollMode="never"
+        showsVerticalScrollIndicator={false}
+        nestedScrollEnabled={true}
+        scrollEnabled={true}
+        bounces={false}
+        scrollEventThrottle={16}
+        directionalLockEnabled={true}
+        alwaysBounceVertical={false}>
               {keyshareInfo ? (
                 <>
                   {/* Wallet Information Container */}
                   <View style={styles.keyshareInfoCard}>
-                    <Pressable
+                    <AppPressable
                       style={styles.collapsibleHeader}
                       onPress={handleToggleWalletInfo}
                       android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -538,7 +521,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                         ]}>
                         ▶
                       </Animated.Text>
-                    </Pressable>
+                    </AppPressable>
                     {isWalletInfoExpanded && (
                       <Animated.View
                         style={[
@@ -548,9 +531,9 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                         <View style={styles.walletInfoContent}>
                           <View style={styles.walletInfoRow}>
                             <Text style={styles.keyshareDetailLabel}>
-                              Wallet ID
+                              Fingerprint
                             </Text>
-                            <Pressable
+                            <AppPressable
                               onPress={handleWalletIdPress}
                               android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                               style={styles.keyshareKeyContainerBadge}>
@@ -564,13 +547,13 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                                   keyshareInfo.fingerprint || 'N/A'
                                 ).toUpperCase()}
                               </Text>
-                            </Pressable>
+                            </AppPressable>
                           </View>
                           <View style={styles.walletInfoRow}>
                             <Text style={styles.keyshareDetailLabel}>
-                              Wallet Type
+                              Keyshares
                             </Text>
-                            <Pressable
+                            <AppPressable
                               onPress={handleWalletTypePress}
                               android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                               style={[
@@ -588,13 +571,13 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                                   ? 'Trio • 3 devices'
                                   : 'Duo • 2 devices'}
                               </Text>
-                            </Pressable>
+                            </AppPressable>
                           </View>
                           <View style={styles.walletInfoRow}>
                             <Text style={styles.keyshareDetailLabel}>
                               Keyshare ID
                             </Text>
-                            <Pressable
+                            <AppPressable
                               onPress={handleKeyshareIdPress}
                               android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                               style={styles.keyshareKeyContainerBadge}>
@@ -606,7 +589,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                                 minimumFontScale={0.5}>
                                 {keyshareInfo.label}
                               </Text>
-                            </Pressable>
+                            </AppPressable>
                           </View>
                           {typeof keyshareInfo.createdAt === 'number' &&
                             keyshareInfo.createdAt > 0 && (
@@ -614,7 +597,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                                 <Text style={styles.keyshareDetailLabel}>
                                   Created At
                                 </Text>
-                                <Pressable
+                                <AppPressable
                                   onPress={handleCreatedAtPress}
                                   android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                                   style={styles.keyshareKeyContainerBadge}>
@@ -627,20 +610,47 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                                       keyshareInfo.createdAt,
                                     ).toLocaleString()}
                                   </Text>
-                                </Pressable>
+                                </AppPressable>
                               </View>
                             )}
                         </View>
-                        <Text style={styles.walletInfoHint}>
-                          Go to Wallet Settings &gt; Security to backup your
-                          keyshare
-                        </Text>
+                        {onOpenSettingsSection ? (
+                          <AppPressable
+                            onPress={() => {
+                              HapticFeedback.light();
+                              onOpenSettingsSection('backup');
+                            }}
+                            android_ripple={{color: 'rgba(0,0,0,0.1)'}}
+                            accessible={true}
+                            accessibilityRole="link"
+                            accessibilityLabel="Open Settings Security section to backup keyshare">
+                            <Text
+                              style={[
+                                styles.walletInfoHint,
+                                {
+                                  fontSize: theme.fontSizes?.base || 14,
+                                  color:
+                                    theme.colors.background === '#121212' ||
+                                    theme.colors.background.includes('12')
+                                      ? theme.colors.secondary
+                                      : theme.colors.primary,
+                                  textDecorationLine: 'underline',
+                                },
+                              ]}>
+                              Settings &gt; Security to backup keyshare
+                            </Text>
+                          </AppPressable>
+                        ) : (
+                          <Text style={styles.walletInfoHint}>
+                            Settings &gt; Security to backup keyshare
+                          </Text>
+                        )}
                       </Animated.View>
                     )}
                   </View>
                   {/* Capabilities / connectivity summary */}
                   <View style={styles.keyshareInfoCard}>
-                    <Pressable
+                    <AppPressable
                       style={styles.collapsibleHeader}
                       onPress={handleToggleCapabilities}
                       android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -664,7 +674,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                         ]}>
                         ▶
                       </Animated.Text>
-                    </Pressable>
+                    </AppPressable>
                     {isCapabilitiesExpanded && (
                       <Animated.View
                         style={[
@@ -675,7 +685,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                           <Text style={styles.keyshareDetailLabel}>
                             LAN / Hotspot
                           </Text>
-                          <Pressable
+                          <AppPressable
                             onPress={handleLanHotspotPress}
                             android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                             <View
@@ -691,7 +701,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                                 ✓ Supported
                               </Text>
                             </View>
-                          </Pressable>
+                          </AppPressable>
                         </View>
                         <View
                           style={[
@@ -701,7 +711,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                             ) && styles.keyshareDetailRowLast,
                           ]}>
                           <Text style={styles.keyshareDetailLabel}>Nostr</Text>
-                          <Pressable
+                          <AppPressable
                             onPress={handleNostrPress}
                             android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                             <View
@@ -723,7 +733,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                                   : 'Not enabled'}
                               </Text>
                             </View>
-                          </Pressable>
+                          </AppPressable>
                         </View>
                         {keyshareInfo.supportsNostr && keyshareInfo.npub && (
                           <View
@@ -733,7 +743,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                             ]}>
                             <Text style={styles.keyshareKeyLabel}>NPub</Text>
                             <View style={styles.keyshareKeyContainer}>
-                              <Pressable
+                              <AppPressable
                                 onPress={handleCopyNpub}
                                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                                 style={styles.keyshareKeyContainerBadge}>
@@ -747,16 +757,16 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                                   ellipsizeMode="middle">
                                   {formatLongString(keyshareInfo.npub)}
                                 </Text>
-                              </Pressable>
+                              </AppPressable>
                               <View style={styles.keyshareButtonsRow}>
-                                <Pressable
+                                <AppPressable
                                   onPress={handleShowNpubQR}
                                   style={styles.keyshareCopyButton}>
                                   <Image
                                     source={require('../assets/qr-icon.png')}
                                     style={styles.keyshareCopyIcon}
                                   />
-                                </Pressable>
+                                </AppPressable>
                               </View>
                             </View>
                           </View>
@@ -766,7 +776,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                   </View>
                   {/* Bold Extension Section */}
                   <View style={styles.watchWalletHeader}>
-                    <Pressable
+                    <AppPressable
                       style={styles.collapsibleHeader}
                       onPress={handleToggleBoldExtension}
                       android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -790,7 +800,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                         ]}>
                         ▶
                       </Animated.Text>
-                    </Pressable>
+                    </AppPressable>
                     {isBoldExtensionExpanded && (
                       <Animated.View
                         style={[
@@ -816,7 +826,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                               Pairing Pubkeys
                             </Text>
                             <View style={styles.watchWalletItemValueContainer}>
-                              <Pressable
+                              <AppPressable
                                 onPress={handleCopyPairingPubkeys}
                                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                                 style={styles.keyshareKeyContainerBadge}>
@@ -829,16 +839,16 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                                   numberOfLines={1}>
                                   {formatLongString(pairingPubkeys)}
                                 </Text>
-                              </Pressable>
+                              </AppPressable>
                               <View style={styles.keyshareButtonsRow}>
-                                <Pressable
+                                <AppPressable
                                   onPress={handleShowPairingPubkeysQR}
                                   style={styles.keyshareCopyButton}>
                                   <Image
                                     source={require('../assets/qr-icon.png')}
                                     style={styles.keyshareCopyIcon}
                                   />
-                                </Pressable>
+                                </AppPressable>
                               </View>
                             </View>
                           </View>
@@ -848,7 +858,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                   </View>
                   {/* Watch Wallet Header Section */}
                   <View style={styles.watchWalletHeader}>
-                    <Pressable
+                    <AppPressable
                       style={styles.collapsibleHeader}
                       onPress={handleToggleWatchWallet}
                       android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -872,7 +882,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                         ]}>
                         ▶
                       </Animated.Text>
-                    </Pressable>
+                    </AppPressable>
                     {isWatchWalletExpanded && (
                       <Animated.View
                         style={[
@@ -903,7 +913,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                               </Text>
                               <View
                                 style={styles.watchWalletItemValueContainer}>
-                                <Pressable
+                                <AppPressable
                                   onPress={() =>
                                     handleCopyOutputDescriptor('legacy')
                                   }
@@ -921,9 +931,9 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                                         'N/A',
                                     )}
                                   </Text>
-                                </Pressable>
+                                </AppPressable>
                                 <View style={styles.keyshareButtonsRow}>
-                                  <Pressable
+                                  <AppPressable
                                     onPress={() =>
                                       handleShareOutputDescriptor('legacy')
                                     }
@@ -932,8 +942,8 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                                       source={require('../assets/share-icon.png')}
                                       style={styles.keyshareCopyIcon}
                                     />
-                                  </Pressable>
-                                  <Pressable
+                                  </AppPressable>
+                                  <AppPressable
                                     onPress={() =>
                                       handleShowOutputDescriptorQR('legacy')
                                     }
@@ -942,7 +952,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                                       source={require('../assets/qr-icon.png')}
                                       style={styles.keyshareCopyIcon}
                                     />
-                                  </Pressable>
+                                  </AppPressable>
                                 </View>
                               </View>
                             </View>
@@ -960,7 +970,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                               </Text>
                               <View
                                 style={styles.watchWalletItemValueContainer}>
-                                <Pressable
+                                <AppPressable
                                   onPress={() =>
                                     handleCopyOutputDescriptor('segwitNative')
                                   }
@@ -978,9 +988,9 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                                         .segwitNative || 'N/A',
                                     )}
                                   </Text>
-                                </Pressable>
+                                </AppPressable>
                                 <View style={styles.keyshareButtonsRow}>
-                                  <Pressable
+                                  <AppPressable
                                     onPress={() =>
                                       handleShareOutputDescriptor(
                                         'segwitNative',
@@ -991,8 +1001,8 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                                       source={require('../assets/share-icon.png')}
                                       style={styles.keyshareCopyIcon}
                                     />
-                                  </Pressable>
-                                  <Pressable
+                                  </AppPressable>
+                                  <AppPressable
                                     onPress={() =>
                                       handleShowOutputDescriptorQR(
                                         'segwitNative',
@@ -1003,7 +1013,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                                       source={require('../assets/qr-icon.png')}
                                       style={styles.keyshareCopyIcon}
                                     />
-                                  </Pressable>
+                                  </AppPressable>
                                 </View>
                               </View>
                             </View>
@@ -1015,7 +1025,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                               </Text>
                               <View
                                 style={styles.watchWalletItemValueContainer}>
-                                <Pressable
+                                <AppPressable
                                   onPress={() =>
                                     handleCopyOutputDescriptor(
                                       'segwitCompatible',
@@ -1035,9 +1045,9 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                                         .segwitCompatible || 'N/A',
                                     )}
                                   </Text>
-                                </Pressable>
+                                </AppPressable>
                                 <View style={styles.keyshareButtonsRow}>
-                                  <Pressable
+                                  <AppPressable
                                     onPress={() =>
                                       handleShareOutputDescriptor(
                                         'segwitCompatible',
@@ -1048,8 +1058,8 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                                       source={require('../assets/share-icon.png')}
                                       style={styles.keyshareCopyIcon}
                                     />
-                                  </Pressable>
-                                  <Pressable
+                                  </AppPressable>
+                                  <AppPressable
                                     onPress={() =>
                                       handleShowOutputDescriptorQR(
                                         'segwitCompatible',
@@ -1060,7 +1070,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                                       source={require('../assets/qr-icon.png')}
                                       style={styles.keyshareCopyIcon}
                                     />
-                                  </Pressable>
+                                  </AppPressable>
                                 </View>
                               </View>
                             </View>
@@ -1077,10 +1087,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
                   </Text>
                 </View>
               )}
-            </ScrollView>
-          </View>
-        </View>
-      </View>
+      </ScrollView>
       {/* QR Code Modal for Output Descriptors */}
       <QRCodeModal
         visible={isOutputDescriptorQrVisible}
@@ -1134,7 +1141,7 @@ const KeyshareModal: React.FC<KeyshareModalProps> = ({
       <View style={styles.toastContainer}>
         <Toast config={createToastConfig(theme)} />
       </View>
-    </Modal>
+    </SafeAreaView>
   );
 };
-export default KeyshareModal;
+export default KeyshareInfoContent;

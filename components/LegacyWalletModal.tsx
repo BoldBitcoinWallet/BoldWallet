@@ -1,5 +1,6 @@
 import React, {useState} from 'react';
-import {Modal, View, Text, Pressable, Image} from 'react-native';
+import {Modal, View, Text, Image} from 'react-native';
+import AppPressable from './AppPressable';
 import {HapticFeedback} from '../utils';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
@@ -122,7 +123,11 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
     setDoNotRemind(prev => !prev);
   };
   return (
-    <Modal visible={visible} transparent={true} animationType="fade">
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={onCancel}>
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeaderRow}>
@@ -147,7 +152,7 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
               To migrate: Create a new wallet setup and send all your funds to
               the new wallet address.
             </Text>
-            <Pressable
+            <AppPressable
               style={styles.legacyModalCheckboxContainer}
               onPress={handleCheckboxToggle}
               android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
@@ -163,10 +168,10 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
               <Text style={styles.legacyModalCheckboxLabel}>
                 Do not remind me again
               </Text>
-            </Pressable>
+            </AppPressable>
           </View>
           <View style={styles.legacyModalButtonsContainer}>
-            <Pressable
+            <AppPressable
               style={[styles.actionButton, styles.legacyModalButtonSecondary]}
               onPress={handleCancel}
               android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
@@ -177,13 +182,13 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
                 ]}>
                 Cancel
               </Text>
-            </Pressable>
-            <Pressable
+            </AppPressable>
+            <AppPressable
               style={[styles.actionButton, styles.legacyModalButtonPrimary]}
               onPress={handleUnderstand}
               android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
               <Text style={styles.actionButtonText}>I Understand</Text>
-            </Pressable>
+            </AppPressable>
           </View>
         </View>
       </View>
