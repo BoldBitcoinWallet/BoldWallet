@@ -51,11 +51,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     return `${value.substring(0, 8)}...${value.substring(value.length - 8)}`;
   }, []);
 
-  const {
-    activeNetwork: network,
-    activeAddressType: addressType,
-    activeApiProvider: apiBase,
-  } = useUser();
+  const {activeNetwork: network, activeAddressType: addressType} = useUser();
   const [keyshareInfo, setKeyshareInfo] = useState<KeyshareInfoForPsbt | null>(
     null,
   );
@@ -74,7 +70,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const [signedPsbt, setSignedPsbt] = useState<string | null>(null);
   const [isSignedPSBTModalVisible, setIsSignedPSBTModalVisible] =
     useState(false);
-  const [btcPrice, setBtcPrice] = useState<string>('');
+  const [_btcPrice, setBtcPrice] = useState<string>('');
   const [selectedCurrency, setSelectedCurrency] = useState('');
   const [priceData, setPriceData] = useState<{[key: string]: number}>({});
   const [isCurrencySelectorVisible, setIsCurrencySelectorVisible] =

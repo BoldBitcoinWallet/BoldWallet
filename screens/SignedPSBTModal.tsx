@@ -314,9 +314,9 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
     qrContainer: {
       alignItems: 'center',
       marginBottom: 24,
-      padding: 16,
-      backgroundColor: theme.colors.cardBackground,
-      borderRadius: 12,
+      backgroundColor: 'white',
+      padding: 8,
+      borderRadius: 8,
     },
     qrCode: {
       marginBottom: 12,
@@ -469,8 +469,8 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
               ref={qrRef}
               value={qrData}
               size={250}
-              color={theme.colors.text}
-              backgroundColor={theme.colors.background}
+              color="black"
+              backgroundColor="white"
             />
             {isAnimated && (
               <Text style={styles.qrInfo}>

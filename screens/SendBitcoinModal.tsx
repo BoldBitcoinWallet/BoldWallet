@@ -46,6 +46,8 @@ interface SendBitcoinModalProps {
   walletBalance: Big;
   walletAddress: string;
   selectedCurrency: string;
+  /** Pre-fill address when opening (e.g. from QR scan of a plain address). */
+  initialAddress?: string;
 }
 const E8 = Big(10).pow(8);
 const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
@@ -56,6 +58,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   walletBalance,
   walletAddress,
   selectedCurrency,
+  initialAddress,
 }) => {
   const [address, setAddress] = useState<string>('');
   const [btcAmount, setBtcAmount] = useState<Big>(Big(0));
@@ -501,6 +504,15 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     };
     initFee();
   }, []);
+  useEffect(() => {
+    if (!visible) {
+      setAddress('');
+      return;
+    }
+    if (initialAddress) {
+      setAddress(initialAddress);
+    }
+  }, [visible, initialAddress]);
   useEffect(() => {
     // Only trigger fee estimation if we have a valid address and non-zero amount
     if (

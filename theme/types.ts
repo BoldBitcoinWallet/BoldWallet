@@ -54,6 +54,7 @@ export interface ThemeColors {
   whiteOverlay20: string; // rgba(255, 255, 255, 0.2)
   whiteOverlay25: string; // rgba(255, 255, 255, 0.25)
   whiteOverlay30: string; // rgba(255, 255, 255, 0.3)
+  primaryOverlay70: string; // rgba(26, 43, 60, 0.7) - primary color at 70% opacity
   primaryOverlay95: string; // rgba(26, 43, 60, 0.95) - primary color at 95% opacity
   blackOverlay02: string; // rgba(0, 0, 0, 0.02)
   blackOverlay03: string; // rgba(0, 0, 0, 0.03)

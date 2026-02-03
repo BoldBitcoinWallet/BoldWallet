@@ -91,6 +91,8 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
   const leftContentStyle: any = {
     flexShrink: 0,
     justifyContent: 'center',
+    borderRadius: 10,
+    overflow: 'hidden',
   };
   const stackWrapStyle: any = {
     flexDirection: 'column',
@@ -388,7 +390,8 @@ export const HeaderNetwork: React.FC<HeaderNetworkProps> = ({
     : theme.colors.accent;
   const pillHeight = 36;
   const innerRadius = 9;
-  const containerStyle: any = {
+  // Pill style: same shape as price button so ripple is clipped to the visible button
+  const pillStyle: any = {
     width: SIDE_BUTTON_WIDTH,
     flexDirection: 'row',
     alignItems: 'center',
@@ -399,6 +402,12 @@ export const HeaderNetwork: React.FC<HeaderNetworkProps> = ({
     borderColor: containerBorderColor,
     backgroundColor: networkBg,
     overflow: 'hidden',
+  };
+  const wrapperStyle: any = {
+    paddingTop: 12,
+    paddingBottom: 12,
+    marginRight: 16,
+    justifyContent: 'center',
   };
   const textStyle: any = {
     fontSize: theme.fontSizes?.xs || 10,
@@ -412,14 +421,8 @@ export const HeaderNetwork: React.FC<HeaderNetworkProps> = ({
     height: 14,
     tintColor: theme.colors.textOnPrimary,
   };
-  const networkWrapperStyle: any = {
-    width: SIDE_BUTTON_WIDTH,
-    paddingTop: 12,
-    paddingBottom: 12,
-    marginRight: 16,
-  };
   const content = (
-    <View style={containerStyle}>
+    <>
       <Image
         source={
           isMainnet
@@ -429,25 +432,31 @@ export const HeaderNetwork: React.FC<HeaderNetworkProps> = ({
         style={networkIconStyle}
       />
       <Text style={textStyle}>{networkLabel}</Text>
-    </View>
+    </>
   );
   if (onPress) {
     return (
-      <AppPressable
-        onPress={() => {
-          HapticFeedback.light();
-          onPress();
-        }}
-        android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-        accessible={true}
-        accessibilityRole="button"
-        accessibilityLabel={`Network: ${networkLabel}. Double tap to open settings.`}
-        style={networkWrapperStyle}>
-        {content}
-      </AppPressable>
+      <RNView style={wrapperStyle}>
+        <AppPressable
+          onPress={() => {
+            HapticFeedback.light();
+            onPress();
+          }}
+          android_ripple={{color: 'rgba(0,0,0,0.1)'}}
+          accessible={true}
+          accessibilityRole="button"
+          accessibilityLabel={`Network: ${networkLabel}. Double tap to open settings.`}
+          style={pillStyle}>
+          {content}
+        </AppPressable>
+      </RNView>
     );
   }
-  return <RNView style={networkWrapperStyle}>{content}</RNView>;
+  return (
+    <RNView style={wrapperStyle}>
+      <View style={pillStyle}>{content}</View>
+    </RNView>
+  );
 };
 
 export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
@@ -631,8 +640,8 @@ export const HeaderTitle: React.FC<{title?: string}> = () => {
       Settings: '',
       Home: 'Home',
       Welcome: 'Welcome',
-      'Devices Pairing': 'Devices Pairing',
-      'Nostr Connect': 'Nostr Connect',
+      'Devices Pairing': 'Local Pairing',
+      'Nostr Connect': 'Nostr Link',
     };
     return titleMap[routeName] || '';
   };

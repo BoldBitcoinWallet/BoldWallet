@@ -66,6 +66,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
           paddingTop: 16,
           paddingBottom: 24,
         },
+        walletInfoHintLink: {textDecorationLine: 'underline'},
       }),
     [theme.colors.background],
   );
@@ -627,6 +628,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                             <Text
                               style={[
                                 styles.walletInfoHint,
+                                screenStyles.walletInfoHintLink,
                                 {
                                   fontSize: theme.fontSizes?.base || 14,
                                   color:
@@ -634,7 +636,6 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                                     theme.colors.background.includes('12')
                                       ? theme.colors.secondary
                                       : theme.colors.primary,
-                                  textDecorationLine: 'underline',
                                 },
                               ]}>
                               Settings &gt; Security to backup keyshare

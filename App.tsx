@@ -7,6 +7,8 @@ import {enableScreens} from 'react-native-screens';
 import {Image} from 'react-native';
 import ShowcaseScreen from './screens/ShowcaseScreen';
 import WalletHome from './screens/WalletHome';
+import MempoolPlaygroundScreen from './screens/MempoolPlaygroundScreen';
+import UtxosScreen from './screens/UtxosScreen';
 import PSBTScreen from './screens/PSBTScreen';
 import DeviceScreen from './screens/DeviceScreen';
 import EncryptedStorage from 'react-native-encrypted-storage';
@@ -16,7 +18,7 @@ import ReactNativeBiometrics, {BiometryTypes} from 'react-native-biometrics';
 import DeviceInfo from 'react-native-device-info';
 import {ThemeProvider, useTheme} from './theme';
 import {WalletProvider} from './context/WalletContext';
-import {UserProvider} from './context/UserContext';
+import {UserProvider, useUser} from './context/UserContext';
 import {
   SafeAreaProvider,
   useSafeAreaInsets,
@@ -94,6 +96,8 @@ const TAB_BAR_ICON_SIZE = 22;
 const tabBarIcons = {
   Device: require('./assets/key-icon.png'),
   Wallet: require('./assets/wallet-icon.png'),
+  Playground: require('./assets/mempool-icon.png'),
+  Utxos: require('./assets/utxo-icon.png'),
   PSBT: require('./assets/cosign-icon.png'),
   Settings: require('./assets/settings-icon.png'),
 };
@@ -106,13 +110,19 @@ const TabBarIcon = ({
   name: keyof typeof tabBarIcons;
   color: string;
   size?: number;
-}) => (
-  <Image
-    source={tabBarIcons[name]}
-    style={{width: size, height: size, tintColor: color}}
-    resizeMode="contain"
-  />
-);
+}) => {
+  const inset = 1;
+  const iconSize = size - inset * 2;
+  return (
+    <View style={tabBarStyles.tabBarIconInner}>
+      <Image
+        source={tabBarIcons[name]}
+        style={{width: iconSize, height: iconSize, tintColor: color}}
+        resizeMode="contain"
+      />
+    </View>
+  );
+};
 
 const TabBarIconDevice = (props: {color: string; size?: number}) => (
   <TabBarIcon
@@ -124,6 +134,20 @@ const TabBarIconDevice = (props: {color: string; size?: number}) => (
 const TabBarIconWallet = (props: {color: string; size?: number}) => (
   <TabBarIcon
     name="Wallet"
+    color={props.color}
+    size={props.size ?? TAB_BAR_ICON_SIZE}
+  />
+);
+const TabBarIconPlayground = (props: {color: string; size?: number}) => (
+  <TabBarIcon
+    name="Playground"
+    color={props.color}
+    size={props.size ?? TAB_BAR_ICON_SIZE}
+  />
+);
+const TabBarIconUtxos = (props: {color: string; size?: number}) => (
+  <TabBarIcon
+    name="Utxos"
     color={props.color}
     size={props.size ?? TAB_BAR_ICON_SIZE}
   />
@@ -162,15 +186,29 @@ const tabBarStyles = StyleSheet.create({
     width: TAB_BAR_ICON_SIZE,
     height: TAB_BAR_ICON_SIZE,
     marginBottom: 2,
+    overflow: 'visible' as const,
+  },
+  tabBarIconInner: {
+    width: TAB_BAR_ICON_SIZE,
+    height: TAB_BAR_ICON_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   tabBarLabel: {
-    fontSize: 11,
+    fontSize: Platform.select({ios: 11, android: 9}),
     fontWeight: '500',
     textAlign: 'center',
   },
   tabBarLabelWrapper: {
+    flex: 1,
     width: '100%',
     alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 0,
+  },
+  tabBarLabelText: {
+    width: '100%',
+    textAlign: 'center',
   },
   tabBarItem: {
     alignItems: 'center',
@@ -180,7 +218,12 @@ const tabBarStyles = StyleSheet.create({
 
 const TabBarLabel = ({color, children}: {color: string; children: string}) => (
   <View style={tabBarStyles.tabBarLabelWrapper}>
-    <Text style={[tabBarStyles.tabBarLabel, {color}]} numberOfLines={1}>
+    <Text
+      style={[tabBarStyles.tabBarLabel, tabBarStyles.tabBarLabelText, {color}]}
+      numberOfLines={1}
+      adjustsFontSizeToFit
+      minimumFontScale={0.5}
+    >
       {children}
     </Text>
   </View>
@@ -234,15 +277,16 @@ const MainTabs = () => {
     bottom: 80 + insets.bottom,
     zIndex: 1000,
   };
+  const lockFabSize = 48; // 15% smaller than 56
   const lockFabShape = {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: lockFabSize,
+    height: lockFabSize,
+    borderRadius: lockFabSize / 2,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
     backgroundColor: isDarkMode
       ? theme.colors.cardBackground
-      : theme.colors.blackOverlay06,
+      : theme.colors.primaryOverlay95,
     borderWidth: Platform.OS === 'android' ? 0 : 1,
     borderColor: isDarkMode
       ? theme.colors.border + '80'
@@ -271,8 +315,8 @@ const MainTabs = () => {
     Platform.OS === 'android'
       ? {
           ...lockFabPosition,
-          width: 56,
-          height: 56,
+          width: lockFabSize,
+          height: lockFabSize,
         }
       : undefined;
   const lockFabShadowStyle =
@@ -281,16 +325,16 @@ const MainTabs = () => {
           position: 'absolute' as const,
           top: -1,
           left: -1,
-          width: 58,
-          height: 58,
-          borderRadius: 29,
+          width: lockFabSize + 2,
+          height: lockFabSize + 2,
+          borderRadius: lockFabSize / 2 + 1,
           backgroundColor: 'rgba(255, 255, 255, 0.2)',
         }
       : undefined;
   const lockFabIconStyle = {
-    width: 24,
-    height: 24,
-    tintColor: theme.colors.text,
+    width: 20,
+    height: 20,
+    tintColor: theme.colors.textOnPrimary,
     opacity: 0.9,
     resizeMode: 'contain' as const,
   };
@@ -300,10 +344,13 @@ const MainTabs = () => {
     ),
     [isDarkMode],
   );
+  const {activeNetwork, showMempoolPlayground, showUtxosTab, showPsbtTab, showWalletTab} = useUser();
+  const showPlayTab = activeNetwork === 'mainnet' && showMempoolPlayground;
+  const initialTab = showWalletTab ? 'Wallet' : showPsbtTab ? 'PSBT' : 'Device';
   return (
     <View style={tabBarStyles.mainTabsContainer}>
       <Tab.Navigator
-        initialRouteName="Wallet"
+        initialRouteName={initialTab}
         screenOptions={{
           headerShown: true,
           headerLeft: () => null,
@@ -336,24 +383,50 @@ const MainTabs = () => {
             tabBarIcon: TabBarIconDevice,
           }}
         />
-        <Tab.Screen
-          name="Wallet"
-          component={WalletHome}
-          options={{
-            header: HomeHeader,
-            tabBarLabel: 'Wallet',
-            tabBarIcon: TabBarIconWallet,
-          }}
-        />
-        <Tab.Screen
-          name="PSBT"
-          component={PSBTScreen}
-          options={{
-            header: PSBTHeader,
-            tabBarLabel: 'PSBT',
-            tabBarIcon: TabBarIconPSBT,
-          }}
-        />
+        {showPsbtTab && (
+          <Tab.Screen
+            name="PSBT"
+            component={PSBTScreen}
+            options={{
+              header: PSBTHeader,
+              tabBarLabel: 'PSBT',
+              tabBarIcon: TabBarIconPSBT,
+            }}
+          />
+        )}
+        {showWalletTab && (
+          <Tab.Screen
+            name="Wallet"
+            component={WalletHome}
+            options={{
+              header: HomeHeader,
+              tabBarLabel: 'Wallet',
+              tabBarIcon: TabBarIconWallet,
+            }}
+          />
+        )}
+        {showPlayTab && (
+          <Tab.Screen
+            name="Playground"
+            component={MempoolPlaygroundScreen}
+            options={{
+              header: HomeHeader,
+              tabBarLabel: 'Play',
+              tabBarIcon: TabBarIconPlayground,
+            }}
+          />
+        )}
+        {showUtxosTab && (
+          <Tab.Screen
+            name="Utxos"
+            component={UtxosScreen}
+            options={{
+              header: HomeHeader,
+              tabBarLabel: 'UTXOs',
+              tabBarIcon: TabBarIconUtxos,
+            }}
+          />
+        )}
         <Tab.Screen
           name="Settings"
           component={WalletSettings}
@@ -411,6 +484,8 @@ const MainTabs = () => {
 const App = () => {
   const [initialRoute, setInitialRoute] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  // Used to force-remount providers/contexts on "app:reload"
+  const [appResetKey, setAppResetKey] = useState(0);
   // Initialize debug logging state from module-level ref
   const [debugLoggingEnabled, setDebugLoggingEnabledState] = useState(
     debugLoggingEnabledRef.current,
@@ -419,6 +494,7 @@ const App = () => {
     const sub = DeviceEventEmitter.addListener('app:reload', async () => {
       //dbg('App: Received app:reload event');
       setIsAuthenticated(false);
+      setAppResetKey(k => k + 1);
       // Update debug logging state from ref
       setDebugLoggingEnabledState(debugLoggingEnabledRef.current);
       // Re-check wallet state after reload to ensure correct initial route
@@ -665,29 +741,23 @@ const App = () => {
     setIsAuthenticated(false);
     await authenticateUser();
   };
-  if (initialRoute === null || !isAuthenticated) {
-    dbg(
-      'Rendering LoadingScreen - initialRoute:',
-      initialRoute,
-      'isAuthenticated:',
-      isAuthenticated,
-    );
-    return (
-      <ErrorBoundary>
-        <SafeAreaProvider>
-          <ThemeProvider>
-            <LoadingScreen onRetry={handleRetryAuthentication} />
-          </ThemeProvider>
-        </SafeAreaProvider>
-      </ErrorBoundary>
-    );
-  }
-  dbg('Rendering main navigation with initialRoute:', initialRoute);
+  dbg(
+    'Rendering - initialRoute:',
+    initialRoute,
+    'isAuthenticated:',
+    isAuthenticated,
+  );
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
         <ThemeProvider>
-          <AppContent initialRoute={initialRoute} />
+          <UserProvider key={`user-${appResetKey}`}>
+            {initialRoute === null || !isAuthenticated ? (
+              <LoadingScreen onRetry={handleRetryAuthentication} />
+            ) : (
+              <AppContent key={`content-${appResetKey}`} initialRoute={initialRoute} />
+            )}
+          </UserProvider>
         </ThemeProvider>
       </SafeAreaProvider>
     </ErrorBoundary>
@@ -702,8 +772,7 @@ const AppContent = ({initialRoute}: {initialRoute: string | null}) => {
     },
   };
   return (
-    <UserProvider>
-      <WalletProvider>
+    <WalletProvider>
         <View style={dynamicStyles.navigationContainer}>
           <NavigationContainer>
             <Stack.Navigator
@@ -758,20 +827,16 @@ const AppContent = ({initialRoute}: {initialRoute: string | null}) => {
           </View>
         </View>
       </WalletProvider>
-    </UserProvider>
   );
 };
 const styles = StyleSheet.create({
   navigationContainer: {
     flex: 1,
+    overflow: 'visible',
     // backgroundColor will be set dynamically based on theme
   },
   toastWrapper: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    ...StyleSheet.absoluteFillObject,
     zIndex: 99999,
     elevation: 99999,
     pointerEvents: 'box-none',

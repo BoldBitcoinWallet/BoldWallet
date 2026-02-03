@@ -29,6 +29,7 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
   ({timestamps, onRefresh, theme, isRefreshing = false, usingCache = false}, ref) => {
     const latestTimestamp = Math.max(timestamps.price, timestamps.balance);
     const shimmerValue = useRef(new Animated.Value(-100)).current;
+    const shimmerAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
     const [currentTime, setCurrentTime] = useState(Date.now());
     const [isUsingCache, setIsUsingCache] = useState(false);
     // Expose a press() method to parent
@@ -41,8 +42,12 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
       },
     }), [onRefresh, isRefreshing]);
     useEffect(() => {
+      // Stop any prior loop (prevents stacked animations on rapid toggles)
+      shimmerAnimationRef.current?.stop?.();
+      shimmerAnimationRef.current = null;
+
       if (isRefreshing) {
-        Animated.loop(
+        const anim = Animated.loop(
           Animated.sequence([
             Animated.timing(shimmerValue, {
               toValue: 100,
@@ -55,20 +60,48 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
               useNativeDriver: true,
             }),
           ]),
-        ).start();
+        );
+        shimmerAnimationRef.current = anim;
+        anim.start();
       } else {
         shimmerValue.setValue(-100);
       }
+
+      return () => {
+        shimmerAnimationRef.current?.stop?.();
+        shimmerAnimationRef.current = null;
+      };
     }, [isRefreshing, shimmerValue]);
-    // Update current time based on time difference
+
+    // Update "time ago" without recreating intervals every tick
     useEffect(() => {
-      const timeDiff = currentTime - latestTimestamp;
-      const interval = timeDiff < 60000 ? 1000 : 60000; // 1 second if < 1 minute, else 1 minute
-      const timer = setInterval(() => {
-        setCurrentTime(Date.now());
-      }, interval);
-      return () => clearInterval(timer);
-    }, [latestTimestamp, currentTime]);
+      let cancelled = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+
+      const scheduleNext = () => {
+        if (cancelled) {
+          return;
+        }
+        const now = Date.now();
+        const diff = now - latestTimestamp;
+        const delay = diff < 60000 ? 1000 : 60000; // 1s if < 1 min, else 1 min
+        timer = setTimeout(() => {
+          setCurrentTime(Date.now());
+          scheduleNext();
+        }, delay);
+      };
+
+      // Ensure we render with a fresh "now" when timestamps change
+      setCurrentTime(Date.now());
+      scheduleNext();
+
+      return () => {
+        cancelled = true;
+        if (timer) {
+          clearTimeout(timer);
+        }
+      };
+    }, [latestTimestamp]);
     // Check if we're using cache
     useEffect(() => {
       const timeDiff = Date.now() - latestTimestamp;
@@ -190,20 +223,22 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
         </View>
         {!isRefreshing && (
           <View style={styles.timeContainer}>
-            <Text
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.5}
-              style={[
-                createStyles(theme).cacheText,
-                {color: theme.colors.textSecondary},
-              ]}>
-              {latestTimestamp === 0
-                ? 'No data available'
-                : isUsingCache
-                ? `Cached • ${timeAgo}`
-                : timeAgo}
-            </Text>
+            <View style={styles.timeTextWrap}>
+              <Text
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.5}
+                style={[
+                  createStyles(theme).cacheText,
+                  {color: theme.colors.textSecondary},
+                ]}>
+                {latestTimestamp === 0
+                  ? 'No data available'
+                  : isUsingCache
+                  ? `Cached • ${timeAgo}`
+                  : timeAgo}
+              </Text>
+            </View>
             <Image
               source={clockIcon}
               style={[styles.clockIcon, {tintColor: theme.colors.textSecondary}]}
@@ -218,6 +253,13 @@ const styles = StyleSheet.create({
   timeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
+    minWidth: 0,
+  },
+  timeTextWrap: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
   },
   clockIcon: {
     width: 16,

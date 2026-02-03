@@ -1,4 +1,4 @@
-import React, {useEffect, useState, useRef, useMemo} from 'react';
+import React, {useCallback, useEffect, useState, useRef, useMemo} from 'react';
 import {
   View,
   Text,
@@ -53,7 +53,7 @@ import {fetchDynamicAPIEndpoints, getNostrRelays} from '../utils';
 import FontComparisonScreen from '../components/FontComparisonScreen';
 import {setDebugLoggingEnabled, isDebugLoggingEnabled} from '../App';
 import Toast from 'react-native-toast-message';
-import {useRoute, RouteProp} from '@react-navigation/native';
+import {useRoute, useFocusEffect, RouteProp} from '@react-navigation/native';
 
 type SettingsParams = {expandSection?: string};
 
@@ -626,6 +626,8 @@ const getSectionIcon = (title: string): any => {
   switch (title.toLowerCase()) {
     case 'theme':
       return require('../assets/theme-icon.png');
+    case 'address type':
+      return require('../assets/address-type-icon.png');
     case 'network providers':
       return require('../assets/api-icon.png');
     case 'security':
@@ -650,12 +652,48 @@ const getSectionIcon = (title: string): any => {
       return require('../assets/font-icon.png');
     case 'balance display':
       return require('../assets/numbers-icon.png');
+    case 'mempool':
+      return require('../assets/mempool-icon.png');
+    case 'utxos':
+      return require('../assets/utxo-icon.png');
+    case 'psbt':
+      return require('../assets/cosign-icon.png');
+    case 'wallet tab':
+      return require('../assets/wallet-icon.png');
+    case 'dev debug':
+      return require('../assets/advanced-icon.png');
     default:
       return require('../assets/advanced-icon.png');
   }
 };
+
+interface SettingsSectionGroupProps {
+  title: string;
+  children: React.ReactNode;
+  styles: any;
+  theme: any;
+}
+const SettingsSectionGroup: React.FC<SettingsSectionGroupProps> = ({
+  title,
+  children,
+  styles,
+  theme,
+}) => (
+  <View style={styles.sectionGroup}>
+    <Text style={[styles.sectionGroupTitle, {color: theme.colors.textSecondary}]}>
+      {title.toUpperCase()}
+    </Text>
+    {children}
+  </View>
+);
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const route = useRoute<RouteProp<{params: SettingsParams}, 'params'>>();
+  // Hide toast when leaving Settings so it does not persist on other tabs
+  useFocusEffect(
+    useCallback(() => {
+      return () => Toast.hide();
+    }, []),
+  );
   // Use UserContext for reactive network and API state
   const {
     setActiveNetwork,
@@ -664,6 +702,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     activeAddressType,
     balanceFormattingEnabled,
     setBalanceFormattingEnabled,
+    showMempoolPlayground,
+    setShowMempoolPlayground,
+    showUtxosTab,
+    setShowUtxosTab,
+    showPsbtTab,
+    setShowPsbtTab,
+    showWalletTab,
+    setShowWalletTab,
+    activeNetwork,
   } = useUser();
   const [selectedIcon, setSelectedIcon] = useState<
     'default' | 'alternative' | 'loading'
@@ -710,6 +757,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     addressType: false,
     fontTesting: false,
     devDebug: false,
+    mempoolPlayground: false,
+    utxos: false,
+    psbt: false,
+    wallet: false,
   });
   const {theme, themeMode, setThemeMode} = useTheme();
   // Force re-render on Android when theme changes
@@ -738,7 +789,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     const validSections = new Set([
       'theme', 'haptics', 'displayFormat', 'backup', 'advanced', 'nostr',
       'about', 'legal', 'storage', 'appIcon', 'devicePairing', 'addressType',
-      'fontTesting', 'devDebug',
+      'fontTesting', 'devDebug', 'mempoolPlayground', 'utxos', 'psbt', 'wallet',
     ]);
     if (section && validSections.has(section)) {
       setExpandedSections(prev => ({...prev, [section]: true}));
@@ -878,7 +929,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     const networkName = value ? 'Testnet' : 'Mainnet';
     await setActiveNetwork(newNetwork);
     dbg('Network toggle: Navigating to Wallet tab');
-    navigation.reset(getResetToMainTabsWallet());
+    navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
     // Show brief feedback alert after a brief delay to ensure navigation completes
     setTimeout(() => {
       // warn user if test net bitcoin is not real
@@ -931,7 +982,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     await setActiveApiProvider(api);
     dbg('API reset and propagated successfully:', api);
     // Navigate to home after reset
-    navigation.reset(getResetToMainTabsWallet());
+    navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
     // Show success alert after navigation
     setTimeout(() => {
       Alert.alert('Success', 'API endpoint reset to default!');
@@ -1016,7 +1067,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       Alert.alert('Success', 'API endpoint updated successfully!');
       dbg('=== API saved and propagated successfully:', normalizedApi);
       // Navigate to home after successful save
-      navigation.reset(getResetToMainTabsWallet());
+      navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
     } catch (error) {
       dbg('Error in saveAPI:', error);
       Alert.alert('Error', 'Failed to save API endpoint. Please try again.');
@@ -1036,7 +1087,23 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('clearing cache storage...');
         await LocalCache.clear();
         dbg('clearing encrypted storage...');
-        await EncryptedStorage.removeItem('keyshare');
+        // Prefer a full clear so we return to true first-launch state.
+        // (If clear() is unavailable on some builds, fall back to removing known keys.)
+        try {
+          // @ts-ignore - some typings omit clear()
+          await EncryptedStorage.clear();
+        } catch (error) {
+          dbg('Error clearing encrypted storage:', error);
+          await Promise.all([
+            EncryptedStorage.removeItem('keyshare'),
+            EncryptedStorage.removeItem('btcPub'),
+            EncryptedStorage.removeItem('bitcoin_display_sats'),
+            EncryptedStorage.removeItem('balance_formatting_enabled'),
+            EncryptedStorage.removeItem('app_icon_preference'),
+            EncryptedStorage.removeItem('devDebugEnabled'),
+            EncryptedStorage.removeItem('psbt_mode_first_visit'),
+          ]);
+        }
         // Trigger a full app reload so all providers/contexts re‑initialize
         navigation.reset({index: 0, routes: [{name: 'Welcome'}]});
         DeviceEventEmitter.emit('app:reload');
@@ -1085,6 +1152,16 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           flexGrow: 1,
           padding: 16,
           paddingBottom: 24,
+        },
+        sectionGroup: {
+          marginBottom: 24,
+        },
+        sectionGroupTitle: {
+          fontSize: theme.fontSizes?.xs || 11,
+          fontFamily: theme.fontFamilies?.bold,
+          letterSpacing: 1.2,
+          marginBottom: 8,
+          marginLeft: 4,
         },
         header: {
           paddingHorizontal: 16,
@@ -1151,6 +1228,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           justifyContent: 'space-between',
           marginBottom: 12,
           paddingHorizontal: 4,
+        },
+        toggleContainerTabs: {
+          marginTop: 12,
         },
         toggleLabel: {
           fontSize: theme.fontSizes?.base || 14,
@@ -2261,7 +2341,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         nestedScrollEnabled={true}
         bounces={true}
         scrollEventThrottle={16}>
-        {/* Theme Section - First for better UX */}
+        {/* App: Theme, Balance Display, Haptics, Storage */}
+        <SettingsSectionGroup title="App" styles={styles} theme={theme}>
         <CollapsibleSection
           title="Theme"
           isExpanded={expandedSections.theme}
@@ -2356,32 +2437,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </AppPressable>
           </View>
         </CollapsibleSection>
-        {/* Haptics Section */}
-        <CollapsibleSection
-          title="Haptics"
-          isExpanded={expandedSections.haptics}
-          onToggle={() => toggleSection('haptics')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.toggleDescription}>
-            Enable vibration feedback. OS settings may override this.
-          </Text>
-          <View style={styles.toggleContainer}>
-            <Text style={styles.toggleLabel}>Haptics Off</Text>
-            <Switch
-              onValueChange={handleToggleHaptics}
-              value={hapticsEnabled}
-              trackColor={{
-                false: theme.colors.switchTrackFalse,
-                true: theme.colors.switchTrackTrue,
-              }}
-              thumbColor={theme.colors.switchThumb}
-              ios_backgroundColor={theme.colors.switchIosBackground}
-            />
-            <Text style={styles.toggleLabel}>Haptics On</Text>
-          </View>
-        </CollapsibleSection>
-        {/* Display Format Section */}
         <CollapsibleSection
           title="Balance Display"
           isExpanded={expandedSections.displayFormat}
@@ -2430,7 +2485,74 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             <Text style={styles.toggleLabel}>Formatted</Text>
           </View>
         </CollapsibleSection>
-        {/* App Icon Section - Android Only */}
+        <CollapsibleSection
+          title="Haptics"
+          isExpanded={expandedSections.haptics}
+          onToggle={() => toggleSection('haptics')}
+          styles={styles}
+          theme={theme}>
+          <Text style={styles.toggleDescription}>
+            Enable vibration feedback. OS settings may override this.
+          </Text>
+          <View style={styles.toggleContainer}>
+            <Text style={styles.toggleLabel}>Haptics Off</Text>
+            <Switch
+              onValueChange={handleToggleHaptics}
+              value={hapticsEnabled}
+              trackColor={{
+                false: theme.colors.switchTrackFalse,
+                true: theme.colors.switchTrackTrue,
+              }}
+              thumbColor={theme.colors.switchThumb}
+              ios_backgroundColor={theme.colors.switchIosBackground}
+            />
+            <Text style={styles.toggleLabel}>Haptics On</Text>
+          </View>
+        </CollapsibleSection>
+        {/* Storage - inside App */}
+        <CollapsibleSection
+          title="Storage"
+          isExpanded={expandedSections.storage}
+          onToggle={() => toggleSection('storage')}
+          styles={styles}
+          theme={theme}>
+          <View style={styles.apiItem}>
+            <Text style={styles.apiName}>Cache Maintenance</Text>
+            <Text style={styles.apiDescription}>
+              Clear cached balances and history.
+            </Text>
+          </View>
+          <AppPressable
+            style={[styles.button, styles.deleteButton]}
+            onPress={async () => {
+              HapticFeedback.light();
+              try {
+                await LocalCache.clear();
+                setUsageSize(await LocalCache.usageSize());
+                Alert.alert('Cache Cleared', 'Cache cleared successfully.');
+                navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
+              } catch (e) {
+                dbg('Error clearing cache', e);
+                Alert.alert(
+                  'Error',
+                  'Failed to clear cache. Please try again.',
+                );
+              }
+            }}
+            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+            <View style={styles.buttonContent}>
+              <Image
+                source={require('../assets/delete-icon.png')}
+                style={[styles.buttonIcon, styles.whiteTint]}
+                resizeMode="contain"
+              />
+              <Text style={styles.buttonText}>
+                Clear Cache ({usageSize.mb})
+              </Text>
+            </View>
+          </AppPressable>
+        </CollapsibleSection>
+        {/* App Icon - Android Only */}
         {Platform.OS === 'android' && (
           <CollapsibleSection
             title="App Icon"
@@ -2466,7 +2588,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   try {
                     HapticFeedback.light();
                     const newIcon = value ? 'alternative' : 'default';
-                    // Check if IconChanger module is available
                     if (!IconChanger || !IconChanger.changeIcon) {
                       Alert.alert(
                         'Error',
@@ -2475,16 +2596,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                       );
                       return;
                     }
-                    // Update UI state
                     setSelectedIcon(newIcon);
-                    // Save preference
                     await EncryptedStorage.setItem(
                       'app_icon_preference',
                       newIcon,
                     );
-                    // Change the icon
                     await IconChanger.changeIcon(newIcon);
-                    // Show success message
                     const iconName =
                       newIcon === 'alternative' ? 'QuickCalc' : 'Bold Wallet';
                     Alert.alert(
@@ -2494,7 +2611,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     );
                   } catch (error: any) {
                     dbg('Error changing icon:', error);
-                    // Revert UI state on error
                     setSelectedIcon(value ? 'default' : 'alternative');
                     Alert.alert(
                       'Error',
@@ -2510,109 +2626,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </CollapsibleSection>
         )}
-        {/* Address Type Section */}
-        <CollapsibleSection
-          title="Address Type"
-          isExpanded={expandedSections.addressType}
-          onToggle={() => toggleSection('addressType')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.walletModeDescription}>
-            Choose the receive address format. Native SegWit (bech32) is
-            recommended. Changing this updates your receive address on the
-            Wallet tab.
-          </Text>
-          <View style={styles.addressTypeOptionsContainer}>
-            <AppPressable
-              style={[
-                styles.addressTypeOption,
-                activeAddressType === 'legacy' && styles.addressTypeOptionSelected,
-              ]}
-              onPress={async () => {
-                HapticFeedback.selection();
-                try {
-                  await setActiveAddressType('legacy');
-                  navigation.reset(getResetToMainTabsWallet());
-                } catch (e) {
-                  dbg('Error setting address type:', e);
-                }
-              }}
-              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-              <Image
-                source={require('../assets/bricks-icon.png')}
-                style={styles.networkIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.toggleLabel}>Legacy (P2PKH)</Text>
-              {activeAddressType === 'legacy' && (
-                <Image
-                  source={require('../assets/check-icon.png')}
-                  style={styles.addressTypeCheckIcon}
-                  resizeMode="contain"
-                />
-              )}
-            </AppPressable>
-            <AppPressable
-              style={[
-                styles.addressTypeOption,
-                activeAddressType === 'segwit-native' && styles.addressTypeOptionSelected,
-              ]}
-              onPress={async () => {
-                HapticFeedback.selection();
-                try {
-                  await setActiveAddressType('segwit-native');
-                  navigation.reset(getResetToMainTabsWallet());
-                } catch (e) {
-                  dbg('Error setting address type:', e);
-                }
-              }}
-              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-              <Image
-                source={require('../assets/dna-icon.png')}
-                style={styles.networkIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.toggleLabel}>Native SegWit (bech32)</Text>
-              {activeAddressType === 'segwit-native' && (
-                <Image
-                  source={require('../assets/check-icon.png')}
-                  style={styles.addressTypeCheckIcon}
-                  resizeMode="contain"
-                />
-              )}
-            </AppPressable>
-            <AppPressable
-              style={[
-                styles.addressTypeOption,
-                activeAddressType === 'segwit-compatible' && styles.addressTypeOptionSelected,
-              ]}
-              onPress={async () => {
-                HapticFeedback.selection();
-                try {
-                  await setActiveAddressType('segwit-compatible');
-                  navigation.reset(getResetToMainTabsWallet());
-                } catch (e) {
-                  dbg('Error setting address type:', e);
-                }
-              }}
-              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-              <Image
-                source={require('../assets/recycle-icon.png')}
-                style={styles.networkIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.toggleLabel}>Nested SegWit (P2SH-WPKH)</Text>
-              {activeAddressType === 'segwit-compatible' && (
-                <Image
-                  source={require('../assets/check-icon.png')}
-                  style={styles.addressTypeCheckIcon}
-                  resizeMode="contain"
-                />
-              )}
-            </AppPressable>
-          </View>
-        </CollapsibleSection>
-        {/* Security Section */}
+        </SettingsSectionGroup>
+
+        {/* Wallet: Security, Address Type, Network providers, Nostr Relays */}
+        <SettingsSectionGroup title="Wallet" styles={styles} theme={theme}>
         <CollapsibleSection
           title="Security"
           isExpanded={expandedSections.backup}
@@ -2656,14 +2673,115 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </AppPressable>
         </CollapsibleSection>
-        {/* Network Providers Section */}
+        {/* Address Type - use address-type-icon */}
+        <CollapsibleSection
+          title="Address Type"
+          isExpanded={expandedSections.addressType}
+          onToggle={() => toggleSection('addressType')}
+          styles={styles}
+          theme={theme}>
+          <Text style={styles.walletModeDescription}>
+            Choose the receive address format. Native SegWit (bech32) is
+            recommended. Changing this updates your receive address on the
+            Wallet tab.
+          </Text>
+          <View style={styles.addressTypeOptionsContainer}>
+            <AppPressable
+              style={[
+                styles.addressTypeOption,
+                activeAddressType === 'legacy' && styles.addressTypeOptionSelected,
+              ]}
+              onPress={async () => {
+                HapticFeedback.selection();
+                try {
+                  await setActiveAddressType('legacy');
+                  navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
+                } catch (e) {
+                  dbg('Error setting address type:', e);
+                }
+              }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+              <Image
+                source={require('../assets/bricks-icon.png')}
+                style={styles.networkIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.toggleLabel}>Legacy (P2PKH)</Text>
+              {activeAddressType === 'legacy' && (
+                <Image
+                  source={require('../assets/check-icon.png')}
+                  style={styles.addressTypeCheckIcon}
+                  resizeMode="contain"
+                />
+              )}
+            </AppPressable>
+            <AppPressable
+              style={[
+                styles.addressTypeOption,
+                activeAddressType === 'segwit-native' && styles.addressTypeOptionSelected,
+              ]}
+              onPress={async () => {
+                HapticFeedback.selection();
+                try {
+                  await setActiveAddressType('segwit-native');
+                  navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
+                } catch (e) {
+                  dbg('Error setting address type:', e);
+                }
+              }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+              <Image
+                source={require('../assets/dna-icon.png')}
+                style={styles.networkIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.toggleLabel}>Native SegWit (bech32)</Text>
+              {activeAddressType === 'segwit-native' && (
+                <Image
+                  source={require('../assets/check-icon.png')}
+                  style={styles.addressTypeCheckIcon}
+                  resizeMode="contain"
+                />
+              )}
+            </AppPressable>
+            <AppPressable
+              style={[
+                styles.addressTypeOption,
+                activeAddressType === 'segwit-compatible' && styles.addressTypeOptionSelected,
+              ]}
+              onPress={async () => {
+                HapticFeedback.selection();
+                try {
+                  await setActiveAddressType('segwit-compatible');
+                  navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
+                } catch (e) {
+                  dbg('Error setting address type:', e);
+                }
+              }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+              <Image
+                source={require('../assets/recycle-icon.png')}
+                style={styles.networkIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.toggleLabel}>Nested SegWit (P2SH-WPKH)</Text>
+              {activeAddressType === 'segwit-compatible' && (
+                <Image
+                  source={require('../assets/check-icon.png')}
+                  style={styles.addressTypeCheckIcon}
+                  resizeMode="contain"
+                />
+              )}
+            </AppPressable>
+          </View>
+        </CollapsibleSection>
+        {/* Network Providers */}
         <CollapsibleSection
           title="Network Providers"
           isExpanded={expandedSections.advanced}
           onToggle={() => toggleSection('advanced')}
           styles={styles}
           theme={theme}>
-          {/* Network Settings */}
           <View style={styles.toggleContainer}>
             <View style={styles.networkOption}>
               <Image
@@ -2692,7 +2810,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               <Text style={styles.toggleLabel}>Testnet3</Text>
             </View>
           </View>
-          {/* Network mode indicator and info */}
           <View style={styles.apiNetworkInfoContainer}>
             <View style={styles.apiNetworkModeRow}>
               <View
@@ -2766,9 +2883,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             styles={styles}
             theme={theme}
           />
-          {/* Action buttons side by side */}
           <View style={styles.apiActionButtonsRow}>
-            {/* Test & Save button - always show in mainnet, disabled when no changes */}
             {!isTestnet && (
               <AppPressable
                 style={[
@@ -2802,7 +2917,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 </View>
               </AppPressable>
             )}
-            {/* Reset Default API button - only show in mainnet */}
             {!isTestnet && (
               <AppPressable
                 style={[
@@ -2827,7 +2941,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             )}
           </View>
         </CollapsibleSection>
-        {/* Nostr Relays Section - only show when keyshare has an npub */}
         {hasNostr && (
           <CollapsibleSection
             title="Nostr Relays"
@@ -2868,7 +2981,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 onPress={async () => {
                   HapticFeedback.light();
                   try {
-                    // Parse relays - support both newline and comma separation
                     const relays = pendingNostrRelays
                       .split(/[,\n]/)
                       .map(r => r.trim())
@@ -2880,7 +2992,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                       );
                       return;
                     }
-                    // Basic validation - check if starts with wss:// or ws://
                     const invalid = relays.find(
                       r => !r.startsWith('wss://') && !r.startsWith('ws://'),
                     );
@@ -2891,9 +3002,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                       );
                       return;
                     }
-                    // Convert to CSV format for storage
                     const relaysCSV = relays.join(',');
-                    // Save to cache as CSV
                     await LocalCache.setItem('nostr_relays', relaysCSV);
                     setNostrRelays(relaysCSV);
                     Alert.alert('Success', 'Nostr relays saved successfully!');
@@ -2931,10 +3040,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 ]}
                 onPress={async () => {
                   HapticFeedback.light();
-                  // Fetch dynamic relays (force fetch, same as first time)
                   const fetchedRelays = await getNostrRelays(true);
                   const relaysCSV = fetchedRelays.join(',');
-                  // Convert CSV to newline-separated for multiline display
                   const relaysForDisplay = relaysCSV.split(',').join('\n');
                   setPendingNostrRelays(relaysForDisplay);
                 }}
@@ -2951,52 +3058,116 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </CollapsibleSection>
         )}
-        {/* Storage Section */}
+        </SettingsSectionGroup>
+
+        {/* Tabs: Wallet, UTXO, PSBT, Playground */}
+        <SettingsSectionGroup title="Tabs" styles={styles} theme={theme}>
         <CollapsibleSection
-          title="Storage"
-          isExpanded={expandedSections.storage}
-          onToggle={() => toggleSection('storage')}
+          title="Wallet"
+          isExpanded={expandedSections.wallet}
+          onToggle={() => toggleSection('wallet')}
           styles={styles}
           theme={theme}>
-          {/* Clear Address Cache (balances + transactions only) */}
-          <View style={styles.apiItem}>
-            <Text style={styles.apiName}>Cache Maintenance</Text>
-            <Text style={styles.apiDescription}>
-              Clear cached balances and history.
-            </Text>
+          <Text style={styles.hintText}>
+            Show the <Text style={styles.hintBold}>Wallet</Text> tab in the tab
+            bar. This tab shows your balance and send/receive. On by default.
+          </Text>
+          <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
+            <Text style={styles.toggleLabel}>Hide Wallet tab</Text>
+            <Switch
+              onValueChange={value => setShowWalletTab(value)}
+              value={showWalletTab}
+              trackColor={{
+                false: theme.colors.switchTrackFalse,
+                true: theme.colors.switchTrackTrue,
+              }}
+              thumbColor={theme.colors.switchThumb}
+              ios_backgroundColor={theme.colors.switchIosBackground}
+            />
+            <Text style={styles.toggleLabel}>Show Wallet tab</Text>
           </View>
-          <AppPressable
-            style={[styles.button, styles.deleteButton]}
-            onPress={async () => {
-              HapticFeedback.light();
-              try {
-                await LocalCache.clear();
-                setUsageSize(await LocalCache.usageSize());
-                Alert.alert('Cache Cleared', 'Cache cleared successfully.');
-                navigation.reset(getResetToMainTabsWallet());
-              } catch (e) {
-                dbg('Error clearing cache', e);
-                Alert.alert(
-                  'Error',
-                  'Failed to clear cache. Please try again.',
-                );
-              }
-            }}
-            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-            <View style={styles.buttonContent}>
-              <Image
-                source={require('../assets/delete-icon.png')}
-                style={[styles.buttonIcon, styles.whiteTint]}
-                resizeMode="contain"
-              />
-              <Text style={styles.buttonText}>
-                Clear Cache ({usageSize.mb})
-              </Text>
-            </View>
-          </AppPressable>
         </CollapsibleSection>
-
-        {/* Dev Debug Section - Only visible on Android if enabled via build number clicks */}
+        <CollapsibleSection
+          title="UTXOs"
+          isExpanded={expandedSections.utxos}
+          onToggle={() => toggleSection('utxos')}
+          styles={styles}
+          theme={theme}>
+          <Text style={styles.hintText}>
+            Show the <Text style={styles.hintBold}>UTXOs</Text> tab in the tab
+            bar. This tab lists your unspent outputs (date, output, address,
+            value in BTC and fiat). Off by default.
+          </Text>
+          <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
+            <Text style={styles.toggleLabel}>Hide UTXOs tab</Text>
+            <Switch
+              onValueChange={value => setShowUtxosTab(value)}
+              value={showUtxosTab}
+              trackColor={{
+                false: theme.colors.switchTrackFalse,
+                true: theme.colors.switchTrackTrue,
+              }}
+              thumbColor={theme.colors.switchThumb}
+              ios_backgroundColor={theme.colors.switchIosBackground}
+            />
+            <Text style={styles.toggleLabel}>Show UTXOs tab</Text>
+          </View>
+        </CollapsibleSection>
+        <CollapsibleSection
+          title="PSBT"
+          isExpanded={expandedSections.psbt ?? false}
+          onToggle={() => toggleSection('psbt')}
+          styles={styles}
+          theme={theme}>
+          <Text style={styles.hintText}>
+            Show the <Text style={styles.hintBold}>PSBT</Text> tab in the tab
+            bar. This tab is for signing Partially Signed Bitcoin Transactions.
+            Off by default.
+          </Text>
+          <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
+            <Text style={styles.toggleLabel}>Hide PSBT tab</Text>
+            <Switch
+              onValueChange={value => setShowPsbtTab(value)}
+              value={showPsbtTab}
+              trackColor={{
+                false: theme.colors.switchTrackFalse,
+                true: theme.colors.switchTrackTrue,
+              }}
+              thumbColor={theme.colors.switchThumb}
+              ios_backgroundColor={theme.colors.switchIosBackground}
+            />
+            <Text style={styles.toggleLabel}>Show PSBT tab</Text>
+          </View>
+        </CollapsibleSection>
+        {activeNetwork === 'mainnet' && (
+          <CollapsibleSection
+            title="Mempool"
+            isExpanded={expandedSections.mempoolPlayground}
+            onToggle={() => toggleSection('mempoolPlayground')}
+            styles={styles}
+            theme={theme}>
+            <Text style={styles.hintText}>
+              Show the <Text style={styles.hintBold}>Play</Text> tab in the tab
+              bar. This tab is a mempool playground for utility APIs (mainnet
+              only).
+            </Text>
+            <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
+              <Text style={styles.toggleLabel}>Hide Play tab</Text>
+              <Switch
+                onValueChange={value => setShowMempoolPlayground(value)}
+                value={showMempoolPlayground}
+                trackColor={{
+                  false: theme.colors.switchTrackFalse,
+                  true: theme.colors.switchTrackTrue,
+                }}
+                thumbColor={theme.colors.switchThumb}
+                ios_backgroundColor={theme.colors.switchIosBackground}
+              />
+              <Text style={styles.toggleLabel}>Show Play tab</Text>
+            </View>
+          </CollapsibleSection>
+        )}
+        {/* Dev Debug - Only visible on Android if enabled via build number clicks */}
         {Platform.OS === 'android' && devDebugEnabled && (
           <CollapsibleSection
             title="Dev Debug"
@@ -3112,8 +3283,28 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </AppPressable>
           </CollapsibleSection>
         )}
+        {/* Font Testing - Development Only */}
+        {__DEV__ && (
+          <CollapsibleSection
+            title="Font Testing"
+            isExpanded={expandedSections.fontTesting}
+            onToggle={() => toggleSection('fontTesting')}
+            styles={styles}
+            theme={theme}>
+            <Text style={styles.toggleDescription}>
+              Visual font comparison tool to verify unified fonts across
+              platforms. This section only appears in development builds. Note
+              that rendered fonts may differ from the actual fonts on your
+              device. Also, the font testing section is only visible in
+              development builds.
+            </Text>
+            <FontComparisonScreen />
+          </CollapsibleSection>
+        )}
+        </SettingsSectionGroup>
 
-        {/* Legal Section */}
+        {/* Info: Legal, About */}
+        <SettingsSectionGroup title="Info" styles={styles} theme={theme}>
         <CollapsibleSection
           title="Legal"
           isExpanded={expandedSections.legal}
@@ -3142,7 +3333,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             Read Privacy Policy
           </Text>
         </CollapsibleSection>
-        {/* About Section */}
         <CollapsibleSection
           title="About"
           isExpanded={expandedSections.about}
@@ -3246,28 +3436,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           </View>
           <Text style={styles.toggleDescription}>
             Make sure that your wallet keyshares devices are running the latest
-            version for optimal compatibility and security.
+            version             for optimal compatibility and security.
           </Text>
         </CollapsibleSection>
+        </SettingsSectionGroup>
 
-        {/* Font Testing Section - Development Only */}
-        {__DEV__ && (
-          <CollapsibleSection
-            title="Font Testing"
-            isExpanded={expandedSections.fontTesting}
-            onToggle={() => toggleSection('fontTesting')}
-            styles={styles}
-            theme={theme}>
-            <Text style={styles.toggleDescription}>
-              Visual font comparison tool to verify unified fonts across
-              platforms. This section only appears in development builds. Note
-              that rendered fonts may differ from the actual fonts on your
-              device. Also, the font testing section is only visible in
-              development builds.
-            </Text>
-            <FontComparisonScreen />
-          </CollapsibleSection>
-        )}
       </ScrollView>
       {/* Modals */}
       <BackupKeyshareModal

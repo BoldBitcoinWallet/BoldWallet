@@ -13,6 +13,7 @@ import {
   Easing,
   Image,
   Linking,
+  Pressable,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
 import DocumentPicker from 'react-native-document-picker';
@@ -867,7 +868,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       <View style={styles.bottomActions}>
         <View style={styles.termsContainer}>
           <View style={styles.termsRow}>
-            <AppPressable
+            <Pressable
               style={styles.checkboxContainer}
               onPress={() => {
                 HapticFeedback.medium();
@@ -880,7 +881,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                 ]}>
                 {agreeToTerms && <Text style={styles.checkmark}>✓</Text>}
               </View>
-            </AppPressable>
+            </Pressable>
             <Text style={styles.termsText}>
               I agree to the{' '}
               <Text
@@ -895,7 +896,7 @@ const ShowcaseScreen = ({navigation}: any) => {
             </Text>
           </View>
           <View style={styles.termsRow}>
-            <AppPressable
+            <Pressable
               style={styles.checkboxContainer}
               onPress={() => {
                 HapticFeedback.medium();
@@ -908,7 +909,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                 ]}>
                 {agreeToPrivacy && <Text style={styles.checkmark}>✓</Text>}
               </View>
-            </AppPressable>
+            </Pressable>
             <Text style={styles.termsText}>
               I agree to the{' '}
               <Text
@@ -992,7 +993,7 @@ const ShowcaseScreen = ({navigation}: any) => {
               <AppPressable
                 style={styles.closeButton}
                 onPress={handleCloseModal}
-                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <Text style={styles.closeButtonText}>✕</Text>
               </AppPressable>
             </View>
@@ -1038,7 +1039,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                 <AppPressable
                   style={[styles.modalActionButton, styles.modalCancelButton]}
                   onPress={handleCloseModal}
-                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                   <Text
                     style={[
                       styles.modalActionButtonText,
@@ -1053,7 +1054,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                     HapticFeedback.medium();
                     handlePasswordSubmit();
                   }}
-                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                   <Image
                     source={require('../assets/key-icon.png')}
                     style={styles.buttonIcon}
@@ -1140,7 +1141,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                   HapticFeedback.medium();
                   setIsModeModalVisible(false);
                 }}
-                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <Text style={styles.closeButtonText}>✕</Text>
               </AppPressable>
             </View>
@@ -1156,7 +1157,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                     HapticFeedback.medium();
                     setSelectedMode('duo');
                   }}
-                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                   <View style={styles.modeOptionContent}>
                     <View style={styles.modeIconWrapper}>
                       {selectedMode === 'duo' && (
@@ -1236,7 +1237,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                     HapticFeedback.medium();
                     setSelectedMode('trio');
                   }}
-                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                   <View style={styles.modeOptionContent}>
                     <View style={styles.modeIconWrapper}>
                       {selectedMode === 'trio' && (
@@ -1369,7 +1370,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                         dbg('Error opening URL:', err);
                       });
                     }}
-                    android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                    android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                     <View style={styles.setupGuideHintRow}>
                       <Image
                         source={require('../assets/start-icon.png')}
@@ -1396,7 +1397,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                   setIsTransportModalVisible(true);
                 }}
                 disabled={!selectedMode}
-                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <Text style={styles.modeContinueButtonText}>
                   Continue to Pair Devices →
                 </Text>

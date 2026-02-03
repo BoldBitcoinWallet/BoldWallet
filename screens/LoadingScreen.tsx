@@ -9,7 +9,6 @@ import {
   Easing,
   Pressable,
 } from 'react-native';
-import AppPressable from '../components/AppPressable';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useTheme} from '../theme';
 import {HapticFeedback} from '../utils';
