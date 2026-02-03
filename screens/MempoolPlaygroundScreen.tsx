@@ -241,12 +241,10 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
       <HeaderPriceButton
         btcPrice={btcPrice}
         selectedCurrency={selectedCurrency}
-        onCurrencyPress={() =>
-          navigation.navigate('Settings', {expandSection: 'advanced'})
-        }
+        onCurrencyPress={() => {}}
       />
     ),
-    [btcPrice, selectedCurrency, navigation],
+    [btcPrice, selectedCurrency],
   );
   const headerTitle = useCallback(
     () => <HeaderProvider apiBase={apiBase} />,
