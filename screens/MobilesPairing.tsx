@@ -13,6 +13,7 @@ import {
   Linking,
   NativeEventEmitter,
   EmitterSubscription,
+  BackHandler,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
 import Animated, {
@@ -1627,6 +1628,13 @@ const MobilesPairing = ({navigation}: any) => {
       gestureEnabled: !isPairing,
     });
   }, [navigation, isPairing]);
+  // Block Android hardware back button during peer discovery
+  useEffect(() => {
+    if (!isPairing || Platform.OS !== 'android') return undefined;
+    const onBack = () => true; // prevent default (stay on screen)
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBack);
+    return () => subscription.remove();
+  }, [isPairing]);
   const styles = StyleSheet.create({
     root: {
       flex: 1,
