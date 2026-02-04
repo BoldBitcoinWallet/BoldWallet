@@ -1,5 +1,33 @@
 # Changelog
 
+## [2.1.14] - 2026-02-03
+
+### Added
+- **Settings sections and subsections**: Reorganized Settings into clear groups
+  - **App**: Theme, Balance Display, Haptics, Storage, App Icon (Android)
+  - **Wallet**: Security, Address Type (with address-type-icon), Network providers, Nostr Relays
+  - **Advanced**: Wallet tab, UTXOs tab, PSBT, Mempool Playground, Dev Debug, Font Testing
+  - **Info**: Legal and About under a single “Info” section header
+- **Tab visibility toggles (Advanced)**: User can show/hide tabs; preferences persisted
+  - Wallet tab toggle (default on)
+  - PSBT tab toggle (default off)
+  - UTXOs tab toggle (default off)
+  - Mempool Playground (Play) tab toggle (default off)
+- **Active tab priority on load**: Wallet → PSBT → Device (only if toggled on)
+
+### Changed
+- **Address Type**: Uses `address-type-icon.png` in Settings
+- **UTXOs tab**: Uses `utxo-icon.png` in tab bar (replacing out-icon)
+- **Tab bar labels**: Auto-shrink to fit (bounded width, `adjustsFontSizeToFit` on iOS); smaller base font on Android; icon wrapper in StyleSheet (lint)
+- **Tab bar icon**: Slight inset so UTXO icon (and others) are not trimmed at top
+- **Lock / reopen**: `UserProvider` wraps both lock screen and main content so tab preferences and last-active tab persist across lock/unlock (e.g. reopening stays on PSBT when PSBT was active)
+
+### Technical Details
+- **UserContext**: `showWalletTab`, `showPsbtTab` (default off), `showMempoolPlayground` (default off), `showUtxosTab` (default off); load/save via LocalCache (`wallet_tab_enabled`, `psbt_tab_enabled`, `mempool_playground_enabled`, `utxos_tab_enabled`)
+- **utils.js**: `getResetToMainTabsWallet` / `getResetToMainTabsPSBT` accept `showWallet`; routes omit Wallet/PSBT when toggled off; selected index follows priority Wallet → PSBT → Device
+- **App.tsx**: Tab.Screen for Wallet/PSBT conditional on `showWalletTab`/`showPsbtTab`; `initialRouteName` = first available of Wallet, PSBT, Device; `UserProvider` moved to wrap lock + main content
+- **WalletSettings**: `SettingsSectionGroup` for section headers; Advanced holds Wallet tab, UTXOs, PSBT, Playground, Dev Debug, Font Testing; Info holds Legal and About
+
 ## [2.1.13] - 2026-02-01
 
 ### Added

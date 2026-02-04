@@ -52,6 +52,7 @@ export interface Theme {
     whiteOverlay25: string;
     whiteOverlay30: string;
     primaryOverlay95: string;
+    primaryOverlay70: string;
     // Status color overlays
     receivedOverlay15: string;
     receivedOverlay40: string;
@@ -666,9 +667,9 @@ export const createStyles = (theme: Theme): Styles => ({
     letterSpacing: 0.5,
   },
   qrContainer: {
+    backgroundColor: 'white',
     padding: 8,
-    backgroundColor: theme.colors.white,
-    borderRadius: 4,
+    borderRadius: 8,
     elevation: 4,
     shadowColor: theme.colors.shadowColor,
     shadowOffset: {width: 0, height: 2},
@@ -1634,8 +1635,8 @@ export const createStyles = (theme: Theme): Styles => ({
   },
   qrCodeContainer: {
     backgroundColor: 'white',
-    padding: 16,
-    borderRadius: 12,
+    padding: 8,
+    borderRadius: 8,
     marginBottom: 16,
   },
   qrModalHint: {

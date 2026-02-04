@@ -18,7 +18,7 @@ import {useUser} from '../context/UserContext';
 
 const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const {theme} = useTheme();
-  const {setActiveApiProvider} = useUser();
+  const {setActiveApiProvider, activeNetwork, showMempoolPlayground, showUtxosTab, showPsbtTab, showWalletTab} = useUser();
   const [pendingAPI, setPendingAPI] = useState('');
   const [isAPISaving, setIsAPISaving] = useState(false);
 
@@ -127,12 +127,26 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
 
   const handleSkip = () => {
     HapticFeedback.medium();
-    navigation.reset(getResetToMainTabsWallet());
+    navigation.reset(
+      getResetToMainTabsWallet({}, {
+        showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
+        showUtxos: showUtxosTab,
+        showPsbt: showPsbtTab,
+        showWallet: showWalletTab,
+      }),
+    );
   };
 
   const handleProceed = () => {
     HapticFeedback.medium();
-    navigation.reset(getResetToMainTabsWallet());
+    navigation.reset(
+      getResetToMainTabsWallet({}, {
+        showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
+        showUtxos: showUtxosTab,
+        showPsbt: showPsbtTab,
+        showWallet: showWalletTab,
+      }),
+    );
   };
 
   const styles = StyleSheet.create({

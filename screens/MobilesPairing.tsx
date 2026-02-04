@@ -1,5 +1,5 @@
 /* eslint-disable react-native/no-inline-styles */
-import React, {useState, useEffect, useCallback} from 'react';
+import React, {useState, useEffect, useCallback, useRef} from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
   Linking,
   NativeEventEmitter,
   EmitterSubscription,
+  BackHandler,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
 import Animated, {
@@ -36,12 +37,14 @@ import {
   RouteProp,
   StackActions,
   useFocusEffect,
+  useIsFocused,
   useRoute,
 } from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Big from 'big.js';
 import {dbg, getPinnedRemoteIPs, HapticFeedback, hexToString, getResetToMainTabsWallet} from '../utils';
 import {useTheme} from '../theme';
+import {useUser} from '../context/UserContext';
 import {waitMS, WalletService} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
 import BackupKeyshareModal from '../components/BackupKeyshareModal';
@@ -126,6 +129,8 @@ const MobilesPairing = ({navigation}: any) => {
     derivePaths?: string[];
   } | null>(null);
   const {theme} = useTheme();
+  const {activeNetwork, showMempoolPlayground, showUtxosTab, showPsbtTab, showWalletTab} = useUser();
+  const showPlay = activeNetwork === 'mainnet' && showMempoolPlayground;
   // Animation ref for horizontal progress bar
   const progressAnimation = useSharedValue(0);
   type RouteParams = {
@@ -143,6 +148,11 @@ const MobilesPairing = ({navigation}: any) => {
     network?: string; // Network from QR code (ensures same network)
   };
   const route = useRoute<RouteProp<{params: RouteParams}>>();
+  const isFocused = useIsFocused();
+  const isFocusedRef = useRef(isFocused);
+  useEffect(() => {
+    isFocusedRef.current = isFocused;
+  }, [isFocused]);
   const isSendBitcoin = route.params?.mode === 'send_btc';
   const isSignPSBT = route.params?.mode === 'sign_psbt';
   const setupMode = route.params?.mode;
@@ -845,7 +855,7 @@ const MobilesPairing = ({navigation}: any) => {
             }
             dbg('PSBT signing complete: Navigating to Wallet tab with signedPsbt');
             navigation.dispatch(
-              CommonActions.reset(getResetToMainTabsWallet({signedPsbt})),
+              CommonActions.reset(getResetToMainTabsWallet({signedPsbt}, { showPlay, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab })),
             );
             setMpcDone(true);
           })
@@ -927,7 +937,7 @@ const MobilesPairing = ({navigation}: any) => {
               JSON.stringify(pendingTxs),
             );
             navigation.dispatch(
-              CommonActions.reset(getResetToMainTabsWallet({txId})),
+              CommonActions.reset(getResetToMainTabsWallet({txId}, { showPlay, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab })),
             );
             setMpcDone(true);
           })
@@ -1401,10 +1411,12 @@ const MobilesPairing = ({navigation}: any) => {
         );
       } else {
         setStatus('Pairing timed out. Please try again.');
-        Alert.alert('Pairing Timeout', 'No peer device was detected.');
-        navigation.dispatch(
-          StackActions.replace('Devices Pairing', route.params),
-        );
+        if (isFocusedRef.current) {
+          Alert.alert('Pairing Timeout', 'No peer device was detected.');
+          navigation.dispatch(
+            StackActions.replace('Devices Pairing', route.params),
+          );
+        }
       }
     } catch (error) {
       dbg('Pairing Error:', error);
@@ -1412,7 +1424,9 @@ const MobilesPairing = ({navigation}: any) => {
       setPeerIP(null);
       setPeerIP2(null);
       setLocalIP(null);
-      Alert.alert('Error', error?.toString() || 'Unknown error occurred');
+      if (isFocusedRef.current) {
+        Alert.alert('Error', error?.toString() || 'Unknown error occurred');
+      }
     } finally {
       setIsPairing(false);
     }
@@ -1607,6 +1621,20 @@ const MobilesPairing = ({navigation}: any) => {
       };
     }, []),
   );
+  // Disable back button and swipe-back during "Starting peer discovery" (isPairing)
+  useEffect(() => {
+    navigation.setOptions({
+      headerLeft: isPairing ? () => null : undefined,
+      gestureEnabled: !isPairing,
+    });
+  }, [navigation, isPairing]);
+  // Block Android hardware back button during peer discovery
+  useEffect(() => {
+    if (!isPairing || Platform.OS !== 'android') return undefined;
+    const onBack = () => true; // prevent default (stay on screen)
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBack);
+    return () => subscription.remove();
+  }, [isPairing]);
   const styles = StyleSheet.create({
     root: {
       flex: 1,
@@ -2064,6 +2092,14 @@ const MobilesPairing = ({navigation}: any) => {
       alignItems: 'center',
       paddingVertical: 2,
       marginVertical: 0,
+    },
+    keepOpenDuringSetupContainer: {
+      paddingHorizontal: 8,
+      marginVertical: 2,
+      marginHorizontal: 4,
+      paddingVertical: 8,
+      borderRadius: 8,
+      backgroundColor: 'transparent',
     },
     checkbox: {
       width: 24,
@@ -3490,7 +3526,11 @@ const MobilesPairing = ({navigation}: any) => {
                           </View>
                         </View>
                         <AppPressable
-                          style={styles.checkboxContainer}
+                          style={[
+                            styles.checkboxContainer,
+                            styles.keepOpenDuringSetupContainer,
+                            isPrepared && styles.enhancedCheckboxContainerChecked,
+                          ]}
                           disabled={isPreparing}
                           onPress={() => {
                             HapticFeedback.medium();

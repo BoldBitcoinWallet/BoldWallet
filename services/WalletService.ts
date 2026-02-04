@@ -42,8 +42,8 @@ interface CachedTransactionData {
 }
 export const waitMS = (ms = 2000) =>
   new Promise(resolve => setTimeout(resolve, ms));
-// Add validation functions
-const validateBitcoinAddressEnhanced = (address: string, network: string = 'mainnet'): boolean => {
+// Add validation functions (exported for address-for-network checks, e.g. QR scan)
+export const validateBitcoinAddressEnhanced = (address: string, network: string = 'mainnet'): boolean => {
   if (!address || typeof address !== 'string') {
     dbg('WalletService: Bitcoin address validation failed - empty or invalid type');
     return false;

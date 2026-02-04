@@ -48,7 +48,10 @@ import {
 } from '../utils';
 import {validate as validateBitcoinAddress} from 'bitcoin-address-validation';
 import {useTheme} from '../theme';
-import {WalletService} from '../services/WalletService';
+import {
+  WalletService,
+  validateBitcoinAddressEnhanced,
+} from '../services/WalletService';
 import WalletSkeleton from '../components/WalletSkeleton';
 import {useUser} from '../context/UserContext';
 import CurrencySelector from '../components/CurrencySelector';
@@ -120,6 +123,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState('');
   const [isQRScannerVisible, setIsQRScannerVisible] = useState(false);
+  const lastInvalidQrRef = useRef<{data: string; time: number}>({
+    data: '',
+    time: 0,
+  });
+  const [initialSendAddress, setInitialSendAddress] = useState<string | null>(
+    null,
+  );
   const [scannedFromQR, setScannedFromQR] = useState(false); // Track if data came from QR scan
   const [priceData, setPriceData] = useState<{[key: string]: number}>({});
   const [_segwitCompatibleAddress, setSegwitCompatibleAddress] =
@@ -167,6 +177,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     showSats,
     setShowSats: setShowSatsGlobal,
     balanceFormattingEnabled,
+    showMempoolPlayground,
+    showUtxosTab,
+    showPsbtTab,
+    showWalletTab,
   } = useUser();
   // Keep local state in sync with UserContext
   useEffect(() => {
@@ -1241,12 +1255,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           ks = JSON.parse(jks);
         } catch (error) {
           dbg('Error parsing keyshare:', error);
-          navigation.reset(getResetToMainTabsWallet());
+          navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
           return;
         }
         if (!ks.pub_key || !ks.chain_code_hex || !ks.local_party_key) {
           dbg('Invalid pub_key or chain_code_hex or local_party_key');
-          navigation.reset(getResetToMainTabsWallet());
+          navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
           return;
         }
         // Get current address type for derivation path
@@ -1400,7 +1414,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       }
     };
     init();
-  }, [showErrorToast, isInitialized, address, navigation, network]);
+  }, [showErrorToast, isInitialized, address, navigation, network, activeNetwork, showMempoolPlayground, showUtxosTab, showPsbtTab, showWalletTab]);
   // Remove the old interval effect since we're handling it in CacheIndicator now
   // Initial data fetch only when initialized and address is set
   useEffect(() => {
@@ -1418,7 +1432,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     return () => {
       mounted = false;
     };
-  }, [isInitialized, address]); // Removed fetchData from dependencies
+  }, [isInitialized, address, activeNetwork, showMempoolPlayground]);
   const handleBlurred = () => {
     const blurr = !isBlurred;
     setIsBlurred(blurr);
@@ -1726,10 +1740,53 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     setScannedNetwork(''); // Reset scanned network
     setComputedFromAddress(''); // Reset computed from address
   };
-  // Process scanned QR data
-  const processScannedQRData = useCallback((qrData: string) => {
-    dbg('Scanned QR data:', qrData.substring(0, 100));
-    const decoded = decodeSendBitcoinQR(qrData) as {
+  // Process scanned QR data: if raw data is a valid address for current network, open SendBitcoinModal; else try decodeSendBitcoinQR
+  const processScannedQRData = useCallback(
+    (qrData: string) => {
+      dbg('Scanned QR data:', qrData.substring(0, 100));
+      const trimmed = qrData.trim();
+      // Support BIP-21: "bitcoin:<address>" or "bitcoin:<address>?amount=..."
+      const addressCandidate = trimmed.startsWith('bitcoin:')
+        ? trimmed.replace(/^bitcoin:/i, '').split('?')[0].trim()
+        : trimmed;
+      const networkForValidation =
+        network === 'testnet3' ? 'testnet' : (network || 'mainnet');
+      if (
+        addressCandidate &&
+        validateBitcoinAddressEnhanced(
+          addressCandidate,
+          networkForValidation,
+        )
+      ) {
+        setInitialSendAddress(addressCandidate);
+        setIsSendModalVisible(true);
+        return;
+      }
+      const otherNetwork =
+        networkForValidation === 'mainnet' ? 'testnet' : 'mainnet';
+      if (
+        addressCandidate &&
+        validateBitcoinAddressEnhanced(addressCandidate, otherNetwork)
+      ) {
+        const now = Date.now();
+        if (
+          lastInvalidQrRef.current.data === qrData &&
+          now - lastInvalidQrRef.current.time < 2000
+        ) {
+          return;
+        }
+        lastInvalidQrRef.current = {data: qrData, time: now};
+        const currentLabel =
+          networkForValidation === 'mainnet' ? 'mainnet' : 'testnet';
+        const addressLabel =
+          otherNetwork === 'mainnet' ? 'mainnet' : 'testnet';
+        Alert.alert(
+          'Wrong network',
+          `This address is for ${addressLabel} but you're on ${currentLabel}. Switch network in Settings or scan an address for ${currentLabel}.`,
+        );
+        return;
+      }
+      const decoded = decodeSendBitcoinQR(qrData) as {
       toAddress: string;
       amountSats: string;
       feeSats: string;
@@ -1744,6 +1801,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       !decoded.amountSats ||
       !decoded.feeSats
     ) {
+      const now = Date.now();
+      if (
+        lastInvalidQrRef.current.data === qrData &&
+        now - lastInvalidQrRef.current.time < 2000
+      ) {
+        return;
+      }
+      lastInvalidQrRef.current = {data: qrData, time: now};
       Alert.alert(
         'Invalid QR Code',
         'The scanned QR code does not contain valid send bitcoin data. Please scan the QR code from the device that initiated the transaction.',
@@ -1806,7 +1871,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     setTimeout(() => {
       setIsTransportModalVisible(true);
     }, 300);
-  }, []);
+    },
+    [network],
+  );
   // Handle QR scan for send bitcoin data
   const handleScanQRForSend = useCallback(() => {
     HapticFeedback.medium();
@@ -2102,7 +2169,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           cacheTimestamps.balance > 0 &&
           Date.now() -
             Math.max(cacheTimestamps.price, cacheTimestamps.balance) >
-            0
+            60000
         }
       />
       <View style={styles.transactionListContainer}>
@@ -2150,9 +2217,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           btcToFiatRate={Big(btcRate)}
           walletBalance={Big(balanceBTC)}
           walletAddress={address}
-          onClose={() => setIsSendModalVisible(false)}
+          onClose={() => {
+            setIsSendModalVisible(false);
+            setInitialSendAddress(null);
+          }}
           onSend={handleSend}
           selectedCurrency={selectedCurrency}
+          initialAddress={initialSendAddress ?? undefined}
         />
       )}
       <TransportModeSelector

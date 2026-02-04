@@ -19,52 +19,83 @@ export const getPinnedRemoteIP = () => (ips.length ? ips[ips.length - 1] : '');
 export const getPinnedRemoteIPs = () => [...ips];
 
 /**
- * Reset navigation config to MainTabs with Wallet tab selected.
- * Use with navigation.reset(getResetToMainTabsWallet()) or navigation.reset(getResetToMainTabsWallet({ signedPsbt: '...' })).
+ * Reset navigation config to MainTabs with Wallet tab selected (or Device when Wallet hidden).
+ * Options: showPlay, showUtxos, showPsbt, showWallet (default true for Wallet).
  */
-export const getResetToMainTabsWallet = (params = {}) => ({
-  index: 0,
-  routes: [
-    {
-      name: 'MainTabs',
-      state: {
-        routes: [
-          {name: 'Device'},
-          {name: 'Wallet', params},
-          {name: 'PSBT'},
-          {name: 'Settings'},
-        ],
-        index: 1,
+export const getResetToMainTabsWallet = (params = {}, options = {}) => {
+  const showPlay = options.showPlay !== false;
+  const showUtxos = options.showUtxos === true;
+  const showPsbt = options.showPsbt === true;
+  const showWallet = options.showWallet !== false;
+  const routes = [
+    {name: 'Device'},
+    ...(showPsbt ? [{name: 'PSBT'}] : []),
+    ...(showWallet ? [{name: 'Wallet', params}] : []),
+    ...(showPlay ? [{name: 'Playground'}] : []),
+    ...(showUtxos ? [{name: 'Utxos'}] : []),
+    {name: 'Settings'},
+  ];
+  let selectedIndex = 0;
+  if (showWallet) {
+    selectedIndex = showPsbt ? 2 : 1;
+  } else if (showPsbt) {
+    selectedIndex = 1;
+  }
+  return {
+    index: 0,
+    routes: [
+      {
+        name: 'MainTabs',
+        state: {
+          routes,
+          index: selectedIndex,
+        },
       },
-    },
-  ],
-});
+    ],
+  };
+};
 
 /**
- * Reset navigation config to MainTabs with PSBT tab selected.
+ * Reset navigation config to MainTabs with PSBT tab selected (or Device when PSBT hidden).
+ * When showWallet is false, Wallet tab is omitted.
  */
-export const getResetToMainTabsPSBT = () => ({
-  index: 0,
-  routes: [
-    {
-      name: 'MainTabs',
-      state: {
-        routes: [
-          {name: 'Device'},
-          {name: 'Wallet'},
-          {name: 'PSBT'},
-          {name: 'Settings'},
-        ],
-        index: 2,
+export const getResetToMainTabsPSBT = (options = {}) => {
+  const showPlay = options.showPlay !== false;
+  const showUtxos = options.showUtxos === true;
+  const showPsbt = options.showPsbt === true;
+  const showWallet = options.showWallet !== false;
+  const routes = [
+    {name: 'Device'},
+    ...(showPsbt ? [{name: 'PSBT'}] : []),
+    ...(showWallet ? [{name: 'Wallet'}] : []),
+    ...(showPlay ? [{name: 'Playground'}] : []),
+    ...(showUtxos ? [{name: 'Utxos'}] : []),
+    {name: 'Settings'},
+  ];
+  let selectedIndex = 0;
+  if (showPsbt) {
+    selectedIndex = 1;
+  } else if (showWallet) {
+    selectedIndex = 1;
+  }
+  return {
+    index: 0,
+    routes: [
+      {
+        name: 'MainTabs',
+        state: {
+          routes,
+          index: selectedIndex,
+        },
       },
-    },
-  ],
-});
+    ],
+  };
+};
 
 export const dbg = (message, ...optionalParams) => {
-  // Disable debug logging by default (even in __DEV__)
-  // Only enable if explicitly toggled via debug setting in WalletSettings
-  if (!isDebugLoggingEnabled()) {
+  // In __DEV__, always show dbg logs (so they appear on iOS/Android without toggling Settings).
+  // In production, only log if user enabled the debug setting in WalletSettings.
+  if (!__DEV__ && !isDebugLoggingEnabled()) {
     return;
   }
   let args = optionalParams.length === 0 ? '' : optionalParams;

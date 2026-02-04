@@ -1,5 +1,5 @@
 import React, {useState} from 'react';
-import {Modal, View, Text, Image} from 'react-native';
+import {Modal, View, Text, Image, Pressable} from 'react-native';
 import AppPressable from './AppPressable';
 import {HapticFeedback} from '../utils';
 import {useTheme} from '../theme';
@@ -152,7 +152,7 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
               To migrate: Create a new wallet setup and send all your funds to
               the new wallet address.
             </Text>
-            <AppPressable
+            <Pressable
               style={styles.legacyModalCheckboxContainer}
               onPress={handleCheckboxToggle}
               android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
@@ -168,7 +168,7 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
               <Text style={styles.legacyModalCheckboxLabel}>
                 Do not remind me again
               </Text>
-            </AppPressable>
+            </Pressable>
           </View>
           <View style={styles.legacyModalButtonsContainer}>
             <AppPressable

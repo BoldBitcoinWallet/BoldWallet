@@ -69,67 +69,7 @@ const WalletSkeleton: React.FC = () => {
       <View style={styles.contentContainer}>
         <View
           style={[styles.walletHeader, skeletonStyles.walletHeaderOverride]}>
-          {/* Party Container - Device, Sign PSBT, Address Type */}
-          <View style={[styles.partyContainer, styles.rowFullWidth]}>
-            <View
-              style={[styles.addressTypeContainer, styles.flexOneMinWidthZero]}>
-              <View style={styles.columnCenter}>
-                <ShimmerEffect
-                  style={skeletonStyles.partyLabelSkeleton}
-                  translateX={translateX}
-                />
-                <View style={styles.rowCenterMarginTop2}>
-                  <ShimmerEffect
-                    style={skeletonStyles.partyIconSkeleton}
-                    translateX={translateX}
-                  />
-                  <ShimmerEffect
-                    style={skeletonStyles.partyValueSkeleton}
-                    translateX={translateX}
-                  />
-                </View>
-              </View>
-            </View>
-            <View
-              style={[styles.addressTypeContainer, styles.flexOneMinWidthZero]}>
-              <View style={styles.columnCenter}>
-                <ShimmerEffect
-                  style={skeletonStyles.partyLabelSkeleton}
-                  translateX={translateX}
-                />
-                <View style={styles.rowCenterMarginTop2}>
-                  <ShimmerEffect
-                    style={skeletonStyles.partyIconSkeleton}
-                    translateX={translateX}
-                  />
-                  <ShimmerEffect
-                    style={skeletonStyles.partyValueSkeleton}
-                    translateX={translateX}
-                  />
-                </View>
-              </View>
-            </View>
-            <View
-              style={[styles.addressTypeContainer, styles.flexOneMinWidthZero]}>
-              <View style={styles.columnCenter}>
-                <ShimmerEffect
-                  style={skeletonStyles.partyLabelSkeleton}
-                  translateX={translateX}
-                />
-                <View style={styles.rowCenterMarginTop2}>
-                  <ShimmerEffect
-                    style={skeletonStyles.partyIconSkeleton}
-                    translateX={translateX}
-                  />
-                  <ShimmerEffect
-                    style={skeletonStyles.partyValueSkeleton}
-                    translateX={translateX}
-                  />
-                </View>
-              </View>
-            </View>
-          </View>
-          {/* Balance Container */}
+          {/* Balance Container - matches WalletHome header order */}
           <View style={styles.balanceContainer}>
             {/* Eye icon placeholder on left */}
             <View style={styles.balanceEyeIcon}>
@@ -244,23 +184,6 @@ const skeletonStyles = StyleSheet.create({
     shadowOffset: {width: 0, height: 0},
     shadowOpacity: 0,
     shadowRadius: 0,
-  },
-  partyLabelSkeleton: {
-    width: 50,
-    height: 9, // Match fontSize from partyLabel (xs = 9)
-    borderRadius: 4.5,
-    marginBottom: 1, // Match marginBottom from partyLabel
-  },
-  partyIconSkeleton: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    marginRight: 4,
-  },
-  partyValueSkeleton: {
-    width: 60,
-    height: 11, // Match fontSize from partyValue (xs = 11)
-    borderRadius: 5.5,
   },
   balanceSkeleton: {
     width: 180,

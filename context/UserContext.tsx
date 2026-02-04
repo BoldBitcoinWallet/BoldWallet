@@ -33,6 +33,18 @@ interface UserContextType {
   /** When true, use formatted numbers (thousand separators); when false, raw numbers. From Settings > Raw Numbers. */
   balanceFormattingEnabled: boolean;
   setBalanceFormattingEnabled: (value: boolean) => Promise<void>;
+  /** When true (and on mainnet), show the Play (mempool playground) tab. From Settings. Default off. */
+  showMempoolPlayground: boolean;
+  setShowMempoolPlayground: (value: boolean) => Promise<void>;
+  /** When true, show the UTXOs tab. From Settings. Default off. */
+  showUtxosTab: boolean;
+  setShowUtxosTab: (value: boolean) => Promise<void>;
+  /** When true, show the PSBT tab. From Settings. Default off. */
+  showPsbtTab: boolean;
+  setShowPsbtTab: (value: boolean) => Promise<void>;
+  /** When true, show the Wallet tab. From Settings. Default on. */
+  showWalletTab: boolean;
+  setShowWalletTab: (value: boolean) => Promise<void>;
 }
 const UserContext = createContext<UserContextType | undefined>(undefined);
 export const UserProvider: React.FC<{children: React.ReactNode}> = ({
@@ -58,6 +70,11 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
   const [showSats, setShowSatsState] = useState<boolean>(false);
   const [balanceFormattingEnabled, setBalanceFormattingEnabledState] =
     useState<boolean>(false);
+  const [showMempoolPlayground, setShowMempoolPlaygroundState] =
+    useState<boolean>(false);
+  const [showUtxosTab, setShowUtxosTabState] = useState<boolean>(false);
+  const [showPsbtTab, setShowPsbtTabState] = useState<boolean>(false);
+  const [showWalletTab, setShowWalletTabState] = useState<boolean>(true);
   // Compute the currently active address based on active network + address type
   const activeAddress = useMemo(() => {
     const isTestnet = network !== 'mainnet';
@@ -143,6 +160,54 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
       }
     };
     loadBalanceFormatting();
+  }, []);
+  // Load mempool playground tab preference (Settings; default off)
+  useEffect(() => {
+    const loadShowMempoolPlayground = async () => {
+      try {
+        const stored = await LocalCache.getItem('mempool_playground_enabled');
+        setShowMempoolPlaygroundState(stored === 'true');
+      } catch {
+        setShowMempoolPlaygroundState(false);
+      }
+    };
+    loadShowMempoolPlayground();
+  }, []);
+  // Load UTXOs tab preference (Settings; default off)
+  useEffect(() => {
+    const loadShowUtxosTab = async () => {
+      try {
+        const stored = await LocalCache.getItem('utxos_tab_enabled');
+        setShowUtxosTabState(stored === 'true');
+      } catch {
+        setShowUtxosTabState(false);
+      }
+    };
+    loadShowUtxosTab();
+  }, []);
+  // Load PSBT tab preference (Settings; default off)
+  useEffect(() => {
+    const loadShowPsbtTab = async () => {
+      try {
+        const stored = await LocalCache.getItem('psbt_tab_enabled');
+        setShowPsbtTabState(stored === 'true');
+      } catch {
+        setShowPsbtTabState(false);
+      }
+    };
+    loadShowPsbtTab();
+  }, []);
+  // Load Wallet tab preference (Settings; default on)
+  useEffect(() => {
+    const loadShowWalletTab = async () => {
+      try {
+        const stored = await LocalCache.getItem('wallet_tab_enabled');
+        setShowWalletTabState(stored !== 'false');
+      } catch {
+        setShowWalletTabState(true);
+      }
+    };
+    loadShowWalletTab();
   }, []);
   // Initialize network/api from cache (migrated from NetworkContext)
   useEffect(() => {
@@ -413,6 +478,38 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
       // no-op
     }
   }, []);
+  const setShowMempoolPlayground = useCallback(async (value: boolean) => {
+    setShowMempoolPlaygroundState(value);
+    try {
+      await LocalCache.setItem('mempool_playground_enabled', value ? 'true' : 'false');
+    } catch {
+      // no-op
+    }
+  }, []);
+  const setShowUtxosTab = useCallback(async (value: boolean) => {
+    setShowUtxosTabState(value);
+    try {
+      await LocalCache.setItem('utxos_tab_enabled', value ? 'true' : 'false');
+    } catch {
+      // no-op
+    }
+  }, []);
+  const setShowPsbtTab = useCallback(async (value: boolean) => {
+    setShowPsbtTabState(value);
+    try {
+      await LocalCache.setItem('psbt_tab_enabled', value ? 'true' : 'false');
+    } catch {
+      // no-op
+    }
+  }, []);
+  const setShowWalletTab = useCallback(async (value: boolean) => {
+    setShowWalletTabState(value);
+    try {
+      await LocalCache.setItem('wallet_tab_enabled', value ? 'true' : 'false');
+    } catch {
+      // no-op
+    }
+  }, []);
   const value: UserContextType = {
     btcPub,
     legacyMainnetAddress,
@@ -433,6 +530,14 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     setShowSats,
     balanceFormattingEnabled,
     setBalanceFormattingEnabled,
+    showMempoolPlayground,
+    setShowMempoolPlayground,
+    showUtxosTab,
+    setShowUtxosTab,
+    showPsbtTab,
+    setShowPsbtTab,
+    showWalletTab,
+    setShowWalletTab,
   };
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 };

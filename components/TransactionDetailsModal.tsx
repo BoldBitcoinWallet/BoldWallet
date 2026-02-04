@@ -176,7 +176,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   const styles = StyleSheet.create({
     modalOverlay: {
       flex: 1,
-      backgroundColor: theme.colors.blackOverlay50,
+      backgroundColor: 'rgba(0, 0, 0, 0.85)',
       justifyContent: 'center',
       alignItems: 'center',
     },

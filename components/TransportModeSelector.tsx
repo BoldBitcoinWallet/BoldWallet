@@ -300,8 +300,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       color: theme.colors.white,
     },
     qrCodeSection: {
-      marginTop: 12,
-      marginBottom: 24,
+      marginBottom: 12,
       padding: 16,
       backgroundColor:
         theme.colors.background === '#ffffff'
@@ -314,24 +313,16 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       alignItems: 'center',
     },
     qrCodeLabel: {
-      fontSize: theme.fontSizes?.base || 13,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.text,
-      marginBottom: 12,
-      textAlign: 'center',
-      lineHeight: 18,
-    },
-    qrCodeSubLabel: {
-      fontSize: theme.fontSizes?.sm || 11,
-      fontFamily: theme.fontFamilies?.regular,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.textSecondary,
-      marginBottom: 8,
+      marginBottom: 10,
       textAlign: 'center',
-      lineHeight: 15,
+      paddingHorizontal: 8,
     },
     qrCodeContainer: {
       backgroundColor: 'white',
-      padding: 12,
+      padding: 8,
       borderRadius: 8,
     },
   });
@@ -387,11 +378,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                 return (
                   <View style={styles.qrCodeSection}>
                     <Text style={styles.qrCodeLabel}>
-                      Quick Shortcut for Other Devices
-                    </Text>
-                    <Text style={styles.qrCodeSubLabel}>
-                      Scan this QR code on other devices to{'\n'}automatically
-                      enter address and amount
+                      Scan on another device to auto fill
                     </Text>
                     <View style={styles.qrCodeContainer}>
                       <QRCode

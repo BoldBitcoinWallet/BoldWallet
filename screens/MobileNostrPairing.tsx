@@ -44,6 +44,7 @@ import {
   getResetToMainTabsWallet,
 } from '../utils';
 import {useTheme} from '../theme';
+import {useUser} from '../context/UserContext';
 import LocalCache from '../services/LocalCache';
 import {WalletService} from '../services/WalletService';
 import RNFS from 'react-native-fs';
@@ -87,6 +88,8 @@ const MobileNostrPairing = ({navigation}: any) => {
   // In keygen mode, use setupMode
   const [isTrio, setIsTrio] = useState<boolean>(setupMode === 'trio');
   const {theme} = useTheme();
+  const {activeNetwork, showMempoolPlayground, showUtxosTab, showPsbtTab, showWalletTab} = useUser();
+  const showPlay = activeNetwork === 'mainnet' && showMempoolPlayground;
   const ppmFile = `${RNFS.DocumentDirectoryPath}/ppm.json`;
   // Nostr Identity
   const [localNsec, setLocalNsec] = useState<string>('');
@@ -1774,7 +1777,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       );
       // Navigate to Wallet tab with txId
       navigation.dispatch(
-        CommonActions.reset(getResetToMainTabsWallet({txId})),
+        CommonActions.reset(getResetToMainTabsWallet({txId}, { showPlay, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab })),
       );
       setMpcDone(true);
     } catch (error: any) {
@@ -1987,7 +1990,7 @@ const MobileNostrPairing = ({navigation}: any) => {
             'PSBT signing complete: Navigating to Wallet tab with signedPsbt',
           );
           navigation.dispatch(
-            CommonActions.reset(getResetToMainTabsWallet({signedPsbt})),
+            CommonActions.reset(getResetToMainTabsWallet({signedPsbt}, { showPlay, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab })),
           );
           setMpcDone(true);
         })
@@ -1996,7 +1999,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           dbg(localNpub, 'PSBT signing error', e);
           try {
             navigation.dispatch(
-              CommonActions.reset(getResetToMainTabsWallet()),
+              CommonActions.reset(getResetToMainTabsWallet({}, { showPlay, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab })),
             );
           } catch (navError) {
             dbg('Error navigating after PSBT error:', navError);
@@ -2010,7 +2013,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       Alert.alert('Error', error?.message || 'PSBT signing failed');
       setStatus('PSBT signing failed');
       try {
-        navigation.dispatch(CommonActions.reset(getResetToMainTabsWallet()));
+        navigation.dispatch(CommonActions.reset(getResetToMainTabsWallet({}, { showPlay, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab })));
       } catch (navError) {
         dbg('Error navigating after PSBT error:', navError);
       }
@@ -2519,12 +2522,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginRight: 8,
     },
     qrContainer: {
-      backgroundColor:
-        theme.colors.background === '#ffffff'
-          ? 'white'
-          : theme.colors.cardBackground,
-      padding: 16,
-      borderRadius: 12,
+      backgroundColor: 'white',
+      padding: 8,
+      borderRadius: 8,
       alignItems: 'center',
       marginBottom: 16,
     },

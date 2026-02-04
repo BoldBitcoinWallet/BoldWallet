@@ -168,8 +168,8 @@ const ReceiveModal: React.FC<{
     },
     qrContainer: {
       backgroundColor: 'white',
-      padding: 16,
-      borderRadius: 12,
+      padding: 8,
+      borderRadius: 8,
       marginBottom: 20,
       elevation: 2,
       shadowColor: theme.colors.shadowColor,

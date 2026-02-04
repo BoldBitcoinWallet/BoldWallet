@@ -702,12 +702,23 @@ const TransactionList = React.forwardRef<
         alignItems: 'center',
         marginVertical: 2,
       },
+      endOfListWrap: {
+        alignItems: 'center',
+        paddingVertical: 16,
+        paddingHorizontal: 10,
+      },
       endOfListText: {
         textAlign: 'center',
         fontSize: appTheme.fontSizes?.lg || 16,
         fontFamily: appTheme.fontFamilies?.regular,
         color: appTheme.colors.text,
-        padding: 10,
+        marginBottom: 4,
+      },
+      endOfListCount: {
+        textAlign: 'center',
+        fontSize: appTheme.fontSizes?.base || 13,
+        fontFamily: appTheme.fontFamilies?.regular,
+        color: appTheme.colors.textSecondary,
       },
       status: {
         fontSize: appTheme.fontSizes?.lg || 16, // Increased from 13px for better readability
@@ -850,15 +861,24 @@ const TransactionList = React.forwardRef<
         }
         // Follow global BTC/sats toggle (WalletHome)
         let info = status.includes('Sen')
-          ? `-${formatBitcoinDisplay(sent, {inSats: showSats, formatted: balanceFormattingEnabled})}`
-          : `+${formatBitcoinDisplay(received, {inSats: showSats, formatted: balanceFormattingEnabled})}`;
+          ? `-${formatBitcoinDisplay(sent, {
+              inSats: showSats,
+              formatted: balanceFormattingEnabled,
+            })}`
+          : `+${formatBitcoinDisplay(received, {
+              inSats: showSats,
+              formatted: balanceFormattingEnabled,
+            })}`;
         let finalStatus = status;
         let finalIcon = statusIcon;
         if (sent === 0 && received === changeAmount) {
           finalStatus = confirmed
             ? 'Consolidated UTXOs'
             : 'Consolidating UTXOs';
-          info = `+${formatBitcoinDisplay(received, {inSats: showSats, formatted: balanceFormattingEnabled})}`;
+          info = `+${formatBitcoinDisplay(received, {
+            inSats: showSats,
+            formatted: balanceFormattingEnabled,
+          })}`;
           finalIcon = confirmed ? consolidateIcon : pendingIcon;
         }
         // Calculate amount in selected currency with proper formatting
@@ -973,6 +993,8 @@ const TransactionList = React.forwardRef<
         getCurrencySymbol,
         selectedCurrency,
         btcRate,
+        balanceFormattingEnabled,
+        showSats,
       ],
     );
     const renderEmptyComponent = useCallback(() => {
@@ -1015,7 +1037,12 @@ const TransactionList = React.forwardRef<
             loadingMore ? (
               <ActivityIndicator size="small" />
             ) : !hasMoreTransactions && transactions.length > 0 ? (
-              <Text style={styles.endOfListText}>End of Transactions</Text>
+              <View style={styles.endOfListWrap}>
+                <Text style={styles.endOfListText}>No more transactions</Text>
+                <Text style={styles.endOfListCount}>
+                  {transactions.length} in total
+                </Text>
+              </View>
             ) : null
           }
           refreshControl={
