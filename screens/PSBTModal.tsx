@@ -18,7 +18,7 @@ import QRScanner from '../components/QRScanner';
 import BarcodeZxingScan from 'rn-barcode-zxing-scan';
 // @ts-ignore - bc-ur types (Buffer polyfill is in polyfills.js)
 import {URDecoder} from '@ngraveio/bc-ur';
-import {dbg, HapticFeedback, formatBitcoinDisplay} from '../utils';
+import {dbg, formatBitcoinDisplay} from '../utils';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 const {BBMTLibNativeModule} = NativeModules;
@@ -206,7 +206,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
   }, []);
   // Handle file upload
   const handleUploadFile = useCallback(async () => {
-    HapticFeedback.light();
     try {
       const result = await DocumentPicker.pick({
         type: [DocumentPicker.types.allFiles],
@@ -272,7 +271,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
           received: estimatedPercentComplete,
           percentage: estimatedPercentComplete,
         });
-        HapticFeedback.light();
         // Check if complete
         if (urDecoderRef.current.isComplete()) {
           dbg('UR decoder reports complete');
@@ -646,7 +644,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
   }, [setupEventListener]); // Include setupEventListener to ensure we have the latest version
   // Handle QR scan button press
   const handleScanQR = useCallback(() => {
-    HapticFeedback.light();
     // Reset all state when starting a new scan
     setError(null); // Clear any previous errors
     setIsLoading(false); // Clear loading state
@@ -688,7 +685,6 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
   }, [startAndroidContinuousScan, isAndroidScanning]);
   // Handle sign button
   const handleSign = useCallback(() => {
-    HapticFeedback.medium();
     if (psbtBase64) {
       // Pass both PSBT and derivation path to the signing handler
       // The handler will need to accept an object with both values

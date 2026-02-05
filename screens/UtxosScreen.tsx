@@ -21,7 +21,7 @@ import {
 } from '../components/Header';
 import LocalCache from '../services/LocalCache';
 import {WalletService} from '../services/WalletService';
-import {presentFiat, getCurrencySymbol, HapticFeedback} from '../utils';
+import {presentFiat, getCurrencySymbol} from '../utils';
 import AppPressable from '../components/AppPressable';
 import {CacheIndicator} from '../components/CacheIndicator';
 
@@ -346,7 +346,6 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
         getCurrencySymbol(selectedCurrency || 'USD') +
         presentFiat((u.value / 1e8) * btcRate);
       const openInExplorer = () => {
-        HapticFeedback.light();
         if (!baseUrl || !u.txid) {
           return;
         }

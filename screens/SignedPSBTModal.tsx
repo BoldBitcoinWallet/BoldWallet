@@ -8,6 +8,7 @@ import {
   Image,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
+import StaticQRCode from '../components/StaticQRCode';
 import QRCode from 'react-native-qrcode-svg';
 import Clipboard from '@react-native-clipboard/clipboard';
 import Share from 'react-native-share';
@@ -17,7 +18,7 @@ import {UREncoder} from '@ngraveio/bc-ur';
 // @ts-ignore - bc-ur-registry types
 import {CryptoPSBT} from '@keystonehq/bc-ur-registry-btc';
 // Buffer is available globally via polyfills.js
-import {dbg, HapticFeedback} from '../utils';
+import {dbg} from '../utils';
 import {useTheme} from '../theme';
 import Toast from 'react-native-toast-message';
 import {createToastConfig} from '../utils/toastConfig';
@@ -100,7 +101,6 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
   }, [urObject]);
   // Copy base64 to clipboard
   const handleCopy = useCallback(() => {
-    HapticFeedback.light();
     Clipboard.setString(signedPsbtBase64);
     setIsCopied(true);
     Toast.show({
@@ -115,7 +115,6 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
   }, [signedPsbtBase64]);
   // Share PSBT as file
   const handleShareFile = useCallback(async () => {
-    HapticFeedback.medium();
     try {
       // Create .psbt file
       const now = new Date();
@@ -157,7 +156,6 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
   }, [signedPsbtBase64]);
   // Share PSBT as animated QR (UR format)
   const handleShareQR = useCallback(async () => {
-    HapticFeedback.medium();
     if (!qrRef.current) {
       Alert.alert('Error', 'QR Code is not ready yet');
       return;
@@ -435,7 +433,6 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
                     qrMode === 'single' && styles.modeButtonActive,
                   ]}
                   onPress={() => {
-                    HapticFeedback.light();
                     setQrMode('single');
                   }}>
                   <Text
@@ -452,7 +449,6 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
                     qrMode === 'animated' && styles.modeButtonActive,
                   ]}
                   onPress={() => {
-                    HapticFeedback.light();
                     setQrMode('animated');
                   }}>
                   <Text
@@ -465,13 +461,24 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
                 </AppPressable>
               </View>
             )}
-            <QRCode
-              ref={qrRef}
-              value={qrData}
-              size={250}
-              color="black"
-              backgroundColor="white"
-            />
+            {qrMode === 'single' ? (
+              <StaticQRCode
+                value={qrData}
+                size={250}
+                copyContent={signedPsbtBase64}
+                toastMessage="PSBT copied to clipboard"
+                getRef={ref => (qrRef.current = ref)}
+                style={styles.qrCode}
+              />
+            ) : (
+              <QRCode
+                ref={qrRef}
+                value={qrData}
+                size={250}
+                color="black"
+                backgroundColor="white"
+              />
+            )}
             {isAnimated && (
               <Text style={styles.qrInfo}>
                 Frame {currentPart} of {totalParts}

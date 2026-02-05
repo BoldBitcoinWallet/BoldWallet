@@ -6,6 +6,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import {HapticFeedback} from '../utils';
 
 const DEFAULT_RIPPLE = {
   color: 'rgba(0,0,0,0.15)',
@@ -23,6 +24,8 @@ export interface AppPressableProps extends Omit<PressableProps, 'style'> {
   variant?: AppPressableVariant;
   /** Override default ripple on Android (ignored when variant="none") */
   android_ripple?: PressableProps['android_ripple'];
+  /** Trigger haptic feedback on press. Default true. Set false to opt out. */
+  haptic?: boolean;
 }
 
 function resolveStyle(
@@ -39,9 +42,17 @@ export default function AppPressable({
   style,
   variant = 'default',
   android_ripple,
+  haptic = true,
+  onPress,
   ...rest
 }: AppPressableProps) {
   const isNone = variant === 'none';
+  const handlePress: PressableProps['onPress'] = (e) => {
+    if (haptic) {
+      HapticFeedback.medium();
+    }
+    onPress?.(e);
+  };
   const ripple = isNone
     ? undefined
     : (() => {
@@ -70,6 +81,7 @@ export default function AppPressable({
   return (
     <Pressable
       {...rest}
+      onPress={handlePress}
       style={mergedStyle}
       android_ripple={ripple}
     />

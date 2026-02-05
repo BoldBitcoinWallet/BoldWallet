@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useTheme} from '../theme';
-import {HapticFeedback} from '../utils';
 const LoadingScreen = ({onRetry}: any) => {
   const {theme} = useTheme();
   const [loading, setLoading] = useState(false);
@@ -40,7 +39,6 @@ const LoadingScreen = ({onRetry}: any) => {
   const turbulenceRef = useRef(0); // increases briefly on tap
   const emitterRef = useRef<number | null>(null);
   const handlePress = async () => {
-    HapticFeedback.medium();
     setLoading(true);
     await onRetry();
     setLoading(false);
@@ -173,7 +171,6 @@ const LoadingScreen = ({onRetry}: any) => {
     });
   };
   const handleLogoPress = () => {
-    HapticFeedback.light();
     // Stronger turbulence boost that decays more slowly
     turbulenceRef.current = Math.min(2, turbulenceRef.current + 1.2);
     // Emit a larger burst to emphasize spread
@@ -190,7 +187,6 @@ const LoadingScreen = ({onRetry}: any) => {
     }, 160);
   };
   const startLogoTouch = () => {
-    HapticFeedback.light();
     if (emitterRef.current != null) {
       return;
     }

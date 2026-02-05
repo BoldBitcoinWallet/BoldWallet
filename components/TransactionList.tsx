@@ -899,7 +899,6 @@ const TransactionList = React.forwardRef<
               pressed && styles.transactionItemPressed,
             ]}
             onPress={() => {
-              HapticFeedback.light();
               setSelectedTransaction(item);
               setIsDetailsModalVisible(true);
             }}

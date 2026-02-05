@@ -20,7 +20,7 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
 import Toast from 'react-native-toast-message';
-import {dbg, HapticFeedback} from '../utils';
+import {dbg} from '../utils';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
 import {createToastConfig} from '../utils/toastConfig';
@@ -151,7 +151,6 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   // Share text as file
   const shareTextAsFile = useCallback(
     async (text: string, filename: string, title: string) => {
-      HapticFeedback.medium();
       try {
         const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
         const filePath = `${tempDir}/${filename}`;
@@ -184,7 +183,6 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
     (type: 'legacy' | 'segwitNative' | 'segwitCompatible') => {
       const descriptor = keyshareInfo?.outputDescriptors?.[type] || '';
       if (!descriptor) return;
-      HapticFeedback.light();
       Clipboard.setString(descriptor);
       const typeLabel =
         type === 'legacy'
@@ -225,7 +223,6 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
     (type: 'legacy' | 'segwitNative' | 'segwitCompatible') => {
       const descriptor = keyshareInfo?.outputDescriptors?.[type] || '';
       if (!descriptor) return;
-      HapticFeedback.light();
       setSelectedDescriptorType(type);
       setIsOutputDescriptorQrVisible(true);
     },
@@ -233,7 +230,6 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   );
   const handleCopyNpub = useCallback(() => {
     if (!keyshareInfo?.npub) return;
-    HapticFeedback.light();
     Clipboard.setString(keyshareInfo.npub);
     Toast.show({
       type: 'success',
@@ -242,12 +238,10 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
     });
   }, [keyshareInfo]);
   const handleShowNpubQR = useCallback(() => {
-    HapticFeedback.light();
     setIsNpubQrVisible(true);
   }, []);
 
   const handleWalletIdPress = useCallback(() => {
-    HapticFeedback.light();
     Toast.show({
       type: 'info',
       text1: 'Wallet ID Verification',
@@ -258,7 +252,6 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
 
   const handleWalletTypePress = useCallback(() => {
     if (!keyshareInfo) return;
-    HapticFeedback.light();
     const isTrio = keyshareInfo.type === 'trio';
     Toast.show({
       type: 'info',
@@ -272,7 +265,6 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
 
   const handleKeyshareIdPress = useCallback(() => {
     if (!keyshareInfo) return;
-    HapticFeedback.light();
     const isTrio = keyshareInfo.type === 'trio';
     Toast.show({
       type: 'info',
@@ -285,7 +277,6 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   }, [keyshareInfo]);
 
   const handleCreatedAtPress = useCallback(() => {
-    HapticFeedback.light();
     Toast.show({
       type: 'info',
       text1: 'Wallet Creation Date',
@@ -295,7 +286,6 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   }, []);
 
   const handleLanHotspotPress = useCallback(() => {
-    HapticFeedback.light();
     Toast.show({
       type: 'info',
       text1: 'LAN / Hotspot Support',
@@ -307,7 +297,6 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
 
   const handleNostrPress = useCallback(() => {
     if (!keyshareInfo) return;
-    HapticFeedback.light();
     Toast.show({
       type: 'info',
       text1: 'Nostr Support',
@@ -320,7 +309,6 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
 
   const handleCopyPairingPubkeys = useCallback(() => {
     if (!pairingPubkeys) return;
-    HapticFeedback.light();
     Clipboard.setString(pairingPubkeys);
     Toast.show({
       type: 'success',
@@ -330,12 +318,10 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   }, [pairingPubkeys]);
 
   const handleShowPairingPubkeysQR = useCallback(() => {
-    HapticFeedback.light();
     setIsPairingPubkeysQrVisible(true);
   }, []);
 
   const handleToggleWalletInfo = useCallback(() => {
-    HapticFeedback.light();
     const newValue = !isWalletInfoExpanded;
     setIsWalletInfoExpanded(newValue);
     // Close other sections if opening this one
@@ -347,7 +333,6 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   }, [isWalletInfoExpanded]);
 
   const handleToggleCapabilities = useCallback(() => {
-    HapticFeedback.light();
     const newValue = !isCapabilitiesExpanded;
     setIsCapabilitiesExpanded(newValue);
     // Close other sections if opening this one
@@ -359,7 +344,6 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   }, [isCapabilitiesExpanded]);
 
   const handleToggleBoldExtension = useCallback(() => {
-    HapticFeedback.light();
     const newValue = !isBoldExtensionExpanded;
     setIsBoldExtensionExpanded(newValue);
     // Close other sections if opening this one
@@ -371,7 +355,6 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   }, [isBoldExtensionExpanded]);
 
   const handleToggleWatchWallet = useCallback(() => {
-    HapticFeedback.light();
     const newValue = !isWatchWalletExpanded;
     setIsWatchWalletExpanded(newValue);
     // Close other sections if opening this one
@@ -618,7 +601,6 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                         {onOpenSettingsSection ? (
                           <AppPressable
                             onPress={() => {
-                              HapticFeedback.light();
                               onOpenSettingsSection('backup');
                             }}
                             android_ripple={{color: 'rgba(0,0,0,0.1)'}}

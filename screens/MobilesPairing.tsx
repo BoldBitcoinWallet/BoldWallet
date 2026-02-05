@@ -42,7 +42,7 @@ import {
 } from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Big from 'big.js';
-import {dbg, getPinnedRemoteIPs, HapticFeedback, hexToString, getResetToMainTabsWallet} from '../utils';
+import {dbg, getPinnedRemoteIPs, hexToString, getResetToMainTabsWallet} from '../utils';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {waitMS, WalletService} from '../services/WalletService';
@@ -2977,7 +2977,6 @@ const MobilesPairing = ({navigation}: any) => {
                 </Text>
                 <AppPressable
                   onPress={() => {
-                    HapticFeedback.medium();
                     navigation.dispatch(
                       CommonActions.reset({
                         index: 0,
@@ -3008,7 +3007,6 @@ const MobilesPairing = ({navigation}: any) => {
                   <>
                     <AppPressable
                       onPress={() => {
-                        HapticFeedback.medium();
                         navigation.dispatch(
                           CommonActions.reset({
                             index: 0,
@@ -3066,7 +3064,6 @@ const MobilesPairing = ({navigation}: any) => {
                           styles.enhancedCheckboxContainerChecked,
                       ]}
                       onPress={() => {
-                        HapticFeedback.medium();
                         toggleCheck(item.key as keyof typeof checks);
                       }}>
                       <View
@@ -3168,7 +3165,6 @@ const MobilesPairing = ({navigation}: any) => {
                       allChecked ? styles.pairButtonOn : styles.pairButtonOff
                     }
                     onPress={() => {
-                      HapticFeedback.medium();
                       initiatePairing();
                     }}
                     disabled={!allChecked}>
@@ -3347,7 +3343,6 @@ const MobilesPairing = ({navigation}: any) => {
                     <AppPressable
                       style={[styles.retryButton, styles.buttonFlex]}
                       onPress={() => {
-                        HapticFeedback.light();
                         navigation.dispatch(
                           StackActions.replace('Devices Pairing', route.params),
                         );
@@ -3371,7 +3366,6 @@ const MobilesPairing = ({navigation}: any) => {
                       <AppPressable
                         style={[styles.cancelSetupButton, styles.buttonFlex]}
                         onPress={() => {
-                          HapticFeedback.light();
                           navigation.dispatch(
                             CommonActions.reset({
                               index: 0,
@@ -3515,7 +3509,6 @@ const MobilesPairing = ({navigation}: any) => {
                                   textDecorationLine: 'underline',
                                 }}
                                 onPress={() => {
-                                  HapticFeedback.light();
                                   Linking.openURL(
                                     'https://www.binance.com/en/square/post/17681517589057',
                                   );
@@ -3533,7 +3526,6 @@ const MobilesPairing = ({navigation}: any) => {
                           ]}
                           disabled={isPreparing}
                           onPress={() => {
-                            HapticFeedback.medium();
                             togglePrepared();
                           }}>
                           <View
@@ -3556,7 +3548,6 @@ const MobilesPairing = ({navigation}: any) => {
                               : styles.clickPrepareOff
                           }
                           onPress={() => {
-                            HapticFeedback.medium();
                             preparams();
                           }}>
                           <View style={styles.buttonContent}>
@@ -3692,7 +3683,6 @@ const MobilesPairing = ({navigation}: any) => {
                             styles.enhancedCheckboxContainerChecked,
                         ]}
                         onPress={() => {
-                          HapticFeedback.medium();
                           toggleKeygenReady();
                         }}>
                         <View
@@ -3788,7 +3778,6 @@ const MobilesPairing = ({navigation}: any) => {
                         }
                         disabled={!isKeygenReady}
                         onPress={() => {
-                          HapticFeedback.medium();
                           mpcTssSetup();
                         }}>
                         <View style={styles.buttonContent}>
@@ -3864,7 +3853,6 @@ const MobilesPairing = ({navigation}: any) => {
                       <AppPressable
                         style={styles.backupButton}
                         onPress={() => {
-                          HapticFeedback.medium();
                           setIsBackupModalVisible(true);
                         }}>
                         <View style={styles.buttonContent}>
@@ -3930,7 +3918,6 @@ const MobilesPairing = ({navigation}: any) => {
                               ] && styles.enhancedBackupCheckboxChecked,
                             ]}
                             onPress={() => {
-                              HapticFeedback.medium();
                               toggleBackedup(
                                 item.key as keyof typeof backupChecks,
                               );
@@ -3969,7 +3956,6 @@ const MobilesPairing = ({navigation}: any) => {
                             : styles.proceedButtonOff
                         }
                         onPress={() => {
-                          HapticFeedback.medium();
                           navigation.dispatch(
                             CommonActions.reset({
                               index: 0,
@@ -4427,7 +4413,6 @@ const MobilesPairing = ({navigation}: any) => {
                   <AppPressable
                     style={styles.checkboxContainer}
                     onPress={() => {
-                      HapticFeedback.medium();
                       toggleKeysignReady();
                     }}>
                     <View
@@ -4516,7 +4501,6 @@ const MobilesPairing = ({navigation}: any) => {
                     }
                     disabled={!isKeysignReady}
                     onPress={() => {
-                      HapticFeedback.medium();
                       runKeysign();
                     }}>
                     <View style={styles.buttonContent}>

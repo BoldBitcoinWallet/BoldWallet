@@ -20,7 +20,7 @@ import DocumentPicker from 'react-native-document-picker';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import RNFS from 'react-native-fs';
 import {useTheme} from '../theme';
-import {dbg, HapticFeedback, isLegacyWallet} from '../utils';
+import {dbg, isLegacyWallet} from '../utils';
 import LegalModal from '../components/LegalModal';
 import TransportModeSelector from '../components/TransportModeSelector';
 import LocalCache from '../services/LocalCache';
@@ -214,7 +214,6 @@ const ShowcaseScreen = ({navigation}: any) => {
     }
   };
   const handleCloseModal = () => {
-    HapticFeedback.medium();
     setModalVisible(false);
     setPassword('');
     setIsPasswordFocused(false);
@@ -871,7 +870,6 @@ const ShowcaseScreen = ({navigation}: any) => {
             <Pressable
               style={styles.checkboxContainer}
               onPress={() => {
-                HapticFeedback.medium();
                 setAgreeToTerms(prev => !prev);
               }}>
               <View
@@ -887,7 +885,6 @@ const ShowcaseScreen = ({navigation}: any) => {
               <Text
                 style={styles.termsLink}
                 onPress={() => {
-                  HapticFeedback.medium();
                   setLegalModalType('terms');
                   setIsLegalModalVisible(true);
                 }}>
@@ -899,7 +896,6 @@ const ShowcaseScreen = ({navigation}: any) => {
             <Pressable
               style={styles.checkboxContainer}
               onPress={() => {
-                HapticFeedback.medium();
                 setAgreeToPrivacy(prev => !prev);
               }}>
               <View
@@ -915,7 +911,6 @@ const ShowcaseScreen = ({navigation}: any) => {
               <Text
                 style={styles.termsLink}
                 onPress={() => {
-                  HapticFeedback.medium();
                   setLegalModalType('privacy');
                   setIsLegalModalVisible(true);
                 }}>
@@ -931,7 +926,6 @@ const ShowcaseScreen = ({navigation}: any) => {
               (!agreeToTerms || !agreeToPrivacy) && styles.disabledButton,
             ]}
             onPress={() => {
-              HapticFeedback.medium();
               setIsModeModalVisible(true);
             }}
             disabled={!agreeToTerms || !agreeToPrivacy}>
@@ -955,7 +949,6 @@ const ShowcaseScreen = ({navigation}: any) => {
               (!agreeToTerms || !agreeToPrivacy) && styles.disabledButton,
             ]}
             onPress={() => {
-              HapticFeedback.medium();
               handleRestoreWallet();
             }}
             disabled={!agreeToTerms || !agreeToPrivacy}>
@@ -1019,7 +1012,6 @@ const ShowcaseScreen = ({navigation}: any) => {
                   <AppPressable
                     style={styles.eyeButton}
                     onPress={() => {
-                      HapticFeedback.light();
                       setPasswordVisible(!passwordVisible);
                     }}>
                     <Image
@@ -1051,7 +1043,6 @@ const ShowcaseScreen = ({navigation}: any) => {
                 <AppPressable
                   style={[styles.modalActionButton, styles.modalSubmitButton]}
                   onPress={() => {
-                    HapticFeedback.medium();
                     handlePasswordSubmit();
                   }}
                   android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -1077,7 +1068,6 @@ const ShowcaseScreen = ({navigation}: any) => {
       <LegalModal
         visible={isLegalModalVisible}
         onClose={() => {
-          HapticFeedback.medium();
           setIsLegalModalVisible(false);
         }}
         type={legalModalType}
@@ -1086,7 +1076,6 @@ const ShowcaseScreen = ({navigation}: any) => {
       <TransportModeSelector
         visible={isTransportModalVisible}
         onClose={() => {
-          HapticFeedback.medium();
           setIsTransportModalVisible(false);
           setPendingMode(null);
         }}
@@ -1138,7 +1127,6 @@ const ShowcaseScreen = ({navigation}: any) => {
               <AppPressable
                 style={styles.closeButton}
                 onPress={() => {
-                  HapticFeedback.medium();
                   setIsModeModalVisible(false);
                 }}
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -1154,7 +1142,6 @@ const ShowcaseScreen = ({navigation}: any) => {
                     selectedMode === 'duo' && styles.modeOptionCardSelected,
                   ]}
                   onPress={() => {
-                    HapticFeedback.medium();
                     setSelectedMode('duo');
                   }}
                   android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -1234,7 +1221,6 @@ const ShowcaseScreen = ({navigation}: any) => {
                     selectedMode === 'trio' && styles.modeOptionCardSelected,
                   ]}
                   onPress={() => {
-                    HapticFeedback.medium();
                     setSelectedMode('trio');
                   }}
                   android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -1362,7 +1348,6 @@ const ShowcaseScreen = ({navigation}: any) => {
                   <AppPressable
                     style={styles.setupGuideHintTouchable}
                     onPress={() => {
-                      HapticFeedback.medium();
                       const url =
                         'https://x.com/boldbtcwallet/status/1988322162386854108';
                       Linking.openURL(url).catch(err => {

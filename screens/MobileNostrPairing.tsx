@@ -28,7 +28,7 @@ import Share from 'react-native-share';
 import {NativeModules} from 'react-native';
 import DeviceInfo from 'react-native-device-info';
 import EncryptedStorage from 'react-native-encrypted-storage';
-import QRCode from 'react-native-qrcode-svg';
+import StaticQRCode from '../components/StaticQRCode';
 import Clipboard from '@react-native-clipboard/clipboard';
 import QRScanner from '../components/QRScanner';
 import BackupKeyshareModal from '../components/BackupKeyshareModal';
@@ -398,7 +398,6 @@ const MobileNostrPairing = ({navigation}: any) => {
     setIsKeygenReady(!isKeygenReady);
   };
   const toggleKeysignReady = () => {
-    HapticFeedback.medium();
     setIsKeysignReady(!isKeysignReady);
   };
   // Listen to native module events for progress tracking
@@ -1063,7 +1062,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         setPeerConnectionDetails2(input.trim());
         setPeerInputError2('');
       }
-      HapticFeedback.light();
     } else {
       dbg(`handlePeerConnectionInput: peerNum=${peerNum}, INVALID`);
       // Check if it's a hex string
@@ -2042,14 +2040,12 @@ const MobileNostrPairing = ({navigation}: any) => {
       .toFixed(8);
   const copyConnectionDetails = () => {
     Clipboard.setString(connectionDetails);
-    HapticFeedback.medium();
     Alert.alert(
       'Copied',
       '- Pairing data copied.\n- Paste them to other device(s)',
     );
   };
   const shareConnectionDetails = async () => {
-    HapticFeedback.medium();
     if (!connectionDetails) {
       Alert.alert('Error', 'Connection details are not ready yet');
       return;
@@ -2092,11 +2088,9 @@ const MobileNostrPairing = ({navigation}: any) => {
     }
   };
   const showQRModal = () => {
-    HapticFeedback.medium();
     setIsQRModalVisible(true);
   };
   const handleQRScan = (data: string, peerNum?: 1 | 2) => {
-    HapticFeedback.medium();
     setIsQRScannerVisible(false);
     // Use provided peerNum, or fallback to scanningForPeerRef (more reliable than state)
     const targetPeer = peerNum || scanningForPeerRef.current;
@@ -2114,7 +2108,6 @@ const MobileNostrPairing = ({navigation}: any) => {
     try {
       const text = await Clipboard.getString();
       dbg(`handlePaste: peerNum=${peerNum}, pasted text="${text}"`);
-      HapticFeedback.medium();
       // Update the input field immediately so user can see what was pasted
       if (peerNum === 1) {
         setPeerConnectionDetails1(text);
@@ -2129,7 +2122,6 @@ const MobileNostrPairing = ({navigation}: any) => {
     }
   };
   const clearPeerConnection = (peerNum: 1 | 2) => {
-    HapticFeedback.medium();
     if (peerNum === 1) {
       setPeerNpub1('');
       setPeerDeviceName1('');
@@ -3782,6 +3774,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       textAlign: 'right',
       lineHeight: 14,
     },
+    noPadding: {
+      padding: 0,
+    },
   });
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
@@ -3820,7 +3815,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                       <AppPressable
                         style={styles.helpButton}
                         onPress={() => {
-                          HapticFeedback.light();
                           setShowHelpModal(true);
                         }}
                         android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -3876,7 +3870,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                         <AppPressable
                           style={[styles.cancelSetupButton, {marginLeft: 12}]}
                           onPress={() => {
-                            HapticFeedback.light();
                             if (isSendBitcoin || isSignPSBT) {
                               navigation.goBack();
                             } else {
@@ -3904,7 +3897,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                       <AppPressable
                         style={styles.collapsibleHeader}
                         onPress={() => {
-                          HapticFeedback.light();
                           setShowRelayConfig(!showRelayConfig);
                         }}
                         android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -4277,7 +4269,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                                                 styles.sendModeDeviceItemSelected,
                                             ]}
                                             onPress={() => {
-                                              HapticFeedback.medium();
                                               // In trio, allow user to select any device
                                               // If clicking the same device, deselect (allow empty selection)
                                               // If clicking different device, select that one
@@ -4636,7 +4627,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   styles.iconButtonCentered,
                                 ]}
                                 onPress={() => {
-                                  HapticFeedback.light();
                                   const peerNum: 1 | 2 = 1;
                                   setScanningForPeer(peerNum);
                                   scanningForPeerRef.current = peerNum; // Update ref immediately
@@ -4768,7 +4758,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                                     styles.iconButtonCentered,
                                   ]}
                                   onPress={() => {
-                                    HapticFeedback.light();
                                     const peerNum: 1 | 2 = 2;
                                     setScanningForPeer(peerNum);
                                     scanningForPeerRef.current = peerNum; // Update ref immediately
@@ -4907,7 +4896,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                           <AppPressable
                             style={styles.qrModalCloseButton}
                             onPress={() => {
-                              HapticFeedback.medium();
                               setShowHelpModal(false);
                             }}
                             android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -5196,7 +5184,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                             <AppPressable
                               style={[styles.enhancedCheckboxContainer]}
                               onPress={() => {
-                                HapticFeedback.medium();
                                 toggleKeygenReady();
                               }}>
                               <View
@@ -5729,7 +5716,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                   <AppPressable
                     style={styles.backupButton}
                     onPress={() => {
-                      HapticFeedback.medium();
                       setIsBackupModalVisible(true);
                     }}>
                     <View style={styles.buttonContent}>
@@ -5805,7 +5791,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                             styles.enhancedBackupCheckboxChecked,
                         ]}
                         onPress={() => {
-                          HapticFeedback.medium();
                           toggleBackedup(item.key as keyof typeof backupChecks);
                         }}>
                         <View
@@ -5850,7 +5835,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                         : styles.proceedButtonOff
                     }
                     onPress={() => {
-                      HapticFeedback.medium();
                       navigation.dispatch(
                         CommonActions.reset({
                           index: 0,
@@ -5901,7 +5885,6 @@ const MobileNostrPairing = ({navigation}: any) => {
               <AppPressable
                 style={styles.qrModalCloseButton}
                 onPress={() => {
-                  HapticFeedback.medium();
                   setIsQRModalVisible(false);
                 }}
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -5909,15 +5892,16 @@ const MobileNostrPairing = ({navigation}: any) => {
               </AppPressable>
             </View>
             <View style={styles.qrModalBody}>
-              <View style={styles.qrContainer}>
-                <QRCode
-                  value={connectionDetails}
-                  size={250}
-                  getRef={ref => {
-                    connectionQrRef.current = ref;
-                  }}
-                />
-              </View>
+              <StaticQRCode
+                value={connectionDetails}
+                size={250}
+                copyContent={connectionDetails}
+                toastMessage="Connection details copied to clipboard"
+                getRef={ref => {
+                  connectionQrRef.current = ref;
+                }}
+                style={[styles.qrContainer, styles.noPadding]}
+              />
               <Text style={styles.connectionDetailsText}>
                 {shortenNpub(connectionDetails)}
               </Text>

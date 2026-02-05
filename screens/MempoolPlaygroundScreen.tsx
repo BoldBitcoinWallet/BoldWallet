@@ -35,7 +35,6 @@ import {
   type PlaygroundSection,
   type EndpointParam,
 } from '../constants/mempoolPlaygroundEndpoints';
-import {HapticFeedback} from '../utils';
 
 interface CollapsibleSectionProps {
   title: string;
@@ -84,7 +83,6 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
     [isExpanded],
   );
   const handlePress = () => {
-    HapticFeedback.light();
     rotationAnim.value = withTiming(isExpanded ? 0 : 1, {duration: 200});
     onToggle();
   };
@@ -369,7 +367,6 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
     const text = responses[sectionId];
     if (text) {
       Clipboard.setString(text);
-      HapticFeedback.light();
       Toast.show({
         type: 'success',
         text1: 'Copied',
@@ -580,7 +577,6 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 </Text>
                 <AppPressable
                   onPress={() => {
-                    HapticFeedback.light();
                     setEndpointPickerSectionId(section.id);
                   }}
                   style={[styles.dropdown, {borderColor, backgroundColor: theme.colors.background}]}>
@@ -622,7 +618,6 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
                         renderItem={({item: ep}) => (
                           <AppPressable
                             onPress={() => {
-                              HapticFeedback.light();
                               setSectionSelected(prev => ({...prev, [section.id]: ep.id}));
                               setEndpointPickerSectionId(null);
                             }}

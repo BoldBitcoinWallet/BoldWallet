@@ -1876,7 +1876,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   );
   // Handle QR scan for send bitcoin data
   const handleScanQRForSend = useCallback(() => {
-    HapticFeedback.medium();
     setIsQRScannerVisible(true);
   }, []);
   // Animated style for balance update
@@ -1895,7 +1894,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             {/* Eye icon on left */}
             <AppPressable
               onPress={() => {
-                HapticFeedback.light();
                 handleBlurred();
               }}
               style={styles.balanceEyeIcon}
@@ -1929,7 +1927,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                     <AppPressable
                       style={styles.balanceTouchable}
                       onPress={() => {
-                        HapticFeedback.light();
                         handleBlurred();
                       }}
                       android_ripple={{color: 'rgba(0,0,0,0.1)'}}
@@ -1978,7 +1975,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                       <AppPressable
                         style={styles.balanceTouchable}
                         onPress={() => {
-                          HapticFeedback.light();
                           handleBlurred();
                         }}
                         android_ripple={{color: 'rgba(0,0,0,0.1)'}}
@@ -2037,7 +2033,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             <View style={styles.balanceUnitToggleContainer}>
               <AppPressable
                 onPress={() => {
-                  HapticFeedback.light();
                   setShowSatsGlobal(!showSats);
                 }}
                 style={styles.balanceUnitToggle}
@@ -2061,7 +2056,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 isCheckingBalanceForSend && styles.sendButtonDisabled,
               ]}
               onPress={async () => {
-                HapticFeedback.medium();
                 // Check if balance is 0 or empty
                 const balance = parseFloat(balanceBTC || '0');
                 if (balance <= 0) {
@@ -2135,7 +2129,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 styles.flexOneMinWidthZero,
               ]}
               onPress={() => {
-                HapticFeedback.medium();
                 setIsReceiveModalVisible(true);
               }}
               android_ripple={{color: 'rgba(0,0,0,0.1)'}}
@@ -2229,7 +2222,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       <TransportModeSelector
         visible={isTransportModalVisible}
         onClose={() => {
-          HapticFeedback.medium();
           setIsTransportModalVisible(false);
           setPendingSendParams(null);
           setScannedFromQR(false);
@@ -2285,7 +2277,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           visible={isSignedPSBTModalVisible}
           signedPsbtBase64={signedPsbt}
           onClose={() => {
-            HapticFeedback.medium();
             setIsSignedPSBTModalVisible(false);
             setSignedPsbt(null);
           }}

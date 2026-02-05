@@ -23,7 +23,7 @@ import {
   SafeAreaProvider,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import {initializeHaptics, HapticFeedback} from './utils';
+import {initializeHaptics} from './utils';
 import ErrorBoundary from './components/ErrorBoundary';
 import {
   Alert,
@@ -240,7 +240,6 @@ const TabBarButton = (props: TabBarButtonProps) => {
       : tabBarStyles.activeTabBgLight;
   const handlePress = useCallback(
     (e: GestureResponderEvent) => {
-      HapticFeedback.selection();
       (onPress as (e: GestureResponderEvent) => void)?.(e);
     },
     [onPress],
@@ -446,7 +445,6 @@ const MainTabs = () => {
             <AppPressable
               style={lockFabStyle}
               onPress={() => {
-                HapticFeedback.light();
                 DeviceEventEmitter.emit('app:reload');
               }}
               accessible={true}
@@ -463,7 +461,6 @@ const MainTabs = () => {
           <AppPressable
             style={lockFabStyle}
             onPress={() => {
-              HapticFeedback.light();
               DeviceEventEmitter.emit('app:reload');
             }}
             accessible={true}

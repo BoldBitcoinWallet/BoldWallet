@@ -7,7 +7,6 @@ import {
   Alert,
   Modal,
   NativeModules,
-  Switch,
   ScrollView,
   Image,
   Keyboard,
@@ -18,6 +17,7 @@ import {
   DeviceEventEmitter,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
+import AppSwitch from '../components/AppSwitch';
 import Animated, {
   useSharedValue,
   withTiming,
@@ -37,7 +37,6 @@ const TESTNET_APIS = ['https://mempool.space/testnet/api'];
 const {IconChanger} = NativeModules; // This is fine here, as it's not a Hook
 import {
   dbg,
-  HapticFeedback,
   setHapticsEnabled,
   areHapticsEnabled,
   getMainnetAPIList,
@@ -85,7 +84,6 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
     };
   });
   const handlePress = () => {
-    HapticFeedback.light();
     // Animate rotation immediately
     rotationAnim.value = withTiming(isExpanded ? 0 : 1, {duration: 200});
     // Toggle content
@@ -298,7 +296,6 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
   const openModal = () => {
     // Prevent modal opening in testnet mode
     if (isTestnet) return;
-    HapticFeedback.light();
     // The filtered options will be set by the useEffect that handles API options
     setSearchQuery('');
     setIsModalVisible(true);
@@ -311,7 +308,6 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
     });
   };
   const closeModal = () => {
-    HapticFeedback.light();
     // Animate modal exit
     const finishCallback = () => {
       setIsModalVisible(false);
@@ -323,7 +319,6 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
   };
   const selectOption = async (option: string) => {
     dbg('selectOption called with:', option);
-    HapticFeedback.selection();
     await onChangeText(option);
     closeModal();
   };
@@ -772,8 +767,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     mb: '0.00 MB',
   });
   const toggleSection = (section: string) => {
-    // Haptic feedback for section toggle
-    HapticFeedback.light();
     setExpandedSections(prev => {
       const newState = Object.keys(prev).reduce((acc, key) => {
         acc[key] = false; // Close all sections
@@ -922,8 +915,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     });
   }, []);
   const toggleNetwork = async (value: boolean) => {
-    // Haptic feedback for network toggle
-    HapticFeedback.light();
     dbg('=== Network toggle started:', value ? 'testnet' : 'mainnet');
     const newNetwork = value ? 'testnet3' : 'mainnet';
     const networkName = value ? 'Testnet' : 'Mainnet';
@@ -1122,16 +1113,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     }
   };
   const handleToggleHaptics = (value: boolean) => {
-    HapticFeedback.light();
     setHapticsEnabledState(value);
     setHapticsEnabled(value);
   };
   const handleToggleBalanceFormatting = (value: boolean) => {
-    HapticFeedback.light();
     setBalanceFormattingEnabled(value);
   };
   const handleToggleDebugLogging = (value: boolean) => {
-    HapticFeedback.light();
     setDebugLoggingEnabledState(value);
     // Update module-level ref
     setDebugLoggingEnabled(value);
@@ -2360,7 +2348,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 themeMode === 'os' && styles.themeOptionSelected,
               ]}
               onPress={() => {
-                HapticFeedback.light();
                 setThemeMode('os');
               }}
               android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -2387,7 +2374,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 themeMode === 'light' && styles.themeOptionSelected,
               ]}
               onPress={() => {
-                HapticFeedback.light();
                 setThemeMode('light');
               }}
               android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -2414,7 +2400,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 themeMode === 'dark' && styles.themeOptionSelected,
               ]}
               onPress={() => {
-                HapticFeedback.light();
                 setThemeMode('dark');
               }}
               android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -2472,15 +2457,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           </Text>
           <View style={styles.toggleContainer}>
             <Text style={styles.toggleLabel}>Raw Numbers</Text>
-            <Switch
+            <AppSwitch
               onValueChange={handleToggleBalanceFormatting}
               value={balanceFormattingEnabled}
-              trackColor={{
-                false: theme.colors.switchTrackFalse,
-                true: theme.colors.switchTrackTrue,
-              }}
-              thumbColor={theme.colors.switchThumb}
-              ios_backgroundColor={theme.colors.switchIosBackground}
             />
             <Text style={styles.toggleLabel}>Formatted</Text>
           </View>
@@ -2496,15 +2475,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           </Text>
           <View style={styles.toggleContainer}>
             <Text style={styles.toggleLabel}>Haptics Off</Text>
-            <Switch
+            <AppSwitch
               onValueChange={handleToggleHaptics}
               value={hapticsEnabled}
-              trackColor={{
-                false: theme.colors.switchTrackFalse,
-                true: theme.colors.switchTrackTrue,
-              }}
-              thumbColor={theme.colors.switchThumb}
-              ios_backgroundColor={theme.colors.switchIosBackground}
             />
             <Text style={styles.toggleLabel}>Haptics On</Text>
           </View>
@@ -2525,7 +2498,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <AppPressable
             style={[styles.button, styles.deleteButton]}
             onPress={async () => {
-              HapticFeedback.light();
               try {
                 await LocalCache.clear();
                 setUsageSize(await LocalCache.usageSize());
@@ -2576,17 +2548,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </Text>
             <View style={styles.toggleContainer}>
               <Text style={styles.toggleLabel}>Bold Wallet</Text>
-              <Switch
+              <AppSwitch
                 value={selectedIcon === 'alternative'}
-                trackColor={{
-                  false: theme.colors.switchTrackFalse,
-                  true: theme.colors.switchTrackTrue,
-                }}
-                thumbColor={theme.colors.switchThumb}
-                ios_backgroundColor={theme.colors.switchIosBackground}
                 onValueChange={async value => {
                   try {
-                    HapticFeedback.light();
                     const newIcon = value ? 'alternative' : 'default';
                     if (!IconChanger || !IconChanger.changeIcon) {
                       Alert.alert(
@@ -2640,7 +2605,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <AppPressable
             style={[styles.button, styles.backupButton]}
             onPress={() => {
-              HapticFeedback.light();
               setIsBackupModalVisible(true);
             }}
             android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -2659,7 +2623,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <AppPressable
             style={[styles.button, styles.deleteButton]}
             onPress={() => {
-              HapticFeedback.light();
               setIsModalResetVisible(true);
             }}
             android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -2692,7 +2655,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 activeAddressType === 'legacy' && styles.addressTypeOptionSelected,
               ]}
               onPress={async () => {
-                HapticFeedback.selection();
                 try {
                   await setActiveAddressType('legacy');
                   navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
@@ -2721,7 +2683,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 activeAddressType === 'segwit-native' && styles.addressTypeOptionSelected,
               ]}
               onPress={async () => {
-                HapticFeedback.selection();
                 try {
                   await setActiveAddressType('segwit-native');
                   navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
@@ -2750,7 +2711,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 activeAddressType === 'segwit-compatible' && styles.addressTypeOptionSelected,
               ]}
               onPress={async () => {
-                HapticFeedback.selection();
                 try {
                   await setActiveAddressType('segwit-compatible');
                   navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
@@ -2791,15 +2751,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               />
               <Text style={styles.toggleLabel}>Mainnet</Text>
             </View>
-            <Switch
+            <AppSwitch
               onValueChange={toggleNetwork}
               value={isTestnet}
-              trackColor={{
-                false: theme.colors.switchTrackFalse,
-                true: theme.colors.switchTrackTrue,
-              }}
-              thumbColor={theme.colors.switchThumb}
-              ios_backgroundColor={theme.colors.switchIosBackground}
             />
             <View style={styles.networkOption}>
               <Image
@@ -2851,7 +2805,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 <AppPressable
                   style={styles.apiInfoButton}
                   onPress={() => {
-                    HapticFeedback.light();
                     setIsApiInfoVisible(true);
                   }}
                   android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -2895,7 +2848,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   isAPISaving && styles.halfOpacity,
                 ]}
                 onPress={() => {
-                  HapticFeedback.light();
                   saveAPI(pendingAPI);
                 }}
                 disabled={isAPISaving || !pendingAPI || pendingAPI === baseAPI}
@@ -2925,7 +2877,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   styles.apiActionButton,
                 ]}
                 onPress={() => {
-                  HapticFeedback.light();
                   resetAPI();
                 }}
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -2979,7 +2930,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     styles.disabledButton,
                 ]}
                 onPress={async () => {
-                  HapticFeedback.light();
                   try {
                     const relays = pendingNostrRelays
                       .split(/[,\n]/)
@@ -3039,7 +2989,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   styles.apiActionButton,
                 ]}
                 onPress={async () => {
-                  HapticFeedback.light();
                   const fetchedRelays = await getNostrRelays(true);
                   const relaysCSV = fetchedRelays.join(',');
                   const relaysForDisplay = relaysCSV.split(',').join('\n');
@@ -3074,15 +3023,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           </Text>
           <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
             <Text style={styles.toggleLabel}>Hide Wallet tab</Text>
-            <Switch
+            <AppSwitch
               onValueChange={value => setShowWalletTab(value)}
               value={showWalletTab}
-              trackColor={{
-                false: theme.colors.switchTrackFalse,
-                true: theme.colors.switchTrackTrue,
-              }}
-              thumbColor={theme.colors.switchThumb}
-              ios_backgroundColor={theme.colors.switchIosBackground}
             />
             <Text style={styles.toggleLabel}>Show Wallet tab</Text>
           </View>
@@ -3100,15 +3043,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           </Text>
           <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
             <Text style={styles.toggleLabel}>Hide UTXOs tab</Text>
-            <Switch
+            <AppSwitch
               onValueChange={value => setShowUtxosTab(value)}
               value={showUtxosTab}
-              trackColor={{
-                false: theme.colors.switchTrackFalse,
-                true: theme.colors.switchTrackTrue,
-              }}
-              thumbColor={theme.colors.switchThumb}
-              ios_backgroundColor={theme.colors.switchIosBackground}
             />
             <Text style={styles.toggleLabel}>Show UTXOs tab</Text>
           </View>
@@ -3126,15 +3063,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           </Text>
           <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
             <Text style={styles.toggleLabel}>Hide PSBT tab</Text>
-            <Switch
+            <AppSwitch
               onValueChange={value => setShowPsbtTab(value)}
               value={showPsbtTab}
-              trackColor={{
-                false: theme.colors.switchTrackFalse,
-                true: theme.colors.switchTrackTrue,
-              }}
-              thumbColor={theme.colors.switchThumb}
-              ios_backgroundColor={theme.colors.switchIosBackground}
             />
             <Text style={styles.toggleLabel}>Show PSBT tab</Text>
           </View>
@@ -3153,15 +3084,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </Text>
             <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
               <Text style={styles.toggleLabel}>Hide Play tab</Text>
-              <Switch
+              <AppSwitch
                 onValueChange={value => setShowMempoolPlayground(value)}
                 value={showMempoolPlayground}
-                trackColor={{
-                  false: theme.colors.switchTrackFalse,
-                  true: theme.colors.switchTrackTrue,
-                }}
-                thumbColor={theme.colors.switchThumb}
-                ios_backgroundColor={theme.colors.switchIosBackground}
               />
               <Text style={styles.toggleLabel}>Show Play tab</Text>
             </View>
@@ -3228,15 +3153,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               </View>
               <View style={styles.toggleContainer}>
                 <Text style={styles.toggleLabel}>Enable Logging</Text>
-                <Switch
+                <AppSwitch
                   onValueChange={handleToggleDebugLogging}
                   value={debugLoggingEnabled}
-                  trackColor={{
-                    false: theme.colors.switchTrackFalse,
-                    true: theme.colors.switchTrackTrue,
-                  }}
-                  thumbColor={theme.colors.switchThumb}
-                  ios_backgroundColor={theme.colors.switchIosBackground}
                 />
               </View>
             </View>
@@ -3245,7 +3164,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             <AppPressable
               style={styles.disableDevModeButton}
               onPress={() => {
-                HapticFeedback.medium();
                 Alert.alert(
                   'Disable Dev Mode',
                   'Are you sure you want to hide the Dev Debug section? You can enable it again by clicking the build number 7 times.',
@@ -3317,7 +3235,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <Text
             style={styles.termsLink}
             onPress={() => {
-              HapticFeedback.light();
               setLegalModalType('terms');
               setIsLegalModalVisible(true);
             }}>
@@ -3326,7 +3243,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           <Text
             style={styles.termsLink}
             onPress={() => {
-              HapticFeedback.light();
               setLegalModalType('privacy');
               setIsLegalModalVisible(true);
             }}>
@@ -3347,7 +3263,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             <Text style={styles.aboutLabel}>Build Number</Text>
             <AppPressable
               onPress={() => {
-                HapticFeedback.light();
                 // Only enable on Android (iOS prod builds don't support logs)
                 if (Platform.OS !== 'android') {
                   return;
@@ -3479,7 +3394,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               <AppPressable
                 style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => {
-                  HapticFeedback.light();
                   setIsModalResetVisible(false);
                 }}
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -3492,7 +3406,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   isDeleting && styles.halfOpacity,
                 ]}
                 onPress={() => {
-                  HapticFeedback.light();
                   handleResetWallet();
                 }}
                 disabled={isDeleting}
@@ -3512,7 +3425,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       <LegalModal
         visible={isLegalModalVisible}
         onClose={() => {
-          HapticFeedback.light();
           setIsLegalModalVisible(false);
         }}
         type={legalModalType}
@@ -3542,7 +3454,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 <AppPressable
                   style={styles.apiInfoModalCloseButton}
                   onPress={() => {
-                    HapticFeedback.light();
                     setIsApiInfoVisible(false);
                   }}
                   android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -3603,7 +3514,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   {backgroundColor: theme.colors.primary},
                 ]}
                 onPress={() => {
-                  HapticFeedback.light();
                   setIsApiInfoVisible(false);
                 }}
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}>

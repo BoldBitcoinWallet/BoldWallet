@@ -8,9 +8,9 @@ import {
   ScrollView,
 } from 'react-native';
 import AppPressable from './AppPressable';
-import QRCode from 'react-native-qrcode-svg';
+import StaticQRCode from './StaticQRCode';
 import {useTheme} from '../theme';
-import {HapticFeedback, encodeSendBitcoinQR} from '../utils';
+import {encodeSendBitcoinQR} from '../utils';
 interface TransportModeSelectorProps {
   visible: boolean;
   onClose: () => void;
@@ -47,12 +47,10 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
     'local' | 'nostr' | null
   >(null);
   const handleSelect = (transport: 'local' | 'nostr') => {
-    HapticFeedback.medium();
     setSelectedTransport(transport);
   };
   const handleContinue = () => {
     if (selectedTransport) {
-      HapticFeedback.medium();
       onSelect(selectedTransport);
       onClose();
       setSelectedTransport(null);
@@ -325,6 +323,9 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       padding: 8,
       borderRadius: 8,
     },
+    noPadding: {
+      padding: 0,
+    },
   });
   return (
     <Modal
@@ -344,7 +345,6 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
             <AppPressable
               style={styles.closeButton}
               onPress={() => {
-                HapticFeedback.medium();
                 setSelectedTransport(null);
                 onClose();
               }}
@@ -380,14 +380,13 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                     <Text style={styles.qrCodeLabel}>
                       Scan on another device to auto fill
                     </Text>
-                    <View style={styles.qrCodeContainer}>
-                      <QRCode
-                        value={qrData}
-                        size={180}
-                        backgroundColor="white"
-                        color="black"
-                      />
-                    </View>
+                    <StaticQRCode
+                      value={qrData}
+                      size={180}
+                      copyContent={qrData}
+                      toastMessage="Send data copied to clipboard"
+                      style={[styles.qrCodeContainer, styles.noPadding]}
+                    />
                   </View>
                 );
               })()}

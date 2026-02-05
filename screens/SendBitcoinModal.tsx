@@ -23,7 +23,6 @@ import debounce from 'lodash/debounce';
 import Big from 'big.js';
 import {
   dbg,
-  HapticFeedback,
   decodeSendBitcoinQR,
   formatBitcoinDisplay,
 } from '../utils';
@@ -528,7 +527,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     }
   }, [address, btcAmount, debouncedGetFee, feeStrategy]);
   const pasteAddress = useCallback(async () => {
-    HapticFeedback.light();
     const text = await Clipboard.getString();
     // Validate that the clipboard contains what looks like a Bitcoin address
     if (!text || !text.trim()) {
@@ -580,7 +578,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     }
   };
   const handleMaxClick = () => {
-    HapticFeedback.medium();
     setBtcAmount(walletBalance);
     setInBtcAmount(walletBalance.toFixed(8));
     setInUsdAmount(walletBalance.times(btcToFiatRate).toFixed(2));
@@ -658,7 +655,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     [btcToFiatRate, showSats, balanceFormattingEnabled],
   );
   const handleFeeStrategyChange = (value: string) => {
-    HapticFeedback.selection();
     setFeeStrategy(value);
     dbg('setting fee strategy to', value);
     BBMTLibNativeModule.setFeePolicy(value);
@@ -682,7 +678,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       Alert.alert('Error', 'Total amount including fee exceeds wallet balance');
       return;
     }
-    HapticFeedback.heavy();
     onSend(address, Big(inBtcAmount).times(1e8), estimatedFee, spendingHash);
   };
   // Check if amount exceeds balance
@@ -807,7 +802,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     </AppPressable>
                     <AppPressable
                       onPress={() => {
-                        HapticFeedback.light();
                         setIsScannerVisible(true);
                       }}
                       style={styles.qrIconContainer}>
@@ -889,7 +883,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     <AppPressable
                       style={styles.setupGuideHintTouchable}
                       onPress={() => {
-                        HapticFeedback.medium();
                         const url =
                           'https://x.com/boldbtcwallet/status/1988332367489237160';
                         Linking.openURL(url).catch(err => {
@@ -933,7 +926,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     <AppPressable
                       style={styles.cancelButton}
                       onPress={() => {
-                        HapticFeedback.light();
                         onClose();
                       }}
                       android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>

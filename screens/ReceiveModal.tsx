@@ -9,11 +9,11 @@ import {
   Alert,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
-import QRCode from 'react-native-qrcode-svg';
+import StaticQRCode from '../components/StaticQRCode';
 import Clipboard from '@react-native-clipboard/clipboard';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
-import {dbg, HapticFeedback} from '../utils';
+import {dbg} from '../utils';
 import {useTheme} from '../theme';
 import {capitalize} from 'lodash';
 const ReceiveModal: React.FC<{
@@ -177,6 +177,9 @@ const ReceiveModal: React.FC<{
       shadowOpacity: 0.2,
       shadowRadius: 1.41,
     },
+    noPadding: {
+      padding: 0,
+    },
     addressContainer: {
       width: '100%',
       marginBottom: 20,
@@ -290,7 +293,6 @@ const ReceiveModal: React.FC<{
             </View>
             <AppPressable
               onPress={() => {
-                HapticFeedback.medium();
                 onClose();
               }}
               style={styles.closeButton}
@@ -303,24 +305,18 @@ const ReceiveModal: React.FC<{
               {capitalize(network)} • {formatAddressType(addressType)}
             </Text>
           </View>
-          <AppPressable
-            style={styles.qrContainer}
-            onPress={() => {
-              HapticFeedback.medium();
-              copyToClipboard();
-            }}
-            android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
-            <QRCode
-              value={address}
-              size={200}
-              getRef={ref => (qrRef.current = ref)}
-            />
-          </AppPressable>
+          <StaticQRCode
+            value={address}
+            size={200}
+            copyContent={address}
+            toastMessage="Address copied to clipboard"
+            getRef={ref => (qrRef.current = ref)}
+            style={[styles.qrContainer, styles.noPadding]}
+          />
           <View style={styles.addressContainer}>
             <AppPressable
               style={styles.addressTouchable}
               onPress={() => {
-                HapticFeedback.medium();
                 dbg('baseAPI', baseApi);
                 const url = `${baseApi.replace('api', '')}address/${address}`;
                 dbg('address URL', url);
@@ -352,7 +348,6 @@ const ReceiveModal: React.FC<{
               <AppPressable
                 style={styles.actionButton}
                 onPress={() => {
-                  HapticFeedback.medium();
                   copyToClipboard();
                 }}
                 android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
@@ -369,7 +364,6 @@ const ReceiveModal: React.FC<{
                   {backgroundColor: theme.colors.secondary},
                 ]}
                 onPress={() => {
-                  HapticFeedback.medium();
                   shareQRCode();
                 }}
                 android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>

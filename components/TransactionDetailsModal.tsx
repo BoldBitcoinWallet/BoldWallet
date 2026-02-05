@@ -11,7 +11,7 @@ import AppPressable from './AppPressable';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import moment from 'moment';
-import {HapticFeedback, dbg, formatBitcoinDisplay} from '../utils';
+import {dbg, formatBitcoinDisplay} from '../utils';
 interface TransactionDetailsModalProps {
   visible: boolean;
   onClose: () => void;
@@ -359,7 +359,6 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
             <Text style={styles.modalTitle}>Transaction Details</Text>
             <AppPressable
               onPress={() => {
-                HapticFeedback.light();
                 onClose();
               }}
               style={styles.closeButton}
@@ -445,7 +444,6 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                       <View style={styles.txIdContainer}>
                         <AppPressable
                           onPress={() => {
-                            HapticFeedback.light();
                             Linking.openURL(addressExplorerLink);
                           }}
                           android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -482,7 +480,6 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
               <View style={styles.txIdContainer}>
                 <AppPressable
                   onPress={() => {
-                    HapticFeedback.light();
                     Linking.openURL(explorerLink);
                   }}
                   android_ripple={{color: 'rgba(0,0,0,0.1)'}}>

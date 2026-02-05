@@ -13,7 +13,7 @@ import {
 import AppPressable from '../components/AppPressable';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useTheme} from '../theme';
-import {dbg, HapticFeedback, getResetToMainTabsWallet} from '../utils';
+import {dbg, getResetToMainTabsWallet} from '../utils';
 import {useUser} from '../context/UserContext';
 
 const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
@@ -126,7 +126,6 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
   };
 
   const handleSkip = () => {
-    HapticFeedback.medium();
     navigation.reset(
       getResetToMainTabsWallet({}, {
         showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
@@ -138,7 +137,6 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
   };
 
   const handleProceed = () => {
-    HapticFeedback.medium();
     navigation.reset(
       getResetToMainTabsWallet({}, {
         showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
@@ -379,7 +377,6 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 styles.proceedButtonDisabled,
             ]}
             onPress={() => {
-              HapticFeedback.medium();
               saveAPIAndProceed(pendingAPI);
             }}
             disabled={isAPISaving || pendingAPI.trim() === ''}
