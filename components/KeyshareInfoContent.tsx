@@ -20,10 +20,13 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
 import Toast from 'react-native-toast-message';
-import {dbg} from '../utils';
+import {dbg, HapticFeedback} from '../utils';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
 import QRCodeModal from './QRCodeModal';
+import DeviceInfo from 'react-native-device-info';
+import {createToastConfig} from '../utils/toastConfig';
+import CryptoJS from 'crypto-js';
 
 const {BBMTLibNativeModule} = NativeModules;
 interface KeyshareInfo {
@@ -84,6 +87,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   const [pairingPubkeys, setPairingPubkeys] = useState<string>('');
   const [isPairingPubkeysQrVisible, setIsPairingPubkeysQrVisible] =
     useState(false);
+  const [pairingPubkeysQrValue, setPairingPubkeysQrValue] = useState('');
   const [isWalletInfoExpanded, setIsWalletInfoExpanded] = useState(true);
   const [isCapabilitiesExpanded, setIsCapabilitiesExpanded] = useState(false);
   const [isBoldExtensionExpanded, setIsBoldExtensionExpanded] = useState(false);
@@ -135,21 +139,44 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
           const checksum = await BBMTLibNativeModule.sha256(payload);
           const checksumLast4 = checksum.slice(-4);
           setPairingPubkeys(`${payload}/${checksumLast4}`);
+
+          // Build pairing_response payload for the Chrome extension pairing flow
+          const deviceId = DeviceInfo.getUniqueIdSync
+            ? DeviceInfo.getUniqueIdSync()
+            : DeviceInfo.getUniqueId();
+          const code = Math.floor(100000 + Math.random() * 900000).toString();
+          const iv = CryptoJS.lib.WordArray.random(16);
+          const plaintext = JSON.stringify({
+            pk: keyshareInfo.pubKey,
+            cc: keyshareInfo.chainCode,
+          });
+          const key = CryptoJS.SHA256(code);
+          const ciphertext = CryptoJS.AES.encrypt(plaintext, key, {iv}).toString();
+
+          const cipherUrl = ciphertext
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_')
+            .replace(/=+$/g, '');
+          const ivHex = CryptoJS.enc.Hex.stringify(iv);
+          setPairingPubkeysQrValue(`pair:${cipherUrl}${ivHex}${code}`);
         } catch (error) {
           dbg('Failed to calculate pairing pubkeys checksum:', error);
           setPairingPubkeys('');
+          setPairingPubkeysQrValue('');
         }
       } else {
         setPairingPubkeys('');
+        setPairingPubkeysQrValue('');
       }
     };
 
     calculatePairingPubkeys();
-  }, [keyshareInfo?.pubKey, keyshareInfo?.chainCode]);
+  }, [keyshareInfo?.pubKey, keyshareInfo?.chainCode, network]);
 
   // Share text as file
   const shareTextAsFile = useCallback(
     async (text: string, filename: string, title: string) => {
+      HapticFeedback.medium();
       try {
         const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
         const filePath = `${tempDir}/${filename}`;
@@ -182,6 +209,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
     (type: 'legacy' | 'segwitNative' | 'segwitCompatible') => {
       const descriptor = keyshareInfo?.outputDescriptors?.[type] || '';
       if (!descriptor) return;
+      HapticFeedback.light();
       Clipboard.setString(descriptor);
       const typeLabel =
         type === 'legacy'
@@ -201,6 +229,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
     (type: 'legacy' | 'segwitNative' | 'segwitCompatible') => {
       const descriptor = keyshareInfo?.outputDescriptors?.[type] || '';
       if (!descriptor) return;
+      HapticFeedback.light();
       const now = new Date();
       const month = now.toLocaleDateString('en-US', {month: 'short'});
       const day = now.getDate().toString().padStart(2, '0');
@@ -222,6 +251,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
     (type: 'legacy' | 'segwitNative' | 'segwitCompatible') => {
       const descriptor = keyshareInfo?.outputDescriptors?.[type] || '';
       if (!descriptor) return;
+      HapticFeedback.light();
       setSelectedDescriptorType(type);
       setIsOutputDescriptorQrVisible(true);
     },
@@ -229,6 +259,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   );
   const handleCopyNpub = useCallback(() => {
     if (!keyshareInfo?.npub) return;
+    HapticFeedback.light();
     Clipboard.setString(keyshareInfo.npub);
     Toast.show({
       type: 'success',
@@ -237,10 +268,12 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
     });
   }, [keyshareInfo]);
   const handleShowNpubQR = useCallback(() => {
+    HapticFeedback.light();
     setIsNpubQrVisible(true);
   }, []);
 
   const handleWalletIdPress = useCallback(() => {
+    HapticFeedback.light();
     Toast.show({
       type: 'info',
       text1: 'Wallet ID Verification',
@@ -251,6 +284,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
 
   const handleWalletTypePress = useCallback(() => {
     if (!keyshareInfo) return;
+    HapticFeedback.light();
     const isTrio = keyshareInfo.type === 'trio';
     Toast.show({
       type: 'info',
@@ -264,6 +298,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
 
   const handleKeyshareIdPress = useCallback(() => {
     if (!keyshareInfo) return;
+    HapticFeedback.light();
     const isTrio = keyshareInfo.type === 'trio';
     Toast.show({
       type: 'info',
@@ -276,6 +311,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   }, [keyshareInfo]);
 
   const handleCreatedAtPress = useCallback(() => {
+    HapticFeedback.light();
     Toast.show({
       type: 'info',
       text1: 'Wallet Creation Date',
@@ -285,6 +321,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   }, []);
 
   const handleLanHotspotPress = useCallback(() => {
+    HapticFeedback.light();
     Toast.show({
       type: 'info',
       text1: 'LAN / Hotspot Support',
@@ -296,6 +333,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
 
   const handleNostrPress = useCallback(() => {
     if (!keyshareInfo) return;
+    HapticFeedback.light();
     Toast.show({
       type: 'info',
       text1: 'Nostr Support',
@@ -308,6 +346,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
 
   const handleCopyPairingPubkeys = useCallback(() => {
     if (!pairingPubkeys) return;
+    HapticFeedback.light();
     Clipboard.setString(pairingPubkeys);
     Toast.show({
       type: 'success',
@@ -317,10 +356,19 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   }, [pairingPubkeys]);
 
   const handleShowPairingPubkeysQR = useCallback(() => {
+    HapticFeedback.light();
+    if (!pairingPubkeysQrValue) {
+      Alert.alert(
+        'Pairing QR unavailable',
+        'Missing public key or chain code for pairing QR.',
+      );
+      return;
+    }
     setIsPairingPubkeysQrVisible(true);
-  }, []);
+  }, [pairingPubkeysQrValue]);
 
   const handleToggleWalletInfo = useCallback(() => {
+    HapticFeedback.light();
     const newValue = !isWalletInfoExpanded;
     setIsWalletInfoExpanded(newValue);
     // Close other sections if opening this one
@@ -332,6 +380,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   }, [isWalletInfoExpanded]);
 
   const handleToggleCapabilities = useCallback(() => {
+    HapticFeedback.light();
     const newValue = !isCapabilitiesExpanded;
     setIsCapabilitiesExpanded(newValue);
     // Close other sections if opening this one
@@ -343,6 +392,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   }, [isCapabilitiesExpanded]);
 
   const handleToggleBoldExtension = useCallback(() => {
+    HapticFeedback.light();
     const newValue = !isBoldExtensionExpanded;
     setIsBoldExtensionExpanded(newValue);
     // Close other sections if opening this one
@@ -354,6 +404,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   }, [isBoldExtensionExpanded]);
 
   const handleToggleWatchWallet = useCallback(() => {
+    HapticFeedback.light();
     const newValue = !isWatchWalletExpanded;
     setIsWatchWalletExpanded(newValue);
     // Close other sections if opening this one
@@ -600,6 +651,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                         {onOpenSettingsSection ? (
                           <AppPressable
                             onPress={() => {
+                              HapticFeedback.light();
                               onOpenSettingsSection('backup');
                             }}
                             android_ripple={{color: 'rgba(0,0,0,0.1)'}}
@@ -1114,12 +1166,15 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
           setIsPairingPubkeysQrVisible(false);
         }}
         title="Bold Extension • Pairing Pubkeys"
-        value={pairingPubkeys}
+        value={pairingPubkeysQrValue || pairingPubkeys}
         network={network as 'mainnet' | 'testnet'}
         showShareButton={true}
         topRightClose={true}
         nonDismissible={false}
       />
+      <View style={styles.toastContainer}>
+        <Toast config={createToastConfig(theme)} />
+      </View>
     </SafeAreaView>
   );
 };

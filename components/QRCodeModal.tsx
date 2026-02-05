@@ -156,18 +156,21 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
               <Text style={styles.qrModalTitle}>{title}</Text>
             )}
             {value && (
-              <StaticQRCode
-                value={value}
-                size={200}
-                copyContent={value}
-                toastMessage="Copied to clipboard"
-                getRef={ref => {
-                  qrRef.current = ref;
-                }}
-                style={[styles.qrCodeContainer, staticStyles.noPadding]}
-              />
+                <StaticQRCode
+                  value={value}
+                  size={title?.toLowerCase().includes('pairing') ? 360 : 200}
+                  quietZone={title?.toLowerCase().includes('pairing') ? 24 : 8}
+                  ecl={title?.toLowerCase().includes('pairing') ? 'M' : 'H'}
+                  copyContent={value}
+                  toastMessage="Copied to clipboard"
+                  showLogo={true}
+                  getRef={ref => {
+                    qrRef.current = ref;
+                  }}
+                  style={[styles.qrCodeContainer, staticStyles.noPadding]}
+                />
             )}
-            {value && showShareButton && (
+            {value && showShareButton && !title?.toLowerCase().includes('pairing') && (
               <View style={[styles.qrModalValueContainer, {width: containerWidth}]}>
                 <ScrollView
                   removeClippedSubviews

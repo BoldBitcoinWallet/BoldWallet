@@ -8,15 +8,19 @@ import {useTheme} from '../theme';
 import {createToastConfig} from '../utils/toastConfig';
 
 const DEFAULT_SIZE = 200;
-const LOGO_SIZE_RATIO = 0.2;
-const LOGO_MARGIN = 0;
-const LOGO_BORDER_RADIUS = 8;
+const LOGO_SIZE_RATIO = 0.18;
+const LOGO_MARGIN = 2;
+const LOGO_BORDER_RADIUS = 6;
 
 export interface StaticQRCodeProps {
   /** QR code payload (string to encode). */
   value: string;
   /** Size in pixels. Default 200. */
   size?: number;
+  /** Quiet zone (padding) in pixels around QR. Default 8. */
+  quietZone?: number;
+  /** Error correction level. Default 'H'. */
+  ecl?: 'L' | 'M' | 'Q' | 'H';
   /** Text to copy on tap. Defaults to `value`. */
   copyContent?: string;
   /** Toast secondary text after copy. Default "Copied to clipboard". */
@@ -40,6 +44,8 @@ export interface StaticQRCodeProps {
 const StaticQRCode: React.FC<StaticQRCodeProps> = ({
   value,
   size = DEFAULT_SIZE,
+  quietZone = 8,
+  ecl = 'H',
   copyContent,
   toastMessage = 'Copied to clipboard',
   getRef,
@@ -62,14 +68,14 @@ const StaticQRCode: React.FC<StaticQRCodeProps> = ({
     });
   }, [contentToCopy, toastMessage, copyDisabled]);
 
-  const qrContainerStyle = [
-    styles.container,
-    {
-      backgroundColor: 'white',
-      shadowColor: theme.colors.shadowColor,
-    },
-    contentStyle,
-  ];
+    const qrContainerStyle = [
+      styles.container,
+      {
+        backgroundColor: 'white',
+        // Removed shadow properties for better scan contrast
+      },
+      contentStyle,
+    ];
 
   return (
     <>
@@ -85,10 +91,13 @@ const StaticQRCode: React.FC<StaticQRCodeProps> = ({
             size={size}
             color="black"
             backgroundColor="white"
+            quietZone={quietZone}
+            ecl={ecl}
             logo={showLogo ? require('../assets/icon.png') : undefined}
             logoSize={showLogo ? logoSize : undefined}
             logoMargin={showLogo ? LOGO_MARGIN : undefined}
             logoBorderRadius={showLogo ? LOGO_BORDER_RADIUS : undefined}
+            logoBackgroundColor={showLogo ? 'white' : undefined}
           />
         </View>
       </AppPressable>
@@ -105,12 +114,14 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   container: {
-    padding: 8,
-    borderRadius: 8,
-    elevation: 2,
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.2,
-    shadowRadius: 1.41,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#000000',
+    elevation: 0,
+    shadowOffset: {width: 0, height: 0},
+    shadowOpacity: 0,
+    shadowRadius: 0,
   },
   toastWrapper: {
     position: 'absolute',

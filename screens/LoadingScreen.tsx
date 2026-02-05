@@ -8,12 +8,78 @@ import {
   Animated,
   Easing,
   Pressable,
+  Platform,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useTheme} from '../theme';
 const LoadingScreen = ({onRetry}: any) => {
   const {theme} = useTheme();
   const [loading, setLoading] = useState(false);
+  const isIos = Platform.OS === 'ios';
+  const handlePress = async () => {
+    setLoading(true);
+    await onRetry();
+    setLoading(false);
+  };
+
+  // Fallback static UI for Android (no animations)
+  if (!isIos) {
+    const textSecondary = (theme.colors as any)?.textSecondary ?? '#6b7280';
+    const logoSource =
+      theme.colors.background === '#ffffff'
+        ? require('../assets/bold-icon.png')
+        : require('../assets/bold-icon-inverted.png');
+
+    return (
+      <SafeAreaView style={{flex: 1, backgroundColor: theme.colors.background}}>
+        <View
+          style={{
+            flex: 1,
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 24,
+            gap: 16,
+          }}>
+          <Image source={logoSource} style={{width: 128, height: 128}} resizeMode="contain" />
+          <Text style={{fontSize: 20, fontWeight: '700', color: theme.colors.primary}}>
+            Bold Bitcoin Wallet
+          </Text>
+          <Text style={{fontSize: 14, color: textSecondary}}>Use fingerprint to continue</Text>
+          <Pressable
+            onPress={handlePress}
+            disabled={loading}
+            style={({pressed}) => ({
+              marginTop: 12,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+              paddingHorizontal: 18,
+              paddingVertical: 12,
+              borderRadius: 12,
+              backgroundColor: theme.colors.primary,
+              opacity: loading || pressed ? 0.85 : 1,
+            })}
+            accessibilityRole="button"
+            accessibilityLabel="Unlock with fingerprint"
+            accessibilityHint="Tap to authenticate with fingerprint">
+            {loading ? (
+              <ActivityIndicator color={theme.colors.background} />
+            ) : (
+              <>
+                <Image
+                  source={require('../assets/fingerprint.png')}
+                  style={{width: 24, height: 24, tintColor: theme.colors.background}}
+                />
+                <Text style={{color: theme.colors.background, fontSize: 15, fontWeight: '700'}}>
+                  Unlock
+                </Text>
+              </>
+            )}
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
   const fadeAnim = useRef(new Animated.Value(0.6)).current;
   const buttonScale = useRef(new Animated.Value(1)).current;
   const iconPulse = useRef(new Animated.Value(1)).current;
@@ -38,11 +104,6 @@ const LoadingScreen = ({onRetry}: any) => {
   });
   const turbulenceRef = useRef(0); // increases briefly on tap
   const emitterRef = useRef<number | null>(null);
-  const handlePress = async () => {
-    setLoading(true);
-    await onRetry();
-    setLoading(false);
-  };
   const handlePressIn = () => {
     Animated.spring(buttonScale, {
       toValue: 0.97,

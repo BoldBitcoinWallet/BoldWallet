@@ -69,6 +69,10 @@ import {
   HeaderNetwork,
 } from '../components/Header';
 import LocalCache from '../services/LocalCache';
+import DeviceInfo from 'react-native-device-info';
+import QRCodeModal from '../components/QRCodeModal';
+import CryptoJS from 'crypto-js';
+
 const {BBMTLibNativeModule} = NativeModules;
 
 type RouteParams = {
@@ -103,6 +107,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [isSignedPSBTModalVisible, setIsSignedPSBTModalVisible] =
     useState(false);
   const [signedPsbt, setSignedPsbt] = useState<string | null>(null);
+  const [isExtensionPairingQrVisible, setIsExtensionPairingQrVisible] =
+    useState(false);
+  const [extensionPairingQrValue, setExtensionPairingQrValue] = useState('');
   // Additional state variables needed by fetchData
   const [_pendingSent, _setPendingSent] = useState(0);
   const [isLegacyWalletModalVisible, setIsLegacyWalletModalVisible] =
@@ -1741,11 +1748,152 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     setScannedNetwork(''); // Reset scanned network
     setComputedFromAddress(''); // Reset computed from address
   };
+  const buildExtensionPairingPayload = useCallback(async (): Promise<string | null> => {
+    try {
+      const keyshareJSON = await EncryptedStorage.getItem('keyshare');
+      if (!keyshareJSON) return null;
+      const ks = JSON.parse(keyshareJSON);
+      if (!ks.pub_key || !ks.chain_code_hex) return null;
+
+      const normalizedNetwork =
+        network === 'testnet3' ? 'testnet' : (network || 'mainnet');
+      const deviceId =
+        (DeviceInfo as any).getUniqueIdSync?.() || DeviceInfo.getUniqueId?.() || '';
+
+      // Generate ephemeral code and encrypt payload
+      const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit
+      const iv = CryptoJS.lib.WordArray.random(16);
+      const plaintext = JSON.stringify({
+        pk: ks.pub_key,
+        cc: ks.chain_code_hex,
+      });
+      const key = CryptoJS.SHA256(code);
+      const ciphertext = CryptoJS.AES.encrypt(plaintext, key, {iv}).toString();
+
+      const cipherUrl = ciphertext
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/g, '');
+      const ivHex = CryptoJS.enc.Hex.stringify(iv);
+      return `pair:${cipherUrl}${ivHex}${code}`;
+    } catch (err) {
+      dbg('WalletHome: Failed to build extension pairing payload:', err);
+      return null;
+    }
+  }, [network, address]);
+
+  const showExtensionPairingQr = useCallback(async () => {
+    const qrValue = await buildExtensionPairingPayload();
+    if (qrValue) {
+      setExtensionPairingQrValue(qrValue);
+      setIsExtensionPairingQrVisible(true);
+      Toast.show({
+        type: 'success',
+        text1: 'Pairing ready',
+        text2: 'Show this QR to the Chrome extension.',
+        position: 'top',
+      });
+    } else {
+      Alert.alert(
+        'Pairing data unavailable',
+        'Could not generate pairing response. Ensure keyshare is present.',
+      );
+    }
+  }, [buildExtensionPairingPayload]);
   // Process scanned QR data: if raw data is a valid address for current network, open SendBitcoinModal; else try decodeSendBitcoinQR
   const processScannedQRData = useCallback(
-    (qrData: string) => {
+    async (qrData: string) => {
       dbg('Scanned QR data:', qrData.substring(0, 100));
       const trimmed = qrData.trim();
+
+      // Quick heuristics to bypass send parsing for pairing/PSBT payloads
+      const isLikelyPSBT = (value: string) => {
+        const normalized = value.toLowerCase();
+        if (normalized.startsWith('psbt:')) return true;
+        // Base64 PSBT usually starts with cHNid or is long and base64-ish
+        if (/^[a-z0-9+/=]+$/i.test(value) && value.length > 80) {
+          return value.startsWith('cHNid');
+        }
+        return false;
+      };
+
+      // Accept pairing responses (from Chrome extension) and route to Devices Pairing
+      const tryExtractPairing = (value: string) => {
+        const normalizeCandidate = (obj: any) => {
+          if (!obj || typeof obj !== 'object') return null;
+          const candidate = obj.data || obj;
+          const pk = candidate.publicKey || candidate.public_key;
+          const cc = candidate.chainCode || candidate.chain_code;
+          if (pk || cc) {
+            return {
+              ...candidate,
+              publicKey: pk || '',
+              chainCode: cc || '',
+              deviceId: candidate.deviceId || obj.deviceId,
+              network: candidate.network || obj.network,
+              type: 'pairing_response',
+            };
+          }
+          return null;
+        };
+        // First pass: JSON parse
+        try {
+          const parsed = JSON.parse(value);
+          const normalized = normalizeCandidate(parsed);
+          if (normalized) return normalized;
+        } catch {}
+        // Second pass: simple slash-delimited pubkey/chaincode[/checksum]
+        const parts = value.split('/');
+        if (parts.length >= 2) {
+          const [pk, cc] = parts;
+          const hexRe = /^[0-9a-fA-F]{64,}$/;
+          if (hexRe.test(pk.trim()) && hexRe.test(cc.trim())) {
+            return {
+              publicKey: pk.trim(),
+              chainCode: cc.trim(),
+              type: 'pairing_response',
+            };
+          }
+        }
+        // Second pass: heuristic extraction from plain string
+        const pkMatch = value.match(/public[_\s-]?key\"?\s*[:=]\s*\"([^\"\n]+)\"/i);
+        const ccMatch = value.match(/chain[_\s-]?code\"?\s*[:=]\s*\"([^\"\n]+)\"/i);
+        if (pkMatch || ccMatch) {
+          return {
+            publicKey: pkMatch ? pkMatch[1] : '',
+            chainCode: ccMatch ? ccMatch[1] : '',
+            type: 'pairing_response',
+          };
+        }
+        return null;
+      };
+      const pairingPayload = tryExtractPairing(trimmed);
+      if (pairingPayload) {
+        await showExtensionPairingQr();
+        return;
+      }
+
+      // Allow PSBT QR codes to go to signing flow instead of throwing a send error
+      if (isLikelyPSBT(trimmed)) {
+        navigation.dispatch(
+          CommonActions.navigate({
+            name: 'Devices Pairing',
+            params: {
+              mode: 'sign_psbt',
+              psbtBase64: trimmed.replace(/^psbt:/i, ''),
+              network: network || 'mainnet',
+            },
+          }),
+        );
+        return;
+      }
+
+      // Heuristic catch-all: if the string mentions pairing/publicKey/chainCode, treat it as pairing
+      if (/pairing_response|publickey|chaincode/i.test(trimmed)) {
+        await showExtensionPairingQr();
+        return;
+      }
+
       // Support BIP-21: "bitcoin:<address>" or "bitcoin:<address>?amount=..."
       const addressCandidate = trimmed.startsWith('bitcoin:')
         ? trimmed.replace(/^bitcoin:/i, '').split('?')[0].trim()
@@ -1802,6 +1950,17 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       !decoded.amountSats ||
       !decoded.feeSats
     ) {
+        // Retry pairing extraction one last time before showing an error/toast
+        const fallbackPairing = tryExtractPairing(trimmed);
+        if (fallbackPairing) {
+          await showExtensionPairingQr();
+          return;
+        }
+        // If payload looks non-send (JSON-ish, PSBT-ish, or pairing-ish), don't throw send error
+        if (/\{|\}|"|pairing|public[_\s-]?key|chain[_\s-]?code|psbt/i.test(trimmed)) {
+          await showExtensionPairingQr();
+          return;
+        }
       const now = Date.now();
       if (
         lastInvalidQrRef.current.data === qrData &&
@@ -1873,7 +2032,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       setIsTransportModalVisible(true);
     }, 300);
     },
-    [network],
+    [network, showExtensionPairingQr],
   );
   // Handle QR scan for send bitcoin data
   const handleScanQRForSend = useCallback(() => {
@@ -2287,6 +2446,16 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           }}
         />
       )}
+      <QRCodeModal
+        visible={isExtensionPairingQrVisible}
+        onClose={() => setIsExtensionPairingQrVisible(false)}
+        title="Bold Extension • Pairing Response"
+        value={extensionPairingQrValue}
+        network={network as 'mainnet' | 'testnet'}
+        showShareButton={true}
+        topRightClose={true}
+        nonDismissible={false}
+      />
     </SafeAreaView>
   );
 };
