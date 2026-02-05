@@ -1,4 +1,4 @@
-import React, {useCallback, useState, useEffect} from 'react';
+import React, {useCallback, useState, useEffect, useRef} from 'react';
 import {View, Text, Image, ScrollView, Alert, StyleSheet} from 'react-native';
 import AppPressable from './AppPressable';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -99,6 +99,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   >(null);
   const [isExtensionResponseQrVisible, setIsExtensionResponseQrVisible] =
     useState(false);
+  const extensionBindHandledRef = useRef(false);
   const [isWalletInfoExpanded, setIsWalletInfoExpanded] = useState(true);
   const [isCapabilitiesExpanded, setIsCapabilitiesExpanded] = useState(false);
   const [isBoldExtensionExpanded, setIsBoldExtensionExpanded] = useState(false);
@@ -306,6 +307,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
 
   const handleExtensionPairingCodeScanned = useCallback(
     async (rawData: string) => {
+      if (extensionBindHandledRef.current) return;
       const pairingCode = parsePairingCodeFromScannedData(rawData);
       if (!pairingCode) {
         Alert.alert(
@@ -321,6 +323,8 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
         setIsExtensionBindScannerVisible(false);
         return;
       }
+      extensionBindHandledRef.current = true;
+      setIsExtensionBindScannerVisible(false);
       try {
         const data = `${pubKey}${chainCode}${pairingCode}`;
         const hash = await BBMTLibNativeModule.sha256(data);
@@ -332,12 +336,11 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
           'hex',
         ).toString('base64');
         setExtensionResponseQrData(qrData);
-        setIsExtensionBindScannerVisible(false);
         setIsExtensionResponseQrVisible(true);
       } catch (e) {
         dbg('Extension bind qrData computation failed:', e);
+        extensionBindHandledRef.current = false;
         Alert.alert('Error', 'Failed to generate response QR.');
-        setIsExtensionBindScannerVisible(false);
       }
     },
     [keyshareInfo?.pubKey, keyshareInfo?.chainCode],
@@ -1115,6 +1118,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
         onClose={() => {
           setIsExtensionResponseQrVisible(false);
           setExtensionResponseQrData(null);
+          extensionBindHandledRef.current = false;
         }}
         title="Bold Extension • Scan this QR"
         value={extensionResponseQrData || ''}
