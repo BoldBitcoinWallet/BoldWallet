@@ -385,6 +385,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                       size={180}
                       copyContent={qrData}
                       toastMessage="Send data copied to clipboard"
+                      copyDisabled={true}
                       style={[styles.qrCodeContainer, styles.noPadding]}
                     />
                   </View>

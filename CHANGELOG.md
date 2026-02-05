@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.1.15] - 2026-02-05
+
+### Changed
+- **Send Bitcoin: sats-aware amount input**: `SendBitcoinModal` now respects the BTC/Sats toggle from Wallet Home for the main amount field, including label/placeholder (“Amount in sats” vs “Amount in BTC”), numeric keyboard selection, and Max behavior, while keeping all internal math in BTC and sending in sats.
+- **Send Bitcoin: fee estimation UX**: Added consistent fee error handling with a unified “Fee Estimation Error” dialog that offers Retry/Cancel; prevents overlapping fee requests (Max is disabled while estimating), and ensures no alerts or side effects fire once the modal is closed or unmounted.
+- **Send Bitcoin: address validation**: Uses network-aware validation via `validateBitcoinAddressEnhanced` so fee estimation, Max, QR imports, and send confirmation all require an address valid for the currently selected network, with inline error messaging.
+- **Static QR copy behavior**: The “Scan on another device to auto fill” QR in `TransportModeSelector` is now explicitly non-copiable via `copyDisabled`, while other QR usages remain copiable by default.
+
+### Fixed
+- **Device QR toast ordering**: Resolved a Toast host conflict so QR-related toasts on the Devices screen now appear above their modals (no longer hidden underneath overlays).
+
+### Technical Details
+- **Version bump**: Updated Android `versionCode`/`versionName`, iOS `CURRENT_PROJECT_VERSION`/`MARKETING_VERSION`, and `package.json` to `2.1.15`.
+
 ## [2.1.14] - 2026-02-03
 
 ### Added
