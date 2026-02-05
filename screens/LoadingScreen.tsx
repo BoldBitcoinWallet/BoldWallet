@@ -11,9 +11,34 @@ import {
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useTheme} from '../theme';
+
+// Error boundary for particle animation - on old/slow devices rendering many Animated.Image can crash
+class ParticlesErrorBoundary extends React.Component<
+  {onError: () => void; children: React.ReactNode},
+  {hasError: boolean}
+> {
+  state = {hasError: false};
+
+  static getDerivedStateFromError() {
+    return {hasError: true};
+  }
+
+  componentDidCatch() {
+    this.props.onError();
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return null;
+    }
+    return this.props.children;
+  }
+}
+
 const LoadingScreen = ({onRetry}: any) => {
   const {theme} = useTheme();
   const [loading, setLoading] = useState(false);
+  const [particlesEnabled, setParticlesEnabled] = useState(true);
   const fadeAnim = useRef(new Animated.Value(0.6)).current;
   const buttonScale = useRef(new Animated.Value(1)).current;
   const iconPulse = useRef(new Animated.Value(1)).current;
@@ -85,106 +110,125 @@ const LoadingScreen = ({onRetry}: any) => {
       }),
     ]).start();
   };
-  const createFountain = (count: number = 2, intensity: number = 1) => {
-    // Continuous vapor-like emission from the logo center
-    const newParticles: Array<{
-      id: number;
-      x: Animated.Value;
-      y: Animated.Value;
-      opacity: Animated.Value;
-      scale: Animated.Value;
-      rotate: Animated.Value;
-      duration: number;
-      size: number;
-    }> = [];
-    for (let i = 0; i < count; i++) {
-      // Start positions jittered by turbulence for better separation
-      const originJitterX =
-        (Math.random() - 0.5) * (30 + 18 * turbulenceRef.current);
-      const originJitterY =
-        (Math.random() - 0.5) * (20 + 10 * turbulenceRef.current);
-      newParticles.push({
-        id: Date.now() + i,
-        x: new Animated.Value(originJitterX),
-        y: new Animated.Value(originJitterY),
-        opacity: new Animated.Value(0.9),
-        scale: new Animated.Value(0.7),
-        rotate: new Animated.Value(0),
-        duration: (2500 + Math.floor(Math.random() * 1400)) * intensity, // slower
-        size:
-          10 +
-          Math.floor(Math.random() * 8) +
-          Math.floor(3 * turbulenceRef.current),
-      });
+  const disableParticles = () => {
+    setParticlesEnabled(false);
+    setParticles([]);
+    if (emitterRef.current != null) {
+      clearInterval(emitterRef.current as unknown as number);
+      emitterRef.current = null;
     }
-    setParticles(prev => [...prev, ...newParticles]);
-    // Animate each particle along a gentle upward drift with slight jitter
-    newParticles.forEach(p => {
-      // Mostly vertical, slight horizontal jitter; amplified by turbulence
-      const turbulence = 1 + turbulenceRef.current * 1.2;
-      // Increase horizontal spread substantially with turbulence
-      const baseSpread = 40;
-      const extraSpread = 90 * turbulence; // scales with turbulence level
-      const dx = (Math.random() - 0.5) * (baseSpread + extraSpread);
-      const distance = (160 + Math.random() * 220) * (1 + 0.6 * turbulence);
-      const dy = -distance; // upward
-      const rotateTo = ((Math.random() * 60 - 30) * Math.PI) / 180; // small rotation
-      const scaleTo = 0.9 + Math.random() * 0.4;
-      Animated.parallel(
-        [
-          Animated.timing(p.x, {
-            toValue: dx,
-            duration: p.duration,
-            easing: Easing.inOut(Easing.quad),
-            useNativeDriver: true,
-          }),
-          Animated.timing(p.y, {
-            toValue: dy,
-            duration: p.duration,
-            easing: Easing.linear,
-            useNativeDriver: true,
-          }),
-          Animated.timing(p.opacity, {
-            toValue: 0,
-            duration: p.duration,
-            easing: Easing.inOut(Easing.quad),
-            useNativeDriver: true,
-          }),
-          Animated.timing(p.scale, {
-            toValue: scaleTo,
-            duration: p.duration,
-            easing: Easing.inOut(Easing.quad),
-            useNativeDriver: true,
-          }),
-          Animated.timing(p.rotate, {
-            toValue: rotateTo,
-            duration: p.duration,
-            easing: Easing.inOut(Easing.quad),
-            useNativeDriver: true,
-          }),
-        ],
-        {stopTogether: true},
-      ).start(() => {
-        // Remove particle after animation finishes
-        setParticles(prev => prev.filter(part => part.id !== p.id));
+  };
+
+  const createFountain = (count: number = 2, intensity: number = 1) => {
+    if (!particlesEnabled) return;
+    try {
+      // Continuous vapor-like emission from the logo center
+      const newParticles: Array<{
+        id: number;
+        x: Animated.Value;
+        y: Animated.Value;
+        opacity: Animated.Value;
+        scale: Animated.Value;
+        rotate: Animated.Value;
+        duration: number;
+        size: number;
+      }> = [];
+      for (let i = 0; i < count; i++) {
+        // Start positions jittered by turbulence for better separation
+        const originJitterX =
+          (Math.random() - 0.5) * (30 + 18 * turbulenceRef.current);
+        const originJitterY =
+          (Math.random() - 0.5) * (20 + 10 * turbulenceRef.current);
+        newParticles.push({
+          id: Date.now() + i,
+          x: new Animated.Value(originJitterX),
+          y: new Animated.Value(originJitterY),
+          opacity: new Animated.Value(0.9),
+          scale: new Animated.Value(0.7),
+          rotate: new Animated.Value(0),
+          duration: (2500 + Math.floor(Math.random() * 1400)) * intensity, // slower
+          size:
+            10 +
+            Math.floor(Math.random() * 8) +
+            Math.floor(3 * turbulenceRef.current),
+        });
+      }
+      setParticles(prev => [...prev, ...newParticles]);
+      // Animate each particle along a gentle upward drift with slight jitter
+      newParticles.forEach(p => {
+        // Mostly vertical, slight horizontal jitter; amplified by turbulence
+        const turbulence = 1 + turbulenceRef.current * 1.2;
+        // Increase horizontal spread substantially with turbulence
+        const baseSpread = 40;
+        const extraSpread = 90 * turbulence; // scales with turbulence level
+        const dx = (Math.random() - 0.5) * (baseSpread + extraSpread);
+        const distance = (160 + Math.random() * 220) * (1 + 0.6 * turbulence);
+        const dy = -distance; // upward
+        const rotateTo = ((Math.random() * 60 - 30) * Math.PI) / 180; // small rotation
+        const scaleTo = 0.9 + Math.random() * 0.4;
+        Animated.parallel(
+          [
+            Animated.timing(p.x, {
+              toValue: dx,
+              duration: p.duration,
+              easing: Easing.inOut(Easing.quad),
+              useNativeDriver: true,
+            }),
+            Animated.timing(p.y, {
+              toValue: dy,
+              duration: p.duration,
+              easing: Easing.linear,
+              useNativeDriver: true,
+            }),
+            Animated.timing(p.opacity, {
+              toValue: 0,
+              duration: p.duration,
+              easing: Easing.inOut(Easing.quad),
+              useNativeDriver: true,
+            }),
+            Animated.timing(p.scale, {
+              toValue: scaleTo,
+              duration: p.duration,
+              easing: Easing.inOut(Easing.quad),
+              useNativeDriver: true,
+            }),
+            Animated.timing(p.rotate, {
+              toValue: rotateTo,
+              duration: p.duration,
+              easing: Easing.inOut(Easing.quad),
+              useNativeDriver: true,
+            }),
+          ],
+          {stopTogether: true},
+        ).start(() => {
+          // Remove particle after animation finishes
+          setParticles(prev => prev.filter(part => part.id !== p.id));
+        });
       });
-    });
+    } catch {
+      disableParticles();
+    }
   };
   const handleLogoPress = () => {
-    // Stronger turbulence boost that decays more slowly
-    turbulenceRef.current = Math.min(2, turbulenceRef.current + 1.2);
-    // Emit a larger burst to emphasize spread
-    createFountain(7, 1);
-    // Decay turbulence
-    const decaySteps = 8;
-    let step = 0;
-    const decayer = setInterval(() => {
-      step += 1;
-      turbulenceRef.current = Math.max(0, turbulenceRef.current - 0.2);
-      if (step >= decaySteps) {
-        clearInterval(decayer);
-      }
-    }, 160);
+    if (!particlesEnabled) return;
+    try {
+      // Stronger turbulence boost that decays more slowly
+      turbulenceRef.current = Math.min(2, turbulenceRef.current + 1.2);
+      // Emit a larger burst to emphasize spread
+      createFountain(7, 1);
+      // Decay turbulence
+      const decaySteps = 8;
+      let step = 0;
+      const decayer = setInterval(() => {
+        step += 1;
+        turbulenceRef.current = Math.max(0, turbulenceRef.current - 0.2);
+        if (step >= decaySteps) {
+          clearInterval(decayer);
+        }
+      }, 160);
+    } catch {
+      disableParticles();
+    }
   };
   const startLogoTouch = () => {
     if (emitterRef.current != null) {
@@ -197,12 +241,21 @@ const LoadingScreen = ({onRetry}: any) => {
       friction: 5,
       tension: 180,
     }).start();
-    // Slight turbulence for wider spread while pressed
-    turbulenceRef.current = Math.min(1.2, turbulenceRef.current + 0.6);
-    // Start continuous emission while touch is active
-    emitterRef.current = setInterval(() => {
-      createFountain(2, 1);
-    }, 140) as unknown as number;
+    if (!particlesEnabled) return;
+    try {
+      // Slight turbulence for wider spread while pressed
+      turbulenceRef.current = Math.min(1.2, turbulenceRef.current + 0.6);
+      // Start continuous emission while touch is active
+      emitterRef.current = setInterval(() => {
+        try {
+          createFountain(2, 1);
+        } catch {
+          disableParticles();
+        }
+      }, 140) as unknown as number;
+    } catch {
+      disableParticles();
+    }
   };
   const endLogoTouch = () => {
     if (emitterRef.current != null) {
@@ -427,40 +480,44 @@ const LoadingScreen = ({onRetry}: any) => {
               const {width, height} = e.nativeEvent.layout;
               logoLayoutRef.current = {width, height};
             }}>
-            {/* Particles overlay */}
-            <View style={styles.particlesContainer}>
-              {particles.map(p => {
-                const rotateInterpolate = p.rotate.interpolate({
-                  inputRange: [-Math.PI, Math.PI],
-                  outputRange: ['-180deg', '180deg'],
-                });
-                const centerX = logoLayoutRef.current.width / 2;
-                const centerY = logoLayoutRef.current.height / 2;
-                return (
-                  <Animated.Image
-                    key={p.id}
-                    source={require('../assets/bitcoin-icon.png')}
-                    style={[
-                      styles.particle,
-                      {
-                        left: centerX - p.size / 2,
-                        top: centerY - p.size / 2,
-                        width: p.size,
-                        height: p.size,
-                        opacity: p.opacity,
-                        transform: [
-                          {translateX: p.x},
-                          {translateY: p.y},
-                          {scale: p.scale},
-                          {rotate: rotateInterpolate},
-                        ],
-                      },
-                    ]}
-                    resizeMode="contain"
-                  />
-                );
-              })}
-            </View>
+            {/* Particles overlay - wrapped in error boundary for old Android devices */}
+            {particlesEnabled && (
+              <ParticlesErrorBoundary onError={disableParticles}>
+                <View style={styles.particlesContainer}>
+                  {particles.map(p => {
+                    const rotateInterpolate = p.rotate.interpolate({
+                      inputRange: [-Math.PI, Math.PI],
+                      outputRange: ['-180deg', '180deg'],
+                    });
+                    const centerX = logoLayoutRef.current.width / 2;
+                    const centerY = logoLayoutRef.current.height / 2;
+                    return (
+                      <Animated.Image
+                        key={p.id}
+                        source={require('../assets/bitcoin-icon.png')}
+                        style={[
+                          styles.particle,
+                          {
+                            left: centerX - p.size / 2,
+                            top: centerY - p.size / 2,
+                            width: p.size,
+                            height: p.size,
+                            opacity: p.opacity,
+                            transform: [
+                              {translateX: p.x},
+                              {translateY: p.y},
+                              {scale: p.scale},
+                              {rotate: rotateInterpolate},
+                            ],
+                          },
+                        ]}
+                        resizeMode="contain"
+                      />
+                    );
+                  })}
+                </View>
+              </ParticlesErrorBoundary>
+            )}
             <Pressable
               onPress={handleLogoPress}
               onPressIn={startLogoTouch}
