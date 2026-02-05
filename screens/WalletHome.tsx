@@ -9,6 +9,7 @@ import {
   PermissionsAndroid,
   Linking,
   ActivityIndicator,
+  StyleSheet,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
 import Animated, {
@@ -57,6 +58,7 @@ import WalletSkeleton from '../components/WalletSkeleton';
 import {useUser} from '../context/UserContext';
 import CurrencySelector from '../components/CurrencySelector';
 import TransportModeSelector from '../components/TransportModeSelector';
+import QRCodeModal from '../components/QRCodeModal';
 import {createStyles} from '../components/Styles';
 import {
   CacheIndicator,
@@ -70,6 +72,18 @@ import {
 } from '../components/Header';
 import LocalCache from '../services/LocalCache';
 const {BBMTLibNativeModule} = NativeModules;
+
+/** Parse pairing_code from extension QR (e.g. "data: pairing_code=abc" or "pairing_code=abc") */
+function parsePairingCodeFromScannedData(raw: string): string | null {
+  const s = raw.trim();
+  const prefix = 'pairing_code=';
+  const i = s.indexOf(prefix);
+  if (i === -1) return null;
+  const after = s.slice(i + prefix.length);
+  const end = after.indexOf('&');
+  const code = end === -1 ? after.trim() : after.slice(0, end).trim();
+  return code || null;
+}
 
 type RouteParams = {
   txId?: string;
@@ -124,10 +138,57 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState('');
   const [isQRScannerVisible, setIsQRScannerVisible] = useState(false);
+  const [extensionResponseQrData, setExtensionResponseQrData] = useState<
+    string | null
+  >(null);
+  const [isExtensionResponseQrVisible, setIsExtensionResponseQrVisible] =
+    useState(false);
+  const extensionQrModalStyles = React.useMemo(
+    () => StyleSheet.create({qrPadding: {padding: 16}}),
+    [],
+  );
   const lastInvalidQrRef = useRef<{data: string; time: number}>({
     data: '',
     time: 0,
   });
+  const extensionBindAlertShownRef = useRef(false);
+
+  const proceedWithExtensionBind = useCallback(
+    async (pairingCode: string) => {
+      try {
+        const keyshareJSON = await EncryptedStorage.getItem('keyshare');
+        if (!keyshareJSON) {
+          extensionBindAlertShownRef.current = false;
+          Alert.alert('Error', 'Keyshare not found.');
+          return;
+        }
+        const keyshare = JSON.parse(keyshareJSON);
+        const pubKey = keyshare.pub_key || '';
+        const chainCode = keyshare.chain_code_hex || '';
+        if (!pubKey || !chainCode) {
+          extensionBindAlertShownRef.current = false;
+          Alert.alert('Error', 'Keyshare info is not available.');
+          return;
+        }
+        const data = `${pubKey}${chainCode}${pairingCode}`;
+        const hash = await BBMTLibNativeModule.sha256(data);
+        const checksum = hash.substring(0, 4);
+        const payload = `${pubKey}${chainCode}${checksum}`;
+        const qrDataBase64 = (global as any).Buffer.from(
+          payload,
+          'hex',
+        ).toString('base64');
+        setExtensionResponseQrData(qrDataBase64);
+        setIsExtensionResponseQrVisible(true);
+      } catch (e) {
+        dbg('Extension bind from scan failed:', e);
+        extensionBindAlertShownRef.current = false;
+        Alert.alert('Error', 'Failed to generate response QR.');
+      }
+    },
+    [],
+  );
+
   const [initialSendAddress, setInitialSendAddress] = useState<string | null>(
     null,
   );
@@ -1746,6 +1807,33 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     (qrData: string) => {
       dbg('Scanned QR data:', qrData.substring(0, 100));
       const trimmed = qrData.trim();
+
+      // Extension pairing: pairing_code=... from Bold extension QR
+      const pairingCode = parsePairingCodeFromScannedData(trimmed);
+      if (pairingCode) {
+        if (extensionBindAlertShownRef.current) return;
+        extensionBindAlertShownRef.current = true;
+        setIsQRScannerVisible(false);
+        Alert.alert(
+          'Bind Bold Extension?',
+          'You scanned a pairing code from the Bold Bitcoin browser extension. If you confirm, this app will show a QR code for the extension to scan and complete the binding. Only proceed if you started this on your extension.',
+          [
+            {
+              text: 'Cancel',
+              style: 'cancel',
+              onPress: () => {
+                extensionBindAlertShownRef.current = false;
+              },
+            },
+            {
+              text: 'Confirm',
+              onPress: () => proceedWithExtensionBind(pairingCode),
+            },
+          ],
+        );
+        return;
+      }
+
       // Support BIP-21: "bitcoin:<address>" or "bitcoin:<address>?amount=..."
       const addressCandidate = trimmed.startsWith('bitcoin:')
         ? trimmed.replace(/^bitcoin:/i, '').split('?')[0].trim()
@@ -1873,7 +1961,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       setIsTransportModalVisible(true);
     }, 300);
     },
-    [network],
+    [network, proceedWithExtensionBind],
   );
   // Handle QR scan for send bitcoin data
   const handleScanQRForSend = useCallback(() => {
@@ -2196,6 +2284,24 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         mode="single"
         title="Scan Send Bitcoin QR"
         subtitle="Point camera to Sending Device QR"
+      />
+      {/* Extension bind: response QR when scan detected pairing_code */}
+      <QRCodeModal
+        visible={isExtensionResponseQrVisible}
+        onClose={() => {
+          setIsExtensionResponseQrVisible(false);
+          setExtensionResponseQrData(null);
+          extensionBindAlertShownRef.current = false;
+        }}
+        title="Bold Extension • Scan this QR"
+        value={extensionResponseQrData || ''}
+        network={network as 'mainnet' | 'testnet'}
+        showShareButton={false}
+        topRightClose={true}
+        nonDismissible={false}
+        qrSize={320}
+        contentMaxWidth={400}
+        qrContentStyle={extensionQrModalStyles.qrPadding}
       />
       <LegacyWalletModal
         visible={isLegacyWalletModalVisible}

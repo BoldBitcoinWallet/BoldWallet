@@ -36,6 +36,12 @@ interface QRCodeModalProps {
   showShareButton?: boolean;
   topRightClose?: boolean;
   nonDismissible?: boolean;
+  /** QR code size in pixels. Default 200. Use larger (e.g. 320) for easier scanning. */
+  qrSize?: number;
+  /** Max width of modal content. Default 320. Use larger for a bigger QR modal. */
+  contentMaxWidth?: number;
+  /** Extra style for the QR container (e.g. larger padding for scanner quiet zone). */
+  qrContentStyle?: import('react-native').ViewStyle;
 }
 const QRCodeModal: React.FC<QRCodeModalProps> = ({
   visible,
@@ -46,17 +52,27 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
   showShareButton = false,
   topRightClose = false,
   nonDismissible = false,
+  qrSize = 200,
+  contentMaxWidth: contentMaxWidthProp,
+  qrContentStyle,
 }) => {
   const {theme} = useTheme();
   const styles = createStyles(theme);
   const qrRef = useRef<any>(null);
-  const staticStyles = useMemo(
-    () => StyleSheet.create({noPadding: {padding: 0}}),
-    [],
-  );
   const screenWidth = Dimensions.get('window').width;
-  const modalMaxWidth = 320;
+  const defaultModalMaxWidth = 320;
+  const modalMaxWidth = contentMaxWidthProp ?? defaultModalMaxWidth;
   const containerWidth = Math.min(screenWidth - 48, modalMaxWidth - 48); // Account for padding
+  const staticStyles = useMemo(
+    () =>
+      StyleSheet.create({
+        noPadding: {padding: 0},
+        contentWide: contentMaxWidthProp
+          ? {maxWidth: contentMaxWidthProp}
+          : {},
+      }),
+    [contentMaxWidthProp],
+  );
   
   // Memoize style to avoid re-creation on every render
   const valueTextStyle = useMemo(
@@ -141,7 +157,11 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
         onPress={nonDismissible ? undefined : handleClose}>
         <AppPressable
           onPress={e => e.stopPropagation()}>
-          <View style={styles.qrModalContent}>
+          <View
+            style={[
+              styles.qrModalContent,
+              staticStyles.contentWide,
+            ]}>
             {topRightClose ? (
               <View style={styles.qrModalHeader}>
                 <Text style={styles.qrModalHeaderTitle}>{title}</Text>
@@ -158,13 +178,14 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
             {value && (
               <StaticQRCode
                 value={value}
-                size={200}
+                size={qrSize}
                 copyContent={value}
                 toastMessage="Copied to clipboard"
                 getRef={ref => {
                   qrRef.current = ref;
                 }}
                 style={[styles.qrCodeContainer, staticStyles.noPadding]}
+                contentStyle={qrContentStyle}
               />
             )}
             {value && showShareButton && (

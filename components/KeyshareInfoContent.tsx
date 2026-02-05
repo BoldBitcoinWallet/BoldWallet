@@ -1,13 +1,5 @@
 import React, {useCallback, useState, useEffect} from 'react';
-import {
-  View,
-  Text,
-  Image,
-  ScrollView,
-  Alert,
-  NativeModules,
-  StyleSheet,
-} from 'react-native';
+import {View, Text, Image, ScrollView, Alert, StyleSheet} from 'react-native';
 import AppPressable from './AppPressable';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Animated, {
@@ -24,8 +16,20 @@ import {dbg} from '../utils';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
 import QRCodeModal from './QRCodeModal';
+import QRScanner from './QRScanner';
+import {BBMTLibNativeModule} from '../native_modules';
 
-const {BBMTLibNativeModule} = NativeModules;
+/** Parse pairing_code from extension QR data (e.g. "data: pairing_code=abc" or "pairing_code=abc") */
+function parsePairingCodeFromScannedData(raw: string): string | null {
+  const s = raw.trim();
+  const prefix = 'pairing_code=';
+  const i = s.indexOf(prefix);
+  if (i === -1) return null;
+  const after = s.slice(i + prefix.length);
+  const end = after.indexOf('&');
+  const code = end === -1 ? after.trim() : after.slice(0, end).trim();
+  return code || null;
+}
 interface KeyshareInfo {
   label: string;
   supportsLocal: boolean;
@@ -66,6 +70,13 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
           paddingBottom: 24,
         },
         walletInfoHintLink: {textDecorationLine: 'underline'},
+        bindExtensionDescription: {marginTop: 4, marginBottom: 8},
+        bindExtensionButton: {
+          flexDirection: 'row' as const,
+          justifyContent: 'center' as const,
+        },
+        bindExtensionButtonText: {marginLeft: 8},
+        extensionResponseQrPadding: {padding: 16},
       }),
     [theme.colors.background],
   );
@@ -81,8 +92,12 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
     'legacy' | 'segwitNative' | 'segwitCompatible' | null
   >(null);
   const [isNpubQrVisible, setIsNpubQrVisible] = useState(false);
-  const [pairingPubkeys, setPairingPubkeys] = useState<string>('');
-  const [isPairingPubkeysQrVisible, setIsPairingPubkeysQrVisible] =
+  const [isExtensionBindScannerVisible, setIsExtensionBindScannerVisible] =
+    useState(false);
+  const [extensionResponseQrData, setExtensionResponseQrData] = useState<
+    string | null
+  >(null);
+  const [isExtensionResponseQrVisible, setIsExtensionResponseQrVisible] =
     useState(false);
   const [isWalletInfoExpanded, setIsWalletInfoExpanded] = useState(true);
   const [isCapabilitiesExpanded, setIsCapabilitiesExpanded] = useState(false);
@@ -125,27 +140,6 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
       duration: 200,
     });
   }, [isWatchWalletExpanded, watchWalletRotationAnim]);
-
-  // Calculate pairing pubkeys with checksum
-  useEffect(() => {
-    const calculatePairingPubkeys = async () => {
-      if (keyshareInfo?.pubKey && keyshareInfo?.chainCode) {
-        try {
-          const payload = `${keyshareInfo.pubKey}/${keyshareInfo.chainCode}`;
-          const checksum = await BBMTLibNativeModule.sha256(payload);
-          const checksumLast4 = checksum.slice(-4);
-          setPairingPubkeys(`${payload}/${checksumLast4}`);
-        } catch (error) {
-          dbg('Failed to calculate pairing pubkeys checksum:', error);
-          setPairingPubkeys('');
-        }
-      } else {
-        setPairingPubkeys('');
-      }
-    };
-
-    calculatePairingPubkeys();
-  }, [keyshareInfo?.pubKey, keyshareInfo?.chainCode]);
 
   // Share text as file
   const shareTextAsFile = useCallback(
@@ -306,19 +300,48 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
     });
   }, [keyshareInfo]);
 
-  const handleCopyPairingPubkeys = useCallback(() => {
-    if (!pairingPubkeys) return;
-    Clipboard.setString(pairingPubkeys);
-    Toast.show({
-      type: 'success',
-      text1: 'Copied',
-      text2: 'Pairing pubkeys copied to clipboard',
-    });
-  }, [pairingPubkeys]);
-
-  const handleShowPairingPubkeysQR = useCallback(() => {
-    setIsPairingPubkeysQrVisible(true);
+  const handleBindExtensionPress = useCallback(() => {
+    setIsExtensionBindScannerVisible(true);
   }, []);
+
+  const handleExtensionPairingCodeScanned = useCallback(
+    async (rawData: string) => {
+      const pairingCode = parsePairingCodeFromScannedData(rawData);
+      if (!pairingCode) {
+        Alert.alert(
+          'Invalid QR',
+          'This QR code does not contain a pairing_code. Please scan the QR shown by the Bold extension.',
+        );
+        return;
+      }
+      const pubKey = keyshareInfo?.pubKey;
+      const chainCode = keyshareInfo?.chainCode;
+      if (!pubKey || !chainCode) {
+        Alert.alert('Error', 'Keyshare info is not available.');
+        setIsExtensionBindScannerVisible(false);
+        return;
+      }
+      try {
+        const data = `${pubKey}${chainCode}${pairingCode}`;
+        const hash = await BBMTLibNativeModule.sha256(data);
+        const checksum = hash.substring(0, 4);
+        // 66 + 64 + 4 = 134 characters
+        // Convert to hex string, then to base64
+        const qrData = Buffer.from(
+          `${pubKey}${chainCode}${checksum}`,
+          'hex',
+        ).toString('base64');
+        setExtensionResponseQrData(qrData);
+        setIsExtensionBindScannerVisible(false);
+        setIsExtensionResponseQrVisible(true);
+      } catch (e) {
+        dbg('Extension bind qrData computation failed:', e);
+        Alert.alert('Error', 'Failed to generate response QR.');
+        setIsExtensionBindScannerVisible(false);
+      }
+    },
+    [keyshareInfo?.pubKey, keyshareInfo?.chainCode],
+  );
 
   const handleToggleWalletInfo = useCallback(() => {
     const newValue = !isWalletInfoExpanded;
@@ -458,7 +481,6 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
     opacity: watchWalletContentAnim.value,
   }));
 
-
   return (
     <SafeAreaView
       style={screenStyles.safeArea}
@@ -476,599 +498,571 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
         scrollEventThrottle={16}
         directionalLockEnabled={true}
         alwaysBounceVertical={false}>
-              {keyshareInfo ? (
-                <>
-                  {/* Wallet Information Container */}
-                  <View style={styles.keyshareInfoCard}>
-                    <AppPressable
-                      style={styles.collapsibleHeader}
-                      onPress={handleToggleWalletInfo}
-                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                      <View style={styles.collapsibleHeaderContent}>
-                        <Image
-                          source={require('../assets/info-icon.png')}
-                          style={styles.collapsibleHeaderIcon}
-                          resizeMode="contain"
-                        />
-                        <Text style={styles.collapsibleHeaderTitle}>
-                          Wallet Information
-                        </Text>
-                      </View>
-                      <Animated.Text
-                        style={[
-                          styles.collapsibleChevron,
-                          walletInfoRotateStyle,
-                          {
-                            color: theme.colors.text,
-                          },
-                        ]}>
-                        ▶
-                      </Animated.Text>
-                    </AppPressable>
-                    {isWalletInfoExpanded && (
-                      <Animated.View
-                        style={[
-                          styles.collapsibleContent,
-                          walletInfoContentOpacityStyle,
-                        ]}>
-                        <View style={styles.walletInfoContent}>
-                          <View style={styles.walletInfoRow}>
-                            <Text style={styles.keyshareDetailLabel}>
-                              Fingerprint
-                            </Text>
-                            <AppPressable
-                              onPress={handleWalletIdPress}
-                              android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-                              style={styles.keyshareKeyContainerBadge}>
-                              <Text
-                                style={styles.keyshareKeyTextClickable}
-                                numberOfLines={1}
-                                ellipsizeMode="middle"
-                                adjustsFontSizeToFit={true}
-                                minimumFontScale={0.5}>
-                                {(
-                                  keyshareInfo.fingerprint || 'N/A'
-                                ).toUpperCase()}
-                              </Text>
-                            </AppPressable>
-                          </View>
-                          <View style={styles.walletInfoRow}>
-                            <Text style={styles.keyshareDetailLabel}>
-                              Keyshares
-                            </Text>
-                            <AppPressable
-                              onPress={handleWalletTypePress}
-                              android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-                              style={[
-                                styles.keyshareKeyContainerBadge,
-                                keyshareInfo.type === 'trio'
-                                  ? styles.keyshareBadgeTrio
-                                  : styles.keyshareBadgeDuo,
-                              ]}>
-                              <Text
-                                style={styles.keyshareBadgeText}
-                                adjustsFontSizeToFit={true}
-                                minimumFontScale={0.5}
-                                numberOfLines={1}>
-                                {keyshareInfo.type === 'trio'
-                                  ? 'Trio • 3 devices'
-                                  : 'Duo • 2 devices'}
-                              </Text>
-                            </AppPressable>
-                          </View>
-                          <View style={styles.walletInfoRow}>
-                            <Text style={styles.keyshareDetailLabel}>
-                              Keyshare ID
-                            </Text>
-                            <AppPressable
-                              onPress={handleKeyshareIdPress}
-                              android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-                              style={styles.keyshareKeyContainerBadge}>
-                              <Text
-                                style={styles.keyshareKeyTextClickable}
-                                numberOfLines={1}
-                                ellipsizeMode="middle"
-                                adjustsFontSizeToFit={true}
-                                minimumFontScale={0.5}>
-                                {keyshareInfo.label}
-                              </Text>
-                            </AppPressable>
-                          </View>
-                          {typeof keyshareInfo.createdAt === 'number' &&
-                            keyshareInfo.createdAt > 0 && (
-                              <View style={styles.walletInfoRow}>
-                                <Text style={styles.keyshareDetailLabel}>
-                                  Created At
-                                </Text>
-                                <AppPressable
-                                  onPress={handleCreatedAtPress}
-                                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-                                  style={styles.keyshareKeyContainerBadge}>
-                                  <Text
-                                    style={styles.keyshareKeyTextClickable}
-                                    numberOfLines={1}
-                                    adjustsFontSizeToFit={true}
-                                    minimumFontScale={0.5}>
-                                    {new Date(
-                                      keyshareInfo.createdAt,
-                                    ).toLocaleString()}
-                                  </Text>
-                                </AppPressable>
-                              </View>
-                            )}
-                        </View>
-                        {onOpenSettingsSection ? (
-                          <AppPressable
-                            onPress={() => {
-                              onOpenSettingsSection('backup');
-                            }}
-                            android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-                            accessible={true}
-                            accessibilityRole="link"
-                            accessibilityLabel="Open Settings Security section to backup keyshare">
-                            <Text
-                              style={[
-                                styles.walletInfoHint,
-                                screenStyles.walletInfoHintLink,
-                                {
-                                  fontSize: theme.fontSizes?.base || 14,
-                                  color:
-                                    theme.colors.background === '#121212' ||
-                                    theme.colors.background.includes('12')
-                                      ? theme.colors.secondary
-                                      : theme.colors.primary,
-                                },
-                              ]}>
-                              Settings &gt; Security to backup keyshare
-                            </Text>
-                          </AppPressable>
-                        ) : (
-                          <Text style={styles.walletInfoHint}>
-                            Settings &gt; Security to backup keyshare
-                          </Text>
-                        )}
-                      </Animated.View>
-                    )}
-                  </View>
-                  {/* Capabilities / connectivity summary */}
-                  <View style={styles.keyshareInfoCard}>
-                    <AppPressable
-                      style={styles.collapsibleHeader}
-                      onPress={handleToggleCapabilities}
-                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                      <View style={styles.collapsibleHeaderContent}>
-                        <Image
-                          source={require('../assets/capability-icon.png')}
-                          style={styles.collapsibleHeaderIcon}
-                          resizeMode="contain"
-                        />
-                        <Text style={styles.collapsibleHeaderTitle}>
-                          Capabilities
-                        </Text>
-                      </View>
-                      <Animated.Text
-                        style={[
-                          styles.collapsibleChevron,
-                          capabilitiesRotateStyle,
-                          {
-                            color: theme.colors.text,
-                          },
-                        ]}>
-                        ▶
-                      </Animated.Text>
-                    </AppPressable>
-                    {isCapabilitiesExpanded && (
-                      <Animated.View
-                        style={[
-                          styles.collapsibleContent,
-                          capabilitiesContentOpacityStyle,
-                        ]}>
-                        <View style={styles.keyshareDetailRow}>
-                          <Text style={styles.keyshareDetailLabel}>
-                            LAN / Hotspot
-                          </Text>
-                          <AppPressable
-                            onPress={handleLanHotspotPress}
-                            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                            <View
-                              style={[
-                                styles.keyshareStatusBadge,
-                                styles.keyshareStatusBadgeSuccess,
-                              ]}>
-                              <Text
-                                style={[
-                                  styles.keyshareStatusBadgeText,
-                                  styles.keyshareStatusBadgeTextSuccess,
-                                ]}>
-                                ✓ Supported
-                              </Text>
-                            </View>
-                          </AppPressable>
-                        </View>
-                        <View
-                          style={[
-                            styles.keyshareDetailRow,
-                            !(
-                              keyshareInfo.supportsNostr && keyshareInfo.npub
-                            ) && styles.keyshareDetailRowLast,
-                          ]}>
-                          <Text style={styles.keyshareDetailLabel}>Nostr</Text>
-                          <AppPressable
-                            onPress={handleNostrPress}
-                            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                            <View
-                              style={[
-                                styles.keyshareStatusBadge,
-                                keyshareInfo.supportsNostr
-                                  ? styles.keyshareStatusBadgeSuccess
-                                  : styles.keyshareStatusBadgeDisabled,
-                              ]}>
-                              <Text
-                                style={[
-                                  styles.keyshareStatusBadgeText,
-                                  keyshareInfo.supportsNostr
-                                    ? styles.keyshareStatusBadgeTextSuccess
-                                    : styles.keyshareStatusBadgeTextDisabled,
-                                ]}>
-                                {keyshareInfo.supportsNostr
-                                  ? '✓ Supported'
-                                  : 'Not enabled'}
-                              </Text>
-                            </View>
-                          </AppPressable>
-                        </View>
-                        {keyshareInfo.supportsNostr && keyshareInfo.npub && (
-                          <View
-                            style={[
-                              styles.keyshareKeyItem,
-                              styles.keyshareKeyItemLast,
-                            ]}>
-                            <Text style={styles.keyshareKeyLabel}>NPub</Text>
-                            <View style={styles.keyshareKeyContainer}>
-                              <AppPressable
-                                onPress={handleCopyNpub}
-                                android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-                                style={styles.keyshareKeyContainerBadge}>
-                                <Image
-                                  source={require('../assets/copy-icon.png')}
-                                  style={styles.keyshareBadgeCopyIcon}
-                                />
-                                <Text
-                                  style={styles.keyshareKeyTextClickable}
-                                  numberOfLines={1}
-                                  ellipsizeMode="middle">
-                                  {formatLongString(keyshareInfo.npub)}
-                                </Text>
-                              </AppPressable>
-                              <View style={styles.keyshareButtonsRow}>
-                                <AppPressable
-                                  onPress={handleShowNpubQR}
-                                  style={styles.keyshareCopyButton}>
-                                  <Image
-                                    source={require('../assets/qr-icon.png')}
-                                    style={styles.keyshareCopyIcon}
-                                  />
-                                </AppPressable>
-                              </View>
-                            </View>
-                          </View>
-                        )}
-                      </Animated.View>
-                    )}
-                  </View>
-                  {/* Bold Extension Section */}
-                  <View style={styles.watchWalletHeader}>
-                    <AppPressable
-                      style={styles.collapsibleHeader}
-                      onPress={handleToggleBoldExtension}
-                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                      <View style={styles.collapsibleHeaderContent}>
-                        <Image
-                          source={require('../assets/extension-icon.png')}
-                          style={styles.collapsibleHeaderIcon}
-                          resizeMode="contain"
-                        />
-                        <Text style={styles.watchWalletTitle}>
-                          Bold Web • Extension
-                        </Text>
-                      </View>
-                      <Animated.Text
-                        style={[
-                          styles.collapsibleChevron,
-                          boldExtensionRotateStyle,
-                          {
-                            color: theme.colors.text,
-                          },
-                        ]}>
-                        ▶
-                      </Animated.Text>
-                    </AppPressable>
-                    {isBoldExtensionExpanded && (
-                      <Animated.View
-                        style={[
-                          styles.collapsibleContent,
-                          boldExtensionContentOpacityStyle,
-                        ]}>
-                        <Text style={styles.watchWalletDescription}>
-                          This is a pubkey that should never be shared with
-                          anyone for privacy. It is only used to bind Bold
-                          Bitcoin Browser extension.
-                        </Text>
-                        <Text style={styles.watchWalletWarning}>
-                          ⚠️ This does NOT hold any private key or keyshare
-                          data.
-                        </Text>
-                        {pairingPubkeys && (
-                          <View
-                            style={[
-                              styles.watchWalletItem,
-                              styles.watchWalletItemLast,
-                            ]}>
-                            <Text style={styles.watchWalletItemLabel}>
-                              Pairing Pubkeys
-                            </Text>
-                            <View style={styles.watchWalletItemValueContainer}>
-                              <AppPressable
-                                onPress={handleCopyPairingPubkeys}
-                                android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-                                style={styles.keyshareKeyContainerBadge}>
-                                <Image
-                                  source={require('../assets/copy-icon.png')}
-                                  style={styles.keyshareBadgeCopyIcon}
-                                />
-                                <Text
-                                  style={styles.keyshareKeyTextClickable}
-                                  numberOfLines={1}>
-                                  {formatLongString(pairingPubkeys)}
-                                </Text>
-                              </AppPressable>
-                              <View style={styles.keyshareButtonsRow}>
-                                <AppPressable
-                                  onPress={handleShowPairingPubkeysQR}
-                                  style={styles.keyshareCopyButton}>
-                                  <Image
-                                    source={require('../assets/qr-icon.png')}
-                                    style={styles.keyshareCopyIcon}
-                                  />
-                                </AppPressable>
-                              </View>
-                            </View>
-                          </View>
-                        )}
-                      </Animated.View>
-                    )}
-                  </View>
-                  {/* Watch Wallet Header Section */}
-                  <View style={styles.watchWalletHeader}>
-                    <AppPressable
-                      style={styles.collapsibleHeader}
-                      onPress={handleToggleWatchWallet}
-                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                      <View style={styles.collapsibleHeaderContent}>
-                        <Image
-                          source={require('../assets/descriptor-icon.png')}
-                          style={styles.collapsibleHeaderIcon}
-                          resizeMode="contain"
-                        />
-                        <Text style={styles.watchWalletTitle}>
-                          Watch-Wallet • Export
-                        </Text>
-                      </View>
-                      <Animated.Text
-                        style={[
-                          styles.collapsibleChevron,
-                          watchWalletRotateStyle,
-                          {
-                            color: theme.colors.text,
-                          },
-                        ]}>
-                        ▶
-                      </Animated.Text>
-                    </AppPressable>
-                    {isWatchWalletExpanded && (
-                      <Animated.View
-                        style={[
-                          styles.collapsibleContent,
-                          watchWalletContentOpacityStyle,
-                        ]}>
-                        <Text style={styles.watchWalletDescription}>
-                          Import the output descriptor into Sparrow or another
-                          PSBT-capable wallet to create a watch-only wallet.
-                        </Text>
-                        <Text style={styles.watchWalletWarning}>
-                          ⚠️ Note: Taproot is not supported. Only Legacy, SegWit
-                          Native, and Nested SegWit address types are supported.
-                        </Text>
-                        <View>
-                          {/* Output Descriptors - One row per address type */}
-                          {keyshareInfo.outputDescriptors?.legacy && (
-                            <View
-                              style={[
-                                styles.watchWalletItem,
-                                !keyshareInfo.outputDescriptors?.segwitNative &&
-                                  !keyshareInfo.outputDescriptors
-                                    ?.segwitCompatible &&
-                                  styles.watchWalletItemLast,
-                              ]}>
-                              <Text style={styles.watchWalletItemLabel}>
-                                Output Descriptor (Legacy)
-                              </Text>
-                              <View
-                                style={styles.watchWalletItemValueContainer}>
-                                <AppPressable
-                                  onPress={() =>
-                                    handleCopyOutputDescriptor('legacy')
-                                  }
-                                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-                                  style={styles.keyshareKeyContainerBadge}>
-                                  <Image
-                                    source={require('../assets/copy-icon.png')}
-                                    style={styles.keyshareBadgeCopyIcon}
-                                  />
-                                  <Text
-                                    style={styles.keyshareKeyTextClickable}
-                                    numberOfLines={1}>
-                                    {formatLongString(
-                                      keyshareInfo.outputDescriptors.legacy ||
-                                        'N/A',
-                                    )}
-                                  </Text>
-                                </AppPressable>
-                                <View style={styles.keyshareButtonsRow}>
-                                  <AppPressable
-                                    onPress={() =>
-                                      handleShareOutputDescriptor('legacy')
-                                    }
-                                    style={styles.keyshareCopyButton}>
-                                    <Image
-                                      source={require('../assets/share-icon.png')}
-                                      style={styles.keyshareCopyIcon}
-                                    />
-                                  </AppPressable>
-                                  <AppPressable
-                                    onPress={() =>
-                                      handleShowOutputDescriptorQR('legacy')
-                                    }
-                                    style={styles.keyshareCopyButton}>
-                                    <Image
-                                      source={require('../assets/qr-icon.png')}
-                                      style={styles.keyshareCopyIcon}
-                                    />
-                                  </AppPressable>
-                                </View>
-                              </View>
-                            </View>
-                          )}
-                          {keyshareInfo.outputDescriptors?.segwitNative && (
-                            <View
-                              style={[
-                                styles.watchWalletItem,
-                                !keyshareInfo.outputDescriptors
-                                  ?.segwitCompatible &&
-                                  styles.watchWalletItemLast,
-                              ]}>
-                              <Text style={styles.watchWalletItemLabel}>
-                                Output Descriptor (Native Segwit)
-                              </Text>
-                              <View
-                                style={styles.watchWalletItemValueContainer}>
-                                <AppPressable
-                                  onPress={() =>
-                                    handleCopyOutputDescriptor('segwitNative')
-                                  }
-                                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-                                  style={styles.keyshareKeyContainerBadge}>
-                                  <Image
-                                    source={require('../assets/copy-icon.png')}
-                                    style={styles.keyshareBadgeCopyIcon}
-                                  />
-                                  <Text
-                                    style={styles.keyshareKeyTextClickable}
-                                    numberOfLines={1}>
-                                    {formatLongString(
-                                      keyshareInfo.outputDescriptors
-                                        .segwitNative || 'N/A',
-                                    )}
-                                  </Text>
-                                </AppPressable>
-                                <View style={styles.keyshareButtonsRow}>
-                                  <AppPressable
-                                    onPress={() =>
-                                      handleShareOutputDescriptor(
-                                        'segwitNative',
-                                      )
-                                    }
-                                    style={styles.keyshareCopyButton}>
-                                    <Image
-                                      source={require('../assets/share-icon.png')}
-                                      style={styles.keyshareCopyIcon}
-                                    />
-                                  </AppPressable>
-                                  <AppPressable
-                                    onPress={() =>
-                                      handleShowOutputDescriptorQR(
-                                        'segwitNative',
-                                      )
-                                    }
-                                    style={styles.keyshareCopyButton}>
-                                    <Image
-                                      source={require('../assets/qr-icon.png')}
-                                      style={styles.keyshareCopyIcon}
-                                    />
-                                  </AppPressable>
-                                </View>
-                              </View>
-                            </View>
-                          )}
-                          {keyshareInfo.outputDescriptors?.segwitCompatible && (
-                            <View style={styles.watchWalletItem}>
-                              <Text style={styles.watchWalletItemLabel}>
-                                Output Descriptor (Nested SegWit)
-                              </Text>
-                              <View
-                                style={styles.watchWalletItemValueContainer}>
-                                <AppPressable
-                                  onPress={() =>
-                                    handleCopyOutputDescriptor(
-                                      'segwitCompatible',
-                                    )
-                                  }
-                                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-                                  style={styles.keyshareKeyContainerBadge}>
-                                  <Image
-                                    source={require('../assets/copy-icon.png')}
-                                    style={styles.keyshareBadgeCopyIcon}
-                                  />
-                                  <Text
-                                    style={styles.keyshareKeyTextClickable}
-                                    numberOfLines={1}>
-                                    {formatLongString(
-                                      keyshareInfo.outputDescriptors
-                                        .segwitCompatible || 'N/A',
-                                    )}
-                                  </Text>
-                                </AppPressable>
-                                <View style={styles.keyshareButtonsRow}>
-                                  <AppPressable
-                                    onPress={() =>
-                                      handleShareOutputDescriptor(
-                                        'segwitCompatible',
-                                      )
-                                    }
-                                    style={styles.keyshareCopyButton}>
-                                    <Image
-                                      source={require('../assets/share-icon.png')}
-                                      style={styles.keyshareCopyIcon}
-                                    />
-                                  </AppPressable>
-                                  <AppPressable
-                                    onPress={() =>
-                                      handleShowOutputDescriptorQR(
-                                        'segwitCompatible',
-                                      )
-                                    }
-                                    style={styles.keyshareCopyButton}>
-                                    <Image
-                                      source={require('../assets/qr-icon.png')}
-                                      style={styles.keyshareCopyIcon}
-                                    />
-                                  </AppPressable>
-                                </View>
-                              </View>
-                            </View>
-                          )}
-                        </View>
-                      </Animated.View>
-                    )}
-                  </View>
-                </>
-              ) : (
-                <View style={styles.keyshareLoadingContainer}>
-                  <Text style={styles.modalTextCompact}>
-                    Loading keyshare information...
+        {keyshareInfo ? (
+          <>
+            {/* Wallet Information Container */}
+            <View style={styles.keyshareInfoCard}>
+              <AppPressable
+                style={styles.collapsibleHeader}
+                onPress={handleToggleWalletInfo}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                <View style={styles.collapsibleHeaderContent}>
+                  <Image
+                    source={require('../assets/info-icon.png')}
+                    style={styles.collapsibleHeaderIcon}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.collapsibleHeaderTitle}>
+                    Wallet Information
                   </Text>
                 </View>
+                <Animated.Text
+                  style={[
+                    styles.collapsibleChevron,
+                    walletInfoRotateStyle,
+                    {
+                      color: theme.colors.text,
+                    },
+                  ]}>
+                  ▶
+                </Animated.Text>
+              </AppPressable>
+              {isWalletInfoExpanded && (
+                <Animated.View
+                  style={[
+                    styles.collapsibleContent,
+                    walletInfoContentOpacityStyle,
+                  ]}>
+                  <View style={styles.walletInfoContent}>
+                    <View style={styles.walletInfoRow}>
+                      <Text style={styles.keyshareDetailLabel}>
+                        Fingerprint
+                      </Text>
+                      <AppPressable
+                        onPress={handleWalletIdPress}
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}
+                        style={styles.keyshareKeyContainerBadge}>
+                        <Text
+                          style={styles.keyshareKeyTextClickable}
+                          numberOfLines={1}
+                          ellipsizeMode="middle"
+                          adjustsFontSizeToFit={true}
+                          minimumFontScale={0.5}>
+                          {(keyshareInfo.fingerprint || 'N/A').toUpperCase()}
+                        </Text>
+                      </AppPressable>
+                    </View>
+                    <View style={styles.walletInfoRow}>
+                      <Text style={styles.keyshareDetailLabel}>Keyshares</Text>
+                      <AppPressable
+                        onPress={handleWalletTypePress}
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}
+                        style={[
+                          styles.keyshareKeyContainerBadge,
+                          keyshareInfo.type === 'trio'
+                            ? styles.keyshareBadgeTrio
+                            : styles.keyshareBadgeDuo,
+                        ]}>
+                        <Text
+                          style={styles.keyshareBadgeText}
+                          adjustsFontSizeToFit={true}
+                          minimumFontScale={0.5}
+                          numberOfLines={1}>
+                          {keyshareInfo.type === 'trio'
+                            ? 'Trio • 3 devices'
+                            : 'Duo • 2 devices'}
+                        </Text>
+                      </AppPressable>
+                    </View>
+                    <View style={styles.walletInfoRow}>
+                      <Text style={styles.keyshareDetailLabel}>
+                        Keyshare ID
+                      </Text>
+                      <AppPressable
+                        onPress={handleKeyshareIdPress}
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}
+                        style={styles.keyshareKeyContainerBadge}>
+                        <Text
+                          style={styles.keyshareKeyTextClickable}
+                          numberOfLines={1}
+                          ellipsizeMode="middle"
+                          adjustsFontSizeToFit={true}
+                          minimumFontScale={0.5}>
+                          {keyshareInfo.label}
+                        </Text>
+                      </AppPressable>
+                    </View>
+                    {typeof keyshareInfo.createdAt === 'number' &&
+                      keyshareInfo.createdAt > 0 && (
+                        <View style={styles.walletInfoRow}>
+                          <Text style={styles.keyshareDetailLabel}>
+                            Created At
+                          </Text>
+                          <AppPressable
+                            onPress={handleCreatedAtPress}
+                            android_ripple={{color: 'rgba(0,0,0,0.1)'}}
+                            style={styles.keyshareKeyContainerBadge}>
+                            <Text
+                              style={styles.keyshareKeyTextClickable}
+                              numberOfLines={1}
+                              adjustsFontSizeToFit={true}
+                              minimumFontScale={0.5}>
+                              {new Date(
+                                keyshareInfo.createdAt,
+                              ).toLocaleString()}
+                            </Text>
+                          </AppPressable>
+                        </View>
+                      )}
+                  </View>
+                  {onOpenSettingsSection ? (
+                    <AppPressable
+                      onPress={() => {
+                        onOpenSettingsSection('backup');
+                      }}
+                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}
+                      accessible={true}
+                      accessibilityRole="link"
+                      accessibilityLabel="Open Settings Security section to backup keyshare">
+                      <Text
+                        style={[
+                          styles.walletInfoHint,
+                          screenStyles.walletInfoHintLink,
+                          {
+                            fontSize: theme.fontSizes?.base || 14,
+                            color:
+                              theme.colors.background === '#121212' ||
+                              theme.colors.background.includes('12')
+                                ? theme.colors.secondary
+                                : theme.colors.primary,
+                          },
+                        ]}>
+                        Settings &gt; Security to backup keyshare
+                      </Text>
+                    </AppPressable>
+                  ) : (
+                    <Text style={styles.walletInfoHint}>
+                      Settings &gt; Security to backup keyshare
+                    </Text>
+                  )}
+                </Animated.View>
               )}
+            </View>
+            {/* Capabilities / connectivity summary */}
+            <View style={styles.keyshareInfoCard}>
+              <AppPressable
+                style={styles.collapsibleHeader}
+                onPress={handleToggleCapabilities}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                <View style={styles.collapsibleHeaderContent}>
+                  <Image
+                    source={require('../assets/capability-icon.png')}
+                    style={styles.collapsibleHeaderIcon}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.collapsibleHeaderTitle}>
+                    Capabilities
+                  </Text>
+                </View>
+                <Animated.Text
+                  style={[
+                    styles.collapsibleChevron,
+                    capabilitiesRotateStyle,
+                    {
+                      color: theme.colors.text,
+                    },
+                  ]}>
+                  ▶
+                </Animated.Text>
+              </AppPressable>
+              {isCapabilitiesExpanded && (
+                <Animated.View
+                  style={[
+                    styles.collapsibleContent,
+                    capabilitiesContentOpacityStyle,
+                  ]}>
+                  <View style={styles.keyshareDetailRow}>
+                    <Text style={styles.keyshareDetailLabel}>
+                      LAN / Hotspot
+                    </Text>
+                    <AppPressable
+                      onPress={handleLanHotspotPress}
+                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                      <View
+                        style={[
+                          styles.keyshareStatusBadge,
+                          styles.keyshareStatusBadgeSuccess,
+                        ]}>
+                        <Text
+                          style={[
+                            styles.keyshareStatusBadgeText,
+                            styles.keyshareStatusBadgeTextSuccess,
+                          ]}>
+                          ✓ Supported
+                        </Text>
+                      </View>
+                    </AppPressable>
+                  </View>
+                  <View
+                    style={[
+                      styles.keyshareDetailRow,
+                      !(keyshareInfo.supportsNostr && keyshareInfo.npub) &&
+                        styles.keyshareDetailRowLast,
+                    ]}>
+                    <Text style={styles.keyshareDetailLabel}>Nostr</Text>
+                    <AppPressable
+                      onPress={handleNostrPress}
+                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                      <View
+                        style={[
+                          styles.keyshareStatusBadge,
+                          keyshareInfo.supportsNostr
+                            ? styles.keyshareStatusBadgeSuccess
+                            : styles.keyshareStatusBadgeDisabled,
+                        ]}>
+                        <Text
+                          style={[
+                            styles.keyshareStatusBadgeText,
+                            keyshareInfo.supportsNostr
+                              ? styles.keyshareStatusBadgeTextSuccess
+                              : styles.keyshareStatusBadgeTextDisabled,
+                          ]}>
+                          {keyshareInfo.supportsNostr
+                            ? '✓ Supported'
+                            : 'Not enabled'}
+                        </Text>
+                      </View>
+                    </AppPressable>
+                  </View>
+                  {keyshareInfo.supportsNostr && keyshareInfo.npub && (
+                    <View
+                      style={[
+                        styles.keyshareKeyItem,
+                        styles.keyshareKeyItemLast,
+                      ]}>
+                      <Text style={styles.keyshareKeyLabel}>NPub</Text>
+                      <View style={styles.keyshareKeyContainer}>
+                        <AppPressable
+                          onPress={handleCopyNpub}
+                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}
+                          style={styles.keyshareKeyContainerBadge}>
+                          <Image
+                            source={require('../assets/copy-icon.png')}
+                            style={styles.keyshareBadgeCopyIcon}
+                          />
+                          <Text
+                            style={styles.keyshareKeyTextClickable}
+                            numberOfLines={1}
+                            ellipsizeMode="middle">
+                            {formatLongString(keyshareInfo.npub)}
+                          </Text>
+                        </AppPressable>
+                        <View style={styles.keyshareButtonsRow}>
+                          <AppPressable
+                            onPress={handleShowNpubQR}
+                            style={styles.keyshareCopyButton}>
+                            <Image
+                              source={require('../assets/qr-icon.png')}
+                              style={styles.keyshareCopyIcon}
+                            />
+                          </AppPressable>
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                </Animated.View>
+              )}
+            </View>
+            {/* Bold Extension Section */}
+            <View style={styles.watchWalletHeader}>
+              <AppPressable
+                style={styles.collapsibleHeader}
+                onPress={handleToggleBoldExtension}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                <View style={styles.collapsibleHeaderContent}>
+                  <Image
+                    source={require('../assets/extension-icon.png')}
+                    style={styles.collapsibleHeaderIcon}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.watchWalletTitle}>
+                    Bold Web • Extension
+                  </Text>
+                </View>
+                <Animated.Text
+                  style={[
+                    styles.collapsibleChevron,
+                    boldExtensionRotateStyle,
+                    {
+                      color: theme.colors.text,
+                    },
+                  ]}>
+                  ▶
+                </Animated.Text>
+              </AppPressable>
+              {isBoldExtensionExpanded && (
+                <Animated.View
+                  style={[
+                    styles.collapsibleContent,
+                    boldExtensionContentOpacityStyle,
+                  ]}>
+                  <Text style={styles.watchWalletDescription}>
+                    This is a pubkey that should never be shared with anyone for
+                    privacy. It is only used to bind Bold Bitcoin Browser
+                    extension.
+                  </Text>
+                  <Text style={styles.watchWalletWarning}>
+                    ⚠️ This does NOT hold any private keyshare data.
+                  </Text>
+                  {/* Bind Extension: scan extension QR then show response QR */}
+                  {keyshareInfo?.pubKey && keyshareInfo?.chainCode && (
+                    <View style={[styles.watchWalletItem]}>
+                      <Text
+                        style={[
+                          styles.watchWalletDescription,
+                          screenStyles.bindExtensionDescription,
+                        ]}>
+                        1. Scan the extension&apos;s QR with the mobile
+                        {'\n'}
+                        2. Scan back confirmation QR with the extension
+                      </Text>
+                      <AppPressable
+                        onPress={handleBindExtensionPress}
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}
+                        style={[
+                          styles.keyshareCopyButton,
+                          screenStyles.bindExtensionButton,
+                        ]}>
+                        <Image
+                          source={require('../assets/scan-icon.png')}
+                          style={styles.keyshareCopyIcon}
+                        />
+                        <Text
+                          style={[
+                            styles.keyshareCopyButtonText,
+                            screenStyles.bindExtensionButtonText,
+                          ]}>
+                          Bind Extension
+                        </Text>
+                      </AppPressable>
+                    </View>
+                  )}
+                </Animated.View>
+              )}
+            </View>
+            {/* Watch Wallet Header Section */}
+            <View style={styles.watchWalletHeader}>
+              <AppPressable
+                style={styles.collapsibleHeader}
+                onPress={handleToggleWatchWallet}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                <View style={styles.collapsibleHeaderContent}>
+                  <Image
+                    source={require('../assets/descriptor-icon.png')}
+                    style={styles.collapsibleHeaderIcon}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.watchWalletTitle}>
+                    Watch-Wallet • Export
+                  </Text>
+                </View>
+                <Animated.Text
+                  style={[
+                    styles.collapsibleChevron,
+                    watchWalletRotateStyle,
+                    {
+                      color: theme.colors.text,
+                    },
+                  ]}>
+                  ▶
+                </Animated.Text>
+              </AppPressable>
+              {isWatchWalletExpanded && (
+                <Animated.View
+                  style={[
+                    styles.collapsibleContent,
+                    watchWalletContentOpacityStyle,
+                  ]}>
+                  <Text style={styles.watchWalletDescription}>
+                    Import the output descriptor into Sparrow or another
+                    PSBT-capable wallet to create a watch-only wallet.
+                  </Text>
+                  <Text style={styles.watchWalletWarning}>
+                    ⚠️ Note: Taproot is not supported. Only Legacy, SegWit
+                    Native, and Nested SegWit address types are supported.
+                  </Text>
+                  <View>
+                    {/* Output Descriptors - One row per address type */}
+                    {keyshareInfo.outputDescriptors?.legacy && (
+                      <View
+                        style={[
+                          styles.watchWalletItem,
+                          !keyshareInfo.outputDescriptors?.segwitNative &&
+                            !keyshareInfo.outputDescriptors?.segwitCompatible &&
+                            styles.watchWalletItemLast,
+                        ]}>
+                        <Text style={styles.watchWalletItemLabel}>
+                          Output Descriptor (Legacy)
+                        </Text>
+                        <View style={styles.watchWalletItemValueContainer}>
+                          <AppPressable
+                            onPress={() => handleCopyOutputDescriptor('legacy')}
+                            android_ripple={{color: 'rgba(0,0,0,0.1)'}}
+                            style={styles.keyshareKeyContainerBadge}>
+                            <Image
+                              source={require('../assets/copy-icon.png')}
+                              style={styles.keyshareBadgeCopyIcon}
+                            />
+                            <Text
+                              style={styles.keyshareKeyTextClickable}
+                              numberOfLines={1}>
+                              {formatLongString(
+                                keyshareInfo.outputDescriptors.legacy || 'N/A',
+                              )}
+                            </Text>
+                          </AppPressable>
+                          <View style={styles.keyshareButtonsRow}>
+                            <AppPressable
+                              onPress={() =>
+                                handleShareOutputDescriptor('legacy')
+                              }
+                              style={styles.keyshareCopyButton}>
+                              <Image
+                                source={require('../assets/share-icon.png')}
+                                style={styles.keyshareCopyIcon}
+                              />
+                            </AppPressable>
+                            <AppPressable
+                              onPress={() =>
+                                handleShowOutputDescriptorQR('legacy')
+                              }
+                              style={styles.keyshareCopyButton}>
+                              <Image
+                                source={require('../assets/qr-icon.png')}
+                                style={styles.keyshareCopyIcon}
+                              />
+                            </AppPressable>
+                          </View>
+                        </View>
+                      </View>
+                    )}
+                    {keyshareInfo.outputDescriptors?.segwitNative && (
+                      <View
+                        style={[
+                          styles.watchWalletItem,
+                          !keyshareInfo.outputDescriptors?.segwitCompatible &&
+                            styles.watchWalletItemLast,
+                        ]}>
+                        <Text style={styles.watchWalletItemLabel}>
+                          Output Descriptor (Native Segwit)
+                        </Text>
+                        <View style={styles.watchWalletItemValueContainer}>
+                          <AppPressable
+                            onPress={() =>
+                              handleCopyOutputDescriptor('segwitNative')
+                            }
+                            android_ripple={{color: 'rgba(0,0,0,0.1)'}}
+                            style={styles.keyshareKeyContainerBadge}>
+                            <Image
+                              source={require('../assets/copy-icon.png')}
+                              style={styles.keyshareBadgeCopyIcon}
+                            />
+                            <Text
+                              style={styles.keyshareKeyTextClickable}
+                              numberOfLines={1}>
+                              {formatLongString(
+                                keyshareInfo.outputDescriptors.segwitNative ||
+                                  'N/A',
+                              )}
+                            </Text>
+                          </AppPressable>
+                          <View style={styles.keyshareButtonsRow}>
+                            <AppPressable
+                              onPress={() =>
+                                handleShareOutputDescriptor('segwitNative')
+                              }
+                              style={styles.keyshareCopyButton}>
+                              <Image
+                                source={require('../assets/share-icon.png')}
+                                style={styles.keyshareCopyIcon}
+                              />
+                            </AppPressable>
+                            <AppPressable
+                              onPress={() =>
+                                handleShowOutputDescriptorQR('segwitNative')
+                              }
+                              style={styles.keyshareCopyButton}>
+                              <Image
+                                source={require('../assets/qr-icon.png')}
+                                style={styles.keyshareCopyIcon}
+                              />
+                            </AppPressable>
+                          </View>
+                        </View>
+                      </View>
+                    )}
+                    {keyshareInfo.outputDescriptors?.segwitCompatible && (
+                      <View style={styles.watchWalletItem}>
+                        <Text style={styles.watchWalletItemLabel}>
+                          Output Descriptor (Nested SegWit)
+                        </Text>
+                        <View style={styles.watchWalletItemValueContainer}>
+                          <AppPressable
+                            onPress={() =>
+                              handleCopyOutputDescriptor('segwitCompatible')
+                            }
+                            android_ripple={{color: 'rgba(0,0,0,0.1)'}}
+                            style={styles.keyshareKeyContainerBadge}>
+                            <Image
+                              source={require('../assets/copy-icon.png')}
+                              style={styles.keyshareBadgeCopyIcon}
+                            />
+                            <Text
+                              style={styles.keyshareKeyTextClickable}
+                              numberOfLines={1}>
+                              {formatLongString(
+                                keyshareInfo.outputDescriptors
+                                  .segwitCompatible || 'N/A',
+                              )}
+                            </Text>
+                          </AppPressable>
+                          <View style={styles.keyshareButtonsRow}>
+                            <AppPressable
+                              onPress={() =>
+                                handleShareOutputDescriptor('segwitCompatible')
+                              }
+                              style={styles.keyshareCopyButton}>
+                              <Image
+                                source={require('../assets/share-icon.png')}
+                                style={styles.keyshareCopyIcon}
+                              />
+                            </AppPressable>
+                            <AppPressable
+                              onPress={() =>
+                                handleShowOutputDescriptorQR('segwitCompatible')
+                              }
+                              style={styles.keyshareCopyButton}>
+                              <Image
+                                source={require('../assets/qr-icon.png')}
+                                style={styles.keyshareCopyIcon}
+                              />
+                            </AppPressable>
+                          </View>
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                </Animated.View>
+              )}
+            </View>
+          </>
+        ) : (
+          <View style={styles.keyshareLoadingContainer}>
+            <Text style={styles.modalTextCompact}>
+              Loading keyshare information...
+            </Text>
+          </View>
+        )}
       </ScrollView>
       {/* QR Code Modal for Output Descriptors */}
       <QRCodeModal
@@ -1107,18 +1101,30 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
         topRightClose={true}
         nonDismissible={false}
       />
-      {/* QR Code Modal for Pairing Pubkeys */}
+      {/* Scanner: extension pairing_code QR (data: pairing_code=...) */}
+      <QRScanner
+        visible={isExtensionBindScannerVisible}
+        onClose={() => setIsExtensionBindScannerVisible(false)}
+        onScan={handleExtensionPairingCodeScanned}
+        title="Scan extension pairing QR"
+        subtitle="Point camera at the QR shown by the Bold extension"
+      />
+      {/* Response QR for extension to scan after mobile scanned pairing_code */}
       <QRCodeModal
-        visible={isPairingPubkeysQrVisible}
+        visible={isExtensionResponseQrVisible}
         onClose={() => {
-          setIsPairingPubkeysQrVisible(false);
+          setIsExtensionResponseQrVisible(false);
+          setExtensionResponseQrData(null);
         }}
-        title="Bold Extension • Pairing Pubkeys"
-        value={pairingPubkeys}
+        title="Bold Extension • Scan this QR"
+        value={extensionResponseQrData || ''}
         network={network as 'mainnet' | 'testnet'}
-        showShareButton={true}
+        showShareButton={false}
         topRightClose={true}
         nonDismissible={false}
+        qrSize={320}
+        contentMaxWidth={400}
+        qrContentStyle={screenStyles.extensionResponseQrPadding}
       />
     </SafeAreaView>
   );
