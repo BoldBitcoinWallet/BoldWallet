@@ -17,6 +17,7 @@ import {
   Linking,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
+import AppText from '../components/AppText';
 import QRScanner from '../components/QRScanner';
 import Clipboard from '@react-native-clipboard/clipboard';
 import debounce from 'lodash/debounce';
@@ -763,7 +764,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                       source={require('../assets/bitcoin-logo.png')}
                       style={styles.bitcoinLogo}
                     />
-                    <Text style={styles.title}>Send Bitcoin</Text>
+                    <AppText style={styles.title}>Send Bitcoin</AppText>
                   </View>
                   <AppPressable
                     onPress={onClose}
@@ -815,21 +816,21 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                   {/* Balance Card */}
                   <View style={styles.balanceCard}>
                     <View style={styles.balanceCardLeft}>
-                      <Text style={styles.balanceCardLabel}>
+                      <AppText style={styles.balanceCardLabel}>
                         Available Balance
-                      </Text>
+                      </AppText>
                       <Text style={styles.balanceCardBtc}>
                         {formatBitcoinDisplay(walletBalance.toNumber(), {
                           inSats: showSats,
                           formatted: balanceFormattingEnabled,
                         })}
                       </Text>
-                      <Text style={styles.balanceCardFiat}>
+                      <AppText style={styles.balanceCardFiat}>
                         ~{selectedCurrency}{' '}
                         {formatUSD(
                           walletBalance.times(btcToFiatRate).toNumber(),
                         )}
-                      </Text>
+                      </AppText>
                     </View>
                     <AppPressable
                       onPress={handleMaxClick}
@@ -839,7 +840,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     </AppPressable>
                   </View>
                   <View style={styles.inputContainer}>
-                    <Text style={styles.inputLabel}>Amount in BTC (₿)</Text>
+                    <AppText style={styles.inputLabel}>Amount in BTC (₿)</AppText>
                     <TextInput
                       style={[
                         styles.input,
@@ -853,20 +854,20 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                       keyboardType="decimal-pad"
                     />
                     {amountExceedsBalance && (
-                      <Text style={styles.errorText}>
+                      <AppText style={styles.errorText}>
                         Amount exceeds wallet balance (
                         {formatBitcoinDisplay(walletBalance.toNumber(), {
                           inSats: showSats,
                           formatted: balanceFormattingEnabled,
                         })}
                         )
-                      </Text>
+                      </AppText>
                     )}
                   </View>
                   <View style={styles.inputContainer}>
-                    <Text style={styles.inputLabel}>
+                    <AppText style={styles.inputLabel}>
                       Amount in {selectedCurrency} ($)
-                    </Text>
+                    </AppText>
                     <TextInput
                       style={styles.input}
                       placeholder={`Or ${selectedCurrency} amount`}
@@ -897,9 +898,9 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                           style={styles.setupGuideHintIcon}
                           resizeMode="contain"
                         />
-                        <Text style={styles.setupGuideHintText}>
+                        <AppText style={styles.setupGuideHintText}>
                           🎥 Watch Send Bitcoin video guide →
-                        </Text>
+                        </AppText>
                       </View>
                     </AppPressable>
                   </View>
@@ -921,7 +922,9 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                         !estimatedFee
                       }
                       android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
-                      <Text style={styles.buttonText}>Send</Text>
+                      <AppText style={styles.buttonText} tone="onPrimary">
+                        Send
+                      </AppText>
                     </AppPressable>
                     <AppPressable
                       style={styles.cancelButton}
@@ -929,7 +932,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                         onClose();
                       }}
                       android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
-                      <Text style={styles.buttonText}>Cancel</Text>
+                      <AppText style={styles.buttonText}>Cancel</AppText>
                     </AppPressable>
                   </View>
                 </ScrollView>

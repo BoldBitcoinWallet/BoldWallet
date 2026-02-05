@@ -23,7 +23,6 @@ import Toast from 'react-native-toast-message';
 import {dbg} from '../utils';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
-import {createToastConfig} from '../utils/toastConfig';
 import QRCodeModal from './QRCodeModal';
 
 const {BBMTLibNativeModule} = NativeModules;
@@ -1121,9 +1120,6 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
         topRightClose={true}
         nonDismissible={false}
       />
-      <View style={styles.toastContainer}>
-        <Toast config={createToastConfig(theme)} />
-      </View>
     </SafeAreaView>
   );
 };

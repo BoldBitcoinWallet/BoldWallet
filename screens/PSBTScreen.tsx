@@ -9,6 +9,7 @@ import {
   Animated,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
+import AppText from '../components/AppText';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {NativeModules} from 'react-native';
@@ -398,9 +399,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   style={styles.watchWalletIcon}
                   resizeMode="contain"
                 />
-                <Text style={styles.watchWalletTitle}>
+                <AppText style={styles.watchWalletTitle}>
                   Watch Wallet Export
-                </Text>
+                </AppText>
               </View>
               <Animated.Text
                 style={[
@@ -420,15 +421,15 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   styles.watchWalletContent,
                   styles.watchWalletContentExpanded,
                 ]}>
-                <Text style={styles.watchWalletSubtitle}>
+                <AppText style={styles.watchWalletSubtitle}>
                   Bold acts as your multi-party Bitcoin signer. Create
                   transactions in a watch-only compatible wallet like Sparrow or
                   Electrum and sign them securely via PSBT.
-                </Text>
-                <Text style={styles.watchWalletWarning}>
+                </AppText>
+                <AppText style={styles.watchWalletWarning}>
                   ⚠️ Note: Taproot is not supported. Only Legacy, Native SegWit,
                   and Nested SegWit address types are supported.
-                </Text>
+                </AppText>
                 {/* Output Descriptors - One row per address type */}
                 {keyshareInfo.outputDescriptors.legacy && (
                   <View
@@ -438,9 +439,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                         !keyshareInfo.outputDescriptors.segwitCompatible &&
                         globalStyles.watchWalletItemLast,
                     ]}>
-                    <Text style={globalStyles.watchWalletItemLabel}>
+                    <AppText style={globalStyles.watchWalletItemLabel}>
                       Output Descriptor (Legacy)
-                    </Text>
+                    </AppText>
                     <View style={globalStyles.watchWalletItemValueContainer}>
                       <AppPressable
                         onPress={() => handleCopyOutputDescriptor('legacy')}
@@ -488,9 +489,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                       !keyshareInfo.outputDescriptors.segwitCompatible &&
                         globalStyles.watchWalletItemLast,
                     ]}>
-                    <Text style={globalStyles.watchWalletItemLabel}>
+                    <AppText style={globalStyles.watchWalletItemLabel}>
                       Output Descriptor (Native SegWit)
-                    </Text>
+                    </AppText>
                     <View style={globalStyles.watchWalletItemValueContainer}>
                       <AppPressable
                         onPress={() =>
@@ -539,9 +540,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 )}
                 {keyshareInfo.outputDescriptors.segwitCompatible && (
                   <View style={globalStyles.watchWalletItem}>
-                    <Text style={globalStyles.watchWalletItemLabel}>
+                    <AppText style={globalStyles.watchWalletItemLabel}>
                       Output Descriptor (Nested SegWit)
-                    </Text>
+                    </AppText>
                     <View style={globalStyles.watchWalletItemValueContainer}>
                       <AppPressable
                         onPress={() =>
@@ -617,9 +618,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 style={styles.psbtSectionIcon}
                 resizeMode="contain"
               />
-              <Text style={styles.psbtSectionTitle}>
+              <AppText style={styles.psbtSectionTitle}>
                 Bold PSBT Signer
-              </Text>
+              </AppText>
             </View>
             <Animated.Text
               style={[

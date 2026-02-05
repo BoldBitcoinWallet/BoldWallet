@@ -30,6 +30,7 @@ import {
 } from '../utils';
 import {useUser} from '../context/UserContext';
 import {themes, useTheme as useAppTheme} from '../theme';
+import AppText from './AppText';
 import {COMMON_FONT_CONFIGS} from '../theme/fonts';
 import TransactionListSkeleton from './TransactionListSkeleton';
 import {WalletService} from '../services/WalletService';
@@ -1002,7 +1003,7 @@ const TransactionList = React.forwardRef<
       }
       return (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No transactions yet</Text>
+          <AppText style={styles.emptyText}>No transactions yet</AppText>
         </View>
       );
     }, [loading, styles.emptyContainer, styles.emptyText]);
@@ -1037,10 +1038,12 @@ const TransactionList = React.forwardRef<
               <ActivityIndicator size="small" />
             ) : !hasMoreTransactions && transactions.length > 0 ? (
               <View style={styles.endOfListWrap}>
-                <Text style={styles.endOfListText}>No more transactions</Text>
-                <Text style={styles.endOfListCount}>
+                <AppText style={styles.endOfListText}>
+                  No more transactions
+                </AppText>
+                <AppText style={styles.endOfListCount}>
                   {transactions.length} in total
-                </Text>
+                </AppText>
               </View>
             ) : null
           }

@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
 import StaticQRCode from '../components/StaticQRCode';
+import AppText from '../components/AppText';
 import QRCode from 'react-native-qrcode-svg';
 import Clipboard from '@react-native-clipboard/clipboard';
 import Share from 'react-native-share';
@@ -420,10 +421,10 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
           <AppPressable
           style={styles.modalContent}
           onPress={e => e.stopPropagation()}>
-          <Text style={styles.title}>Signed PSBT</Text>
-          <Text style={styles.subtitle}>
+          <AppText style={styles.title}>Signed PSBT</AppText>
+          <AppText style={styles.subtitle}>
             Share back the signed PSBT
-          </Text>
+          </AppText>
           <View style={styles.qrContainer}>
             {urObject && fitsInSingleQR && (
               <View style={styles.modeToggle}>
@@ -435,13 +436,13 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
                   onPress={() => {
                     setQrMode('single');
                   }}>
-                  <Text
+                  <AppText
                     style={[
                       styles.modeButtonText,
                       qrMode === 'single' && styles.modeButtonTextActive,
                     ]}>
                     Single QR
-                  </Text>
+                  </AppText>
                 </AppPressable>
                 <AppPressable
                   style={[
@@ -451,13 +452,13 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
                   onPress={() => {
                     setQrMode('animated');
                   }}>
-                  <Text
+                  <AppText
                     style={[
                       styles.modeButtonText,
                       qrMode === 'animated' && styles.modeButtonTextActive,
                     ]}>
                     Animated QR
-                  </Text>
+                  </AppText>
                 </AppPressable>
               </View>
             )}
@@ -480,14 +481,14 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
               />
             )}
             {isAnimated && (
-              <Text style={styles.qrInfo}>
+              <AppText style={styles.qrInfo}>
                 Frame {currentPart} of {totalParts}
-              </Text>
+              </AppText>
             )}
             {!fitsInSingleQR && urObject && (
-              <Text style={styles.qrInfo}>
+              <AppText style={styles.qrInfo}>
                 Large PSBT - Scanning all frames required
-              </Text>
+              </AppText>
             )}
           </View>
           <View style={styles.buttonRow}>
@@ -500,9 +501,9 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
                 style={styles.buttonIcon}
                 resizeMode="contain"
               />
-              <Text style={styles.buttonSecondaryText}>
+              <AppText style={styles.buttonSecondaryText}>
                 {isCopied ? '✓ Copied' : 'Copy'}
-              </Text>
+              </AppText>
             </AppPressable>
             <AppPressable
               style={[styles.button, styles.buttonSecondary]}
@@ -513,7 +514,7 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
                 style={styles.buttonIcon}
                 resizeMode="contain"
               />
-              <Text style={styles.buttonSecondaryText}>Share File</Text>
+              <AppText style={styles.buttonSecondaryText}>Share File</AppText>
             </AppPressable>
           </View>
           {fitsInSingleQR && (
@@ -526,14 +527,16 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
                 style={[styles.buttonIcon, {tintColor: theme.colors.textOnPrimary}]}
                 resizeMode="contain"
               />
-              <Text style={styles.buttonText}>Share QR Code</Text>
+              <AppText style={styles.buttonText} tone="onPrimary">
+                Share QR Code
+              </AppText>
             </AppPressable>
           )}
           <AppPressable
             style={styles.closeButton}
             onPress={onClose}
             android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
-            <Text style={styles.closeButtonText}>Close</Text>
+            <AppText style={styles.closeButtonText}>Close</AppText>
           </AppPressable>
           </AppPressable>
       </AppPressable>

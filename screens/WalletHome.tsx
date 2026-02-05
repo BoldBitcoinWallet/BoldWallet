@@ -34,6 +34,7 @@ import Big from 'big.js';
 import ReceiveModal from './ReceiveModal';
 import SignedPSBTModal from './SignedPSBTModal';
 import LegacyWalletModal from '../components/LegacyWalletModal';
+import AppText from '../components/AppText';
 import {
   dbg,
   presentFiat,
@@ -1917,7 +1918,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             <View style={styles.balanceContentContainer}>
               {balanceError && !isBlurred ? (
                 <View style={styles.balanceErrorContainer}>
-                  <Text style={styles.balanceErrorText}>{balanceError}</Text>
+                  <AppText style={styles.balanceErrorText}>{balanceError}</AppText>
                 </View>
               ) : (
                 <>
@@ -2041,9 +2042,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   showSats ? 'BTC' : 'sats'
                 }`}
                 accessibilityRole="button">
-                <Text style={styles.balanceUnitToggleText}>
+                <AppText style={styles.balanceUnitToggleText}>
                   {showSats ? '₿' : 'BTC'}
-                </Text>
+                </AppText>
               </AppPressable>
             </View>
           </View>
@@ -2102,7 +2103,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                     resizeMode="contain"
                     accessibilityLabel="Send icon"
                   />
-                  <Text style={styles.sendButtonText}>Send</Text>
+                  <AppText style={styles.sendButtonText} tone="onPrimary">
+                    Send
+                  </AppText>
                 </>
               )}
             </AppPressable>
@@ -2142,7 +2145,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 resizeMode="contain"
                 accessibilityLabel="Receive icon"
               />
-              <Text style={styles.receiveButtonText}>Receive</Text>
+              <AppText style={styles.receiveButtonText} tone="onPrimary">
+                Receive
+              </AppText>
             </AppPressable>
           </View>
         </View>

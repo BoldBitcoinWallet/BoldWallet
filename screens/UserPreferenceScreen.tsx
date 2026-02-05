@@ -11,6 +11,7 @@ import {
   Image,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
+import AppText from '../components/AppText';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useTheme} from '../theme';
 import {dbg, getResetToMainTabsWallet} from '../utils';
@@ -330,29 +331,31 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 style={styles.infoCardIcon}
                 resizeMode="contain"
               />
-              <Text style={styles.infoCardTitle}>
+              <AppText style={styles.infoCardTitle}>
                 Privacy / Mempool.Space
-              </Text>
+              </AppText>
             </View>
-            <Text style={styles.infoCardDescription}>
+            <AppText style={styles.infoCardDescription} tone="muted">
               Bold collects zero user data. Users are anonymous and no personal
               data is collected or shared. However, public mempool servers can
               see your Bitcoin addresses, potentially link them to your IP
               address, Geolocation or Device Agent. For that, you can point to your own
               self-hosted mempool.space to protect privacy.
-            </Text>
-            <Text style={styles.infoCardTechNote}>
+            </AppText>
+            <AppText style={styles.infoCardTechNote} tone="muted">
               Enter a mempool.space API endpoint (mainnet) or just skip that.
               {'\n'}
               You can change this later from Settings.
-            </Text>
+            </AppText>
           </View>
 
           <View style={styles.apiSection}>
-            <Text style={styles.apiSectionTitle}>Mempool Provider URL</Text>
-            <Text style={styles.apiSectionDescription}>
+            <AppText style={styles.apiSectionTitle}>
+              Mempool Provider URL
+            </AppText>
+            <AppText style={styles.apiSectionDescription} tone="muted">
               Enter your endpoint URL (e.g., https://mempool.space/api)
-            </Text>
+            </AppText>
             <View style={getInputContainerStyle()}>
               <TextInput
                 ref={inputRef}
@@ -394,16 +397,16 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 },
               ]}
             />
-            <Text style={styles.proceedButtonText}>
+            <AppText style={styles.proceedButtonText} tone="onPrimary">
               {isAPISaving ? 'Validating...' : 'Validate and Proceed'}
-            </Text>
+            </AppText>
           </AppPressable>
 
           <AppPressable
             style={styles.skipButton}
             onPress={handleSkip}
             android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
-            <Text style={styles.skipButtonText}>Skip for now</Text>
+            <AppText style={styles.skipButtonText}>Skip for now</AppText>
           </AppPressable>
         </ScrollView>
       </KeyboardAvoidingView>

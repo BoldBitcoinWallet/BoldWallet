@@ -11,6 +11,7 @@ import {View} from 'react-native';
 import {useRoute} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useTheme} from '../theme';
+import AppText from './AppText';
 import {createStyles} from './Styles';
 import {presentFiat, getCurrencySymbol} from '../utils';
 import type {NativeStackHeaderProps} from '@react-navigation/native-stack';
@@ -191,7 +192,7 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
             }
             style={networkIconStyle}
           />
-          <Text style={networkTextStyle}>{networkLabel}</Text>
+          <AppText style={networkTextStyle}>{networkLabel}</AppText>
         </View>
       ) : null}
       {hasProvider && hasNetwork ? (
@@ -204,13 +205,13 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
             style={providerIconStyle}
           />
           <View style={providerTextWrapStyle}>
-            <Text
+            <AppText
               style={providerTextStyle}
               numberOfLines={1}
               adjustsFontSizeToFit
               minimumFontScale={0.5}>
               {providerHost}
-            </Text>
+            </AppText>
           </View>
         </View>
       ) : null}

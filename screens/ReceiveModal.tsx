@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
 import StaticQRCode from '../components/StaticQRCode';
+import AppText from '../components/AppText';
 import Clipboard from '@react-native-clipboard/clipboard';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
@@ -289,7 +290,7 @@ const ReceiveModal: React.FC<{
                 source={require('../assets/bitcoin-logo.png')}
                 style={styles.bitcoinLogo}
               />
-              <Text style={styles.title}>Receive Bitcoin</Text>
+              <AppText style={styles.title}>Receive Bitcoin</AppText>
             </View>
             <AppPressable
               onPress={() => {
@@ -301,9 +302,9 @@ const ReceiveModal: React.FC<{
             </AppPressable>
           </View>
           <View style={styles.networkBadge}>
-            <Text style={styles.networkText}>
+            <AppText style={styles.networkText}>
               {capitalize(network)} • {formatAddressType(addressType)}
-            </Text>
+            </AppText>
           </View>
           <StaticQRCode
             value={address}
@@ -324,15 +325,17 @@ const ReceiveModal: React.FC<{
               }}
               android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
               <View style={styles.addressTextContainer}>
-                <Text 
+                <AppText
                   style={styles.addressTextInteractive}
                   adjustsFontSizeToFit={true}
                   numberOfLines={1}
                   minimumFontScale={0.5}>
                   {address}
-                </Text>
+                </AppText>
               </View>
-              <Text style={styles.addressHint}>Tap to view in explorer</Text>
+              <AppText style={styles.addressHint} tone="muted">
+                Tap to view in explorer
+              </AppText>
               {isCopied && (
                 <View style={styles.copyFeedback}>
                   <Image
@@ -340,7 +343,7 @@ const ReceiveModal: React.FC<{
                     style={[styles.buttonIcon, styles.copyIcon]}
                     resizeMode="contain"
                   />
-                  <Text style={styles.copyFeedbackText}>Copied!</Text>
+                  <AppText style={styles.copyFeedbackText}>Copied!</AppText>
                 </View>
               )}
             </AppPressable>
@@ -356,7 +359,9 @@ const ReceiveModal: React.FC<{
                   style={styles.buttonIcon}
                   resizeMode="contain"
                 />
-                <Text style={styles.actionButtonText}>Copy</Text>
+                <AppText style={styles.actionButtonText} tone="onPrimary">
+                  Copy
+                </AppText>
               </AppPressable>
               <AppPressable
                 style={[
@@ -372,7 +377,9 @@ const ReceiveModal: React.FC<{
                   style={styles.buttonIcon}
                   resizeMode="contain"
                 />
-                <Text style={styles.actionButtonText}>Share</Text>
+                <AppText style={styles.actionButtonText} tone="onPrimary">
+                  Share
+                </AppText>
               </AppPressable>
             </View>
           </View>

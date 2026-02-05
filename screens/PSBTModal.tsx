@@ -12,6 +12,7 @@ import {
   EmitterSubscription,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
+import AppText from '../components/AppText';
 import DocumentPicker from 'react-native-document-picker';
 import * as RNFS from 'react-native-fs';
 import QRScanner from '../components/QRScanner';
@@ -714,10 +715,10 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
     <View style={useOverlay ? styles.modalOverlay : undefined}>
       <View style={useOverlay ? styles.modalContent : styles.embeddedContent}>
         {/* Description */}
-        <Text style={styles.description}>
+        <AppText style={styles.description} tone="muted">
           Import a Partially Signed Bitcoin Transaction (PSBT) from Sparrow or
           another wallet to co-sign accordingly, with your wallet's keyshares.
-        </Text>
+        </AppText>
         {/* Import buttons */}
         {!psbtBase64 && (
           <View style={styles.importButtonsContainer}>
@@ -729,7 +730,9 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                 source={require('../assets/upload-icon.png')}
                 style={styles.importButtonIcon}
               />
-              <Text style={styles.importButtonText}>Load PSBT File</Text>
+              <AppText style={styles.importButtonText}>
+                Load PSBT File
+              </AppText>
             </AppPressable>
             <AppPressable
               style={styles.importButton}
@@ -739,20 +742,22 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                 source={require('../assets/scan-icon.png')}
                 style={styles.importButtonIcon}
               />
-              <Text style={styles.importButtonText}>Scan PSBT QR</Text>
+              <AppText style={styles.importButtonText}>Scan PSBT QR</AppText>
             </AppPressable>
           </View>
         )}
         {/* Loading indicator */}
         {isLoading && (
           <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Parsing PSBT...</Text>
+            <AppText style={styles.loadingText} tone="muted">
+              Parsing PSBT...
+            </AppText>
           </View>
         )}
         {/* Error message */}
         {error && (
           <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
+            <AppText style={styles.errorText}>{error}</AppText>
             <AppPressable
               style={styles.retryButton}
               onPress={() => {
@@ -760,7 +765,9 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                 setPsbtBase64(null);
                 setPsbtDetails(null);
               }}>
-              <Text style={styles.retryButtonText}>Try Again</Text>
+              <AppText style={styles.retryButtonText} tone="onPrimary">
+                Try Again
+              </AppText>
             </AppPressable>
           </View>
         )}
