@@ -8,6 +8,7 @@ import {
   Animated,
   Easing,
   Pressable,
+  Platform,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useTheme} from '../theme';
@@ -37,8 +38,9 @@ class ParticlesErrorBoundary extends React.Component<
 
 const LoadingScreen = ({onRetry}: any) => {
   const {theme} = useTheme();
+  const isIOS = Platform.OS === 'ios';
   const [loading, setLoading] = useState(false);
-  const [particlesEnabled, setParticlesEnabled] = useState(true);
+  const [particlesEnabled, setParticlesEnabled] = useState(isIOS);
   const fadeAnim = useRef(new Animated.Value(0.6)).current;
   const buttonScale = useRef(new Animated.Value(1)).current;
   const iconPulse = useRef(new Animated.Value(1)).current;
@@ -120,7 +122,7 @@ const LoadingScreen = ({onRetry}: any) => {
   };
 
   const createFountain = (count: number = 2, intensity: number = 1) => {
-    if (!particlesEnabled) return;
+    if (!isIOS || !particlesEnabled) return;
     try {
       // Continuous vapor-like emission from the logo center
       const newParticles: Array<{
@@ -210,7 +212,7 @@ const LoadingScreen = ({onRetry}: any) => {
     }
   };
   const handleLogoPress = () => {
-    if (!particlesEnabled) return;
+    if (!isIOS || !particlesEnabled) return;
     try {
       // Stronger turbulence boost that decays more slowly
       turbulenceRef.current = Math.min(2, turbulenceRef.current + 1.2);
@@ -231,6 +233,7 @@ const LoadingScreen = ({onRetry}: any) => {
     }
   };
   const startLogoTouch = () => {
+    if (!isIOS) return;
     if (emitterRef.current != null) {
       return;
     }
@@ -258,6 +261,7 @@ const LoadingScreen = ({onRetry}: any) => {
     }
   };
   const endLogoTouch = () => {
+    if (!isIOS) return;
     if (emitterRef.current != null) {
       clearInterval(emitterRef.current as unknown as number);
       emitterRef.current = null;
@@ -467,21 +471,20 @@ const LoadingScreen = ({onRetry}: any) => {
       backgroundColor: theme.colors.background,
     },
   });
-  // Use simple background color instead of gradient, especially in dark mode
   const isDarkMode = theme.colors.background !== '#ffffff';
   const backgroundColor = isDarkMode ? '#1A1A1A' : theme.colors.background;
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={[styles.container, {backgroundColor}]}>
-        <View style={[styles.contentContainer]}>
+      <View style={[styles.container, {backgroundColor}] }>
+        <View style={styles.contentContainer}>
           <Animated.View
             style={styles.logoContainer}
             onLayout={e => {
               const {width, height} = e.nativeEvent.layout;
               logoLayoutRef.current = {width, height};
             }}>
-            {/* Particles overlay - wrapped in error boundary for old Android devices */}
-            {particlesEnabled && (
+            {/* Particles overlay - wrapped in error boundary for old/slow devices */}
+            {isIOS && particlesEnabled && (
               <ParticlesErrorBoundary onError={disableParticles}>
                 <View style={styles.particlesContainer}>
                   {particles.map(p => {
@@ -530,8 +533,8 @@ const LoadingScreen = ({onRetry}: any) => {
                   style={[styles.storeIcon]}
                   source={
                     theme.colors.background === '#ffffff'
-                      ? require('../assets/bold-icon.png') // Original icon in light mode
-                      : require('../assets/bold-icon-inverted.png') // Use inverted icon in dark mode
+                      ? require('../assets/bold-icon.png')
+                      : require('../assets/bold-icon-inverted.png')
                   }
                 />
               </Animated.View>
@@ -539,51 +542,50 @@ const LoadingScreen = ({onRetry}: any) => {
           </Animated.View>
         </View>
         <View style={styles.bottomContainer}>
-          <Animated.View
-            style={[
-              styles.buttonAnimatedContainer,
-              styles.buttonLift,
-              {transform: [{scale: buttonScale}]},
-            ]}>
+          <View style={[styles.buttonAnimatedContainer, styles.buttonLift]}>
             {/* Floating drop shadow to emphasize FAB look */}
             <View style={styles.dropShadow} />
-            <Pressable
-              style={[styles.button, loading && styles.buttonDisabled]}
-              onPress={handlePress}
-              onPressIn={handlePressIn}
-              onPressOut={handlePressOut}
-              disabled={loading}
-              accessibilityRole="button"
-              accessibilityLabel="Unlock with biometrics"
-              accessibilityHint="Double tap to authenticate and unlock"
-              testID="unlock-biometric-button">
-              {loading ? (
-                <View style={styles.loadingContainer}>
-                  <ActivityIndicator size="small" color={theme.colors.white} />
-                  <Text style={styles.loadingText}>Unlocking...</Text>
-                </View>
-              ) : (
-                <>
-                  <View style={styles.circleWrap}>
-                    <View style={styles.circleShadowUnder} />
-                    <View style={styles.iconWrapper}>
-                      <Animated.View
-                        style={{
-                          ...StyleSheet.flatten(styles.glowCircle),
-                          transform: [{scale: glowScale}],
-                          opacity: glowOpacity,
-                        }}
-                      />
-                      <Animated.Image
-                        source={require('../assets/fingerprint.png')}
-                        style={[styles.icon, {transform: [{scale: iconPulse}]}]}
-                      />
-                    </View>
+            <Animated.View style={{transform: [{scale: buttonScale}]}}>
+              <Pressable
+                style={[styles.button, loading && styles.buttonDisabled]}
+                onPress={handlePress}
+                onPressIn={handlePressIn}
+                onPressOut={handlePressOut}
+                disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel="Unlock with biometrics"
+                accessibilityHint="Double tap to authenticate and unlock"
+                testID="unlock-biometric-button">
+                {loading ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="small" color={theme.colors.white} />
+                    <Text style={styles.loadingText}>Unlocking...</Text>
                   </View>
-                </>
-              )}
-            </Pressable>
-          </Animated.View>
+                ) : (
+                  <>
+                    <View style={styles.circleWrap}>
+                      <View style={styles.circleShadowUnder} />
+                      <View style={styles.iconWrapper}>
+                        <Animated.View
+                          style={{
+                            ...StyleSheet.flatten(styles.glowCircle),
+                            transform: [{scale: glowScale}],
+                            opacity: glowOpacity,
+                          }}
+                        />
+                        <Animated.View style={{transform: [{scale: iconPulse}]}}>
+                          <Image
+                            source={require('../assets/fingerprint.png')}
+                            style={styles.icon}
+                          />
+                        </Animated.View>
+                      </View>
+                    </View>
+                  </>
+                )}
+              </Pressable>
+            </Animated.View>
+          </View>
         </View>
       </View>
     </SafeAreaView>
