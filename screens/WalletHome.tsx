@@ -10,6 +10,9 @@ import {
   Linking,
   ActivityIndicator,
   StyleSheet,
+  Modal,
+  ScrollView,
+  Pressable,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
 import Animated, {
@@ -72,6 +75,34 @@ import {
 } from '../components/Header';
 import LocalCache from '../services/LocalCache';
 const {BBMTLibNativeModule} = NativeModules;
+
+type TermsSection = {
+  title: string;
+  body: string;
+};
+
+const TERMS_SECTIONS: readonly TermsSection[] = [
+  {
+    title: 'Summary',
+    body:
+      'Using this wallet is at your own risk. Always verify addresses, amounts, and network before sending. Keep your recovery information secure.',
+  },
+  {
+    title: 'No Custody',
+    body:
+      'This app does not custody your funds. You are responsible for safeguarding your keys and following best practices for backups.',
+  },
+  {
+    title: 'Privacy',
+    body:
+      'Network requests may be made to configured API providers to display balances and transactions. Consider your privacy and choose providers accordingly.',
+  },
+  {
+    title: 'Limitations',
+    body:
+      'Software can contain bugs. There are no guarantees that the app will be uninterrupted or error-free. To the fullest extent permitted by law, liability is limited.',
+  },
+];
 
 /** Parse pairing_code from extension QR (e.g. "data: pairing_code=abc" or "pairing_code=abc") */
 function parsePairingCodeFromScannedData(raw: string): string | null {
@@ -143,6 +174,45 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   >(null);
   const [isExtensionResponseQrVisible, setIsExtensionResponseQrVisible] =
     useState(false);
+
+  // Terms & Conditions
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [modalTermsChecked, setModalTermsChecked] = useState(termsAccepted);
+  const termsAutoPromptedRef = useRef(false);
+
+  // Load persisted acceptance state (so we can auto-prompt only when needed)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const accepted = (await LocalCache.getItem('termsAccepted')) === 'true';
+        if (!mounted) return;
+        setTermsAccepted(accepted);
+        setModalTermsChecked(accepted);
+      } catch {
+        // ignore cache errors; default is not accepted
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const [expandedSections, setExpandedSections] = useState<
+    Record<number, boolean>
+  >({});
+  const toggleSection = useCallback((idx: number) => {
+    setExpandedSections(prev => ({...prev, [idx]: !prev[idx]}));
+  }, []);
+
+  // Reset modal checkbox when modal opens
+  useEffect(() => {
+    if (showTermsModal) {
+      setModalTermsChecked(termsAccepted);
+      setExpandedSections({});
+    }
+  }, [showTermsModal, termsAccepted]);
   const extensionQrModalStyles = React.useMemo(
     () => StyleSheet.create({qrPadding: {padding: 16}}),
     [],
@@ -1091,6 +1161,84 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     sendButtonDisabled: {
       opacity: 0.6,
     } as const,
+    modalScroll: {
+      maxHeight: 360,
+      marginTop: 12,
+      marginBottom: 12,
+    } as const,
+    section: {
+      marginBottom: 10,
+    } as const,
+    sectionToggle: {
+      fontSize: theme.fontSizes?.lg || 16,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text,
+      marginLeft: 12,
+    },
+    sectionBody: {
+      marginTop: 8,
+      color: theme.colors.textSecondary,
+      fontSize: theme.fontSizes?.base || 14,
+      lineHeight: 20,
+    } as const,
+    modalConfirmRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 8,
+      marginBottom: 12,
+    } as const,
+    checkbox: {
+      width: 20,
+      height: 20,
+      borderRadius: 4,
+      borderWidth: 1,
+      borderColor: theme.colors.textSecondary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 10,
+    } as const,
+    checkboxChecked: {
+      borderColor: theme.colors.primary,
+      backgroundColor: theme.colors.primary,
+    } as const,
+    checkboxTick: {
+      color: theme.colors.textOnPrimary || theme.colors.white,
+      fontFamily: theme.fontFamilies?.bold,
+      fontSize: theme.fontSizes?.base || 14,
+      lineHeight: theme.fontSizes?.base || 14,
+    },
+    modalButtons: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      marginTop: 8,
+    } as const,
+    btnSecondary: {
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: theme.colors.textSecondary,
+    } as const,
+    btnText: {
+      color: theme.colors.text,
+      fontFamily: theme.fontFamilies?.bold,
+      fontSize: theme.fontSizes?.base || 14,
+    },
+    btnPrimary: {
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderRadius: 10,
+      backgroundColor: theme.colors.primary,
+      marginLeft: 12,
+    } as const,
+    btnPrimaryDisabled: {
+      opacity: 0.6,
+    } as const,
+    btnTextPrimary: {
+      color: theme.colors.textOnPrimary || theme.colors.white,
+      fontFamily: theme.fontFamilies?.bold,
+      fontSize: theme.fontSizes?.base || 14,
+    },
     balanceContainer: {
       ...createStyles(theme).balanceContainer,
       backgroundColor: isDarkMode
@@ -1452,6 +1600,22 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         });
         setLoading(false);
         setIsInitialized(true);
+
+        // After successful initial setup/pairing, prompt for Terms acceptance once
+        // (if the user hasn't accepted yet).
+        try {
+          const accepted =
+            (await LocalCache.getItem('termsAccepted')) === 'true';
+          if (!accepted && !termsAutoPromptedRef.current) {
+            termsAutoPromptedRef.current = true;
+            setTimeout(() => {
+              setShowTermsModal(true);
+            }, 600);
+          }
+        } catch {
+          // ignore cache errors
+        }
+
         // Check if this is a legacy wallet and show migration modal if needed
         // Modal shows by default unless user checked "do not remind" (flag = "yes")
         if (useLegacyPath) {
@@ -1834,6 +1998,40 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         return;
       }
 
+      // Extension pairing: JSON payload from the Chrome extension (type: pairing)
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && parsed.type === 'pairing' && parsed.data) {
+          const pairingCodeFromPayload =
+            parsed.data.pairing_code || parsed.data.extensionId || '';
+          if (pairingCodeFromPayload) {
+            if (extensionBindAlertShownRef.current) return;
+            extensionBindAlertShownRef.current = true;
+            setIsQRScannerVisible(false);
+            Alert.alert(
+              'Bind Bold Extension?',
+              'You scanned a pairing request from the Bold Bitcoin browser extension. This app will show a QR code for the extension to scan and complete the binding. Only proceed if you started this on your extension.',
+              [
+                {
+                  text: 'Cancel',
+                  style: 'cancel',
+                  onPress: () => {
+                    extensionBindAlertShownRef.current = false;
+                  },
+                },
+                {
+                  text: 'Confirm',
+                  onPress: () => proceedWithExtensionBind(pairingCodeFromPayload),
+                },
+              ],
+            );
+            return;
+          }
+        }
+      } catch {
+        // Not a JSON pairing payload; continue with send parsing.
+      }
+
       // Support BIP-21: "bitcoin:<address>" or "bitcoin:<address>?amount=..."
       const addressCandidate = trimmed.startsWith('bitcoin:')
         ? trimmed.replace(/^bitcoin:/i, '').split('?')[0].trim()
@@ -2145,6 +2343,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 isCheckingBalanceForSend && styles.sendButtonDisabled,
               ]}
               onPress={async () => {
+                // Enforce T&C acceptance
+                if (!termsAccepted) {
+                  Alert.alert(
+                    'Accept Terms',
+                    'You must accept the Terms & Conditions before sending. View terms?',
+                    [
+                      {text: 'Cancel', style: 'cancel'},
+                      {text: 'View Terms', onPress: () => setShowTermsModal(true)},
+                    ],
+                  );
+                  return;
+                }
+
                 // Check if balance is 0 or empty
                 const balance = parseFloat(balanceBTC || '0');
                 if (balance <= 0) {
@@ -2285,6 +2496,64 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         title="Scan Send Bitcoin QR"
         subtitle="Point camera to Sending Device QR"
       />
+      {/* Terms & Conditions Modal */}
+      <Modal
+        visible={showTermsModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowTermsModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Terms & Conditions</Text>
+            <ScrollView style={styles.modalScroll}>
+              {TERMS_SECTIONS.map((sec, idx) => (
+                <View key={idx} style={styles.section}>
+                  <Pressable
+                    onPress={() => toggleSection(idx)}
+                    style={styles.sectionHeader}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Toggle section ${sec.title}`}>
+                    <Text style={styles.sectionTitle}>{sec.title}</Text>
+                    <Text style={styles.sectionToggle}>{expandedSections[idx] ? '−' : '+'}</Text>
+                  </Pressable>
+                  {expandedSections[idx] && (
+                    <Text style={styles.sectionBody}>{sec.body}</Text>
+                  )}
+                </View>
+              ))}
+            </ScrollView>
+            <Pressable
+              style={styles.modalConfirmRow}
+              onPress={() => setModalTermsChecked(s => !s)}
+              accessibilityRole="checkbox"
+              accessibilityState={{checked: modalTermsChecked}}>
+              <View style={[styles.checkbox, modalTermsChecked && styles.checkboxChecked]}>
+                {modalTermsChecked && <Text style={styles.checkboxTick}>✓</Text>}
+              </View>
+              <Text style={styles.modalText}>I have read and accept the Terms & Conditions</Text>
+            </Pressable>
+            <View style={styles.modalButtons}>
+              <Pressable
+                style={styles.btnSecondary}
+                onPress={() => setShowTermsModal(false)}>
+                <Text style={styles.btnText}>Close</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.btnPrimary, !modalTermsChecked && styles.btnPrimaryDisabled]}
+                onPress={async () => {
+                  await LocalCache.setItem('termsAccepted', 'true');
+                  setTermsAccepted(true);
+                  setShowTermsModal(false);
+                }}
+                disabled={!modalTermsChecked}
+                accessibilityState={{disabled: !modalTermsChecked}}>
+                <Text style={styles.btnTextPrimary}>Accept</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Extension bind: response QR when scan detected pairing_code */}
       <QRCodeModal
         visible={isExtensionResponseQrVisible}
