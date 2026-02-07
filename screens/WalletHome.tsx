@@ -71,19 +71,11 @@ import {
   HeaderNetwork,
 } from '../components/Header';
 import LocalCache from '../services/LocalCache';
+import {
+  parsePairingCodeFromScannedData,
+  computeExtensionBindResponseQr,
+} from '../utils/extensionBind';
 const {BBMTLibNativeModule} = NativeModules;
-
-/** Parse pairing_code from extension QR (e.g. "data: pairing_code=abc" or "pairing_code=abc") */
-function parsePairingCodeFromScannedData(raw: string): string | null {
-  const s = raw.trim();
-  const prefix = 'pairing_code=';
-  const i = s.indexOf(prefix);
-  if (i === -1) return null;
-  const after = s.slice(i + prefix.length);
-  const end = after.indexOf('&');
-  const code = end === -1 ? after.trim() : after.slice(0, end).trim();
-  return code || null;
-}
 
 type RouteParams = {
   txId?: string;
@@ -170,14 +162,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           Alert.alert('Error', 'Keyshare info is not available.');
           return;
         }
-        const data = `${pubKey}${chainCode}${pairingCode}`;
-        const hash = await BBMTLibNativeModule.sha256(data);
-        const checksum = hash.substring(0, 4);
-        const payload = `${pubKey}${chainCode}${checksum}`;
-        const qrDataBase64 = (global as any).Buffer.from(
-          payload,
-          'hex',
-        ).toString('base64');
+        const qrDataBase64 = await computeExtensionBindResponseQr(
+          pairingCode,
+          pubKey,
+          chainCode,
+        );
         setExtensionResponseQrData(qrDataBase64);
         setIsExtensionResponseQrVisible(true);
       } catch (e) {

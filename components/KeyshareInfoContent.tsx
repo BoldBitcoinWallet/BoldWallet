@@ -17,19 +17,10 @@ import {useTheme} from '../theme';
 import {createStyles} from './Styles';
 import QRCodeModal from './QRCodeModal';
 import QRScanner from './QRScanner';
-import {BBMTLibNativeModule} from '../native_modules';
-
-/** Parse pairing_code from extension QR data (e.g. "data: pairing_code=abc" or "pairing_code=abc") */
-function parsePairingCodeFromScannedData(raw: string): string | null {
-  const s = raw.trim();
-  const prefix = 'pairing_code=';
-  const i = s.indexOf(prefix);
-  if (i === -1) return null;
-  const after = s.slice(i + prefix.length);
-  const end = after.indexOf('&');
-  const code = end === -1 ? after.trim() : after.slice(0, end).trim();
-  return code || null;
-}
+import {
+  parsePairingCodeFromScannedData,
+  computeExtensionBindResponseQr,
+} from '../utils/extensionBind';
 interface KeyshareInfo {
   label: string;
   supportsLocal: boolean;
@@ -326,15 +317,11 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
       extensionBindHandledRef.current = true;
       setIsExtensionBindScannerVisible(false);
       try {
-        const data = `${pubKey}${chainCode}${pairingCode}`;
-        const hash = await BBMTLibNativeModule.sha256(data);
-        const checksum = hash.substring(0, 4);
-        // 66 + 64 + 4 = 134 characters
-        // Convert to hex string, then to base64
-        const qrData = Buffer.from(
-          `${pubKey}${chainCode}${checksum}`,
-          'hex',
-        ).toString('base64');
+        const qrData = await computeExtensionBindResponseQr(
+          pairingCode,
+          pubKey,
+          chainCode,
+        );
         setExtensionResponseQrData(qrData);
         setIsExtensionResponseQrVisible(true);
       } catch (e) {
