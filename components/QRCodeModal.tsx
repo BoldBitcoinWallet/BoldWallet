@@ -19,16 +19,14 @@ import {
   ScrollView,
   Platform,
   Dimensions,
+  StyleSheet,
 } from 'react-native';
 import AppPressable from './AppPressable';
-import QRCode from 'react-native-qrcode-svg';
+import StaticQRCode from './StaticQRCode';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
-import {HapticFeedback} from '../utils';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
-import Toast from 'react-native-toast-message';
-import {createToastConfig} from '../utils/toastConfig';
 interface QRCodeModalProps {
   visible: boolean;
   onClose: () => void;
@@ -38,6 +36,12 @@ interface QRCodeModalProps {
   showShareButton?: boolean;
   topRightClose?: boolean;
   nonDismissible?: boolean;
+  /** QR code size in pixels. Default 200. Use larger (e.g. 320) for easier scanning. */
+  qrSize?: number;
+  /** Max width of modal content. Default 320. Use larger for a bigger QR modal. */
+  contentMaxWidth?: number;
+  /** Extra style for the QR container (e.g. larger padding for scanner quiet zone). */
+  qrContentStyle?: import('react-native').ViewStyle;
 }
 const QRCodeModal: React.FC<QRCodeModalProps> = ({
   visible,
@@ -48,13 +52,27 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
   showShareButton = false,
   topRightClose = false,
   nonDismissible = false,
+  qrSize = 200,
+  contentMaxWidth: contentMaxWidthProp,
+  qrContentStyle,
 }) => {
   const {theme} = useTheme();
   const styles = createStyles(theme);
   const qrRef = useRef<any>(null);
   const screenWidth = Dimensions.get('window').width;
-  const modalMaxWidth = 320;
+  const defaultModalMaxWidth = 320;
+  const modalMaxWidth = contentMaxWidthProp ?? defaultModalMaxWidth;
   const containerWidth = Math.min(screenWidth - 48, modalMaxWidth - 48); // Account for padding
+  const staticStyles = useMemo(
+    () =>
+      StyleSheet.create({
+        noPadding: {padding: 0},
+        contentWide: contentMaxWidthProp
+          ? {maxWidth: contentMaxWidthProp}
+          : {},
+      }),
+    [contentMaxWidthProp],
+  );
   
   // Memoize style to avoid re-creation on every render
   const valueTextStyle = useMemo(
@@ -64,7 +82,6 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
   // Share QR code as image file
   const shareQRAsFile = useCallback(
     async (filename: string, shareTitle: string) => {
-      HapticFeedback.medium();
       try {
         if (!qrRef.current) {
           Alert.alert('Error', 'QR Code is not ready yet');
@@ -123,7 +140,6 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
     shareQRAsFile(filename, shareTitle);
   }, [network, title, shareQRAsFile]);
   const handleClose = useCallback(() => {
-    HapticFeedback.light();
     onClose();
   }, [onClose]);
   return (
@@ -141,7 +157,11 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
         onPress={nonDismissible ? undefined : handleClose}>
         <AppPressable
           onPress={e => e.stopPropagation()}>
-          <View style={styles.qrModalContent}>
+          <View
+            style={[
+              styles.qrModalContent,
+              staticStyles.contentWide,
+            ]}>
             {topRightClose ? (
               <View style={styles.qrModalHeader}>
                 <Text style={styles.qrModalHeaderTitle}>{title}</Text>
@@ -155,19 +175,19 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
             ) : (
               <Text style={styles.qrModalTitle}>{title}</Text>
             )}
-            <View style={styles.qrCodeContainer}>
-              {value && (
-                <QRCode
-                  getRef={ref => {
-                    qrRef.current = ref;
-                  }}
-                  value={value}
-                  size={200}
-                  backgroundColor="white"
-                  color="black"
-                />
-              )}
-            </View>
+            {value && (
+              <StaticQRCode
+                value={value}
+                size={qrSize}
+                copyContent={value}
+                toastMessage="Copied to clipboard"
+                getRef={ref => {
+                  qrRef.current = ref;
+                }}
+                style={[styles.qrCodeContainer, staticStyles.noPadding]}
+                contentStyle={qrContentStyle}
+              />
+            )}
             {value && showShareButton && (
               <View style={[styles.qrModalValueContainer, {width: containerWidth}]}>
                 <ScrollView
@@ -245,9 +265,6 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
           </View>
         </AppPressable>
       </AppPressable>
-      <View style={styles.toastContainer}>
-        <Toast config={createToastConfig(theme)} />
-      </View>
     </Modal>
   );
 };

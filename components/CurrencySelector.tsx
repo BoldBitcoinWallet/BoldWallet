@@ -16,7 +16,6 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import {useTheme} from '../theme';
-import {HapticFeedback} from '../utils';
 interface Currency {
   code: string;
   name: string;
@@ -81,7 +80,6 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
   }));
 
   const handleClose = () => {
-    HapticFeedback.light();
     // Animate modal exit
     const finishCallback = () => {
       onClose();
@@ -105,7 +103,6 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
         item.code === currentCurrency && styles.selectedCurrency,
       ]}
       onPress={() => {
-        HapticFeedback.selection();
         onSelect(item);
         onClose();
       }}

@@ -8,7 +8,6 @@ import {
 } from 'react-native';
 import AppPressable from './AppPressable';
 import {createStyles} from './Styles';
-import {HapticFeedback} from '../utils';
 export interface CacheTimestamp {
   price: number;
   balance: number;
@@ -36,7 +35,6 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
     useImperativeHandle(ref, () => ({
       press: () => {
         if (!isRefreshing) {
-          HapticFeedback.medium();
           onRefresh();
         }
       },
@@ -179,7 +177,6 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
           isRefreshing && createStyles(theme).disabled,
         ]}
         onPress={() => {
-          HapticFeedback.medium();
           onRefresh();
         }}
         disabled={isRefreshing}>

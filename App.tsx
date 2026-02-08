@@ -23,7 +23,7 @@ import {
   SafeAreaProvider,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import {initializeHaptics, HapticFeedback} from './utils';
+import {initializeHaptics} from './utils';
 import ErrorBoundary from './components/ErrorBoundary';
 import {
   Alert,
@@ -195,8 +195,6 @@ const tabBarStyles = StyleSheet.create({
     justifyContent: 'center',
   },
   tabBarLabel: {
-    fontSize: Platform.select({ios: 11, android: 9}),
-    fontWeight: '500',
     textAlign: 'center',
   },
   tabBarLabelWrapper: {
@@ -216,18 +214,29 @@ const tabBarStyles = StyleSheet.create({
   },
 });
 
-const TabBarLabel = ({color, children}: {color: string; children: string}) => (
-  <View style={tabBarStyles.tabBarLabelWrapper}>
-    <Text
-      style={[tabBarStyles.tabBarLabel, tabBarStyles.tabBarLabelText, {color}]}
-      numberOfLines={1}
-      adjustsFontSizeToFit
-      minimumFontScale={0.5}
-    >
-      {children}
-    </Text>
-  </View>
-);
+const TabBarLabel = ({color, children}: {color: string; children: string}) => {
+  const {theme} = useTheme();
+  const labelTypography = {
+    fontSize: theme.fontSizes?.xs || 10,
+    fontFamily: theme.fontFamilies?.medium,
+    color,
+  };
+  return (
+    <View style={tabBarStyles.tabBarLabelWrapper}>
+      <Text
+        style={[
+          tabBarStyles.tabBarLabel,
+          tabBarStyles.tabBarLabelText,
+          labelTypography,
+        ]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.5}>
+        {children}
+      </Text>
+    </View>
+  );
+};
 
 type TabBarButtonProps = Record<string, unknown> & {isDarkMode?: boolean};
 
@@ -240,7 +249,6 @@ const TabBarButton = (props: TabBarButtonProps) => {
       : tabBarStyles.activeTabBgLight;
   const handlePress = useCallback(
     (e: GestureResponderEvent) => {
-      HapticFeedback.selection();
       (onPress as (e: GestureResponderEvent) => void)?.(e);
     },
     [onPress],
@@ -446,7 +454,6 @@ const MainTabs = () => {
             <AppPressable
               style={lockFabStyle}
               onPress={() => {
-                HapticFeedback.light();
                 DeviceEventEmitter.emit('app:reload');
               }}
               accessible={true}
@@ -463,7 +470,6 @@ const MainTabs = () => {
           <AppPressable
             style={lockFabStyle}
             onPress={() => {
-              HapticFeedback.light();
               DeviceEventEmitter.emit('app:reload');
             }}
             accessible={true}

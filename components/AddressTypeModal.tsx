@@ -1,7 +1,7 @@
 import React from 'react';
 import {Modal, View, Text, Image} from 'react-native';
 import AppPressable from './AppPressable';
-import {shorten, HapticFeedback} from '../utils';
+import {shorten} from '../utils';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
 
@@ -36,7 +36,6 @@ const AddressTypeModal: React.FC<AddressTypeModalProps> = ({
       <AppPressable
         style={styles.modalOverlay}
         onPress={() => {
-          HapticFeedback.light();
           onClose();
         }}>
         <View style={styles.modalContent}>
@@ -53,7 +52,6 @@ const AddressTypeModal: React.FC<AddressTypeModalProps> = ({
               addressType === 'legacy' && styles.addressTypeButtonSelected,
             ]}
             onPress={() => {
-              HapticFeedback.selection();
               onSelectAddressType('legacy');
             }}
             android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -85,7 +83,6 @@ const AddressTypeModal: React.FC<AddressTypeModalProps> = ({
                 styles.addressTypeButtonSelected,
             ]}
             onPress={() => {
-              HapticFeedback.selection();
               onSelectAddressType('segwit-native');
             }}
             android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -122,7 +119,6 @@ const AddressTypeModal: React.FC<AddressTypeModalProps> = ({
                 styles.addressTypeButtonSelected,
             ]}
             onPress={() => {
-              HapticFeedback.selection();
               onSelectAddressType('segwit-compatible');
             }}
             android_ripple={{color: 'rgba(0,0,0,0.1)'}}>

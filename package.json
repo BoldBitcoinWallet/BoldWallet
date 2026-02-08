@@ -1,6 +1,6 @@
 {
   "name": "boldwallet",
-  "version": "2.1.14",
+  "version": "2.1.15",
   "private": true,
   "scripts": {
     "android": "react-native run-android",
@@ -8,6 +8,7 @@
     "lint": "eslint .",
     "start": "react-native start",
     "test": "jest",
+    "test:extensionBind": "jest __tests__/extensionBind.test.ts",
     "postinstall": "patch-package"
   },
   "dependencies": {

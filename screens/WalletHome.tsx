@@ -9,6 +9,7 @@ import {
   PermissionsAndroid,
   Linking,
   ActivityIndicator,
+  StyleSheet,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
 import Animated, {
@@ -34,6 +35,7 @@ import Big from 'big.js';
 import ReceiveModal from './ReceiveModal';
 import SignedPSBTModal from './SignedPSBTModal';
 import LegacyWalletModal from '../components/LegacyWalletModal';
+import AppText from '../components/AppText';
 import {
   dbg,
   presentFiat,
@@ -56,6 +58,7 @@ import WalletSkeleton from '../components/WalletSkeleton';
 import {useUser} from '../context/UserContext';
 import CurrencySelector from '../components/CurrencySelector';
 import TransportModeSelector from '../components/TransportModeSelector';
+import QRCodeModal from '../components/QRCodeModal';
 import {createStyles} from '../components/Styles';
 import {
   CacheIndicator,
@@ -68,6 +71,10 @@ import {
   HeaderNetwork,
 } from '../components/Header';
 import LocalCache from '../services/LocalCache';
+import {
+  parsePairingCodeFromScannedData,
+  computeExtensionBindResponseQr,
+} from '../utils/extensionBind';
 const {BBMTLibNativeModule} = NativeModules;
 
 type RouteParams = {
@@ -123,10 +130,54 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState('');
   const [isQRScannerVisible, setIsQRScannerVisible] = useState(false);
+  const [extensionResponseQrData, setExtensionResponseQrData] = useState<
+    string | null
+  >(null);
+  const [isExtensionResponseQrVisible, setIsExtensionResponseQrVisible] =
+    useState(false);
+  const extensionQrModalStyles = React.useMemo(
+    () => StyleSheet.create({qrPadding: {padding: 16}}),
+    [],
+  );
   const lastInvalidQrRef = useRef<{data: string; time: number}>({
     data: '',
     time: 0,
   });
+  const extensionBindAlertShownRef = useRef(false);
+
+  const proceedWithExtensionBind = useCallback(
+    async (pairingCode: string) => {
+      try {
+        const keyshareJSON = await EncryptedStorage.getItem('keyshare');
+        if (!keyshareJSON) {
+          extensionBindAlertShownRef.current = false;
+          Alert.alert('Error', 'Keyshare not found.');
+          return;
+        }
+        const keyshare = JSON.parse(keyshareJSON);
+        const pubKey = keyshare.pub_key || '';
+        const chainCode = keyshare.chain_code_hex || '';
+        if (!pubKey || !chainCode) {
+          extensionBindAlertShownRef.current = false;
+          Alert.alert('Error', 'Keyshare info is not available.');
+          return;
+        }
+        const qrDataBase64 = await computeExtensionBindResponseQr(
+          pairingCode,
+          pubKey,
+          chainCode,
+        );
+        setExtensionResponseQrData(qrDataBase64);
+        setIsExtensionResponseQrVisible(true);
+      } catch (e) {
+        dbg('Extension bind from scan failed:', e);
+        extensionBindAlertShownRef.current = false;
+        Alert.alert('Error', 'Failed to generate response QR.');
+      }
+    },
+    [],
+  );
+
   const [initialSendAddress, setInitialSendAddress] = useState<string | null>(
     null,
   );
@@ -1745,6 +1796,33 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     (qrData: string) => {
       dbg('Scanned QR data:', qrData.substring(0, 100));
       const trimmed = qrData.trim();
+
+      // Extension pairing: pairing_code=... from Bold extension QR
+      const pairingCode = parsePairingCodeFromScannedData(trimmed);
+      if (pairingCode) {
+        if (extensionBindAlertShownRef.current) return;
+        extensionBindAlertShownRef.current = true;
+        setIsQRScannerVisible(false);
+        Alert.alert(
+          'Bind Bold Extension?',
+          'You scanned a pairing code from the Bold Bitcoin browser extension. If you confirm, this app will show a QR code for the extension to scan and complete the binding. Only proceed if you started this on your extension.',
+          [
+            {
+              text: 'Cancel',
+              style: 'cancel',
+              onPress: () => {
+                extensionBindAlertShownRef.current = false;
+              },
+            },
+            {
+              text: 'Confirm',
+              onPress: () => proceedWithExtensionBind(pairingCode),
+            },
+          ],
+        );
+        return;
+      }
+
       // Support BIP-21: "bitcoin:<address>" or "bitcoin:<address>?amount=..."
       const addressCandidate = trimmed.startsWith('bitcoin:')
         ? trimmed.replace(/^bitcoin:/i, '').split('?')[0].trim()
@@ -1872,11 +1950,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       setIsTransportModalVisible(true);
     }, 300);
     },
-    [network],
+    [network, proceedWithExtensionBind],
   );
   // Handle QR scan for send bitcoin data
   const handleScanQRForSend = useCallback(() => {
-    HapticFeedback.medium();
     setIsQRScannerVisible(true);
   }, []);
   // Animated style for balance update
@@ -1895,7 +1972,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             {/* Eye icon on left */}
             <AppPressable
               onPress={() => {
-                HapticFeedback.light();
                 handleBlurred();
               }}
               style={styles.balanceEyeIcon}
@@ -1919,7 +1995,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             <View style={styles.balanceContentContainer}>
               {balanceError && !isBlurred ? (
                 <View style={styles.balanceErrorContainer}>
-                  <Text style={styles.balanceErrorText}>{balanceError}</Text>
+                  <AppText style={styles.balanceErrorText}>{balanceError}</AppText>
                 </View>
               ) : (
                 <>
@@ -1929,7 +2005,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                     <AppPressable
                       style={styles.balanceTouchable}
                       onPress={() => {
-                        HapticFeedback.light();
                         handleBlurred();
                       }}
                       android_ripple={{color: 'rgba(0,0,0,0.1)'}}
@@ -1978,7 +2053,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                       <AppPressable
                         style={styles.balanceTouchable}
                         onPress={() => {
-                          HapticFeedback.light();
                           handleBlurred();
                         }}
                         android_ripple={{color: 'rgba(0,0,0,0.1)'}}
@@ -2037,7 +2111,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             <View style={styles.balanceUnitToggleContainer}>
               <AppPressable
                 onPress={() => {
-                  HapticFeedback.light();
                   setShowSatsGlobal(!showSats);
                 }}
                 style={styles.balanceUnitToggle}
@@ -2046,9 +2119,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   showSats ? 'BTC' : 'sats'
                 }`}
                 accessibilityRole="button">
-                <Text style={styles.balanceUnitToggleText}>
+                <AppText style={styles.balanceUnitToggleText}>
                   {showSats ? '₿' : 'BTC'}
-                </Text>
+                </AppText>
               </AppPressable>
             </View>
           </View>
@@ -2061,7 +2134,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 isCheckingBalanceForSend && styles.sendButtonDisabled,
               ]}
               onPress={async () => {
-                HapticFeedback.medium();
                 // Check if balance is 0 or empty
                 const balance = parseFloat(balanceBTC || '0');
                 if (balance <= 0) {
@@ -2108,7 +2180,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                     resizeMode="contain"
                     accessibilityLabel="Send icon"
                   />
-                  <Text style={styles.sendButtonText}>Send</Text>
+                  <AppText style={styles.sendButtonText} tone="onPrimary">
+                    Send
+                  </AppText>
                 </>
               )}
             </AppPressable>
@@ -2135,7 +2209,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 styles.flexOneMinWidthZero,
               ]}
               onPress={() => {
-                HapticFeedback.medium();
                 setIsReceiveModalVisible(true);
               }}
               android_ripple={{color: 'rgba(0,0,0,0.1)'}}
@@ -2149,7 +2222,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 resizeMode="contain"
                 accessibilityLabel="Receive icon"
               />
-              <Text style={styles.receiveButtonText}>Receive</Text>
+              <AppText style={styles.receiveButtonText} tone="onPrimary">
+                Receive
+              </AppText>
             </AppPressable>
           </View>
         </View>
@@ -2199,6 +2274,24 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         title="Scan Send Bitcoin QR"
         subtitle="Point camera to Sending Device QR"
       />
+      {/* Extension bind: response QR when scan detected pairing_code */}
+      <QRCodeModal
+        visible={isExtensionResponseQrVisible}
+        onClose={() => {
+          setIsExtensionResponseQrVisible(false);
+          setExtensionResponseQrData(null);
+          extensionBindAlertShownRef.current = false;
+        }}
+        title="Bold Extension • Scan this QR"
+        value={extensionResponseQrData || ''}
+        network={network as 'mainnet' | 'testnet'}
+        showShareButton={false}
+        topRightClose={true}
+        nonDismissible={false}
+        qrSize={320}
+        contentMaxWidth={400}
+        qrContentStyle={extensionQrModalStyles.qrPadding}
+      />
       <LegacyWalletModal
         visible={isLegacyWalletModalVisible}
         onCancel={() => setIsLegacyWalletModalVisible(false)}
@@ -2229,7 +2322,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       <TransportModeSelector
         visible={isTransportModalVisible}
         onClose={() => {
-          HapticFeedback.medium();
           setIsTransportModalVisible(false);
           setPendingSendParams(null);
           setScannedFromQR(false);
@@ -2285,7 +2377,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           visible={isSignedPSBTModalVisible}
           signedPsbtBase64={signedPsbt}
           onClose={() => {
-            HapticFeedback.medium();
             setIsSignedPSBTModalVisible(false);
             setSignedPsbt(null);
           }}

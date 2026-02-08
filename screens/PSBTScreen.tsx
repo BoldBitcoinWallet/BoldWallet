@@ -9,13 +9,14 @@ import {
   Animated,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
+import AppText from '../components/AppText';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {NativeModules} from 'react-native';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {PSBTLoader} from './PSBTModal';
-import {dbg, HapticFeedback, generateAllOutputDescriptors} from '../utils';
+import {dbg, generateAllOutputDescriptors} from '../utils';
 import {CommonActions, useRoute, RouteProp} from '@react-navigation/native';
 import TransportModeSelector from '../components/TransportModeSelector';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -106,7 +107,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     outputRange: ['0deg', '90deg'],
   });
   const handleToggleWatchWallet = useCallback(() => {
-    HapticFeedback.light();
     const newValue = !isWatchWalletExpanded;
     setIsWatchWalletExpanded(newValue);
     // Close other section if opening this one
@@ -115,7 +115,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     }
   }, [isWatchWalletExpanded]);
   const handleTogglePSBTSection = useCallback(() => {
-    HapticFeedback.light();
     const newValue = !isPSBTSectionExpanded;
     setIsPSBTSectionExpanded(newValue);
     // Close other section if opening this one
@@ -167,7 +166,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   // Share helper for exporting text as a small file (descriptor)
   const shareTextAsFile = useCallback(
     async (text: string, filename: string, title: string) => {
-      HapticFeedback.medium();
       try {
         const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
         const filePath = `${tempDir}/${filename}`;
@@ -200,7 +198,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     (type: 'legacy' | 'segwitNative' | 'segwitCompatible') => {
       const descriptor = keyshareInfo?.outputDescriptors[type] || '';
       if (!descriptor) return;
-      HapticFeedback.light();
       Clipboard.setString(descriptor);
       const typeLabel =
         type === 'legacy'
@@ -241,7 +238,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     (type: 'legacy' | 'segwitNative' | 'segwitCompatible') => {
       const descriptor = keyshareInfo?.outputDescriptors[type] || '';
       if (!descriptor) return;
-      HapticFeedback.light();
       setSelectedDescriptorType(type);
       setIsOutputDescriptorQrVisible(true);
     },
@@ -403,9 +399,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   style={styles.watchWalletIcon}
                   resizeMode="contain"
                 />
-                <Text style={styles.watchWalletTitle}>
+                <AppText style={styles.watchWalletTitle}>
                   Watch Wallet Export
-                </Text>
+                </AppText>
               </View>
               <Animated.Text
                 style={[
@@ -425,15 +421,15 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   styles.watchWalletContent,
                   styles.watchWalletContentExpanded,
                 ]}>
-                <Text style={styles.watchWalletSubtitle}>
+                <AppText style={styles.watchWalletSubtitle}>
                   Bold acts as your multi-party Bitcoin signer. Create
                   transactions in a watch-only compatible wallet like Sparrow or
                   Electrum and sign them securely via PSBT.
-                </Text>
-                <Text style={styles.watchWalletWarning}>
+                </AppText>
+                <AppText style={styles.watchWalletWarning}>
                   ⚠️ Note: Taproot is not supported. Only Legacy, Native SegWit,
                   and Nested SegWit address types are supported.
-                </Text>
+                </AppText>
                 {/* Output Descriptors - One row per address type */}
                 {keyshareInfo.outputDescriptors.legacy && (
                   <View
@@ -443,9 +439,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                         !keyshareInfo.outputDescriptors.segwitCompatible &&
                         globalStyles.watchWalletItemLast,
                     ]}>
-                    <Text style={globalStyles.watchWalletItemLabel}>
+                    <AppText style={globalStyles.watchWalletItemLabel}>
                       Output Descriptor (Legacy)
-                    </Text>
+                    </AppText>
                     <View style={globalStyles.watchWalletItemValueContainer}>
                       <AppPressable
                         onPress={() => handleCopyOutputDescriptor('legacy')}
@@ -493,9 +489,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                       !keyshareInfo.outputDescriptors.segwitCompatible &&
                         globalStyles.watchWalletItemLast,
                     ]}>
-                    <Text style={globalStyles.watchWalletItemLabel}>
+                    <AppText style={globalStyles.watchWalletItemLabel}>
                       Output Descriptor (Native SegWit)
-                    </Text>
+                    </AppText>
                     <View style={globalStyles.watchWalletItemValueContainer}>
                       <AppPressable
                         onPress={() =>
@@ -544,9 +540,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 )}
                 {keyshareInfo.outputDescriptors.segwitCompatible && (
                   <View style={globalStyles.watchWalletItem}>
-                    <Text style={globalStyles.watchWalletItemLabel}>
+                    <AppText style={globalStyles.watchWalletItemLabel}>
                       Output Descriptor (Nested SegWit)
-                    </Text>
+                    </AppText>
                     <View style={globalStyles.watchWalletItemValueContainer}>
                       <AppPressable
                         onPress={() =>
@@ -622,9 +618,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 style={styles.psbtSectionIcon}
                 resizeMode="contain"
               />
-              <Text style={styles.psbtSectionTitle}>
+              <AppText style={styles.psbtSectionTitle}>
                 Bold PSBT Signer
-              </Text>
+              </AppText>
             </View>
             <Animated.Text
               style={[
@@ -690,7 +686,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       <TransportModeSelector
         visible={isPSBTTransportModalVisible}
         onClose={() => {
-          HapticFeedback.medium();
           setIsPSBTTransportModalVisible(false);
           setPendingPSBTParams(null);
         }}
@@ -705,7 +700,6 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
           visible={isSignedPSBTModalVisible}
           signedPsbtBase64={signedPsbt}
           onClose={() => {
-            HapticFeedback.medium();
             setIsSignedPSBTModalVisible(false);
             setSignedPsbt(null);
           }}

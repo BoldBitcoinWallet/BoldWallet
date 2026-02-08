@@ -11,8 +11,9 @@ import {View} from 'react-native';
 import {useRoute} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useTheme} from '../theme';
+import AppText from './AppText';
 import {createStyles} from './Styles';
-import {HapticFeedback, presentFiat, getCurrencySymbol} from '../utils';
+import {presentFiat, getCurrencySymbol} from '../utils';
 import type {NativeStackHeaderProps} from '@react-navigation/native-stack';
 interface HeaderPriceButtonProps {
   btcPrice?: string;
@@ -191,7 +192,7 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
             }
             style={networkIconStyle}
           />
-          <Text style={networkTextStyle}>{networkLabel}</Text>
+          <AppText style={networkTextStyle}>{networkLabel}</AppText>
         </View>
       ) : null}
       {hasProvider && hasNetwork ? (
@@ -204,13 +205,13 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
             style={providerIconStyle}
           />
           <View style={providerTextWrapStyle}>
-            <Text
+            <AppText
               style={providerTextStyle}
               numberOfLines={1}
               adjustsFontSizeToFit
               minimumFontScale={0.5}>
               {providerHost}
-            </Text>
+            </AppText>
           </View>
         </View>
       ) : null}
@@ -221,7 +222,6 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
       <AppPressable
         style={leftContentStyle}
         onPress={() => {
-          HapticFeedback.light();
           onPress();
         }}
         android_ripple={{color: 'rgba(0,0,0,0.08)'}}
@@ -239,7 +239,6 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
       <AppPressable
         style={settingsStripStyle}
         onPress={() => {
-          HapticFeedback.light();
           onSettingsPress();
         }}
         android_ripple={{color: 'rgba(0,0,0,0.08)'}}
@@ -439,7 +438,6 @@ export const HeaderNetwork: React.FC<HeaderNetworkProps> = ({
       <RNView style={wrapperStyle}>
         <AppPressable
           onPress={() => {
-            HapticFeedback.light();
             onPress();
           }}
           android_ripple={{color: 'rgba(0,0,0,0.1)'}}
@@ -514,7 +512,6 @@ export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
       <AppPressable
         style={priceButtonStyle}
         onPress={() => {
-          HapticFeedback.light();
           onCurrencyPress();
         }}
         android_ripple={{color: 'rgba(0,0,0,0.1)'}}
@@ -695,7 +692,6 @@ export const CustomHeader: React.FC<
     headerLeft = (
       <AppPressable
         onPress={() => {
-          HapticFeedback.light();
           navigation.goBack();
         }}
         style={headerStyles.backButton}

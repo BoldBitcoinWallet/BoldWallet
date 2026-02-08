@@ -16,7 +16,7 @@ import {NativeModules} from 'react-native';
 import Share from 'react-native-share';
 import RNFS from 'react-native-fs';
 import EncryptedStorage from 'react-native-encrypted-storage';
-import {dbg, HapticFeedback} from '../utils';
+import {dbg} from '../utils';
 import {getKeyshareLabel} from '../utils';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
@@ -144,7 +144,6 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
     }
 
     try {
-      HapticFeedback.medium();
       const storedKeyshare = await EncryptedStorage.getItem('keyshare');
       if (storedKeyshare) {
         const json = JSON.parse(storedKeyshare);
@@ -397,14 +396,11 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
         <AppPressable
           style={globalStyles.modalOverlay}
           onPress={() => {
-            HapticFeedback.light();
             Keyboard.dismiss();
           }}>
           <AppPressable
             style={globalStyles.modalContent}
-            onPress={() => {
-              HapticFeedback.light();
-            }}>
+            onPress={() => {}}>
             <View style={styles.modalHeader}>
               <Image
                 source={require('../assets/backup-icon.png')}
@@ -432,7 +428,6 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
                 <AppPressable
                   style={styles.eyeButton}
                   onPress={() => {
-                    HapticFeedback.light();
                     setPasswordVisible(!passwordVisible);
                   }}
                   android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
@@ -502,7 +497,6 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
                 <AppPressable
                   style={styles.eyeButton}
                   onPress={() => {
-                    HapticFeedback.light();
                     setConfirmPasswordVisible(!confirmPasswordVisible);
                   }}
                   android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
@@ -526,7 +520,6 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
               <AppPressable
                 style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => {
-                  HapticFeedback.light();
                   clearModal();
                 }}
                 android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>

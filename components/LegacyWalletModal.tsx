@@ -1,7 +1,6 @@
 import React, {useState} from 'react';
 import {Modal, View, Text, Image, Pressable} from 'react-native';
 import AppPressable from './AppPressable';
-import {HapticFeedback} from '../utils';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
 import LocalCache from '../services/LocalCache';
@@ -101,7 +100,6 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
     } as const,
   };
   const handleCancel = async () => {
-    HapticFeedback.light();
     // Save checkbox state: "yes" = do not remind, "no" = show again
     await LocalCache.setItem(
       'legacyWalletModalDoNotRemind',
@@ -110,7 +108,6 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
     onCancel();
   };
   const handleUnderstand = async () => {
-    HapticFeedback.medium();
     // Save checkbox state: "yes" = do not remind, "no" = show again
     await LocalCache.setItem(
       'legacyWalletModalDoNotRemind',
@@ -119,7 +116,6 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
     onUnderstand();
   };
   const handleCheckboxToggle = () => {
-    HapticFeedback.light();
     setDoNotRemind(prev => !prev);
   };
   return (

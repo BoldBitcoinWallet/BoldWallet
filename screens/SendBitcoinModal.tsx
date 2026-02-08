@@ -1,4 +1,4 @@
-import React, {useState, useCallback, useEffect, useMemo} from 'react';
+import React, {useState, useCallback, useEffect, useMemo, useRef} from 'react';
 import {
   View,
   Text,
@@ -17,21 +17,20 @@ import {
   Linking,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
+import AppText from '../components/AppText';
 import QRScanner from '../components/QRScanner';
 import Clipboard from '@react-native-clipboard/clipboard';
 import debounce from 'lodash/debounce';
 import Big from 'big.js';
-import {
-  dbg,
-  HapticFeedback,
-  decodeSendBitcoinQR,
-  formatBitcoinDisplay,
-} from '../utils';
+import {dbg, decodeSendBitcoinQR, formatBitcoinDisplay} from '../utils';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import LocalCache from '../services/LocalCache';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {validate as validateBitcoinAddress} from 'bitcoin-address-validation';
+import {
+  validateBitcoinAddressEnhanced,
+  waitMS,
+} from '../services/WalletService';
 const {BBMTLibNativeModule} = NativeModules;
 interface SendBitcoinModalProps {
   visible: boolean;
@@ -60,6 +59,8 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   selectedCurrency,
   initialAddress,
 }) => {
+  const isMountedRef = useRef(true);
+  const visibleRef = useRef(visible);
   const [address, setAddress] = useState<string>('');
   const [btcAmount, setBtcAmount] = useState<Big>(Big(0));
   const [inBtcAmount, setInBtcAmount] = useState('');
@@ -70,8 +71,19 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   const [spendingHash, setSpendingHash] = useState<string>('');
   const [_activeInput, setActiveInput] = useState<'btc' | 'usd' | null>(null);
   const [feeStrategy, setFeeStrategy] = useState('1hr');
+  const [addressError, setAddressError] = useState<string | null>(null);
   const {theme} = useTheme();
-  const {showSats, balanceFormattingEnabled} = useUser();
+  const {showSats, balanceFormattingEnabled, activeNetwork} = useUser();
+  const isSatsMode = showSats;
+  useEffect(() => {
+    visibleRef.current = visible;
+  }, [visible]);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
   const styles = StyleSheet.create({
     feeStrategyContainer: {
       marginBottom: 8,
@@ -396,6 +408,15 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       textDecorationColor: theme.colors.text + '80',
     },
   });
+  const currentNetworkForValidation =
+    activeNetwork === 'testnet' || activeNetwork === 'testnet3'
+      ? 'testnet'
+      : 'mainnet';
+  const validateAddressForCurrentNetwork = useCallback(
+    (addr: string) =>
+      validateBitcoinAddressEnhanced(addr, currentNetworkForValidation),
+    [currentNetworkForValidation],
+  );
   const feeStrategies = [
     {label: 'Economy', value: 'eco'},
     {label: 'Top Priority', value: 'top'},
@@ -410,7 +431,21 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     }).format(price);
   const getFee = useCallback(
     async (addr: string, amt: string) => {
+      // If modal is not mounted or not visible, abort any fee work
+      if (!isMountedRef.current || !visibleRef.current) {
+        return;
+      }
       if (!addr || !amt || btcAmount.eq(0)) {
+        setEstimatedFee(null);
+        return;
+      }
+      // Validate address for the current network before estimating fees
+      if (!validateAddressForCurrentNetwork(addr)) {
+        dbg(
+          'Fee estimation skipped: invalid address for network',
+          addr,
+          currentNetworkForValidation,
+        );
         setEstimatedFee(null);
         return;
       }
@@ -423,10 +458,16 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       const satoshiAmount = amount.times(1e8).toFixed(0);
       BBMTLibNativeModule.spendingHash(walletAddress, addr, satoshiAmount)
         .then((hash: string) => {
+          if (!isMountedRef.current || !visibleRef.current) {
+            return;
+          }
           setSpendingHash(hash);
           dbg('got spending hash:', hash);
           BBMTLibNativeModule.estimateFees(walletAddress, addr, satoshiAmount)
             .then((fee: string) => {
+              if (!isMountedRef.current || !visibleRef.current) {
+                return;
+              }
               if (fee && typeof fee === 'string') {
                 // Check if the response contains an error message
                 if (
@@ -436,6 +477,23 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                 ) {
                   dbg('Fee estimation API returned error:', fee);
                   setEstimatedFee(null);
+                  Alert.alert(
+                    'Fee Estimation Error',
+                    'Unable to estimate transaction fee. Please try again later.',
+                    [
+                      {
+                        text: 'Cancel',
+                        style: 'cancel',
+                      },
+                      {
+                        text: 'Retry',
+                        onPress: () => {
+                          getFee(addr, amt);
+                        },
+                      },
+                    ],
+                    {cancelable: true},
+                  );
                   return;
                 }
                 // Try to parse the fee as a valid number
@@ -444,6 +502,23 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                   if (isNaN(feeNumber) || feeNumber <= 0) {
                     dbg('Invalid fee amount received:', fee);
                     setEstimatedFee(null);
+                    Alert.alert(
+                      'Fee Estimation Error',
+                      'Unable to estimate transaction fee. Please try again later.',
+                      [
+                        {
+                          text: 'Cancel',
+                          style: 'cancel',
+                        },
+                        {
+                          text: 'Retry',
+                          onPress: () => {
+                            getFee(addr, amt);
+                          },
+                        },
+                      ],
+                      {cancelable: true},
+                    );
                     return;
                   }
                   dbg('got fees:', fee);
@@ -451,10 +526,14 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                   setEstimatedFee(feeAmt);
                   // Dismiss keyboard when fee is updated
                   Keyboard.dismiss();
-                  if (Big(inBtcAmount).eq(walletBalance)) {
+                  if (btcAmount.eq(walletBalance)) {
                     // When MAX is clicked, adjust amount to account for fee
                     const adjustedAmount = walletBalance.minus(feeAmt.div(1e8));
-                    setInBtcAmount(adjustedAmount.toFixed(8));
+                    setInBtcAmount(
+                      isSatsMode
+                        ? adjustedAmount.times(1e8).toFixed(0)
+                        : adjustedAmount.toFixed(8),
+                    );
                     setBtcAmount(adjustedAmount);
                     setInUsdAmount(
                       adjustedAmount.times(btcToFiatRate).toFixed(2),
@@ -463,13 +542,50 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                 } catch (parseError) {
                   dbg('Failed to parse fee amount:', fee, parseError);
                   setEstimatedFee(null);
+                  Alert.alert(
+                    'Fee Estimation Error',
+                    'Unable to estimate transaction fee. Please try again later.',
+                    [
+                      {
+                        text: 'Cancel',
+                        style: 'cancel',
+                      },
+                      {
+                        text: 'Retry',
+                        onPress: () => {
+                          getFee(addr, amt);
+                        },
+                      },
+                    ],
+                    {cancelable: true},
+                  );
                 }
               } else {
                 dbg('No fee data received from API');
                 setEstimatedFee(null);
+                Alert.alert(
+                  'Fee Estimation Error',
+                  'Unable to estimate transaction fee. Please try again later.',
+                  [
+                    {
+                      text: 'Cancel',
+                      style: 'cancel',
+                    },
+                    {
+                      text: 'Retry',
+                      onPress: () => {
+                        getFee(addr, amt);
+                      },
+                    },
+                  ],
+                  {cancelable: true},
+                );
               }
             })
             .catch((e: any) => {
+              if (!isMountedRef.current || !visibleRef.current) {
+                return;
+              }
               dbg('Fee estimation failed:', e);
               setEstimatedFee(null);
               // Only show alert for network/API errors, not parsing errors
@@ -477,20 +593,64 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                 Alert.alert(
                   'Fee Estimation Error',
                   'Unable to estimate transaction fee. Please try again later.',
+                  [
+                    {
+                      text: 'Cancel',
+                      style: 'cancel',
+                    },
+                    {
+                      text: 'Retry',
+                      onPress: () => {
+                        getFee(addr, amt);
+                      },
+                    },
+                  ],
+                  {cancelable: true},
                 );
               }
             })
             .finally(() => {
+              if (!isMountedRef.current || !visibleRef.current) {
+                return;
+              }
               setIsCalculatingFee(false);
             });
         })
         .catch((e: any) => {
+          if (!isMountedRef.current || !visibleRef.current) {
+            return;
+          }
           dbg('Spending hash failed:', e);
           setIsCalculatingFee(false);
           setEstimatedFee(null);
+          Alert.alert(
+            'Fee Estimation Error',
+            'Unable to prepare transaction for fee estimation. Please try again.',
+            [
+              {
+                text: 'Cancel',
+                style: 'cancel',
+              },
+              {
+                text: 'Retry',
+                onPress: () => {
+                  getFee(addr, amt);
+                },
+              },
+            ],
+            {cancelable: true},
+          );
         });
     },
-    [btcAmount, walletBalance, walletAddress, inBtcAmount, btcToFiatRate],
+    [
+      btcAmount,
+      walletBalance,
+      walletAddress,
+      btcToFiatRate,
+      validateAddressForCurrentNetwork,
+      currentNetworkForValidation,
+      isSatsMode,
+    ],
   );
   const debouncedGetFee = useMemo(() => debounce(getFee, 1000), [getFee]);
   useEffect(() => {
@@ -514,21 +674,37 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     }
   }, [visible, initialAddress]);
   useEffect(() => {
-    // Only trigger fee estimation if we have a valid address and non-zero amount
+    if (!address) {
+      setAddressError(null);
+      return;
+    }
+    if (!validateAddressForCurrentNetwork(address)) {
+      setAddressError('Please enter a valid Bitcoin address.');
+    } else {
+      setAddressError(null);
+    }
+  }, [address, validateAddressForCurrentNetwork]);
+  useEffect(() => {
+    // Only trigger fee estimation if we have a valid address (for current network) and non-zero amount
     if (
       address &&
       btcAmount &&
       btcAmount.gt(0) &&
-      validateBitcoinAddress(address)
+      validateAddressForCurrentNetwork(address)
     ) {
       debouncedGetFee(address, btcAmount.toString());
     } else {
       // Clear fee if conditions aren't met
       setEstimatedFee(null);
     }
-  }, [address, btcAmount, debouncedGetFee, feeStrategy]);
+  }, [
+    address,
+    btcAmount,
+    debouncedGetFee,
+    feeStrategy,
+    validateAddressForCurrentNetwork,
+  ]);
   const pasteAddress = useCallback(async () => {
-    HapticFeedback.light();
     const text = await Clipboard.getString();
     // Validate that the clipboard contains what looks like a Bitcoin address
     if (!text || !text.trim()) {
@@ -558,12 +734,13 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     setActiveInput('btc');
     setInBtcAmount(text);
     try {
-      const btc = Big(text || 0);
+      const value = Big(text || 0);
+      const btc = isSatsMode ? value.div(E8) : value;
       setBtcAmount(btc);
-      // Always update USD amount when BTC changes (no need to check activeInput)
+      // Always update USD amount when amount changes (BTC basis)
       setInUsdAmount(btc.mul(btcToFiatRate).toFixed(2));
     } catch {
-      dbg('Invalid BTC input:', text);
+      dbg('Invalid amount input:', text);
     }
   };
   const handleUsdChange = (text: string) => {
@@ -574,16 +751,40 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       const calculatedBtc = usd.div(btcToFiatRate);
       // Always update BTC amount when USD changes (no need to check activeInput)
       setBtcAmount(calculatedBtc);
-      setInBtcAmount(calculatedBtc.toFixed(8));
+      setInBtcAmount(
+        isSatsMode
+          ? calculatedBtc.times(E8).toFixed(0)
+          : calculatedBtc.toFixed(8),
+      );
     } catch {
       dbg('Invalid USD input:', text);
     }
   };
   const handleMaxClick = () => {
-    HapticFeedback.medium();
-    setBtcAmount(walletBalance);
-    setInBtcAmount(walletBalance.toFixed(8));
-    setInUsdAmount(walletBalance.times(btcToFiatRate).toFixed(2));
+    // If a fee estimation is already in progress, ignore repeated MAX clicks
+    if (isCalculatingFee) {
+      return;
+    }
+    // Require a valid address before calculating max and fees
+    if (!address || !validateAddressForCurrentNetwork(address)) {
+      setAddressError('Please enter a valid Bitcoin address.');
+      Alert.alert('Error', 'Please enter a valid Bitcoin address.');
+      return;
+    }
+    // clear up
+    setBtcAmount(Big(0));
+    setInBtcAmount('');
+    setInUsdAmount('');
+    waitMS(100).then(() => {
+      // set the amount to the wallet balance
+      setBtcAmount(walletBalance);
+      setInBtcAmount(
+        isSatsMode
+          ? walletBalance.times(E8).toFixed(0)
+          : walletBalance.toFixed(8),
+      );
+      setInUsdAmount(walletBalance.times(btcToFiatRate).toFixed(2));
+    });
   };
   // Handle QR scan - supports both regular addresses and send bitcoin QR format
   const handleQRScan = useCallback(
@@ -607,9 +808,9 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
         decoded.feeSats
       ) {
         // It's a send bitcoin QR format - populate all fields
-        if (!validateBitcoinAddress(decoded.toAddress)) {
+        if (!validateAddressForCurrentNetwork(decoded.toAddress)) {
           Alert.alert(
-            'Invalid Address',
+            'Error',
             'The scanned QR code contains an invalid Bitcoin address.',
           );
           return;
@@ -619,7 +820,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
         const amountBTC = amountSats.div(1e8);
         if (amountSats.lte(0) || feeSats.lte(0)) {
           Alert.alert(
-            'Invalid Amount',
+            'Error',
             'The scanned QR code contains invalid amount or fee values.',
           );
           return;
@@ -645,7 +846,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
         );
       } else {
         // It's a regular Bitcoin address - just set the address
-        if (validateBitcoinAddress(qrData.trim())) {
+        if (validateAddressForCurrentNetwork(qrData.trim())) {
           setAddress(qrData.trim());
         } else {
           Alert.alert(
@@ -655,10 +856,14 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
         }
       }
     },
-    [btcToFiatRate, showSats, balanceFormattingEnabled],
+    [
+      btcToFiatRate,
+      showSats,
+      balanceFormattingEnabled,
+      validateAddressForCurrentNetwork,
+    ],
   );
   const handleFeeStrategyChange = (value: string) => {
-    HapticFeedback.selection();
     setFeeStrategy(value);
     dbg('setting fee strategy to', value);
     BBMTLibNativeModule.setFeePolicy(value);
@@ -668,22 +873,41 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   };
   const handleSendClick = () => {
     // Client-side Bitcoin address validation
-    if (!address || !validateBitcoinAddress(address)) {
-      Alert.alert('Error', 'Please enter a valid Bitcoin address');
+    if (!address || !validateAddressForCurrentNetwork(address)) {
+      setAddressError('Please enter a valid Bitcoin addres');
+      Alert.alert('Error', 'Please enter a valid Bitcoin addres');
       return;
     }
     if (!estimatedFee) {
-      Alert.alert('Error', 'Please wait for fee estimation');
+      Alert.alert(
+        'Fee Estimation Error',
+        'Unable to estimate transaction fee. Please try again later.',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+          {
+            text: 'Retry',
+            onPress: () => {
+              getFee(address, btcAmount.toString());
+            },
+          },
+        ],
+        {cancelable: true},
+      );
       return;
     }
-    const feeBTC = estimatedFee.div(1e8);
-    const totalAmount = Big(inBtcAmount).add(feeBTC);
-    if (totalAmount.gt(walletBalance)) {
+    // Work internally in BTC regardless of display mode
+    const feeBTC = estimatedFee.div(E8);
+    const totalAmountBTC = btcAmount.add(feeBTC);
+    if (totalAmountBTC.gt(walletBalance)) {
       Alert.alert('Error', 'Total amount including fee exceeds wallet balance');
       return;
     }
-    HapticFeedback.heavy();
-    onSend(address, Big(inBtcAmount).times(1e8), estimatedFee, spendingHash);
+    // Normalize to sats for sending
+    const amountSats = btcAmount.times(E8);
+    onSend(address, amountSats, estimatedFee, spendingHash);
   };
   // Check if amount exceeds balance
   const amountExceedsBalance = btcAmount.gt(0) && btcAmount.gt(walletBalance);
@@ -768,12 +992,12 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                       source={require('../assets/bitcoin-logo.png')}
                       style={styles.bitcoinLogo}
                     />
-                    <Text style={styles.title}>Send Bitcoin</Text>
+                    <AppText style={styles.title}>Send Bitcoin</AppText>
                   </View>
                   <AppPressable
                     onPress={onClose}
                     style={styles.closeButton}
-                    android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                    android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                     <Text style={styles.closeButtonText}>✖️</Text>
                   </AppPressable>
                 </View>
@@ -807,7 +1031,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     </AppPressable>
                     <AppPressable
                       onPress={() => {
-                        HapticFeedback.light();
                         setIsScannerVisible(true);
                       }}
                       style={styles.qrIconContainer}>
@@ -818,61 +1041,69 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                       />
                     </AppPressable>
                   </View>
+                  {addressError && (
+                    <AppText style={styles.errorText}>{addressError}</AppText>
+                  )}
                   {/* Balance Card */}
                   <View style={styles.balanceCard}>
                     <View style={styles.balanceCardLeft}>
-                      <Text style={styles.balanceCardLabel}>
+                      <AppText style={styles.balanceCardLabel}>
                         Available Balance
-                      </Text>
+                      </AppText>
                       <Text style={styles.balanceCardBtc}>
                         {formatBitcoinDisplay(walletBalance.toNumber(), {
                           inSats: showSats,
                           formatted: balanceFormattingEnabled,
                         })}
                       </Text>
-                      <Text style={styles.balanceCardFiat}>
+                      <AppText style={styles.balanceCardFiat}>
                         ~{selectedCurrency}{' '}
                         {formatUSD(
                           walletBalance.times(btcToFiatRate).toNumber(),
                         )}
-                      </Text>
+                      </AppText>
                     </View>
                     <AppPressable
                       onPress={handleMaxClick}
+                      disabled={isCalculatingFee}
                       style={styles.balanceCardMaxButton}
-                      android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                       <Text style={styles.balanceCardMaxButtonText}>Max</Text>
                     </AppPressable>
                   </View>
                   <View style={styles.inputContainer}>
-                    <Text style={styles.inputLabel}>Amount in BTC (₿)</Text>
+                    <AppText style={styles.inputLabel}>
+                      {isSatsMode ? 'Amount in sats' : 'Amount in BTC (₿)'}
+                    </AppText>
                     <TextInput
                       style={[
                         styles.input,
                         amountExceedsBalance && styles.inputError,
                       ]}
-                      placeholder="Enter BTC amount"
+                      placeholder={
+                        isSatsMode ? 'Enter sats amount' : 'Enter BTC amount'
+                      }
                       placeholderTextColor={theme.colors.textSecondary + '80'}
                       value={inBtcAmount}
                       onChangeText={handleBtcChange}
                       onFocus={() => setActiveInput('btc')}
-                      keyboardType="decimal-pad"
+                      keyboardType={isSatsMode ? 'numeric' : 'decimal-pad'}
                     />
                     {amountExceedsBalance && (
-                      <Text style={styles.errorText}>
+                      <AppText style={styles.errorText}>
                         Amount exceeds wallet balance (
                         {formatBitcoinDisplay(walletBalance.toNumber(), {
                           inSats: showSats,
                           formatted: balanceFormattingEnabled,
                         })}
                         )
-                      </Text>
+                      </AppText>
                     )}
                   </View>
                   <View style={styles.inputContainer}>
-                    <Text style={styles.inputLabel}>
+                    <AppText style={styles.inputLabel}>
                       Amount in {selectedCurrency} ($)
-                    </Text>
+                    </AppText>
                     <TextInput
                       style={styles.input}
                       placeholder={`Or ${selectedCurrency} amount`}
@@ -889,7 +1120,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     <AppPressable
                       style={styles.setupGuideHintTouchable}
                       onPress={() => {
-                        HapticFeedback.medium();
                         const url =
                           'https://x.com/boldbtcwallet/status/1988332367489237160';
                         Linking.openURL(url).catch(err => {
@@ -897,16 +1127,16 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                           dbg('Error opening URL:', err);
                         });
                       }}
-                      android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                       <View style={styles.setupGuideHintRow}>
                         <Image
                           source={require('../assets/start-icon.png')}
                           style={styles.setupGuideHintIcon}
                           resizeMode="contain"
                         />
-                        <Text style={styles.setupGuideHintText}>
+                        <AppText style={styles.setupGuideHintText}>
                           🎥 Watch Send Bitcoin video guide →
-                        </Text>
+                        </AppText>
                       </View>
                     </AppPressable>
                   </View>
@@ -927,17 +1157,18 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                         isCalculatingFee ||
                         !estimatedFee
                       }
-                      android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
-                      <Text style={styles.buttonText}>Send</Text>
+                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                      <AppText style={styles.buttonText} tone="onPrimary">
+                        Send
+                      </AppText>
                     </AppPressable>
                     <AppPressable
                       style={styles.cancelButton}
                       onPress={() => {
-                        HapticFeedback.light();
                         onClose();
                       }}
-                      android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
-                      <Text style={styles.buttonText}>Cancel</Text>
+                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                      <AppText style={styles.buttonText}>Cancel</AppText>
                     </AppPressable>
                   </View>
                 </ScrollView>
