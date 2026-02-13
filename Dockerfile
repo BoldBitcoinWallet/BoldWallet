@@ -134,6 +134,9 @@ fi
 # Build Go library (uses cached Go modules)
 # Inlined from build.sh - optimized for Docker with cache mounts
 # Removed redundant go mod tidy/download (already done above with cache mounts)
+# GOFIPS140=v1.0.0 links the Go Cryptographic Module for NIST FIPS 140-3 (optional: set to "off" to disable)
+ARG GOFIPS140=v1.0.0
+ENV GOFIPS140=${GOFIPS140}
 WORKDIR /BoldWallet/BBMTLib
 RUN --mount=type=cache,target=/root/go/pkg/mod,id=go-modules-cache,sharing=shared \
     --mount=type=cache,target=/root/.cache/go-build,id=go-build-cache,sharing=shared \
