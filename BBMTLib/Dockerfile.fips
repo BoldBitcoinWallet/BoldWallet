@@ -1,0 +1,68 @@
+# syntax=docker/dockerfile:1
+# Dockerfile.fips - BoldWallet FIPS-aware gomobile build (UBI 9 + Android SDK/NDK + Go 1.25)
+
+FROM registry.access.redhat.com/ubi9/ubi:9.4 AS builder
+
+LABEL maintainer="BoldWallet Team" \
+      description="FIPS-aware gomobile build env for TSS lib (Android/iOS bindings)" \
+      fips="policy-enabled" \
+      base="ubi9"
+
+# Install dependencies
+RUN dnf install -y --setopt=install_weak_deps=False --nodocs \
+    gcc gcc-c++ make git wget tar unzip which \
+    java-17-openjdk-devel \
+    bzip2 bzip2-devel zlib-devel libffi-devel xz-devel \
+    glibc-devel glibc-headers libstdc++-devel \
+    crypto-policies openssl openssl-devel \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf/*
+
+# Enable FIPS crypto policy
+RUN update-crypto-policies --set FIPS && \
+    grep -q '^FIPS$' /etc/crypto-policies/config || { echo "FIPS policy failed"; exit 1; }
+
+# Install Go 1.25 (amd64 for gomobile compatibility)
+ARG GO_VERSION=1.25.0
+RUN wget -O go.tar.gz "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" && \
+    tar -C /usr/local -xzf go.tar.gz && \
+    rm go.tar.gz
+
+ENV PATH="/usr/local/go/bin:/go/bin:${PATH}" \
+    GOPATH="/go" \
+    GOCACHE="/go/.cache" \
+    GO111MODULE=on \
+    CGO_ENABLED=1 \
+    GODEBUG=fips140=on \
+    CGO_CFLAGS="-O2 -g -Wall -Wno-unused-variable -Wno-error=unused-variable -Wno-unused-but-set-variable -Wno-error=unused-but-set-variable"
+
+# Android SDK/NDK
+ENV ANDROID_HOME=/opt/android-sdk \
+    ANDROID_SDK_ROOT=/opt/android-sdk \
+    PATH="${PATH}:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools"
+
+RUN mkdir -p ${ANDROID_HOME}/cmdline-tools && \
+    wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline.zip && \
+    unzip -q cmdline.zip -d ${ANDROID_HOME}/cmdline-tools && \
+    mv ${ANDROID_HOME}/cmdline-tools/cmdline-tools ${ANDROID_HOME}/cmdline-tools/latest && \
+    rm cmdline.zip && \
+    yes | sdkmanager --licenses >/dev/null 2>&1 && \
+    sdkmanager --update && \
+    sdkmanager \
+        "platform-tools" \
+        "platforms;android-34" \
+        "build-tools;34.0.0" \
+        "ndk;27.1.12297006" && \
+    ln -sfn ${ANDROID_HOME}/ndk/27.1.12297006 ${ANDROID_HOME}/ndk/latest
+
+ENV ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/27.1.12297006"
+
+# Install gomobile + gobind (pinned)
+RUN go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20250408133729-978277e7eaf7 && \
+    go install golang.org/x/mobile/cmd/gobind@v0.0.0-20250408133729-978277e7eaf7
+
+# Init gomobile
+RUN gomobile init
+
+WORKDIR /workspace
+# This stage has no CMD – we use it only for docker cp / export
