@@ -34,6 +34,38 @@ gomobile init
 export GOFLAGS="-mod=mod"
 # NIST FIPS 140-3: use Go Cryptographic Module (enables FIPS mode in the built binary)
 export GOFIPS140="${GOFIPS140:-v1.0.0}"
+
+echo "Verifying FIPS 140-3 mode..."
+
+TMP_FIPS_FILE=$(mktemp /tmp/fipscheck-XXXX.go)
+
+cat > "$TMP_FIPS_FILE" <<'EOF'
+package main
+
+import (
+	"fmt"
+	"crypto/internal/fips140"
+)
+
+func main() {
+	if fips140.Enabled() {
+		fmt.Print("enabled")
+	} else {
+		fmt.Print("disabled")
+	}
+}
+EOF
+
+FIPS_STATUS=$(go run "$TMP_FIPS_FILE" 2>/dev/null)
+rm -f "$TMP_FIPS_FILE"
+
+if [ "$FIPS_STATUS" = "enabled" ]; then
+	echo "FIPS mode: ENABLED"
+else
+	echo "FIPS mode: DISABLED"
+	echo "ERROR: Go toolchain is not running in FIPS mode"
+	exit 1
+fi
 gomobile bind -v -target=android -androidapi 21 github.com/BoldBitcoinWallet/BBMTLib/tss
 cp tss.aar ../android/app/libs/tss.aar
 cp tss-sources.jar ../android/app/libs/tss-sources.jar
