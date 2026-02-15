@@ -97,3 +97,7 @@ else
     echo "Run ./build.sh directly on macOS for iOS/macOS framework"
 fi
 
+# Run go mod tidy again at the end to ensure go.mod/go.sum are up to date
+# This ensures any dependencies added during the build are included
+echo "Updating go.mod/go.sum..."
+go mod tidy
