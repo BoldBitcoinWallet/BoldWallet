@@ -54,6 +54,21 @@ const ExtensionPairingModal: React.FC<ExtensionPairingModalProps> = ({
           width: '100%',
           maxWidth: 340,
         },
+        contentWrapper: {
+          width: '100%' as const,
+          alignItems: 'center' as const,
+        },
+        stepText: {
+          flex: 1,
+          lineHeight: 20,
+        },
+        noteText: {
+          textAlign: 'center' as const,
+          lineHeight: 18,
+        },
+        actionsRowWithMargin: {
+          marginTop: 20,
+        },
         cancelButton: {
           paddingVertical: 12,
           paddingHorizontal: 20,
@@ -81,8 +96,8 @@ const ExtensionPairingModal: React.FC<ExtensionPairingModalProps> = ({
       <AppPressable style={styles.modalOverlay} onPress={onClose}>
         <View style={[styles.modalContent, localStyles.contentInner]}>
           <AppPressable
-            onPress={(e) => e.stopPropagation()}
-            style={{width: '100%', alignItems: 'center'}}>
+            onPress={e => e.stopPropagation()}
+            style={localStyles.contentWrapper}>
             <View style={styles.modalHeaderRow}>
               <Image
                 source={require('../assets/extension-icon.png')}
@@ -95,7 +110,7 @@ const ExtensionPairingModal: React.FC<ExtensionPairingModalProps> = ({
             </View>
             <AppText variant="body" style={localStyles.bodyText}>
               You scanned a pairing code from the Bold Bitcoin Wallet browser
-              extension. To complete binding:
+              extension.{'\n'}To complete binding:
             </AppText>
             <View style={localStyles.stepRow}>
               <View style={localStyles.stepNumber}>
@@ -103,7 +118,7 @@ const ExtensionPairingModal: React.FC<ExtensionPairingModalProps> = ({
                   1
                 </AppText>
               </View>
-              <AppText variant="body" style={{flex: 1, lineHeight: 20}}>
+              <AppText variant="body" style={localStyles.stepText}>
                 Tap Confirm below — this app will show a QR code.
               </AppText>
             </View>
@@ -113,7 +128,7 @@ const ExtensionPairingModal: React.FC<ExtensionPairingModalProps> = ({
                   2
                 </AppText>
               </View>
-              <AppText variant="body" style={{flex: 1, lineHeight: 20}}>
+              <AppText variant="body" style={localStyles.stepText}>
                 Scan that QR with the extension to finish pairing.
               </AppText>
             </View>
@@ -121,11 +136,11 @@ const ExtensionPairingModal: React.FC<ExtensionPairingModalProps> = ({
               <AppText
                 variant="caption"
                 tone="muted"
-                style={{textAlign: 'center', lineHeight: 18}}>
+                style={localStyles.noteText}>
                 Only proceed if you started this pairing from your extension.
               </AppText>
             </View>
-            <View style={[styles.modalActionsRow, {marginTop: 20}]}>
+            <View style={[styles.modalActionsRow, localStyles.actionsRowWithMargin]}>
               <View style={styles.modalActionLeft}>
                 <AppPressable
                   onPress={onClose}

@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.2.0] - 2026-02-15
+
+### Added
+- **FIPS 140-3 (SP 800-90A DRBG) compliance**: Optional FIPS-approved build for BBMTLib and Docker.
+  - **BBMTLib**: `build.sh` supports `GOFIPS140=v1.0.0` (default) or `GOFIPS140=off`; FIPS mode uses SP 800-90A DRBG with mixed entropy; requires Go 1.24+.
+  - **Docker**: `Dockerfile.fips` and Red Hat UBI9-based FIPS build; `Dockerfile` passes through build args for FIPS.
+  - **Android**: `fips-android.sh` and Gradle integration for FIPS-aware native build.
+  - **CI**: Build and test pipeline checks FIPS capability and `go mod tidy` cleanliness.
+- **Bold Wallet Chrome extension**: Device tab and Wallet home improvements.
+  - **Device tab**: In the “Bold Web • Extension” section, added a link to install the Bold Wallet Chrome extension (Chrome Web Store).
+  - **Wallet home**: Replaced the extension-pairing system Alert with a dedicated **Extension Pairing** modal: step-by-step explanation, Confirm/Cancel, and theme-aware typography (AppText, light/dark).
+
+### Changed
+- **BBMTLib build**: `build.sh` hardened (set -euo pipefail), FIPS and environment checks, `go mod tidy`/download/verify; gomobile/gobind validation.
+- **Lint**: Resolved inline-style warnings in `ExtensionPairingModal` and `KeyshareInfoContent`; removed unused imports in `MobilesPairing`, `SignedPSBTModal`, and `UserPreferenceScreen`.
+
+### Technical Details
+- **Version**: `package.json` 2.2.0; Android/iOS version bumps as applicable.
+- **BBMTLib**: `go.mod`/`go.sum` updates; README documents FIPS build and randomness behavior.
+
 ## [2.1.15] - 2026-02-05
 
 ### Changed

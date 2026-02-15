@@ -1,7 +1,6 @@
 import React, {useCallback, useRef, useState, useMemo, useEffect} from 'react';
 import {
   View,
-  Text,
   Modal,
   StyleSheet,
   Alert,

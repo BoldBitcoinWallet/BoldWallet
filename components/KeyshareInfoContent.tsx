@@ -77,6 +77,8 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
         },
         bindExtensionButtonText: {marginLeft: 8},
         extensionResponseQrPadding: {padding: 16},
+        extensionLinkItem: {marginBottom: 8},
+        extensionLinkText: {marginBottom: 0},
       }),
     [theme.colors.background],
   );
@@ -819,13 +821,13 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                         'https://chromewebstore.google.com/detail/bold-wallet/dpgigdojkmhknnoedgbkfdeilmlbdecf',
                       )
                     }
-                    style={[styles.watchWalletItem, {marginBottom: 8}]}>
+                    style={[styles.watchWalletItem, screenStyles.extensionLinkItem]}>
                     <AppText
                       variant="body"
                       tone="primary"
                       style={[
                         screenStyles.walletInfoHintLink,
-                        {marginBottom: 0},
+                        screenStyles.extensionLinkText,
                       ]}>
                       Get Bold Wallet for Chrome →
                     </AppText>
