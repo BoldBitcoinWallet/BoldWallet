@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+# FIPS 140-3 by default (override with GOFIPS140=off or GODEBUG= to disable)
+export GOFIPS140="${GOFIPS140:-v1.0.0}"
+export GODEBUG="${GODEBUG:+$GODEBUG,}fips140=on"
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
