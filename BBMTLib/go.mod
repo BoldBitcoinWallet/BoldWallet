@@ -1,8 +1,6 @@
 module github.com/BoldBitcoinWallet/BBMTLib
 
-go 1.24.1
-
-toolchain go1.24.2
+go 1.25.0
 
 require (
 	github.com/bnb-chain/tss-lib/v2 v2.0.2
@@ -61,7 +59,7 @@ require (
 	go.uber.org/multierr v1.10.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/crypto v0.44.0 // indirect
-	golang.org/x/sys v0.40.0 // indirect
+	golang.org/x/sys v0.41.0 // indirect
 	google.golang.org/protobuf v1.36.2 // indirect
 )
 

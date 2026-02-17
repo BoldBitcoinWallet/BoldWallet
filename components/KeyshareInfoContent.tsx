@@ -1,6 +1,15 @@
 import React, {useCallback, useState, useEffect, useRef} from 'react';
-import {View, Text, Image, ScrollView, Alert, StyleSheet} from 'react-native';
+import {
+  View,
+  Text,
+  Image,
+  ScrollView,
+  Alert,
+  StyleSheet,
+  Linking,
+} from 'react-native';
 import AppPressable from './AppPressable';
+import AppText from './AppText';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Animated, {
   useSharedValue,
@@ -68,6 +77,8 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
         },
         bindExtensionButtonText: {marginLeft: 8},
         extensionResponseQrPadding: {padding: 16},
+        extensionLinkItem: {marginBottom: 8},
+        extensionLinkText: {marginBottom: 0},
       }),
     [theme.colors.background],
   );
@@ -804,6 +815,23 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                   <Text style={styles.watchWalletWarning}>
                     ⚠️ This does NOT hold any private keyshare data.
                   </Text>
+                  <AppPressable
+                    onPress={() =>
+                      Linking.openURL(
+                        'https://chromewebstore.google.com/detail/bold-wallet/dpgigdojkmhknnoedgbkfdeilmlbdecf',
+                      )
+                    }
+                    style={[styles.watchWalletItem, screenStyles.extensionLinkItem]}>
+                    <AppText
+                      variant="body"
+                      tone="primary"
+                      style={[
+                        screenStyles.walletInfoHintLink,
+                        screenStyles.extensionLinkText,
+                      ]}>
+                      Get Bold Wallet for Chrome →
+                    </AppText>
+                  </AppPressable>
                   {/* Bind Extension: scan extension QR then show response QR */}
                   {keyshareInfo?.pubKey && keyshareInfo?.chainCode && (
                     <View style={[styles.watchWalletItem]}>

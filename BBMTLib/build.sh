@@ -1,47 +1,157 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Check for --clear-cache flag
-CLEAR_CACHE=false
-for arg in "$@"; do
-    if [ "$arg" = "--clear-cache" ]; then
-        CLEAR_CACHE=true
-        break
+# --- Configuration & Helpers ---
+
+# Text formatting
+BOLD="\033[1m"
+RESET="\033[0m"
+GREEN="\033[32m"
+YELLOW="\033[33m"
+
+info() { echo -e "${BOLD}${GREEN}==>${RESET} ${BOLD}$1${RESET}"; }
+warn() { echo -e "${BOLD}${YELLOW}Warning:${RESET} $1"; }
+
+info "Starting BoldWallet TSS gomobile build (FIPS-aware, Go 1.25+)"
+
+# --- 1. Environment Checks ---
+
+echo "Go environment:"
+go version
+go env | grep -E 'GOOS|GOARCH|CGO_ENABLED|GODEBUG|GOEXPERIMENT|GOPATH|PATH'
+
+# FIPS Policy Check (Linux specific)
+if [[ "$(uname)" == "Linux" ]] && [[ -f "/etc/crypto-policies/config" ]]; then
+    info "FIPS policy check (system level):"
+    if grep -q '^FIPS$' /etc/crypto-policies/config 2>/dev/null; then
+        echo "FIPS crypto policy active"
+    else
+        echo "No FIPS system policy active"
     fi
-done
-
-echo "building gomobile tss lib"
-go mod tidy
-
-# Clear module cache if --clear-cache flag is provided
-if [ "$CLEAR_CACHE" = true ]; then
-    echo "Clearing module cache to force fresh download..."
-    go clean -modcache
 fi
 
-# Force download of all dependencies
-echo "Downloading all dependencies..."
+# Reliable FIPS check (Cross-platform temp file)
+info "Checking native FIPS 140-3 mode..."
+
+# Portable mktemp approach: create in current dir to avoid /tmp permission/path issues on different OSs
+TMP_GO_FILE="./fips_check_$(date +%s).go"
+
+cat > "$TMP_GO_FILE" <<'EOF'
+package main
+import (
+    "crypto/fips140"
+    "fmt"
+    "os"
+)
+func main() {
+    if fips140.Enabled() {
+        fmt.Fprint(os.Stdout, "enabled")
+    } else {
+        fmt.Fprint(os.Stdout, "disabled")
+    }
+}
+EOF
+
+# Run check, defaulting to disabled if run fails (e.g. if crypto/fips140 doesn't exist in older Go)
+FIPS_ENABLED=$(go run "$TMP_GO_FILE" 2>/dev/null || echo "disabled/unavailable")
+rm -f "$TMP_GO_FILE"
+
+echo "Native FIPS mode: ${FIPS_ENABLED}"
+
+# --- 2. Toolchain Setup ---
+
+info "Preparing modules..."
+go mod tidy
 go mod download
+go mod verify
 
-# Install gomobile if not already installed
+# Ensure GOPATH/bin is in PATH
+export PATH="$PATH:$(go env GOPATH)/bin"
+
+# Install gomobile/gobind if missing
 if ! command -v gomobile &> /dev/null; then
-    echo "gomobile not found, installing..."
+    warn "gomobile not found. Installing..."
     go install golang.org/x/mobile/cmd/gomobile@latest
-    # Add Go bin directory to PATH if not already there
-    export PATH="$PATH:$(go env GOPATH)/bin"
 fi
 
-gomobile init
+if ! command -v gobind &> /dev/null; then
+    warn "gobind not found. Installing..."
+    go install golang.org/x/mobile/cmd/gobind@latest
+fi
+
+# Initialize gomobile (Safe to run repeatedly, but we try standard init first)
+info "Initializing gomobile..."
+gomobile init || { warn "Init failed – retrying with verbose output"; gomobile init -v; }
+
+# Verify gobind works
+gobind -h >/dev/null 2>&1 || { echo "Error: gobind not functional"; exit 1; }
+
+# Optional cache clear
+if [[ "${1:-}" == "--clear-cache" ]]; then
+    warn "Clearing cache as requested..."
+    go clean -modcache
+    go mod download
+fi
+
+# --- 3. Build: Android ---
+
+info "Building for Android..."
+
+# Check requirements for Android
+if [[ -z "${ANDROID_HOME:-}" ]]; then
+    warn "ANDROID_HOME is not set. Android build might fail if SDK is missing."
+fi
+
+# Set flag for Go modules
 export GOFLAGS="-mod=mod"
-gomobile bind -v -target=android -androidapi 21 github.com/BoldBitcoinWallet/BBMTLib/tss
-cp tss.aar ../android/app/libs/tss.aar
-cp tss-sources.jar ../android/app/libs/tss-sources.jar
 
-gomobile bind -v -target=ios,iossimulator,macos github.com/BoldBitcoinWallet/BBMTLib/tss
-# Remove old framework first (cp -r fails with symlinks when destination exists)
-rm -rf ../ios/Tss.xcframework
-cp -R ./Tss.xcframework ../ios/
+# Run Bind
+# Note: -androidapi 21 is the standard min version
+gomobile bind -v -target=android -androidapi 21 -o tss.aar github.com/BoldBitcoinWallet/BBMTLib/tss
 
-# Run go mod tidy again at the end to ensure go.mod/go.sum are up to date
-# This ensures any dependencies added during the build are included
-echo "Updating go.mod/go.sum..."
+# Copy Artifacts
+if [[ -d "../android/app/libs" ]]; then
+    info "Copying Android artifacts..."
+    cp -v tss.aar ../android/app/libs/tss.aar || warn "Copy tss.aar failed"
+    echo "✓ tss.aar copied to ../android/app/libs/tss.aar"
+    # gomobile bind generates sources jar alongside the aar? 
+    # Usually it produces just the .aar. If you have a custom process generating -sources.jar, keep this.
+    if [[ -f "tss-sources.jar" ]]; then
+        cp -v tss-sources.jar ../android/app/libs/tss-sources.jar || warn "Copy sources.jar failed"
+        echo "✓ tss-sources.jar copied to ../android/app/libs/tss-sources.jar"
+    fi
+fi
+
+# --- 4. Build: iOS/macOS ---
+
+if [[ "$(uname)" == "Darwin" ]]; then
+    info "macOS detected → Building for iOS/Simulator/macOS"
+    
+    # Ensure Xcode command line tools or Xcode is valid
+    if ! xcode-select -p &>/dev/null; then
+        echo "Error: Xcode tools not found. Cannot build for iOS."
+        exit 1
+    fi
+
+    # Build xcframework
+    gomobile bind -v -target=ios,iossimulator,macos -o Tss.xcframework github.com/BoldBitcoinWallet/BBMTLib/tss
+
+    # Copy Artifacts
+    if [[ -d "../ios" ]]; then
+        info "Copying iOS artifacts..."
+        # Clean old framework to ensure clean copy
+        rm -rf ../ios/Tss.xcframework 2>/dev/null || true
+        cp -a ./Tss.xcframework ../ios/ || warn "Copy Tss.xcframework failed"
+        echo "✓ Tss.xcframework copied to ../ios/Tss.xcframework"
+    fi
+else
+    info "Not running on macOS → Skipping iOS/macOS targets"
+fi
+
+# --- 5. Cleanup ---
+
+info "Finalizing..."
+# Run go mod tidy again at the end to ensure go.mod/go.sum are clean
 go mod tidy
+
+info "Build complete!"

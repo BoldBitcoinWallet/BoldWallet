@@ -48,7 +48,6 @@ import {useUser} from '../context/UserContext';
 import {waitMS, WalletService} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
 import BackupKeyshareModal from '../components/BackupKeyshareModal';
-import AppText from '../components/AppText';
 const {BBMTLibNativeModule} = NativeModules;
 // Helper component for connection line animation
 const ConnectionLineAnimatedView: React.FC<{

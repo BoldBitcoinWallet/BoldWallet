@@ -3,6 +3,10 @@
 set -e  # Exit on error
 set -o pipefail  # Catch errors in pipes
 
+# FIPS 140-3 by default (override with GOFIPS140=off or GODEBUG= to disable)
+export GOFIPS140="${GOFIPS140:-v1.0.0}"
+export GODEBUG="${GODEBUG:+$GODEBUG,}fips140=on"
+
 BIN_NAME="bbmt"
 BUILD_DIR="./bin"
 
@@ -91,6 +95,10 @@ case "$ADDRESS_TYPE" in
     exit 1
     ;;
 esac
+
+# Run from BBMTLib root (script may be invoked from BBMTLib or BBMTLib/scripts)
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 
 # Ensure build directory exists
 mkdir -p "$BUILD_DIR"

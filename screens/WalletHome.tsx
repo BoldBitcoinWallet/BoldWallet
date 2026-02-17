@@ -35,6 +35,7 @@ import Big from 'big.js';
 import ReceiveModal from './ReceiveModal';
 import SignedPSBTModal from './SignedPSBTModal';
 import LegacyWalletModal from '../components/LegacyWalletModal';
+import ExtensionPairingModal from '../components/ExtensionPairingModal';
 import AppText from '../components/AppText';
 import {
   dbg,
@@ -135,6 +136,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   >(null);
   const [isExtensionResponseQrVisible, setIsExtensionResponseQrVisible] =
     useState(false);
+  const [isExtensionPairingModalVisible, setIsExtensionPairingModalVisible] =
+    useState(false);
+  const [pendingExtensionPairingCode, setPendingExtensionPairingCode] =
+    useState<string | null>(null);
   const extensionQrModalStyles = React.useMemo(
     () => StyleSheet.create({qrPadding: {padding: 16}}),
     [],
@@ -1803,23 +1808,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         if (extensionBindAlertShownRef.current) return;
         extensionBindAlertShownRef.current = true;
         setIsQRScannerVisible(false);
-        Alert.alert(
-          'Bind Bold Extension?',
-          'You scanned a pairing code from the Bold Bitcoin browser extension. If you confirm, this app will show a QR code for the extension to scan and complete the binding. Only proceed if you started this on your extension.',
-          [
-            {
-              text: 'Cancel',
-              style: 'cancel',
-              onPress: () => {
-                extensionBindAlertShownRef.current = false;
-              },
-            },
-            {
-              text: 'Confirm',
-              onPress: () => proceedWithExtensionBind(pairingCode),
-            },
-          ],
-        );
+        setPendingExtensionPairingCode(pairingCode);
+        setIsExtensionPairingModalVisible(true);
         return;
       }
 
@@ -1950,7 +1940,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       setIsTransportModalVisible(true);
     }, 300);
     },
-    [network, proceedWithExtensionBind],
+    [network],
   );
   // Handle QR scan for send bitcoin data
   const handleScanQRForSend = useCallback(() => {
@@ -2291,6 +2281,21 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         qrSize={320}
         contentMaxWidth={400}
         qrContentStyle={extensionQrModalStyles.qrPadding}
+      />
+      <ExtensionPairingModal
+        visible={isExtensionPairingModalVisible}
+        onClose={() => {
+          extensionBindAlertShownRef.current = false;
+          setIsExtensionPairingModalVisible(false);
+          setPendingExtensionPairingCode(null);
+        }}
+        onConfirm={() => {
+          if (pendingExtensionPairingCode) {
+            proceedWithExtensionBind(pendingExtensionPairingCode);
+            setPendingExtensionPairingCode(null);
+            setIsExtensionPairingModalVisible(false);
+          }
+        }}
       />
       <LegacyWalletModal
         visible={isLegacyWalletModalVisible}
