@@ -1,10 +1,5 @@
 import React from 'react';
-import {
-  Text,
-  View as RNView,
-  StyleSheet,
-  Platform,
-} from 'react-native';
+import {Text, View as RNView, StyleSheet, Platform} from 'react-native';
 import AppPressable from './AppPressable';
 import {Image} from 'react-native';
 import {View} from 'react-native';
@@ -39,7 +34,11 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
   const {theme} = useTheme();
   const styles = createStyles(theme);
   const cleanProviderUrl = apiBase
-    ? apiBase.replace('https://', '').replace('/api', '').replace(/\/+$/, '')
+    ? apiBase
+        .replace('https://', '')
+        .replace('http://', '')
+        .replace('/api', '')
+        .replace(/\/+$/, '')
     : 'Loading...';
   const providerHost = cleanProviderUrl.includes('/')
     ? cleanProviderUrl.split('/')[0]

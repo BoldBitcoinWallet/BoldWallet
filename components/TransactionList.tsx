@@ -42,7 +42,12 @@ const outIcon = require('../assets/out-icon.png');
 const consolidateIcon = require('../assets/consolidate-icon.png');
 const pendingIcon = require('../assets/pending-icon.png');
 interface TransactionListProps {
-  address: string;
+  /** Single address (legacy). Use addresses for multi-address (HD wallet) mode. */
+  address?: string;
+  /** All HD addresses (receive + change) for wallet-level transaction list. */
+  addresses?: string[];
+  network?: string;
+  addressType?: string;
   baseApi: string;
   onUpdate: (pendingTxs: any[], pending: number) => Promise<any>;
   initialTransactions?: any[];
@@ -62,6 +67,9 @@ const TransactionList = React.forwardRef<
   (
     {
       address,
+      addresses,
+      network,
+      addressType,
       baseApi,
       onUpdate,
       initialTransactions = [],
@@ -73,6 +81,8 @@ const TransactionList = React.forwardRef<
     },
     ref,
   ) => {
+    const isMultiAddress = Array.isArray(addresses) && addresses.length > 0;
+    const effectiveAddress = isMultiAddress ? addresses![0] : address;
     const [transactions, setTransactions] =
       useState<any[]>(initialTransactions);
     const [loading, setLoading] = useState(false);
@@ -90,43 +100,60 @@ const TransactionList = React.forwardRef<
     const isMounted = useRef(true);
     const abortController = useRef<AbortController | null>(null);
     const isRefreshingRef = useRef(false);
-    // Memoized transaction amount calculator
-    const getTransactionAmounts = useCallback((tx: any, addr: string) => {
-      if (tx.sentAt) {
-        const self =
-          String(tx.from).toLowerCase() === String(tx.to).toLowerCase();
-        const sent = self ? 0 : tx.amount;
-        const chng = self ? sent : 0;
-        const rcvd = self ? sent : 0;
+    const ourAddresses = useMemo(
+      () => (isMultiAddress ? new Set(addresses!) : null),
+      [isMultiAddress, addresses],
+    );
+    const isOurAddress = useCallback(
+      (addr: string) =>
+        ourAddresses ? ourAddresses.has(addr) : addr === effectiveAddress,
+      [ourAddresses, effectiveAddress],
+    );
+    const getTransactionAmounts = useCallback(
+      (tx: any, addrOrAddrs?: string | string[]) => {
+        const checkAddr = (a: string) =>
+          addrOrAddrs
+            ? Array.isArray(addrOrAddrs)
+              ? addrOrAddrs.includes(a)
+              : a === addrOrAddrs
+            : isOurAddress(a);
+        if (tx.sentAt) {
+          const self =
+            String(tx.from).toLowerCase() === String(tx.to).toLowerCase();
+          const sent = self ? 0 : tx.amount;
+          const chng = self ? sent : 0;
+          const rcvd = self ? sent : 0;
+          return {
+            sent: tx.amount / 1e8,
+            changeAmount: chng / 1e8,
+            received: rcvd / 1e8,
+          };
+        }
+        const sentAmount = tx.vin.reduce((total: number, input: any) => {
+          return checkAddr(input.prevout?.scriptpubkey_address || '')
+            ? total + (input.prevout?.value || 0)
+            : total;
+        }, 0);
+        const receivedAmount = tx.vout.reduce((total: number, output: any) => {
+          return checkAddr(output.scriptpubkey_address || '')
+            ? total + output.value
+            : total;
+        }, 0);
+        const changeAmount = tx.vout.reduce((total: number, output: any) => {
+          return sentAmount > 0 && checkAddr(output.scriptpubkey_address || '')
+            ? total + output.value
+            : total;
+        }, 0);
+        const fee = tx.fee || 0;
+        const finalSentAmount = Math.max(0, sentAmount - changeAmount - fee);
         return {
-          sent: tx.amount / 1e8,
-          changeAmount: chng / 1e8,
-          received: rcvd / 1e8,
+          sent: finalSentAmount / 1e8,
+          changeAmount: changeAmount / 1e8,
+          received: receivedAmount / 1e8,
         };
-      }
-      const sentAmount = tx.vin.reduce((total: number, input: any) => {
-        return input.prevout.scriptpubkey_address === addr
-          ? total + input.prevout.value
-          : total;
-      }, 0);
-      const receivedAmount = tx.vout.reduce((total: number, output: any) => {
-        return output.scriptpubkey_address === addr
-          ? total + output.value
-          : total;
-      }, 0);
-      const changeAmount = tx.vout.reduce((total: number, output: any) => {
-        return sentAmount > 0 && output.scriptpubkey_address === addr
-          ? total + output.value
-          : total;
-      }, 0);
-      const fee = tx.fee || 0;
-      const finalSentAmount = Math.max(0, sentAmount - changeAmount - fee);
-      return {
-        sent: finalSentAmount / 1e8,
-        changeAmount: changeAmount / 1e8,
-        received: receivedAmount / 1e8,
-      };
-    }, []);
+      },
+      [isOurAddress],
+    );
     // Memoize fetchTransactions to prevent unnecessary re-renders
     const memoizedFetchTransactions = useCallback(
       async (url: string | undefined, silent: boolean = false) => {
@@ -153,8 +180,9 @@ const TransactionList = React.forwardRef<
         // Function to load from cache
         const loadFromCache = async () => {
           dbg('Loading from cache...');
-          const cachedTransactions =
-            await WalletService.getInstance().transactionsFromCache(address);
+          const cachedTransactions = isMultiAddress && network && addressType
+            ? await WalletService.getInstance().transactionsFromCacheForWallet(network, addressType)
+            : await WalletService.getInstance().transactionsFromCache(address || '');
           if (isMounted.current) {
             // No need to update cache when loading from cache
             setTransactions(cachedTransactions);
@@ -195,9 +223,10 @@ const TransactionList = React.forwardRef<
               a.startsWith('1') || a.startsWith('3') || a.startsWith('bc1')
             );
           };
-          if (!addressMatchesNetwork(address, isTestnetApi)) {
+          const addrToCheck = isMultiAddress ? addresses![0] : address;
+          if (!addrToCheck || !addressMatchesNetwork(addrToCheck, isTestnetApi)) {
             dbg('TransactionList: address/baseApi mismatch; skipping fetch', {
-              address,
+              address: addrToCheck,
               url,
             });
             if (isMounted.current) {
@@ -210,65 +239,91 @@ const TransactionList = React.forwardRef<
           dbg(
             'TransactionList: Guard passed. Address matches network. Proceeding to fetch.',
             {
-              address,
+              address: addrToCheck,
               isTestnetApi,
+              isMultiAddress,
             },
           );
-          // Construct proper API URL
           const cleanBaseApi = url.replace(/\/+$/, '').replace(/\/api\/?$/, '');
-          const apiUrl = `${cleanBaseApi}/api/address/${address}/txs`;
-          dbg('Starting fetch transactions from:', apiUrl);
-          // Set a timeout to fall back to cache if API takes too long
-          const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('API timeout')), 10000); // Increased timeout to 10s
-          });
-          const response = (await Promise.race([
-            axios.get(apiUrl, {
-              signal: abortController.current.signal,
-              timeout: 10000, // Increased timeout to 10s
-            }),
-            timeoutPromise,
-          ])) as {data: any[]};
+          let responseData: any[];
+          if (isMultiAddress && addresses!.length > 0) {
+            responseData = await WalletService.getInstance().fetchTransactionsForAddresses(
+              cleanBaseApi,
+              addresses!,
+            );
+          } else {
+            const apiUrl = `${cleanBaseApi}/api/address/${address}/txs`;
+            dbg('Starting fetch transactions from:', apiUrl);
+            const timeoutPromise = new Promise((_, reject) => {
+              setTimeout(() => reject(new Error('API timeout')), 10000);
+            });
+            const response = (await Promise.race([
+              axios.get(apiUrl, {
+                signal: abortController.current.signal,
+                timeout: 10000,
+              }),
+              timeoutPromise,
+            ])) as {data: any[]};
+            responseData = response.data;
+          }
           dbg(
             'TransactionList: Received response with',
-            response.data.length,
+            responseData.length,
             'transactions',
           );
           if (!isMounted.current) {
             dbg('Component unmounted, skipping state updates');
             return;
           }
-          const cached = JSON.parse(
-            (await LocalCache.getItem(`${address}-pendingTxs`)) || '{}',
-          );
-          // Process pending transactions
+          const cached = await (async () => {
+            if (isMultiAddress && addresses!.length > 0) {
+              const merged: Record<string, any> = {};
+              for (const addr of addresses!) {
+                const p = JSON.parse(
+                  (await LocalCache.getItem(`${addr}-pendingTxs`)) || '{}',
+                );
+                Object.assign(merged, p);
+              }
+              return merged;
+            }
+            return JSON.parse(
+              (await LocalCache.getItem(`${address}-pendingTxs`)) || '{}',
+            );
+          })();
+          const addrForAmounts = isMultiAddress ? addresses! : address;
           let pending = 0;
-          let pendingTxs = response.data
+          let pendingTxs = responseData
             .filter((tx: any) => !tx.status || !tx.status.confirmed)
             .map((tx: any) => {
-              const {sent} = getTransactionAmounts(tx, address);
+              const {sent} = getTransactionAmounts(tx, addrForAmounts);
               if (!isNaN(sent) && sent > 0) {
                 pending += Number(sent);
               }
               return tx;
             });
-          // Update cache
-          response.data.forEach((tx: any) => {
+          // Update cache - remove confirmed txs from pending
+          const addrsToUpdate = isMultiAddress ? addresses! : [address!];
+          for (const tx of responseData) {
             if (cached[tx.txid]) {
               delete cached[tx.txid];
-              LocalCache.setItem(
-                `${address}-pendingTxs`,
-                JSON.stringify(cached),
-              );
+              for (const a of addrsToUpdate) {
+                const p = JSON.parse(
+                  (await LocalCache.getItem(`${a}-pendingTxs`)) || '{}',
+                );
+                if (p[tx.txid]) {
+                  delete p[tx.txid];
+                  await LocalCache.setItem(`${a}-pendingTxs`, JSON.stringify(p));
+                }
+              }
             }
-          });
-          // Add cached transactions
+          }
+          const workingData = [...responseData];
           for (const txID in cached) {
             const validTxID = /^[a-fA-F0-9]{64}$/.test(txID);
             if (!validTxID) {
               delete cached[txID];
             } else {
-              response.data.unshift({
+              workingData.unshift({
                 txid: txID,
                 from: cached[txID].from,
                 to: cached[txID].to,
@@ -284,8 +339,7 @@ const TransactionList = React.forwardRef<
             }
           }
           await onUpdate(pendingTxs, pending);
-          // Filter out duplicates, keeping confirmed transactions over pending ones
-          const uniqueTransactions = response.data.reduce(
+          const uniqueTransactions = workingData.reduce(
             (acc: any[], tx: any) => {
               const existingTx = acc.find(t => t.txid === tx.txid);
               if (!existingTx) {
@@ -324,10 +378,18 @@ const TransactionList = React.forwardRef<
             // For confirmed transactions, sort by block height
             return (b.status.block_height || 0) - (a.status.block_height || 0);
           });
-          WalletService.getInstance().updateTransactionsCache(
-            address,
-            newTransactions,
-          );
+          if (isMultiAddress && network && addressType) {
+            WalletService.getInstance().updateTransactionsCacheForWallet(
+              network,
+              addressType,
+              newTransactions,
+            );
+          } else {
+            WalletService.getInstance().updateTransactionsCache(
+              address!,
+              newTransactions,
+            );
+          }
           if (isMounted.current) {
             dbg(
               'TransactionList: Setting',
@@ -372,7 +434,7 @@ const TransactionList = React.forwardRef<
           }
         }
       },
-      [address, getTransactionAmounts, onUpdate],
+      [address, addresses, isMultiAddress, network, addressType, getTransactionAmounts, onUpdate],
     );
     // For user pull-to-refresh
     const handlePullRefresh = useCallback(async () => {
@@ -419,10 +481,11 @@ const TransactionList = React.forwardRef<
     }, [isRefreshing]);
     // Fix transaction refresh handling
     useEffect(() => {
-      // Skip effect if address or baseApi are not initialized
-      if (!address || !baseApi || address === '' || baseApi === '') {
-        dbg('Skipping transaction fetch - address or baseApi not initialized', {
+      const hasAddress = address || (isMultiAddress && addresses!.length > 0);
+      if (!hasAddress || !baseApi || baseApi === '') {
+        dbg('Skipping transaction fetch - address/baseApi not initialized', {
           address,
+          addresses: isMultiAddress ? addresses?.length : 0,
           baseApi,
         });
         setTransactions([]);
@@ -483,16 +546,16 @@ const TransactionList = React.forwardRef<
         setLoading(false);
         setIsRefreshing(false);
       };
-    }, [address, baseApi, memoizedFetchTransactions]);
+    }, [address, addresses, isMultiAddress, baseApi, memoizedFetchTransactions]);
     // Memoized transaction status checker
     const getTransactionStatus = useCallback(
       (tx: any) => {
         const isSending =
           !!tx?.sentAt ||
-          !!tx.vin.some(
-            (input: any) => input.prevout.scriptpubkey_address === address,
+          !!tx.vin?.some(
+            (input: any) => isOurAddress(input.prevout?.scriptpubkey_address || ''),
           );
-        if (tx.sentAt || !tx.status.confirmed) {
+        if (tx.sentAt || !tx.status?.confirmed) {
           return {
             confirmed: false,
             text: isSending ? 'Sending' : 'Receiving',
@@ -505,7 +568,7 @@ const TransactionList = React.forwardRef<
           icon: isSending ? outIcon : inIcon,
         };
       },
-      [address],
+      [isOurAddress],
     );
     // Debounced fetch more implementation
     const fetchMore = useCallback(async () => {
@@ -516,12 +579,15 @@ const TransactionList = React.forwardRef<
         });
         return;
       }
-      // Guard against invalid state
-      if (!lastSeenTxId || !address || !baseApi) {
-        dbg('Skipping fetch more - invalid state:', {
+      if (isMultiAddress || !lastSeenTxId || !address || !baseApi) {
+        if (isMultiAddress) {
+          setHasMoreTransactions(false);
+        }
+        dbg('Skipping fetch more:', {
           lastSeenTxId,
           address,
           baseApi,
+          isMultiAddress,
         });
         return;
       }
@@ -564,7 +630,7 @@ const TransactionList = React.forwardRef<
             let pendingTxs = filteredTransactions
               .filter((tx: any) => !tx.status || !tx.status.confirmed)
               .map((tx: any) => {
-                const {sent} = getTransactionAmounts(tx, address);
+                const {sent} = getTransactionAmounts(tx, isMultiAddress ? addresses : address);
                 if (!isNaN(sent) && sent > 0) {
                   pending += Number(sent);
                 }
@@ -828,7 +894,7 @@ const TransactionList = React.forwardRef<
         } = getTransactionStatus(item);
         const {sent, changeAmount, received} = getTransactionAmounts(
           item,
-          address,
+          isMultiAddress ? addresses : address,
         );
         const txTime = item.sentAt || item.status.block_time * 1000;
         const txConf = item.sentAt ? false : item.status.confirmed;
@@ -842,20 +908,19 @@ const TransactionList = React.forwardRef<
         let relevantAddresses: string[] = [];
         let relevantAddress: string | null = null;
         if (status.includes('Sen')) {
-          // For sent transactions: collect ALL recipient addresses (outputs that aren't the sender's address)
+          // For sent transactions: collect ALL recipient addresses (outputs that aren't ours)
           relevantAddresses =
             item?.vout
-              ?.filter((output: any) => output.scriptpubkey_address !== address)
+              ?.filter((output: any) => !isOurAddress(output.scriptpubkey_address))
               .map((output: any) => output.scriptpubkey_address)
               .filter((addr: string) => addr) || [];
-          // Remove duplicates
           relevantAddresses = [...new Set(relevantAddresses)];
           relevantAddress = relevantAddresses[0] || null;
         } else {
-          // For received transactions: show the first input address that's not the receiver's address
+          // For received transactions: show the first input address that's not ours (the sender)
           relevantAddress =
             item?.vin?.find(
-              (input: any) => input.prevout.scriptpubkey_address !== address,
+              (input: any) => !isOurAddress(input.prevout?.scriptpubkey_address || ''),
             )?.prevout?.scriptpubkey_address || null;
           // Set empty array for received transactions (not used in display)
           relevantAddresses = [];
@@ -971,6 +1036,9 @@ const TransactionList = React.forwardRef<
         getTransactionStatus,
         getTransactionAmounts,
         address,
+        addresses,
+        isMultiAddress,
+        isOurAddress,
         appTheme.colors.background,
         appTheme.colors.bitcoinOrange,
         styles.transactionRow,
@@ -1086,14 +1154,15 @@ const TransactionList = React.forwardRef<
             selectedCurrency={selectedCurrency}
             btcRate={btcRate}
             getCurrencySymbol={getCurrencySymbol}
-            address={address}
+            address={isMultiAddress ? undefined : address}
+            addresses={isMultiAddress ? addresses : undefined}
             status={
               selectedTransaction
                 ? (() => {
                     const {text: status, confirmed} =
                       getTransactionStatus(selectedTransaction);
                     const {sent, changeAmount, received} =
-                      getTransactionAmounts(selectedTransaction, address);
+                      getTransactionAmounts(selectedTransaction, isMultiAddress ? addresses : address);
                     let finalStatus = status;
                     if (sent === 0 && received === changeAmount) {
                       finalStatus = confirmed
@@ -1109,7 +1178,7 @@ const TransactionList = React.forwardRef<
             }
             amounts={
               selectedTransaction
-                ? getTransactionAmounts(selectedTransaction, address)
+                ? getTransactionAmounts(selectedTransaction, isMultiAddress ? addresses : address)
                 : null
             }
             isBlurred={isBlurred}

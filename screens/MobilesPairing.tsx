@@ -875,7 +875,7 @@ const MobilesPairing = ({navigation}: any) => {
           });
         return; // Exit early for PSBT
       } else {
-        // Send BTC mode - derive from address using route params
+        // Send BTC mode - try multi-path first (spend from receive + change addresses)
         const btcPub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,
           ks.chain_code_hex,
@@ -892,23 +892,125 @@ const MobilesPairing = ({navigation}: any) => {
         if (satoshiAmount !== route.params.satoshiAmount) {
           throw 'Make sure you\'re sending the "Same Bitcoin" amount from Both Devices';
         }
-        // Call MPC send BTC
-        await BBMTLibNativeModule.mpcSendBTC(
-          server,
-          partyID,
-          partiesCSV,
-          sessionID,
-          sessionKey,
-          encKey,
-          decKey,
-          jks,
-          path,
-          btcPub,
-          senderAddress,
-          toAddress,
-          satoshiAmount,
-          satoshiFees,
-        )
+
+        const apiUrl =
+          (await LocalCache.getItem(`api_${net}`)) ||
+          (net === 'testnet3' || net === 'testnet'
+            ? 'https://mempool.space/testnet/api'
+            : 'https://mempool.space/api');
+
+        let usedMultiPath = false;
+        try {
+          const utxosWithPaths = await WalletService.getInstance().fetchUtxosWithPaths(
+            net,
+            addressTypeToUse,
+            apiUrl,
+          );
+          const changeAddress = await WalletService.getInstance().getNextChangeAddress(
+            net,
+            addressTypeToUse,
+          );
+          if (utxosWithPaths.length > 0 && changeAddress) {
+            const utxosForNative = utxosWithPaths.map(u => ({
+              txid: u.txid,
+              vout: u.vout,
+              value: u.value,
+              derivation_path: u.derivationPath,
+              address: u.address,
+            }));
+            const utxosWithPathsJSON = JSON.stringify(utxosForNative);
+            const txId = await BBMTLibNativeModule.mpcSendBTCWithUTXOs(
+              server,
+              partyID,
+              partiesCSV,
+              sessionID,
+              sessionKey,
+              encKey,
+              decKey,
+              jks,
+              btcPub,
+              toAddress,
+              satoshiAmount,
+              satoshiFees,
+              utxosWithPathsJSON,
+              changeAddress,
+            );
+            dbg(partyID, 'txID (multi-path)', txId);
+            const validTxID = /^[a-fA-F0-9]{64}$/.test(txId);
+            if (!validTxID) {
+              throw txId;
+            }
+            usedMultiPath = true;
+            try {
+              await WalletService.getInstance().incrementChangeIndexAfterSend(
+                net,
+                addressTypeToUse,
+              );
+            } catch (e) {
+              dbg('MobilesPairing: incrementChangeIndexAfterSend failed:', e);
+            }
+            const pendingKey = utxosWithPaths[0]?.address || senderAddress;
+            const pendingTxs = JSON.parse(
+              (await LocalCache.getItem(`${pendingKey}-pendingTxs`)) || '{}',
+            );
+            pendingTxs[txId] = {
+              txid: txId,
+              from: pendingKey,
+              to: toAddress,
+              amount: satoshiAmount,
+              satoshiAmount: satoshiAmount,
+              satoshiFees: satoshiFees,
+              sentAt: Date.now(),
+              status: {confirmed: false, block_height: null},
+            };
+            await LocalCache.setItem(
+              `${pendingKey}-pendingTxs`,
+              JSON.stringify(pendingTxs),
+            );
+            navigation.dispatch(
+              CommonActions.reset(getResetToMainTabsWallet({txId}, {showPlay, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab})),
+            );
+            setMpcDone(true);
+            if (originalNetwork && originalApiUrl) {
+              try {
+                await BBMTLibNativeModule.setBtcNetwork(originalNetwork);
+                await BBMTLibNativeModule.setAPI(originalNetwork, originalApiUrl);
+                await LocalCache.setItem('api', originalApiUrl);
+                const walletServiceRestore = WalletService.getInstance();
+                (walletServiceRestore as any).currentNetwork = originalNetwork;
+                (walletServiceRestore as any).currentApiUrl = originalApiUrl;
+              } catch (e) {
+                dbg('MobilesPairing: Error restoring network after multi-path send:', e);
+              }
+            }
+            if (isMaster) {
+              await waitMS(2000);
+              stopRelay();
+            }
+            setDoingMPC(false);
+          }
+        } catch (multiPathErr) {
+          dbg('MobilesPairing: multi-path send failed, falling back to single-path:', multiPathErr);
+        }
+
+        if (!usedMultiPath) {
+          // Fallback: single-path (original flow)
+          await BBMTLibNativeModule.mpcSendBTC(
+            server,
+            partyID,
+            partiesCSV,
+            sessionID,
+            sessionKey,
+            encKey,
+            decKey,
+            jks,
+            path,
+            btcPub,
+            senderAddress,
+            toAddress,
+            satoshiAmount,
+            satoshiFees,
+          )
           .then(async (txId: any) => {
             dbg(partyID, 'txID', txId);
             const validTxID = /^[a-fA-F0-9]{64}$/.test(txId);
@@ -983,6 +1085,7 @@ const MobilesPairing = ({navigation}: any) => {
             }
             setDoingMPC(false);
           });
+        }
       }
     } catch (error: any) {
       Alert.alert('Operation Error', error?.message || error);

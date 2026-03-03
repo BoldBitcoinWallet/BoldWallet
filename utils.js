@@ -267,6 +267,32 @@ export const getDerivePathForNetwork = (network, addressType = 'legacy', useLega
   return `m/${bipPath}/${coinType}/${account}'/${change}/${index}`;
 };
 
+/** Standard BIP44/BIP84/BIP49 gap limit for address discovery (e.g. restore). */
+export const GAP_LIMIT = 5;
+
+/** Minimum indices to always scan for both receive and change chains. Ensures path 0 and old paths are never missed. */
+export const MIN_SCAN_INDEX = 20;
+
+/**
+ * Derivation path for receive (external) address at given index.
+ * @param {string} network - 'mainnet' or 'testnet3'
+ * @param {string} addressType - 'legacy' | 'segwit-native' | 'segwit-compatible'
+ * @param {boolean} useLegacyPath - legacy wallet path
+ * @param {number} index - address index (default 0)
+ */
+export const getReceivePath = (network, addressType, useLegacyPath, index = 0) =>
+  getDerivePathForNetwork(network, addressType, useLegacyPath, 0, 0, index);
+
+/**
+ * Derivation path for change (internal) address at given index.
+ * @param {string} network - 'mainnet' or 'testnet3'
+ * @param {string} addressType - 'legacy' | 'segwit-native' | 'segwit-compatible'
+ * @param {boolean} useLegacyPath - legacy wallet path
+ * @param {number} index - change address index (default 0)
+ */
+export const getChangePath = (network, addressType, useLegacyPath, index = 0) =>
+  getDerivePathForNetwork(network, addressType, useLegacyPath, 0, 1, index);
+
 /**
  * Convert a hex string to a regular string
  * @param {string} hex - The hex string to convert

@@ -154,10 +154,36 @@ RCT_EXTERN_METHOD(estimateFees:(NSString *)senderAddress
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+// Call estimateFeeWithUTXOs (multi-path)
+RCT_EXTERN_METHOD(estimateFeeWithUTXOs:(NSString *)utxosWithPathsJSON
+                  receiverAddress:(NSString *)receiverAddress
+                  amountSatoshi:(NSString *)amountSatoshi
+                  changeAddress:(NSString *)changeAddress
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 // Call spendingHash
 RCT_EXTERN_METHOD(spendingHash:(NSString *)senderAddress
                   receiverAddress:(NSString *)receiverAddress
                   amountSatoshi:(NSString *)amountSatoshi
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+// Call mpcSendBTCWithUTXOs (multi-path)
+RCT_EXTERN_METHOD(mpcSendBTCWithUTXOs:(NSString *)server
+                  partyID:(NSString *)partyID
+                  partiesCSV:(NSString *)partiesCSV
+                  sessionID:(NSString *)sessionID
+                  sessionKey:(NSString *)sessionKey
+                  encKey:(NSString *)encKey
+                  decKey:(NSString *)decKey
+                  keyshare:(NSString *)keyshare
+                  publicKey:(NSString *)publicKey
+                  receiverAddress:(NSString *)receiverAddress
+                  amountSatoshi:(NSString *)amountSatoshi
+                  feeSatoshi:(NSString *)feeSatoshi
+                  utxosWithPathsJSON:(NSString *)utxosWithPathsJSON
+                  changeAddress:(NSString *)changeAddress
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -208,7 +234,22 @@ RCT_EXTERN_METHOD(nostrJoinKeysign:(NSString *)relaysCSV
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
-// Nostr MPC Send BTC
+// Nostr MPC Send BTC With UTXOs (multi-path)
+RCT_EXTERN_METHOD(nostrMpcSendBTCWithUTXOs:(NSString *)relaysCSV
+                  partyNsec:(NSString *)partyNsec
+                  partiesNpubsCSV:(NSString *)partiesNpubsCSV
+                  npubsSorted:(NSString *)npubsSorted
+                  balanceSats:(NSString *)balanceSats
+                  keyshareJSON:(NSString *)keyshareJSON
+                  receiverAddress:(NSString *)receiverAddress
+                  amountSatoshi:(NSString *)amountSatoshi
+                  estimatedFee:(NSString *)estimatedFee
+                  utxosWithPathsJSON:(NSString *)utxosWithPathsJSON
+                  changeAddress:(NSString *)changeAddress
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+// Nostr MPC Send BTC (changeAddress: optional HD change address; pass empty string for legacy behavior)
 RCT_EXTERN_METHOD(nostrMpcSendBTC:(NSString *)relaysCSV
                   partyNsec:(NSString *)partyNsec
                   partiesNpubsCSV:(NSString *)partiesNpubsCSV
@@ -221,6 +262,7 @@ RCT_EXTERN_METHOD(nostrMpcSendBTC:(NSString *)relaysCSV
                   receiverAddress:(NSString *)receiverAddress
                   amountSatoshi:(NSString *)amountSatoshi
                   estimatedFee:(NSString *)estimatedFee
+                  changeAddress:(NSString *)changeAddress
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 

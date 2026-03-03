@@ -1,8 +1,17 @@
 import Big from 'big.js';
 import {BBMTLibNativeModule} from '../native_modules';
-import {dbg, getDerivePathForNetwork, getMainnetAPIList, isLegacyWallet} from '../utils';
+import {dbg, getChangePath, getMainnetAPIList, getReceivePath, GAP_LIMIT, isLegacyWallet, MIN_SCAN_INDEX} from '../utils';
 import LocalCache from './LocalCache';
 import EncryptedStorage from 'react-native-encrypted-storage';
+import {
+  getChangeIndex,
+  getExternalIndex,
+  getMaxUsedExternal,
+  incrementChangeIndexAfterSend as hdIncrementChangeIndexAfterSend,
+  setChangeIndex,
+  setExternalIndex,
+  setMaxUsedExternal,
+} from './HdIndexService';
 import { validate as validateBitcoinAddress } from 'bitcoin-address-validation';
 export interface WalletBalance {
   btc: string;
@@ -10,6 +19,36 @@ export interface WalletBalance {
   hasNonZeroBalance: boolean;
   timestamp: number;
 }
+
+/** In-scope HD address with derivation path and chain (for UTXO tab and multi-address send). */
+export interface HdAddressWithPath {
+  address: string;
+  derivationPath: string;
+  chain: 'receive' | 'change';
+  index: number;
+}
+
+/** Mempool.space UTXO item: txid, vout, value (sats), status. */
+export interface ApiUtxo {
+  txid: string;
+  vout: number;
+  value: number;
+  status?: {
+    confirmed: boolean;
+    block_height?: number;
+    block_hash?: string;
+    block_time?: number;
+  };
+}
+
+/** UTXO with HD context: address, derivation path, and chain (receive vs change). */
+export interface UtxoWithPath extends ApiUtxo {
+  address: string;
+  derivationPath: string;
+  chain: 'receive' | 'change';
+  chainIndex: number;
+}
+
 export interface Transaction {
   txid: string;
   timestamp?: number;
@@ -249,6 +288,383 @@ export class WalletService {
     }
     return WalletService.instance;
   }
+
+  /**
+   * Returns the next change (internal chain) address for the given network and address type.
+   * Does not increment the change index; call incrementChangeIndexAfterSend() after successful broadcast.
+   */
+  public async getNextChangeAddress(
+    network: string,
+    addressType: string,
+  ): Promise<string> {
+    const jks = await EncryptedStorage.getItem('keyshare');
+    if (!jks) throw new Error('No keyshare found');
+    const ks = JSON.parse(jks);
+    const useLegacyPath = isLegacyWallet(ks.created_at);
+    const changeIdx = await getChangeIndex(network, addressType);
+    const path = getChangePath(network, addressType, useLegacyPath, changeIdx);
+    const btcPub = await BBMTLibNativeModule.derivePubkey(
+      ks.pub_key,
+      ks.chain_code_hex,
+      path,
+    );
+    const changeAddress = await BBMTLibNativeModule.btcAddress(
+      btcPub,
+      network,
+      addressType,
+    );
+    dbg('WalletService: getNextChangeAddress', {network, addressType, changeIdx, changeAddress: changeAddress?.slice(0, 12) + '...'});
+    return changeAddress;
+  }
+
+  /** Call after a send has been successfully broadcast to advance the change index. */
+  public async incrementChangeIndexAfterSend(
+    network: string,
+    addressType: string,
+  ): Promise<void> {
+    await hdIncrementChangeIndexAfterSend(network, addressType);
+  }
+
+  /**
+   * Derive the next receive (external) address and persist it as current.
+   * Call when user requests "Get new address" to avoid address reuse.
+   */
+  public async getNextReceiveAddress(
+    network: string,
+    addressType: string,
+  ): Promise<string> {
+    const jks = await EncryptedStorage.getItem('keyshare');
+    if (!jks) throw new Error('No keyshare found');
+    const ks = JSON.parse(jks);
+    const useLegacyPath = isLegacyWallet(ks.created_at);
+    const nextIndex = (await getExternalIndex(network, addressType)) + 1;
+    await setExternalIndex(network, addressType, nextIndex);
+    const path = getReceivePath(network, addressType, useLegacyPath, nextIndex);
+    const btcPub = await BBMTLibNativeModule.derivePubkey(
+      ks.pub_key,
+      ks.chain_code_hex,
+      path,
+    );
+    const newAddress = await BBMTLibNativeModule.btcAddress(
+      btcPub,
+      network,
+      addressType,
+    );
+    await this.saveStoredState({address: newAddress});
+    this.currentAddress = newAddress;
+    dbg('WalletService: getNextReceiveAddress', {network, addressType, nextIndex});
+    return newAddress;
+  }
+
+  /**
+   * Fetches UTXOs for all in-scope HD addresses (receive + change) and tags each with its derivation path.
+   * Used by multi-path send flow and can be reused by UtxosScreen.
+   * @param network - 'mainnet' | 'testnet'
+   * @param addressType - e.g. 'segwit-native'
+   * @param apiUrl - base API URL (e.g. https://mempool.space/api)
+   * @param signal - optional AbortSignal for cancellation
+   */
+  public async fetchUtxosWithPaths(
+    network: string,
+    addressType: string,
+    apiUrl: string,
+    signal?: AbortSignal,
+  ): Promise<UtxoWithPath[]> {
+    const baseUrl = apiUrl.replace(/\/+$/, '').replace(/\/api\/?$/, '');
+    const fullApiUrl = `${baseUrl}/api`;
+    const isTestnetApi = /\/testnet(\/|$)/.test(fullApiUrl);
+
+    const addressesWithPaths = await this.getHdAddressesWithPaths(
+      network,
+      addressType || 'segwit-native',
+    );
+    if (addressesWithPaths.length === 0) return [];
+
+    const merged: UtxoWithPath[] = [];
+    const controller = signal ? undefined : new AbortController();
+    const fetchSignal = signal ?? controller?.signal;
+    if (controller) {
+      setTimeout(() => controller.abort(), 20000);
+    }
+
+    await Promise.all(
+      addressesWithPaths.map(async ({address, derivationPath, chain, index}) => {
+        if (!this.addressMatchesNetwork(address, isTestnetApi)) return;
+        try {
+          const utxoUrl = `${fullApiUrl}/address/${encodeURIComponent(address)}/utxo`;
+          const res = await this.withTimeout(
+            `utxo-${address.slice(0, 12)}`,
+            fetch(utxoUrl, {signal: fetchSignal}),
+            8000,
+          );
+          if (!res.ok) return;
+          const rawList: ApiUtxo[] = await res.json();
+          if (!Array.isArray(rawList)) return;
+          for (const u of rawList) {
+            merged.push({
+              ...u,
+              address,
+              derivationPath,
+              chain,
+              chainIndex: index,
+            });
+          }
+        } catch {
+          // skip failed address
+        }
+      }),
+    );
+
+    // Sort: receive first, then change; by chain index; then by block_time desc (newest first)
+    merged.sort((a, b) => {
+      if (a.chain !== b.chain) return a.chain === 'receive' ? -1 : 1;
+      if (a.chainIndex !== b.chainIndex) return a.chainIndex - b.chainIndex;
+      const ta = a.status?.block_time ?? 0;
+      const tb = b.status?.block_time ?? 0;
+      return tb - ta;
+    });
+
+    return merged;
+  }
+
+  private addressMatchesNetwork(addr: string, isTestnetApi: boolean): boolean {
+    if (!addr) return false;
+    if (isTestnetApi) {
+      return (
+        ['m', 'n', '2', 't'].some(p => addr.startsWith(p)) ||
+        addr.startsWith('tb1')
+      );
+    }
+    return (
+      ['1', '3', 'b'].some(p => addr.startsWith(p)) || addr.startsWith('bc1')
+    );
+  }
+
+  /**
+   * Returns all in-scope HD addresses with derivation path and chain (receive vs change).
+   * Used by UTXOs tab and multi-address send to fetch UTXOs per address and show path in UI.
+   */
+  public async getHdAddressesWithPaths(
+    network: string,
+    addressType: string,
+  ): Promise<HdAddressWithPath[]> {
+    const jks = await EncryptedStorage.getItem('keyshare');
+    if (!jks) return [];
+    const ks = JSON.parse(jks);
+    const useLegacyPath = isLegacyWallet(ks.created_at);
+    const externalIdx = await getExternalIndex(network, addressType);
+    const maxUsedExternal = await getMaxUsedExternal(network, addressType);
+    const changeIdx = await getChangeIndex(network, addressType);
+    // Always scan at least 0..MIN_SCAN_INDEX so path 0 and old paths are never missed
+    const externalEnd = Math.max(MIN_SCAN_INDEX, Math.max(externalIdx, maxUsedExternal) + GAP_LIMIT);
+    const internalEnd = Math.max(MIN_SCAN_INDEX, changeIdx + GAP_LIMIT);
+    const results: HdAddressWithPath[] = [];
+    for (let i = 0; i <= externalEnd; i++) {
+      const path = getReceivePath(network, addressType, useLegacyPath, i);
+      const pub = await BBMTLibNativeModule.derivePubkey(
+        ks.pub_key,
+        ks.chain_code_hex,
+        path,
+      );
+      const address = await BBMTLibNativeModule.btcAddress(
+        pub,
+        network,
+        addressType,
+      );
+      results.push({address, derivationPath: path, chain: 'receive', index: i});
+    }
+    for (let i = 0; i <= internalEnd; i++) {
+      const path = getChangePath(network, addressType, useLegacyPath, i);
+      const pub = await BBMTLibNativeModule.derivePubkey(
+        ks.pub_key,
+        ks.chain_code_hex,
+        path,
+      );
+      const address = await BBMTLibNativeModule.btcAddress(
+        pub,
+        network,
+        addressType,
+      );
+      results.push({address, derivationPath: path, chain: 'change', index: i});
+    }
+    return results;
+  }
+
+  /**
+   * Returns the current receive address derivation path and index for display (e.g. ReceiveModal).
+   */
+  public async getCurrentReceivePathInfo(
+    network: string,
+    addressType: string,
+  ): Promise<{path: string; index: number} | null> {
+    const jks = await EncryptedStorage.getItem('keyshare');
+    if (!jks) {
+      dbg('WalletService: getCurrentReceivePathInfo - no keyshare');
+      return null;
+    }
+    const ks = JSON.parse(jks);
+    const useLegacyPath = isLegacyWallet(ks.created_at);
+    const index = await getExternalIndex(network, addressType);
+    const path = getReceivePath(network, addressType, useLegacyPath, index);
+    dbg('WalletService: getCurrentReceivePathInfo', {
+      network,
+      addressType,
+      index,
+      path,
+    });
+    return {path, index};
+  }
+
+  /**
+   * HD rule: An address is USED if it has EVER appeared in transaction history (confirmed or mempool),
+   * regardless of current UTXO state. Used for restore discovery to prevent address reuse.
+   */
+  private async isAddressUsed(address: string, apiUrl: string): Promise<boolean> {
+    try {
+      const baseUrl = apiUrl.replace(/\/+$/, '');
+      const url = `${baseUrl}/address/${address}/txs`;
+      const response = await this.withTimeout(
+        `txs-${address.slice(0, 12)}`,
+        fetch(url, {signal: this.abortController.signal}),
+        5000,
+      );
+      if (!response.ok) {
+        dbg('WalletService: isAddressUsed fetch failed', {address: address.slice(0, 12), status: response.status});
+        return true; // Conservative: treat as used to avoid reuse
+      }
+      const data = (await response.json()) as unknown;
+      const hasTxs = Array.isArray(data) && data.length > 0;
+      dbg('WalletService: isAddressUsed', {address: address.slice(0, 12), hasTxs});
+      return hasTxs;
+    } catch (error) {
+      dbg('WalletService: isAddressUsed error', {address: address.slice(0, 12), error});
+      return true; // Conservative: treat as used to avoid reuse
+    }
+  }
+
+  /**
+   * Restore discovery: scan external and internal chains until GAP_LIMIT consecutive
+   * unused addresses, then set externalIndex, maxUsedExternal, and changeIndex from chain state.
+   * Uses transaction history (not UTXO-only) per HD rule: address is used if it has EVER appeared in a tx.
+   * Call after LocalCache.clear() (storage clear) or keyshare import.
+   */
+  /** Progress: chain, current index, consecutive unused count */
+  public async discoverHdIndexesForNetwork(
+    network: string,
+    addressType: string,
+    apiUrl: string,
+    onProgress?: (chain: 'external' | 'internal', index: number, gapIndex: number) => void,
+  ): Promise<void> {
+    dbg('WalletService: discoverHdIndexesForNetwork START', {
+      network,
+      addressType,
+      apiUrl: apiUrl?.slice(0, 40) + '...',
+    });
+    const jks = await EncryptedStorage.getItem('keyshare');
+    if (!jks) {
+      dbg('WalletService: No keyshare, skipping restore discovery');
+      return;
+    }
+    const ks = JSON.parse(jks);
+    const useLegacyPath = isLegacyWallet(ks.created_at);
+    BBMTLibNativeModule.setAPI(network, apiUrl);
+    dbg('WalletService: Restore discovery - scanning external chain', {
+      network,
+      addressType,
+      useLegacyPath,
+    });
+
+    // External chain: scan until GAP_LIMIT consecutive unused
+    let maxUsedExternal = -1;
+    let consecutiveUnused = 0;
+    for (let i = 0; consecutiveUnused < GAP_LIMIT; i++) {
+      const path = getReceivePath(network, addressType, useLegacyPath, i);
+      const pub = await BBMTLibNativeModule.derivePubkey(
+        ks.pub_key,
+        ks.chain_code_hex,
+        path,
+      );
+      const addr = await BBMTLibNativeModule.btcAddress(
+        pub,
+        network,
+        addressType,
+      );
+      try {
+        onProgress?.('external', i, consecutiveUnused);
+        const used = await this.isAddressUsed(addr, apiUrl);
+        if (used) {
+          maxUsedExternal = i;
+          consecutiveUnused = 0;
+        } else {
+          consecutiveUnused++;
+        }
+      } catch {
+        maxUsedExternal = i; // Conservative: treat as used on error
+        consecutiveUnused = 0;
+      }
+    }
+    const externalNext = maxUsedExternal + 1;
+    await setExternalIndex(network, addressType, externalNext);
+    await setMaxUsedExternal(network, addressType, Math.max(0, maxUsedExternal));
+    dbg('WalletService: Restore discovery external chain DONE', {
+      network,
+      addressType,
+      maxUsedExternal,
+      externalNext,
+    });
+
+    // Internal (change) chain: same logic
+    dbg('WalletService: Restore discovery - scanning internal (change) chain', {
+      network,
+      addressType,
+    });
+    let maxUsedChange = -1;
+    consecutiveUnused = 0;
+    for (let i = 0; consecutiveUnused < GAP_LIMIT; i++) {
+      const path = getChangePath(network, addressType, useLegacyPath, i);
+      const pub = await BBMTLibNativeModule.derivePubkey(
+        ks.pub_key,
+        ks.chain_code_hex,
+        path,
+      );
+      const addr = await BBMTLibNativeModule.btcAddress(
+        pub,
+        network,
+        addressType,
+      );
+      try {
+        onProgress?.('internal', i, consecutiveUnused);
+        const used = await this.isAddressUsed(addr, apiUrl);
+        if (used) {
+          maxUsedChange = i;
+          consecutiveUnused = 0;
+        } else {
+          consecutiveUnused++;
+        }
+      } catch {
+        maxUsedChange = i; // Conservative: treat as used on error
+        consecutiveUnused = 0;
+      }
+    }
+    const changeNext = maxUsedChange + 1;
+    await setChangeIndex(network, addressType, changeNext);
+    dbg('WalletService: Restore discovery internal chain DONE', {
+      network,
+      addressType,
+      maxUsedChange,
+      changeNext,
+    });
+    // Mark restore discovery as completed for this (network, addressType) pair
+    await LocalCache.setItem(
+      `hd_restore_done_${network}_${addressType}`,
+      'yes',
+    );
+    dbg('WalletService: discoverHdIndexesForNetwork COMPLETE', {
+      network,
+      addressType,
+    });
+  }
+
   // Add method to cancel ongoing fetches
   private cancelOngoingFetches(key: string) {
     if (this.fetchInProgress[key]) {
@@ -373,14 +789,13 @@ export class WalletService {
       } catch (error) {
         dbg('WalletService: Error clearing persistent cache:', error);
       }
-      // Generate new address for the current network
+      // Generate address for the current network at current external index (HD)
       try {
         const jks = await EncryptedStorage.getItem('keyshare');
         const ks = JSON.parse(jks || '{}');
-        // Check if this is a legacy wallet (created before migration timestamp)
         const useLegacyPath = isLegacyWallet(ks.created_at);
-        // Use derivation path that matches the address type (or legacy path for old wallets)
-        const path = getDerivePathForNetwork(network, state.addressType, useLegacyPath);
+        const externalIndex = await getExternalIndex(network, state.addressType);
+        const path = getReceivePath(network, state.addressType, useLegacyPath, externalIndex);
         const btcPub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,
           ks.chain_code_hex,
@@ -424,15 +839,12 @@ export class WalletService {
   public async handleAddressTypeChange(addressType: string) {
     dbg('WalletService: Address type changed to:', addressType);
     try {
-      // Get current state
       const state = await this.getStoredState();
-      // Generate new address for current network and type
       const jks = await EncryptedStorage.getItem('keyshare');
       const ks = JSON.parse(jks || '{}');
-      // Check if this is a legacy wallet (created before migration timestamp)
       const useLegacyPath = isLegacyWallet(ks.created_at);
-      // Use derivation path that matches the address type (or legacy path for old wallets)
-      const path = getDerivePathForNetwork(state.network, addressType, useLegacyPath);
+      const externalIndex = await getExternalIndex(state.network, addressType);
+      const path = getReceivePath(state.network, addressType, useLegacyPath, externalIndex);
       const btcPub = await BBMTLibNativeModule.derivePubkey(
         ks.pub_key,
         ks.chain_code_hex,
@@ -545,6 +957,125 @@ export class WalletService {
       return await this.getBal(address);
     }
   }
+
+  /**
+   * Aggregated balance over all HD addresses (external chain 0..maxUsed+GAP, internal 0..changeIndex+GAP).
+   * Use this for HD wallets to include receive and change addresses.
+   */
+  public async getWalletBalanceAggregate(
+    network: string,
+    addressType: string,
+    btcRate: number,
+    pendingSent: number = 0,
+    _force: boolean = false,
+  ): Promise<WalletBalance> {
+    try {
+      const jks = await EncryptedStorage.getItem('keyshare');
+      if (!jks) {
+        dbg('WalletService: No keyshare for aggregate balance');
+        return {
+          btc: '0.00000000',
+          usd: '$0.00',
+          hasNonZeroBalance: false,
+          timestamp: Date.now(),
+        };
+      }
+      const ks = JSON.parse(jks);
+      const useLegacyPath = isLegacyWallet(ks.created_at);
+      const externalIdx = await getExternalIndex(network, addressType);
+      const maxUsedExternal = await getMaxUsedExternal(network, addressType);
+      const changeIdx = await getChangeIndex(network, addressType);
+      const externalEnd = Math.max(MIN_SCAN_INDEX, Math.max(externalIdx, maxUsedExternal) + GAP_LIMIT);
+      const internalEnd = Math.max(MIN_SCAN_INDEX, changeIdx + GAP_LIMIT);
+      const addresses: string[] = [];
+      for (let i = 0; i <= externalEnd; i++) {
+        const path = getReceivePath(network, addressType, useLegacyPath, i);
+        const pub = await BBMTLibNativeModule.derivePubkey(
+          ks.pub_key,
+          ks.chain_code_hex,
+          path,
+        );
+        const addr = await BBMTLibNativeModule.btcAddress(
+          pub,
+          network,
+          addressType,
+        );
+        addresses.push(addr);
+      }
+      for (let i = 0; i <= internalEnd; i++) {
+        const path = getChangePath(network, addressType, useLegacyPath, i);
+        const pub = await BBMTLibNativeModule.derivePubkey(
+          ks.pub_key,
+          ks.chain_code_hex,
+          path,
+        );
+        const addr = await BBMTLibNativeModule.btcAddress(
+          pub,
+          network,
+          addressType,
+        );
+        addresses.push(addr);
+      }
+      BBMTLibNativeModule.setAPI(network, this.currentApiUrl);
+      const api = await LocalCache.getItem('api');
+      if (!api) throw new Error('No API URL found');
+      BBMTLibNativeModule.setAPI(network, api);
+      let totalSats = new Big(0);
+      for (const addr of addresses) {
+        try {
+          const n = (await this.withTimeout(
+            `utxo-${addr}`,
+            BBMTLibNativeModule.totalUTXO(addr),
+          )) as number;
+          if (validateNumber(n)) totalSats = totalSats.add(n);
+        } catch {
+          // skip failed address
+        }
+      }
+      const balanceAfterPending = totalSats.sub(pendingSent);
+      const finalBalance = balanceAfterPending.gte(0) ? balanceAfterPending : new Big(0);
+      const newBalance = finalBalance.div(1e8).toFixed(8);
+      const hasNonZeroBalance = Number(newBalance) > 0;
+      let usdAmount = '';
+      if (btcRate > 0) {
+        usdAmount = this.formatUSD(totalSats.mul(btcRate).div(1e8).toNumber());
+      }
+      const result: WalletBalance = {
+        btc: newBalance,
+        usd: usdAmount,
+        hasNonZeroBalance,
+        timestamp: Date.now(),
+      };
+      const cacheKey = `wallet_balance_aggregate_${network}_${addressType}`;
+      await LocalCache.setItem(cacheKey, JSON.stringify(result));
+      return result;
+    } catch (error) {
+      dbg('WalletService: getWalletBalanceAggregate error:', error);
+      const cached = await this.getCachedAggregateBalance(network, addressType);
+      return cached ?? {
+        btc: '0.00000000',
+        usd: '$0.00',
+        hasNonZeroBalance: false,
+        timestamp: Date.now(),
+      };
+    }
+  }
+
+  /** Returns cached aggregate balance for HD wallet (network + addressType). */
+  public async getCachedAggregateBalance(
+    network: string,
+    addressType: string,
+  ): Promise<WalletBalance | null> {
+    const cacheKey = `wallet_balance_aggregate_${network}_${addressType}`;
+    const raw = await LocalCache.getItem(cacheKey);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as WalletBalance;
+    } catch {
+      return null;
+    }
+  }
+
   public getTransactionDetails(
     tx: any,
     address: string,
@@ -649,5 +1180,74 @@ export class WalletService {
     const txs = await this.getTxs(cacheKey);
     dbg('found cached txs:', txs.transactions.length);
     return txs.transactions;
+  }
+
+  /**
+   * Fetches transactions for multiple HD addresses, merges by txid, dedupes, sorts by block_time desc.
+   * Used for wallet-level transaction list (all receive + change addresses).
+   */
+  public async fetchTransactionsForAddresses(
+    apiBase: string,
+    addresses: string[],
+  ): Promise<any[]> {
+    if (addresses.length === 0) return [];
+    const cleanBase = apiBase.replace(/\/+$/, '').replace(/\/api\/?$/, '');
+    const seen = new Set<string>();
+    const merged: any[] = [];
+    await Promise.all(
+      addresses.map(async addr => {
+        try {
+          const url = `${cleanBase}/api/address/${encodeURIComponent(addr)}/txs`;
+          const res = await this.withTimeout(
+            `txs-${addr.slice(0, 12)}`,
+            fetch(url),
+            8000,
+          );
+          if (!res.ok) return;
+          const data = (await res.json()) as any[];
+          if (!Array.isArray(data)) return;
+          for (const tx of data) {
+            if (!seen.has(tx.txid)) {
+              seen.add(tx.txid);
+              merged.push(tx);
+            }
+          }
+        } catch (e) {
+          dbg(
+            'WalletService: fetchTransactionsForAddresses failed for',
+            addr.slice(0, 12),
+            e,
+          );
+        }
+      }),
+    );
+    const blockTime = (tx: any) => tx.status?.block_time ?? 0;
+    merged.sort((a, b) => blockTime(b) - blockTime(a));
+    dbg('WalletService: fetchTransactionsForAddresses merged', merged.length, 'txs from', addresses.length, 'addresses');
+    return merged;
+  }
+
+  /** Cache key for wallet-level (multi-address) transactions. */
+  private walletTxsCacheKey(network: string, addressType: string) {
+    return `wallet_txs_${network}_${addressType}`;
+  }
+
+  public async transactionsFromCacheForWallet(
+    network: string,
+    addressType: string,
+  ): Promise<any[]> {
+    const cacheKey = this.walletTxsCacheKey(network, addressType);
+    const txs = await this.getTxs(cacheKey);
+    return txs.transactions;
+  }
+
+  public async updateTransactionsCacheForWallet(
+    network: string,
+    addressType: string,
+    txs: any[],
+  ) {
+    const cacheKey = this.walletTxsCacheKey(network, addressType);
+    await this.setTxs(cacheKey, txs);
+    dbg('WalletService: wallet txs cache updated', cacheKey, txs.length);
   }
 }

@@ -9,7 +9,8 @@ import React, {
 import EncryptedStorage from 'react-native-encrypted-storage';
 import LocalCache from '../services/LocalCache';
 import {BBMTLibNativeModule} from '../native_modules';
-import {getDerivePathForNetwork, isLegacyWallet, dbg} from '../utils';
+import {getReceivePath, isLegacyWallet, dbg} from '../utils';
+import {getExternalIndex} from '../services/HdIndexService';
 type AddressType = 'legacy' | 'segwit-native' | 'segwit-compatible';
 interface UserContextType {
   btcPub: string;
@@ -322,17 +323,20 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         ks = JSON.parse(jks);
         // Check if this is a legacy wallet (created before migration timestamp)
         const useLegacyPath = isLegacyWallet(ks.created_at);
-        // Use derivation path that matches the address type (or legacy path for old wallets)
-        const path = getDerivePathForNetwork(
+        const externalIndex = await getExternalIndex(network, currentAddressType);
+        // Use receive path at current external index (HD: no address reuse)
+        const path = getReceivePath(
           network,
           currentAddressType,
           useLegacyPath,
+          externalIndex,
         );
         dbg(`[UserContext] refresh() - Deriving btcPub:`, {
           timestamp: Date.now(),
           network,
           currentAddressType,
           useLegacyPath,
+          externalIndex,
           path,
         });
         pub = await BBMTLibNativeModule.derivePubkey(
@@ -366,10 +370,12 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         // because btcPub is network-specific (derivation path includes coin type: 0' for mainnet, 1' for testnet)
         const otherNet = actualNet === 'mainnet' ? 'testnet3' : 'mainnet';
         const useLegacyPathOther = isLegacyWallet(ks.created_at);
-        const otherPath = getDerivePathForNetwork(
+        const otherExternalIndex = await getExternalIndex(otherNet, currentAddressType);
+        const otherPath = getReceivePath(
           otherNet,
           currentAddressType,
           useLegacyPathOther,
+          otherExternalIndex,
         );
         const otherPub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,

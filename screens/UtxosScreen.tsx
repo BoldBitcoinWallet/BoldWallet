@@ -38,6 +38,14 @@ type ApiUtxo = {
   };
 };
 
+/** UTXO with HD context: address, derivation path, and chain (receive vs change). */
+export type UtxoWithPath = ApiUtxo & {
+  address: string;
+  derivationPath: string;
+  chain: 'receive' | 'change';
+  chainIndex: number;
+};
+
 function addressMatchesNetwork(addr: string, isTestnetApi: boolean): boolean {
   if (!addr) return false;
   if (isTestnetApi) {
@@ -56,14 +64,14 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const {
     activeApiProvider: apiBase,
     activeNetwork: network,
-    activeAddress,
+    activeAddressType: addressType,
   } = useUser();
   const [btcPrice, setBtcPrice] = useState<string>('');
   const [btcRate, setBtcRate] = useState<number>(0);
   const [selectedCurrency, setSelectedCurrency] = useState<string>('USD');
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [rawUtxos, setRawUtxos] = useState<ApiUtxo[]>([]);
+  const [utxosWithPath, setUtxosWithPath] = useState<UtxoWithPath[]>([]);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [utxoFetchTimestamp, setUtxoFetchTimestamp] = useState<number>(0);
 
@@ -104,41 +112,64 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
   }, [selectedCurrency]);
 
   const fetchUtxos = useCallback(async () => {
-    const addr = activeAddress?.trim();
     const base = apiBase?.trim();
-    if (!addr || !base) {
-      setRawUtxos([]);
-      setFetchError(addr ? 'No API configured' : 'No wallet address');
+    if (!base) {
+      setUtxosWithPath([]);
+      setFetchError('No API configured');
       setLoading(false);
       return;
     }
     const cleanBase = base.replace(/\/+$/, '').replace(/\/api\/?$/, '');
     const apiUrl = `${cleanBase}/api`;
     const isTestnetApi = /\/testnet(\/|$)/.test(apiUrl);
-    if (!addressMatchesNetwork(addr, isTestnetApi)) {
-      setRawUtxos([]);
-      setFetchError('Address and network mismatch');
-      setLoading(false);
-      return;
-    }
     setFetchError(null);
-    const utxoUrl = `${apiUrl}/address/${encodeURIComponent(addr)}/utxo`;
     try {
+      const walletService = WalletService.getInstance();
+      const addressesWithPaths = await walletService.getHdAddressesWithPaths(
+        network,
+        addressType || 'segwit-native',
+      );
+      if (addressesWithPaths.length === 0) {
+        setUtxosWithPath([]);
+        setUtxoFetchTimestamp(Date.now());
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+      const merged: UtxoWithPath[] = [];
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      const res = await fetch(utxoUrl, {signal: controller.signal});
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
+      for (const {address, derivationPath, chain, index} of addressesWithPaths) {
+        if (!addressMatchesNetwork(address, isTestnetApi)) continue;
+        try {
+          const utxoUrl = `${apiUrl}/address/${encodeURIComponent(address)}/utxo`;
+          const res = await fetch(utxoUrl, {signal: controller.signal});
+          if (!res.ok) continue;
+          const rawList: ApiUtxo[] = await res.json();
+          if (!Array.isArray(rawList)) continue;
+          for (const u of rawList) {
+            merged.push({
+              ...u,
+              address,
+              derivationPath,
+              chain,
+              chainIndex: index,
+            });
+          }
+        } catch {
+          // skip failed address
+        }
+      }
       clearTimeout(timeoutId);
-      if (!res.ok) {
-        setRawUtxos([]);
-        setFetchError(`API error ${res.status}`);
-        return;
-      }
-      const rawList: ApiUtxo[] = await res.json();
-      if (!Array.isArray(rawList)) {
-        setRawUtxos([]);
-        return;
-      }
-      setRawUtxos(rawList);
+      // Sort: receive first, then change; by chain index; then by block_time desc (newest first)
+      merged.sort((a, b) => {
+        if (a.chain !== b.chain) return a.chain === 'receive' ? -1 : 1;
+        if (a.chainIndex !== b.chainIndex) return a.chainIndex - b.chainIndex;
+        const ta = a.status?.block_time ?? 0;
+        const tb = b.status?.block_time ?? 0;
+        return tb - ta;
+      });
+      setUtxosWithPath(merged);
       setUtxoFetchTimestamp(Date.now());
     } catch (e: any) {
       if (e?.name === 'AbortError') {
@@ -146,12 +177,12 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
       } else {
         setFetchError(e?.message || 'Failed to load UTXOs');
       }
-      setRawUtxos([]);
+      setUtxosWithPath([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [activeAddress, apiBase]);
+  }, [apiBase, network, addressType]);
 
   useEffect(() => {
     setLoading(true);
@@ -217,10 +248,19 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
 
   const shortTxId = (txid: string) =>
     txid ? `${txid.slice(0, 6)}…${txid.slice(-6)}` : '—';
-  const shortAddr =
-    activeAddress && activeAddress.length > 12
-      ? `${activeAddress.slice(0, 6)}…${activeAddress.slice(-6)}`
-      : activeAddress || '—';
+  const shortAddr = (addr: string) =>
+    addr && addr.length > 12
+      ? `${addr.slice(0, 6)}…${addr.slice(-6)}`
+      : addr || '—';
+  /** Format path for display: keep last segment visible (e.g. …/0/3). */
+  const formatPath = (path: string) => {
+    if (!path) return '—';
+    const parts = path.split('/').filter(Boolean);
+    if (parts.length >= 2) return `…/${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+    return path;
+  };
+  const chainLabel = (chain: 'receive' | 'change', index: number) =>
+    chain === 'receive' ? `Receive #${index}` : `Change #${index}`;
 
   const baseUrl = apiBase?.trim()
     ? apiBase.replace(/\/+$/, '').replace(/\/api\/?$/, '')
@@ -294,6 +334,40 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           fontSize: theme.fontSizes?.xs || 11,
           opacity: 0.5,
         },
+        chainBadge: {
+          alignSelf: 'flex-start',
+          paddingHorizontal: 8,
+          paddingVertical: 4,
+          borderRadius: 6,
+          marginBottom: 6,
+        },
+        chainBadgeReceive: {
+          backgroundColor: theme.colors.receivedOverlay15,
+        },
+        chainBadgeChange: {
+          backgroundColor: theme.colors.primary + '20',
+        },
+        chainBadgeText: {
+          fontSize: theme.fontSizes?.xs || 11,
+          fontFamily: theme.fontFamilies?.bold,
+        },
+        pathRow: {
+          marginTop: 4,
+          paddingTop: 4,
+          borderTopWidth: 1,
+          borderTopColor: theme.colors.border + '60',
+        },
+        pathLabel: {
+          fontSize: theme.fontSizes?.xs || 11,
+          fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
+          opacity: 0.7,
+        },
+        pathFull: {
+          marginTop: 2,
+          fontSize: (theme.fontSizes?.xs ?? 11) - 1,
+          fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
+          opacity: 0.7,
+        },
         emptyWrap: {
           paddingVertical: 32,
           paddingHorizontal: 24,
@@ -333,7 +407,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
   );
 
   const renderUtxoItem = useCallback(
-    ({item: u}: {item: ApiUtxo}) => {
+    ({item: u}: {item: UtxoWithPath}) => {
       const blockTime =
         u.status?.block_time != null ? u.status.block_time * 1000 : null;
       const timestamp = blockTime
@@ -346,15 +420,14 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
         getCurrencySymbol(selectedCurrency || 'USD') +
         presentFiat((u.value / 1e8) * btcRate);
       const openInExplorer = () => {
-        if (!baseUrl || !u.txid) {
-          return;
-        }
+        if (!baseUrl || !u.txid) return;
         const vout = u.vout ?? 0;
         const url = `${baseUrl}/tx/${u.txid}#vout=${vout}`;
         Linking.openURL(url).catch(() => {
           Alert.alert('Error', 'Could not open explorer');
         });
       };
+      const isReceive = u.chain === 'receive';
       return (
         <AppPressable
           style={[
@@ -368,7 +441,24 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           }}
           accessible={true}
           accessibilityRole="button"
-          accessibilityLabel={`UTXO ${shortTxId(u.txid || '')} vout ${u.vout ?? 0}. Tap to open in explorer.`}>
+          accessibilityLabel={`${chainLabel(u.chain, u.chainIndex)} UTXO ${shortTxId(u.txid || '')} vout ${u.vout ?? 0}. Tap to open in explorer.`}>
+          <View
+            style={[
+              styles.chainBadge,
+              isReceive ? styles.chainBadgeReceive : styles.chainBadgeChange,
+            ]}>
+            <Text
+              style={[
+                styles.chainBadgeText,
+                {
+                  color: isReceive
+                    ? theme.colors.received
+                    : theme.colors.primary,
+                },
+              ]}>
+              {chainLabel(u.chain, u.chainIndex)}
+            </Text>
+          </View>
           <View style={styles.utxoRow}>
             <Text
               style={[styles.utxoLeft, {color: theme.colors.text}]}
@@ -403,11 +493,25 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
               style={[styles.utxoLeft, {color: theme.colors.text}]}
               numberOfLines={1}
               selectable>
-              Addr:<Text style={styles.utxoLeftValue}> {shortAddr}</Text>
+              Addr:<Text style={styles.utxoLeftValue}> {shortAddr(u.address)}</Text>
             </Text>
             <Text
               style={[styles.utxoTime, {color: theme.colors.textSecondary}]}>
               {timestamp}
+            </Text>
+          </View>
+          <View style={[styles.pathRow]}>
+            <Text
+              style={[styles.pathLabel, {color: theme.colors.textSecondary}]}
+              numberOfLines={1}
+              selectable>
+              Path: <Text style={styles.utxoLeftValue}>{formatPath(u.derivationPath)}</Text>
+            </Text>
+            <Text
+              style={[styles.pathFull, {color: theme.colors.textSecondary}]}
+              numberOfLines={2}
+              selectable>
+              {u.derivationPath}
             </Text>
           </View>
         </AppPressable>
@@ -418,7 +522,6 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
       styles,
       cardBg,
       cardBorder,
-      shortAddr,
       selectedCurrency,
       btcRate,
       isDarkMode,
@@ -471,28 +574,38 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
       <FlatList
         style={styles.flexOne}
         contentContainerStyle={styles.listContent}
-        data={rawUtxos}
+        data={utxosWithPath}
         renderItem={renderUtxoItem}
-        keyExtractor={item => `${item.txid}:${item.vout}`}
+        keyExtractor={item => `${item.txid}:${item.vout}:${item.address}`}
         ListEmptyComponent={ListEmpty}
         ListHeaderComponentStyle={styles.listHeader}
         ListHeaderComponent={
-          <View style={styles.cacheIndicatorWrap}>
-            <CacheIndicator
-              timestamps={{price: 0, balance: utxoFetchTimestamp}}
-              onRefresh={onRefresh}
-              theme={theme}
-              isRefreshing={refreshing}
-              usingCache={
-                !refreshing &&
-                utxoFetchTimestamp > 0 &&
-                Date.now() - utxoFetchTimestamp > 60000
-              }
-            />
+          <View>
+            <View style={styles.cacheIndicatorWrap}>
+              <CacheIndicator
+                timestamps={{price: 0, balance: utxoFetchTimestamp}}
+                onRefresh={onRefresh}
+                theme={theme}
+                isRefreshing={refreshing}
+                usingCache={
+                  !refreshing &&
+                  utxoFetchTimestamp > 0 &&
+                  Date.now() - utxoFetchTimestamp > 60000
+                }
+              />
+            </View>
+            <Text
+              style={[
+                styles.subtitle,
+                {color: theme.colors.textSecondary},
+              ]}
+              numberOfLines={2}>
+              Receive & change addresses · path shown per UTXO
+            </Text>
           </View>
         }
         ListFooterComponent={
-          rawUtxos.length > 0 ? (
+          utxosWithPath.length > 0 ? (
             <View style={styles.endOfListWrap}>
               <Text style={[styles.endOfListText, {color: theme.colors.text}]}>
                 No more UTXOs
@@ -502,7 +615,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   styles.endOfListCount,
                   {color: theme.colors.textSecondary},
                 ]}>
-                {rawUtxos.length} in total
+                {utxosWithPath.length} in total (all addresses)
               </Text>
             </View>
           ) : null

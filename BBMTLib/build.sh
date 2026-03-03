@@ -107,7 +107,9 @@ export GOFLAGS="-mod=mod"
 
 # Run Bind
 # Note: -androidapi 21 is the standard min version
-gomobile bind -v -target=android -androidapi 21 -o tss.aar github.com/BoldBitcoinWallet/BBMTLib/tss
+# Android 15 requires 16 KB page size support. Go 1.23+ supports it, but we explicitly
+# set the max-page-size for the linker to ensure libgojni.so is compliant.
+gomobile bind -v -target=android -androidapi 21 -ldflags="-extldflags=-Wl,-z,max-page-size=16384" -o tss.aar github.com/BoldBitcoinWallet/BBMTLib/tss
 
 # Copy Artifacts
 if [[ -d "../android/app/libs" ]]; then

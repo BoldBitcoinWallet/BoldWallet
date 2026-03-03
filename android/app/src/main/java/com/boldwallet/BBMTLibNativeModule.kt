@@ -180,6 +180,31 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun estimateFeeWithUTXOs(
+        utxosWithPathsJSON: String,
+        receiverAddress: String,
+        amountSatoshi: String,
+        changeAddress: String,
+        promise: Promise
+    ) {
+        Thread {
+            try {
+                val result = Tss.estimateFeeWithUTXOs(
+                    utxosWithPathsJSON,
+                    receiverAddress,
+                    amountSatoshi,
+                    changeAddress
+                )
+                ld("estimateFeeWithUTXOs", result)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                ld("estimateFeeWithUTXOs", "error: ${e.stackTraceToString()}")
+                promise.reject(e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
     fun mpcSendBTC(
         // tss
         server: String,
@@ -222,6 +247,52 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             }
         }.start()
     }
+
+    @ReactMethod
+    fun mpcSendBTCWithUTXOs(
+        server: String,
+        partyID: String,
+        partiesCSV: String,
+        sessionID: String,
+        sessionKey: String,
+        encKey: String,
+        decKey: String,
+        keyshare: String,
+        publicKey: String,
+        receiverAddress: String,
+        amountSatoshi: String,
+        feeSatoshi: String,
+        utxosWithPathsJSON: String,
+        changeAddress: String,
+        promise: Promise
+    ) {
+        Thread {
+            try {
+                val result = Tss.mpcSendBTCWithUTXOs(
+                    server,
+                    partyID,
+                    partiesCSV,
+                    sessionID,
+                    sessionKey,
+                    encKey,
+                    decKey,
+                    keyshare,
+                    publicKey,
+                    receiverAddress,
+                    amountSatoshi,
+                    feeSatoshi,
+                    utxosWithPathsJSON,
+                    changeAddress
+                )
+                ld("mpcSendBTCWithUTXOs", result)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                ld("mpcSendBTCWithUTXOs", "error: ${e.stackTraceToString()}")
+                promise.reject("MPC_SEND_BTC_ERROR", "Failed to send BTC: ${e.message}", e)
+            }
+        }.start()
+    }
+
     @ReactMethod
     fun nostrMpcSendBTC(
         relaysCSV: String,
@@ -236,6 +307,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         receiverAddress: String,
         amountSatoshi: String,
         estimatedFee: String,
+        changeAddress: String,
         promise: Promise
     ) {
         Thread {
@@ -252,12 +324,52 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     senderAddress,
                     receiverAddress,
                     amountSatoshi.toLong(),
-                    estimatedFee.toLong()
+                    estimatedFee.toLong(),
+                    changeAddress ?: ""
                 )
                 ld("nostrMpcSendBTC", result)
                 promise.resolve(result)
             } catch (e: Throwable) {
                 ld("nostrMpcSendBTC", "error: ${e.stackTraceToString()}")
+                promise.reject("NOSTR_MPC_SEND_BTC_ERROR", "Failed to send BTC via Nostr: ${e.message}", e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun nostrMpcSendBTCWithUTXOs(
+        relaysCSV: String,
+        partyNsec: String,
+        partiesNpubsCSV: String,
+        npubsSorted: String,
+        balanceSats: String,
+        keyshareJSON: String,
+        receiverAddress: String,
+        amountSatoshi: String,
+        estimatedFee: String,
+        utxosWithPathsJSON: String,
+        changeAddress: String,
+        promise: Promise
+    ) {
+        Thread {
+            try {
+                val result = Tss.nostrMpcSendBTCWithUTXOs(
+                    relaysCSV,
+                    partyNsec,
+                    partiesNpubsCSV,
+                    npubsSorted,
+                    balanceSats,
+                    keyshareJSON,
+                    receiverAddress,
+                    amountSatoshi,
+                    estimatedFee,
+                    utxosWithPathsJSON,
+                    changeAddress ?: ""
+                )
+                ld("nostrMpcSendBTCWithUTXOs", result)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                ld("nostrMpcSendBTCWithUTXOs", "error: ${e.stackTraceToString()}")
                 promise.reject("NOSTR_MPC_SEND_BTC_ERROR", "Failed to send BTC via Nostr: ${e.message}", e)
             }
         }.start()

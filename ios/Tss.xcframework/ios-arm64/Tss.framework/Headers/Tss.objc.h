@@ -26,6 +26,7 @@
 @class TssSession;
 @class TssStatus;
 @class TssUTXO;
+@class TssUTXOWithPath;
 @protocol TssGoLogListener;
 @class TssGoLogListener;
 @protocol TssHookListener;
@@ -274,6 +275,20 @@
 
 @end
 
+/**
+ * UTXOWithPath extends UTXO with derivation path for HD wallets (per-input signing).
+ */
+@interface TssUTXOWithPath : NSObject <goSeqRefInterface> {
+}
+@property(strong, readonly) _Nonnull id _ref;
+
+- (nonnull instancetype)initWithRef:(_Nonnull id)ref;
+- (nonnull instancetype)init;
+// skipped field UTXOWithPath.UTXO with unsupported type: github.com/BoldBitcoinWallet/BBMTLib/tss.UTXO
+
+@property (nonatomic) NSString* _Nonnull derivationPath;
+@end
+
 // skipped const MaxUint32 with unsupported type: uint32
 
 
@@ -313,6 +328,13 @@ network: "mainnet" or "testnet3"
 Returns: xpub (mainnet) or tpub (testnet) encoded string at account level m/44/0/0
  */
 FOUNDATION_EXPORT NSString* _Nonnull TssEncodeXpub(NSString* _Nullable hexPubKey, NSString* _Nullable hexChainCode, NSString* _Nullable network, NSError* _Nullable* _Nullable error);
+
+/**
+ * EstimateFeeWithUTXOs estimates fees using a pre-fetched UTXO pool with paths (multi-path send).
+utxosWithPathsJSON: JSON array of {txid, vout, value, derivation_path or derivationPath}
+changeAddress: used for change output size estimation (e.g. next HD change address)
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssEstimateFeeWithUTXOs(NSString* _Nullable utxosWithPathsJSON, NSString* _Nullable receiverAddress, NSString* _Nullable amountSatoshiStr, NSString* _Nullable changeAddress, NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssEstimateFees(NSString* _Nullable senderAddress, NSString* _Nullable receiverAddress, int64_t amountSatoshi, NSError* _Nullable* _Nullable error);
 
@@ -385,6 +407,13 @@ FOUNDATION_EXPORT BOOL TssLocalPreParams(NSString* _Nullable ppmFile, long timeo
 FOUNDATION_EXPORT NSString* _Nonnull TssMpcSendBTC(NSString* _Nullable server, NSString* _Nullable key, NSString* _Nullable partiesCSV, NSString* _Nullable session, NSString* _Nullable sessionKey, NSString* _Nullable encKey, NSString* _Nullable decKey, NSString* _Nullable keyshare, NSString* _Nullable derivePath, NSString* _Nullable publicKey, NSString* _Nullable senderAddress, NSString* _Nullable receiverAddress, int64_t amountSatoshi, int64_t estimatedFee, NSError* _Nullable* _Nullable error);
 
 /**
+ * MpcSendBTCWithUTXOs is the multi-path variant: uses pre-fetched UTXOs with per-input derivation paths.
+utxosWithPathsJSON: JSON array of {txid, vout, value, derivation_path or derivationPath}
+changeAddress: HD change address for change output (required)
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssMpcSendBTCWithUTXOs(NSString* _Nullable server, NSString* _Nullable key, NSString* _Nullable partiesCSV, NSString* _Nullable session, NSString* _Nullable sessionKey, NSString* _Nullable encKey, NSString* _Nullable decKey, NSString* _Nullable keyshare, NSString* _Nullable publicKey, NSString* _Nullable receiverAddress, NSString* _Nullable amountSatoshiStr, NSString* _Nullable estimatedFeeStr, NSString* _Nullable utxosWithPathsJSON, NSString* _Nullable changeAddress, NSError* _Nullable* _Nullable error);
+
+/**
  * MpcSignPSBT signs a PSBT using MPC (server-based transport)
 Parameters:
   - server, key, partiesCSV, session, sessionKey, encKey, decKey: TSS parameters
@@ -439,8 +468,17 @@ Parameters:
   - npubsSorted: Comma-separated sorted list of all party npubs (for sessionFlag calculation)
   - balanceSats: Balance in satoshis (for sessionFlag calculation)
   - amountSatoshi: Transaction amount in satoshis (for sessionFlag calculation)
+NostrMpcSendBTC performs a Nostr-based MPC Bitcoin transaction.
+changeAddress: when non-empty, change output is sent here (HD internal chain); otherwise to senderAddress.
  */
-FOUNDATION_EXPORT NSString* _Nonnull TssNostrMpcSendBTC(NSString* _Nullable relaysCSV, NSString* _Nullable partyNsec, NSString* _Nullable partiesNpubsCSV, NSString* _Nullable npubsSorted, NSString* _Nullable balanceSats, NSString* _Nullable keyshareJSON, NSString* _Nullable derivePath, NSString* _Nullable publicKey, NSString* _Nullable senderAddress, NSString* _Nullable receiverAddress, int64_t amountSatoshi, int64_t estimatedFee, NSError* _Nullable* _Nullable error);
+FOUNDATION_EXPORT NSString* _Nonnull TssNostrMpcSendBTC(NSString* _Nullable relaysCSV, NSString* _Nullable partyNsec, NSString* _Nullable partiesNpubsCSV, NSString* _Nullable npubsSorted, NSString* _Nullable balanceSats, NSString* _Nullable keyshareJSON, NSString* _Nullable derivePath, NSString* _Nullable publicKey, NSString* _Nullable senderAddress, NSString* _Nullable receiverAddress, int64_t amountSatoshi, int64_t estimatedFee, NSString* _Nullable changeAddress, NSError* _Nullable* _Nullable error);
+
+/**
+ * NostrMpcSendBTCWithUTXOs is the multi-path variant: uses pre-fetched UTXOs with per-input derivation paths.
+utxosWithPathsJSON: JSON array of {txid, vout, value, derivation_path or derivationPath}
+changeAddress: HD change address for change output (required)
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssNostrMpcSendBTCWithUTXOs(NSString* _Nullable relaysCSV, NSString* _Nullable partyNsec, NSString* _Nullable partiesNpubsCSV, NSString* _Nullable npubsSorted, NSString* _Nullable balanceSats, NSString* _Nullable keyshareJSON, NSString* _Nullable receiverAddress, NSString* _Nullable amountSatoshiStr, NSString* _Nullable estimatedFeeStr, NSString* _Nullable utxosWithPathsJSON, NSString* _Nullable changeAddress, NSError* _Nullable* _Nullable error);
 
 /**
  * NostrMpcSignPSBT signs a PSBT using MPC over Nostr transport
@@ -502,6 +540,9 @@ FOUNDATION_EXPORT NSString* _Nonnull TssSecP256k1Recover(NSString* _Nullable r, 
 FOUNDATION_EXPORT NSString* _Nonnull TssSecureRandom(long length, NSError* _Nullable* _Nullable error);
 
 // skipped function SelectUTXOs with unsupported parameter or return types
+
+
+// skipped function SelectUTXOsWithPaths with unsupported parameter or return types
 
 
 FOUNDATION_EXPORT NSString* _Nonnull TssSendBitcoin(NSString* _Nullable wifKey, NSString* _Nullable publicKey, NSString* _Nullable senderAddress, NSString* _Nullable receiverAddress, int64_t preview, int64_t amountSatoshi, NSError* _Nullable* _Nullable error);

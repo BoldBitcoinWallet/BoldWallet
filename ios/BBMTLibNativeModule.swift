@@ -135,6 +135,26 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     }
   }
 
+  @objc func estimateFeeWithUTXOs(
+    _ utxosWithPathsJSON: String,
+    receiverAddress: String,
+    amountSatoshi: String,
+    changeAddress: String,
+    resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      var error: NSError?
+      let output = TssEstimateFeeWithUTXOs(
+        utxosWithPathsJSON,
+        receiverAddress,
+        amountSatoshi,
+        changeAddress, &error)
+      self?.sendLogEvent("estimateFeeWithUTXOs", output)
+      resolver(error == nil ? output : error!.localizedDescription)
+    }
+  }
+
   @objc func mpcSendBTC(
     /* tss */
     _ server: String,
@@ -173,6 +193,46 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
         Int64(amountSatoshi) ?? 0,
         Int64(feeSatoshi) ?? 0, &error)
       self?.sendLogEvent("mpcSendBTC", output)
+      resolver(error == nil ? output : error!.localizedDescription)
+    }
+  }
+
+  @objc func mpcSendBTCWithUTXOs(
+    _ server: String,
+    partyID: String,
+    partiesCSV: String,
+    sessionID: String,
+    sessionKey: String,
+    encKey: String,
+    decKey: String,
+    keyshare: String,
+    publicKey: String,
+    receiverAddress: String,
+    amountSatoshi: String,
+    feeSatoshi: String,
+    utxosWithPathsJSON: String,
+    changeAddress: String,
+    resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      var error: NSError?
+      let output = TssMpcSendBTCWithUTXOs(
+        server,
+        partyID,
+        partiesCSV,
+        sessionID,
+        sessionKey,
+        encKey,
+        decKey,
+        keyshare,
+        publicKey,
+        receiverAddress,
+        amountSatoshi,
+        feeSatoshi,
+        utxosWithPathsJSON,
+        changeAddress, &error)
+      self?.sendLogEvent("mpcSendBTCWithUTXOs", output)
       resolver(error == nil ? output : error!.localizedDescription)
     }
   }
@@ -534,6 +594,7 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, npubsSorted: String,
     balanceSats: String, keyshareJSON: String, derivePath: String, publicKey: String,
     senderAddress: String, receiverAddress: String, amountSatoshi: String, estimatedFee: String,
+    changeAddress: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async { [weak self] in
@@ -541,8 +602,42 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
       let output = TssNostrMpcSendBTC(
         relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON, derivePath,
         publicKey, senderAddress, receiverAddress, Int64(amountSatoshi) ?? 0,
-        Int64(estimatedFee) ?? 0, &error)
+        Int64(estimatedFee) ?? 0, changeAddress, &error)
       self?.sendLogEvent("nostrMpcSendBTC", output)
+      resolver(error == nil ? output : error!.localizedDescription)
+    }
+  }
+
+  @objc func nostrMpcSendBTCWithUTXOs(
+    _ relaysCSV: String,
+    partyNsec: String,
+    partiesNpubsCSV: String,
+    npubsSorted: String,
+    balanceSats: String,
+    keyshareJSON: String,
+    receiverAddress: String,
+    amountSatoshi: String,
+    estimatedFee: String,
+    utxosWithPathsJSON: String,
+    changeAddress: String,
+    resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      var error: NSError?
+      let output = TssNostrMpcSendBTCWithUTXOs(
+        relaysCSV,
+        partyNsec,
+        partiesNpubsCSV,
+        npubsSorted,
+        balanceSats,
+        keyshareJSON,
+        receiverAddress,
+        amountSatoshi,
+        estimatedFee,
+        utxosWithPathsJSON,
+        changeAddress, &error)
+      self?.sendLogEvent("nostrMpcSendBTCWithUTXOs", output)
       resolver(error == nil ? output : error!.localizedDescription)
     }
   }

@@ -1730,27 +1730,96 @@ const MobileNostrPairing = ({navigation}: any) => {
         }
       }
       const partiesNpubsCSV = allNpubs.sort().join(',');
-      // Prepare relays CSV
       const relaysCSV = relays.join(',');
-      // Call MPC send BTC
-      const txId = await BBMTLibNativeModule.nostrMpcSendBTC(
-        relaysCSV,
-        nsecToUse,
-        partiesNpubsCSV,
-        npubsSorted,
-        balanceSats,
-        keyshareJSON,
-        path,
-        publicKey,
-        senderAddress,
-        toAddress,
-        satoshiAmount,
-        satoshiFees,
-      );
-      // Validate txId
+      // HD: get next change address so change output goes to internal chain (no address reuse)
+      let changeAddress = '';
+      try {
+        changeAddress =
+          (await WalletService.getInstance().getNextChangeAddress(
+            net,
+            addressTypeToUse,
+          )) || '';
+      } catch (e) {
+        dbg('MobileNostrPairing: getNextChangeAddress failed, using legacy change to sender:', e);
+      }
+
+      let txId: string;
+      try {
+        const utxosWithPaths = await WalletService.getInstance().fetchUtxosWithPaths(
+          net,
+          addressTypeToUse,
+          apiUrl,
+        );
+        if (utxosWithPaths.length > 0 && changeAddress) {
+          const utxosForNative = utxosWithPaths.map(u => ({
+            txid: u.txid,
+            vout: u.vout,
+            value: u.value,
+            derivation_path: u.derivationPath,
+            address: u.address,
+          }));
+          const utxosWithPathsJSON = JSON.stringify(utxosForNative);
+          txId = await BBMTLibNativeModule.nostrMpcSendBTCWithUTXOs(
+            relaysCSV,
+            nsecToUse,
+            partiesNpubsCSV,
+            npubsSorted,
+            balanceSats,
+            keyshareJSON,
+            toAddress,
+            satoshiAmount,
+            satoshiFees,
+            utxosWithPathsJSON,
+            changeAddress,
+          );
+          dbg('MobileNostrPairing: multi-path send succeeded');
+        } else {
+          txId = await BBMTLibNativeModule.nostrMpcSendBTC(
+            relaysCSV,
+            nsecToUse,
+            partiesNpubsCSV,
+            npubsSorted,
+            balanceSats,
+            keyshareJSON,
+            path,
+            publicKey,
+            senderAddress,
+            toAddress,
+            satoshiAmount,
+            satoshiFees,
+            changeAddress,
+          );
+        }
+      } catch (multiPathErr) {
+        dbg('MobileNostrPairing: multi-path failed, trying single-path:', multiPathErr);
+        txId = await BBMTLibNativeModule.nostrMpcSendBTC(
+          relaysCSV,
+          nsecToUse,
+          partiesNpubsCSV,
+          npubsSorted,
+          balanceSats,
+          keyshareJSON,
+          path,
+          publicKey,
+          senderAddress,
+          toAddress,
+          satoshiAmount,
+          satoshiFees,
+          changeAddress,
+        );
+      }
       const validTxID = /^[a-fA-F0-9]{64}$/.test(txId);
       if (!validTxID) {
         throw new Error(txId || 'Invalid transaction ID');
+      }
+      // HD: advance change index only after successful broadcast
+      try {
+        await WalletService.getInstance().incrementChangeIndexAfterSend(
+          net,
+          addressTypeToUse,
+        );
+      } catch (e) {
+        dbg('MobileNostrPairing: incrementChangeIndexAfterSend failed:', e);
       }
       // Save pending transaction
       const pendingTxs = JSON.parse(

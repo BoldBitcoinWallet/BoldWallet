@@ -8,9 +8,10 @@ LABEL maintainer="BoldWallet Team" \
       fips="policy-enabled" \
       base="ubi9"
 
-# Install dependencies
+# 1. Install system dependencies
+# Added 'curl' which was in your first file but missing in the second
 RUN dnf install -y --setopt=install_weak_deps=False --nodocs \
-    gcc gcc-c++ make git wget tar unzip which \
+    gcc gcc-c++ make git wget tar unzip which curl \
     java-17-openjdk-devel \
     bzip2 bzip2-devel zlib-devel libffi-devel xz-devel \
     glibc-devel glibc-headers libstdc++-devel \
@@ -18,27 +19,31 @@ RUN dnf install -y --setopt=install_weak_deps=False --nodocs \
     && dnf clean all \
     && rm -rf /var/cache/dnf/*
 
-# Enable FIPS crypto policy
+# 2. Enable FIPS crypto policy
 RUN update-crypto-policies --set FIPS && \
     grep -q '^FIPS$' /etc/crypto-policies/config || { echo "FIPS policy failed"; exit 1; }
 
-# Install Go 1.25 (amd64 for gomobile compatibility)
+# 3. Install Go 1.25 (FIPS 140-3 enabled by default in Go 1.24+)
 ARG GO_VERSION=1.25.0
 RUN wget -O go.tar.gz "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" && \
     tar -C /usr/local -xzf go.tar.gz && \
     rm go.tar.gz
 
+# Environment setup combining your preferred paths and FIPS flags
 ENV PATH="/usr/local/go/bin:/go/bin:${PATH}" \
     GOPATH="/go" \
     GOCACHE="/go/.cache" \
+    GOMODCACHE="/go/pkg/mod" \
     GO111MODULE=on \
     CGO_ENABLED=1 \
     GODEBUG=fips140=on \
-    CGO_CFLAGS="-O2 -g -Wall -Wno-unused-variable -Wno-error=unused-variable -Wno-unused-but-set-variable -Wno-error=unused-but-set-variable"
+    GOFIPS140=v1.0.0
 
-# Android SDK/NDK
+# 4. Android SDK/NDK Setup
+# Synced NDK version to 27.1.12297006 from your original file
 ENV ANDROID_HOME=/opt/android-sdk \
     ANDROID_SDK_ROOT=/opt/android-sdk \
+    ANDROID_NDK_HOME="/opt/android-sdk/ndk/27.1.12297006" \
     PATH="${PATH}:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools"
 
 RUN mkdir -p ${ANDROID_HOME}/cmdline-tools && \
@@ -52,17 +57,19 @@ RUN mkdir -p ${ANDROID_HOME}/cmdline-tools && \
         "platform-tools" \
         "platforms;android-34" \
         "build-tools;34.0.0" \
-        "ndk;27.1.12297006" && \
-    ln -sfn ${ANDROID_HOME}/ndk/27.1.12297006 ${ANDROID_HOME}/ndk/latest
+        "ndk;27.1.12297006"
 
-ENV ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/27.1.12297006"
-
-# Install gomobile + gobind (pinned)
+# 5. Gomobile Installation (Pinned Version)
+# Using your specific commit hash for gomobile and gobind
 RUN go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20250408133729-978277e7eaf7 && \
-    go install golang.org/x/mobile/cmd/gobind@v0.0.0-20250408133729-978277e7eaf7
+    go install golang.org/x/mobile/cmd/gobind@v0.0.0-20250408133729-978277e7eaf7 && \
+    gomobile init
 
-# Init gomobile
-RUN gomobile init
+WORKDIR /BoldWallet/BBMTLib
 
-WORKDIR /workspace
-# This stage has no CMD – we use it only for docker cp / export
+# 6. Build Command Suggestion (to be run via docker exec or added as a RUN step)
+# This uses the 16KB page size flag you added for Android 15 compatibility
+# RUN --mount=type=cache,target=/go/pkg/mod \
+#     gomobile bind -v -target=android -androidapi 21 \
+#     -ldflags="-extldflags=-Wl,-z,max-page-size=16384" \
+#     github.com/BoldBitcoinWallet/BBMTLib/tss

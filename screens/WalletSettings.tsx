@@ -48,6 +48,7 @@ import {WalletService} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
 import LegalModal from '../components/LegalModal';
 import BackupKeyshareModal from '../components/BackupKeyshareModal';
+import RestoringIndexesModal from '../components/RestoringIndexesModal';
 import {fetchDynamicAPIEndpoints, getNostrRelays} from '../utils';
 import FontComparisonScreen from '../components/FontComparisonScreen';
 import {setDebugLoggingEnabled, isDebugLoggingEnabled} from '../App';
@@ -706,6 +707,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     showWalletTab,
     setShowWalletTab,
     activeNetwork,
+    activeApiProvider,
   } = useUser();
   const [selectedIcon, setSelectedIcon] = useState<
     'default' | 'alternative' | 'loading'
@@ -722,6 +724,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [nostrRelays, setNostrRelays] = useState<string>('');
   const [pendingNostrRelays, setPendingNostrRelays] = useState<string>('');
   const [hasNostr, setHasNostr] = useState(false);
+  const [isRestoringIndexes, setIsRestoringIndexes] = useState(false);
+  const [restoreProgress, setRestoreProgress] = useState<{
+    chain: 'external' | 'internal';
+    index: number;
+    gapIndex: number;
+  } | null>(null);
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
   const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
     'terms',
@@ -2499,8 +2507,35 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             style={[styles.button, styles.deleteButton]}
             onPress={async () => {
               try {
+                setIsRestoringIndexes(true);
+                setRestoreProgress(null);
+                dbg('WalletSettings: Storage clear - clearing LocalCache');
                 await LocalCache.clear();
+                dbg('WalletSettings: LocalCache cleared, running restore discovery', {
+                  network: activeNetwork,
+                  addressType: activeAddressType,
+                });
+                // Restore discovery: re-scan chain to repopulate HD indexes
+                const ws = WalletService.getInstance();
+                const apiUrl =
+                  activeApiProvider ||
+                  (activeNetwork === 'mainnet'
+                    ? 'https://mempool.space/api'
+                    : 'https://mempool.space/testnet/api');
+                await ws.discoverHdIndexesForNetwork(
+                  activeNetwork,
+                  activeAddressType,
+                  apiUrl,
+                  (chain, index, gapIndex) =>
+                    setRestoreProgress({chain, index, gapIndex}),
+                );
+                dbg('WalletSettings: Restore discovery done, re-persisting network/api');
+                // Re-persist network/api so app continues to work
+                await LocalCache.setItem('network', activeNetwork);
+                await LocalCache.setItem('api', apiUrl);
+                await LocalCache.setItem('addressType', activeAddressType);
                 setUsageSize(await LocalCache.usageSize());
+                dbg('WalletSettings: Storage clear complete');
                 Alert.alert('Cache Cleared', 'Cache cleared successfully.');
                 navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
               } catch (e) {
@@ -2509,6 +2544,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   'Error',
                   'Failed to clear cache. Please try again.',
                 );
+              } finally {
+                setIsRestoringIndexes(false);
+                setRestoreProgress(null);
               }
             }}
             android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -3351,13 +3389,19 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           </View>
           <Text style={styles.toggleDescription}>
             Make sure that your wallet keyshares devices are running the latest
-            version             for optimal compatibility and security.
+            version for optimal compatibility and security.
           </Text>
         </CollapsibleSection>
         </SettingsSectionGroup>
 
       </ScrollView>
       {/* Modals */}
+      <RestoringIndexesModal
+        visible={isRestoringIndexes}
+        chain={restoreProgress?.chain}
+        index={restoreProgress?.index}
+        gapIndex={restoreProgress?.gapIndex}
+      />
       <BackupKeyshareModal
         visible={isBackupModalVisible}
         onClose={() => setIsBackupModalVisible(false)}

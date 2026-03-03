@@ -20,7 +20,10 @@ interface TransactionDetailsModalProps {
   selectedCurrency: string;
   btcRate: number;
   getCurrencySymbol: (currency: string) => string;
-  address: string;
+  /** Single address (legacy). Use addresses for multi-address (HD wallet). */
+  address?: string;
+  /** All HD addresses for wallet-level transaction details. */
+  addresses?: string[];
   status: {
     confirmed: boolean;
     text: string;
@@ -41,10 +44,17 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   btcRate,
   getCurrencySymbol,
   address,
+  addresses,
   status,
   amounts,
   isBlurred = false,
 }) => {
+  const ourAddresses = addresses?.length
+    ? new Set(addresses)
+    : address
+      ? new Set([address])
+      : new Set<string>();
+  const isOurAddress = (a: string) => ourAddresses.has(a);
   const {theme} = useTheme();
   const {showSats, balanceFormattingEnabled} = useUser();
   const [currentBlockHeight, setCurrentBlockHeight] = React.useState<
@@ -116,9 +126,9 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     // Sent transaction: show ALL recipient addresses with their amounts
     const recipientOutputs =
       transaction.vout?.filter((output: any) => {
-        // Exclude outputs that match the sender's address (change outputs)
+        // Exclude outputs that match our addresses (change outputs)
         return (
-          output.scriptpubkey_address && output.scriptpubkey_address !== address
+          output.scriptpubkey_address && !isOurAddress(output.scriptpubkey_address)
         );
       }) || [];
     // Group by address and sum amounts (in case same address appears multiple times)
@@ -145,14 +155,14 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       ?.map((input: any) => input.prevout?.scriptpubkey_address)
       .filter(
         (addr: any): addr is string =>
-          typeof addr === 'string' && addr !== address,
-      ) || []) as string[]; // Exclude user's own address (change)
+          typeof addr === 'string' && !isOurAddress(addr),
+      ) || []) as string[]; // Exclude our addresses (change)
     // Remove duplicates
     const uniqueAddresses: string[] = [...new Set(inputAddresses)];
-    // Calculate total received amount from outputs to user's address
+    // Calculate total received amount from outputs to our addresses
     const totalReceivedSats =
       transaction.vout
-        ?.filter((output: any) => output.scriptpubkey_address === address)
+        ?.filter((output: any) => isOurAddress(output.scriptpubkey_address))
         .reduce(
           (total: number, output: any) => total + (output.value || 0),
           0,
