@@ -387,33 +387,51 @@ export class WalletService {
       setTimeout(() => controller.abort(), 20000);
     }
 
-    await Promise.all(
-      addressesWithPaths.map(async ({address, derivationPath, chain, index}) => {
-        if (!this.addressMatchesNetwork(address, isTestnetApi)) return;
-        try {
-          const utxoUrl = `${fullApiUrl}/address/${encodeURIComponent(address)}/utxo`;
-          const res = await this.withTimeout(
-            `utxo-${address.slice(0, 12)}`,
-            fetch(utxoUrl, {signal: fetchSignal}),
-            8000,
-          );
-          if (!res.ok) return;
-          const rawList: ApiUtxo[] = await res.json();
-          if (!Array.isArray(rawList)) return;
-          for (const u of rawList) {
-            merged.push({
-              ...u,
-              address,
-              derivationPath,
-              chain,
-              chainIndex: index,
-            });
-          }
-        } catch {
-          // skip failed address
+    // Fetch UTXOs sequentially, address-by-address, to avoid hammering
+    // mempool.space and to keep behavior deterministic under slow networks.
+    for (const {address, derivationPath, chain, index} of addressesWithPaths) {
+      if (!this.addressMatchesNetwork(address, isTestnetApi)) {
+        continue;
+      }
+      if (fetchSignal?.aborted) {
+        dbg('WalletService: fetchUtxosWithPaths aborted', {
+          address: address.slice(0, 12),
+        });
+        break;
+      }
+      try {
+        const utxoUrl = `${fullApiUrl}/address/${encodeURIComponent(
+          address,
+        )}/utxo`;
+        const res = await this.withTimeout(
+          `utxo-${address.slice(0, 12)}`,
+          fetch(utxoUrl, {signal: fetchSignal}),
+          8000,
+        );
+        if (!res.ok) {
+          continue;
         }
-      }),
-    );
+        const rawList: ApiUtxo[] = await res.json();
+        if (!Array.isArray(rawList)) {
+          continue;
+        }
+        for (const u of rawList) {
+          merged.push({
+            ...u,
+            address,
+            derivationPath,
+            chain,
+            chainIndex: index,
+          });
+        }
+      } catch (e) {
+        dbg('WalletService: fetchUtxosWithPaths failed for address', {
+          address: address.slice(0, 12),
+          error: e,
+        });
+        // skip failed address, continue with next
+      }
+    }
 
     // Sort: receive first, then change; by chain index; then by block_time desc (newest first)
     merged.sort((a, b) => {
@@ -520,25 +538,34 @@ export class WalletService {
    * regardless of current UTXO state. Used for restore discovery to prevent address reuse.
    */
   private async isAddressUsed(address: string, apiUrl: string): Promise<boolean> {
+    const baseUrl = apiUrl.replace(/\/+$/, '');
+    const url = `${baseUrl}/address/${address}/txs`;
     try {
-      const baseUrl = apiUrl.replace(/\/+$/, '');
-      const url = `${baseUrl}/address/${address}/txs`;
       const response = await this.withTimeout(
         `txs-${address.slice(0, 12)}`,
         fetch(url, {signal: this.abortController.signal}),
         5000,
       );
       if (!response.ok) {
-        dbg('WalletService: isAddressUsed fetch failed', {address: address.slice(0, 12), status: response.status});
-        return true; // Conservative: treat as used to avoid reuse
+        dbg('WalletService: isAddressUsed fetch failed', {
+          address: address.slice(0, 12),
+          status: response.status,
+        });
+        throw new Error(`isAddressUsed HTTP ${response.status}`);
       }
       const data = (await response.json()) as unknown;
       const hasTxs = Array.isArray(data) && data.length > 0;
-      dbg('WalletService: isAddressUsed', {address: address.slice(0, 12), hasTxs});
+      dbg('WalletService: isAddressUsed', {
+        address: address.slice(0, 12),
+        hasTxs,
+      });
       return hasTxs;
     } catch (error) {
-      dbg('WalletService: isAddressUsed error', {address: address.slice(0, 12), error});
-      return true; // Conservative: treat as used to avoid reuse
+      dbg('WalletService: isAddressUsed error', {
+        address: address.slice(0, 12),
+        error,
+      });
+      throw error;
     }
   }
 
@@ -568,6 +595,16 @@ export class WalletService {
     const ks = JSON.parse(jks);
     const useLegacyPath = isLegacyWallet(ks.created_at);
     BBMTLibNativeModule.setAPI(network, apiUrl);
+
+    const prevExternalIndex = await getExternalIndex(network, addressType);
+    const prevMaxUsedExternal = await getMaxUsedExternal(network, addressType);
+    const prevChangeIndex = await getChangeIndex(network, addressType);
+
+    let discoveredMaxUsedExternal = -1;
+    let discoveredMaxUsedChange = -1;
+    let discoveryStatus: 'ok' | 'partial' | 'failed' = 'ok';
+    const startedAt = Date.now();
+
     dbg('WalletService: Restore discovery - scanning external chain', {
       network,
       addressType,
@@ -575,93 +612,174 @@ export class WalletService {
     });
 
     // External chain: scan until GAP_LIMIT consecutive unused
-    let maxUsedExternal = -1;
-    let consecutiveUnused = 0;
-    for (let i = 0; consecutiveUnused < GAP_LIMIT; i++) {
-      const path = getReceivePath(network, addressType, useLegacyPath, i);
-      const pub = await BBMTLibNativeModule.derivePubkey(
-        ks.pub_key,
-        ks.chain_code_hex,
-        path,
-      );
-      const addr = await BBMTLibNativeModule.btcAddress(
-        pub,
+    try {
+      let consecutiveUnused = 0;
+      for (let i = 0; consecutiveUnused < GAP_LIMIT; i++) {
+        const path = getReceivePath(network, addressType, useLegacyPath, i);
+        const pub = await BBMTLibNativeModule.derivePubkey(
+          ks.pub_key,
+          ks.chain_code_hex,
+          path,
+        );
+        const addr = await BBMTLibNativeModule.btcAddress(
+          pub,
+          network,
+          addressType,
+        );
+        try {
+          onProgress?.('external', i, consecutiveUnused);
+          const used = await this.isAddressUsed(addr, apiUrl);
+          if (used) {
+            discoveredMaxUsedExternal = i;
+            consecutiveUnused = 0;
+          } else {
+            consecutiveUnused++;
+          }
+        } catch (error) {
+          dbg('WalletService: Restore discovery external error', {
+            network,
+            addressType,
+            index: i,
+            error,
+          });
+          discoveryStatus = 'partial';
+          break;
+        }
+      }
+    } catch (error) {
+      dbg('WalletService: Restore discovery external FAILED', {
         network,
         addressType,
-      );
-      try {
-        onProgress?.('external', i, consecutiveUnused);
-        const used = await this.isAddressUsed(addr, apiUrl);
-        if (used) {
-          maxUsedExternal = i;
-          consecutiveUnused = 0;
-        } else {
-          consecutiveUnused++;
-        }
-      } catch {
-        maxUsedExternal = i; // Conservative: treat as used on error
-        consecutiveUnused = 0;
-      }
+        error,
+      });
+      discoveryStatus = 'failed';
     }
-    const externalNext = maxUsedExternal + 1;
-    await setExternalIndex(network, addressType, externalNext);
-    await setMaxUsedExternal(network, addressType, Math.max(0, maxUsedExternal));
-    dbg('WalletService: Restore discovery external chain DONE', {
-      network,
-      addressType,
-      maxUsedExternal,
-      externalNext,
-    });
 
-    // Internal (change) chain: same logic
-    dbg('WalletService: Restore discovery - scanning internal (change) chain', {
-      network,
-      addressType,
-    });
-    let maxUsedChange = -1;
-    consecutiveUnused = 0;
-    for (let i = 0; consecutiveUnused < GAP_LIMIT; i++) {
-      const path = getChangePath(network, addressType, useLegacyPath, i);
-      const pub = await BBMTLibNativeModule.derivePubkey(
-        ks.pub_key,
-        ks.chain_code_hex,
-        path,
-      );
-      const addr = await BBMTLibNativeModule.btcAddress(
-        pub,
-        network,
-        addressType,
+    // Internal (change) chain: only scan if external completed successfully
+    if (discoveryStatus === 'ok') {
+      dbg(
+        'WalletService: Restore discovery - scanning internal (change) chain',
+        {
+          network,
+          addressType,
+        },
       );
       try {
-        onProgress?.('internal', i, consecutiveUnused);
-        const used = await this.isAddressUsed(addr, apiUrl);
-        if (used) {
-          maxUsedChange = i;
-          consecutiveUnused = 0;
-        } else {
-          consecutiveUnused++;
+        let consecutiveUnused = 0;
+        for (let i = 0; consecutiveUnused < GAP_LIMIT; i++) {
+          const path = getChangePath(network, addressType, useLegacyPath, i);
+          const pub = await BBMTLibNativeModule.derivePubkey(
+            ks.pub_key,
+            ks.chain_code_hex,
+            path,
+          );
+          const addr = await BBMTLibNativeModule.btcAddress(
+            pub,
+            network,
+            addressType,
+          );
+          try {
+            onProgress?.('internal', i, consecutiveUnused);
+            const used = await this.isAddressUsed(addr, apiUrl);
+            if (used) {
+              discoveredMaxUsedChange = i;
+              consecutiveUnused = 0;
+            } else {
+              consecutiveUnused++;
+            }
+          } catch (error) {
+            dbg('WalletService: Restore discovery internal error', {
+              network,
+              addressType,
+              index: i,
+              error,
+            });
+            discoveryStatus = 'partial';
+            break;
+          }
         }
-      } catch {
-        maxUsedChange = i; // Conservative: treat as used on error
-        consecutiveUnused = 0;
+      } catch (error) {
+        dbg('WalletService: Restore discovery internal FAILED', {
+          network,
+          addressType,
+          error,
+        });
+        discoveryStatus = 'failed';
       }
     }
-    const changeNext = maxUsedChange + 1;
-    await setChangeIndex(network, addressType, changeNext);
-    dbg('WalletService: Restore discovery internal chain DONE', {
-      network,
-      addressType,
-      maxUsedChange,
-      changeNext,
-    });
-    // Mark restore discovery as completed for this (network, addressType) pair
-    await LocalCache.setItem(
-      `hd_restore_done_${network}_${addressType}`,
-      'yes',
-    );
+
+    const durationMs = Date.now() - startedAt;
+
+    if (discoveryStatus === 'ok') {
+      const externalNext = Math.max(
+        0,
+        discoveredMaxUsedExternal + 1,
+        prevExternalIndex,
+      );
+      await setExternalIndex(network, addressType, externalNext);
+      if (discoveredMaxUsedExternal >= 0) {
+        await setMaxUsedExternal(
+          network,
+          addressType,
+          Math.max(prevMaxUsedExternal, discoveredMaxUsedExternal, 0),
+        );
+      }
+      const changeNext = Math.max(
+        0,
+        discoveredMaxUsedChange + 1,
+        prevChangeIndex,
+      );
+      await setChangeIndex(network, addressType, changeNext);
+      dbg('WalletService: Restore discovery DONE (committed indexes)', {
+        network,
+        addressType,
+        discoveredMaxUsedExternal,
+        externalNext,
+        discoveredMaxUsedChange,
+        changeNext,
+        durationMs,
+      });
+      // Mark restore discovery as completed for this (network, addressType) pair
+      await LocalCache.setItem(
+        `hd_restore_done_${network}_${addressType}`,
+        'yes',
+      );
+      await LocalCache.setItem(
+        `hd_discovery_status_${network}_${addressType}`,
+        'ok',
+      );
+      await LocalCache.setItem(
+        `hd_discovery_last_at_${network}_${addressType}`,
+        String(Date.now()),
+      );
+    } else {
+      dbg(
+        'WalletService: Restore discovery aborted, keeping previous HD indexes',
+        {
+          network,
+          addressType,
+          discoveryStatus,
+          prevExternalIndex,
+          prevMaxUsedExternal,
+          prevChangeIndex,
+          durationMs,
+        },
+      );
+      await LocalCache.setItem(
+        `hd_discovery_status_${network}_${addressType}`,
+        discoveryStatus,
+      );
+      await LocalCache.setItem(
+        `hd_discovery_last_at_${network}_${addressType}`,
+        String(Date.now()),
+      );
+    }
+
     dbg('WalletService: discoverHdIndexesForNetwork COMPLETE', {
       network,
       addressType,
+      discoveryStatus,
+      durationMs,
     });
   }
 
@@ -1194,33 +1312,36 @@ export class WalletService {
     const cleanBase = apiBase.replace(/\/+$/, '').replace(/\/api\/?$/, '');
     const seen = new Set<string>();
     const merged: any[] = [];
-    await Promise.all(
-      addresses.map(async addr => {
-        try {
-          const url = `${cleanBase}/api/address/${encodeURIComponent(addr)}/txs`;
-          const res = await this.withTimeout(
-            `txs-${addr.slice(0, 12)}`,
-            fetch(url),
-            8000,
-          );
-          if (!res.ok) return;
-          const data = (await res.json()) as any[];
-          if (!Array.isArray(data)) return;
-          for (const tx of data) {
-            if (!seen.has(tx.txid)) {
-              seen.add(tx.txid);
-              merged.push(tx);
-            }
-          }
-        } catch (e) {
-          dbg(
-            'WalletService: fetchTransactionsForAddresses failed for',
-            addr.slice(0, 12),
-            e,
-          );
+    // Fetch transactions sequentially, address-by-address, to avoid
+    // hammering mempool.space and to keep behavior deterministic.
+    for (const addr of addresses) {
+      try {
+        const url = `${cleanBase}/api/address/${encodeURIComponent(
+          addr,
+        )}/txs`;
+        const res = await this.withTimeout(
+          `txs-${addr.slice(0, 12)}`,
+          fetch(url),
+          8000,
+        );
+        if (!res.ok) {
+          continue;
         }
-      }),
-    );
+        const data = (await res.json()) as any[];
+        if (!Array.isArray(data)) {
+          continue;
+        }
+        for (const tx of data) {
+          if (!seen.has(tx.txid)) {
+            seen.add(tx.txid);
+            merged.push(tx);
+          }
+        }
+      } catch (e) {
+        dbg('WalletService: fetchTransactionsForAddresses failed for', addr.slice(0, 12), e);
+        // skip failed address, continue with next
+      }
+    }
     const blockTime = (tx: any) => tx.status?.block_time ?? 0;
     merged.sort((a, b) => blockTime(b) - blockTime(a));
     dbg('WalletService: fetchTransactionsForAddresses merged', merged.length, 'txs from', addresses.length, 'addresses');

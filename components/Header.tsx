@@ -266,7 +266,11 @@ interface HeaderProviderProps {
 export const HeaderProvider: React.FC<HeaderProviderProps> = ({apiBase}) => {
   const {theme} = useTheme();
   const cleanProviderUrl = apiBase
-    ? apiBase.replace('https://', '').replace('/api', '').replace(/\/+$/, '')
+    ? apiBase
+        .replace('https://', '')
+        .replace('http://', '')
+        .replace('/api', '')
+        .replace(/\/+$/, '')
     : '';
   const providerHost = cleanProviderUrl.includes('/')
     ? cleanProviderUrl.split('/')[0]

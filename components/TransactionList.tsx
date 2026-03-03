@@ -92,6 +92,12 @@ const TransactionList = React.forwardRef<
     const [hasMoreTransactions, setHasMoreTransactions] = useState(true);
     const isFetching = useRef(false);
     const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
+    const [selectedWalletPath, setSelectedWalletPath] = useState<{
+      address: string;
+      derivationPath: string;
+      chain: 'receive' | 'change';
+      index: number;
+    } | null>(null);
     const [isDetailsModalVisible, setIsDetailsModalVisible] = useState(false);
     const {theme: appTheme} = useAppTheme();
     const {showSats, balanceFormattingEnabled} = useUser();
@@ -109,6 +115,51 @@ const TransactionList = React.forwardRef<
         ourAddresses ? ourAddresses.has(addr) : addr === effectiveAddress,
       [ourAddresses, effectiveAddress],
     );
+    const [addressPathMap, setAddressPathMap] = useState<
+      Record<
+        string,
+        {derivationPath: string; chain: 'receive' | 'change'; index: number}
+      > | null
+    >(null);
+    // Load derivation paths for our HD addresses so we can show path per tx row
+    useEffect(() => {
+      let cancelled = false;
+      const loadPaths = async () => {
+        if (!network || !addressType) {
+          setAddressPathMap(null);
+          return;
+        }
+        try {
+          const list = await WalletService.getInstance().getHdAddressesWithPaths(
+            network,
+            addressType,
+          );
+          if (cancelled) {
+            return;
+          }
+          const map: Record<
+            string,
+            {derivationPath: string; chain: 'receive' | 'change'; index: number}
+          > = {};
+          for (const item of list) {
+            map[item.address] = {
+              derivationPath: item.derivationPath,
+              chain: item.chain,
+              index: item.index,
+            };
+          }
+          setAddressPathMap(map);
+        } catch {
+          if (!cancelled) {
+            setAddressPathMap(null);
+          }
+        }
+      };
+      loadPaths();
+      return () => {
+        cancelled = true;
+      };
+    }, [network, addressType]);
     const getTransactionAmounts = useCallback(
       (tx: any, addrOrAddrs?: string | string[]) => {
         const checkAddr = (a: string) =>
@@ -180,9 +231,15 @@ const TransactionList = React.forwardRef<
         // Function to load from cache
         const loadFromCache = async () => {
           dbg('Loading from cache...');
-          const cachedTransactions = isMultiAddress && network && addressType
-            ? await WalletService.getInstance().transactionsFromCacheForWallet(network, addressType)
-            : await WalletService.getInstance().transactionsFromCache(address || '');
+          const cachedTransactions =
+            isMultiAddress && network && addressType
+              ? await WalletService.getInstance().transactionsFromCacheForWallet(
+                  network,
+                  addressType,
+                )
+              : await WalletService.getInstance().transactionsFromCache(
+                  address || '',
+                );
           if (isMounted.current) {
             // No need to update cache when loading from cache
             setTransactions(cachedTransactions);
@@ -223,8 +280,11 @@ const TransactionList = React.forwardRef<
               a.startsWith('1') || a.startsWith('3') || a.startsWith('bc1')
             );
           };
-          const addrToCheck = isMultiAddress ? addresses![0] : address;
-          if (!addrToCheck || !addressMatchesNetwork(addrToCheck, isTestnetApi)) {
+          const addrToCheck = isMultiAddress ? addresses?.[0] : address;
+          if (
+            !addrToCheck ||
+            !addressMatchesNetwork(addrToCheck, isTestnetApi)
+          ) {
             dbg('TransactionList: address/baseApi mismatch; skipping fetch', {
               address: addrToCheck,
               url,
@@ -246,11 +306,12 @@ const TransactionList = React.forwardRef<
           );
           const cleanBaseApi = url.replace(/\/+$/, '').replace(/\/api\/?$/, '');
           let responseData: any[];
-          if (isMultiAddress && addresses!.length > 0) {
-            responseData = await WalletService.getInstance().fetchTransactionsForAddresses(
-              cleanBaseApi,
-              addresses!,
-            );
+          if (isMultiAddress && addresses && addresses.length > 0) {
+            responseData =
+              await WalletService.getInstance().fetchTransactionsForAddresses(
+                cleanBaseApi,
+                addresses,
+              );
           } else {
             const apiUrl = `${cleanBaseApi}/api/address/${address}/txs`;
             dbg('Starting fetch transactions from:', apiUrl);
@@ -312,7 +373,10 @@ const TransactionList = React.forwardRef<
                 );
                 if (p[tx.txid]) {
                   delete p[tx.txid];
-                  await LocalCache.setItem(`${a}-pendingTxs`, JSON.stringify(p));
+                  await LocalCache.setItem(
+                    `${a}-pendingTxs`,
+                    JSON.stringify(p),
+                  );
                 }
               }
             }
@@ -434,7 +498,15 @@ const TransactionList = React.forwardRef<
           }
         }
       },
-      [address, addresses, isMultiAddress, network, addressType, getTransactionAmounts, onUpdate],
+      [
+        address,
+        addresses,
+        isMultiAddress,
+        network,
+        addressType,
+        getTransactionAmounts,
+        onUpdate,
+      ],
     );
     // For user pull-to-refresh
     const handlePullRefresh = useCallback(async () => {
@@ -546,14 +618,20 @@ const TransactionList = React.forwardRef<
         setLoading(false);
         setIsRefreshing(false);
       };
-    }, [address, addresses, isMultiAddress, baseApi, memoizedFetchTransactions]);
+    }, [
+      address,
+      addresses,
+      isMultiAddress,
+      baseApi,
+      memoizedFetchTransactions,
+    ]);
     // Memoized transaction status checker
     const getTransactionStatus = useCallback(
       (tx: any) => {
         const isSending =
           !!tx?.sentAt ||
-          !!tx.vin?.some(
-            (input: any) => isOurAddress(input.prevout?.scriptpubkey_address || ''),
+          !!tx.vin?.some((input: any) =>
+            isOurAddress(input.prevout?.scriptpubkey_address || ''),
           );
         if (tx.sentAt || !tx.status?.confirmed) {
           return {
@@ -630,7 +708,10 @@ const TransactionList = React.forwardRef<
             let pendingTxs = filteredTransactions
               .filter((tx: any) => !tx.status || !tx.status.confirmed)
               .map((tx: any) => {
-                const {sent} = getTransactionAmounts(tx, isMultiAddress ? addresses : address);
+                const {sent} = getTransactionAmounts(
+                  tx,
+                  isMultiAddress ? addresses : address,
+                );
                 if (!isNaN(sent) && sent > 0) {
                   pending += Number(sent);
                 }
@@ -717,6 +798,8 @@ const TransactionList = React.forwardRef<
       baseApi,
       getTransactionAmounts,
       onUpdate,
+      isMultiAddress,
+      addresses,
     ]);
     // Add effect to handle initialTransactions changes
     useEffect(() => {
@@ -821,6 +904,19 @@ const TransactionList = React.forwardRef<
         color: appTheme.colors.text,
         opacity: 0.8,
       },
+      pathText: {
+        fontSize: appTheme.fontSizes?.xs || 11,
+        fontFamily: appTheme.fontFamilies?.monospace,
+        color: appTheme.colors.textSecondary,
+        opacity: 0.8,
+        marginTop: 2,
+      },
+      pathIndexText: {
+        fontSize: appTheme.fontSizes?.xs || 11,
+        fontFamily: appTheme.fontFamilies?.regular,
+        color: appTheme.colors.textSecondary,
+        opacity: 0.8,
+      },
       txId: {
         fontSize: appTheme.fontSizes?.base || 13,
         fontFamily: appTheme.fontFamilies?.monospaceMedium,
@@ -903,7 +999,7 @@ const TransactionList = React.forwardRef<
             ? moment(txTime).fromNow()
             : 'Recently confirmed'
           : 'Pending confirmation';
-        const shortTxId = `${item.txid.slice(0, 4)}...${item.txid.slice(-4)}`;
+        const shortTxId = `${item.txid.slice(0, 3)}…${item.txid.slice(-3)}`;
         // Get the relevant address(es) based on transaction type
         let relevantAddresses: string[] = [];
         let relevantAddress: string | null = null;
@@ -911,7 +1007,9 @@ const TransactionList = React.forwardRef<
           // For sent transactions: collect ALL recipient addresses (outputs that aren't ours)
           relevantAddresses =
             item?.vout
-              ?.filter((output: any) => !isOurAddress(output.scriptpubkey_address))
+              ?.filter(
+                (output: any) => !isOurAddress(output.scriptpubkey_address),
+              )
               .map((output: any) => output.scriptpubkey_address)
               .filter((addr: string) => addr) || [];
           relevantAddresses = [...new Set(relevantAddresses)];
@@ -920,11 +1018,48 @@ const TransactionList = React.forwardRef<
           // For received transactions: show the first input address that's not ours (the sender)
           relevantAddress =
             item?.vin?.find(
-              (input: any) => !isOurAddress(input.prevout?.scriptpubkey_address || ''),
+              (input: any) =>
+                !isOurAddress(input.prevout?.scriptpubkey_address || ''),
             )?.prevout?.scriptpubkey_address || null;
           // Set empty array for received transactions (not used in display)
           relevantAddresses = [];
         }
+        // Derivation path for our side of the transaction (first matching our address)
+        let ourWalletPath:
+          | {
+              address: string;
+              derivationPath: string;
+              chain: 'receive' | 'change';
+              index: number;
+            }
+          | null = null;
+        if (addressPathMap) {
+          const ourOutput = item?.vout?.find((output: any) =>
+            isOurAddress(output.scriptpubkey_address || ''),
+          );
+          const ourInput = item?.vin?.find((input: any) =>
+            isOurAddress(input.prevout?.scriptpubkey_address || ''),
+          );
+          const ourAddr: string | null =
+            (ourOutput && ourOutput.scriptpubkey_address) ||
+            (ourInput && ourInput.prevout?.scriptpubkey_address) ||
+            null;
+          if (ourAddr && addressPathMap[ourAddr]) {
+            const p = addressPathMap[ourAddr];
+            ourWalletPath = {
+              address: ourAddr,
+              derivationPath: p.derivationPath,
+              chain: p.chain,
+              index: p.index,
+            };
+          }
+        }
+        const ourPath: string | null = ourWalletPath?.derivationPath ?? null;
+        const ourIndexLabel: string | null = ourWalletPath
+          ? `${ourWalletPath.chain === 'receive' ? 'receive' : 'change'} #${
+              ourWalletPath.index
+            }`
+          : null;
         // Follow global BTC/sats toggle (WalletHome)
         let info = status.includes('Sen')
           ? `-${formatBitcoinDisplay(sent, {
@@ -939,7 +1074,7 @@ const TransactionList = React.forwardRef<
         let finalIcon = statusIcon;
         if (sent === 0 && received === changeAmount) {
           finalStatus = confirmed
-            ? 'Consolidated UTXOs'
+            ? 'Consolidation'
             : 'Consolidating UTXOs';
           info = `+${formatBitcoinDisplay(received, {
             inSats: showSats,
@@ -966,6 +1101,7 @@ const TransactionList = React.forwardRef<
             ]}
             onPress={() => {
               setSelectedTransaction(item);
+              setSelectedWalletPath(ourWalletPath);
               setIsDetailsModalVisible(true);
             }}
             android_ripple={{
@@ -1001,8 +1137,7 @@ const TransactionList = React.forwardRef<
                   <Text style={styles.address}>
                     {status.includes('Sen') ? 'To: ' : 'Fr: '}
                     <Text style={styles.addressText}>
-                      {relevantAddress.slice(0, 4)}...
-                      {relevantAddress.slice(-4)}
+                      {relevantAddress.slice(0, 3)}…{relevantAddress.slice(-3)}
                       {status.includes('Sen') &&
                         relevantAddresses.length > 1 && (
                           <Text style={styles.addressText}>
@@ -1029,6 +1164,17 @@ const TransactionList = React.forwardRef<
               </View>
               <Text style={styles.timestamp}>{timestamp}</Text>
             </View>
+            {ourPath && ourIndexLabel && (
+              <View style={styles.transactionRow}>
+                <View style={styles.txIdContainer}>
+                  <Text style={styles.txId}>
+                    Ix:
+                    <Text style={styles.txText}> {ourPath}</Text>
+                  </Text>
+                </View>
+                <Text style={styles.pathIndexText}>{ourIndexLabel}</Text>
+              </View>
+            )}
           </AppPressable>
         );
       },
@@ -1039,6 +1185,7 @@ const TransactionList = React.forwardRef<
         addresses,
         isMultiAddress,
         isOurAddress,
+        addressPathMap,
         appTheme.colors.background,
         appTheme.colors.bitcoinOrange,
         styles.transactionRow,
@@ -1055,6 +1202,7 @@ const TransactionList = React.forwardRef<
         styles.txId,
         styles.txText,
         styles.timestamp,
+        styles.pathIndexText,
         styles.transactionItem,
         styles.transactionItemPressed,
         isBlurred,
@@ -1162,11 +1310,14 @@ const TransactionList = React.forwardRef<
                     const {text: status, confirmed} =
                       getTransactionStatus(selectedTransaction);
                     const {sent, changeAmount, received} =
-                      getTransactionAmounts(selectedTransaction, isMultiAddress ? addresses : address);
+                      getTransactionAmounts(
+                        selectedTransaction,
+                        isMultiAddress ? addresses : address,
+                      );
                     let finalStatus = status;
                     if (sent === 0 && received === changeAmount) {
                       finalStatus = confirmed
-                        ? 'Consolidated UTXOs'
+                        ? 'Consolidation'
                         : 'Consolidating UTXOs';
                     }
                     return {
@@ -1178,9 +1329,13 @@ const TransactionList = React.forwardRef<
             }
             amounts={
               selectedTransaction
-                ? getTransactionAmounts(selectedTransaction, isMultiAddress ? addresses : address)
+                ? getTransactionAmounts(
+                    selectedTransaction,
+                    isMultiAddress ? addresses : address,
+                  )
                 : null
             }
+            walletPath={selectedWalletPath}
             isBlurred={isBlurred}
           />
         )}

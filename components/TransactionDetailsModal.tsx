@@ -24,6 +24,13 @@ interface TransactionDetailsModalProps {
   address?: string;
   /** All HD addresses for wallet-level transaction details. */
   addresses?: string[];
+  /** Optional HD wallet path info for our address involved in this tx (from TransactionList). */
+  walletPath?: {
+    address: string;
+    derivationPath: string;
+    chain: 'receive' | 'change';
+    index: number;
+  } | null;
   status: {
     confirmed: boolean;
     text: string;
@@ -45,6 +52,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   getCurrencySymbol,
   address,
   addresses,
+  walletPath,
   status,
   amounts,
   isBlurred = false,
@@ -176,6 +184,14 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     }));
     addressLabel =
       relevantAddresses.length > 1 ? 'From Addresses' : 'From Address';
+  }
+  let pathLabel: string | null = null;
+  let walletAddressLabel: string | null = null;
+  if (walletPath) {
+    const chainLabel =
+      walletPath.chain === 'receive' ? 'receive' : 'change';
+    pathLabel = `${walletPath.derivationPath} (${chainLabel} #${walletPath.index})`;
+    walletAddressLabel = walletPath.address;
   }
   const renderDetailRow = (label: string, value: string | React.ReactNode) => (
     <View style={styles.detailRow}>
@@ -439,6 +455,10 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                         amount,
                       )}`,
                 )}
+              {walletAddressLabel &&
+                renderDetailRow('Wallet address', walletAddressLabel)}
+              {pathLabel &&
+                renderDetailRow('Wallet path', pathLabel)}
             </View>
             {relevantAddresses.length > 0 && (
               <View style={styles.section}>
