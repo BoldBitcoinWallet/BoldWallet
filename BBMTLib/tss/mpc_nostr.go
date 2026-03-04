@@ -606,6 +606,7 @@ func NostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 //   - npubsSorted: Comma-separated sorted list of all party npubs (for sessionFlag calculation)
 //   - balanceSats: Balance in satoshis (for sessionFlag calculation)
 //   - amountSatoshi: Transaction amount in satoshis (for sessionFlag calculation)
+//
 // NostrMpcSendBTC performs a Nostr-based MPC Bitcoin transaction.
 // changeAddress: when non-empty, change output is sent here (HD internal chain); otherwise to senderAddress.
 func NostrMpcSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON, derivePath, publicKey, senderAddress, receiverAddress string, amountSatoshi, estimatedFee int64, changeAddress string) (result string, err error) {
