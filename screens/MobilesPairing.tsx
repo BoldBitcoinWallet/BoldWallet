@@ -111,10 +111,6 @@ const MobilesPairing = ({navigation}: any) => {
   const [prepCounter, setPrepCounter] = useState(0);
   const [keypair, setKeypair] = useState('');
   const [peerPubkey, setPeerPubkey] = useState('');
-  const [fromAddress, setFromAddress] = useState<string>(''); // Derived address for send transaction
-  const [currentDerivationPath, setCurrentDerivationPath] =
-    useState<string>(''); // Derivation path for display
-  const [currentNetwork, setCurrentNetwork] = useState<string>('mainnet'); // Network for display
   const [peerPubkey2, setPeerPubkey2] = useState('');
   const [shareName, setShareName] = useState('');
   const [_keyshare, setKeyshare] = useState('');
@@ -226,134 +222,6 @@ const MobilesPairing = ({navigation}: any) => {
     clearCacheForSetup();
   }, [setupMode]);
   // Initialize network and derivation path immediately when component loads (for send Bitcoin mode)
-  useEffect(() => {
-    const initializeNetwork = async () => {
-      if (!isSendBitcoin || !route.params) {
-        // For non-send modes, use cached network
-        const cachedNetwork =
-          (await LocalCache.getItem('network')) || 'mainnet';
-        setCurrentNetwork(cachedNetwork);
-        return;
-      }
-      dbg('=== MobilesPairing: Received route params ===', {
-        network: route.params?.network,
-        derivationPath: route.params?.derivationPath,
-        addressType: route.params?.addressType,
-        toAddress: route.params?.toAddress,
-        satoshiAmount: route.params?.satoshiAmount,
-        allParams: route.params,
-      });
-      // CRITICAL: In send mode, ALL parameters MUST come from route params (no fallbacks)
-      if (!route.params.network || route.params.network.trim() === '') {
-        dbg('ERROR: Network missing from route params in send mode');
-        return;
-      }
-      // ALWAYS use route params - no fallbacks
-      const netForNative = route.params.network.trim();
-      const netForDisplay =
-        netForNative === 'testnet3' ? 'testnet' : netForNative;
-      setCurrentNetwork(netForDisplay);
-      // Also set derivation path immediately if available from route params
-      if (
-        route.params.derivationPath &&
-        route.params.derivationPath.trim() !== ''
-      ) {
-        setCurrentDerivationPath(route.params.derivationPath.trim());
-        dbg(
-          'MobilesPairing: Initialized derivation path from route params:',
-          route.params.derivationPath,
-        );
-      }
-      dbg(
-        'MobilesPairing: Initialized network for display:',
-        netForDisplay,
-        '(native format:',
-        netForNative,
-        ')',
-      );
-    };
-    initializeNetwork();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSendBitcoin, route.params?.network, route.params?.derivationPath]);
-  // Compute from address for send transactions
-  useEffect(() => {
-    const computeFromAddress = async () => {
-      if (!isSendBitcoin || !route.params) return;
-      try {
-        // CRITICAL: In send mode, ALL parameters MUST come from route params (no fallbacks)
-        // This ensures consistency between devices and prevents mismatches
-        if (!route.params.network || route.params.network.trim() === '') {
-          dbg('ERROR: Network missing from route params in send mode');
-          setFromAddress('');
-          return;
-        }
-        if (
-          !route.params.addressType ||
-          route.params.addressType.trim() === ''
-        ) {
-          dbg('ERROR: Address type missing from route params in send mode');
-          setFromAddress('');
-          return;
-        }
-        if (
-          !route.params.derivationPath ||
-          route.params.derivationPath.trim() === ''
-        ) {
-          dbg('ERROR: Derivation path missing from route params in send mode');
-          setFromAddress('');
-          return;
-        }
-        const jks = await EncryptedStorage.getItem('keyshare');
-        if (!jks) return;
-        const ks = JSON.parse(jks);
-        // ALWAYS use route params - no fallbacks
-        const netForNative = route.params.network.trim();
-        const addressTypeToUse = route.params.addressType.trim();
-        const path = route.params.derivationPath.trim();
-        // Normalize for display only: 'testnet3' -> 'testnet'
-        const netForDisplay =
-          netForNative === 'testnet3' ? 'testnet' : netForNative;
-        dbg('=== MobilesPairing: Using route params ONLY (no fallbacks) ===', {
-          network: netForNative,
-          addressType: addressTypeToUse,
-          derivationPath: path,
-        });
-        // Derive the public key and address
-        const btcPub = await BBMTLibNativeModule.derivePubkey(
-          ks.pub_key,
-          ks.chain_code_hex,
-          path,
-        );
-        // Use original network format for native module (requires 'testnet3' not 'testnet')
-        const derivedAddress = await BBMTLibNativeModule.btcAddress(
-          btcPub,
-          netForNative,
-          addressTypeToUse,
-        );
-        setFromAddress(derivedAddress);
-        setCurrentDerivationPath(path);
-        setCurrentNetwork(netForDisplay);
-        dbg('=== MobilesPairing: Computed from address ===', {
-          derivationPath: path,
-          addressType: addressTypeToUse,
-          fromAddress: derivedAddress,
-          network: netForNative,
-          networkForDisplay: netForDisplay,
-        });
-      } catch (error) {
-        dbg('Error computing from address:', error);
-        setFromAddress('');
-      }
-    };
-    computeFromAddress();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    isSendBitcoin,
-    route.params?.derivationPath,
-    route.params?.mode,
-    route.params?.network,
-    route.params?.addressType,
-  ]);
   const stringToHex = (str: string) => {
     return Array.from(str)
       .map(char => char.charCodeAt(0).toString(16).padStart(2, '0'))
@@ -4170,8 +4038,7 @@ const MobilesPairing = ({navigation}: any) => {
                               letterSpacing: 0.5,
                             }}>
                             {(() => {
-                              const net =
-                                route.params?.network || currentNetwork;
+                              const net = route.params?.network || '';
                               const normalizedNet =
                                 net === 'testnet3' ? 'testnet' : net;
                               return normalizedNet === 'testnet'
@@ -4181,7 +4048,7 @@ const MobilesPairing = ({navigation}: any) => {
                           </Text>
                         </View>
                       </View>
-                      {fromAddress && (
+                      {route.params?.derivationPath && (
                         <View
                           style={[
                             styles.transactionItem,
@@ -4192,7 +4059,6 @@ const MobilesPairing = ({navigation}: any) => {
                               flexDirection: 'row',
                               alignItems: 'center',
                               justifyContent: 'space-between',
-                              marginBottom: 2,
                             }}>
                             <Text
                               style={[
@@ -4202,30 +4068,22 @@ const MobilesPairing = ({navigation}: any) => {
                                   lineHeight: 14,
                                 },
                               ]}>
-                              From Address
+                              Signing Path
                             </Text>
-                            {currentDerivationPath && (
-                              <Text
-                                style={{
-                                  fontSize: theme.fontSizes?.xs || 10,
-                                  fontFamily: theme.fontFamilies?.monospace,
-                                  fontStyle: 'italic',
-                                  color: theme.colors.textSecondary,
-                                  marginLeft: 6,
-                                  textAlign: 'right',
-                                  flex: 1,
-                                  flexShrink: 1,
-                                }}>
-                                {currentDerivationPath}
-                              </Text>
-                            )}
-                          </View>
-                          <View style={styles.addressContainer}>
                             <Text
-                              style={styles.addressValue}
-                              numberOfLines={1}
-                              ellipsizeMode="middle">
-                              {fromAddress}
+                              style={{
+                                fontSize: theme.fontSizes?.xs || 10,
+                                fontFamily: theme.fontFamilies?.monospace,
+                                color:
+                                  theme.colors.background === '#ffffff'
+                                    ? theme.colors.primary
+                                    : theme.colors.bitcoinOrange,
+                                marginLeft: 6,
+                                textAlign: 'right',
+                                flex: 1,
+                                flexShrink: 1,
+                              }}>
+                              {route.params.derivationPath}
                             </Text>
                           </View>
                         </View>
