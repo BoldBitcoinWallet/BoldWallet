@@ -564,6 +564,16 @@ FOUNDATION_EXPORT NSString* _Nonnull TssSha256(NSString* _Nullable msg, NSError*
 
 FOUNDATION_EXPORT NSString* _Nonnull TssSpendingHash(NSString* _Nullable senderAddress, NSString* _Nullable receiverAddress, int64_t amountSatoshi, NSError* _Nullable* _Nullable error);
 
+/**
+ * SpendingHashWithUTXOs is the multi-path counterpart of SpendingHash.
+Instead of fetching UTXOs from a single address, it accepts a pre-fetched
+pool (JSON-encoded []utxoWithPathJSON) that covers all HD addresses.
+It selects UTXOs using the same "smallest-first" strategy and returns a
+deterministic SHA-256 hex over "txid:vout" pairs – identical across
+co-signing devices as long as they supply the same UTXO set.
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssSpendingHashWithUTXOs(NSString* _Nullable utxosWithPathsJSON, NSString* _Nullable receiverAddress, NSString* _Nullable amountSatoshiStr, NSError* _Nullable* _Nullable error);
+
 FOUNDATION_EXPORT NSString* _Nonnull TssStopRelay(NSError* _Nullable* _Nullable error);
 
 FOUNDATION_EXPORT NSString* _Nonnull TssTotalUTXO(NSString* _Nullable address, NSError* _Nullable* _Nullable error);

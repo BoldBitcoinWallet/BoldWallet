@@ -1,6 +1,6 @@
 import Big from 'big.js';
 import {BBMTLibNativeModule} from '../native_modules';
-import {dbg, getChangePath, getMainnetAPIList, getReceivePath, GAP_LIMIT, isLegacyWallet, MIN_SCAN_INDEX} from '../utils';
+import {dbg, getChangePath, getMainnetAPIList, getReceivePath, GAP_LIMIT, isLegacyWallet} from '../utils';
 import LocalCache from './LocalCache';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {
@@ -153,6 +153,15 @@ export class WalletService {
   private currentApiUrl: string = 'https://mempool.space/api';
   private fetchInProgress: {[key: string]: boolean} = {};
   private fetchTimeout: {[key: string]: NodeJS.Timeout} = {};
+  // In-memory cache for derived HD address lists. Keyed by
+  // "<network>_<addressType>_<externalEnd>_<internalEnd>".
+  // Invalidated explicitly via invalidateAddressCache() whenever indexes change.
+  private hdAddressCache: Map<string, HdAddressWithPath[]> = new Map();
+  // Per-address UTXO result cache. Keyed by address string.
+  // Only empty results are used to short-circuit future fetches (TTL-gated).
+  // Addresses with UTXOs are always re-fetched so spent coins are detected.
+  private readonly UTXO_EMPTY_CACHE_TTL_MS = 30_000; // 30 s
+  private utxoEmptyCache: Map<string, number> = new Map(); // address → fetchedAt timestamp
   private constructor() {
     // Don't auto-initialize, wait for explicit initialize call
   }
@@ -323,6 +332,7 @@ export class WalletService {
     addressType: string,
   ): Promise<void> {
     await hdIncrementChangeIndexAfterSend(network, addressType);
+    this.invalidateAddressCache(network, addressType);
   }
 
   /**
@@ -399,6 +409,14 @@ export class WalletService {
         });
         break;
       }
+      // Skip addresses that returned empty UTXOs recently — no need to ask
+      // the API again while the user is typing/estimating fees.
+      // Addresses with UTXOs are always re-fetched so spent coins are detected.
+      const emptyAt = this.utxoEmptyCache.get(address);
+      if (emptyAt && Date.now() - emptyAt < this.UTXO_EMPTY_CACHE_TTL_MS) {
+        continue;
+      }
+
       try {
         const utxoUrl = `${fullApiUrl}/address/${encodeURIComponent(
           address,
@@ -413,6 +431,11 @@ export class WalletService {
         }
         const rawList: ApiUtxo[] = await res.json();
         if (!Array.isArray(rawList)) {
+          continue;
+        }
+        if (rawList.length === 0) {
+          // Cache this empty result so we skip it for the next TTL window
+          this.utxoEmptyCache.set(address, Date.now());
           continue;
         }
         for (const u of rawList) {
@@ -459,8 +482,29 @@ export class WalletService {
   }
 
   /**
+   * Clears the in-memory HD address cache for the given network+addressType combination.
+   * Call this after any index advance (e.g. after a send, after bumpExternalIndexIfCurrentUsed).
+   */
+  public invalidateAddressCache(network?: string, addressType?: string): void {
+    if (!network && !addressType) {
+      this.hdAddressCache.clear();
+      this.utxoEmptyCache.clear();
+      return;
+    }
+    const prefix = `${network}_${addressType}_`;
+    for (const key of this.hdAddressCache.keys()) {
+      if (key.startsWith(prefix)) {
+        this.hdAddressCache.delete(key);
+      }
+    }
+    // Also clear the UTXO empty-skip cache so newly-active addresses are not skipped
+    this.utxoEmptyCache.clear();
+  }
+
+  /**
    * Returns all in-scope HD addresses with derivation path and chain (receive vs change).
-   * Used by UTXOs tab and multi-address send to fetch UTXOs per address and show path in UI.
+   * Results are memoized in-memory for the lifetime of the app session — re-derivation only
+   * happens when the indexes change (i.e. after the cache is explicitly invalidated).
    */
   public async getHdAddressesWithPaths(
     network: string,
@@ -473,9 +517,20 @@ export class WalletService {
     const externalIdx = await getExternalIndex(network, addressType);
     const maxUsedExternal = await getMaxUsedExternal(network, addressType);
     const changeIdx = await getChangeIndex(network, addressType);
-    // Always scan at least 0..MIN_SCAN_INDEX so path 0 and old paths are never missed
-    const externalEnd = Math.max(MIN_SCAN_INDEX, Math.max(externalIdx, maxUsedExternal) + GAP_LIMIT);
-    const internalEnd = Math.max(MIN_SCAN_INDEX, changeIdx + GAP_LIMIT);
+    // Runtime range: only addresses that are known to have been issued or used.
+    // GAP_LIMIT and MIN_SCAN_INDEX are discovery-time concerns (discoverHdIndexesForNetwork),
+    // not runtime concerns — we already know the wallet state from completed discovery.
+    const externalEnd = Math.max(externalIdx, maxUsedExternal);
+    const internalEnd = changeIdx;
+
+    const cacheKey = `${network}_${addressType}_${externalEnd}_${internalEnd}`;
+    const cached = this.hdAddressCache.get(cacheKey);
+    if (cached) {
+      dbg('WalletService: getHdAddressesWithPaths cache hit', cacheKey, cached.length, 'addresses');
+      return cached;
+    }
+
+    dbg('WalletService: getHdAddressesWithPaths deriving', externalEnd + 1, 'receive +', internalEnd + 1, 'change addresses');
     const results: HdAddressWithPath[] = [];
     for (let i = 0; i <= externalEnd; i++) {
       const path = getReceivePath(network, addressType, useLegacyPath, i);
@@ -505,6 +560,8 @@ export class WalletService {
       );
       results.push({address, derivationPath: path, chain: 'change', index: i});
     }
+
+    this.hdAddressCache.set(cacheKey, results);
     return results;
   }
 
@@ -531,6 +588,72 @@ export class WalletService {
       path,
     });
     return {path, index};
+  }
+
+  /**
+   * If the current external (receive) address has ever been used (confirmed or mempool),
+   * advance externalIndex to the next index and update maxUsedExternal accordingly.
+   * This is a lightweight frontier bump, not a full restore scan.
+   */
+  public async bumpExternalIndexIfCurrentUsed(
+    network: string,
+    addressType: string,
+    apiUrl: string,
+  ): Promise<void> {
+    try {
+      const jks = await EncryptedStorage.getItem('keyshare');
+      if (!jks) {
+        dbg('WalletService: bumpExternalIndexIfCurrentUsed - no keyshare');
+        return;
+      }
+      const ks = JSON.parse(jks);
+      const useLegacyPath = isLegacyWallet(ks.created_at);
+      const currentIndex = await getExternalIndex(network, addressType);
+      const path = getReceivePath(
+        network,
+        addressType,
+        useLegacyPath,
+        currentIndex,
+      );
+      const pub = await BBMTLibNativeModule.derivePubkey(
+        ks.pub_key,
+        ks.chain_code_hex,
+        path,
+      );
+      const addr = await BBMTLibNativeModule.btcAddress(
+        pub,
+        network,
+        addressType,
+      );
+      const used = await this.isAddressUsed(addr, apiUrl);
+      if (!used) {
+        dbg(
+          'WalletService: bumpExternalIndexIfCurrentUsed - current address not used',
+          {network, addressType, currentIndex, addr: addr.slice(0, 12)},
+        );
+        return;
+      }
+      const prevMaxUsed = await getMaxUsedExternal(network, addressType);
+      const newMaxUsed = Math.max(prevMaxUsed, currentIndex, 0);
+      await setMaxUsedExternal(network, addressType, newMaxUsed);
+      const newIndex = newMaxUsed + 1;
+      await setExternalIndex(network, addressType, newIndex);
+      dbg('WalletService: bumpExternalIndexIfCurrentUsed advanced index', {
+        network,
+        addressType,
+        currentIndex,
+        newIndex,
+        newMaxUsed,
+        addr: addr.slice(0, 12),
+      });
+      this.invalidateAddressCache(network, addressType);
+    } catch (error) {
+      dbg('WalletService: bumpExternalIndexIfCurrentUsed error', {
+        network,
+        addressType,
+        error,
+      });
+    }
   }
 
   /**
@@ -781,6 +904,8 @@ export class WalletService {
       discoveryStatus,
       durationMs,
     });
+    // Indexes may have changed — drop the cached address list
+    this.invalidateAddressCache(network, addressType);
   }
 
   // Add method to cancel ongoing fetches
@@ -1098,42 +1223,9 @@ export class WalletService {
           timestamp: Date.now(),
         };
       }
-      const ks = JSON.parse(jks);
-      const useLegacyPath = isLegacyWallet(ks.created_at);
-      const externalIdx = await getExternalIndex(network, addressType);
-      const maxUsedExternal = await getMaxUsedExternal(network, addressType);
-      const changeIdx = await getChangeIndex(network, addressType);
-      const externalEnd = Math.max(MIN_SCAN_INDEX, Math.max(externalIdx, maxUsedExternal) + GAP_LIMIT);
-      const internalEnd = Math.max(MIN_SCAN_INDEX, changeIdx + GAP_LIMIT);
-      const addresses: string[] = [];
-      for (let i = 0; i <= externalEnd; i++) {
-        const path = getReceivePath(network, addressType, useLegacyPath, i);
-        const pub = await BBMTLibNativeModule.derivePubkey(
-          ks.pub_key,
-          ks.chain_code_hex,
-          path,
-        );
-        const addr = await BBMTLibNativeModule.btcAddress(
-          pub,
-          network,
-          addressType,
-        );
-        addresses.push(addr);
-      }
-      for (let i = 0; i <= internalEnd; i++) {
-        const path = getChangePath(network, addressType, useLegacyPath, i);
-        const pub = await BBMTLibNativeModule.derivePubkey(
-          ks.pub_key,
-          ks.chain_code_hex,
-          path,
-        );
-        const addr = await BBMTLibNativeModule.btcAddress(
-          pub,
-          network,
-          addressType,
-        );
-        addresses.push(addr);
-      }
+      // Reuse the cached address list — no re-derivation if indexes haven't changed.
+      const addressesWithPaths = await this.getHdAddressesWithPaths(network, addressType);
+      const addresses = addressesWithPaths.map(a => a.address);
       BBMTLibNativeModule.setAPI(network, this.currentApiUrl);
       const api = await LocalCache.getItem('api');
       if (!api) throw new Error('No API URL found');

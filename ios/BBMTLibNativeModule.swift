@@ -117,6 +117,24 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     }
   }
 
+  @objc func spendingHashWithUTXOs(
+    _ utxosWithPathsJSON: String,
+    receiverAddress: String,
+    amountSatoshi: String,
+    resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      var error: NSError?
+      let output = TssSpendingHashWithUTXOs(
+        utxosWithPathsJSON,
+        receiverAddress,
+        amountSatoshi, &error)
+      self?.sendLogEvent("spendingHashWithUTXOs", output)
+      resolver(error == nil ? output : error!.localizedDescription)
+    }
+  }
+
   @objc func estimateFees(
     _ senderAddress: String,
     receiverAddress: String,

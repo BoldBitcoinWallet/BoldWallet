@@ -169,6 +169,13 @@ RCT_EXTERN_METHOD(spendingHash:(NSString *)senderAddress
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+// Call spendingHashWithUTXOs (multi-path)
+RCT_EXTERN_METHOD(spendingHashWithUTXOs:(NSString *)utxosWithPathsJSON
+                  receiverAddress:(NSString *)receiverAddress
+                  amountSatoshi:(NSString *)amountSatoshi
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 // Call mpcSendBTCWithUTXOs (multi-path)
 RCT_EXTERN_METHOD(mpcSendBTCWithUTXOs:(NSString *)server
                   partyID:(NSString *)partyID

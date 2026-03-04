@@ -30,6 +30,7 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {
   validateBitcoinAddressEnhanced,
   waitMS,
+  WalletService,
 } from '../services/WalletService';
 const {BBMTLibNativeModule} = NativeModules;
 interface SendBitcoinModalProps {
@@ -73,7 +74,13 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   const [feeStrategy, setFeeStrategy] = useState('1hr');
   const [addressError, setAddressError] = useState<string | null>(null);
   const {theme} = useTheme();
-  const {showSats, balanceFormattingEnabled, activeNetwork} = useUser();
+  const {
+    showSats,
+    balanceFormattingEnabled,
+    activeNetwork,
+    activeAddressType,
+    activeApiProvider,
+  } = useUser();
   const isSatsMode = showSats;
   useEffect(() => {
     visibleRef.current = visible;
@@ -456,15 +463,72 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       }
       setIsCalculatingFee(true);
       const satoshiAmount = amount.times(1e8).toFixed(0);
-      BBMTLibNativeModule.spendingHash(walletAddress, addr, satoshiAmount)
-        .then((hash: string) => {
+
+      // Fetch multi-path UTXOs once and reuse for both spendingHash and fee estimation.
+      // Falls back to single-address path when no activeApiProvider is set.
+      let utxosJson: string | null = null;
+      let changeAddress: string = '';
+      if (activeApiProvider) {
+        try {
+          const ws = WalletService.getInstance();
+          const utxosWithPaths = await ws.fetchUtxosWithPaths(
+            activeNetwork,
+            activeAddressType,
+            activeApiProvider,
+          );
+          dbg('SendBitcoinModal: utxosWithPaths count', utxosWithPaths.length);
+          utxosJson = JSON.stringify(utxosWithPaths);
+          changeAddress = await ws.getNextChangeAddress(
+            activeNetwork,
+            activeAddressType,
+          );
+        } catch (e) {
+          dbg('SendBitcoinModal: UTXO fetch failed, falling back to single-address', e);
+        }
+      }
+
+      // Spending hash: prefer multi-path (deterministic across all co-signers),
+      // fall back to single-address legacy path when UTXOs could not be fetched.
+      let hashPromise: Promise<string>;
+      if (utxosJson) {
+        hashPromise = BBMTLibNativeModule.spendingHashWithUTXOs(
+          utxosJson,
+          addr,
+          satoshiAmount,
+        );
+      } else {
+        hashPromise = BBMTLibNativeModule.spendingHash(
+          walletAddress,
+          addr,
+          satoshiAmount,
+        );
+      }
+
+      hashPromise
+        .then(async (hash: string) => {
           if (!isMountedRef.current || !visibleRef.current) {
             return;
           }
           setSpendingHash(hash);
           dbg('got spending hash:', hash);
-          BBMTLibNativeModule.estimateFees(walletAddress, addr, satoshiAmount)
-            .then((fee: string) => {
+
+          // Fee estimation — reuse already-fetched UTXOs (no second network round-trip).
+          let feePromise: Promise<string>;
+          if (utxosJson) {
+            feePromise = BBMTLibNativeModule.estimateFeeWithUTXOs(
+              utxosJson,
+              addr,
+              satoshiAmount,
+              changeAddress,
+            );
+          } else {
+            feePromise = BBMTLibNativeModule.estimateFees(
+              walletAddress,
+              addr,
+              satoshiAmount,
+            );
+          }
+          feePromise.then((fee: string) => {
               if (!isMountedRef.current || !visibleRef.current) {
                 return;
               }
@@ -650,6 +714,9 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       validateAddressForCurrentNetwork,
       currentNetworkForValidation,
       isSatsMode,
+      activeApiProvider,
+      activeNetwork,
+      activeAddressType,
     ],
   );
   const debouncedGetFee = useMemo(() => debounce(getFee, 1000), [getFee]);

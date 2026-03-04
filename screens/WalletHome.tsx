@@ -153,6 +153,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     useState(false);
   const [pendingExtensionPairingCode, setPendingExtensionPairingCode] =
     useState<string | null>(null);
+  const [isReceiveBusy, setIsReceiveBusy] = useState(false);
   const extensionQrModalStyles = React.useMemo(
     () => StyleSheet.create({qrPadding: {padding: 16}}),
     [],
@@ -2269,11 +2270,21 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 styles.receiveButton,
                 styles.flexOneMinWidthZero,
               ]}
+              disabled={isReceiveBusy || isRestoringIndexes}
               onPress={async () => {
+                if (isReceiveBusy || isRestoringIndexes) {
+                  return;
+                }
                 try {
+                  setIsReceiveBusy(true);
                   const ws = WalletService.getInstance();
                   const effectiveAddressType =
                     addressType || 'segwit-native';
+                  const apiUrl =
+                    apiBase ||
+                    (network === 'mainnet'
+                      ? 'https://mempool.space/api'
+                      : 'https://mempool.space/testnet/api');
                   const restoreDoneKey = `hd_restore_done_${network}_${effectiveAddressType}`;
                   const restoreDone =
                     (await LocalCache.getItem(restoreDoneKey)) === 'yes';
@@ -2282,11 +2293,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   if (!restoreDone) {
                     setIsRestoringIndexes(true);
                     setRestoreProgress(null);
-                    const apiUrl =
-                      apiBase ||
-                      (network === 'mainnet'
-                        ? 'https://mempool.space/api'
-                        : 'https://mempool.space/testnet/api');
                     await ws.discoverHdIndexesForNetwork(
                       network,
                       effectiveAddressType,
@@ -2296,6 +2302,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                     );
                     await refreshUserContext();
                   }
+
+                  // Lightweight frontier bump: if current receive address is already used,
+                  // advance external index so the next receive shows a fresh address.
+                  await ws.bumpExternalIndexIfCurrentUsed(
+                    network,
+                    effectiveAddressType,
+                    apiUrl,
+                  );
 
                   const info = await ws.getCurrentReceivePathInfo(
                     network,
@@ -2317,6 +2331,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 } finally {
                   setIsRestoringIndexes(false);
                   setRestoreProgress(null);
+                  setIsReceiveBusy(false);
                 }
               }}
               android_ripple={{color: 'rgba(0,0,0,0.1)'}}
@@ -2324,15 +2339,21 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               accessibilityLabel="Receive Bitcoin"
               accessibilityHint="Double tap to view your Bitcoin address and QR code"
               accessibilityRole="button">
-              <Image
-                source={require('../assets/receive-icon.png')}
-                style={styles.actionButtonIcon}
-                resizeMode="contain"
-                accessibilityLabel="Receive icon"
-              />
-              <AppText style={styles.receiveButtonText} tone="onPrimary">
-                Receive
-              </AppText>
+              {isReceiveBusy || isRestoringIndexes ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Image
+                    source={require('../assets/receive-icon.png')}
+                    style={styles.actionButtonIcon}
+                    resizeMode="contain"
+                    accessibilityLabel="Receive icon"
+                  />
+                  <AppText style={styles.receiveButtonText} tone="onPrimary">
+                    Receive
+                  </AppText>
+                </>
+              )}
             </AppPressable>
           </View>
         </View>

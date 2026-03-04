@@ -164,6 +164,20 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun spendingHashWithUTXOs(utxosWithPathsJSON: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
+        Thread {
+            try {
+                val result = Tss.spendingHashWithUTXOs(utxosWithPathsJSON, receiverAddress, amountSatoshi)
+                ld("spendingHashWithUTXOs", result)
+                promise.resolve(result)
+            } catch (e: Exception) {
+                ld("spendingHashWithUTXOs", "error: ${e.stackTraceToString()}")
+                promise.reject(e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
     fun estimateFees(senderAddress: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
         Thread {
             try {

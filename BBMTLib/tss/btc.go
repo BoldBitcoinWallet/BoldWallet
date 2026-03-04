@@ -511,16 +511,26 @@ func SpendingHash(senderAddress, receiverAddress string, amountSatoshi int64) (r
 
 	Logln("BBMTLog", "invoking SpendingHash...")
 
-	// Fetch UTXOs (same as EstimateFees)
+	// Fetch UTXOs (same as EstimateFees), but be conservative:
+	// if there are no UTXOs or selection fails, return an empty hash instead
+	// of treating it as a hard error. The caller already validates wallet
+	// balance (potentially using HD/multi-path), so single-address insufficiency
+	// here should not block UX.
 	utxos, err := FetchUTXOs(senderAddress)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch UTXOs: %w", err)
+		Logf("SpendingHash: failed to fetch UTXOs for %s: %v", senderAddress, err)
+		return "", nil
+	}
+	if len(utxos) == 0 {
+		Logf("SpendingHash: no UTXOs for %s, returning empty hash", senderAddress)
+		return "", nil
 	}
 
 	// Select UTXOs using the same strategy as EstimateFees
 	selectedUTXOs, _, err := SelectUTXOs(utxos, amountSatoshi, "smallest")
 	if err != nil {
-		return "", err
+		Logf("SpendingHash: SelectUTXOs error for %s amount=%d: %v", senderAddress, amountSatoshi, err)
+		return "", nil
 	}
 
 	// Sort selected UTXOs deterministically by TxID, then Vout
@@ -547,6 +557,68 @@ func SpendingHash(senderAddress, receiverAddress string, amountSatoshi int64) (r
 	hashHex := hex.EncodeToString(hash[:])
 
 	Logf("SpendingHash: selected %d UTXOs, hash: %s", len(sortedUTXOs), hashHex)
+	return hashHex, nil
+}
+
+// SpendingHashWithUTXOs is the multi-path counterpart of SpendingHash.
+// Instead of fetching UTXOs from a single address, it accepts a pre-fetched
+// pool (JSON-encoded []utxoWithPathJSON) that covers all HD addresses.
+// It selects UTXOs using the same "smallest-first" strategy and returns a
+// deterministic SHA-256 hex over "txid:vout" pairs – identical across
+// co-signing devices as long as they supply the same UTXO set.
+func SpendingHashWithUTXOs(utxosWithPathsJSON, receiverAddress, amountSatoshiStr string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in SpendingHashWithUTXOs: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
+	Logln("BBMTLog", "invoking SpendingHashWithUTXOs...")
+
+	amountSatoshi, parseErr := strconv.ParseInt(amountSatoshiStr, 10, 64)
+	if parseErr != nil {
+		Logf("SpendingHashWithUTXOs: invalid amount %q: %v", amountSatoshiStr, parseErr)
+		return "", fmt.Errorf("invalid amount: %w", parseErr)
+	}
+
+	utxos, err := parseUTXOsWithPathsJSON(utxosWithPathsJSON)
+	if err != nil {
+		Logf("SpendingHashWithUTXOs: failed to parse utxosWithPathsJSON: %v", err)
+		return "", nil
+	}
+	if len(utxos) == 0 {
+		Logf("SpendingHashWithUTXOs: no UTXOs provided, returning empty hash")
+		return "", nil
+	}
+
+	selected, _, err := SelectUTXOsWithPaths(utxos, amountSatoshi, "smallest")
+	if err != nil {
+		Logf("SpendingHashWithUTXOs: SelectUTXOsWithPaths failed amount=%d: %v", amountSatoshi, err)
+		return "", nil
+	}
+
+	// Sort selected UTXOs deterministically by TxID, then Vout
+	sort.Slice(selected, func(i, j int) bool {
+		if selected[i].TxID != selected[j].TxID {
+			return selected[i].TxID < selected[j].TxID
+		}
+		return selected[i].Vout < selected[j].Vout
+	})
+
+	var utxoStrings []string
+	for _, u := range selected {
+		utxoStrings = append(utxoStrings, fmt.Sprintf("%s:%d", u.TxID, u.Vout))
+	}
+	utxoData := strings.Join(utxoStrings, ",")
+
+	hash := sha256.Sum256([]byte(utxoData))
+	hashHex := hex.EncodeToString(hash[:])
+
+	Logf("SpendingHashWithUTXOs: selected %d UTXOs, hash: %s", len(selected), hashHex)
 	return hashHex, nil
 }
 
@@ -627,16 +699,23 @@ func EstimateFeeWithUTXOs(utxosWithPathsJSON, receiverAddress, amountSatoshiStr,
 		}
 	}()
 
+	Logln("BBMTLog", "invoking EstimateFeeWithUTXOs...")
+	Logf("GoLog: EstimateFeeWithUTXOs input receiverAddress=%s amountSatoshi=%s changeAddress=%s", receiverAddress, amountSatoshiStr, changeAddress)
+	Logf("GoLog: Current network: %s, API: %s", _btc_net, _api_url)
+
 	amountSatoshi, parseErr := strconv.ParseInt(amountSatoshiStr, 10, 64)
 	if parseErr != nil {
+		Logf("GoLog: EstimateFeeWithUTXOs - invalid amount %q: %v", amountSatoshiStr, parseErr)
 		return "", fmt.Errorf("invalid amount: %w", parseErr)
 	}
 
 	utxos, err := parseUTXOsWithPathsJSON(utxosWithPathsJSON)
 	if err != nil {
+		Logf("GoLog: EstimateFeeWithUTXOs - failed to parse utxosWithPathsJSON: %v", err)
 		return "", err
 	}
 	if len(utxos) == 0 {
+		Logf("GoLog: EstimateFeeWithUTXOs - utxosWithPathsJSON parsed but no UTXOs available")
 		return "", fmt.Errorf("no UTXOs available. Please ensure you have confirmed transactions before sending")
 	}
 
@@ -650,12 +729,16 @@ func EstimateFeeWithUTXOs(utxosWithPathsJSON, receiverAddress, amountSatoshiStr,
 		}
 	}
 	if addrForFee == "" {
+		Logf("GoLog: EstimateFeeWithUTXOs - missing changeAddress and unable to infer from utxosWithPathsJSON")
 		return "", fmt.Errorf("changeAddress required for multi-path fee estimation")
 	}
+
+	Logf("GoLog: EstimateFeeWithUTXOs - using addrForFee=%s and %d candidate UTXOs", addrForFee, len(utxos))
 
 	// First iteration: select for amount only
 	selected, _, err := SelectUTXOsWithPaths(utxos, amountSatoshi, "smallest")
 	if err != nil {
+		Logf("GoLog: EstimateFeeWithUTXOs - failed SelectUTXOsWithPaths for amount=%d: %v", amountSatoshi, err)
 		return "", err
 	}
 	selectedUTXOs := make([]UTXO, len(selected))
@@ -665,13 +748,15 @@ func EstimateFeeWithUTXOs(utxosWithPathsJSON, receiverAddress, amountSatoshiStr,
 
 	_fee, _err := calculateFees(addrForFee, selectedUTXOs, amountSatoshi, receiverAddress)
 	if _err != nil {
+		Logf("GoLog: EstimateFeeWithUTXOs - calculateFees (first pass) error: %v", _err)
 		return "", _err
 	}
+	Logf("GoLog: EstimateFeeWithUTXOs - first pass fee=%d (amount=%d, selectedUTXOs=%d)", _fee, amountSatoshi, len(selectedUTXOs))
 
 	// Second iteration: re-select for amount+fee
 	selected, _, err = SelectUTXOsWithPaths(utxos, amountSatoshi+_fee, "smallest")
 	if err != nil {
-		Logf("Could not select UTXOs for amount+fee, using original estimate: %v", err)
+		Logf("GoLog: Could not select UTXOs for amount+fee=%d, using original estimate: %v", amountSatoshi+_fee, err)
 		return strconv.FormatInt(_fee, 10), nil
 	}
 	selectedUTXOs = make([]UTXO, len(selected))
@@ -681,9 +766,10 @@ func EstimateFeeWithUTXOs(utxosWithPathsJSON, receiverAddress, amountSatoshiStr,
 
 	_fee, _err = calculateFees(addrForFee, selectedUTXOs, amountSatoshi, receiverAddress)
 	if _err != nil {
+		Logf("GoLog: EstimateFeeWithUTXOs - calculateFees (second pass) error: %v", _err)
 		return "", _err
 	}
-	Logf("EstimateFeeWithUTXOs: final fee %d", _fee)
+	Logf("GoLog: EstimateFeeWithUTXOs: final fee %d (amount=%d, selectedUTXOs=%d)", _fee, amountSatoshi, len(selectedUTXOs))
 	return strconv.FormatInt(_fee, 10), nil
 }
 
