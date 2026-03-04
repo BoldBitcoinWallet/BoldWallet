@@ -39,6 +39,7 @@ import LocalCache from '../services/LocalCache';
 // Add icon imports
 const inIcon = require('../assets/in-icon.png');
 const outIcon = require('../assets/out-icon.png');
+const consolidateIcon = require('../assets/consolidate-icon.png');
 const pendingIcon = require('../assets/pending-icon.png');
 interface TransactionListProps {
   /** Single address (legacy). Use addresses for multi-address (HD wallet) mode. */
@@ -108,12 +109,10 @@ const TransactionList = React.forwardRef<
         ourAddresses ? ourAddresses.has(addr) : addr === effectiveAddress,
       [ourAddresses, effectiveAddress],
     );
-    const [addressPathMap, setAddressPathMap] = useState<
-      Record<
-        string,
-        {derivationPath: string; chain: 'receive' | 'change'; index: number}
-      > | null
-    >(null);
+    const [addressPathMap, setAddressPathMap] = useState<Record<
+      string,
+      {derivationPath: string; chain: 'receive' | 'change'; index: number}
+    > | null>(null);
     // Load derivation paths for our HD addresses so we can show path per tx row
     useEffect(() => {
       let cancelled = false;
@@ -123,10 +122,11 @@ const TransactionList = React.forwardRef<
           return;
         }
         try {
-          const list = await WalletService.getInstance().getHdAddressesWithPaths(
-            network,
-            addressType,
-          );
+          const list =
+            await WalletService.getInstance().getHdAddressesWithPaths(
+              network,
+              addressType,
+            );
           if (cancelled) {
             return;
           }
@@ -1014,7 +1014,25 @@ const TransactionList = React.forwardRef<
           relevantAddresses = [];
         }
         // Follow global BTC/sats toggle (WalletHome)
-        let info = status.includes('Sen')
+        // sent === 0: all outputs landed on our own addresses — self-directed tx.
+        // Distinguish by number of internal outputs:
+        //   1 internal output  → classic UTXO merge      → Consolidation
+        //   2+ internal outputs → spreading across paths  → Rebalancing
+        const isSelfTransfer = status.includes('Sen') && sent === 0;
+        const confirmed = item.sentAt ? false : item.status?.confirmed;
+        const internalOutputCount = isSelfTransfer
+          ? (item.vout ?? []).filter((o: any) =>
+              isOurAddress(o.scriptpubkey_address || ''),
+            ).length
+          : 0;
+        const isConsolidation = isSelfTransfer && internalOutputCount <= 1;
+        const isRebalancing = isSelfTransfer && internalOutputCount > 1;
+        let info = isSelfTransfer
+          ? `+${formatBitcoinDisplay(received, {
+              inSats: showSats,
+              formatted: balanceFormattingEnabled,
+            })}`
+          : status.includes('Sen')
           ? `-${formatBitcoinDisplay(sent, {
               inSats: showSats,
               formatted: balanceFormattingEnabled,
@@ -1023,8 +1041,20 @@ const TransactionList = React.forwardRef<
               inSats: showSats,
               formatted: balanceFormattingEnabled,
             })}`;
-        const finalStatus = status;
-        const finalIcon = statusIcon;
+        const finalStatus = isConsolidation
+          ? confirmed
+            ? 'Consolidated'
+            : 'Consolidating'
+          : isRebalancing
+          ? confirmed
+            ? 'Rebalance'
+            : 'Rebalancing'
+          : status;
+        const finalIcon = isSelfTransfer
+          ? confirmed
+            ? consolidateIcon
+            : pendingIcon
+          : statusIcon;
         // Calculate amount in selected currency with proper formatting
         const getFiatAmount = (btcAmount: number) => {
           if (!btcRate || btcRate <= 0) {
@@ -1033,7 +1063,9 @@ const TransactionList = React.forwardRef<
           const amount = btcAmount * btcRate;
           return presentFiat(amount);
         };
-        const fiatAmount = status.includes('Sen')
+        const fiatAmount = isConsolidation
+          ? getFiatAmount(received)
+          : status.includes('Sen')
           ? getFiatAmount(sent)
           : getFiatAmount(received);
         return (
@@ -1236,7 +1268,26 @@ const TransactionList = React.forwardRef<
                 ? (() => {
                     const {text, confirmed} =
                       getTransactionStatus(selectedTransaction);
-                    return {confirmed, text};
+                    const {sent} = getTransactionAmounts(
+                      selectedTransaction,
+                      isMultiAddress ? addresses : address,
+                    );
+                    const isSelf = text.includes('Sen') && sent === 0;
+                    if (!isSelf) {
+                      return {confirmed, text};
+                    }
+                    const internalOuts = (
+                      selectedTransaction.vout ?? []
+                    ).filter((o: any) =>
+                      isOurAddress(o.scriptpubkey_address || ''),
+                    ).length;
+                    const label =
+                      internalOuts <= 1
+                        ? confirmed
+                          ? 'Consolidation'
+                          : 'Consolidating'
+                        : 'Rebalancing';
+                    return {confirmed, text: label};
                   })()
                 : null
             }
