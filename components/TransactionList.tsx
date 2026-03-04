@@ -39,7 +39,6 @@ import LocalCache from '../services/LocalCache';
 // Add icon imports
 const inIcon = require('../assets/in-icon.png');
 const outIcon = require('../assets/out-icon.png');
-const consolidateIcon = require('../assets/consolidate-icon.png');
 const pendingIcon = require('../assets/pending-icon.png');
 interface TransactionListProps {
   /** Single address (legacy). Use addresses for multi-address (HD wallet) mode. */
@@ -92,12 +91,6 @@ const TransactionList = React.forwardRef<
     const [hasMoreTransactions, setHasMoreTransactions] = useState(true);
     const isFetching = useRef(false);
     const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
-    const [selectedWalletPath, setSelectedWalletPath] = useState<{
-      address: string;
-      derivationPath: string;
-      chain: 'receive' | 'change';
-      index: number;
-    } | null>(null);
     const [isDetailsModalVisible, setIsDetailsModalVisible] = useState(false);
     const {theme: appTheme} = useAppTheme();
     const {showSats, balanceFormattingEnabled} = useUser();
@@ -983,12 +976,8 @@ const TransactionList = React.forwardRef<
     // Memoized render item with currency support
     const renderItem = useCallback(
       ({item}: any) => {
-        const {
-          text: status,
-          confirmed,
-          icon: statusIcon,
-        } = getTransactionStatus(item);
-        const {sent, changeAmount, received} = getTransactionAmounts(
+        const {text: status, icon: statusIcon} = getTransactionStatus(item);
+        const {sent, received} = getTransactionAmounts(
           item,
           isMultiAddress ? addresses : address,
         );
@@ -1024,42 +1013,6 @@ const TransactionList = React.forwardRef<
           // Set empty array for received transactions (not used in display)
           relevantAddresses = [];
         }
-        // Derivation path for our side of the transaction (first matching our address)
-        let ourWalletPath:
-          | {
-              address: string;
-              derivationPath: string;
-              chain: 'receive' | 'change';
-              index: number;
-            }
-          | null = null;
-        if (addressPathMap) {
-          const ourOutput = item?.vout?.find((output: any) =>
-            isOurAddress(output.scriptpubkey_address || ''),
-          );
-          const ourInput = item?.vin?.find((input: any) =>
-            isOurAddress(input.prevout?.scriptpubkey_address || ''),
-          );
-          const ourAddr: string | null =
-            (ourOutput && ourOutput.scriptpubkey_address) ||
-            (ourInput && ourInput.prevout?.scriptpubkey_address) ||
-            null;
-          if (ourAddr && addressPathMap[ourAddr]) {
-            const p = addressPathMap[ourAddr];
-            ourWalletPath = {
-              address: ourAddr,
-              derivationPath: p.derivationPath,
-              chain: p.chain,
-              index: p.index,
-            };
-          }
-        }
-        const ourPath: string | null = ourWalletPath?.derivationPath ?? null;
-        const ourIndexLabel: string | null = ourWalletPath
-          ? `${ourWalletPath.chain === 'receive' ? 'receive' : 'change'} #${
-              ourWalletPath.index
-            }`
-          : null;
         // Follow global BTC/sats toggle (WalletHome)
         let info = status.includes('Sen')
           ? `-${formatBitcoinDisplay(sent, {
@@ -1070,18 +1023,8 @@ const TransactionList = React.forwardRef<
               inSats: showSats,
               formatted: balanceFormattingEnabled,
             })}`;
-        let finalStatus = status;
-        let finalIcon = statusIcon;
-        if (sent === 0 && received === changeAmount) {
-          finalStatus = confirmed
-            ? 'Consolidation'
-            : 'Consolidating UTXOs';
-          info = `+${formatBitcoinDisplay(received, {
-            inSats: showSats,
-            formatted: balanceFormattingEnabled,
-          })}`;
-          finalIcon = confirmed ? consolidateIcon : pendingIcon;
-        }
+        const finalStatus = status;
+        const finalIcon = statusIcon;
         // Calculate amount in selected currency with proper formatting
         const getFiatAmount = (btcAmount: number) => {
           if (!btcRate || btcRate <= 0) {
@@ -1101,7 +1044,6 @@ const TransactionList = React.forwardRef<
             ]}
             onPress={() => {
               setSelectedTransaction(item);
-              setSelectedWalletPath(ourWalletPath);
               setIsDetailsModalVisible(true);
             }}
             android_ripple={{
@@ -1164,17 +1106,6 @@ const TransactionList = React.forwardRef<
               </View>
               <Text style={styles.timestamp}>{timestamp}</Text>
             </View>
-            {ourPath && ourIndexLabel && (
-              <View style={styles.transactionRow}>
-                <View style={styles.txIdContainer}>
-                  <Text style={styles.txId}>
-                    Ix:
-                    <Text style={styles.txText}> {ourPath}</Text>
-                  </Text>
-                </View>
-                <Text style={styles.pathIndexText}>{ourIndexLabel}</Text>
-              </View>
-            )}
           </AppPressable>
         );
       },
@@ -1185,7 +1116,6 @@ const TransactionList = React.forwardRef<
         addresses,
         isMultiAddress,
         isOurAddress,
-        addressPathMap,
         appTheme.colors.background,
         appTheme.colors.bitcoinOrange,
         styles.transactionRow,
@@ -1202,7 +1132,6 @@ const TransactionList = React.forwardRef<
         styles.txId,
         styles.txText,
         styles.timestamp,
-        styles.pathIndexText,
         styles.transactionItem,
         styles.transactionItemPressed,
         isBlurred,
@@ -1302,28 +1231,12 @@ const TransactionList = React.forwardRef<
             selectedCurrency={selectedCurrency}
             btcRate={btcRate}
             getCurrencySymbol={getCurrencySymbol}
-            address={isMultiAddress ? undefined : address}
-            addresses={isMultiAddress ? addresses : undefined}
             status={
               selectedTransaction
                 ? (() => {
-                    const {text: status, confirmed} =
+                    const {text, confirmed} =
                       getTransactionStatus(selectedTransaction);
-                    const {sent, changeAmount, received} =
-                      getTransactionAmounts(
-                        selectedTransaction,
-                        isMultiAddress ? addresses : address,
-                      );
-                    let finalStatus = status;
-                    if (sent === 0 && received === changeAmount) {
-                      finalStatus = confirmed
-                        ? 'Consolidation'
-                        : 'Consolidating UTXOs';
-                    }
-                    return {
-                      confirmed,
-                      text: finalStatus,
-                    };
+                    return {confirmed, text};
                   })()
                 : null
             }
@@ -1335,7 +1248,7 @@ const TransactionList = React.forwardRef<
                   )
                 : null
             }
-            walletPath={selectedWalletPath}
+            addressPathMap={addressPathMap}
             isBlurred={isBlurred}
           />
         )}

@@ -20,17 +20,11 @@ interface TransactionDetailsModalProps {
   selectedCurrency: string;
   btcRate: number;
   getCurrencySymbol: (currency: string) => string;
-  /** Single address (legacy). Use addresses for multi-address (HD wallet). */
-  address?: string;
-  /** All HD addresses for wallet-level transaction details. */
-  addresses?: string[];
-  /** Optional HD wallet path info for our address involved in this tx (from TransactionList). */
-  walletPath?: {
-    address: string;
-    derivationPath: string;
-    chain: 'receive' | 'change';
-    index: number;
-  } | null;
+  /** HD address → path map, used to annotate our inputs/outputs with derivation path. */
+  addressPathMap?: Record<
+    string,
+    {derivationPath: string; chain: 'receive' | 'change'; index: number}
+  > | null;
   status: {
     confirmed: boolean;
     text: string;
@@ -50,19 +44,11 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   selectedCurrency,
   btcRate,
   getCurrencySymbol,
-  address,
-  addresses,
-  walletPath,
+  addressPathMap,
   status,
   amounts,
   isBlurred = false,
 }) => {
-  const ourAddresses = addresses?.length
-    ? new Set(addresses)
-    : address
-      ? new Set([address])
-      : new Set<string>();
-  const isOurAddress = (a: string) => ourAddresses.has(a);
   const {theme} = useTheme();
   const {showSats, balanceFormattingEnabled} = useUser();
   const [currentBlockHeight, setCurrentBlockHeight] = React.useState<
@@ -121,78 +107,6 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     typeof amounts.sent === 'number' && Number.isFinite(amounts.sent);
   const hasValidReceived =
     typeof amounts.received === 'number' && Number.isFinite(amounts.received);
-  // Get the relevant address(es) with amounts based on transaction type
-  // For sent: show ALL recipient addresses with their amounts (all outputs that aren't the sender's address)
-  // For received: show ALL input addresses (excluding the receiver's own address if it appears)
-  interface AddressWithAmount {
-    address: string;
-    amount: number; // in BTC
-  }
-  let relevantAddresses: AddressWithAmount[] = [];
-  let addressLabel = '';
-  if (isSent) {
-    // Sent transaction: show ALL recipient addresses with their amounts
-    const recipientOutputs =
-      transaction.vout?.filter((output: any) => {
-        // Exclude outputs that match our addresses (change outputs)
-        return (
-          output.scriptpubkey_address && !isOurAddress(output.scriptpubkey_address)
-        );
-      }) || [];
-    // Group by address and sum amounts (in case same address appears multiple times)
-    const addressAmountMap = new Map<string, number>();
-    recipientOutputs.forEach((output: any) => {
-      const addr = output.scriptpubkey_address;
-      const amountSats = output.value || 0;
-      const currentAmount = addressAmountMap.get(addr) || 0;
-      addressAmountMap.set(addr, currentAmount + amountSats);
-    });
-    // Convert to array with amounts in BTC
-    relevantAddresses = Array.from(addressAmountMap.entries()).map(
-      ([addr, amountSats]) => ({
-        address: addr,
-        amount: amountSats / 1e8, // Convert satoshis to BTC
-      }),
-    );
-    addressLabel = relevantAddresses.length > 1 ? 'To Addresses' : 'To Address';
-  } else {
-    // Received transaction: collect ALL unique input addresses (these are the senders)
-    // Exclude the user's own address (change) from the list since it's not a "from" address
-    // For received transactions, show the output amount that went to user's address, not input amounts
-    const inputAddresses: string[] = (transaction.vin
-      ?.map((input: any) => input.prevout?.scriptpubkey_address)
-      .filter(
-        (addr: any): addr is string =>
-          typeof addr === 'string' && !isOurAddress(addr),
-      ) || []) as string[]; // Exclude our addresses (change)
-    // Remove duplicates
-    const uniqueAddresses: string[] = [...new Set(inputAddresses)];
-    // Calculate total received amount from outputs to our addresses
-    const totalReceivedSats =
-      transaction.vout
-        ?.filter((output: any) => isOurAddress(output.scriptpubkey_address))
-        .reduce(
-          (total: number, output: any) => total + (output.value || 0),
-          0,
-        ) || 0;
-    const totalReceivedBTC = totalReceivedSats / 1e8;
-    // Show all sender addresses with the total received amount
-    // (We can't attribute portions to individual senders since Bitcoin doesn't work that way)
-    relevantAddresses = uniqueAddresses.map((addr: string) => ({
-      address: addr,
-      amount: totalReceivedBTC, // Show the received output amount, not input amounts
-    }));
-    addressLabel =
-      relevantAddresses.length > 1 ? 'From Addresses' : 'From Address';
-  }
-  let pathLabel: string | null = null;
-  let walletAddressLabel: string | null = null;
-  if (walletPath) {
-    const chainLabel =
-      walletPath.chain === 'receive' ? 'receive' : 'change';
-    pathLabel = `${walletPath.derivationPath} (${chainLabel} #${walletPath.index})`;
-    walletAddressLabel = walletPath.address;
-  }
   const renderDetailRow = (label: string, value: string | React.ReactNode) => (
     <View style={styles.detailRow}>
       <Text style={styles.detailLabel}>{label}</Text>
@@ -284,17 +198,62 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       color: theme.colors.text,
       flexShrink: 1,
     },
-    addressItem: {
+    ioRow: {
       flexDirection: 'row',
+      justifyContent: 'space-between',
       alignItems: 'flex-start',
-      marginBottom: 12,
+      paddingVertical: 8,
+      borderBottomWidth: 1,
+      borderBottomColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10
+          : theme.colors.whiteOverlay20,
+      gap: 8,
     },
-    addressIndex: {
-      fontSize: theme.fontSizes?.base || 14,
+    ioAddressBlock: {
+      flex: 1,
+      flexShrink: 1,
+    },
+    ioAddress: {
+      fontSize: theme.fontSizes?.base || 13,
+      fontFamily: theme.fontFamilies?.monospace,
+      color: theme.colors.text,
+    },
+    ioPath: {
+      fontSize: theme.fontSizes?.xs || 11,
+      fontFamily: theme.fontFamilies?.monospace,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+      marginTop: 2,
+    },
+    ioAmountBlock: {
+      alignItems: 'flex-end',
+      justifyContent: 'center',
+      minWidth: 90,
+    },
+    ioAmount: {
+      fontSize: theme.fontSizes?.base || 13,
+      fontFamily: theme.fontFamilies?.monospaceBold,
+      color: theme.colors.text,
+    },
+    ioAmountOurs: {
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+    },
+    ioBadge: {
+      fontSize: theme.fontSizes?.xs || 10,
       fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.textSecondary, // Use textSecondary for better readability
-      marginRight: 8,
-      minWidth: 20,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+      textTransform: 'uppercase',
+      letterSpacing: 0.4,
+      marginBottom: 2,
     },
     txIdContainer: {
       backgroundColor:
@@ -310,22 +269,6 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
           ? theme.colors.border + '40' // More visible border in dark mode
           : theme.colors.blackOverlay06, // Light mode border
       marginRight: 12,
-    },
-    addressAmountContainer: {
-      alignItems: 'flex-end',
-      justifyContent: 'center',
-      minWidth: 100,
-    },
-    addressAmount: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontFamily: theme.fontFamilies?.monospaceBold,
-      color: theme.colors.text,
-      marginBottom: 2,
-    },
-    addressAmountFiat: {
-      fontSize: theme.fontSizes?.sm || 12,
-      fontFamily: theme.fontFamilies?.monospace,
-      color: theme.colors.textSecondary, // Use textSecondary for better readability
     },
     txId: {
       fontSize: theme.fontSizes?.base || 14,
@@ -455,51 +398,98 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                         amount,
                       )}`,
                 )}
-              {walletAddressLabel &&
-                renderDetailRow('Wallet address', walletAddressLabel)}
-              {pathLabel &&
-                renderDetailRow('Wallet path', pathLabel)}
             </View>
-            {relevantAddresses.length > 0 && (
+            {/* Inputs */}
+            {transaction.vin?.length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>{addressLabel}</Text>
-                {relevantAddresses.map((addrWithAmount, index) => {
-                  const addressExplorerLink = `${baseUrl}/address/${addrWithAmount.address}`;
-                  const showAmount = addrWithAmount.amount > 0;
+                <Text style={styles.sectionTitle}>Inputs</Text>
+                {transaction.vin.map((input: any, idx: number) => {
+                  const addr: string = input.prevout?.scriptpubkey_address || '';
+                  const sats: number = input.prevout?.value || 0;
+                  const pathInfo = addr ? addressPathMap?.[addr] : undefined;
+                  const short = addr
+                    ? `${addr.slice(0, 8)}…${addr.slice(-6)}`
+                    : 'coinbase';
+                  const addrLink = addr ? `${baseUrl}/address/${addr}` : null;
                   return (
-                    <View key={index} style={styles.addressItem}>
-                      {relevantAddresses.length > 1 && (
-                        <Text style={styles.addressIndex}>{index + 1}.</Text>
-                      )}
-                      <View style={styles.txIdContainer}>
-                        <AppPressable
-                          onPress={() => {
-                            Linking.openURL(addressExplorerLink);
-                          }}
-                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                          <Text style={[styles.txId, styles.clickableText]}>
-                            {addrWithAmount.address}
-                          </Text>
-                        </AppPressable>
-                      </View>
-                      {showAmount && (
-                        <View style={styles.addressAmountContainer}>
-                          <Text style={styles.addressAmount}>
-                            {isBlurred
-                              ? '***'
-                              : formatBitcoinDisplay(addrWithAmount.amount, {
-                                  inSats: showSats,
-                                  formatted: balanceFormattingEnabled,
-                                })}
-                          </Text>
-                          {!isBlurred && btcRate > 0 && (
-                            <Text style={styles.addressAmountFiat}>
-                              {getCurrencySymbol(selectedCurrency)}
-                              {getFiatAmount(addrWithAmount.amount)}
+                    <View key={idx} style={styles.ioRow}>
+                      <View style={styles.ioAddressBlock}>
+                        {addrLink ? (
+                          <AppPressable
+                            onPress={() => Linking.openURL(addrLink)}
+                            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                            <Text style={[styles.ioAddress, styles.clickableText]}>
+                              {short}
                             </Text>
-                          )}
-                        </View>
-                      )}
+                          </AppPressable>
+                        ) : (
+                          <Text style={styles.ioAddress}>{short}</Text>
+                        )}
+                        {pathInfo && (
+                          <Text style={styles.ioPath}>
+                            {pathInfo.derivationPath} · {pathInfo.chain} #{pathInfo.index}
+                          </Text>
+                        )}
+                      </View>
+                      <View style={styles.ioAmountBlock}>
+                        {pathInfo && <Text style={styles.ioBadge}>ours</Text>}
+                        <Text style={[styles.ioAmount, pathInfo ? styles.ioAmountOurs : null]}>
+                          {isBlurred
+                            ? '***'
+                            : formatBitcoinDisplay(sats / 1e8, {
+                                inSats: showSats,
+                                formatted: balanceFormattingEnabled,
+                              })}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+            {/* Outputs */}
+            {transaction.vout?.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Outputs</Text>
+                {transaction.vout.map((output: any, idx: number) => {
+                  const addr: string = output.scriptpubkey_address || '';
+                  const sats: number = output.value || 0;
+                  const pathInfo = addr ? addressPathMap?.[addr] : undefined;
+                  const short = addr
+                    ? `${addr.slice(0, 8)}…${addr.slice(-6)}`
+                    : 'OP_RETURN';
+                  const addrLink = addr ? `${baseUrl}/address/${addr}` : null;
+                  return (
+                    <View key={idx} style={styles.ioRow}>
+                      <View style={styles.ioAddressBlock}>
+                        {addrLink ? (
+                          <AppPressable
+                            onPress={() => Linking.openURL(addrLink)}
+                            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                            <Text style={[styles.ioAddress, styles.clickableText]}>
+                              {short}
+                            </Text>
+                          </AppPressable>
+                        ) : (
+                          <Text style={styles.ioAddress}>{short}</Text>
+                        )}
+                        {pathInfo && (
+                          <Text style={styles.ioPath}>
+                            {pathInfo.derivationPath} · {pathInfo.chain} #{pathInfo.index}
+                          </Text>
+                        )}
+                      </View>
+                      <View style={styles.ioAmountBlock}>
+                        {pathInfo && <Text style={styles.ioBadge}>ours</Text>}
+                        <Text style={[styles.ioAmount, pathInfo ? styles.ioAmountOurs : null]}>
+                          {isBlurred
+                            ? '***'
+                            : formatBitcoinDisplay(sats / 1e8, {
+                                inSats: showSats,
+                                formatted: balanceFormattingEnabled,
+                              })}
+                        </Text>
+                      </View>
                     </View>
                   );
                 })}
