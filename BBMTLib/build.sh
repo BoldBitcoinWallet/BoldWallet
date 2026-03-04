@@ -158,5 +158,6 @@ fi
 # --- 5. Cleanup ---
 
 info "Finalizing..."
+go mod tidy &>/dev/null || warn "go mod tidy failed"
 
 info "Build complete!"

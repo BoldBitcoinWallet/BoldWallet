@@ -14,7 +14,6 @@
   - **TransactionList**: Multi-address transaction list with per-address cursor pagination; consolidation (1 internal output) vs rebalancing (2+ internal outputs) labels; animations for Sending/Receiving/Consolidating/Rebalancing; derivation path in details only (no Ix row in list).
   - **TransactionDetailsModal**: Inputs/outputs flow diagram (PSBT-style); internal (ours) outputs highlighted with theme accent; summary bar with fee; address path map for paths.
 - **Pairing screens**: Inputs/outputs flow in MobilesPairing and MobileNostrPairing; “Signing Path” instead of “From Address”; network badge and flow diagram aligned.
-- **Docs**: `HD_WALLET_REFACTOR.md`, `MULTI_PATH_UTXO_SPEND_DESIGN.md`.
 - **RestoringIndexesModal**: Dedicated modal for index discovery progress.
 
 ### Changed
