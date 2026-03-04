@@ -12,9 +12,12 @@ YELLOW="\033[33m"
 info() { echo -e "${BOLD}${GREEN}==>${RESET} ${BOLD}$1${RESET}"; }
 warn() { echo -e "${BOLD}${YELLOW}Warning:${RESET} $1"; }
 
-info "Starting BoldWallet TSS gomobile build (FIPS-aware, Go 1.25+)"
+info "Starting BoldWallet TSS gomobile build (FIPS-aware, Go 1.24+)"
 
 # --- 1. Environment Checks ---
+# Note: Go 1.25's tagged-pointer runtime can trigger "fatal error: taggedPointerPack"
+# in some container/virtualized environments. For FIPS Android build, use
+# fips-android.sh (Docker) which uses Go 1.24.x, or install Go 1.24.x on the host.
 
 echo "Go environment:"
 go version
@@ -113,6 +116,8 @@ gomobile bind -v -target=android -androidapi 21 -ldflags="-extldflags=-Wl,-z,max
 
 # Copy Artifacts
 if [[ -d "../android/app/libs" ]]; then
+    # Run go mod tidy again at the end to ensure go.mod/go.sum are clean
+    go mod tidy || warn "go mod tidy failed"
     info "Copying Android artifacts..."
     cp -v tss.aar ../android/app/libs/tss.aar || warn "Copy tss.aar failed"
     echo "✓ tss.aar copied to ../android/app/libs/tss.aar"
@@ -153,7 +158,5 @@ fi
 # --- 5. Cleanup ---
 
 info "Finalizing..."
-# Run go mod tidy again at the end to ensure go.mod/go.sum are clean
-go mod tidy
 
 info "Build complete!"

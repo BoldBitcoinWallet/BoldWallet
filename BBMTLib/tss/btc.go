@@ -564,7 +564,7 @@ func SpendingHash(senderAddress, receiverAddress string, amountSatoshi int64) (r
 // Instead of fetching UTXOs from a single address, it accepts a pre-fetched
 // pool (JSON-encoded []utxoWithPathJSON) that covers all HD addresses.
 // It selects UTXOs using the same "smallest-first" strategy and returns a
-// deterministic SHA-256 hex over "txid:vout" pairs – identical across
+// deterministic SHA-256 hex over "txid:vout" pairs - identical across
 // co-signing devices as long as they supply the same UTXO set.
 func SpendingHashWithUTXOs(utxosWithPathsJSON, receiverAddress, amountSatoshiStr string) (result string, err error) {
 	defer func() {

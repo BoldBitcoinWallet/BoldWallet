@@ -1,5 +1,5 @@
 # Dockerfile.fips
-docker buildx build --platform linux/amd64 -f Dockerfile.fips -t boldwallet-builder:fips .
+docker buildx build --load --platform linux/amd64 -f Dockerfile.fips -t boldwallet-builder:fips .
 
 # Generate lib
 docker run --rm \
