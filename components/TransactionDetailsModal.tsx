@@ -3,6 +3,7 @@ import {
   Modal,
   View,
   Text,
+  Image,
   StyleSheet,
   ScrollView,
   Linking,
@@ -198,62 +199,151 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       color: theme.colors.text,
       flexShrink: 1,
     },
-    ioRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'flex-start',
-      paddingVertical: 8,
-      borderBottomWidth: 1,
-      borderBottomColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.blackOverlay10
-          : theme.colors.whiteOverlay20,
-      gap: 8,
+    transactionFlow: {
+      paddingVertical: 4,
     },
-    ioAddressBlock: {
-      flex: 1,
-      flexShrink: 1,
+    flowSection: {
+      width: '100%',
     },
-    ioAddress: {
-      fontSize: theme.fontSizes?.base || 13,
-      fontFamily: theme.fontFamilies?.monospace,
-      color: theme.colors.text,
-    },
-    ioPath: {
-      fontSize: theme.fontSizes?.xs || 11,
-      fontFamily: theme.fontFamilies?.monospace,
-      color:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.primary
-          : theme.colors.bitcoinOrange,
-      marginTop: 2,
-    },
-    ioAmountBlock: {
-      alignItems: 'flex-end',
-      justifyContent: 'center',
-      minWidth: 90,
-    },
-    ioAmount: {
-      fontSize: theme.fontSizes?.base || 13,
-      fontFamily: theme.fontFamilies?.monospaceBold,
-      color: theme.colors.text,
-    },
-    ioAmountOurs: {
-      color:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.primary
-          : theme.colors.bitcoinOrange,
-    },
-    ioBadge: {
+    flowSectionTitle: {
       fontSize: theme.fontSizes?.xs || 10,
       fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.textSecondary,
+      marginBottom: 10,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    flowItem: {
+      marginBottom: 6,
+    },
+    flowItemContent: {
+      backgroundColor: theme.colors.cardBackground || theme.colors.background,
+      borderRadius: 10,
+      padding: 10,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    flowItemContentOurs: {
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '70'
+          : theme.colors.bitcoinOrange + '70',
+    },
+    flowItemHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+      marginRight: 8,
+    },
+    flowIcon: {
+      width: 18,
+      height: 18,
+      marginRight: 8,
+      tintColor: theme.colors.textSecondary,
+    },
+    flowIconOurs: {
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+    },
+    flowItemInfo: {
+      flex: 1,
+    },
+    flowItemLabel: {
+      fontSize: theme.fontSizes?.xs || 11,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text,
+      marginBottom: 2,
+    },
+    flowItemPath: {
+      fontSize: theme.fontSizes?.xs || 9,
+      fontFamily: theme.fontFamilies?.monospaceMedium || theme.fontFamilies?.monospace,
       color:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
           : theme.colors.bitcoinOrange,
+    },
+    flowItemType: {
+      fontSize: theme.fontSizes?.xs || 9,
+      color: theme.colors.textSecondary,
+      fontStyle: 'italic',
+      marginTop: 1,
+    },
+    flowAmount: {
+      alignItems: 'flex-end',
+    },
+    flowAmountBTC: {
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text,
+    },
+    flowAmountBTCOurs: {
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+    },
+    flowAmountFiat: {
+      fontSize: theme.fontSizes?.xs || 9,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textSecondary,
+      marginTop: 1,
+    },
+    flowConnectorVertical: {
+      width: 1,
+      height: 6,
+      backgroundColor: theme.colors.border,
+      marginLeft: 13,
+      marginVertical: 2,
+    },
+    transactionHubVertical: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 10,
+    },
+    hubArrow: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      backgroundColor: theme.colors.primary + '20',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 4,
+    },
+    hubArrowText: {
+      fontSize: theme.fontSizes?.xl || 18,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.primary,
+    },
+    hubLabel: {
+      marginTop: 2,
+    },
+    hubLabelText: {
+      fontSize: theme.fontSizes?.xs || 10,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.textSecondary,
       textTransform: 'uppercase',
-      letterSpacing: 0.4,
-      marginBottom: 2,
+      letterSpacing: 0.5,
+    },
+    summaryBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.colors.cardBackground || theme.colors.background,
+      borderRadius: 10,
+      padding: 10,
+      marginTop: 10,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    summaryBarText: {
+      fontSize: theme.fontSizes?.xs || 11,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textSecondary,
+      flex: 1,
     },
     txIdContainer: {
       backgroundColor:
@@ -399,100 +489,239 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                       )}`,
                 )}
             </View>
-            {/* Inputs */}
-            {transaction.vin?.length > 0 && (
+            {/* Transaction Flow Diagram */}
+            {(transaction.vin?.length > 0 || transaction.vout?.length > 0) && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Inputs</Text>
-                {transaction.vin.map((input: any, idx: number) => {
-                  const addr: string = input.prevout?.scriptpubkey_address || '';
-                  const sats: number = input.prevout?.value || 0;
-                  const pathInfo = addr ? addressPathMap?.[addr] : undefined;
-                  const short = addr
-                    ? `${addr.slice(0, 8)}…${addr.slice(-6)}`
-                    : 'coinbase';
-                  const addrLink = addr ? `${baseUrl}/address/${addr}` : null;
-                  return (
-                    <View key={idx} style={styles.ioRow}>
-                      <View style={styles.ioAddressBlock}>
-                        {addrLink ? (
-                          <AppPressable
-                            onPress={() => Linking.openURL(addrLink)}
-                            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                            <Text style={[styles.ioAddress, styles.clickableText]}>
-                              {short}
-                            </Text>
-                          </AppPressable>
-                        ) : (
-                          <Text style={styles.ioAddress}>{short}</Text>
-                        )}
-                        {pathInfo && (
-                          <Text style={styles.ioPath}>
-                            {pathInfo.derivationPath} · {pathInfo.chain} #{pathInfo.index}
-                          </Text>
-                        )}
-                      </View>
-                      <View style={styles.ioAmountBlock}>
-                        {pathInfo && <Text style={styles.ioBadge}>ours</Text>}
-                        <Text style={[styles.ioAmount, pathInfo ? styles.ioAmountOurs : null]}>
-                          {isBlurred
-                            ? '***'
-                            : formatBitcoinDisplay(sats / 1e8, {
-                                inSats: showSats,
-                                formatted: balanceFormattingEnabled,
-                              })}
-                        </Text>
-                      </View>
+                <View style={styles.transactionFlow}>
+                  {/* Inputs */}
+                  {transaction.vin?.length > 0 && (
+                    <View style={styles.flowSection}>
+                      <Text style={styles.flowSectionTitle}>Inputs</Text>
+                      {transaction.vin.map((input: any, idx: number) => {
+                        const addr: string = input.prevout?.scriptpubkey_address || '';
+                        const sats: number = input.prevout?.value || 0;
+                        const pathInfo = addr ? addressPathMap?.[addr] : undefined;
+                        const short = addr
+                          ? `${addr.slice(0, 9)}…${addr.slice(-6)}`
+                          : 'coinbase';
+                        const addrLink = addr ? `${baseUrl}/address/${addr}` : null;
+                        return (
+                          <View key={idx} style={styles.flowItem}>
+                            <View
+                              style={[
+                                styles.flowItemContent,
+                                pathInfo && styles.flowItemContentOurs,
+                              ]}>
+                              <View style={styles.flowItemHeader}>
+                                <Image
+                                  source={require('../assets/in-icon.png')}
+                                  style={[
+                                    styles.flowIcon,
+                                    pathInfo && styles.flowIconOurs,
+                                  ]}
+                                  resizeMode="contain"
+                                />
+                                <View style={styles.flowItemInfo}>
+                                  {addrLink ? (
+                                    <AppPressable
+                                      onPress={() => Linking.openURL(addrLink)}
+                                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                                      <Text
+                                        style={[styles.flowItemLabel, styles.clickableText]}
+                                        numberOfLines={1}
+                                        ellipsizeMode="middle">
+                                        {short}
+                                      </Text>
+                                    </AppPressable>
+                                  ) : (
+                                    <Text style={styles.flowItemLabel} numberOfLines={1}>
+                                      {short}
+                                    </Text>
+                                  )}
+                                  {pathInfo ? (
+                                    <Text style={styles.flowItemPath} numberOfLines={1}>
+                                      {pathInfo.derivationPath} · {pathInfo.chain} #{pathInfo.index}
+                                    </Text>
+                                  ) : (
+                                    <Text style={styles.flowItemType}>external</Text>
+                                  )}
+                                </View>
+                              </View>
+                              <View style={styles.flowAmount}>
+                                <Text
+                                  style={[
+                                    styles.flowAmountBTC,
+                                    pathInfo && styles.flowAmountBTCOurs,
+                                  ]}>
+                                  {isBlurred
+                                    ? '***'
+                                    : formatBitcoinDisplay(sats / 1e8, {
+                                        inSats: showSats,
+                                        formatted: balanceFormattingEnabled,
+                                      })}
+                                </Text>
+                                {!isBlurred && btcRate > 0 && (
+                                  <Text style={styles.flowAmountFiat}>
+                                    {getCurrencySymbol(selectedCurrency)}
+                                    {getFiatAmount(sats / 1e8)}
+                                  </Text>
+                                )}
+                              </View>
+                            </View>
+                            {idx < transaction.vin.length - 1 && (
+                              <View style={styles.flowConnectorVertical} />
+                            )}
+                          </View>
+                        );
+                      })}
                     </View>
-                  );
-                })}
-              </View>
-            )}
-            {/* Outputs */}
-            {transaction.vout?.length > 0 && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Outputs</Text>
-                {transaction.vout.map((output: any, idx: number) => {
-                  const addr: string = output.scriptpubkey_address || '';
-                  const sats: number = output.value || 0;
-                  const pathInfo = addr ? addressPathMap?.[addr] : undefined;
-                  const short = addr
-                    ? `${addr.slice(0, 8)}…${addr.slice(-6)}`
-                    : 'OP_RETURN';
-                  const addrLink = addr ? `${baseUrl}/address/${addr}` : null;
-                  return (
-                    <View key={idx} style={styles.ioRow}>
-                      <View style={styles.ioAddressBlock}>
-                        {addrLink ? (
-                          <AppPressable
-                            onPress={() => Linking.openURL(addrLink)}
-                            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                            <Text style={[styles.ioAddress, styles.clickableText]}>
-                              {short}
-                            </Text>
-                          </AppPressable>
-                        ) : (
-                          <Text style={styles.ioAddress}>{short}</Text>
-                        )}
-                        {pathInfo && (
-                          <Text style={styles.ioPath}>
-                            {pathInfo.derivationPath} · {pathInfo.chain} #{pathInfo.index}
-                          </Text>
-                        )}
-                      </View>
-                      <View style={styles.ioAmountBlock}>
-                        {pathInfo && <Text style={styles.ioBadge}>ours</Text>}
-                        <Text style={[styles.ioAmount, pathInfo ? styles.ioAmountOurs : null]}>
-                          {isBlurred
-                            ? '***'
-                            : formatBitcoinDisplay(sats / 1e8, {
-                                inSats: showSats,
-                                formatted: balanceFormattingEnabled,
-                              })}
-                        </Text>
-                      </View>
+                  )}
+                  {/* Hub Arrow */}
+                  <View style={styles.transactionHubVertical}>
+                    <View style={styles.hubArrow}>
+                      <Text style={styles.hubArrowText}>↓</Text>
                     </View>
-                  );
-                })}
+                    <View style={styles.hubLabel}>
+                      <Text style={styles.hubLabelText}>Transaction</Text>
+                    </View>
+                  </View>
+                  {/* Outputs */}
+                  {transaction.vout?.length > 0 && (
+                    <View style={styles.flowSection}>
+                      <Text style={styles.flowSectionTitle}>Outputs</Text>
+                      {transaction.vout.map((output: any, idx: number) => {
+                        const addr: string = output.scriptpubkey_address || '';
+                        const sats: number = output.value || 0;
+                        const pathInfo = addr ? addressPathMap?.[addr] : undefined;
+                        const isChange = pathInfo?.chain === 'change';
+                        const short = addr
+                          ? `${addr.slice(0, 9)}…${addr.slice(-6)}`
+                          : 'OP_RETURN';
+                        const addrLink = addr ? `${baseUrl}/address/${addr}` : null;
+                        const outputIcon = pathInfo
+                          ? isChange
+                            ? require('../assets/consolidate-icon.png')
+                            : require('../assets/in-icon.png')
+                          : require('../assets/bitcoin-icon.png');
+                        return (
+                          <View key={idx} style={styles.flowItem}>
+                            <View
+                              style={[
+                                styles.flowItemContent,
+                                pathInfo && styles.flowItemContentOurs,
+                              ]}>
+                              <View style={styles.flowItemHeader}>
+                                <Image
+                                  source={outputIcon}
+                                  style={[
+                                    styles.flowIcon,
+                                    pathInfo && styles.flowIconOurs,
+                                  ]}
+                                  resizeMode="contain"
+                                />
+                                <View style={styles.flowItemInfo}>
+                                  {addrLink ? (
+                                    <AppPressable
+                                      onPress={() => Linking.openURL(addrLink)}
+                                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                                      <Text
+                                        style={[styles.flowItemLabel, styles.clickableText]}
+                                        numberOfLines={1}
+                                        ellipsizeMode="middle">
+                                        {short}
+                                      </Text>
+                                    </AppPressable>
+                                  ) : (
+                                    <Text style={styles.flowItemLabel} numberOfLines={1}>
+                                      {short}
+                                    </Text>
+                                  )}
+                                  {pathInfo ? (
+                                    <Text style={styles.flowItemPath} numberOfLines={1}>
+                                      {pathInfo.derivationPath} · {pathInfo.chain} #{pathInfo.index}
+                                    </Text>
+                                  ) : (
+                                    <Text style={styles.flowItemType}>external</Text>
+                                  )}
+                                </View>
+                              </View>
+                              <View style={styles.flowAmount}>
+                                <Text
+                                  style={[
+                                    styles.flowAmountBTC,
+                                    pathInfo && styles.flowAmountBTCOurs,
+                                  ]}>
+                                  {isBlurred
+                                    ? '***'
+                                    : formatBitcoinDisplay(sats / 1e8, {
+                                        inSats: showSats,
+                                        formatted: balanceFormattingEnabled,
+                                      })}
+                                </Text>
+                                {!isBlurred && btcRate > 0 && (
+                                  <Text style={styles.flowAmountFiat}>
+                                    {getCurrencySymbol(selectedCurrency)}
+                                    {getFiatAmount(sats / 1e8)}
+                                  </Text>
+                                )}
+                              </View>
+                            </View>
+                            {idx < transaction.vout.length - 1 && (
+                              <View style={styles.flowConnectorVertical} />
+                            )}
+                          </View>
+                        );
+                      })}
+                      {/* Fee as final item */}
+                      {typeof transaction.fee === 'number' &&
+                        Number.isFinite(transaction.fee) &&
+                        transaction.fee > 0 && (
+                          <View style={styles.flowItem}>
+                            <View style={styles.flowConnectorVertical} />
+                            <View style={styles.flowItemContent}>
+                              <View style={styles.flowItemHeader}>
+                                <Image
+                                  source={require('../assets/send-icon.png')}
+                                  style={styles.flowIcon}
+                                  resizeMode="contain"
+                                />
+                                <View style={styles.flowItemInfo}>
+                                  <Text style={styles.flowItemLabel}>Fee</Text>
+                                </View>
+                              </View>
+                              <View style={styles.flowAmount}>
+                                <Text style={styles.flowAmountBTC}>
+                                  {isBlurred
+                                    ? '***'
+                                    : formatBitcoinDisplay(transaction.fee / 1e8, {
+                                        inSats: showSats,
+                                        formatted: balanceFormattingEnabled,
+                                      })}
+                                </Text>
+                                {!isBlurred && btcRate > 0 && (
+                                  <Text style={styles.flowAmountFiat}>
+                                    {getCurrencySymbol(selectedCurrency)}
+                                    {getFiatAmount(transaction.fee / 1e8)}
+                                  </Text>
+                                )}
+                              </View>
+                            </View>
+                          </View>
+                        )}
+                    </View>
+                  )}
+                </View>
+                {/* Summary bar */}
+                <View style={styles.summaryBar}>
+                  <Text style={styles.summaryBarText}>
+                    {`${transaction.vin?.length || 0} input${transaction.vin?.length !== 1 ? 's' : ''} → ${transaction.vout?.length || 0} output${transaction.vout?.length !== 1 ? 's' : ''}`}
+                    {typeof transaction.fee === 'number' &&
+                      Number.isFinite(transaction.fee) &&
+                      transaction.fee > 0 &&
+                      !isBlurred &&
+                      `  ·  fee ${formatBitcoinDisplay(transaction.fee / 1e8, {inSats: showSats, formatted: balanceFormattingEnabled})}`}
+                  </Text>
+                </View>
               </View>
             )}
             <View style={styles.section}>
