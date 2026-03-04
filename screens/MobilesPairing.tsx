@@ -4088,96 +4088,251 @@ const MobilesPairing = ({navigation}: any) => {
                           </View>
                         </View>
                       )}
-                      <View
-                        style={[
-                          styles.transactionItem,
-                          {paddingVertical: 2, marginBottom: 3},
-                        ]}>
-                        <Text
-                          style={[
-                            styles.transactionLabel,
-                            {
-                              fontSize: theme.fontSizes?.sm || 12,
-                              lineHeight: 14,
-                            },
-                          ]}>
-                          To Address
-                        </Text>
-                        <View style={styles.addressContainer}>
-                          <Text
-                            style={styles.addressValue}
-                            numberOfLines={1}
-                            ellipsizeMode="middle">
-                            {route.params.toAddress}
-                          </Text>
-                        </View>
-                      </View>
-                      <View
-                        style={[
-                          styles.transactionItem,
-                          {paddingVertical: 2, marginBottom: 3},
-                        ]}>
-                        <Text
-                          style={[
-                            styles.transactionLabel,
-                            {
-                              fontSize: theme.fontSizes?.sm || 12,
-                              lineHeight: 14,
-                            },
-                          ]}>
-                          Transaction Amount
-                        </Text>
-                        <View style={styles.amountContainer}>
-                          <Text
-                            style={[
-                              styles.amountValue,
-                              {fontSize: theme.fontSizes?.base || 13},
-                            ]}>
-                            {sat2btcStr(route.params.satoshiAmount)} BTC
-                          </Text>
-                          <Text
-                            style={[
-                              styles.fiatValue,
-                              {fontSize: theme.fontSizes?.sm || 12},
-                            ]}>
-                            {route.params.selectedCurrency}{' '}
-                            {formatFiat(route.params.fiatAmount)}
-                          </Text>
-                        </View>
-                      </View>
-                      <View
-                        style={[
-                          styles.transactionItem,
-                          {paddingVertical: 2, marginBottom: 0},
-                        ]}>
-                        <Text
-                          style={[
-                            styles.transactionLabel,
-                            {
-                              fontSize: theme.fontSizes?.sm || 12,
-                              lineHeight: 14,
-                            },
-                          ]}>
-                          Transaction Fee
-                        </Text>
-                        <View style={styles.amountContainer}>
-                          <Text
-                            style={[
-                              styles.amountValue,
-                              {fontSize: theme.fontSizes?.base || 13},
-                            ]}>
-                            {sat2btcStr(route.params.satoshiFees)} BTC
-                          </Text>
-                          <Text
-                            style={[
-                              styles.fiatValue,
-                              {fontSize: theme.fontSizes?.sm || 12},
-                            ]}>
-                            {route.params.selectedCurrency}{' '}
-                            {formatFiat(route.params.fiatFees)}
-                          </Text>
-                        </View>
-                      </View>
+                      {/* Transaction Flow */}
+                      {(() => {
+                        const accentColor =
+                          theme.colors.background === '#ffffff'
+                            ? theme.colors.primary
+                            : theme.colors.bitcoinOrange;
+                        const totalSats =
+                          Number(route.params.satoshiAmount) +
+                          Number(route.params.satoshiFees);
+                        const toAddr = route.params.toAddress || '';
+                        const net = route.params?.network || '';
+                        const isTestnet =
+                          net === 'testnet3' || net === 'testnet';
+                        const explorerBase = isTestnet
+                          ? 'https://mempool.space/testnet'
+                          : 'https://mempool.space';
+                        const sectionTitle = {
+                          fontSize: theme.fontSizes?.xs || 10,
+                          fontFamily: theme.fontFamilies?.bold,
+                          color: theme.colors.textSecondary,
+                          textTransform: 'uppercase' as const,
+                          letterSpacing: 0.5,
+                          marginBottom: 6,
+                        };
+                        const rowBase = {
+                          flexDirection: 'row' as const,
+                          alignItems: 'center' as const,
+                          backgroundColor:
+                            theme.colors.background === '#ffffff'
+                              ? theme.colors.primary + '06'
+                              : '#ffffff08',
+                          borderRadius: 8,
+                          padding: 8,
+                          marginBottom: 4,
+                          borderWidth: 1,
+                          borderColor: theme.colors.border,
+                        };
+                        const rowOurs = {
+                          ...rowBase,
+                          backgroundColor:
+                            theme.colors.background === '#ffffff'
+                              ? accentColor + '12'
+                              : accentColor + '1A',
+                          borderColor: accentColor + '60',
+                          paddingLeft: 11,
+                          overflow: 'hidden' as const,
+                        };
+                        const iconBase = {
+                          width: 18,
+                          height: 18,
+                          marginRight: 8,
+                        };
+                        const labelStyle = {
+                          fontSize: theme.fontSizes?.sm || 12,
+                          fontFamily: theme.fontFamilies?.bold,
+                          color: theme.colors.text,
+                        };
+                        const labelOurs = {
+                          ...labelStyle,
+                          color: accentColor,
+                        };
+                        const pathText = {
+                          fontSize: theme.fontSizes?.xs || 10,
+                          fontFamily: theme.fontFamilies?.monospace,
+                          color: theme.colors.textSecondary,
+                          marginTop: 1,
+                        };
+                        const subLabel = {
+                          fontSize: theme.fontSizes?.xs || 10,
+                          fontFamily: theme.fontFamilies?.regular,
+                          color: theme.colors.textSecondary,
+                          fontStyle: 'italic' as const,
+                          marginTop: 1,
+                        };
+                        const amtBTC = {
+                          fontSize: theme.fontSizes?.sm || 12,
+                          fontFamily: theme.fontFamilies?.bold,
+                          color: theme.colors.text,
+                          textAlign: 'right' as const,
+                        };
+                        const amtBTCOurs = {
+                          ...amtBTC,
+                          color: accentColor,
+                        };
+                        const amtFiat = {
+                          fontSize: theme.fontSizes?.xs || 10,
+                          fontFamily: theme.fontFamilies?.regular,
+                          color: theme.colors.textSecondary,
+                          textAlign: 'right' as const,
+                        };
+                        return (
+                          <View style={{paddingTop: 8}}>
+                            {/* Inputs */}
+                            <Text style={sectionTitle}>Inputs</Text>
+                            <View style={rowOurs}>
+                              <View
+                                style={{
+                                  position: 'absolute',
+                                  left: 0,
+                                  top: 0,
+                                  bottom: 0,
+                                  width: 3,
+                                  backgroundColor: accentColor,
+                                  borderTopLeftRadius: 8,
+                                  borderBottomLeftRadius: 8,
+                                }}
+                              />
+                              <Image
+                                source={require('../assets/in-icon.png')}
+                                style={[
+                                  iconBase,
+                                  {tintColor: accentColor},
+                                ]}
+                                resizeMode="contain"
+                              />
+                              <View style={{flex: 1}}>
+                                <Text style={labelOurs} numberOfLines={1}>
+                                  HD Wallet
+                                </Text>
+                                {route.params?.derivationPath ? (
+                                  <Text style={pathText} numberOfLines={1}>
+                                    {route.params.derivationPath}
+                                  </Text>
+                                ) : null}
+                              </View>
+                              <View style={{alignItems: 'flex-end'}}>
+                                <Text style={amtBTCOurs}>
+                                  {sat2btcStr(String(totalSats))} BTC
+                                </Text>
+                              </View>
+                            </View>
+
+                            {/* Hub */}
+                            <View
+                              style={{
+                                alignItems: 'center',
+                                paddingVertical: 8,
+                              }}>
+                              <View
+                                style={{
+                                  width: 28,
+                                  height: 28,
+                                  borderRadius: 14,
+                                  backgroundColor: accentColor + '20',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}>
+                                <Text
+                                  style={{
+                                    fontSize: 14,
+                                    color: accentColor,
+                                    fontFamily: theme.fontFamilies?.bold,
+                                  }}>
+                                  ↓
+                                </Text>
+                              </View>
+                              <Text
+                                style={{
+                                  fontSize: theme.fontSizes?.xs || 10,
+                                  fontFamily: theme.fontFamilies?.bold,
+                                  color: theme.colors.textSecondary,
+                                  textTransform: 'uppercase',
+                                  letterSpacing: 0.5,
+                                  marginTop: 4,
+                                }}>
+                                Transaction
+                              </Text>
+                            </View>
+
+                            {/* Outputs */}
+                            <Text style={sectionTitle}>Outputs</Text>
+                            {/* Recipient */}
+                            <AppPressable
+                              style={rowBase}
+                              onPress={() =>
+                                Linking.openURL(
+                                  `${explorerBase}/address/${toAddr}`,
+                                )
+                              }>
+                              <Image
+                                source={require('../assets/bitcoin-icon.png')}
+                                style={[
+                                  iconBase,
+                                  {tintColor: theme.colors.textSecondary},
+                                ]}
+                                resizeMode="contain"
+                              />
+                              <View style={{flex: 1}}>
+                                <Text
+                                  style={[
+                                    labelStyle,
+                                    {textDecorationLine: 'underline'},
+                                  ]}
+                                  numberOfLines={1}
+                                  ellipsizeMode="middle">
+                                  {toAddr}
+                                </Text>
+                                <Text style={subLabel}>recipient</Text>
+                              </View>
+                              <View style={{alignItems: 'flex-end'}}>
+                                <Text style={amtBTC}>
+                                  {sat2btcStr(route.params.satoshiAmount)} BTC
+                                </Text>
+                                <Text style={amtFiat}>
+                                  {route.params.selectedCurrency}{' '}
+                                  {formatFiat(route.params.fiatAmount)}
+                                </Text>
+                              </View>
+                            </AppPressable>
+                            {/* Connector */}
+                            <View
+                              style={{
+                                width: 1,
+                                height: 8,
+                                backgroundColor: theme.colors.border,
+                                marginLeft: 17,
+                                marginBottom: 2,
+                              }}
+                            />
+                            {/* Fee */}
+                            <View style={rowBase}>
+                              <Image
+                                source={require('../assets/send-icon.png')}
+                                style={[
+                                  iconBase,
+                                  {tintColor: theme.colors.textSecondary},
+                                ]}
+                                resizeMode="contain"
+                              />
+                              <View style={{flex: 1}}>
+                                <Text style={labelStyle}>Fee</Text>
+                              </View>
+                              <View style={{alignItems: 'flex-end'}}>
+                                <Text style={amtBTC}>
+                                  {sat2btcStr(route.params.satoshiFees)} BTC
+                                </Text>
+                                <Text style={amtFiat}>
+                                  {route.params.selectedCurrency}{' '}
+                                  {formatFiat(route.params.fiatFees)}
+                                </Text>
+                              </View>
+                            </View>
+                          </View>
+                        );
+                      })()}
                     </View>
                   )}
                   {isSignPSBT && (

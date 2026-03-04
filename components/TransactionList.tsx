@@ -14,7 +14,8 @@ import {
   ActivityIndicator,
   RefreshControl,
   Platform,
-  Image,
+  Animated,
+  Easing,
 } from 'react-native';
 import AppPressable from './AppPressable';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -41,6 +42,179 @@ const inIcon = require('../assets/in-icon.png');
 const outIcon = require('../assets/out-icon.png');
 const consolidateIcon = require('../assets/consolidate-icon.png');
 const pendingIcon = require('../assets/pending-icon.png');
+
+type AnimationType = 'send' | 'receive' | 'consolidate' | 'rebalance' | 'none';
+
+/** Renders a status icon with an appropriate looping animation for pending states. */
+const AnimatedStatusIcon = React.memo(
+  ({
+    source,
+    style,
+    animationType,
+  }: {
+    source: any;
+    style: any;
+    animationType: AnimationType;
+  }) => {
+    const anim = React.useRef(new Animated.Value(0)).current;
+
+    React.useEffect(() => {
+      if (animationType === 'none') {
+        anim.setValue(0);
+        return;
+      }
+      let loop: Animated.CompositeAnimation;
+      switch (animationType) {
+        // Arrow slides up + fades then resets: conveys outgoing motion
+        case 'send':
+          loop = Animated.loop(
+            Animated.sequence([
+              Animated.timing(anim, {
+                toValue: 1,
+                duration: 700,
+                easing: Easing.inOut(Easing.ease),
+                useNativeDriver: true,
+              }),
+              Animated.timing(anim, {
+                toValue: 0,
+                duration: 300,
+                easing: Easing.out(Easing.ease),
+                useNativeDriver: true,
+              }),
+              Animated.delay(300),
+            ]),
+          );
+          break;
+        // Arrow slides down + brightens then resets: conveys incoming motion
+        case 'receive':
+          loop = Animated.loop(
+            Animated.sequence([
+              Animated.timing(anim, {
+                toValue: 1,
+                duration: 700,
+                easing: Easing.inOut(Easing.ease),
+                useNativeDriver: true,
+              }),
+              Animated.timing(anim, {
+                toValue: 0,
+                duration: 300,
+                easing: Easing.out(Easing.ease),
+                useNativeDriver: true,
+              }),
+              Animated.delay(300),
+            ]),
+          );
+          break;
+        // Slow continuous rotation: conveys merging/gathering
+        case 'consolidate':
+          loop = Animated.loop(
+            Animated.timing(anim, {
+              toValue: 1,
+              duration: 1400,
+              easing: Easing.linear,
+              useNativeDriver: true,
+            }),
+          );
+          break;
+        // Scale pulse: conveys spreading/redistributing
+        case 'rebalance':
+          loop = Animated.loop(
+            Animated.sequence([
+              Animated.timing(anim, {
+                toValue: 1,
+                duration: 600,
+                easing: Easing.inOut(Easing.ease),
+                useNativeDriver: true,
+              }),
+              Animated.timing(anim, {
+                toValue: 0,
+                duration: 600,
+                easing: Easing.inOut(Easing.ease),
+                useNativeDriver: true,
+              }),
+            ]),
+          );
+          break;
+        default:
+          return;
+      }
+      loop.start();
+      return () => loop.stop();
+    }, [animationType, anim]);
+
+    let animStyle: object = {};
+    switch (animationType) {
+      case 'send':
+        animStyle = {
+          opacity: anim.interpolate({
+            inputRange: [0, 0.5, 1],
+            outputRange: [1, 0.35, 1],
+          }),
+          transform: [
+            {
+              translateY: anim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, -4],
+              }),
+            },
+          ],
+        };
+        break;
+      case 'receive':
+        animStyle = {
+          opacity: anim.interpolate({
+            inputRange: [0, 0.5, 1],
+            outputRange: [0.35, 1, 0.35],
+          }),
+          transform: [
+            {
+              translateY: anim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [-4, 0],
+              }),
+            },
+          ],
+        };
+        break;
+      case 'consolidate':
+        animStyle = {
+          transform: [
+            {
+              rotate: anim.interpolate({
+                inputRange: [0, 1],
+                outputRange: ['0deg', '360deg'],
+              }),
+            },
+          ],
+        };
+        break;
+      case 'rebalance':
+        animStyle = {
+          opacity: anim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0.4, 1],
+          }),
+          transform: [
+            {
+              scale: anim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.8, 1.15],
+              }),
+            },
+          ],
+        };
+        break;
+    }
+
+    return (
+      <Animated.Image
+        source={source}
+        style={[style, animStyle]}
+        resizeMode="contain"
+      />
+    );
+  },
+);
 interface TransactionListProps {
   /** Single address (legacy). Use addresses for multi-address (HD wallet) mode. */
   address?: string;
@@ -88,6 +262,10 @@ const TransactionList = React.forwardRef<
     const [loading, setLoading] = useState(false);
     const [loadingMore, setLoadingMore] = useState(false);
     const [lastSeenTxId, setLastSeenTxId] = useState<string | null>(null);
+    // Per-address cursors for multi-address pagination (null = address exhausted)
+    const [addressCursors, setAddressCursors] = useState<
+      Record<string, string | null>
+    >({});
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [hasMoreTransactions, setHasMoreTransactions] = useState(true);
     const isFetching = useRef(false);
@@ -299,12 +477,17 @@ const TransactionList = React.forwardRef<
           );
           const cleanBaseApi = url.replace(/\/+$/, '').replace(/\/api\/?$/, '');
           let responseData: any[];
+          let multiHasMore = false;
           if (isMultiAddress && addresses && addresses.length > 0) {
-            responseData =
+            const result =
               await WalletService.getInstance().fetchTransactionsForAddresses(
                 cleanBaseApi,
                 addresses,
               );
+            responseData = result.txs;
+            // Store per-address cursors so fetchMore can page each address independently
+            setAddressCursors(result.cursors);
+            multiHasMore = Object.values(result.cursors).some(c => c !== null);
           } else {
             const apiUrl = `${cleanBaseApi}/api/address/${address}/txs`;
             dbg('Starting fetch transactions from:', apiUrl);
@@ -454,8 +637,10 @@ const TransactionList = React.forwardRef<
               'transactions to state',
             );
             setTransactions(newTransactions);
-            setHasMoreTransactions(newTransactions.length > 0);
-            if (newTransactions.length > 0) {
+            setHasMoreTransactions(
+              isMultiAddress ? multiHasMore : newTransactions.length > 0,
+            );
+            if (!isMultiAddress && newTransactions.length > 0) {
               setLastSeenTxId(newTransactions[newTransactions.length - 1].txid);
             }
             // Clear refresh state on successful API response
@@ -641,25 +826,111 @@ const TransactionList = React.forwardRef<
       },
       [isOurAddress],
     );
-    // Debounced fetch more implementation
+    // Shared sort: pending (no block_height) first, then block_height descending.
+    const sortTxs = useCallback(
+      (txs: any[]): any[] =>
+        [...txs].sort((a, b) => {
+          const aPending = !a.status?.block_height;
+          const bPending = !b.status?.block_height;
+          if (aPending && !bPending) {
+            return -1;
+          }
+          if (!aPending && bPending) {
+            return 1;
+          }
+          if (aPending && bPending) {
+            return (b.sentAt || 0) - (a.sentAt || 0);
+          }
+          return (b.status.block_height || 0) - (a.status.block_height || 0);
+        }),
+      [],
+    );
+
     const fetchMore = useCallback(async () => {
       if (loadingMore || !isMounted.current) {
-        dbg('Skipping fetch more - conditions not met:', {
-          loadingMore,
-          isMounted: isMounted.current,
-        });
+        dbg('Skipping fetchMore — already in flight or unmounted');
         return;
       }
-      if (isMultiAddress || !lastSeenTxId || !address || !baseApi) {
-        if (isMultiAddress) {
-          setHasMoreTransactions(false);
+
+      // ── Multi-address path ─────────────────────────────────────────────────
+      if (isMultiAddress) {
+        if (!baseApi || !addresses?.length) {
+          return;
         }
-        dbg('Skipping fetch more:', {
-          lastSeenTxId,
-          address,
-          baseApi,
-          isMultiAddress,
-        });
+        const hasOpenCursor = Object.values(addressCursors).some(
+          c => c !== null,
+        );
+        if (!hasOpenCursor) {
+          setHasMoreTransactions(false);
+          return;
+        }
+        dbg(
+          'fetchMore (multi-address): fetching next page with cursors',
+          addressCursors,
+        );
+        setLoadingMore(true);
+        try {
+          const cleanBaseApi = baseApi
+            .replace(/\/+$/, '')
+            .replace(/\/api\/?$/, '');
+          const result =
+            await WalletService.getInstance().fetchMoreTransactionsForAddresses(
+              cleanBaseApi,
+              addressCursors,
+            );
+          if (!isMounted.current) {
+            return;
+          }
+          const stillHasMore = Object.values(result.cursors).some(
+            c => c !== null,
+          );
+          setAddressCursors(result.cursors);
+          setHasMoreTransactions(stillHasMore);
+          if (result.txs.length > 0) {
+            setTransactions(prev => {
+              const existingIds = new Set(prev.map((tx: any) => tx.txid));
+              const newTxs = result.txs.filter(
+                (tx: any) => !existingIds.has(tx.txid),
+              );
+              if (newTxs.length === 0) {
+                return prev;
+              }
+              const merged = sortTxs([...prev, ...newTxs]);
+              if (network && addressType) {
+                WalletService.getInstance().updateTransactionsCacheForWallet(
+                  network,
+                  addressType,
+                  merged,
+                );
+              }
+              dbg(
+                'fetchMore (multi-address): appended',
+                newTxs.length,
+                'new txs, total',
+                merged.length,
+              );
+              return merged;
+            });
+          }
+        } catch (error: any) {
+          if (!isCanceledError(error)) {
+            dbg('fetchMore (multi-address) error:', error);
+            Toast.show({
+              type: 'error',
+              text1: 'Error loading more transactions',
+            });
+          }
+        } finally {
+          if (isMounted.current) {
+            setLoadingMore(false);
+          }
+        }
+        return;
+      }
+
+      // ── Single-address path ────────────────────────────────────────────────
+      if (!lastSeenTxId || !address || !baseApi) {
+        dbg('Skipping fetchMore (single):', {lastSeenTxId, address, baseApi});
         return;
       }
       dbg('Starting fetch more from:', lastSeenTxId);
@@ -788,11 +1059,15 @@ const TransactionList = React.forwardRef<
       loadingMore,
       lastSeenTxId,
       address,
+      addresses,
       baseApi,
       getTransactionAmounts,
       onUpdate,
       isMultiAddress,
-      addresses,
+      addressCursors,
+      network,
+      addressType,
+      sortTxs,
     ]);
     // Add effect to handle initialTransactions changes
     useEffect(() => {
@@ -1047,7 +1322,7 @@ const TransactionList = React.forwardRef<
             : 'Consolidating'
           : isRebalancing
           ? confirmed
-            ? 'Rebalance'
+            ? 'Rebalanced'
             : 'Rebalancing'
           : status;
         const finalIcon = isSelfTransfer
@@ -1087,7 +1362,21 @@ const TransactionList = React.forwardRef<
             }}>
             <View style={styles.transactionRow}>
               <View style={styles.statusContainer}>
-                <Image source={finalIcon} style={styles.statusIcon} />
+                <AnimatedStatusIcon
+                  source={finalIcon}
+                  style={styles.statusIcon}
+                  animationType={
+                    confirmed
+                      ? 'none'
+                      : isConsolidation
+                      ? 'consolidate'
+                      : isRebalancing
+                      ? 'rebalance'
+                      : status.includes('Sen')
+                      ? 'send'
+                      : 'receive'
+                  }
+                />
                 <Text style={styles.status}>{finalStatus}</Text>
               </View>
               <Text
@@ -1286,6 +1575,8 @@ const TransactionList = React.forwardRef<
                         ? confirmed
                           ? 'Consolidation'
                           : 'Consolidating'
+                        : confirmed
+                        ? 'Rebalanced'
                         : 'Rebalancing';
                     return {confirmed, text: label};
                   })()

@@ -1396,48 +1396,98 @@ export class WalletService {
    * Fetches transactions for multiple HD addresses, merges by txid, dedupes, sorts by block_time desc.
    * Used for wallet-level transaction list (all receive + change addresses).
    */
+  /**
+   * mempool.space returns at most 25 txs per /txs call.
+   * When exactly PAGE_SIZE are returned there may be more; store the last txid
+   * as a cursor so callers can page with /txs/chain/{cursor}.
+   */
+  private static readonly TX_PAGE_SIZE = 25;
+
+  /** Pending txs (no block_height) sort to the top; confirmed sort by block_height desc. */
+  private static txSortKey(tx: any): number {
+    if (!tx.status?.block_height) {
+      return Number.MAX_SAFE_INTEGER; // pending → top
+    }
+    return tx.status.block_height;
+  }
+
+  /**
+   * Initial fetch — calls /txs for every address sequentially.
+   * Returns merged + deduped transactions sorted newest-first, plus a per-address
+   * cursor map (null = address exhausted, string = last txid for next page).
+   */
   public async fetchTransactionsForAddresses(
     apiBase: string,
     addresses: string[],
-  ): Promise<any[]> {
-    if (addresses.length === 0) return [];
+  ): Promise<{txs: any[]; cursors: Record<string, string | null>}> {
+    if (addresses.length === 0) return {txs: [], cursors: {}};
     const cleanBase = apiBase.replace(/\/+$/, '').replace(/\/api\/?$/, '');
     const seen = new Set<string>();
     const merged: any[] = [];
-    // Fetch transactions sequentially, address-by-address, to avoid
-    // hammering mempool.space and to keep behavior deterministic.
+    const cursors: Record<string, string | null> = {};
+    // Fetch sequentially to avoid rate-limiting mempool.space.
     for (const addr of addresses) {
       try {
-        const url = `${cleanBase}/api/address/${encodeURIComponent(
-          addr,
-        )}/txs`;
-        const res = await this.withTimeout(
-          `txs-${addr.slice(0, 12)}`,
-          fetch(url),
-          8000,
-        );
-        if (!res.ok) {
-          continue;
-        }
+        const url = `${cleanBase}/api/address/${encodeURIComponent(addr)}/txs`;
+        const res = await this.withTimeout(`txs-${addr.slice(0, 12)}`, fetch(url), 8000);
+        if (!res.ok) { cursors[addr] = null; continue; }
         const data = (await res.json()) as any[];
-        if (!Array.isArray(data)) {
+        if (!Array.isArray(data)) { cursors[addr] = null; continue; }
+        for (const tx of data) {
+          if (!seen.has(tx.txid)) { seen.add(tx.txid); merged.push(tx); }
+        }
+        // Exactly PAGE_SIZE returned → there may be a next page
+        cursors[addr] = data.length >= WalletService.TX_PAGE_SIZE
+          ? data[data.length - 1].txid
+          : null;
+      } catch (e) {
+        dbg('WalletService: fetchTransactionsForAddresses failed for', addr.slice(0, 12), e);
+        cursors[addr] = null;
+      }
+    }
+    merged.sort((a, b) => WalletService.txSortKey(b) - WalletService.txSortKey(a));
+    dbg('WalletService: fetchTransactionsForAddresses merged', merged.length, 'txs from', addresses.length, 'addresses');
+    return {txs: merged, cursors};
+  }
+
+  /**
+   * Paginated fetch — calls /txs/chain/{cursor} for every address whose cursor
+   * is non-null. Returns only the NEW transactions for this page plus updated
+   * cursors (null out exhausted addresses).
+   */
+  public async fetchMoreTransactionsForAddresses(
+    apiBase: string,
+    cursors: Record<string, string | null>,
+  ): Promise<{txs: any[]; cursors: Record<string, string | null>}> {
+    const cleanBase = apiBase.replace(/\/+$/, '').replace(/\/api\/?$/, '');
+    const seen = new Set<string>();
+    const merged: any[] = [];
+    const updatedCursors: Record<string, string | null> = {...cursors};
+    for (const [addr, cursor] of Object.entries(cursors)) {
+      if (!cursor) continue; // already exhausted
+      try {
+        const url = `${cleanBase}/api/address/${encodeURIComponent(addr)}/txs/chain/${cursor}`;
+        const res = await this.withTimeout(`txs-more-${addr.slice(0, 12)}`, fetch(url), 8000);
+        if (!res.ok) { updatedCursors[addr] = null; continue; }
+        const data = (await res.json()) as any[];
+        if (!Array.isArray(data) || data.length === 0) {
+          updatedCursors[addr] = null;
           continue;
         }
         for (const tx of data) {
-          if (!seen.has(tx.txid)) {
-            seen.add(tx.txid);
-            merged.push(tx);
-          }
+          if (!seen.has(tx.txid)) { seen.add(tx.txid); merged.push(tx); }
         }
+        updatedCursors[addr] = data.length >= WalletService.TX_PAGE_SIZE
+          ? data[data.length - 1].txid
+          : null;
       } catch (e) {
-        dbg('WalletService: fetchTransactionsForAddresses failed for', addr.slice(0, 12), e);
-        // skip failed address, continue with next
+        dbg('WalletService: fetchMoreTransactionsForAddresses failed for', addr.slice(0, 12), e);
+        updatedCursors[addr] = null;
       }
     }
-    const blockTime = (tx: any) => tx.status?.block_time ?? 0;
-    merged.sort((a, b) => blockTime(b) - blockTime(a));
-    dbg('WalletService: fetchTransactionsForAddresses merged', merged.length, 'txs from', addresses.length, 'addresses');
-    return merged;
+    merged.sort((a, b) => WalletService.txSortKey(b) - WalletService.txSortKey(a));
+    dbg('WalletService: fetchMoreTransactionsForAddresses page yielded', merged.length, 'new txs');
+    return {txs: merged, cursors: updatedCursors};
   }
 
   /** Cache key for wallet-level (multi-address) transactions. */

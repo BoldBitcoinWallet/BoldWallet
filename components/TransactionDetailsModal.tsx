@@ -225,12 +225,30 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
+      overflow: 'hidden', // clips the accent bar to rounded corners
     },
     flowItemContentOurs: {
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '10'       // light: very subtle primary wash
+          : theme.colors.bitcoinOrange + '1A', // dark: warm amber tint
       borderColor:
         theme.colors.background === '#ffffff'
-          ? theme.colors.primary + '70'
-          : theme.colors.bitcoinOrange + '70',
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+      borderWidth: 1.5,
+      paddingLeft: 13, // make room for the left accent bar
+    },
+    flowItemAccentBar: {
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      bottom: 0,
+      width: 3,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     flowItemHeader: {
       flexDirection: 'row',
@@ -258,6 +276,12 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       marginBottom: 2,
+    },
+    flowItemLabelOurs: {
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     flowItemPath: {
       fontSize: theme.fontSizes?.xs || 9,
@@ -512,6 +536,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                                 styles.flowItemContent,
                                 pathInfo && styles.flowItemContentOurs,
                               ]}>
+                              {pathInfo && <View style={styles.flowItemAccentBar} />}
                               <View style={styles.flowItemHeader}>
                                 <Image
                                   source={require('../assets/in-icon.png')}
@@ -527,14 +552,23 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                                       onPress={() => Linking.openURL(addrLink)}
                                       android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                                       <Text
-                                        style={[styles.flowItemLabel, styles.clickableText]}
+                                        style={[
+                                          styles.flowItemLabel,
+                                          pathInfo && styles.flowItemLabelOurs,
+                                          styles.clickableText,
+                                        ]}
                                         numberOfLines={1}
                                         ellipsizeMode="middle">
                                         {short}
                                       </Text>
                                     </AppPressable>
                                   ) : (
-                                    <Text style={styles.flowItemLabel} numberOfLines={1}>
+                                    <Text
+                                      style={[
+                                        styles.flowItemLabel,
+                                        pathInfo && styles.flowItemLabelOurs,
+                                      ]}
+                                      numberOfLines={1}>
                                       {short}
                                     </Text>
                                   )}
@@ -610,6 +644,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                                 styles.flowItemContent,
                                 pathInfo && styles.flowItemContentOurs,
                               ]}>
+                              {pathInfo && <View style={styles.flowItemAccentBar} />}
                               <View style={styles.flowItemHeader}>
                                 <Image
                                   source={outputIcon}
@@ -625,14 +660,23 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                                       onPress={() => Linking.openURL(addrLink)}
                                       android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                                       <Text
-                                        style={[styles.flowItemLabel, styles.clickableText]}
+                                        style={[
+                                          styles.flowItemLabel,
+                                          pathInfo && styles.flowItemLabelOurs,
+                                          styles.clickableText,
+                                        ]}
                                         numberOfLines={1}
                                         ellipsizeMode="middle">
                                         {short}
                                       </Text>
                                     </AppPressable>
                                   ) : (
-                                    <Text style={styles.flowItemLabel} numberOfLines={1}>
+                                    <Text
+                                      style={[
+                                        styles.flowItemLabel,
+                                        pathInfo && styles.flowItemLabelOurs,
+                                      ]}
+                                      numberOfLines={1}>
                                       {short}
                                     </Text>
                                   )}
