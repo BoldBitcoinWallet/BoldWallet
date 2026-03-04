@@ -1,5 +1,43 @@
 # Changelog
 
+## [3.0.0] - 2026-03-04
+
+### Added
+- **Multi-path HD wallet (no-address-reuse)**: Full support for per-address indexing and spending across receive and change paths.
+  - **WalletService**: Aggregate balance and UTXO fetch across all HD addresses; `getHdAddressesWithPaths` with in-memory cache; `fetchUtxosWithPaths` with sequential API calls and empty-address skip cache; `fetchMoreTransactionsForAddresses` for cursor-based multi-address transaction pagination.
+  - **HdIndexService**: Centralized HD index management; discovery uses `GAP_LIMIT` and `MIN_SCAN_INDEX`; runtime address range based on `max(externalIndex, maxUsedExternal)` and `changeIndex`.
+  - **Receive**: Restoring-indexes flow; receive index advances only when current address is used; receive button shows busy state while computing next address.
+- **Multi-path UTXO spend and fee estimation**:
+  - **BBMTLib (Go)**: `SpendingHashWithUTXOs` for deterministic spending hash from a pre-fetched UTXO set; `estimateFeeWithUTXOs`; sequential API behavior and improved logging in fee/UTXO paths.
+  - **Native bridges**: iOS/Android expose `spendingHashWithUTXOs`; Send flow uses multi-path UTXOs for fee and spending hash.
+- **Transaction list and details**:
+  - **TransactionList**: Multi-address transaction list with per-address cursor pagination; consolidation (1 internal output) vs rebalancing (2+ internal outputs) labels; animations for Sending/Receiving/Consolidating/Rebalancing; derivation path in details only (no Ix row in list).
+  - **TransactionDetailsModal**: Inputs/outputs flow diagram (PSBT-style); internal (ours) outputs highlighted with theme accent; summary bar with fee; address path map for paths.
+- **Pairing screens**: Inputs/outputs flow in MobilesPairing and MobileNostrPairing; “Signing Path” instead of “From Address”; network badge and flow diagram aligned.
+- **Docs**: `HD_WALLET_REFACTOR.md`, `MULTI_PATH_UTXO_SPEND_DESIGN.md`.
+- **RestoringIndexesModal**: Dedicated modal for index discovery progress.
+
+### Changed
+- **Mempool API**: All WalletService calls to mempool.space (UTXOs, transactions) are sequential/synchronous to avoid rate limits and non-determinism.
+- **SendBitcoinModal**: Passes `activeNetwork` (e.g. testnet3) to WalletService; fee estimation uses multi-path UTXOs and native `estimateFeeWithUTXOs` with fallback.
+- **UtxosScreen / WalletHome**: Use aggregate balance and multi-address–aware flows.
+- **BBMTLib build**: `build.sh` banner and note for Go 1.25 taggedPointerPack; FIPS check and toolchain steps unchanged.
+- **FIPS Android (Dockerfile.fips and fips-android.sh)**:
+  - `WORKDIR /workspace` so `docker run -v $(pwd):/workspace ./build.sh` runs against mounted source; `-w /workspace` in script.
+  - BuildKit cache mounts: dnf, Go tarball, Android SDK download and per-platform install cache, Go modules/gomobile.
+  - Platform default: `linux/arm64` on Apple Silicon (avoids Go 1.25 taggedPointerPack under QEMU), `linux/amd64` elsewhere; optional `FIPS_ANDROID_PLATFORM` override.
+  - Run-from-BBMTLib check so `build.sh` exists in mounted dir.
+
+### Fixed
+- **Receive index**: No longer advances on network errors; discovery records partial/failed state without bumping indexes; `bumpExternalIndexIfCurrentUsed` only when address is actually used.
+- **Fee estimation**: Multi-path UTXO set used for native fee estimation; “insufficient funds” handling and logging aligned with multi-path.
+- **Transaction list**: Removed legacy single-address consolidation detection and Ix row; correct merge/sort for multi-address pagination.
+
+### Technical Details
+- **Version**: `package.json` 3.0.0.
+- **BBMTLib**: `go.mod`/`go.sum`; `tss/btc.go` (SpendingHashWithUTXOs, fee/UTXO); `tss/mpc_nostr.go`; iOS/Android native module updates; `Dockerfile.fips` (Go 1.25.x, TARGETARCH, cache mounts, WORKDIR /workspace).
+- **Context**: UserContext/WalletContext and utils.js updates for tabs and routing where applicable.
+
 ## [2.2.0] - 2026-02-15
 
 ### Added
