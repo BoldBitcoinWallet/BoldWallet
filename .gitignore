@@ -143,6 +143,10 @@ build.log
 # Local gradle properties with secrets (never commit)
 android/gradle.properties.local
 
+# IDE - Cursor / project-local
+.cursor/
+mcps/
+
 # IDE - VSCode
 .vscode/
 *.code-workspace
