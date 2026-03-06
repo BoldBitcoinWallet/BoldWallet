@@ -636,8 +636,14 @@ func NostrMpcSendBTCWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted
 		}
 	}()
 
-	amountSatoshi, _ := strconv.ParseInt(amountSatoshiStr, 10, 64)
-	estimatedFee, _ := strconv.ParseInt(estimatedFeeStr, 10, 64)
+	amountSatoshi, parseErr := strconv.ParseInt(amountSatoshiStr, 10, 64)
+	if parseErr != nil {
+		return "", fmt.Errorf("invalid amountSatoshi %q: %w", amountSatoshiStr, parseErr)
+	}
+	estimatedFee, parseErr := strconv.ParseInt(estimatedFeeStr, 10, 64)
+	if parseErr != nil {
+		return "", fmt.Errorf("invalid estimatedFee %q: %w", estimatedFeeStr, parseErr)
+	}
 	return runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON, receiverAddress, amountSatoshi, estimatedFee, utxosWithPathsJSON, changeAddress)
 }
 
@@ -1226,11 +1232,23 @@ func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, 
 		tx.AddTxOut(wire.NewTxOut(changeAmount, changePkScript))
 	}
 
+	// Build prevOuts map from inline scriptpubkey (no network call).
+	// Falls back to FetchUTXODetails only when scriptpubkey was not supplied by the caller.
 	prevOuts := make(map[wire.OutPoint]*wire.TxOut)
 	for _, utxo := range selectedUTXOs {
-		txOut, _, err := FetchUTXODetails(utxo.TxID, utxo.Vout)
-		if err != nil {
-			return "", fmt.Errorf("failed to fetch UTXO details: %w", err)
+		var txOut *wire.TxOut
+		if utxo.Scriptpubkey != "" {
+			sb, spkErr := hex.DecodeString(utxo.Scriptpubkey)
+			if spkErr != nil || len(sb) == 0 {
+				return "", fmt.Errorf("invalid scriptpubkey for %s:%d", utxo.TxID, utxo.Vout)
+			}
+			txOut = &wire.TxOut{PkScript: sb, Value: utxo.Value}
+		} else {
+			var fetchErr error
+			txOut, _, fetchErr = FetchUTXODetails(utxo.TxID, utxo.Vout)
+			if fetchErr != nil {
+				return "", fmt.Errorf("failed to fetch UTXO details for %s:%d: %w", utxo.TxID, utxo.Vout, fetchErr)
+			}
 		}
 		hash, _ := chainhash.NewHashFromStr(utxo.TxID)
 		prevOuts[wire.OutPoint{Hash: *hash, Index: utxo.Vout}] = txOut
@@ -1253,10 +1271,10 @@ func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, 
 		}
 
 		utxoSession := fmt.Sprintf("%s%d", sessionID, i)
-		txOut, isWitness, err := FetchUTXODetails(utxo.TxID, utxo.Vout)
-		if err != nil {
-			return "", fmt.Errorf("failed to fetch UTXO details: %w", err)
-		}
+		// Re-use the already-resolved prevout (no second network call per input).
+		outpointHash, _ := chainhash.NewHashFromStr(utxo.TxID)
+		txOut := prevOuts[wire.OutPoint{Hash: *outpointHash, Index: utxo.Vout}]
+		isWitness := txscript.IsWitnessProgram(txOut.PkScript)
 		hashCache := txscript.NewTxSigHashes(tx, prevOutFetcher)
 
 		var sigHash []byte

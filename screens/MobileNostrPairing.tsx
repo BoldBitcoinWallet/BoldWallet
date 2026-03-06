@@ -1616,12 +1616,18 @@ const MobileNostrPairing = ({navigation}: any) => {
           apiUrl,
         );
         if (utxosWithPaths.length > 0 && changeAddress) {
-          const utxosForNative = utxosWithPaths.map(u => ({
+          // Enrich UTXOs with scriptpubkey so Go skips FetchUTXODetails during signing.
+          const enriched = await WalletService.getInstance().enrichUtxosWithScriptpubkey(
+            utxosWithPaths,
+            apiUrl,
+          );
+          const utxosForNative = enriched.map(u => ({
             txid: u.txid,
             vout: u.vout,
             value: u.value,
             derivation_path: u.derivationPath,
             address: u.address,
+            scriptpubkey: u.scriptpubkey,
           }));
           const utxosWithPathsJSON = JSON.stringify(utxosForNative);
           txId = await BBMTLibNativeModule.nostrMpcSendBTCWithUTXOs(

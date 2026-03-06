@@ -36,10 +36,13 @@ type UTXO struct {
 	} `json:"status,omitempty"` // Status is optional, includes both confirmed and unconfirmed UTXOs
 }
 
-// UTXOWithPath extends UTXO with derivation path for HD wallets (per-input signing).
+// UTXOWithPath extends UTXO with derivation path and scriptpubkey for HD wallets (per-input signing).
+// Scriptpubkey (hex) is optional: when present, FetchUTXODetails is skipped during signing,
+// removing the last network call from the MPC signing loop.
 type UTXOWithPath struct {
 	UTXO
 	DerivationPath string `json:"derivation_path,omitempty"`
+	Scriptpubkey   string `json:"scriptpubkey,omitempty"`
 }
 
 var _btc_net = "testnet3" // default to testnet
@@ -384,12 +387,13 @@ func SelectUTXOs(utxos []UTXO, totalAmount int64, strategy string) (result []UTX
 
 // utxoWithPathJSON is used for JSON unmarshaling from RN (supports both derivation_path and derivationPath).
 type utxoWithPathJSON struct {
-	TxID    string `json:"txid"`
-	Vout    uint32 `json:"vout"`
-	Value   int64  `json:"value"`
-	Path    string `json:"derivation_path"`
-	PathAlt string `json:"derivationPath"`
-	Address string `json:"address"` // optional, for fee estimation fallback
+	TxID         string `json:"txid"`
+	Vout         uint32 `json:"vout"`
+	Value        int64  `json:"value"`
+	Path         string `json:"derivation_path"`
+	PathAlt      string `json:"derivationPath"`
+	Address      string `json:"address"`      // optional, for fee estimation fallback
+	Scriptpubkey string `json:"scriptpubkey"` // hex locking script; when set avoids FetchUTXODetails during signing
 }
 
 func (u *utxoWithPathJSON) toUTXOWithPath() UTXOWithPath {
@@ -400,6 +404,7 @@ func (u *utxoWithPathJSON) toUTXOWithPath() UTXOWithPath {
 	return UTXOWithPath{
 		UTXO:           UTXO{TxID: u.TxID, Vout: u.Vout, Value: u.Value},
 		DerivationPath: path,
+		Scriptpubkey:   u.Scriptpubkey,
 	}
 }
 
@@ -1496,8 +1501,14 @@ func MpcSendBTCWithUTXOs(
 		}
 	}()
 
-	amountSatoshi, _ := strconv.ParseInt(amountSatoshiStr, 10, 64)
-	estimatedFee, _ := strconv.ParseInt(estimatedFeeStr, 10, 64)
+	amountSatoshi, parseErr := strconv.ParseInt(amountSatoshiStr, 10, 64)
+	if parseErr != nil {
+		return "", fmt.Errorf("invalid amountSatoshi %q: %w", amountSatoshiStr, parseErr)
+	}
+	estimatedFee, parseErr := strconv.ParseInt(estimatedFeeStr, 10, 64)
+	if parseErr != nil {
+		return "", fmt.Errorf("invalid estimatedFee %q: %w", estimatedFeeStr, parseErr)
+	}
 
 	utxos, err := parseUTXOsWithPathsJSON(utxosWithPathsJSON)
 	if err != nil {
@@ -1557,11 +1568,23 @@ func MpcSendBTCWithUTXOs(
 		tx.AddTxOut(wire.NewTxOut(changeAmount, changePkScript))
 	}
 
+	// Build prevOuts map from inline scriptpubkey (no network call).
+	// Falls back to FetchUTXODetails only when scriptpubkey was not supplied by the caller.
 	prevOuts := make(map[wire.OutPoint]*wire.TxOut)
 	for _, utxo := range selectedUTXOs {
-		txOut, _, err := FetchUTXODetails(utxo.TxID, utxo.Vout)
-		if err != nil {
-			return "", fmt.Errorf("failed to fetch UTXO details: %w", err)
+		var txOut *wire.TxOut
+		if utxo.Scriptpubkey != "" {
+			sb, spkErr := hex.DecodeString(utxo.Scriptpubkey)
+			if spkErr != nil || len(sb) == 0 {
+				return "", fmt.Errorf("invalid scriptpubkey for %s:%d", utxo.TxID, utxo.Vout)
+			}
+			txOut = &wire.TxOut{PkScript: sb, Value: utxo.Value}
+		} else {
+			var fetchErr error
+			txOut, _, fetchErr = FetchUTXODetails(utxo.TxID, utxo.Vout)
+			if fetchErr != nil {
+				return "", fmt.Errorf("failed to fetch UTXO details for %s:%d: %w", utxo.TxID, utxo.Vout, fetchErr)
+			}
 		}
 		hash, _ := chainhash.NewHashFromStr(utxo.TxID)
 		prevOuts[wire.OutPoint{Hash: *hash, Index: utxo.Vout}] = txOut
@@ -1584,10 +1607,10 @@ func MpcSendBTCWithUTXOs(
 		}
 
 		utxoSession := fmt.Sprintf("%s%d", session, i)
-		txOut, isWitness, err := FetchUTXODetails(utxo.TxID, utxo.Vout)
-		if err != nil {
-			return "", fmt.Errorf("failed to fetch UTXO details: %w", err)
-		}
+		// Re-use the already-resolved prevout (no second network call per input).
+		outpointHash, _ := chainhash.NewHashFromStr(utxo.TxID)
+		txOut := prevOuts[wire.OutPoint{Hash: *outpointHash, Index: utxo.Vout}]
+		isWitness := txscript.IsWitnessProgram(txOut.PkScript)
 		hashCache := txscript.NewTxSigHashes(tx, prevOutFetcher)
 
 		var sigHash []byte

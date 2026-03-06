@@ -1490,6 +1490,42 @@ export class WalletService {
     return {txs: merged, cursors: updatedCursors};
   }
 
+  /**
+   * Enriches a UTXO list with the scriptpubkey (hex locking script) for each output.
+   * Fetches /tx/{txid} for each unique txid and reads vout[n].scriptpubkey.
+   * Called before passing UTXOs to the native bridge so Go's signing loop needs
+   * no network calls (FetchUTXODetails is skipped when scriptpubkey is present).
+   *
+   * UTXOs for which the fetch fails get an empty scriptpubkey string; Go will
+   * fall back to FetchUTXODetails for those inputs (safe, backward-compatible).
+   */
+  public async enrichUtxosWithScriptpubkey(
+    utxos: UtxoWithPath[],
+    apiUrl: string,
+  ): Promise<(UtxoWithPath & {scriptpubkey: string})[]> {
+    const base = apiUrl.replace(/\/+$/, '').replace(/\/api\/?$/, '');
+    // Batch unique txids to avoid duplicate fetches for multi-input transactions.
+    const txCache: Map<string, any> = new Map();
+    const results: (UtxoWithPath & {scriptpubkey: string})[] = [];
+    for (const u of utxos) {
+      let scriptpubkey = '';
+      try {
+        if (!txCache.has(u.txid)) {
+          const res = await fetch(`${base}/api/tx/${u.txid}`);
+          if (res.ok) {
+            txCache.set(u.txid, await res.json());
+          }
+        }
+        const txData = txCache.get(u.txid);
+        scriptpubkey = txData?.vout?.[u.vout]?.scriptpubkey ?? '';
+      } catch (e) {
+        dbg('WalletService: enrichUtxosWithScriptpubkey failed for', u.txid, e);
+      }
+      results.push({...u, scriptpubkey});
+    }
+    return results;
+  }
+
   /** Cache key for wallet-level (multi-address) transactions. */
   private walletTxsCacheKey(network: string, addressType: string) {
     return `wallet_txs_${network}_${addressType}`;
