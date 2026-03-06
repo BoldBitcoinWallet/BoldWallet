@@ -151,12 +151,10 @@ if [[ "$(uname)" == "Darwin" ]]; then
         cp -a ./Tss.xcframework ../ios/ || warn "Copy Tss.xcframework failed"
         echo "✓ Tss.xcframework copied to ../ios/Tss.xcframework"
     fi
+    go mod tidy || warn "go mod tidy failed"
 else
     info "Not running on macOS → Skipping iOS/macOS targets"
 fi
 
-# --- 5. Cleanup ---
-
-info "Finalizing..."
 
 info "Build complete!"
