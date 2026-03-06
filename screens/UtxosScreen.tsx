@@ -139,10 +139,17 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
       const merged: UtxoWithPath[] = [];
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 20000);
-      for (const {address, derivationPath, chain, index} of addressesWithPaths) {
+      for (const {
+        address,
+        derivationPath,
+        chain,
+        index,
+      } of addressesWithPaths) {
         if (!addressMatchesNetwork(address, isTestnetApi)) continue;
         try {
-          const utxoUrl = `${apiUrl}/address/${encodeURIComponent(address)}/utxo`;
+          const utxoUrl = `${apiUrl}/address/${encodeURIComponent(
+            address,
+          )}/utxo`;
           const res = await fetch(utxoUrl, {signal: controller.signal});
           if (!res.ok) continue;
           const rawList: ApiUtxo[] = await res.json();
@@ -246,6 +253,40 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
     : theme.colors.blackOverlay05 ?? 'rgba(0,0,0,0.06)';
   const receivedColor = themes.cryptoVibrant.colors.secondary;
 
+  /** Confirmed / unconfirmed breakdown derived from the already-loaded UTXO list.
+   *  Zero extra API calls — same data source as the list below, always in sync. */
+  const balanceSummary = useMemo(() => {
+    let confirmedSats = 0;
+    let unconfirmedSats = 0;
+    let confirmedCount = 0;
+    let unconfirmedCount = 0;
+    for (const u of utxosWithPath) {
+      if (u.status?.confirmed) {
+        confirmedSats += u.value;
+        confirmedCount++;
+      } else {
+        unconfirmedSats += u.value;
+        unconfirmedCount++;
+      }
+    }
+    const totalSats = confirmedSats + unconfirmedSats;
+    const fmt = (sats: number) => (sats / 1e8).toFixed(8);
+    const fiat = (sats: number) =>
+      btcRate > 0
+        ? getCurrencySymbol(selectedCurrency || 'USD') +
+          presentFiat((sats / 1e8) * btcRate)
+        : null;
+    return {
+      confirmedSats,
+      unconfirmedSats,
+      totalSats,
+      confirmedCount,
+      unconfirmedCount,
+      fmt,
+      fiat,
+    };
+  }, [utxosWithPath, btcRate, selectedCurrency]);
+
   const shortTxId = (txid: string) =>
     txid ? `${txid.slice(0, 6)}…${txid.slice(-6)}` : '—';
   const shortAddr = (addr: string) =>
@@ -256,7 +297,8 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const formatPath = (path: string) => {
     if (!path) return '—';
     const parts = path.split('/').filter(Boolean);
-    if (parts.length >= 2) return `…/${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+    if (parts.length >= 2)
+      return `…/${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
     return path;
   };
   const chainLabel = (chain: 'receive' | 'change', index: number) =>
@@ -368,6 +410,55 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
           opacity: 0.7,
         },
+        summaryCard: {
+          borderRadius: 12,
+          borderWidth: 1,
+          paddingHorizontal: 14,
+          paddingVertical: 12,
+          marginHorizontal: 16,
+          marginTop: 12,
+          marginBottom: 0,
+          gap: 6,
+        },
+        summaryRow: {
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        },
+        summaryDivider: {
+          height: 1,
+          marginVertical: 2,
+        },
+        summaryLabel: {
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
+          opacity: 0.75,
+        },
+        summaryCount: {
+          fontSize: theme.fontSizes?.xs || 11,
+          fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
+          opacity: 0.55,
+          marginLeft: 6,
+        },
+        summaryBtc: {
+          fontSize: theme.fontSizes?.md || 15,
+          fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
+          letterSpacing: COMMON_FONT_CONFIGS.bitcoinAmountMono.letterSpacing,
+        },
+        summaryFiat: {
+          fontSize: theme.fontSizes?.xs || 11,
+          fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
+          opacity: 0.55,
+          marginTop: 1,
+          textAlign: 'right',
+        },
+        summaryRight: {
+          alignItems: 'flex-end',
+        },
+        summaryLabelRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+        },
         emptyWrap: {
           paddingVertical: 32,
           paddingHorizontal: 24,
@@ -441,7 +532,12 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           }}
           accessible={true}
           accessibilityRole="button"
-          accessibilityLabel={`${chainLabel(u.chain, u.chainIndex)} UTXO ${shortTxId(u.txid || '')} vout ${u.vout ?? 0}. Tap to open in explorer.`}>
+          accessibilityLabel={`${chainLabel(
+            u.chain,
+            u.chainIndex,
+          )} UTXO ${shortTxId(u.txid || '')} vout ${
+            u.vout ?? 0
+          }. Tap to open in explorer.`}>
           <View
             style={[
               styles.chainBadge,
@@ -493,7 +589,8 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
               style={[styles.utxoLeft, {color: theme.colors.text}]}
               numberOfLines={1}
               selectable>
-              Addr:<Text style={styles.utxoLeftValue}> {shortAddr(u.address)}</Text>
+              Addr:
+              <Text style={styles.utxoLeftValue}> {shortAddr(u.address)}</Text>
             </Text>
             <Text
               style={[styles.utxoTime, {color: theme.colors.textSecondary}]}>
@@ -505,7 +602,10 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
               style={[styles.pathLabel, {color: theme.colors.textSecondary}]}
               numberOfLines={1}
               selectable>
-              Path: <Text style={styles.utxoLeftValue}>{formatPath(u.derivationPath)}</Text>
+              Path:{' '}
+              <Text style={styles.utxoLeftValue}>
+                {formatPath(u.derivationPath)}
+              </Text>
             </Text>
             <Text
               style={[styles.pathFull, {color: theme.colors.textSecondary}]}
@@ -571,6 +671,102 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
   return (
     <View
       style={[styles.container, {backgroundColor: theme.colors.background}]}>
+      {/* Balance summary card — static, sits above the scrollable list */}
+      <View
+        style={[
+          styles.summaryCard,
+          {backgroundColor: cardBg, borderColor: cardBorder},
+        ]}>
+        {/* Total row */}
+        <View style={styles.summaryRow}>
+          <Text style={[styles.summaryLabel, {color: theme.colors.text}]}>
+            Total
+          </Text>
+          <View style={styles.summaryRight}>
+            <Text style={[styles.summaryBtc, {color: theme.colors.text}]}>
+              {balanceSummary.fmt(balanceSummary.totalSats)} BTC
+            </Text>
+            {balanceSummary.fiat(balanceSummary.totalSats) && (
+              <Text
+                style={[
+                  styles.summaryFiat,
+                  {color: theme.colors.textSecondary},
+                ]}>
+                {balanceSummary.fiat(balanceSummary.totalSats)}
+              </Text>
+            )}
+          </View>
+        </View>
+
+        {/* Divider */}
+        <View style={[styles.summaryDivider, {backgroundColor: cardBorder}]} />
+
+        {/* Confirmed row */}
+        <View style={styles.summaryRow}>
+          <View style={styles.summaryLabelRow}>
+            <Text style={[styles.summaryLabel, {color: receivedColor}]}>
+              ✓ Confirmed
+            </Text>
+            <Text
+              style={[
+                styles.summaryCount,
+                {color: theme.colors.textSecondary},
+              ]}>
+              {balanceSummary.confirmedCount}{' '}
+              {balanceSummary.confirmedCount === 1 ? 'UTXO' : 'UTXOs'}
+            </Text>
+          </View>
+          <View style={styles.summaryRight}>
+            <Text style={[styles.summaryBtc, {color: receivedColor}]}>
+              {balanceSummary.fmt(balanceSummary.confirmedSats)} BTC
+            </Text>
+            {balanceSummary.fiat(balanceSummary.confirmedSats) && (
+              <Text
+                style={[
+                  styles.summaryFiat,
+                  {color: theme.colors.textSecondary},
+                ]}>
+                {balanceSummary.fiat(balanceSummary.confirmedSats)}
+              </Text>
+            )}
+          </View>
+        </View>
+
+        {/* Pending row — only when there are unconfirmed UTXOs */}
+        {balanceSummary.unconfirmedCount > 0 && (
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryLabelRow}>
+              <Text
+                style={[styles.summaryLabel, {color: theme.colors.warning}]}>
+                ⏳ Pending
+              </Text>
+              <Text
+                style={[
+                  styles.summaryCount,
+                  {color: theme.colors.textSecondary},
+                ]}>
+                {balanceSummary.unconfirmedCount}{' '}
+                {balanceSummary.unconfirmedCount === 1 ? 'UTXO' : 'UTXOs'}
+              </Text>
+            </View>
+            <View style={styles.summaryRight}>
+              <Text style={[styles.summaryBtc, {color: theme.colors.warning}]}>
+                +{balanceSummary.fmt(balanceSummary.unconfirmedSats)} BTC
+              </Text>
+              {balanceSummary.fiat(balanceSummary.unconfirmedSats) && (
+                <Text
+                  style={[
+                    styles.summaryFiat,
+                    {color: theme.colors.textSecondary},
+                  ]}>
+                  {balanceSummary.fiat(balanceSummary.unconfirmedSats)}
+                </Text>
+              )}
+            </View>
+          </View>
+        )}
+      </View>
+
       <FlatList
         style={styles.flexOne}
         contentContainerStyle={styles.listContent}
@@ -594,14 +790,6 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 }
               />
             </View>
-            <Text
-              style={[
-                styles.subtitle,
-                {color: theme.colors.textSecondary},
-              ]}
-              numberOfLines={2}>
-              Receive & change addresses · path shown per UTXO
-            </Text>
           </View>
         }
         ListFooterComponent={

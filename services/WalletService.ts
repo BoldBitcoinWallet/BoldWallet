@@ -19,6 +19,10 @@ export interface WalletBalance {
   usd: string;
   hasNonZeroBalance: boolean;
   timestamp: number;
+  /** Net mempool balance in satoshis across all HD addresses.
+   *  Positive = incoming unconfirmed.  Negative = outgoing unconfirmed.
+   *  Absent on legacy cached entries — treat as 0. */
+  pendingSats?: number;
 }
 
 /** In-scope HD address with derivation path and chain (for UTXO tab and multi-address send). */
@@ -1220,7 +1224,17 @@ export class WalletService {
 
   /**
    * Aggregated balance over all HD addresses (external chain 0..maxUsed+GAP, internal 0..changeIndex+GAP).
-   * Use this for HD wallets to include receive and change addresses.
+   *
+   * Uses GET /api/address/{addr} instead of /api/address/{addr}/utxo so that:
+   *   - Responses are ~50× smaller (6 integers vs a full UTXO array)
+   *   - All calls go through mempoolClient (30 s cache + in-flight dedup)
+   *   - The formula is equivalent: confirmed + unconfirmed funded minus spent
+   *
+   * balance_sats = (chain_stats.funded_txo_sum  - chain_stats.spent_txo_sum)
+   *             + (mempool_stats.funded_txo_sum - mempool_stats.spent_txo_sum)
+   *
+   * The UTXO list for transaction construction is fetched separately via
+   * fetchUtxosWithPaths (also mempoolClient-cached) and is not affected here.
    */
   public async getWalletBalanceAggregate(
     network: string,
@@ -1240,25 +1254,43 @@ export class WalletService {
           timestamp: Date.now(),
         };
       }
+      const api = await LocalCache.getItem('api');
+      if (!api) throw new Error('No API URL found');
+      const cleanApi = api.replace(/\/+$/, '');
+
       // Reuse the cached address list — no re-derivation if indexes haven't changed.
       const addressesWithPaths = await this.getHdAddressesWithPaths(network, addressType);
       const addresses = addressesWithPaths.map(a => a.address);
-      BBMTLibNativeModule.setAPI(network, this.currentApiUrl);
-      const api = await LocalCache.getItem('api');
-      if (!api) throw new Error('No API URL found');
-      BBMTLibNativeModule.setAPI(network, api);
-      let totalSats = new Big(0);
+
+      let confirmedSats = new Big(0);
+      let mempoolSats = new Big(0);
       for (const addr of addresses) {
         try {
-          const n = (await this.withTimeout(
-            `utxo-${addr}`,
-            BBMTLibNativeModule.totalUTXO(addr),
-          )) as number;
-          if (validateNumber(n)) totalSats = totalSats.add(n);
+          const res = await mempoolClient.get<{
+            chain_stats: {funded_txo_sum: number; spent_txo_sum: number};
+            mempool_stats: {funded_txo_sum: number; spent_txo_sum: number};
+          }>(`${cleanApi}/address/${encodeURIComponent(addr)}`);
+
+          if (!res.ok) {
+            continue;
+          }
+          const {chain_stats, mempool_stats} = res.data;
+          const addrConfirmed =
+            chain_stats.funded_txo_sum - chain_stats.spent_txo_sum;
+          const addrMempool =
+            mempool_stats.funded_txo_sum - mempool_stats.spent_txo_sum;
+          if (Number.isFinite(addrConfirmed) && addrConfirmed > 0) {
+            confirmedSats = confirmedSats.add(addrConfirmed);
+          }
+          if (Number.isFinite(addrMempool) && addrMempool !== 0) {
+            mempoolSats = mempoolSats.add(addrMempool);
+          }
         } catch {
-          // skip failed address
+          // skip failed address, continue with the rest
         }
       }
+
+      const totalSats = confirmedSats.add(mempoolSats);
       const balanceAfterPending = totalSats.sub(pendingSent);
       const finalBalance = balanceAfterPending.gte(0) ? balanceAfterPending : new Big(0);
       const newBalance = finalBalance.div(1e8).toFixed(8);
@@ -1267,11 +1299,19 @@ export class WalletService {
       if (btcRate > 0) {
         usdAmount = this.formatUSD(totalSats.mul(btcRate).div(1e8).toNumber());
       }
+      const pendingSatsValue = mempoolSats.toNumber();
+      dbg('WalletService: getWalletBalanceAggregate', {
+        addresses: addresses.length,
+        confirmedSats: confirmedSats.toFixed(0),
+        pendingSats: pendingSatsValue,
+        newBalance,
+      });
       const result: WalletBalance = {
         btc: newBalance,
         usd: usdAmount,
         hasNonZeroBalance,
         timestamp: Date.now(),
+        pendingSats: pendingSatsValue,
       };
       const cacheKey = `wallet_balance_aggregate_${network}_${addressType}`;
       await LocalCache.setItem(cacheKey, JSON.stringify(result));

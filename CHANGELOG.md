@@ -3,6 +3,12 @@
 ## [3.0.0] - 2026-03-04
 
 ### Added
+- **HTTP caching layer** (`MempoolClient`): In-memory cache wrapping all `fetch` calls to mempool.space; per-endpoint TTL (30 s default, 5 min for immutable tx details, 60 s for fee rates and BTC price); in-flight request deduplication prevents duplicate concurrent fetches; only HTTP-200 responses are cached; `invalidate(prefix)` and `invalidateAll()` for manual eviction.
+- **Universal 10-second API timeout**: Every outbound `fetch` through `MempoolClient` is capped at 10 s via `AbortController`; caller signals are combined using a React Native–compatible `combineSignals` helper.
+- **Balance via address-stats endpoint**: `getWalletBalanceAggregate` now uses `GET /api/address/:address` (`chain_stats` + `mempool_stats`) instead of fetching full UTXO arrays — responses are ~50× smaller and are fully cached through `MempoolClient`. Formula: `(chain_stats.funded − chain_stats.spent) + (mempool_stats.funded − mempool_stats.spent)` per address.
+- **Confirmed / unconfirmed balance breakdown in `WalletBalance`**: `pendingSats` field exposes the net mempool delta (positive = incoming unconfirmed, negative = outgoing unconfirmed) alongside the total balance.
+- **WalletHome pending chip**: When `pendingSats ≠ 0`, a small amber pill is shown below the fiat balance (`⏳ +X.XXXXXXXX BTC incoming` / `⏳ X.XXXXXXXX BTC outgoing`); hidden while loading or in privacy-blur mode.
+- **UtxosScreen balance summary card**: Static card pinned above the scrollable UTXO list showing Total, ✓ Confirmed, and ⏳ Pending balances with BTC, fiat, and UTXO counts; computed locally from the already-loaded UTXO set (zero extra API calls).
 - **Multi-path HD wallet (no-address-reuse)**: Full support for per-address indexing and spending across receive and change paths.
   - **WalletService**: Aggregate balance and UTXO fetch across all HD addresses; `getHdAddressesWithPaths` with in-memory cache; `fetchUtxosWithPaths` with sequential API calls and empty-address skip cache; `fetchMoreTransactionsForAddresses` for cursor-based multi-address transaction pagination.
   - **HdIndexService**: Centralized HD index management; discovery uses `GAP_LIMIT` and `MIN_SCAN_INDEX`; runtime address range based on `max(externalIndex, maxUsedExternal)` and `changeIndex`.
@@ -17,6 +23,8 @@
 - **RestoringIndexesModal**: Dedicated modal for index discovery progress.
 
 ### Changed
+- **`TransactionList`**: Migrated from `axios` to `MempoolClient`; manual `timeoutPromise` race removed (timeout now enforced inside `MempoolClient`).
+- **WalletHome balance rendering**: `ActivityIndicator` spinners replaced with a `react-native-reanimated` shimmer animation while balances load; fiat balance derived via `useMemo` from `balanceBTC × btcRate` to prevent the 0-BTC / non-zero-fiat display mismatch.
 - **Mempool API**: All WalletService calls to mempool.space (UTXOs, transactions) are sequential/synchronous to avoid rate limits and non-determinism.
 - **SendBitcoinModal**: Passes `activeNetwork` (e.g. testnet3) to WalletService; fee estimation uses multi-path UTXOs and native `estimateFeeWithUTXOs` with fallback.
 - **UtxosScreen / WalletHome**: Use aggregate balance and multi-address–aware flows.
@@ -28,12 +36,15 @@
   - Run-from-BBMTLib check so `build.sh` exists in mounted dir.
 
 ### Fixed
+- **Receive flow address mismatch**: `getCurrentReceivePathInfo` now atomically derives and returns `{path, index, address}` in one call; `WalletHome` passes the address from this combined result to `ReceiveModal`, eliminating QR flicker and stale-address display when advancing to a new receive index.
 - **Receive index**: No longer advances on network errors; discovery records partial/failed state without bumping indexes; `bumpExternalIndexIfCurrentUsed` only when address is actually used.
 - **Fee estimation**: Multi-path UTXO set used for native fee estimation; “insufficient funds” handling and logging aligned with multi-path.
 - **Transaction list**: Removed legacy single-address consolidation detection and Ix row; correct merge/sort for multi-address pagination.
 
 ### Technical Details
 - **Version**: `package.json` 3.0.0.
+- **New file**: `services/MempoolClient.ts` — `MempoolClient` class; `MempoolResponse<T>` interface; `buildKey`, `ttlForUrl`, `combineSignals` helpers; singleton `mempoolClient` export.
+- **`WalletBalance` interface**: Added optional `pendingSats?: number` (backward-compatible with cached entries).
 - **BBMTLib**: `go.mod`/`go.sum`; `tss/btc.go` (SpendingHashWithUTXOs, fee/UTXO); `tss/mpc_nostr.go`; iOS/Android native module updates; `Dockerfile.fips` (Go 1.25.x, TARGETARCH, cache mounts, WORKDIR /workspace).
 - **Context**: UserContext/WalletContext and utils.js updates for tabs and routing where applicable.
 

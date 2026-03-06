@@ -236,8 +236,8 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
           : theme.colors.bitcoinOrange,
-      borderWidth: 1.5,
-      paddingLeft: 13, // make room for the left accent bar
+      borderWidth: 2,
+      paddingLeft: 10, // make room for the left accent bar
     },
     flowItemAccentBar: {
       position: 'absolute',

@@ -109,6 +109,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [btcRate, setBtcRate] = useState(0);
   const [balanceBTC, setBalanceBTC] = useState<string>('0.00000000');
   const [balanceFiat, setBalanceFiat] = useState<string>('0');
+  const [pendingSats, setPendingSats] = useState<number>(0);
   const [_party, setParty] = useState<string>('');
   const [isBlurred, setIsBlurred] = useState<boolean>(false);
   const [isReceiveModalVisible, setIsReceiveModalVisible] = useState(false);
@@ -407,6 +408,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             const balanceNum = parseFloat(normalizedBTC);
             const finalBTC = balanceNum <= 0 ? '0.00000000' : normalizedBTC;
             setBalanceBTC(finalBTC);
+            setPendingSats(freshBalance.pendingSats ?? 0);
             const fiatBalance = Number(freshBalance.btc * rates[currency]);
             setBalanceFiat(Math.max(0, fiatBalance).toFixed(2));
             // Update cache timestamps with fresh data
@@ -486,6 +488,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               HapticFeedback.light();
             }
             setBalanceBTC(finalBTC);
+            setPendingSats(cachedBalance.pendingSats ?? 0);
             const fiatBalance =
               Number(cachedBalance.btc) * Number(rates[currency]);
             setBalanceFiat(Math.max(0, fiatBalance).toFixed(2));
@@ -875,6 +878,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setAddress('');
         setBalanceBTC('0.00000000');
         setBalanceFiat('0');
+        setPendingSats(0);
         setBtcPrice('');
         setBtcRate(0);
         setLegacyAddress('');
@@ -1022,6 +1026,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               const balanceNum = parseFloat(normalizedBTC);
               const finalBTC = balanceNum <= 0 ? '0.00000000' : normalizedBTC;
               setBalanceBTC(finalBTC);
+              setPendingSats(cachedBal.pendingSats ?? 0);
               const r =
                 (cachedPrice.rates?.[currency] as number) ||
                 (cachedPrice.rate as number) ||
@@ -1168,6 +1173,20 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         borderRadius: 6,
         backgroundColor: 'rgba(255,255,255,0.2)',
         alignSelf: 'center',
+      },
+      pendingChip: {
+        alignSelf: 'center',
+        marginTop: 6,
+        paddingHorizontal: 10,
+        paddingVertical: 3,
+        borderRadius: 12,
+        backgroundColor: 'rgba(255,179,0,0.18)',
+      },
+      pendingChipText: {
+        fontSize: 11,
+        fontWeight: '500',
+        color: '#FFB300',
+        letterSpacing: 0.2,
       },
     }),
     balanceContainer: {
@@ -2216,6 +2235,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                         )}
                       </AppPressable>
                     </Animated.View>
+                  )}
+                  {!isBlurred && !isBalanceLoading && pendingSats !== 0 && (
+                    <View style={styles.pendingChip}>
+                      <AppText style={styles.pendingChipText}>
+                        {pendingSats > 0
+                          ? `⏳ +${(pendingSats / 1e8).toFixed(8)} BTC incoming`
+                          : `⏳ ${(pendingSats / 1e8).toFixed(8)} BTC outgoing`}
+                      </AppText>
+                    </View>
                   )}
                 </>
               )}
