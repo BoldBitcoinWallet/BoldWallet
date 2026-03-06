@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 
 # Always run from the BBMTLib directory regardless of where the script is called from.
