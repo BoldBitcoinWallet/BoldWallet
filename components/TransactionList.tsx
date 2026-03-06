@@ -19,7 +19,7 @@ import {
 } from 'react-native';
 import AppPressable from './AppPressable';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import axios from 'axios';
+import mempoolClient from '../services/MempoolClient';
 import Toast from 'react-native-toast-message';
 import moment from 'moment';
 import {
@@ -491,17 +491,10 @@ const TransactionList = React.forwardRef<
           } else {
             const apiUrl = `${cleanBaseApi}/api/address/${address}/txs`;
             dbg('Starting fetch transactions from:', apiUrl);
-            const timeoutPromise = new Promise((_, reject) => {
-              setTimeout(() => reject(new Error('API timeout')), 10000);
+            const response = await mempoolClient.get<any[]>(apiUrl, {
+              signal: abortController.current.signal,
             });
-            const response = (await Promise.race([
-              axios.get(apiUrl, {
-                signal: abortController.current.signal,
-                timeout: 10000,
-              }),
-              timeoutPromise,
-            ])) as {data: any[]};
-            responseData = response.data;
+            responseData = response.ok ? response.data : [];
           }
           dbg(
             'TransactionList: Received response with',
@@ -938,18 +931,16 @@ const TransactionList = React.forwardRef<
       try {
         // Ensure baseApi doesn't end with a slash and add a single slash
         const cleanBaseApi = baseApi.replace(/\/+$/, '');
-        const response = await axios.get(
+        const response = await mempoolClient.get<any[]>(
           `${cleanBaseApi}/address/${address}/txs/chain/${lastSeenTxId}`,
-          {
-            signal: abortController.current?.signal,
-          },
+          {signal: abortController.current?.signal},
         );
-        dbg('Received more transactions:', response.data.length);
+        const newTransactions = response.ok ? response.data : [];
+        dbg('Received more transactions:', newTransactions.length);
         if (!isMounted.current) {
           dbg('Component unmounted during fetch more');
           return;
         }
-        const newTransactions = response.data;
         // Only set hasMoreTransactions to false if we get no new transactions
         if (newTransactions.length === 0) {
           dbg('No more transactions to load');

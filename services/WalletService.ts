@@ -2,6 +2,7 @@ import Big from 'big.js';
 import {BBMTLibNativeModule} from '../native_modules';
 import {dbg, getChangePath, getMainnetAPIList, getReceivePath, GAP_LIMIT, isLegacyWallet} from '../utils';
 import LocalCache from './LocalCache';
+import mempoolClient from './MempoolClient';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {
   getChangeIndex,
@@ -423,13 +424,13 @@ export class WalletService {
         )}/utxo`;
         const res = await this.withTimeout(
           `utxo-${address.slice(0, 12)}`,
-          fetch(utxoUrl, {signal: fetchSignal}),
+          mempoolClient.get<ApiUtxo[]>(utxoUrl, {signal: fetchSignal}),
           8000,
         );
         if (!res.ok) {
           continue;
         }
-        const rawList: ApiUtxo[] = await res.json();
+        const rawList: ApiUtxo[] = res.data;
         if (!Array.isArray(rawList)) {
           continue;
         }
@@ -566,12 +567,17 @@ export class WalletService {
   }
 
   /**
-   * Returns the current receive address derivation path and index for display (e.g. ReceiveModal).
+   * Returns the current receive address, derivation path, and index for display (e.g. ReceiveModal).
+   *
+   * All three values are derived together in one call so the returned object is
+   * always internally consistent — the address is guaranteed to match the path
+   * and index, eliminating the stale-state flicker that arises when address and
+   * path info are fetched from separate state variables.
    */
   public async getCurrentReceivePathInfo(
     network: string,
     addressType: string,
-  ): Promise<{path: string; index: number} | null> {
+  ): Promise<{path: string; index: number; address: string} | null> {
     const jks = await EncryptedStorage.getItem('keyshare');
     if (!jks) {
       dbg('WalletService: getCurrentReceivePathInfo - no keyshare');
@@ -581,13 +587,24 @@ export class WalletService {
     const useLegacyPath = isLegacyWallet(ks.created_at);
     const index = await getExternalIndex(network, addressType);
     const path = getReceivePath(network, addressType, useLegacyPath, index);
+    const pub = await BBMTLibNativeModule.derivePubkey(
+      ks.pub_key,
+      ks.chain_code_hex,
+      path,
+    );
+    const address = await BBMTLibNativeModule.btcAddress(
+      pub,
+      network,
+      addressType,
+    );
     dbg('WalletService: getCurrentReceivePathInfo', {
       network,
       addressType,
       index,
       path,
+      address: address.slice(0, 12),
     });
-    return {path, index};
+    return {path, index, address};
   }
 
   /**
@@ -666,7 +683,7 @@ export class WalletService {
     try {
       const response = await this.withTimeout(
         `txs-${address.slice(0, 12)}`,
-        fetch(url, {signal: this.abortController.signal}),
+        mempoolClient.get(url, {signal: this.abortController.signal}),
         5000,
       );
       if (!response.ok) {
@@ -676,7 +693,7 @@ export class WalletService {
         });
         throw new Error(`isAddressUsed HTTP ${response.status}`);
       }
-      const data = (await response.json()) as unknown;
+      const data = response.data as unknown;
       const hasTxs = Array.isArray(data) && data.length > 0;
       dbg('WalletService: isAddressUsed', {
         address: address.slice(0, 12),
@@ -964,12 +981,12 @@ export class WalletService {
           dbg('WalletService: Trying price API URL:', priceUrl);
           const response = await this.withTimeout(
             'price',
-            fetch(priceUrl, {signal: this.abortController.signal}),
+            mempoolClient.get(priceUrl, {signal: this.abortController.signal}),
           );
           if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            throw new Error(`HTTP ${response.status}`);
           }
-          const data = await response.json();
+          const data = response.data as any;
           dbg('WalletService: Raw price data received from', priceUrl, ':', data);
           if (!data || !data.USD || !validateNumber(data.USD)) {
             dbg('WalletService: Invalid price data received from', priceUrl, ':', data);
@@ -1429,9 +1446,9 @@ export class WalletService {
     for (const addr of addresses) {
       try {
         const url = `${cleanBase}/api/address/${encodeURIComponent(addr)}/txs`;
-        const res = await this.withTimeout(`txs-${addr.slice(0, 12)}`, fetch(url), 8000);
+        const res = await this.withTimeout(`txs-${addr.slice(0, 12)}`, mempoolClient.get(url), 8000);
         if (!res.ok) { cursors[addr] = null; continue; }
-        const data = (await res.json()) as any[];
+        const data = res.data as any[];
         if (!Array.isArray(data)) { cursors[addr] = null; continue; }
         for (const tx of data) {
           if (!seen.has(tx.txid)) { seen.add(tx.txid); merged.push(tx); }
@@ -1467,9 +1484,9 @@ export class WalletService {
       if (!cursor) continue; // already exhausted
       try {
         const url = `${cleanBase}/api/address/${encodeURIComponent(addr)}/txs/chain/${cursor}`;
-        const res = await this.withTimeout(`txs-more-${addr.slice(0, 12)}`, fetch(url), 8000);
+        const res = await this.withTimeout(`txs-more-${addr.slice(0, 12)}`, mempoolClient.get(url), 8000);
         if (!res.ok) { updatedCursors[addr] = null; continue; }
-        const data = (await res.json()) as any[];
+        const data = res.data as any[];
         if (!Array.isArray(data) || data.length === 0) {
           updatedCursors[addr] = null;
           continue;
@@ -1504,19 +1521,14 @@ export class WalletService {
     apiUrl: string,
   ): Promise<(UtxoWithPath & {scriptpubkey: string})[]> {
     const base = apiUrl.replace(/\/+$/, '').replace(/\/api\/?$/, '');
-    // Batch unique txids to avoid duplicate fetches for multi-input transactions.
-    const txCache: Map<string, any> = new Map();
+    // mempoolClient deduplicates concurrent fetches for the same txid and caches
+    // the result for 5 min (immutable confirmed tx content), so no local txCache needed.
     const results: (UtxoWithPath & {scriptpubkey: string})[] = [];
     for (const u of utxos) {
       let scriptpubkey = '';
       try {
-        if (!txCache.has(u.txid)) {
-          const res = await fetch(`${base}/api/tx/${u.txid}`);
-          if (res.ok) {
-            txCache.set(u.txid, await res.json());
-          }
-        }
-        const txData = txCache.get(u.txid);
+        const res = await mempoolClient.get<any>(`${base}/api/tx/${u.txid}`);
+        const txData = res.ok ? res.data : undefined;
         scriptpubkey = txData?.vout?.[u.vout]?.scriptpubkey ?? '';
       } catch (e) {
         dbg('WalletService: enrichUtxosWithScriptpubkey failed for', u.txid, e);

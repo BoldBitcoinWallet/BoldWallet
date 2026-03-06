@@ -17,7 +17,7 @@ import * as RNFS from 'react-native-fs';
 import {dbg} from '../utils';
 import {useTheme} from '../theme';
 import {capitalize} from 'lodash';
-export type ReceivePathInfo = {path: string; index: number} | null;
+export type ReceivePathInfo = {path: string; index: number; address: string} | null;
 
 const ReceiveModal: React.FC<{
   address: string;

@@ -1,4 +1,4 @@
-import React, {useEffect, useState, useCallback, useRef} from 'react';
+import React, {useEffect, useState, useCallback, useRef, useMemo} from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,8 @@ import AppPressable from '../components/AppPressable';
 import Animated, {
   useSharedValue,
   withTiming,
+  withRepeat,
+  withSequence,
   useAnimatedStyle,
 } from 'react-native-reanimated';
 import QRScanner from '../components/QRScanner';
@@ -119,6 +121,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [receivePathInfo, setReceivePathInfo] = useState<{
     path: string;
     index: number;
+    address: string;
   } | null>(null);
   const [isSignedPSBTModalVisible, setIsSignedPSBTModalVisible] =
     useState(false);
@@ -209,6 +212,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   // Animation and visual feedback states
   const [isBalanceLoading, setIsBalanceLoading] = useState(false);
   const balanceUpdateAnimation = useSharedValue(1);
+  const shimmerOpacity = useSharedValue(0.3);
   const [balanceError, setBalanceError] = useState<string | null>(null);
   const previousBalanceRef = useRef<string>('0.00000000');
   // Helper function for showing error toasts
@@ -1150,6 +1154,22 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     sendButtonDisabled: {
       opacity: 0.6,
     } as const,
+    ...StyleSheet.create({
+      shimmerBTC: {
+        height: 38,
+        width: '60%',
+        borderRadius: 8,
+        backgroundColor: 'rgba(255,255,255,0.25)',
+        alignSelf: 'center',
+      },
+      shimmerFiat: {
+        height: 22,
+        width: '38%',
+        borderRadius: 6,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        alignSelf: 'center',
+      },
+    }),
     balanceContainer: {
       ...createStyles(theme).balanceContainer,
       backgroundColor: isDarkMode
@@ -2023,6 +2043,41 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     opacity: balanceUpdateAnimation.value,
   }));
 
+  // Pulse shimmer while balance is loading.
+  useEffect(() => {
+    if (isBalanceLoading) {
+      shimmerOpacity.value = withRepeat(
+        withSequence(
+          withTiming(0.65, {duration: 700}),
+          withTiming(0.25, {duration: 700}),
+        ),
+        -1,
+        false,
+      );
+    } else {
+      shimmerOpacity.value = withTiming(0.3, {duration: 150});
+    }
+  }, [isBalanceLoading, shimmerOpacity]);
+
+  const shimmerAnimStyle = useAnimatedStyle(() => ({
+    opacity: shimmerOpacity.value,
+  }));
+
+  /**
+   * Fiat display value derived from balanceBTC × btcRate so the two rows are
+   * always consistent.  Falls back to the stored balanceFiat only when the
+   * price has not been loaded yet (btcRate === 0).
+   */
+  const displayFiat = useMemo(() => {
+    if (balanceFiat === '-') {
+      return '-';
+    }
+    if (btcRate > 0) {
+      return (parseFloat(balanceBTC || '0') * btcRate).toFixed(2);
+    }
+    return balanceFiat;
+  }, [balanceBTC, balanceFiat, btcRate]);
+
   if (loading && !isInitialized) {
     return <WalletSkeleton />;
   }
@@ -2080,11 +2135,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                       }`}
                       accessibilityHint="Double tap to toggle balance visibility"
                       accessibilityRole="button">
-                      {isBalanceLoading && !isBlurred && !isRefreshing ? (
-                        <ActivityIndicator
-                          size="small"
-                          color={theme.colors.white}
-                          style={styles.balanceLoadingIndicator}
+                      {isBalanceLoading && !isBlurred ? (
+                        <Animated.View
+                          style={[styles.shimmerBTC, shimmerAnimStyle]}
                         />
                       ) : (
                         <Text
@@ -2123,7 +2176,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                             ? 'hidden'
                             : (() => {
                                 const fiatValue =
-                                  balanceFiat === '-' ? '0' : balanceFiat;
+                                  displayFiat === '-' ? '0' : displayFiat;
                                 return balanceFormattingEnabled
                                   ? `${getCurrencySymbol(
                                       selectedCurrency,
@@ -2135,11 +2188,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                         }`}
                         accessibilityHint="Double tap to toggle balance visibility"
                         accessibilityRole="button">
-                        {isBalanceLoading && !isBlurred && !isRefreshing ? (
-                          <ActivityIndicator
-                            size="small"
-                            color={theme.colors.white}
-                            style={styles.balanceLoadingIndicator}
+                        {isBalanceLoading && !isBlurred ? (
+                          <Animated.View
+                            style={[styles.shimmerFiat, shimmerAnimStyle]}
                           />
                         ) : (
                           <Text
@@ -2152,7 +2203,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                               ? `${getCurrencySymbol(selectedCurrency)} ******`
                               : (() => {
                                   const fiatValue =
-                                    balanceFiat === '-' ? '0' : balanceFiat;
+                                    displayFiat === '-' ? '0' : displayFiat;
                                   return balanceFormattingEnabled
                                     ? `${getCurrencySymbol(
                                         selectedCurrency,
@@ -2517,7 +2568,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       />
       {isReceiveModalVisible && (
         <ReceiveModal
-          address={address}
+          address={receivePathInfo?.address ?? address}
           addressType={addressType}
           baseApi={apiBase}
           network={network as 'mainnet' | 'testnet'}

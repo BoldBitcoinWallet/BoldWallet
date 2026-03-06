@@ -276,7 +276,9 @@
 @end
 
 /**
- * UTXOWithPath extends UTXO with derivation path for HD wallets (per-input signing).
+ * UTXOWithPath extends UTXO with derivation path and scriptpubkey for HD wallets (per-input signing).
+Scriptpubkey (hex) is optional: when present, FetchUTXODetails is skipped during signing,
+removing the last network call from the MPC signing loop.
  */
 @interface TssUTXOWithPath : NSObject <goSeqRefInterface> {
 }
@@ -287,6 +289,7 @@
 // skipped field UTXOWithPath.UTXO with unsupported type: github.com/BoldBitcoinWallet/BBMTLib/tss.UTXO
 
 @property (nonatomic) NSString* _Nonnull derivationPath;
+@property (nonatomic) NSString* _Nonnull scriptpubkey;
 @end
 
 // skipped const MaxUint32 with unsupported type: uint32
@@ -468,6 +471,7 @@ Parameters:
   - npubsSorted: Comma-separated sorted list of all party npubs (for sessionFlag calculation)
   - balanceSats: Balance in satoshis (for sessionFlag calculation)
   - amountSatoshi: Transaction amount in satoshis (for sessionFlag calculation)
+
 NostrMpcSendBTC performs a Nostr-based MPC Bitcoin transaction.
 changeAddress: when non-empty, change output is sent here (HD internal chain); otherwise to senderAddress.
  */
@@ -569,7 +573,7 @@ FOUNDATION_EXPORT NSString* _Nonnull TssSpendingHash(NSString* _Nullable senderA
 Instead of fetching UTXOs from a single address, it accepts a pre-fetched
 pool (JSON-encoded []utxoWithPathJSON) that covers all HD addresses.
 It selects UTXOs using the same "smallest-first" strategy and returns a
-deterministic SHA-256 hex over "txid:vout" pairs – identical across
+deterministic SHA-256 hex over "txid:vout" pairs - identical across
 co-signing devices as long as they supply the same UTXO set.
  */
 FOUNDATION_EXPORT NSString* _Nonnull TssSpendingHashWithUTXOs(NSString* _Nullable utxosWithPathsJSON, NSString* _Nullable receiverAddress, NSString* _Nullable amountSatoshiStr, NSError* _Nullable* _Nullable error);
