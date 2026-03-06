@@ -117,7 +117,6 @@ gomobile bind -v -target=android -androidapi 21 -ldflags="-extldflags=-Wl,-z,max
 # Copy Artifacts
 if [[ -d "../android/app/libs" ]]; then
     # Run go mod tidy again at the end to ensure go.mod/go.sum are clean
-    go mod tidy || warn "go mod tidy failed"
     info "Copying Android artifacts..."
     cp -v tss.aar ../android/app/libs/tss.aar || warn "Copy tss.aar failed"
     echo "✓ tss.aar copied to ../android/app/libs/tss.aar"
@@ -151,10 +150,11 @@ if [[ "$(uname)" == "Darwin" ]]; then
         cp -a ./Tss.xcframework ../ios/ || warn "Copy Tss.xcframework failed"
         echo "✓ Tss.xcframework copied to ../ios/Tss.xcframework"
     fi
-    go mod tidy || warn "go mod tidy failed"
 else
     info "Not running on macOS → Skipping iOS/macOS targets"
 fi
 
-
+info "Tidying dependencies..."
+go mod tidy || warn "go mod tidy failed"
+    
 info "Build complete!"
