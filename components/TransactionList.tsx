@@ -751,7 +751,7 @@ const TransactionList = React.forwardRef<
       setHasMoreTransactions(true);
       setLastSeenTxId(null);
       let mounted = true;
-      let refreshInterval: NodeJS.Timeout | null = null;
+
       const controller = new AbortController();
       abortController.current = controller;
       const fetchData = async (silent: boolean = false) => {
@@ -777,18 +777,9 @@ const TransactionList = React.forwardRef<
       if (!isFetching.current && !isRefreshingRef.current) {
         fetchData(true);
       }
-      // Set up refresh interval
-      refreshInterval = setInterval(() => {
-        if (mounted && !isFetching.current && !isRefreshingRef.current) {
-          fetchData(true);
-        }
-      }, 30000); // Refresh every 30 seconds
       return () => {
         dbg('Cleaning up fetch effect');
         mounted = false;
-        if (refreshInterval) {
-          clearInterval(refreshInterval);
-        }
         if (abortController.current) {
           abortController.current.abort();
         }

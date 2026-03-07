@@ -401,12 +401,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             const normalizedBTC = freshBalance.btc || '0.00000000';
             const balanceNum = parseFloat(normalizedBTC);
             const finalBTC = balanceNum <= 0 ? '0.00000000' : normalizedBTC;
-            dbg('WalletHome: Final BTC:', finalBTC);
+            dbg('WalletHome: Final BTC (fresh):', finalBTC);
             setBalanceBTC(finalBTC);
             setPendingSats(freshBalance.pendingSats ?? 0);
             const fiatBalance =
               Number(freshBalance.btc) * Number(rates[currency] || 0);
-            setBalanceFiat(Math.max(0, fiatBalance).toFixed(2));
+            setBalanceFiat(Math.max(0, fiatBalance).toFixed(2) || '-');
             // Update cache timestamps with fresh data
             setCacheTimestamps({
               price: freshPrice.timestamp,
@@ -474,7 +474,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             // Normalize balance to ensure no negative zero
             const normalizedBTC = cachedBalance.btc || '0.00000000';
             const balanceNum = parseFloat(normalizedBTC);
-            const finalBTC = balanceNum <= 0 ? '0.00000000' : normalizedBTC;
+            const finalBTC = balanceNum <= 0 ? '-' : normalizedBTC;
             // Animate balance update if it changed
             if (finalBTC !== previousBalanceRef.current) {
               // Trigger fade animation
@@ -489,7 +489,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             setPendingSats(cachedBalance.pendingSats ?? 0);
             const fiatBalance =
               Number(cachedBalance.btc) * Number(rates[currency]);
-            setBalanceFiat(Math.max(0, fiatBalance).toFixed(2));
+            setBalanceFiat(Math.max(0, fiatBalance).toFixed(2) || '-');
             setCacheTimestamps({
               price: cachedPrice.timestamp,
               balance: cachedBalance.timestamp,
@@ -659,12 +659,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         // Update balance state - normalize to ensure no negative zero
         const normalizedBTC = (balanceResult as any).btc || '0.00000000';
         const balanceNum = parseFloat(normalizedBTC);
-        const finalBTC = balanceNum <= 0 ? '0.00000000' : normalizedBTC;
+        const finalBTC = balanceNum <= 0 ? '-' : normalizedBTC;
         dbg('checkBalanceForSend: Final BTC:', finalBTC);
         setBalanceBTC(finalBTC);
         if (btcRate > 0) {
           const fiatBalance = Number((balanceResult as any).btc) * btcRate;
-          setBalanceFiat(Math.max(0, fiatBalance).toFixed(2));
+          setBalanceFiat(Math.max(0, fiatBalance).toFixed(2) || '-');
         }
         return newBalance;
       }
@@ -943,7 +943,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setAddress('');
         dbg('WalletHome: Setting balance to -');
         setBalanceBTC('-');
-        setBalanceFiat('0');
+        setBalanceFiat('-');
         setPendingSats(0);
         setBtcPrice('');
         setBtcRate(0);
@@ -1093,7 +1093,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               // Normalize balance to ensure no negative zero
               const normalizedBTC = cachedBal.btc || '0.00000000';
               const balanceNum = parseFloat(normalizedBTC);
-              const finalBTC = balanceNum <= 0 ? '0.00000000' : normalizedBTC;
+              const finalBTC = balanceNum <= 0 ? '-' : normalizedBTC;
               dbg('reinitializeWallet: Final BTC (cached):', finalBTC);
               setBalanceBTC(finalBTC);
               setPendingSats(cachedBal.pendingSats ?? 0);
@@ -1103,7 +1103,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 0;
               if (r && Number(cachedBal.btc) >= 0) {
                 const fiatBalance = Number(cachedBal.btc) * r;
-                setBalanceFiat(Math.max(0, fiatBalance).toFixed(2));
+                setBalanceFiat(Math.max(0, fiatBalance).toFixed(2) || '-');
               }
             }
             // initial transactions
@@ -1462,7 +1462,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       // Update fiat balance with new currency rate
       if (balanceBTC) {
         const newBalance = Number(balanceBTC) * priceData[currency.code];
-        setBalanceFiat(newBalance.toFixed(2));
+        setBalanceFiat(newBalance.toFixed(2) || '-');
       }
     }
   };
@@ -1630,7 +1630,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           // Normalize balance to ensure no negative zero
           const normalizedBTC = cachedBal.btc || '0.00000000';
           const balanceNum = parseFloat(normalizedBTC);
-          const finalBTC = balanceNum <= 0 ? '0.00000000' : normalizedBTC;
+          const finalBTC = balanceNum <= 0 ? '-' : normalizedBTC;
           dbg('WalletHome: Final BTC (cachedBal):', finalBTC);
           setBalanceBTC(finalBTC);
           const r =
@@ -2337,13 +2337,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                               : (() => {
                                   const fiatValue =
                                     displayFiat === '-' ? '0' : displayFiat;
-                                  return balanceFormattingEnabled
-                                    ? `${getCurrencySymbol(
-                                        selectedCurrency,
-                                      )}${presentFiat(fiatValue)}`
-                                    : `${getCurrencySymbol(
-                                        selectedCurrency,
-                                      )}${fiatValue}`;
+                                  const symbol =
+                                    getCurrencySymbol(selectedCurrency);
+                                  const formattedFiat = balanceFormattingEnabled
+                                    ? presentFiat(fiatValue)
+                                    : fiatValue;
+                                  return isNaN(Number(formattedFiat))
+                                    ? '-'
+                                    : symbol + formattedFiat;
                                 })()}
                           </Text>
                         )}

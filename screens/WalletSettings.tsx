@@ -677,7 +677,8 @@ const SettingsSectionGroup: React.FC<SettingsSectionGroupProps> = ({
   theme,
 }) => (
   <View style={styles.sectionGroup}>
-    <Text style={[styles.sectionGroupTitle, {color: theme.colors.textSecondary}]}>
+    <Text
+      style={[styles.sectionGroupTitle, {color: theme.colors.textSecondary}]}>
       {title.toUpperCase()}
     </Text>
     {children}
@@ -785,13 +786,59 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       return newState;
     });
   };
+  // Run HD index discovery + cache pre-warm for (network, addressType). Same as Clear Cache.
+  // Call after changing address type or network so WalletHome loads correct balance and tx list.
+  const runRestoreIndexing = useCallback(
+    async (network: string, addressType: string) => {
+      setIsRestoringIndexes(true);
+      setRestoreProgress(null);
+      try {
+        const ws = WalletService.getInstance();
+        const apiUrl =
+          (await LocalCache.getItem(`api_${network}`)) ||
+          (await LocalCache.getItem('api')) ||
+          (network === 'mainnet'
+            ? 'https://mempool.space/api'
+            : 'https://mempool.space/testnet/api');
+        await ws.discoverHdIndexesForNetwork(
+          network,
+          addressType,
+          apiUrl,
+          (chain, index, gapIndex) =>
+            setRestoreProgress({chain, index, gapIndex}),
+        );
+        ws.invalidateAddressCache();
+        await ws.getHdAddressesWithPaths(network, addressType);
+        mempoolClient.invalidateAll();
+      } finally {
+        setIsRestoringIndexes(false);
+        setRestoreProgress(null);
+      }
+    },
+    [],
+  );
   // Expand section when opened from header network button (e.g. expandSection: 'advanced' for Network Providers)
   useEffect(() => {
     const section = route.params?.expandSection;
     const validSections = new Set([
-      'theme', 'haptics', 'displayFormat', 'backup', 'advanced', 'nostr',
-      'about', 'legal', 'storage', 'appIcon', 'devicePairing', 'addressType',
-      'fontTesting', 'devDebug', 'mempoolPlayground', 'utxos', 'psbt', 'wallet',
+      'theme',
+      'haptics',
+      'displayFormat',
+      'backup',
+      'advanced',
+      'nostr',
+      'about',
+      'legal',
+      'storage',
+      'appIcon',
+      'devicePairing',
+      'addressType',
+      'fontTesting',
+      'devDebug',
+      'mempoolPlayground',
+      'utxos',
+      'psbt',
+      'wallet',
     ]);
     if (section && validSections.has(section)) {
       setExpandedSections(prev => ({...prev, [section]: true}));
@@ -928,8 +975,19 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     const newNetwork = value ? 'testnet3' : 'mainnet';
     const networkName = value ? 'Testnet' : 'Mainnet';
     await setActiveNetwork(newNetwork);
+    await runRestoreIndexing(newNetwork, activeAddressType);
     dbg('Network toggle: Navigating to Wallet tab');
-    navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
+    navigation.reset(
+      getResetToMainTabsWallet(
+        {},
+        {
+          showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
+          showUtxos: showUtxosTab,
+          showPsbt: showPsbtTab,
+          showWallet: showWalletTab,
+        },
+      ),
+    );
     // Show brief feedback alert after a brief delay to ensure navigation completes
     setTimeout(() => {
       // warn user if test net bitcoin is not real
@@ -982,7 +1040,17 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     await setActiveApiProvider(api);
     dbg('API reset and propagated successfully:', api);
     // Navigate to home after reset
-    navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
+    navigation.reset(
+      getResetToMainTabsWallet(
+        {},
+        {
+          showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
+          showUtxos: showUtxosTab,
+          showPsbt: showPsbtTab,
+          showWallet: showWalletTab,
+        },
+      ),
+    );
     // Show success alert after navigation
     setTimeout(() => {
       Alert.alert('Success', 'API endpoint reset to default!');
@@ -1067,7 +1135,17 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       Alert.alert('Success', 'API endpoint updated successfully!');
       dbg('=== API saved and propagated successfully:', normalizedApi);
       // Navigate to home after successful save
-      navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
+      navigation.reset(
+        getResetToMainTabsWallet(
+          {},
+          {
+            showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
+            showUtxos: showUtxosTab,
+            showPsbt: showPsbtTab,
+            showWallet: showWalletTab,
+          },
+        ),
+      );
     } catch (error) {
       dbg('Error in saveAPI:', error);
       Alert.alert('Error', 'Failed to save API endpoint. Please try again.');
@@ -2341,1070 +2419,1150 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         scrollEventThrottle={16}>
         {/* App: Theme, Balance Display, Haptics, Storage */}
         <SettingsSectionGroup title="App" styles={styles} theme={theme}>
-        <CollapsibleSection
-          title="Theme"
-          isExpanded={expandedSections.theme}
-          onToggle={() => toggleSection('theme')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.toggleDescription}>
-            Choose your preferred color theme. OS Default follows your system
-            settings.
-          </Text>
-          <View style={styles.themeOptionContainer}>
-            <AppPressable
-              style={[
-                styles.themeOption,
-                themeMode === 'os' && styles.themeOptionSelected,
-              ]}
-              onPress={() => {
-                setThemeMode('os');
-              }}
-              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-              <View style={styles.themeOptionContent}>
-                <Text
-                  style={[
-                    styles.themeOptionLabel,
-                    themeMode === 'os' && styles.themeOptionLabelSelected,
-                  ]}>
-                  OS Default
-                </Text>
-                {themeMode === 'os' && (
-                  <Image
-                    source={require('../assets/check-icon.png')}
-                    style={styles.themeOptionCheck}
-                    resizeMode="contain"
-                  />
-                )}
-              </View>
-            </AppPressable>
-            <AppPressable
-              style={[
-                styles.themeOption,
-                themeMode === 'light' && styles.themeOptionSelected,
-              ]}
-              onPress={() => {
-                setThemeMode('light');
-              }}
-              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-              <View style={styles.themeOptionContent}>
-                <Text
-                  style={[
-                    styles.themeOptionLabel,
-                    themeMode === 'light' && styles.themeOptionLabelSelected,
-                  ]}>
-                  Light
-                </Text>
-                {themeMode === 'light' && (
-                  <Image
-                    source={require('../assets/check-icon.png')}
-                    style={styles.themeOptionCheck}
-                    resizeMode="contain"
-                  />
-                )}
-              </View>
-            </AppPressable>
-            <AppPressable
-              style={[
-                styles.themeOption,
-                themeMode === 'dark' && styles.themeOptionSelected,
-              ]}
-              onPress={() => {
-                setThemeMode('dark');
-              }}
-              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-              <View style={styles.themeOptionContent}>
-                <Text
-                  style={[
-                    styles.themeOptionLabel,
-                    themeMode === 'dark' && styles.themeOptionLabelSelected,
-                  ]}>
-                  Dark
-                </Text>
-                {themeMode === 'dark' && (
-                  <Image
-                    source={require('../assets/check-icon.png')}
-                    style={styles.themeOptionCheck}
-                    resizeMode="contain"
-                  />
-                )}
-              </View>
-            </AppPressable>
-          </View>
-        </CollapsibleSection>
-        <CollapsibleSection
-          title="Balance Display"
-          isExpanded={expandedSections.displayFormat}
-          onToggle={() => toggleSection('displayFormat')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.hintText}>
-            Bitcoin uses <Text style={styles.hintBold}>8 decimal places</Text>{' '}
-            for full accuracy.
-          </Text>
-
-          <Text style={[styles.hintText, styles.hintSpacing]}>
-            <Text style={styles.hintAmount}>1 BTC</Text> ={' '}
-            <Text style={styles.hintAmount}>100,000,000 satoshis (sats)</Text>
-          </Text>
-
-          <Text style={[styles.hintText, styles.hintSpacing]}>
-            You can choose how your balance is shown:
-          </Text>
-
-          <Text style={[styles.hintText, styles.hintSpacing]}>
-            <Text style={styles.hintBold}>Formatted:</Text> Thousand separators
-            make large numbers easier to read and verify decimal precision.
-            Example: <Text style={styles.hintAmount}>1,234.56,789,010 ₿</Text>{' '}
-            or <Text style={styles.hintAmount}>123,456,789,010 sats</Text>
-          </Text>
-
-          <Text style={[styles.hintText, styles.hintSpacing]}>
-            <Text style={styles.hintBold}>Raw Numbers:</Text> Exact values
-            without separators. Example:{' '}
-            <Text style={styles.hintAmount}>1234.56789 ₿</Text> or{' '}
-            <Text style={styles.hintAmount}>123456789000 sats</Text>
-          </Text>
-          <View style={styles.toggleContainer}>
-            <Text style={styles.toggleLabel}>Raw Numbers</Text>
-            <AppSwitch
-              onValueChange={handleToggleBalanceFormatting}
-              value={balanceFormattingEnabled}
-            />
-            <Text style={styles.toggleLabel}>Formatted</Text>
-          </View>
-        </CollapsibleSection>
-        <CollapsibleSection
-          title="Haptics"
-          isExpanded={expandedSections.haptics}
-          onToggle={() => toggleSection('haptics')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.toggleDescription}>
-            Enable vibration feedback. OS settings may override this.
-          </Text>
-          <View style={styles.toggleContainer}>
-            <Text style={styles.toggleLabel}>Haptics Off</Text>
-            <AppSwitch
-              onValueChange={handleToggleHaptics}
-              value={hapticsEnabled}
-            />
-            <Text style={styles.toggleLabel}>Haptics On</Text>
-          </View>
-        </CollapsibleSection>
-        {/* Storage - inside App */}
-        <CollapsibleSection
-          title="Storage"
-          isExpanded={expandedSections.storage}
-          onToggle={() => toggleSection('storage')}
-          styles={styles}
-          theme={theme}>
-          <View style={styles.apiItem}>
-            <Text style={styles.apiName}>Cache Maintenance</Text>
-            <Text style={styles.apiDescription}>
-              Clear cached balances and history.
-            </Text>
-          </View>
-          <AppPressable
-            style={[styles.button, styles.deleteButton]}
-            onPress={async () => {
-              try {
-                setIsRestoringIndexes(true);
-                setRestoreProgress(null);
-                dbg('WalletSettings: Storage clear - clearing LocalCache');
-                await LocalCache.clear();
-                dbg('WalletSettings: LocalCache cleared, running restore discovery', {
-                  network: activeNetwork,
-                  addressType: activeAddressType,
-                });
-                // Restore discovery: re-scan chain to repopulate HD indexes
-                const ws = WalletService.getInstance();
-                const apiUrl =
-                  activeApiProvider ||
-                  (activeNetwork === 'mainnet'
-                    ? 'https://mempool.space/api'
-                    : 'https://mempool.space/testnet/api');
-                await ws.discoverHdIndexesForNetwork(
-                  activeNetwork,
-                  activeAddressType,
-                  apiUrl,
-                  (chain, index, gapIndex) =>
-                    setRestoreProgress({chain, index, gapIndex}),
-                );
-                dbg('WalletSettings: Restore discovery done, re-persisting network/api');
-                // Pre-warm the in-memory HD address cache and wipe stale HTTP
-                // cache entries — same post-discovery pattern as UserPreferenceScreen.
-                // Without this, WalletHome loads with a cold hdAddressCache
-                // (causing a 2-5 s derivation delay and premature single-address
-                // TransactionList fetch) and the mempoolClient cache still holds
-                // discovery-era /txs snapshots that mask the real transaction history.
-                ws.invalidateAddressCache();
-                await ws.getHdAddressesWithPaths(activeNetwork, activeAddressType);
-                mempoolClient.invalidateAll();
-                // Re-persist network/api so app continues to work
-                await LocalCache.setItem('network', activeNetwork);
-                await LocalCache.setItem('api', apiUrl);
-                await LocalCache.setItem('addressType', activeAddressType);
-                setUsageSize(await LocalCache.usageSize());
-                dbg('WalletSettings: Storage clear complete');
-                Alert.alert('Cache Cleared', 'Cache cleared successfully.');
-                navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
-              } catch (e) {
-                dbg('Error clearing cache', e);
-                Alert.alert(
-                  'Error',
-                  'Failed to clear cache. Please try again.',
-                );
-              } finally {
-                setIsRestoringIndexes(false);
-                setRestoreProgress(null);
-              }
-            }}
-            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-            <View style={styles.buttonContent}>
-              <Image
-                source={require('../assets/delete-icon.png')}
-                style={[styles.buttonIcon, styles.whiteTint]}
-                resizeMode="contain"
-              />
-              <Text style={styles.buttonText}>
-                Clear Cache ({usageSize.mb})
-              </Text>
-            </View>
-          </AppPressable>
-        </CollapsibleSection>
-        {/* App Icon - Android Only */}
-        {Platform.OS === 'android' && (
           <CollapsibleSection
-            title="App Icon"
-            isExpanded={expandedSections.appIcon}
-            onToggle={() => toggleSection('appIcon')}
+            title="Theme"
+            isExpanded={expandedSections.theme}
+            onToggle={() => toggleSection('theme')}
             styles={styles}
             theme={theme}>
-            <View style={styles.appIconHintRow}>
-              <View style={styles.appIconHintTextContainer}>
-                <Text style={styles.appIconHintTitle}>
-                  Blend in when you need to.
-                </Text>
-                <Text style={styles.appIconHintSubtitle}>
-                  Switch to the calculator icon when you want your wallet to
-                  look like just another app on your home screen.
-                </Text>
-              </View>
-            </View>
             <Text style={styles.toggleDescription}>
-              Change the app's launcher icon on your device.
+              Choose your preferred color theme. OS Default follows your system
+              settings.
             </Text>
-            <View style={styles.toggleContainer}>
-              <Text style={styles.toggleLabel}>Bold Wallet</Text>
-              <AppSwitch
-                value={selectedIcon === 'alternative'}
-                onValueChange={async value => {
-                  try {
-                    const newIcon = value ? 'alternative' : 'default';
-                    if (!IconChanger || !IconChanger.changeIcon) {
-                      Alert.alert(
-                        'Error',
-                        'Icon switching is not available on this device.',
-                        [{text: 'OK'}],
-                      );
-                      return;
-                    }
-                    setSelectedIcon(newIcon);
-                    await EncryptedStorage.setItem(
-                      'app_icon_preference',
-                      newIcon,
-                    );
-                    await IconChanger.changeIcon(newIcon);
-                    const iconName =
-                      newIcon === 'alternative' ? 'QuickCalc' : 'Bold Wallet';
-                    Alert.alert(
-                      'Icon Changed',
-                      `App icon switched to ${iconName}.\n\nYou may need to refresh your launcher to see the change.`,
-                      [{text: 'OK'}],
-                    );
-                  } catch (error: any) {
-                    dbg('Error changing icon:', error);
-                    setSelectedIcon(value ? 'default' : 'alternative');
-                    Alert.alert(
-                      'Error',
-                      error?.message ||
-                        'Failed to change app icon. Please try again.',
-                      [{text: 'OK'}],
-                    );
-                  }
+            <View style={styles.themeOptionContainer}>
+              <AppPressable
+                style={[
+                  styles.themeOption,
+                  themeMode === 'os' && styles.themeOptionSelected,
+                ]}
+                onPress={() => {
+                  setThemeMode('os');
                 }}
-                disabled={selectedIcon === 'loading'}
-              />
-              <Text style={styles.toggleLabel}>QuickCalc</Text>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                <View style={styles.themeOptionContent}>
+                  <Text
+                    style={[
+                      styles.themeOptionLabel,
+                      themeMode === 'os' && styles.themeOptionLabelSelected,
+                    ]}>
+                    OS Default
+                  </Text>
+                  {themeMode === 'os' && (
+                    <Image
+                      source={require('../assets/check-icon.png')}
+                      style={styles.themeOptionCheck}
+                      resizeMode="contain"
+                    />
+                  )}
+                </View>
+              </AppPressable>
+              <AppPressable
+                style={[
+                  styles.themeOption,
+                  themeMode === 'light' && styles.themeOptionSelected,
+                ]}
+                onPress={() => {
+                  setThemeMode('light');
+                }}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                <View style={styles.themeOptionContent}>
+                  <Text
+                    style={[
+                      styles.themeOptionLabel,
+                      themeMode === 'light' && styles.themeOptionLabelSelected,
+                    ]}>
+                    Light
+                  </Text>
+                  {themeMode === 'light' && (
+                    <Image
+                      source={require('../assets/check-icon.png')}
+                      style={styles.themeOptionCheck}
+                      resizeMode="contain"
+                    />
+                  )}
+                </View>
+              </AppPressable>
+              <AppPressable
+                style={[
+                  styles.themeOption,
+                  themeMode === 'dark' && styles.themeOptionSelected,
+                ]}
+                onPress={() => {
+                  setThemeMode('dark');
+                }}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                <View style={styles.themeOptionContent}>
+                  <Text
+                    style={[
+                      styles.themeOptionLabel,
+                      themeMode === 'dark' && styles.themeOptionLabelSelected,
+                    ]}>
+                    Dark
+                  </Text>
+                  {themeMode === 'dark' && (
+                    <Image
+                      source={require('../assets/check-icon.png')}
+                      style={styles.themeOptionCheck}
+                      resizeMode="contain"
+                    />
+                  )}
+                </View>
+              </AppPressable>
             </View>
           </CollapsibleSection>
-        )}
+          <CollapsibleSection
+            title="Balance Display"
+            isExpanded={expandedSections.displayFormat}
+            onToggle={() => toggleSection('displayFormat')}
+            styles={styles}
+            theme={theme}>
+            <Text style={styles.hintText}>
+              Bitcoin uses <Text style={styles.hintBold}>8 decimal places</Text>{' '}
+              for full accuracy.
+            </Text>
+
+            <Text style={[styles.hintText, styles.hintSpacing]}>
+              <Text style={styles.hintAmount}>1 BTC</Text> ={' '}
+              <Text style={styles.hintAmount}>100,000,000 satoshis (sats)</Text>
+            </Text>
+
+            <Text style={[styles.hintText, styles.hintSpacing]}>
+              You can choose how your balance is shown:
+            </Text>
+
+            <Text style={[styles.hintText, styles.hintSpacing]}>
+              <Text style={styles.hintBold}>Formatted:</Text> Thousand
+              separators make large numbers easier to read and verify decimal
+              precision. Example:{' '}
+              <Text style={styles.hintAmount}>1,234.56,789,010 ₿</Text> or{' '}
+              <Text style={styles.hintAmount}>123,456,789,010 sats</Text>
+            </Text>
+
+            <Text style={[styles.hintText, styles.hintSpacing]}>
+              <Text style={styles.hintBold}>Raw Numbers:</Text> Exact values
+              without separators. Example:{' '}
+              <Text style={styles.hintAmount}>1234.56789 ₿</Text> or{' '}
+              <Text style={styles.hintAmount}>123456789000 sats</Text>
+            </Text>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Raw Numbers</Text>
+              <AppSwitch
+                onValueChange={handleToggleBalanceFormatting}
+                value={balanceFormattingEnabled}
+              />
+              <Text style={styles.toggleLabel}>Formatted</Text>
+            </View>
+          </CollapsibleSection>
+          <CollapsibleSection
+            title="Haptics"
+            isExpanded={expandedSections.haptics}
+            onToggle={() => toggleSection('haptics')}
+            styles={styles}
+            theme={theme}>
+            <Text style={styles.toggleDescription}>
+              Enable vibration feedback. OS settings may override this.
+            </Text>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Haptics Off</Text>
+              <AppSwitch
+                onValueChange={handleToggleHaptics}
+                value={hapticsEnabled}
+              />
+              <Text style={styles.toggleLabel}>Haptics On</Text>
+            </View>
+          </CollapsibleSection>
+          {/* Storage - inside App */}
+          <CollapsibleSection
+            title="Storage"
+            isExpanded={expandedSections.storage}
+            onToggle={() => toggleSection('storage')}
+            styles={styles}
+            theme={theme}>
+            <View style={styles.apiItem}>
+              <Text style={styles.apiName}>Cache Maintenance</Text>
+              <Text style={styles.apiDescription}>
+                Clear cached balances and history.
+              </Text>
+            </View>
+            <AppPressable
+              style={[styles.button, styles.deleteButton]}
+              onPress={async () => {
+                try {
+                  setIsRestoringIndexes(true);
+                  setRestoreProgress(null);
+                  dbg('WalletSettings: Storage clear - clearing LocalCache');
+                  await LocalCache.clear();
+                  dbg(
+                    'WalletSettings: LocalCache cleared, running restore discovery',
+                    {
+                      network: activeNetwork,
+                      addressType: activeAddressType,
+                    },
+                  );
+                  // Restore discovery: re-scan chain to repopulate HD indexes
+                  const ws = WalletService.getInstance();
+                  const apiUrl =
+                    activeApiProvider ||
+                    (activeNetwork === 'mainnet'
+                      ? 'https://mempool.space/api'
+                      : 'https://mempool.space/testnet/api');
+                  await ws.discoverHdIndexesForNetwork(
+                    activeNetwork,
+                    activeAddressType,
+                    apiUrl,
+                    (chain, index, gapIndex) =>
+                      setRestoreProgress({chain, index, gapIndex}),
+                  );
+                  dbg(
+                    'WalletSettings: Restore discovery done, re-persisting network/api',
+                  );
+                  // Pre-warm the in-memory HD address cache and wipe stale HTTP
+                  // cache entries — same post-discovery pattern as UserPreferenceScreen.
+                  // Without this, WalletHome loads with a cold hdAddressCache
+                  // (causing a 2-5 s derivation delay and premature single-address
+                  // TransactionList fetch) and the mempoolClient cache still holds
+                  // discovery-era /txs snapshots that mask the real transaction history.
+                  ws.invalidateAddressCache();
+                  await ws.getHdAddressesWithPaths(
+                    activeNetwork,
+                    activeAddressType,
+                  );
+                  mempoolClient.invalidateAll();
+                  // Re-persist network/api so app continues to work
+                  await LocalCache.setItem('network', activeNetwork);
+                  await LocalCache.setItem('api', apiUrl);
+                  await LocalCache.setItem('addressType', activeAddressType);
+                  setUsageSize(await LocalCache.usageSize());
+                  dbg('WalletSettings: Storage clear complete');
+                  Alert.alert('Cache Cleared', 'Cache cleared successfully.');
+                  navigation.reset(
+                    getResetToMainTabsWallet(
+                      {},
+                      {
+                        showPlay:
+                          activeNetwork === 'mainnet' && showMempoolPlayground,
+                        showUtxos: showUtxosTab,
+                        showPsbt: showPsbtTab,
+                        showWallet: showWalletTab,
+                      },
+                    ),
+                  );
+                } catch (e) {
+                  dbg('Error clearing cache', e);
+                  Alert.alert(
+                    'Error',
+                    'Failed to clear cache. Please try again.',
+                  );
+                } finally {
+                  setIsRestoringIndexes(false);
+                  setRestoreProgress(null);
+                }
+              }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+              <View style={styles.buttonContent}>
+                <Image
+                  source={require('../assets/delete-icon.png')}
+                  style={[styles.buttonIcon, styles.whiteTint]}
+                  resizeMode="contain"
+                />
+                <Text style={styles.buttonText}>
+                  Clear Cache ({usageSize.mb})
+                </Text>
+              </View>
+            </AppPressable>
+          </CollapsibleSection>
+          {/* App Icon - Android Only */}
+          {Platform.OS === 'android' && (
+            <CollapsibleSection
+              title="App Icon"
+              isExpanded={expandedSections.appIcon}
+              onToggle={() => toggleSection('appIcon')}
+              styles={styles}
+              theme={theme}>
+              <View style={styles.appIconHintRow}>
+                <View style={styles.appIconHintTextContainer}>
+                  <Text style={styles.appIconHintTitle}>
+                    Blend in when you need to.
+                  </Text>
+                  <Text style={styles.appIconHintSubtitle}>
+                    Switch to the calculator icon when you want your wallet to
+                    look like just another app on your home screen.
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.toggleDescription}>
+                Change the app's launcher icon on your device.
+              </Text>
+              <View style={styles.toggleContainer}>
+                <Text style={styles.toggleLabel}>Bold Wallet</Text>
+                <AppSwitch
+                  value={selectedIcon === 'alternative'}
+                  onValueChange={async value => {
+                    try {
+                      const newIcon = value ? 'alternative' : 'default';
+                      if (!IconChanger || !IconChanger.changeIcon) {
+                        Alert.alert(
+                          'Error',
+                          'Icon switching is not available on this device.',
+                          [{text: 'OK'}],
+                        );
+                        return;
+                      }
+                      setSelectedIcon(newIcon);
+                      await EncryptedStorage.setItem(
+                        'app_icon_preference',
+                        newIcon,
+                      );
+                      await IconChanger.changeIcon(newIcon);
+                      const iconName =
+                        newIcon === 'alternative' ? 'QuickCalc' : 'Bold Wallet';
+                      Alert.alert(
+                        'Icon Changed',
+                        `App icon switched to ${iconName}.\n\nYou may need to refresh your launcher to see the change.`,
+                        [{text: 'OK'}],
+                      );
+                    } catch (error: any) {
+                      dbg('Error changing icon:', error);
+                      setSelectedIcon(value ? 'default' : 'alternative');
+                      Alert.alert(
+                        'Error',
+                        error?.message ||
+                          'Failed to change app icon. Please try again.',
+                        [{text: 'OK'}],
+                      );
+                    }
+                  }}
+                  disabled={selectedIcon === 'loading'}
+                />
+                <Text style={styles.toggleLabel}>QuickCalc</Text>
+              </View>
+            </CollapsibleSection>
+          )}
         </SettingsSectionGroup>
 
         {/* Wallet: Security, Address Type, Network providers, Nostr Relays */}
         <SettingsSectionGroup title="Wallet" styles={styles} theme={theme}>
-        <CollapsibleSection
-          title="Security"
-          isExpanded={expandedSections.backup}
-          onToggle={() => toggleSection('backup')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.apiName}>Backup Wallet Keyshare</Text>
-          <AppPressable
-            style={[styles.button, styles.backupButton]}
-            onPress={() => {
-              setIsBackupModalVisible(true);
-            }}
-            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-            <View style={styles.buttonContent}>
-              <Image
-                source={require('../assets/upload-icon.png')}
-                style={[styles.buttonIcon, styles.whiteTint]}
-                resizeMode="contain"
-              />
-              <Text style={styles.buttonText}>Backup {party}</Text>
-            </View>
-          </AppPressable>
-          <View style={styles.apiItem}>
-            <Text style={styles.apiName}>Delete Wallet Keyshare</Text>
-          </View>
-          <AppPressable
-            style={[styles.button, styles.deleteButton]}
-            onPress={() => {
-              setIsModalResetVisible(true);
-            }}
-            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-            <View style={styles.buttonContent}>
-              <Image
-                source={require('../assets/delete-icon.png')}
-                style={[styles.buttonIcon, styles.whiteTint]}
-                resizeMode="contain"
-              />
-              <Text style={styles.buttonText}>Delete {party}</Text>
-            </View>
-          </AppPressable>
-        </CollapsibleSection>
-        {/* Address Type - use address-type-icon */}
-        <CollapsibleSection
-          title="Address Type"
-          isExpanded={expandedSections.addressType}
-          onToggle={() => toggleSection('addressType')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.walletModeDescription}>
-            Choose the receive address format. Native SegWit (bech32) is
-            recommended. Changing this updates your receive address on the
-            Wallet tab.
-          </Text>
-          <View style={styles.addressTypeOptionsContainer}>
-            <AppPressable
-              style={[
-                styles.addressTypeOption,
-                activeAddressType === 'legacy' && styles.addressTypeOptionSelected,
-              ]}
-              onPress={async () => {
-                try {
-                  await setActiveAddressType('legacy');
-                  navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
-                } catch (e) {
-                  dbg('Error setting address type:', e);
-                }
-              }}
-              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-              <Image
-                source={require('../assets/bricks-icon.png')}
-                style={styles.networkIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.toggleLabel}>Legacy (P2PKH)</Text>
-              {activeAddressType === 'legacy' && (
-                <Image
-                  source={require('../assets/check-icon.png')}
-                  style={styles.addressTypeCheckIcon}
-                  resizeMode="contain"
-                />
-              )}
-            </AppPressable>
-            <AppPressable
-              style={[
-                styles.addressTypeOption,
-                activeAddressType === 'segwit-native' && styles.addressTypeOptionSelected,
-              ]}
-              onPress={async () => {
-                try {
-                  await setActiveAddressType('segwit-native');
-                  navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
-                } catch (e) {
-                  dbg('Error setting address type:', e);
-                }
-              }}
-              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-              <Image
-                source={require('../assets/dna-icon.png')}
-                style={styles.networkIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.toggleLabel}>Native SegWit (bech32)</Text>
-              {activeAddressType === 'segwit-native' && (
-                <Image
-                  source={require('../assets/check-icon.png')}
-                  style={styles.addressTypeCheckIcon}
-                  resizeMode="contain"
-                />
-              )}
-            </AppPressable>
-            <AppPressable
-              style={[
-                styles.addressTypeOption,
-                activeAddressType === 'segwit-compatible' && styles.addressTypeOptionSelected,
-              ]}
-              onPress={async () => {
-                try {
-                  await setActiveAddressType('segwit-compatible');
-                  navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
-                } catch (e) {
-                  dbg('Error setting address type:', e);
-                }
-              }}
-              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-              <Image
-                source={require('../assets/recycle-icon.png')}
-                style={styles.networkIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.toggleLabel}>Nested SegWit (P2SH-WPKH)</Text>
-              {activeAddressType === 'segwit-compatible' && (
-                <Image
-                  source={require('../assets/check-icon.png')}
-                  style={styles.addressTypeCheckIcon}
-                  resizeMode="contain"
-                />
-              )}
-            </AppPressable>
-          </View>
-        </CollapsibleSection>
-        {/* Network Providers */}
-        <CollapsibleSection
-          title="Network Providers"
-          isExpanded={expandedSections.advanced}
-          onToggle={() => toggleSection('advanced')}
-          styles={styles}
-          theme={theme}>
-          <View style={styles.toggleContainer}>
-            <View style={styles.networkOption}>
-              <Image
-                source={require('../assets/mainnet-icon.png')}
-                style={styles.networkIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.toggleLabel}>Mainnet</Text>
-            </View>
-            <AppSwitch
-              onValueChange={toggleNetwork}
-              value={isTestnet}
-            />
-            <View style={styles.networkOption}>
-              <Image
-                source={require('../assets/testnet-icon.png')}
-                style={styles.networkIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.toggleLabel}>Testnet3</Text>
-            </View>
-          </View>
-          <View style={styles.apiNetworkInfoContainer}>
-            <View style={styles.apiNetworkModeRow}>
-              <View
-                style={[
-                  styles.apiNetworkModeBadge,
-                  isTestnet
-                    ? styles.apiNetworkModeBadgeTestnet
-                    : styles.apiNetworkModeBadgeMainnet,
-                ]}>
-                <Image
-                  source={
-                    isTestnet
-                      ? require('../assets/locker-icon.png')
-                      : require('../assets/privacy-icon.png')
-                  }
-                  style={[
-                    styles.apiNetworkModeIcon,
-                    {
-                      tintColor: isTestnet
-                        ? theme.colors.background === '#ffffff'
-                          ? theme.colors.accent
-                          : theme.colors.bitcoinOrange
-                        : theme.colors.received,
-                    },
-                  ]}
-                  resizeMode="contain"
-                />
-                <Text
-                  style={[
-                    styles.apiNetworkModeText,
-                    isTestnet
-                      ? styles.apiNetworkModeTextTestnet
-                      : styles.apiNetworkModeTextMainnet,
-                  ]}>
-                  {isTestnet ? 'Testnet Mode' : 'Mainnet Mode'}
-                </Text>
-              </View>
-              {!isTestnet && (
-                <AppPressable
-                  style={styles.apiInfoButton}
-                  onPress={() => {
-                    setIsApiInfoVisible(true);
-                  }}
-                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                  <Image
-                    source={require('../assets/about-icon.png')}
-                    style={styles.apiInfoButtonIcon}
-                    resizeMode="contain"
-                  />
-                  <Text style={styles.apiInfoButtonText}>Change Provider?</Text>
-                </AppPressable>
-              )}
-            </View>
-            <Text
-              style={[
-                styles.apiNetworkDescription,
-                isTestnet
-                  ? styles.apiNetworkDescriptionTestnet
-                  : styles.apiNetworkDescriptionMainnet,
-              ]}>
-              {isTestnet
-                ? 'Testnet Provider is restricted to mempool.space/testnet'
-                : 'Mainnet Providers are customizable.'}
-            </Text>
-          </View>
-          <APIAutocomplete
-            value={pendingAPI || baseAPI}
-            onChangeText={handleAPISelection}
-            isTestnet={isTestnet}
-            styles={styles}
-            theme={theme}
-          />
-          <View style={styles.apiActionButtonsRow}>
-            {!isTestnet && (
-              <AppPressable
-                style={[
-                  styles.button,
-                  styles.backupButton,
-                  styles.apiActionButton,
-                  (isAPISaving || !pendingAPI || pendingAPI === baseAPI) &&
-                    styles.disabledButton,
-                  isAPISaving && styles.halfOpacity,
-                ]}
-                onPress={() => {
-                  saveAPI(pendingAPI);
-                }}
-                disabled={isAPISaving || !pendingAPI || pendingAPI === baseAPI}
-                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                <View style={styles.buttonContent}>
-                  <Image
-                    source={require('../assets/check-icon.png')}
-                    style={[styles.buttonIcon, styles.whiteTint]}
-                    resizeMode="contain"
-                  />
-                  <Text
-                    style={[
-                      styles.buttonText,
-                      (isAPISaving || !pendingAPI || pendingAPI === baseAPI) &&
-                        styles.disabledButtonText,
-                    ]}>
-                    {isAPISaving ? 'Verifying...' : 'Verify & Save'}
-                  </Text>
-                </View>
-              </AppPressable>
-            )}
-            {!isTestnet && (
-              <AppPressable
-                style={[
-                  styles.button,
-                  styles.resetButton,
-                  styles.apiActionButton,
-                ]}
-                onPress={() => {
-                  resetAPI();
-                }}
-                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                <View style={styles.buttonContent}>
-                  <Image
-                    source={require('../assets/refresh-icon.png')}
-                    style={[styles.buttonIcon, styles.whiteTint]}
-                    resizeMode="contain"
-                  />
-                  <Text style={styles.buttonText}>Defaults</Text>
-                </View>
-              </AppPressable>
-            )}
-          </View>
-        </CollapsibleSection>
-        {hasNostr && (
           <CollapsibleSection
-            title="Nostr Relays"
-            isExpanded={expandedSections.nostr}
-            onToggle={() => toggleSection('nostr')}
+            title="Security"
+            isExpanded={expandedSections.backup}
+            onToggle={() => toggleSection('backup')}
             styles={styles}
             theme={theme}>
+            <Text style={styles.apiName}>Backup Wallet Keyshare</Text>
+            <AppPressable
+              style={[styles.button, styles.backupButton]}
+              onPress={() => {
+                setIsBackupModalVisible(true);
+              }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+              <View style={styles.buttonContent}>
+                <Image
+                  source={require('../assets/upload-icon.png')}
+                  style={[styles.buttonIcon, styles.whiteTint]}
+                  resizeMode="contain"
+                />
+                <Text style={styles.buttonText}>Backup {party}</Text>
+              </View>
+            </AppPressable>
             <View style={styles.apiItem}>
-              <Text style={styles.apiName}>Nostr Relay Configuration</Text>
-              <Text style={styles.apiDescription}>
-                Configure Nostr relays for device pairing and transaction
-                signing. Enter relay URLs, one per line or comma-separated
-                (wss://...).
-              </Text>
+              <Text style={styles.apiName}>Delete Wallet Keyshare</Text>
             </View>
-            <TextInput
-              style={[styles.input, styles.nostrRelaysInput]}
-              value={pendingNostrRelays}
-              onChangeText={setPendingNostrRelays}
-              placeholder={
-                'wss://relay1.com\nwss://relay2.com\nwss://relay3.com'
-              }
-              placeholderTextColor={theme.colors.textSecondary + '80'}
-              autoCapitalize="none"
-              autoCorrect={false}
-              multiline
-              numberOfLines={6}
-            />
-            <View style={styles.apiActionButtonsRow}>
+            <AppPressable
+              style={[styles.button, styles.deleteButton]}
+              onPress={() => {
+                setIsModalResetVisible(true);
+              }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+              <View style={styles.buttonContent}>
+                <Image
+                  source={require('../assets/delete-icon.png')}
+                  style={[styles.buttonIcon, styles.whiteTint]}
+                  resizeMode="contain"
+                />
+                <Text style={styles.buttonText}>Delete {party}</Text>
+              </View>
+            </AppPressable>
+          </CollapsibleSection>
+          {/* Address Type - use address-type-icon */}
+          <CollapsibleSection
+            title="Address Type"
+            isExpanded={expandedSections.addressType}
+            onToggle={() => toggleSection('addressType')}
+            styles={styles}
+            theme={theme}>
+            <Text style={styles.walletModeDescription}>
+              Choose the receive address format. Native SegWit (bech32) is
+              recommended. Changing this updates your receive address on the
+              Wallet tab.
+            </Text>
+            <View style={styles.addressTypeOptionsContainer}>
               <AppPressable
                 style={[
-                  styles.button,
-                  styles.backupButton,
-                  styles.apiActionButton,
-                  (!pendingNostrRelays || pendingNostrRelays === nostrRelays) &&
-                    styles.disabledButton,
+                  styles.addressTypeOption,
+                  activeAddressType === 'legacy' &&
+                    styles.addressTypeOptionSelected,
                 ]}
                 onPress={async () => {
                   try {
-                    const relays = pendingNostrRelays
-                      .split(/[,\n]/)
-                      .map(r => r.trim())
-                      .filter(Boolean);
-                    if (relays.length === 0) {
-                      Alert.alert(
-                        'Error',
-                        'Please enter at least one relay URL',
-                      );
-                      return;
-                    }
-                    const invalid = relays.find(
-                      r => !r.startsWith('wss://') && !r.startsWith('ws://'),
+                    await setActiveAddressType('legacy');
+                    await runRestoreIndexing(activeNetwork, 'legacy');
+                    navigation.reset(
+                      getResetToMainTabsWallet(
+                        {},
+                        {
+                          showPlay:
+                            activeNetwork === 'mainnet' &&
+                            showMempoolPlayground,
+                          showUtxos: showUtxosTab,
+                          showPsbt: showPsbtTab,
+                          showWallet: showWalletTab,
+                        },
+                      ),
                     );
-                    if (invalid) {
-                      Alert.alert(
-                        'Error',
-                        `Invalid relay URL: ${invalid}\nRelay URLs must start with wss:// or ws://`,
-                      );
-                      return;
-                    }
-                    const relaysCSV = relays.join(',');
-                    await LocalCache.setItem('nostr_relays', relaysCSV);
-                    setNostrRelays(relaysCSV);
-                    Alert.alert('Success', 'Nostr relays saved successfully!');
-                  } catch (error) {
-                    dbg('Error saving Nostr relays:', error);
-                    Alert.alert('Error', 'Failed to save Nostr relays');
+                  } catch (e) {
+                    dbg('Error setting address type:', e);
                   }
                 }}
-                disabled={
-                  !pendingNostrRelays || pendingNostrRelays === nostrRelays
-                }
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                <View style={styles.buttonContent}>
+                <Image
+                  source={require('../assets/bricks-icon.png')}
+                  style={styles.networkIcon}
+                  resizeMode="contain"
+                />
+                <Text style={styles.toggleLabel}>Legacy (P2PKH)</Text>
+                {activeAddressType === 'legacy' && (
                   <Image
                     source={require('../assets/check-icon.png')}
-                    style={[styles.buttonIcon, styles.whiteTint]}
+                    style={styles.addressTypeCheckIcon}
+                    resizeMode="contain"
+                  />
+                )}
+              </AppPressable>
+              <AppPressable
+                style={[
+                  styles.addressTypeOption,
+                  activeAddressType === 'segwit-native' &&
+                    styles.addressTypeOptionSelected,
+                ]}
+                onPress={async () => {
+                  try {
+                    await setActiveAddressType('segwit-native');
+                    await runRestoreIndexing(activeNetwork, 'segwit-native');
+                    navigation.reset(
+                      getResetToMainTabsWallet(
+                        {},
+                        {
+                          showPlay:
+                            activeNetwork === 'mainnet' &&
+                            showMempoolPlayground,
+                          showUtxos: showUtxosTab,
+                          showPsbt: showPsbtTab,
+                          showWallet: showWalletTab,
+                        },
+                      ),
+                    );
+                  } catch (e) {
+                    dbg('Error setting address type:', e);
+                  }
+                }}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                <Image
+                  source={require('../assets/dna-icon.png')}
+                  style={styles.networkIcon}
+                  resizeMode="contain"
+                />
+                <Text style={styles.toggleLabel}>Native SegWit (bech32)</Text>
+                {activeAddressType === 'segwit-native' && (
+                  <Image
+                    source={require('../assets/check-icon.png')}
+                    style={styles.addressTypeCheckIcon}
+                    resizeMode="contain"
+                  />
+                )}
+              </AppPressable>
+              <AppPressable
+                style={[
+                  styles.addressTypeOption,
+                  activeAddressType === 'segwit-compatible' &&
+                    styles.addressTypeOptionSelected,
+                ]}
+                onPress={async () => {
+                  try {
+                    await setActiveAddressType('segwit-compatible');
+                    await runRestoreIndexing(
+                      activeNetwork,
+                      'segwit-compatible',
+                    );
+                    navigation.reset(
+                      getResetToMainTabsWallet(
+                        {},
+                        {
+                          showPlay:
+                            activeNetwork === 'mainnet' &&
+                            showMempoolPlayground,
+                          showUtxos: showUtxosTab,
+                          showPsbt: showPsbtTab,
+                          showWallet: showWalletTab,
+                        },
+                      ),
+                    );
+                  } catch (e) {
+                    dbg('Error setting address type:', e);
+                  }
+                }}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                <Image
+                  source={require('../assets/recycle-icon.png')}
+                  style={styles.networkIcon}
+                  resizeMode="contain"
+                />
+                <Text style={styles.toggleLabel}>
+                  Nested SegWit (P2SH-WPKH)
+                </Text>
+                {activeAddressType === 'segwit-compatible' && (
+                  <Image
+                    source={require('../assets/check-icon.png')}
+                    style={styles.addressTypeCheckIcon}
+                    resizeMode="contain"
+                  />
+                )}
+              </AppPressable>
+            </View>
+          </CollapsibleSection>
+          {/* Network Providers */}
+          <CollapsibleSection
+            title="Network Providers"
+            isExpanded={expandedSections.advanced}
+            onToggle={() => toggleSection('advanced')}
+            styles={styles}
+            theme={theme}>
+            <View style={styles.toggleContainer}>
+              <View style={styles.networkOption}>
+                <Image
+                  source={require('../assets/mainnet-icon.png')}
+                  style={styles.networkIcon}
+                  resizeMode="contain"
+                />
+                <Text style={styles.toggleLabel}>Mainnet</Text>
+              </View>
+              <AppSwitch onValueChange={toggleNetwork} value={isTestnet} />
+              <View style={styles.networkOption}>
+                <Image
+                  source={require('../assets/testnet-icon.png')}
+                  style={styles.networkIcon}
+                  resizeMode="contain"
+                />
+                <Text style={styles.toggleLabel}>Testnet3</Text>
+              </View>
+            </View>
+            <View style={styles.apiNetworkInfoContainer}>
+              <View style={styles.apiNetworkModeRow}>
+                <View
+                  style={[
+                    styles.apiNetworkModeBadge,
+                    isTestnet
+                      ? styles.apiNetworkModeBadgeTestnet
+                      : styles.apiNetworkModeBadgeMainnet,
+                  ]}>
+                  <Image
+                    source={
+                      isTestnet
+                        ? require('../assets/locker-icon.png')
+                        : require('../assets/privacy-icon.png')
+                    }
+                    style={[
+                      styles.apiNetworkModeIcon,
+                      {
+                        tintColor: isTestnet
+                          ? theme.colors.background === '#ffffff'
+                            ? theme.colors.accent
+                            : theme.colors.bitcoinOrange
+                          : theme.colors.received,
+                      },
+                    ]}
                     resizeMode="contain"
                   />
                   <Text
                     style={[
-                      styles.buttonText,
-                      (!pendingNostrRelays ||
-                        pendingNostrRelays === nostrRelays) &&
-                        styles.disabledButtonText,
+                      styles.apiNetworkModeText,
+                      isTestnet
+                        ? styles.apiNetworkModeTextTestnet
+                        : styles.apiNetworkModeTextMainnet,
                     ]}>
-                    Save Relays
+                    {isTestnet ? 'Testnet Mode' : 'Mainnet Mode'}
                   </Text>
                 </View>
-              </AppPressable>
-              <AppPressable
+                {!isTestnet && (
+                  <AppPressable
+                    style={styles.apiInfoButton}
+                    onPress={() => {
+                      setIsApiInfoVisible(true);
+                    }}
+                    android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                    <Image
+                      source={require('../assets/about-icon.png')}
+                      style={styles.apiInfoButtonIcon}
+                      resizeMode="contain"
+                    />
+                    <Text style={styles.apiInfoButtonText}>
+                      Change Provider?
+                    </Text>
+                  </AppPressable>
+                )}
+              </View>
+              <Text
                 style={[
-                  styles.button,
-                  styles.resetButton,
-                  styles.apiActionButton,
-                ]}
-                onPress={async () => {
-                  const fetchedRelays = await getNostrRelays(true);
-                  const relaysCSV = fetchedRelays.join(',');
-                  const relaysForDisplay = relaysCSV.split(',').join('\n');
-                  setPendingNostrRelays(relaysForDisplay);
-                }}
-                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                <View style={styles.buttonContent}>
-                  <Image
-                    source={require('../assets/refresh-icon.png')}
-                    style={[styles.buttonIcon, styles.whiteTint]}
-                    resizeMode="contain"
-                  />
-                  <Text style={styles.buttonText}>Defaults</Text>
-                </View>
-              </AppPressable>
+                  styles.apiNetworkDescription,
+                  isTestnet
+                    ? styles.apiNetworkDescriptionTestnet
+                    : styles.apiNetworkDescriptionMainnet,
+                ]}>
+                {isTestnet
+                  ? 'Testnet Provider is restricted to mempool.space/testnet'
+                  : 'Mainnet Providers are customizable.'}
+              </Text>
+            </View>
+            <APIAutocomplete
+              value={pendingAPI || baseAPI}
+              onChangeText={handleAPISelection}
+              isTestnet={isTestnet}
+              styles={styles}
+              theme={theme}
+            />
+            <View style={styles.apiActionButtonsRow}>
+              {!isTestnet && (
+                <AppPressable
+                  style={[
+                    styles.button,
+                    styles.backupButton,
+                    styles.apiActionButton,
+                    (isAPISaving || !pendingAPI || pendingAPI === baseAPI) &&
+                      styles.disabledButton,
+                    isAPISaving && styles.halfOpacity,
+                  ]}
+                  onPress={() => {
+                    saveAPI(pendingAPI);
+                  }}
+                  disabled={
+                    isAPISaving || !pendingAPI || pendingAPI === baseAPI
+                  }
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                  <View style={styles.buttonContent}>
+                    <Image
+                      source={require('../assets/check-icon.png')}
+                      style={[styles.buttonIcon, styles.whiteTint]}
+                      resizeMode="contain"
+                    />
+                    <Text
+                      style={[
+                        styles.buttonText,
+                        (isAPISaving ||
+                          !pendingAPI ||
+                          pendingAPI === baseAPI) &&
+                          styles.disabledButtonText,
+                      ]}>
+                      {isAPISaving ? 'Verifying...' : 'Verify & Save'}
+                    </Text>
+                  </View>
+                </AppPressable>
+              )}
+              {!isTestnet && (
+                <AppPressable
+                  style={[
+                    styles.button,
+                    styles.resetButton,
+                    styles.apiActionButton,
+                  ]}
+                  onPress={() => {
+                    resetAPI();
+                  }}
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                  <View style={styles.buttonContent}>
+                    <Image
+                      source={require('../assets/refresh-icon.png')}
+                      style={[styles.buttonIcon, styles.whiteTint]}
+                      resizeMode="contain"
+                    />
+                    <Text style={styles.buttonText}>Defaults</Text>
+                  </View>
+                </AppPressable>
+              )}
             </View>
           </CollapsibleSection>
-        )}
+          {hasNostr && (
+            <CollapsibleSection
+              title="Nostr Relays"
+              isExpanded={expandedSections.nostr}
+              onToggle={() => toggleSection('nostr')}
+              styles={styles}
+              theme={theme}>
+              <View style={styles.apiItem}>
+                <Text style={styles.apiName}>Nostr Relay Configuration</Text>
+                <Text style={styles.apiDescription}>
+                  Configure Nostr relays for device pairing and transaction
+                  signing. Enter relay URLs, one per line or comma-separated
+                  (wss://...).
+                </Text>
+              </View>
+              <TextInput
+                style={[styles.input, styles.nostrRelaysInput]}
+                value={pendingNostrRelays}
+                onChangeText={setPendingNostrRelays}
+                placeholder={
+                  'wss://relay1.com\nwss://relay2.com\nwss://relay3.com'
+                }
+                placeholderTextColor={theme.colors.textSecondary + '80'}
+                autoCapitalize="none"
+                autoCorrect={false}
+                multiline
+                numberOfLines={6}
+              />
+              <View style={styles.apiActionButtonsRow}>
+                <AppPressable
+                  style={[
+                    styles.button,
+                    styles.backupButton,
+                    styles.apiActionButton,
+                    (!pendingNostrRelays ||
+                      pendingNostrRelays === nostrRelays) &&
+                      styles.disabledButton,
+                  ]}
+                  onPress={async () => {
+                    try {
+                      const relays = pendingNostrRelays
+                        .split(/[,\n]/)
+                        .map(r => r.trim())
+                        .filter(Boolean);
+                      if (relays.length === 0) {
+                        Alert.alert(
+                          'Error',
+                          'Please enter at least one relay URL',
+                        );
+                        return;
+                      }
+                      const invalid = relays.find(
+                        r => !r.startsWith('wss://') && !r.startsWith('ws://'),
+                      );
+                      if (invalid) {
+                        Alert.alert(
+                          'Error',
+                          `Invalid relay URL: ${invalid}\nRelay URLs must start with wss:// or ws://`,
+                        );
+                        return;
+                      }
+                      const relaysCSV = relays.join(',');
+                      await LocalCache.setItem('nostr_relays', relaysCSV);
+                      setNostrRelays(relaysCSV);
+                      Alert.alert(
+                        'Success',
+                        'Nostr relays saved successfully!',
+                      );
+                    } catch (error) {
+                      dbg('Error saving Nostr relays:', error);
+                      Alert.alert('Error', 'Failed to save Nostr relays');
+                    }
+                  }}
+                  disabled={
+                    !pendingNostrRelays || pendingNostrRelays === nostrRelays
+                  }
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                  <View style={styles.buttonContent}>
+                    <Image
+                      source={require('../assets/check-icon.png')}
+                      style={[styles.buttonIcon, styles.whiteTint]}
+                      resizeMode="contain"
+                    />
+                    <Text
+                      style={[
+                        styles.buttonText,
+                        (!pendingNostrRelays ||
+                          pendingNostrRelays === nostrRelays) &&
+                          styles.disabledButtonText,
+                      ]}>
+                      Save Relays
+                    </Text>
+                  </View>
+                </AppPressable>
+                <AppPressable
+                  style={[
+                    styles.button,
+                    styles.resetButton,
+                    styles.apiActionButton,
+                  ]}
+                  onPress={async () => {
+                    const fetchedRelays = await getNostrRelays(true);
+                    const relaysCSV = fetchedRelays.join(',');
+                    const relaysForDisplay = relaysCSV.split(',').join('\n');
+                    setPendingNostrRelays(relaysForDisplay);
+                  }}
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                  <View style={styles.buttonContent}>
+                    <Image
+                      source={require('../assets/refresh-icon.png')}
+                      style={[styles.buttonIcon, styles.whiteTint]}
+                      resizeMode="contain"
+                    />
+                    <Text style={styles.buttonText}>Defaults</Text>
+                  </View>
+                </AppPressable>
+              </View>
+            </CollapsibleSection>
+          )}
         </SettingsSectionGroup>
 
         {/* Tabs: Wallet, UTXO, PSBT, Playground */}
         <SettingsSectionGroup title="Tabs" styles={styles} theme={theme}>
-        <CollapsibleSection
-          title="Wallet"
-          isExpanded={expandedSections.wallet}
-          onToggle={() => toggleSection('wallet')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.hintText}>
-            Show the <Text style={styles.hintBold}>Wallet</Text> tab in the tab
-            bar. This tab shows your balance and send/receive. On by default.
-          </Text>
-          <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
-            <Text style={styles.toggleLabel}>Hide Wallet tab</Text>
-            <AppSwitch
-              onValueChange={value => setShowWalletTab(value)}
-              value={showWalletTab}
-            />
-            <Text style={styles.toggleLabel}>Show Wallet tab</Text>
-          </View>
-        </CollapsibleSection>
-        <CollapsibleSection
-          title="UTXOs"
-          isExpanded={expandedSections.utxos}
-          onToggle={() => toggleSection('utxos')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.hintText}>
-            Show the <Text style={styles.hintBold}>UTXOs</Text> tab in the tab
-            bar. This tab lists your unspent outputs (date, output, address,
-            value in BTC and fiat). Off by default.
-          </Text>
-          <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
-            <Text style={styles.toggleLabel}>Hide UTXOs tab</Text>
-            <AppSwitch
-              onValueChange={value => setShowUtxosTab(value)}
-              value={showUtxosTab}
-            />
-            <Text style={styles.toggleLabel}>Show UTXOs tab</Text>
-          </View>
-        </CollapsibleSection>
-        <CollapsibleSection
-          title="PSBT"
-          isExpanded={expandedSections.psbt ?? false}
-          onToggle={() => toggleSection('psbt')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.hintText}>
-            Show the <Text style={styles.hintBold}>PSBT</Text> tab in the tab
-            bar. This tab is for signing Partially Signed Bitcoin Transactions.
-            Off by default.
-          </Text>
-          <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
-            <Text style={styles.toggleLabel}>Hide PSBT tab</Text>
-            <AppSwitch
-              onValueChange={value => setShowPsbtTab(value)}
-              value={showPsbtTab}
-            />
-            <Text style={styles.toggleLabel}>Show PSBT tab</Text>
-          </View>
-        </CollapsibleSection>
-        {activeNetwork === 'mainnet' && (
           <CollapsibleSection
-            title="Mempool"
-            isExpanded={expandedSections.mempoolPlayground}
-            onToggle={() => toggleSection('mempoolPlayground')}
+            title="Wallet"
+            isExpanded={expandedSections.wallet}
+            onToggle={() => toggleSection('wallet')}
             styles={styles}
             theme={theme}>
             <Text style={styles.hintText}>
-              Show the <Text style={styles.hintBold}>Play</Text> tab in the tab
-              bar. This tab is a mempool playground for utility APIs (mainnet
-              only).
+              Show the <Text style={styles.hintBold}>Wallet</Text> tab in the
+              tab bar. This tab shows your balance and send/receive. On by
+              default.
             </Text>
             <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
-              <Text style={styles.toggleLabel}>Hide Play tab</Text>
+              <Text style={styles.toggleLabel}>Hide Wallet tab</Text>
               <AppSwitch
-                onValueChange={value => setShowMempoolPlayground(value)}
-                value={showMempoolPlayground}
+                onValueChange={value => setShowWalletTab(value)}
+                value={showWalletTab}
               />
-              <Text style={styles.toggleLabel}>Show Play tab</Text>
+              <Text style={styles.toggleLabel}>Show Wallet tab</Text>
             </View>
           </CollapsibleSection>
-        )}
-        {/* Dev Debug - Only visible on Android if enabled via build number clicks */}
-        {Platform.OS === 'android' && devDebugEnabled && (
           <CollapsibleSection
-            title="Dev Debug"
-            isExpanded={expandedSections.devDebug}
-            onToggle={() => toggleSection('devDebug')}
+            title="UTXOs"
+            isExpanded={expandedSections.utxos}
+            onToggle={() => toggleSection('utxos')}
             styles={styles}
             theme={theme}>
-            <View
-              style={[
-                styles.warningContainer,
-                {
-                  backgroundColor: theme.colors.warningBg,
-                  borderColor: theme.colors.warningBorder,
-                },
-              ]}>
-              <Text
-                style={[styles.warningText, {color: theme.colors.warningText}]}>
-                ⚠️ Developers Only
-              </Text>
-              <Text
-                style={[
-                  styles.warningDescription,
-                  {color: theme.colors.warningText},
-                ]}>
-                Debug logs may contain sensitive information. Use only on
-                trusted devices, and only if you know what you are doing. View
-                detailed logs in logcat (Android only, requires USB debugging).
-                Session-only setting - resets on app restart.
-              </Text>
+            <Text style={styles.hintText}>
+              Show the <Text style={styles.hintBold}>UTXOs</Text> tab in the tab
+              bar. This tab lists your unspent outputs (date, output, address,
+              value in BTC and fiat). Off by default.
+            </Text>
+            <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
+              <Text style={styles.toggleLabel}>Hide UTXOs tab</Text>
+              <AppSwitch
+                onValueChange={value => setShowUtxosTab(value)}
+                value={showUtxosTab}
+              />
+              <Text style={styles.toggleLabel}>Show UTXOs tab</Text>
             </View>
-            {/* Enhanced Debug Logging Card */}
-            <View style={styles.debugLoggingCard}>
-              <View style={styles.debugLoggingHeader}>
-                <Text style={styles.debugLoggingTitle}>Debug Logging</Text>
-                <View style={styles.debugLoggingStatus}>
-                  <View
-                    style={[
-                      styles.debugLoggingStatusDot,
-                      {
-                        backgroundColor: debugLoggingEnabled
-                          ? theme.colors.success
-                          : theme.colors.textSecondary,
-                      },
-                    ]}
+          </CollapsibleSection>
+          <CollapsibleSection
+            title="PSBT"
+            isExpanded={expandedSections.psbt ?? false}
+            onToggle={() => toggleSection('psbt')}
+            styles={styles}
+            theme={theme}>
+            <Text style={styles.hintText}>
+              Show the <Text style={styles.hintBold}>PSBT</Text> tab in the tab
+              bar. This tab is for signing Partially Signed Bitcoin
+              Transactions. Off by default.
+            </Text>
+            <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
+              <Text style={styles.toggleLabel}>Hide PSBT tab</Text>
+              <AppSwitch
+                onValueChange={value => setShowPsbtTab(value)}
+                value={showPsbtTab}
+              />
+              <Text style={styles.toggleLabel}>Show PSBT tab</Text>
+            </View>
+          </CollapsibleSection>
+          {activeNetwork === 'mainnet' && (
+            <CollapsibleSection
+              title="Mempool"
+              isExpanded={expandedSections.mempoolPlayground}
+              onToggle={() => toggleSection('mempoolPlayground')}
+              styles={styles}
+              theme={theme}>
+              <Text style={styles.hintText}>
+                Show the <Text style={styles.hintBold}>Play</Text> tab in the
+                tab bar. This tab is a mempool playground for utility APIs
+                (mainnet only).
+              </Text>
+              <View
+                style={[styles.toggleContainer, styles.toggleContainerTabs]}>
+                <Text style={styles.toggleLabel}>Hide Play tab</Text>
+                <AppSwitch
+                  onValueChange={value => setShowMempoolPlayground(value)}
+                  value={showMempoolPlayground}
+                />
+                <Text style={styles.toggleLabel}>Show Play tab</Text>
+              </View>
+            </CollapsibleSection>
+          )}
+          {/* Dev Debug - Only visible on Android if enabled via build number clicks */}
+          {Platform.OS === 'android' && devDebugEnabled && (
+            <CollapsibleSection
+              title="Dev Debug"
+              isExpanded={expandedSections.devDebug}
+              onToggle={() => toggleSection('devDebug')}
+              styles={styles}
+              theme={theme}>
+              <View
+                style={[
+                  styles.warningContainer,
+                  {
+                    backgroundColor: theme.colors.warningBg,
+                    borderColor: theme.colors.warningBorder,
+                  },
+                ]}>
+                <Text
+                  style={[
+                    styles.warningText,
+                    {color: theme.colors.warningText},
+                  ]}>
+                  ⚠️ Developers Only
+                </Text>
+                <Text
+                  style={[
+                    styles.warningDescription,
+                    {color: theme.colors.warningText},
+                  ]}>
+                  Debug logs may contain sensitive information. Use only on
+                  trusted devices, and only if you know what you are doing. View
+                  detailed logs in logcat (Android only, requires USB
+                  debugging). Session-only setting - resets on app restart.
+                </Text>
+              </View>
+              {/* Enhanced Debug Logging Card */}
+              <View style={styles.debugLoggingCard}>
+                <View style={styles.debugLoggingHeader}>
+                  <Text style={styles.debugLoggingTitle}>Debug Logging</Text>
+                  <View style={styles.debugLoggingStatus}>
+                    <View
+                      style={[
+                        styles.debugLoggingStatusDot,
+                        {
+                          backgroundColor: debugLoggingEnabled
+                            ? theme.colors.success
+                            : theme.colors.textSecondary,
+                        },
+                      ]}
+                    />
+                    <Text
+                      style={[
+                        styles.debugLoggingStatusText,
+                        {
+                          color: debugLoggingEnabled
+                            ? theme.colors.success
+                            : theme.colors.textSecondary,
+                        },
+                      ]}>
+                      {debugLoggingEnabled ? 'Active' : 'Inactive'}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.toggleContainer}>
+                  <Text style={styles.toggleLabel}>Enable Logging</Text>
+                  <AppSwitch
+                    onValueChange={handleToggleDebugLogging}
+                    value={debugLoggingEnabled}
                   />
-                  <Text
-                    style={[
-                      styles.debugLoggingStatusText,
-                      {
-                        color: debugLoggingEnabled
-                          ? theme.colors.success
-                          : theme.colors.textSecondary,
-                      },
-                    ]}>
-                    {debugLoggingEnabled ? 'Active' : 'Inactive'}
-                  </Text>
                 </View>
               </View>
-              <View style={styles.toggleContainer}>
-                <Text style={styles.toggleLabel}>Enable Logging</Text>
-                <AppSwitch
-                  onValueChange={handleToggleDebugLogging}
-                  value={debugLoggingEnabled}
-                />
-              </View>
-            </View>
 
-            {/* Enhanced Disable Dev Mode Button */}
-            <AppPressable
-              style={styles.disableDevModeButton}
-              onPress={() => {
-                Alert.alert(
-                  'Disable Dev Mode',
-                  'Are you sure you want to hide the Dev Debug section? You can enable it again by clicking the build number 7 times.',
-                  [
-                    {
-                      text: 'Cancel',
-                      style: 'cancel',
-                    },
-                    {
-                      text: 'Disable',
-                      style: 'destructive',
-                      onPress: () => {
-                        setDevDebugEnabled(false);
-                        EncryptedStorage.setItem(
-                          'devDebugEnabled',
-                          'false',
-                        ).catch(error => {
-                          dbg('Error saving devDebugEnabled:', error);
-                        });
-                        Toast.show({
-                          type: 'info',
-                          text1: 'Dev Mode Disabled',
-                          text2: 'Dev Debug section is now hidden',
-                          position: 'top',
-                        });
+              {/* Enhanced Disable Dev Mode Button */}
+              <AppPressable
+                style={styles.disableDevModeButton}
+                onPress={() => {
+                  Alert.alert(
+                    'Disable Dev Mode',
+                    'Are you sure you want to hide the Dev Debug section? You can enable it again by clicking the build number 7 times.',
+                    [
+                      {
+                        text: 'Cancel',
+                        style: 'cancel',
                       },
-                    },
-                  ],
-                );
-              }}
-              android_ripple={{color: 'rgba(255,255,255,0.2)'}}>
-              <Text style={styles.disableDevModeButtonText}>
-                Disable Dev Mode
+                      {
+                        text: 'Disable',
+                        style: 'destructive',
+                        onPress: () => {
+                          setDevDebugEnabled(false);
+                          EncryptedStorage.setItem(
+                            'devDebugEnabled',
+                            'false',
+                          ).catch(error => {
+                            dbg('Error saving devDebugEnabled:', error);
+                          });
+                          Toast.show({
+                            type: 'info',
+                            text1: 'Dev Mode Disabled',
+                            text2: 'Dev Debug section is now hidden',
+                            position: 'top',
+                          });
+                        },
+                      },
+                    ],
+                  );
+                }}
+                android_ripple={{color: 'rgba(255,255,255,0.2)'}}>
+                <Text style={styles.disableDevModeButtonText}>
+                  Disable Dev Mode
+                </Text>
+              </AppPressable>
+            </CollapsibleSection>
+          )}
+          {/* Font Testing - Development Only */}
+          {__DEV__ && (
+            <CollapsibleSection
+              title="Font Testing"
+              isExpanded={expandedSections.fontTesting}
+              onToggle={() => toggleSection('fontTesting')}
+              styles={styles}
+              theme={theme}>
+              <Text style={styles.toggleDescription}>
+                Visual font comparison tool to verify unified fonts across
+                platforms. This section only appears in development builds. Note
+                that rendered fonts may differ from the actual fonts on your
+                device. Also, the font testing section is only visible in
+                development builds.
               </Text>
-            </AppPressable>
-          </CollapsibleSection>
-        )}
-        {/* Font Testing - Development Only */}
-        {__DEV__ && (
-          <CollapsibleSection
-            title="Font Testing"
-            isExpanded={expandedSections.fontTesting}
-            onToggle={() => toggleSection('fontTesting')}
-            styles={styles}
-            theme={theme}>
-            <Text style={styles.toggleDescription}>
-              Visual font comparison tool to verify unified fonts across
-              platforms. This section only appears in development builds. Note
-              that rendered fonts may differ from the actual fonts on your
-              device. Also, the font testing section is only visible in
-              development builds.
-            </Text>
-            <FontComparisonScreen />
-          </CollapsibleSection>
-        )}
+              <FontComparisonScreen />
+            </CollapsibleSection>
+          )}
         </SettingsSectionGroup>
 
         {/* Info: Legal, About */}
         <SettingsSectionGroup title="Info" styles={styles} theme={theme}>
-        <CollapsibleSection
-          title="Legal"
-          isExpanded={expandedSections.legal}
-          onToggle={() => toggleSection('legal')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.toggleDescription}>
-            Terms of Service and Privacy Policy
-          </Text>
-          <Text
-            style={styles.termsLink}
-            onPress={() => {
-              setLegalModalType('terms');
-              setIsLegalModalVisible(true);
-            }}>
-            Read Terms of Use
-          </Text>
-          <Text
-            style={styles.termsLink}
-            onPress={() => {
-              setLegalModalType('privacy');
-              setIsLegalModalVisible(true);
-            }}>
-            Read Privacy Policy
-          </Text>
-        </CollapsibleSection>
-        <CollapsibleSection
-          title="About"
-          isExpanded={expandedSections.about}
-          onToggle={() => toggleSection('about')}
-          styles={styles}
-          theme={theme}>
-          <View style={styles.aboutInfoRow}>
-            <Text style={styles.aboutLabel}>App Version</Text>
-            <Text style={styles.aboutValue}>{appVersion}</Text>
-          </View>
-          <View style={styles.aboutInfoRow}>
-            <Text style={styles.aboutLabel}>Build Number</Text>
-            <AppPressable
+          <CollapsibleSection
+            title="Legal"
+            isExpanded={expandedSections.legal}
+            onToggle={() => toggleSection('legal')}
+            styles={styles}
+            theme={theme}>
+            <Text style={styles.toggleDescription}>
+              Terms of Service and Privacy Policy
+            </Text>
+            <Text
+              style={styles.termsLink}
               onPress={() => {
-                // Only enable on Android (iOS prod builds don't support logs)
-                if (Platform.OS !== 'android') {
-                  return;
-                }
+                setLegalModalType('terms');
+                setIsLegalModalVisible(true);
+              }}>
+              Read Terms of Use
+            </Text>
+            <Text
+              style={styles.termsLink}
+              onPress={() => {
+                setLegalModalType('privacy');
+                setIsLegalModalVisible(true);
+              }}>
+              Read Privacy Policy
+            </Text>
+          </CollapsibleSection>
+          <CollapsibleSection
+            title="About"
+            isExpanded={expandedSections.about}
+            onToggle={() => toggleSection('about')}
+            styles={styles}
+            theme={theme}>
+            <View style={styles.aboutInfoRow}>
+              <Text style={styles.aboutLabel}>App Version</Text>
+              <Text style={styles.aboutValue}>{appVersion}</Text>
+            </View>
+            <View style={styles.aboutInfoRow}>
+              <Text style={styles.aboutLabel}>Build Number</Text>
+              <AppPressable
+                onPress={() => {
+                  // Only enable on Android (iOS prod builds don't support logs)
+                  if (Platform.OS !== 'android') {
+                    return;
+                  }
 
-                // Check if dev mode is already enabled
-                if (devDebugEnabled) {
-                  Toast.show({
-                    type: 'info',
-                    text1: 'Dev Mode Already Enabled',
-                    text2: 'Developer debug section is already visible',
-                    position: 'top',
-                    visibilityTime: 2000,
-                  });
-                  return;
-                }
+                  // Check if dev mode is already enabled
+                  if (devDebugEnabled) {
+                    Toast.show({
+                      type: 'info',
+                      text1: 'Dev Mode Already Enabled',
+                      text2: 'Developer debug section is already visible',
+                      position: 'top',
+                      visibilityTime: 2000,
+                    });
+                    return;
+                  }
 
-                // Increment click count
-                buildNumberClickCountRef.current += 1;
-                const currentCount = buildNumberClickCountRef.current;
-                setBuildNumberClickCount(currentCount);
+                  // Increment click count
+                  buildNumberClickCountRef.current += 1;
+                  const currentCount = buildNumberClickCountRef.current;
+                  setBuildNumberClickCount(currentCount);
 
-                // Clear existing timeout
-                if (buildNumberClickTimeoutRef.current) {
-                  clearTimeout(buildNumberClickTimeoutRef.current);
-                }
-                // Reset count after 3 seconds of inactivity
-                buildNumberClickTimeoutRef.current = setTimeout(() => {
-                  buildNumberClickCountRef.current = 0;
-                  setBuildNumberClickCount(0);
-                }, 3000);
-
-                // Show progress toast starting from 2 clicks
-                if (currentCount >= 2 && currentCount < 7) {
-                  const stepsRemaining = 7 - currentCount;
-                  Toast.show({
-                    type: 'info',
-                    text1: `You're now ${stepsRemaining} step${
-                      stepsRemaining > 1 ? 's' : ''
-                    } to enable dev mode`,
-                    position: 'top',
-                    visibilityTime: 2000,
-                  });
-                }
-
-                // Check if we've reached 7 clicks
-                if (currentCount >= 7) {
-                  // Enable dev debug mode
-                  setDevDebugEnabled(true);
-                  EncryptedStorage.setItem('devDebugEnabled', 'true').catch(
-                    error => {
-                      dbg('Error saving devDebugEnabled:', error);
-                    },
-                  );
-                  // Open devDebug section and close about section
-                  setExpandedSections(prev => ({
-                    ...prev,
-                    about: false,
-                    devDebug: true,
-                  }));
-                  // Show toast
-                  Toast.show({
-                    type: 'success',
-                    text1: 'Dev Mode Enabled',
-                    text2: 'Developer debug section is now visible',
-                    position: 'top',
-                  });
-                  // Reset counter
-                  buildNumberClickCountRef.current = 0;
-                  setBuildNumberClickCount(0);
+                  // Clear existing timeout
                   if (buildNumberClickTimeoutRef.current) {
                     clearTimeout(buildNumberClickTimeoutRef.current);
-                    buildNumberClickTimeoutRef.current = null;
                   }
-                }
-              }}
-              style={styles.buildNumberContainer}>
-              {buildNumberClickCount >= 2 ? (
-                <View style={styles.buildNumberBadge}>
-                  <Text style={styles.buildNumberBadgeText}>{buildNumber}</Text>
-                </View>
-              ) : (
-                <Text style={styles.aboutValue}>{buildNumber}</Text>
-              )}
-            </AppPressable>
-          </View>
-          <Text style={styles.toggleDescription}>
-            Make sure that your wallet keyshares devices are running the latest
-            version for optimal compatibility and security.
-          </Text>
-        </CollapsibleSection>
-        </SettingsSectionGroup>
+                  // Reset count after 3 seconds of inactivity
+                  buildNumberClickTimeoutRef.current = setTimeout(() => {
+                    buildNumberClickCountRef.current = 0;
+                    setBuildNumberClickCount(0);
+                  }, 3000);
 
+                  // Show progress toast starting from 2 clicks
+                  if (currentCount >= 2 && currentCount < 7) {
+                    const stepsRemaining = 7 - currentCount;
+                    Toast.show({
+                      type: 'info',
+                      text1: `You're now ${stepsRemaining} step${
+                        stepsRemaining > 1 ? 's' : ''
+                      } to enable dev mode`,
+                      position: 'top',
+                      visibilityTime: 2000,
+                    });
+                  }
+
+                  // Check if we've reached 7 clicks
+                  if (currentCount >= 7) {
+                    // Enable dev debug mode
+                    setDevDebugEnabled(true);
+                    EncryptedStorage.setItem('devDebugEnabled', 'true').catch(
+                      error => {
+                        dbg('Error saving devDebugEnabled:', error);
+                      },
+                    );
+                    // Open devDebug section and close about section
+                    setExpandedSections(prev => ({
+                      ...prev,
+                      about: false,
+                      devDebug: true,
+                    }));
+                    // Show toast
+                    Toast.show({
+                      type: 'success',
+                      text1: 'Dev Mode Enabled',
+                      text2: 'Developer debug section is now visible',
+                      position: 'top',
+                    });
+                    // Reset counter
+                    buildNumberClickCountRef.current = 0;
+                    setBuildNumberClickCount(0);
+                    if (buildNumberClickTimeoutRef.current) {
+                      clearTimeout(buildNumberClickTimeoutRef.current);
+                      buildNumberClickTimeoutRef.current = null;
+                    }
+                  }
+                }}
+                style={styles.buildNumberContainer}>
+                {buildNumberClickCount >= 2 ? (
+                  <View style={styles.buildNumberBadge}>
+                    <Text style={styles.buildNumberBadgeText}>
+                      {buildNumber}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={styles.aboutValue}>{buildNumber}</Text>
+                )}
+              </AppPressable>
+            </View>
+            <Text style={styles.toggleDescription}>
+              Make sure that your wallet keyshares devices are running the
+              latest version for optimal compatibility and security.
+            </Text>
+          </CollapsibleSection>
+        </SettingsSectionGroup>
       </ScrollView>
       {/* Modals */}
       <RestoringIndexesModal

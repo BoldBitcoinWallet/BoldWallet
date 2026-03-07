@@ -1,6 +1,13 @@
 import Big from 'big.js';
 import {BBMTLibNativeModule} from '../native_modules';
-import {dbg, getChangePath, getMainnetAPIList, getReceivePath, GAP_LIMIT, isLegacyWallet} from '../utils';
+import {
+  dbg,
+  getChangePath,
+  getMainnetAPIList,
+  getReceivePath,
+  GAP_LIMIT,
+  isLegacyWallet,
+} from '../utils';
 import LocalCache from './LocalCache';
 import mempoolClient from './MempoolClient';
 import EncryptedStorage from 'react-native-encrypted-storage';
@@ -13,7 +20,7 @@ import {
   setExternalIndex,
   setMaxUsedExternal,
 } from './HdIndexService';
-import { validate as validateBitcoinAddress } from 'bitcoin-address-validation';
+import {validate as validateBitcoinAddress} from 'bitcoin-address-validation';
 export interface WalletBalance {
   btc: string;
   usd: string;
@@ -87,9 +94,14 @@ interface CachedTransactionData {
 export const waitMS = (ms = 2000) =>
   new Promise(resolve => setTimeout(resolve, ms));
 // Add validation functions (exported for address-for-network checks, e.g. QR scan)
-export const validateBitcoinAddressEnhanced = (address: string, network: string = 'mainnet'): boolean => {
+export const validateBitcoinAddressEnhanced = (
+  address: string,
+  network: string = 'mainnet',
+): boolean => {
   if (!address || typeof address !== 'string') {
-    dbg('WalletService: Bitcoin address validation failed - empty or invalid type');
+    dbg(
+      'WalletService: Bitcoin address validation failed - empty or invalid type',
+    );
     return false;
   }
   try {
@@ -104,19 +116,40 @@ export const validateBitcoinAddressEnhanced = (address: string, network: string 
     // Check address type based on network
     if (isTestnet) {
       // Testnet addresses: m, n, 2, tb1 prefixes
-      if (!(address.startsWith('m') || address.startsWith('n') ||
-            address.startsWith('2') || address.startsWith('tb1'))) {
-        dbg('WalletService: Bitcoin address validation failed - testnet address expected');
+      if (
+        !(
+          address.startsWith('m') ||
+          address.startsWith('n') ||
+          address.startsWith('2') ||
+          address.startsWith('tb1')
+        )
+      ) {
+        dbg(
+          'WalletService: Bitcoin address validation failed - testnet address expected',
+        );
         return false;
       }
     } else {
       // Mainnet addresses: 1, 3, bc1 prefixes
-      if (!(address.startsWith('1') || address.startsWith('3') || address.startsWith('bc1'))) {
-        dbg('WalletService: Bitcoin address validation failed - mainnet address expected');
+      if (
+        !(
+          address.startsWith('1') ||
+          address.startsWith('3') ||
+          address.startsWith('bc1')
+        )
+      ) {
+        dbg(
+          'WalletService: Bitcoin address validation failed - mainnet address expected',
+        );
         return false;
       }
     }
-    dbg('WalletService: Bitcoin address validation passed:', address, 'for network:', network);
+    dbg(
+      'WalletService: Bitcoin address validation passed:',
+      address,
+      'for network:',
+      network,
+    );
     return true;
   } catch (error) {
     dbg('WalletService: Bitcoin address validation error:', error);
@@ -327,7 +360,12 @@ export class WalletService {
       network,
       addressType,
     );
-    dbg('WalletService: getNextChangeAddress', {network, addressType, changeIdx, changeAddress: changeAddress?.slice(0, 12) + '...'});
+    dbg('WalletService: getNextChangeAddress', {
+      network,
+      addressType,
+      changeIdx,
+      changeAddress: changeAddress?.slice(0, 12) + '...',
+    });
     return changeAddress;
   }
 
@@ -367,7 +405,11 @@ export class WalletService {
     );
     await this.saveStoredState({address: newAddress});
     this.currentAddress = newAddress;
-    dbg('WalletService: getNextReceiveAddress', {network, addressType, nextIndex});
+    dbg('WalletService: getNextReceiveAddress', {
+      network,
+      addressType,
+      nextIndex,
+    });
     return newAddress;
   }
 
@@ -531,11 +573,22 @@ export class WalletService {
     const cacheKey = `${network}_${addressType}_${externalEnd}_${internalEnd}`;
     const cached = this.hdAddressCache.get(cacheKey);
     if (cached) {
-      dbg('WalletService: getHdAddressesWithPaths cache hit', cacheKey, cached.length, 'addresses');
+      dbg(
+        'WalletService: getHdAddressesWithPaths cache hit',
+        cacheKey,
+        cached.length,
+        'addresses',
+      );
       return cached;
     }
 
-    dbg('WalletService: getHdAddressesWithPaths deriving', externalEnd + 1, 'receive +', internalEnd + 1, 'change addresses');
+    dbg(
+      'WalletService: getHdAddressesWithPaths deriving',
+      externalEnd + 1,
+      'receive +',
+      internalEnd + 1,
+      'change addresses',
+    );
     const results: HdAddressWithPath[] = [];
     for (let i = 0; i <= externalEnd; i++) {
       const path = getReceivePath(network, addressType, useLegacyPath, i);
@@ -681,7 +734,10 @@ export class WalletService {
    * HD rule: An address is USED if it has EVER appeared in transaction history (confirmed or mempool),
    * regardless of current UTXO state. Used for restore discovery to prevent address reuse.
    */
-  private async isAddressUsed(address: string, apiUrl: string): Promise<boolean> {
+  private async isAddressUsed(
+    address: string,
+    apiUrl: string,
+  ): Promise<boolean> {
     const baseUrl = apiUrl.replace(/\/+$/, '');
     const url = `${baseUrl}/address/${address}/txs`;
     try {
@@ -724,7 +780,11 @@ export class WalletService {
     network: string,
     addressType: string,
     apiUrl: string,
-    onProgress?: (chain: 'external' | 'internal', index: number, gapIndex: number) => void,
+    onProgress?: (
+      chain: 'external' | 'internal',
+      index: number,
+      gapIndex: number,
+    ) => void,
   ): Promise<void> {
     dbg('WalletService: discoverHdIndexesForNetwork START', {
       network,
@@ -975,13 +1035,17 @@ export class WalletService {
     try {
       // Get the list of mainnet API endpoints
       const apiEndpoints = await getMainnetAPIList();
-      dbg('WalletService: Attempting to fetch BTC price using round-robin from APIs:', apiEndpoints);
+      dbg(
+        'WalletService: Attempting to fetch BTC price using round-robin from APIs:',
+        apiEndpoints,
+      );
       let lastError: any = null;
       // Try each API endpoint in sequence until one succeeds
       for (const baseApiUrl of apiEndpoints) {
         try {
           // Always use mainnet price endpoint (remove any testnet suffix)
-          const priceUrl = baseApiUrl.replace(/\/testnet\/?$/, '') + '/v1/prices';
+          const priceUrl =
+            baseApiUrl.replace(/\/testnet\/?$/, '') + '/v1/prices';
           dbg('WalletService: Trying price API URL:', priceUrl);
           const response = await this.withTimeout(
             'price',
@@ -991,9 +1055,19 @@ export class WalletService {
             throw new Error(`HTTP ${response.status}`);
           }
           const data = response.data as any;
-          dbg('WalletService: Raw price data received from', priceUrl, ':', data);
+          dbg(
+            'WalletService: Raw price data received from',
+            priceUrl,
+            ':',
+            data,
+          );
           if (!data || !data.USD || !validateNumber(data.USD)) {
-            dbg('WalletService: Invalid price data received from', priceUrl, ':', data);
+            dbg(
+              'WalletService: Invalid price data received from',
+              priceUrl,
+              ':',
+              data,
+            );
             throw new Error('Invalid price data received');
           }
           const rate = parseFloat(data.USD);
@@ -1003,7 +1077,14 @@ export class WalletService {
             throw new Error('Invalid rate value');
           }
           const price = this.formatUSD(data.USD);
-          dbg('WalletService: New price fetched from', priceUrl, '- Rate:', rate, 'Price:', price);
+          dbg(
+            'WalletService: New price fetched from',
+            priceUrl,
+            '- Rate:',
+            rate,
+            'Price:',
+            price,
+          );
           // Use all available rates from the API response
           const rates: {[key: string]: number} = {};
           Object.entries(data).forEach(([currency, value]) => {
@@ -1058,8 +1139,16 @@ export class WalletService {
         const jks = await EncryptedStorage.getItem('keyshare');
         const ks = JSON.parse(jks || '{}');
         const useLegacyPath = isLegacyWallet(ks.created_at);
-        const externalIndex = await getExternalIndex(network, state.addressType);
-        const path = getReceivePath(network, state.addressType, useLegacyPath, externalIndex);
+        const externalIndex = await getExternalIndex(
+          network,
+          state.addressType,
+        );
+        const path = getReceivePath(
+          network,
+          state.addressType,
+          useLegacyPath,
+          externalIndex,
+        );
         const btcPub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,
           ks.chain_code_hex,
@@ -1108,7 +1197,12 @@ export class WalletService {
       const ks = JSON.parse(jks || '{}');
       const useLegacyPath = isLegacyWallet(ks.created_at);
       const externalIndex = await getExternalIndex(state.network, addressType);
-      const path = getReceivePath(state.network, addressType, useLegacyPath, externalIndex);
+      const path = getReceivePath(
+        state.network,
+        addressType,
+        useLegacyPath,
+        externalIndex,
+      );
       const btcPub = await BBMTLibNativeModule.derivePubkey(
         ks.pub_key,
         ks.chain_code_hex,
@@ -1152,9 +1246,15 @@ export class WalletService {
         force,
       );
       // Normalize network parameter for validation (testnet3 -> testnet)
-      const normalizedNetwork = this.currentNetwork === 'testnet3' ? 'testnet' : this.currentNetwork;
+      const normalizedNetwork =
+        this.currentNetwork === 'testnet3' ? 'testnet' : this.currentNetwork;
       if (!validateBitcoinAddressEnhanced(address, normalizedNetwork)) {
-        dbg('WalletService: Invalid Bitcoin address format:', address, 'for network:', this.currentNetwork);
+        dbg(
+          'WalletService: Invalid Bitcoin address format:',
+          address,
+          'for network:',
+          this.currentNetwork,
+        );
         throw new Error('Invalid Bitcoin address');
       }
       if (!validateNumber(btcRate)) {
@@ -1189,7 +1289,9 @@ export class WalletService {
       dbg('WalletService: Raw balance in satoshis:', balance.toString());
       // Calculate balance after pending sent, ensuring it's never negative
       const balanceAfterPending = balance.sub(pendingSent);
-      const finalBalance = balanceAfterPending.gte(0) ? balanceAfterPending : new Big(0);
+      const finalBalance = balanceAfterPending.gte(0)
+        ? balanceAfterPending
+        : new Big(0);
       const newBalance = finalBalance.div(1e8).toFixed(8);
       dbg('WalletService: Balance after pending subtraction:', newBalance);
       const hasNonZeroBalance = Number(newBalance) > 0;
@@ -1244,6 +1346,14 @@ export class WalletService {
     _force: boolean = false,
   ): Promise<WalletBalance> {
     try {
+      dbg('WalletService: getWalletBalanceAggregate', {
+        network,
+        addressType,
+        btcRate,
+        pendingSent,
+        _force,
+      });
+
       const jks = await EncryptedStorage.getItem('keyshare');
       if (!jks) {
         dbg('WalletService: No keyshare for aggregate balance');
@@ -1259,7 +1369,10 @@ export class WalletService {
       const cleanApi = api.replace(/\/+$/, '');
 
       // Reuse the cached address list — no re-derivation if indexes haven't changed.
-      const addressesWithPaths = await this.getHdAddressesWithPaths(network, addressType);
+      const addressesWithPaths = await this.getHdAddressesWithPaths(
+        network,
+        addressType,
+      );
       const addresses = addressesWithPaths.map(a => a.address);
 
       let confirmedSats = new Big(0);
@@ -1292,7 +1405,9 @@ export class WalletService {
 
       const totalSats = confirmedSats.add(mempoolSats);
       const balanceAfterPending = totalSats.sub(pendingSent);
-      const finalBalance = balanceAfterPending.gte(0) ? balanceAfterPending : new Big(0);
+      const finalBalance = balanceAfterPending.gte(0)
+        ? balanceAfterPending
+        : new Big(0);
       const newBalance = finalBalance.div(1e8).toFixed(8);
       const hasNonZeroBalance = Number(newBalance) > 0;
       let usdAmount = '';
@@ -1315,16 +1430,20 @@ export class WalletService {
       };
       const cacheKey = `wallet_balance_aggregate_${network}_${addressType}`;
       await LocalCache.setItem(cacheKey, JSON.stringify(result));
+      dbg('WalletService: getWalletBalanceAggregate result:', result);
       return result;
     } catch (error) {
       dbg('WalletService: getWalletBalanceAggregate error:', error);
       const cached = await this.getCachedAggregateBalance(network, addressType);
-      return cached ?? {
-        btc: '0.00000000',
-        usd: '$0.00',
-        hasNonZeroBalance: false,
-        timestamp: Date.now(),
-      };
+      dbg('WalletService: getWalletBalanceAggregate cached:', cached);
+      return (
+        cached ?? {
+          btc: '0.00000000',
+          usd: '$0.00',
+          hasNonZeroBalance: false,
+          timestamp: Date.now(),
+        }
+      );
     }
   }
 
@@ -1486,24 +1605,50 @@ export class WalletService {
     for (const addr of addresses) {
       try {
         const url = `${cleanBase}/api/address/${encodeURIComponent(addr)}/txs`;
-        const res = await this.withTimeout(`txs-${addr.slice(0, 12)}`, mempoolClient.get(url), 8000);
-        if (!res.ok) { cursors[addr] = null; continue; }
+        const res = await this.withTimeout(
+          `txs-${addr.slice(0, 12)}`,
+          mempoolClient.get(url),
+          8000,
+        );
+        if (!res.ok) {
+          cursors[addr] = null;
+          continue;
+        }
         const data = res.data as any[];
-        if (!Array.isArray(data)) { cursors[addr] = null; continue; }
+        if (!Array.isArray(data)) {
+          cursors[addr] = null;
+          continue;
+        }
         for (const tx of data) {
-          if (!seen.has(tx.txid)) { seen.add(tx.txid); merged.push(tx); }
+          if (!seen.has(tx.txid)) {
+            seen.add(tx.txid);
+            merged.push(tx);
+          }
         }
         // Exactly PAGE_SIZE returned → there may be a next page
-        cursors[addr] = data.length >= WalletService.TX_PAGE_SIZE
-          ? data[data.length - 1].txid
-          : null;
+        cursors[addr] =
+          data.length >= WalletService.TX_PAGE_SIZE
+            ? data[data.length - 1].txid
+            : null;
       } catch (e) {
-        dbg('WalletService: fetchTransactionsForAddresses failed for', addr.slice(0, 12), e);
+        dbg(
+          'WalletService: fetchTransactionsForAddresses failed for',
+          addr.slice(0, 12),
+          e,
+        );
         cursors[addr] = null;
       }
     }
-    merged.sort((a, b) => WalletService.txSortKey(b) - WalletService.txSortKey(a));
-    dbg('WalletService: fetchTransactionsForAddresses merged', merged.length, 'txs from', addresses.length, 'addresses');
+    merged.sort(
+      (a, b) => WalletService.txSortKey(b) - WalletService.txSortKey(a),
+    );
+    dbg(
+      'WalletService: fetchTransactionsForAddresses merged',
+      merged.length,
+      'txs from',
+      addresses.length,
+      'addresses',
+    );
     return {txs: merged, cursors};
   }
 
@@ -1523,27 +1668,50 @@ export class WalletService {
     for (const [addr, cursor] of Object.entries(cursors)) {
       if (!cursor) continue; // already exhausted
       try {
-        const url = `${cleanBase}/api/address/${encodeURIComponent(addr)}/txs/chain/${cursor}`;
-        const res = await this.withTimeout(`txs-more-${addr.slice(0, 12)}`, mempoolClient.get(url), 8000);
-        if (!res.ok) { updatedCursors[addr] = null; continue; }
+        const url = `${cleanBase}/api/address/${encodeURIComponent(
+          addr,
+        )}/txs/chain/${cursor}`;
+        const res = await this.withTimeout(
+          `txs-more-${addr.slice(0, 12)}`,
+          mempoolClient.get(url),
+          8000,
+        );
+        if (!res.ok) {
+          updatedCursors[addr] = null;
+          continue;
+        }
         const data = res.data as any[];
         if (!Array.isArray(data) || data.length === 0) {
           updatedCursors[addr] = null;
           continue;
         }
         for (const tx of data) {
-          if (!seen.has(tx.txid)) { seen.add(tx.txid); merged.push(tx); }
+          if (!seen.has(tx.txid)) {
+            seen.add(tx.txid);
+            merged.push(tx);
+          }
         }
-        updatedCursors[addr] = data.length >= WalletService.TX_PAGE_SIZE
-          ? data[data.length - 1].txid
-          : null;
+        updatedCursors[addr] =
+          data.length >= WalletService.TX_PAGE_SIZE
+            ? data[data.length - 1].txid
+            : null;
       } catch (e) {
-        dbg('WalletService: fetchMoreTransactionsForAddresses failed for', addr.slice(0, 12), e);
+        dbg(
+          'WalletService: fetchMoreTransactionsForAddresses failed for',
+          addr.slice(0, 12),
+          e,
+        );
         updatedCursors[addr] = null;
       }
     }
-    merged.sort((a, b) => WalletService.txSortKey(b) - WalletService.txSortKey(a));
-    dbg('WalletService: fetchMoreTransactionsForAddresses page yielded', merged.length, 'new txs');
+    merged.sort(
+      (a, b) => WalletService.txSortKey(b) - WalletService.txSortKey(a),
+    );
+    dbg(
+      'WalletService: fetchMoreTransactionsForAddresses page yielded',
+      merged.length,
+      'new txs',
+    );
     return {txs: merged, cursors: updatedCursors};
   }
 
