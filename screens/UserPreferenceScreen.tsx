@@ -9,18 +9,30 @@ import {
   Platform,
   Image,
 } from 'react-native';
+import {useRoute} from '@react-navigation/native';
 import AppPressable from '../components/AppPressable';
 import AppText from '../components/AppText';
+import RestoringIndexesModal from '../components/RestoringIndexesModal';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useTheme} from '../theme';
 import {dbg, getResetToMainTabsWallet} from '../utils';
 import {useUser} from '../context/UserContext';
+import {WalletService} from '../services/WalletService';
 
 const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
+  const route = useRoute();
+  const pendingRestore = (route.params as any)?.pendingRestore === true;
+
   const {theme} = useTheme();
-  const {setActiveApiProvider, activeNetwork, showMempoolPlayground, showUtxosTab, showPsbtTab, showWalletTab} = useUser();
+  const {setActiveApiProvider, activeApiProvider, activeNetwork, showMempoolPlayground, showUtxosTab, showPsbtTab, showWalletTab} = useUser();
   const [pendingAPI, setPendingAPI] = useState('');
   const [isAPISaving, setIsAPISaving] = useState(false);
+  const [isRestoringIndexes, setIsRestoringIndexes] = useState(false);
+  const [restoreProgress, setRestoreProgress] = useState<{
+    chain: 'external' | 'internal';
+    index: number;
+    gapIndex: number;
+  } | null>(null);
 
   const [isFocused, setIsFocused] = useState(false);
   const inputRef = useRef<TextInput>(null);
@@ -96,8 +108,9 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
       await setActiveApiProvider(normalizedApi);
       setPendingAPI(normalizedApi);
       dbg('=== API saved and propagated successfully:', normalizedApi);
-      // Proceed to home after successful save
-      handleProceed();
+      // Proceed to home after successful save — pass the resolved API so the
+      // restore uses the endpoint the user just configured, not the stale state.
+      handleProceed(normalizedApi);
     } catch (error) {
       dbg('Error in saveAPIAndProceed:', error);
       Alert.alert('Error', 'Failed to save API endpoint. Please try again.');
@@ -125,7 +138,7 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
     return styles.apiInputContainer;
   };
 
-  const handleSkip = () => {
+  const navigateToHome = () => {
     navigation.reset(
       getResetToMainTabsWallet({}, {
         showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
@@ -136,15 +149,40 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
     );
   };
 
-  const handleProceed = () => {
-    navigation.reset(
-      getResetToMainTabsWallet({}, {
-        showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
-        showUtxos: showUtxosTab,
-        showPsbt: showPsbtTab,
-        showWallet: showWalletTab,
-      }),
-    );
+  const runRestoreIfNeeded = async (apiUrl: string) => {
+    if (!pendingRestore) {
+      return;
+    }
+    dbg('UserPreferenceScreen: Running HD index restore with API:', apiUrl.slice(0, 40));
+    setIsRestoringIndexes(true);
+    setRestoreProgress(null);
+    try {
+      const ws = WalletService.getInstance();
+      for (const addrType of ['legacy', 'segwit-native', 'segwit-compatible']) {
+        await ws.discoverHdIndexesForNetwork(
+          'mainnet',
+          addrType,
+          apiUrl,
+          (chain, index, gapIndex) => setRestoreProgress({chain, index, gapIndex}),
+        );
+      }
+      dbg('UserPreferenceScreen: HD index restore complete');
+    } finally {
+      setIsRestoringIndexes(false);
+      setRestoreProgress(null);
+    }
+  };
+
+  const handleSkip = async () => {
+    const fallbackApi =
+      activeApiProvider || 'https://mempool.space/api';
+    await runRestoreIfNeeded(fallbackApi);
+    navigateToHome();
+  };
+
+  const handleProceed = async (resolvedApi?: string) => {
+    await runRestoreIfNeeded(resolvedApi || activeApiProvider || 'https://mempool.space/api');
+    navigateToHome();
   };
 
   const styles = StyleSheet.create({
@@ -375,13 +413,13 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
           <AppPressable
             style={[
               styles.proceedButton,
-              (isAPISaving || pendingAPI.trim() === '') &&
+              (isAPISaving || isRestoringIndexes || pendingAPI.trim() === '') &&
                 styles.proceedButtonDisabled,
             ]}
             onPress={() => {
               saveAPIAndProceed(pendingAPI);
             }}
-            disabled={isAPISaving || pendingAPI.trim() === ''}
+            disabled={isAPISaving || isRestoringIndexes || pendingAPI.trim() === ''}
             android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
             <Image
               source={require('../assets/check-icon.png')}
@@ -404,11 +442,18 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
           <AppPressable
             style={styles.skipButton}
             onPress={handleSkip}
+            disabled={isAPISaving || isRestoringIndexes}
             android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
             <AppText style={styles.skipButtonText}>Skip for now</AppText>
           </AppPressable>
         </ScrollView>
       </KeyboardAvoidingView>
+      <RestoringIndexesModal
+        visible={isRestoringIndexes}
+        chain={restoreProgress?.chain}
+        index={restoreProgress?.index}
+        gapIndex={restoreProgress?.gapIndex}
+      />
     </SafeAreaView>
   );
 };

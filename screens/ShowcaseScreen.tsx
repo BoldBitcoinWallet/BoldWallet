@@ -23,9 +23,7 @@ import {useTheme} from '../theme';
 import {dbg, isLegacyWallet} from '../utils';
 import LegalModal from '../components/LegalModal';
 import TransportModeSelector from '../components/TransportModeSelector';
-import RestoringIndexesModal from '../components/RestoringIndexesModal';
 import LocalCache from '../services/LocalCache';
-import {WalletService} from '../services/WalletService';
 import {useUser} from '../context/UserContext';
 const {BBMTLibNativeModule} = NativeModules;
 const ShowcaseScreen = ({navigation}: any) => {
@@ -44,12 +42,6 @@ const ShowcaseScreen = ({navigation}: any) => {
   );
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
-  const [isRestoringIndexes, setIsRestoringIndexes] = useState(false);
-  const [restoreProgress, setRestoreProgress] = useState<{
-    chain: 'external' | 'internal';
-    index: number;
-    gapIndex: number;
-  } | null>(null);
   const {theme} = useTheme();
   const {setActiveNetwork} = useUser();
   const fadeAnim = useRef(new Animated.Value(0.6)).current;
@@ -205,38 +197,16 @@ const ShowcaseScreen = ({navigation}: any) => {
         await setActiveNetwork('mainnet');
         dbg('=== Network reset to mainnet, UserContext will refresh addresses');
         setModalVisible(false);
-        setIsRestoringIndexes(true);
-        setRestoreProgress(null);
-        try {
-          // Restore discovery: scan chain to populate HD indexes for all address types
-          dbg('ShowcaseScreen: Running restore discovery for all address types');
-          const mainnetApi = 'https://mempool.space/api';
-          const ws = WalletService.getInstance();
-          for (const addrType of ['legacy', 'segwit-native', 'segwit-compatible']) {
-            dbg('ShowcaseScreen: Restore discovery for', addrType);
-            await ws.discoverHdIndexesForNetwork(
-              'mainnet',
-              addrType,
-              mainnetApi,
-              (chain, index, gapIndex) =>
-                setRestoreProgress({chain, index, gapIndex}),
-            );
-          }
-          dbg('ShowcaseScreen: Restore discovery complete for all address types');
-        } finally {
-          setIsRestoringIndexes(false);
-          setRestoreProgress(null);
-        }
         setPassword('');
-        dbg('Navigating to User Preferences');
+        dbg('Navigating to User Preferences (restore will run after endpoint selection)');
         setTimeout(() => {
           navigation.dispatch(
             CommonActions.reset({
               index: 0,
-              routes: [{name: 'User Preferences'}],
+              routes: [{name: 'User Preferences', params: {pendingRestore: true}}],
             }),
           );
-        }, 1000);
+        }, 500);
       }
     } catch {
       dbg('Failed to decode as UTF-8. File might be binary.');
@@ -1101,12 +1071,6 @@ const ShowcaseScreen = ({navigation}: any) => {
           setIsLegalModalVisible(false);
         }}
         type={legalModalType}
-      />
-      <RestoringIndexesModal
-        visible={isRestoringIndexes}
-        chain={restoreProgress?.chain}
-        index={restoreProgress?.index}
-        gapIndex={restoreProgress?.gapIndex}
       />
       {/* Transport Mode Selector */}
       <TransportModeSelector
