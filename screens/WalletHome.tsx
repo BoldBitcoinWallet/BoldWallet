@@ -210,6 +210,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     React.useState('');
   const [initialTransactions, setInitialTransactions] = useState<any[]>([]);
   const [walletAddresses, setWalletAddresses] = useState<string[]>([]);
+  // true once getHdAddressesWithPaths has resolved for the first time.
+  // TransactionList must not fire in single-address mode while HD derivation is
+  // still running (2-5 s when hdAddressCache is cold), otherwise it fetches only
+  // the current receive address (likely unused, 0 txs) and caches that stale result.
+  const [walletAddressesReady, setWalletAddressesReady] = useState(false);
   // Animation and visual feedback states
   const [isBalanceLoading, setIsBalanceLoading] = useState(false);
   const balanceUpdateAnimation = useSharedValue(1);
@@ -503,6 +508,28 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           }
         }
       }
+      // Sync walletAddresses with the current HD index state.
+      // bumpExternalIndexIfCurrentUsed may advance indexes between renders
+      // but the walletAddresses effect only fires on specific dep changes.
+      // Refreshing here ensures the TransactionList always covers every address
+      // the wallet has used, including the one just received on.
+      try {
+        const addrType = addressType || userAddressType || 'segwit-native';
+        const freshAddrs = await WalletService.getInstance().getHdAddressesWithPaths(
+          network,
+          addrType,
+        );
+        const freshList = freshAddrs.map(a => a.address);
+        setWalletAddresses(prev => {
+          const same =
+            prev.length === freshList.length &&
+            prev.every((a, i) => a === freshList[i]);
+          return same ? prev : freshList;
+        });
+        setWalletAddressesReady(true);
+      } catch {
+        // Non-critical — address list failure does not affect balance display.
+      }
     } catch (error: any) {
       dbg('WalletHome: Error fetching data:', error);
       let errMsg = 'Unknown error';
@@ -537,14 +564,24 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     addressType,
     userAddressType,
   ]);
-  // Load HD addresses for multi-address transaction list
+  // Load HD addresses for multi-address transaction list.
+  // walletAddressesReady is set to true once the async derivation has settled so
+  // that TransactionList is never given a single-address prop while we are still
+  // waiting for the full HD address list.
   useEffect(() => {
     if (!isInitialized || !network || !(addressType || userAddressType)) return;
     const effectiveType = addressType || userAddressType || 'segwit-native';
+    setWalletAddressesReady(false);
     WalletService.getInstance()
       .getHdAddressesWithPaths(network, effectiveType)
-      .then(arr => setWalletAddresses(arr.map(a => a.address)))
-      .catch(() => setWalletAddresses([]));
+      .then(arr => {
+        setWalletAddresses(arr.map(a => a.address));
+        setWalletAddressesReady(true);
+      })
+      .catch(() => {
+        setWalletAddresses([]);
+        setWalletAddressesReady(true);
+      });
   }, [isInitialized, network, addressType, userAddressType]);
   // Update the ref whenever fetchData changes
   useEffect(() => {
@@ -1055,6 +1092,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setLoading(false);
         isReinitInProgressRef.current = false;
       }
+      // Fetch live balance/price now that the reinit guard has been cleared.
+      // Without this, reinitializeWallet only shows cached data and never
+      // triggers a network refresh, so returning from settings after a
+      // "clear cache" always shows 0 BTC until the user pulls to refresh.
+      await fetchDataRef.current?.();
     },
     [network, apiBase, showErrorToast, address],
   );
@@ -2459,8 +2501,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         <TransactionList
           ref={transactionListRef}
           baseApi={apiBase}
-          address={walletAddresses.length > 0 ? undefined : address}
-          addresses={walletAddresses.length > 0 ? walletAddresses : undefined}
+          address={walletAddressesReady && walletAddresses.length === 0 ? address : undefined}
+          addresses={walletAddressesReady && walletAddresses.length > 0 ? walletAddresses : undefined}
           network={network}
           addressType={addressType || userAddressType}
           onUpdate={handleTransactionUpdate}

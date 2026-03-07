@@ -45,6 +45,7 @@ import {
 } from '../utils';
 import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
+import mempoolClient from '../services/MempoolClient';
 import LocalCache from '../services/LocalCache';
 import LegalModal from '../components/LegalModal';
 import BackupKeyshareModal from '../components/BackupKeyshareModal';
@@ -2530,6 +2531,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     setRestoreProgress({chain, index, gapIndex}),
                 );
                 dbg('WalletSettings: Restore discovery done, re-persisting network/api');
+                // Pre-warm the in-memory HD address cache and wipe stale HTTP
+                // cache entries — same post-discovery pattern as UserPreferenceScreen.
+                // Without this, WalletHome loads with a cold hdAddressCache
+                // (causing a 2-5 s derivation delay and premature single-address
+                // TransactionList fetch) and the mempoolClient cache still holds
+                // discovery-era /txs snapshots that mask the real transaction history.
+                ws.invalidateAddressCache();
+                await ws.getHdAddressesWithPaths(activeNetwork, activeAddressType);
+                mempoolClient.invalidateAll();
                 // Re-persist network/api so app continues to work
                 await LocalCache.setItem('network', activeNetwork);
                 await LocalCache.setItem('api', apiUrl);

@@ -18,6 +18,7 @@ import {useTheme} from '../theme';
 import {dbg, getResetToMainTabsWallet} from '../utils';
 import {useUser} from '../context/UserContext';
 import {WalletService} from '../services/WalletService';
+import mempoolClient from '../services/MempoolClient';
 
 const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const route = useRoute();
@@ -167,6 +168,22 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
         );
       }
       dbg('UserPreferenceScreen: HD index restore complete');
+
+      // Pre-warm the in-memory HD address cache for the default address type.
+      // discoverHdIndexesForNetwork sets the indexes but never calls
+      // getHdAddressesWithPaths, so hdAddressCache is cold when WalletHome loads.
+      // A cold cache forces sequential native-module derivation (2-5 s), during
+      // which TransactionList fires in single-address mode and shows stale/partial
+      // results.  Pre-warming here means getHdAddressesWithPaths returns from the
+      // in-memory Map in microseconds — walletAddresses is ready before the first
+      // TransactionList render.
+      await ws.getHdAddressesWithPaths('mainnet', 'segwit-native');
+
+      // Wipe all HTTP cache entries populated by isAddressUsed() during discovery.
+      // Those entries share the same /address/{addr}/txs URLs that the transaction
+      // list fetches.  Leaving them causes pull-to-refresh (within the 30 s TTL)
+      // to serve discovery-era snapshots instead of fresh network data.
+      mempoolClient.invalidateAll();
     } finally {
       setIsRestoringIndexes(false);
       setRestoreProgress(null);

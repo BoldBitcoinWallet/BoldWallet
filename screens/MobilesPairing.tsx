@@ -42,7 +42,12 @@ import {
 } from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Big from 'big.js';
-import {dbg, getPinnedRemoteIPs, hexToString, getResetToMainTabsWallet} from '../utils';
+import {
+  dbg,
+  getPinnedRemoteIPs,
+  hexToString,
+  getResetToMainTabsWallet,
+} from '../utils';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {waitMS, WalletService} from '../services/WalletService';
@@ -125,7 +130,13 @@ const MobilesPairing = ({navigation}: any) => {
     derivePaths?: string[];
   } | null>(null);
   const {theme} = useTheme();
-  const {activeNetwork, showMempoolPlayground, showUtxosTab, showPsbtTab, showWalletTab} = useUser();
+  const {
+    activeNetwork,
+    showMempoolPlayground,
+    showUtxosTab,
+    showPsbtTab,
+    showWalletTab,
+  } = useUser();
   const showPlay = activeNetwork === 'mainnet' && showMempoolPlayground;
   // Animation ref for horizontal progress bar
   const progressAnimation = useSharedValue(0);
@@ -721,9 +732,21 @@ const MobilesPairing = ({navigation}: any) => {
             } else {
               dbg(partyID, 'PSBT signed successfully');
             }
-            dbg('PSBT signing complete: Navigating to Wallet tab with signedPsbt');
+            dbg(
+              'PSBT signing complete: Navigating to Wallet tab with signedPsbt',
+            );
             navigation.dispatch(
-              CommonActions.reset(getResetToMainTabsWallet({signedPsbt}, { showPlay, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab })),
+              CommonActions.reset(
+                getResetToMainTabsWallet(
+                  {signedPsbt},
+                  {
+                    showPlay,
+                    showUtxos: showUtxosTab,
+                    showPsbt: showPsbtTab,
+                    showWallet: showWalletTab,
+                  },
+                ),
+              ),
             );
             setMpcDone(true);
           })
@@ -769,21 +792,24 @@ const MobilesPairing = ({navigation}: any) => {
 
         let usedMultiPath = false;
         try {
-          const utxosWithPaths = await WalletService.getInstance().fetchUtxosWithPaths(
-            net,
-            addressTypeToUse,
-            apiUrl,
-          );
-          const changeAddress = await WalletService.getInstance().getNextChangeAddress(
-            net,
-            addressTypeToUse,
-          );
-          if (utxosWithPaths.length > 0 && changeAddress) {
-            // Enrich UTXOs with scriptpubkey so Go skips FetchUTXODetails during signing.
-            const enriched = await WalletService.getInstance().enrichUtxosWithScriptpubkey(
-              utxosWithPaths,
+          const utxosWithPaths =
+            await WalletService.getInstance().fetchUtxosWithPaths(
+              net,
+              addressTypeToUse,
               apiUrl,
             );
+          const changeAddress =
+            await WalletService.getInstance().getNextChangeAddress(
+              net,
+              addressTypeToUse,
+            );
+          if (utxosWithPaths.length > 0 && changeAddress) {
+            // Enrich UTXOs with scriptpubkey so Go skips FetchUTXODetails during signing.
+            const enriched =
+              await WalletService.getInstance().enrichUtxosWithScriptpubkey(
+                utxosWithPaths,
+                apiUrl,
+              );
             const utxosForNative = enriched.map(u => ({
               txid: u.txid,
               vout: u.vout,
@@ -842,19 +868,35 @@ const MobilesPairing = ({navigation}: any) => {
               JSON.stringify(pendingTxs),
             );
             navigation.dispatch(
-              CommonActions.reset(getResetToMainTabsWallet({txId}, {showPlay, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab})),
+              CommonActions.reset(
+                getResetToMainTabsWallet(
+                  {txId},
+                  {
+                    showPlay,
+                    showUtxos: showUtxosTab,
+                    showPsbt: showPsbtTab,
+                    showWallet: showWalletTab,
+                  },
+                ),
+              ),
             );
             setMpcDone(true);
             if (originalNetwork && originalApiUrl) {
               try {
                 await BBMTLibNativeModule.setBtcNetwork(originalNetwork);
-                await BBMTLibNativeModule.setAPI(originalNetwork, originalApiUrl);
+                await BBMTLibNativeModule.setAPI(
+                  originalNetwork,
+                  originalApiUrl,
+                );
                 await LocalCache.setItem('api', originalApiUrl);
                 const walletServiceRestore = WalletService.getInstance();
                 (walletServiceRestore as any).currentNetwork = originalNetwork;
                 (walletServiceRestore as any).currentApiUrl = originalApiUrl;
               } catch (e) {
-                dbg('MobilesPairing: Error restoring network after multi-path send:', e);
+                dbg(
+                  'MobilesPairing: Error restoring network after multi-path send:',
+                  e,
+                );
               }
             }
             if (isMaster) {
@@ -864,7 +906,10 @@ const MobilesPairing = ({navigation}: any) => {
             setDoingMPC(false);
           }
         } catch (multiPathErr) {
-          dbg('MobilesPairing: multi-path send failed, falling back to single-path:', multiPathErr);
+          dbg(
+            'MobilesPairing: multi-path send failed, falling back to single-path:',
+            multiPathErr,
+          );
         }
 
         if (!usedMultiPath) {
@@ -885,80 +930,92 @@ const MobilesPairing = ({navigation}: any) => {
             satoshiAmount,
             satoshiFees,
           )
-          .then(async (txId: any) => {
-            dbg(partyID, 'txID', txId);
-            const validTxID = /^[a-fA-F0-9]{64}$/.test(txId);
-            if (!validTxID) {
-              throw txId;
-            }
-            // Save pending transaction
-            const pendingTxs = JSON.parse(
-              (await LocalCache.getItem(`${senderAddress}-pendingTxs`)) || '{}',
-            );
-            pendingTxs[txId] = {
-              txid: txId,
-              from: senderAddress,
-              to: toAddress,
-              amount: satoshiAmount,
-              satoshiAmount: satoshiAmount,
-              satoshiFees: satoshiFees,
-              sentAt: Date.now(),
-              status: {
-                confirmed: false,
-                block_height: null,
-              },
-            };
-            await LocalCache.setItem(
-              `${senderAddress}-pendingTxs`,
-              JSON.stringify(pendingTxs),
-            );
-            navigation.dispatch(
-              CommonActions.reset(getResetToMainTabsWallet({txId}, { showPlay, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab })),
-            );
-            setMpcDone(true);
-          })
-          .catch((e: any) => {
-            Alert.alert(
-              'Operation Error',
-              `Could not sign and send transaction.\n${e?.message}`,
-            );
-            dbg(partyID, 'keysign error', e);
-          })
-          .finally(async () => {
-            // CRITICAL: Restore original network after transaction completes (success or failure)
-            // This ensures the device's active network remains unchanged
-            if (originalNetwork && originalApiUrl) {
-              try {
-                await BBMTLibNativeModule.setBtcNetwork(originalNetwork);
-                await BBMTLibNativeModule.setAPI(
-                  originalNetwork,
-                  originalApiUrl,
-                );
-                // Restore LocalCache 'api' key to original network's API
-                await LocalCache.setItem('api', originalApiUrl);
-                // Restore WalletService internal state
-                const walletServiceRestore = WalletService.getInstance();
-                (walletServiceRestore as any).currentNetwork = originalNetwork;
-                (walletServiceRestore as any).currentApiUrl = originalApiUrl;
-                dbg(
-                  'MobilesPairing: Restored original network:',
-                  originalNetwork,
-                  'API:',
-                  originalApiUrl,
-                );
-              } catch (restoreError) {
-                dbg(
-                  'MobilesPairing: Error restoring original network:',
-                  restoreError,
-                );
+            .then(async (txId: any) => {
+              dbg(partyID, 'txID', txId);
+              const validTxID = /^[a-fA-F0-9]{64}$/.test(txId);
+              if (!validTxID) {
+                throw txId;
               }
-            }
-            if (isMaster) {
-              await waitMS(2000);
-              stopRelay();
-            }
-            setDoingMPC(false);
-          });
+              // Save pending transaction
+              const pendingTxs = JSON.parse(
+                (await LocalCache.getItem(`${senderAddress}-pendingTxs`)) ||
+                  '{}',
+              );
+              pendingTxs[txId] = {
+                txid: txId,
+                from: senderAddress,
+                to: toAddress,
+                amount: satoshiAmount,
+                satoshiAmount: satoshiAmount,
+                satoshiFees: satoshiFees,
+                sentAt: Date.now(),
+                status: {
+                  confirmed: false,
+                  block_height: null,
+                },
+              };
+              await LocalCache.setItem(
+                `${senderAddress}-pendingTxs`,
+                JSON.stringify(pendingTxs),
+              );
+              navigation.dispatch(
+                CommonActions.reset(
+                  getResetToMainTabsWallet(
+                    {txId},
+                    {
+                      showPlay,
+                      showUtxos: showUtxosTab,
+                      showPsbt: showPsbtTab,
+                      showWallet: showWalletTab,
+                    },
+                  ),
+                ),
+              );
+              setMpcDone(true);
+            })
+            .catch((e: any) => {
+              Alert.alert(
+                'Operation Error',
+                `Could not sign and send transaction.\n${e?.message}`,
+              );
+              dbg(partyID, 'keysign error', e);
+            })
+            .finally(async () => {
+              // CRITICAL: Restore original network after transaction completes (success or failure)
+              // This ensures the device's active network remains unchanged
+              if (originalNetwork && originalApiUrl) {
+                try {
+                  await BBMTLibNativeModule.setBtcNetwork(originalNetwork);
+                  await BBMTLibNativeModule.setAPI(
+                    originalNetwork,
+                    originalApiUrl,
+                  );
+                  // Restore LocalCache 'api' key to original network's API
+                  await LocalCache.setItem('api', originalApiUrl);
+                  // Restore WalletService internal state
+                  const walletServiceRestore = WalletService.getInstance();
+                  (walletServiceRestore as any).currentNetwork =
+                    originalNetwork;
+                  (walletServiceRestore as any).currentApiUrl = originalApiUrl;
+                  dbg(
+                    'MobilesPairing: Restored original network:',
+                    originalNetwork,
+                    'API:',
+                    originalApiUrl,
+                  );
+                } catch (restoreError) {
+                  dbg(
+                    'MobilesPairing: Error restoring original network:',
+                    restoreError,
+                  );
+                }
+              }
+              if (isMaster) {
+                await waitMS(2000);
+                stopRelay();
+              }
+              setDoingMPC(false);
+            });
         }
       }
     } catch (error: any) {
@@ -1609,7 +1666,10 @@ const MobilesPairing = ({navigation}: any) => {
   useEffect(() => {
     if (!isPairing || Platform.OS !== 'android') return undefined;
     const onBack = () => true; // prevent default (stay on screen)
-    const subscription = BackHandler.addEventListener('hardwareBackPress', onBack);
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      onBack,
+    );
     return () => subscription.remove();
   }, [isPairing]);
   const styles = StyleSheet.create({
@@ -3499,7 +3559,8 @@ const MobilesPairing = ({navigation}: any) => {
                           style={[
                             styles.checkboxContainer,
                             styles.keepOpenDuringSetupContainer,
-                            isPrepared && styles.enhancedCheckboxContainerChecked,
+                            isPrepared &&
+                              styles.enhancedCheckboxContainerChecked,
                           ]}
                           disabled={isPreparing}
                           onPress={() => {
@@ -3548,7 +3609,9 @@ const MobilesPairing = ({navigation}: any) => {
                           <Modal
                             transparent={true}
                             visible={isPreparing}
-                            onRequestClose={() => {} /* non-dismissible: block Android back */}>
+                            onRequestClose={
+                              () => {} /* non-dismissible: block Android back */
+                            }>
                             <View style={styles.modalOverlay}>
                               <View style={styles.modalContent}>
                                 {/* Icon Container */}
@@ -3686,7 +3749,9 @@ const MobilesPairing = ({navigation}: any) => {
                           transparent={true}
                           visible={doingMPC}
                           animationType="fade"
-                          onRequestClose={() => {} /* non-dismissible: block Android back */}>
+                          onRequestClose={
+                            () => {} /* non-dismissible: block Android back */
+                          }>
                           <View style={styles.modalOverlay}>
                             <View style={styles.modalContent}>
                               {/* Icon Container */}
@@ -4203,21 +4268,13 @@ const MobilesPairing = ({navigation}: any) => {
                               />
                               <Image
                                 source={require('../assets/in-icon.png')}
-                                style={[
-                                  iconBase,
-                                  {tintColor: accentColor},
-                                ]}
+                                style={[iconBase, {tintColor: accentColor}]}
                                 resizeMode="contain"
                               />
                               <View style={{flex: 1}}>
                                 <Text style={labelOurs} numberOfLines={1}>
                                   HD Wallet
                                 </Text>
-                                {route.params?.derivationPath ? (
-                                  <Text style={pathText} numberOfLines={1}>
-                                    {route.params.derivationPath}
-                                  </Text>
-                                ) : null}
                               </View>
                               <View style={{alignItems: 'flex-end'}}>
                                 <Text style={amtBTCOurs}>
@@ -4552,7 +4609,9 @@ const MobilesPairing = ({navigation}: any) => {
                       transparent={true}
                       visible={doingMPC}
                       animationType="fade"
-                      onRequestClose={() => {} /* non-dismissible: block Android back */}>
+                      onRequestClose={
+                        () => {} /* non-dismissible: block Android back */
+                      }>
                       <View style={styles.modalOverlay}>
                         <View style={styles.modalContent}>
                           {/* Icon Container */}

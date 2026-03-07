@@ -89,7 +89,13 @@ const MobileNostrPairing = ({navigation}: any) => {
   // In keygen mode, use setupMode
   const [isTrio, setIsTrio] = useState<boolean>(setupMode === 'trio');
   const {theme} = useTheme();
-  const {activeNetwork, showMempoolPlayground, showUtxosTab, showPsbtTab, showWalletTab} = useUser();
+  const {
+    activeNetwork,
+    showMempoolPlayground,
+    showUtxosTab,
+    showPsbtTab,
+    showWalletTab,
+  } = useUser();
   const showPlay = activeNetwork === 'mainnet' && showMempoolPlayground;
   const ppmFile = `${RNFS.DocumentDirectoryPath}/ppm.json`;
   // Nostr Identity
@@ -1605,22 +1611,27 @@ const MobileNostrPairing = ({navigation}: any) => {
             addressTypeToUse,
           )) || '';
       } catch (e) {
-        dbg('MobileNostrPairing: getNextChangeAddress failed, using legacy change to sender:', e);
+        dbg(
+          'MobileNostrPairing: getNextChangeAddress failed, using legacy change to sender:',
+          e,
+        );
       }
 
       let txId: string;
       try {
-        const utxosWithPaths = await WalletService.getInstance().fetchUtxosWithPaths(
-          net,
-          addressTypeToUse,
-          apiUrl,
-        );
-        if (utxosWithPaths.length > 0 && changeAddress) {
-          // Enrich UTXOs with scriptpubkey so Go skips FetchUTXODetails during signing.
-          const enriched = await WalletService.getInstance().enrichUtxosWithScriptpubkey(
-            utxosWithPaths,
+        const utxosWithPaths =
+          await WalletService.getInstance().fetchUtxosWithPaths(
+            net,
+            addressTypeToUse,
             apiUrl,
           );
+        if (utxosWithPaths.length > 0 && changeAddress) {
+          // Enrich UTXOs with scriptpubkey so Go skips FetchUTXODetails during signing.
+          const enriched =
+            await WalletService.getInstance().enrichUtxosWithScriptpubkey(
+              utxosWithPaths,
+              apiUrl,
+            );
           const utxosForNative = enriched.map(u => ({
             txid: u.txid,
             vout: u.vout,
@@ -1662,7 +1673,10 @@ const MobileNostrPairing = ({navigation}: any) => {
           );
         }
       } catch (multiPathErr) {
-        dbg('MobileNostrPairing: multi-path failed, trying single-path:', multiPathErr);
+        dbg(
+          'MobileNostrPairing: multi-path failed, trying single-path:',
+          multiPathErr,
+        );
         txId = await BBMTLibNativeModule.nostrMpcSendBTC(
           relaysCSV,
           nsecToUse,
@@ -1715,7 +1729,17 @@ const MobileNostrPairing = ({navigation}: any) => {
       );
       // Navigate to Wallet tab with txId
       navigation.dispatch(
-        CommonActions.reset(getResetToMainTabsWallet({txId}, { showPlay, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab })),
+        CommonActions.reset(
+          getResetToMainTabsWallet(
+            {txId},
+            {
+              showPlay,
+              showUtxos: showUtxosTab,
+              showPsbt: showPsbtTab,
+              showWallet: showWalletTab,
+            },
+          ),
+        ),
       );
       setMpcDone(true);
     } catch (error: any) {
@@ -1928,7 +1952,17 @@ const MobileNostrPairing = ({navigation}: any) => {
             'PSBT signing complete: Navigating to Wallet tab with signedPsbt',
           );
           navigation.dispatch(
-            CommonActions.reset(getResetToMainTabsWallet({signedPsbt}, { showPlay, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab })),
+            CommonActions.reset(
+              getResetToMainTabsWallet(
+                {signedPsbt},
+                {
+                  showPlay,
+                  showUtxos: showUtxosTab,
+                  showPsbt: showPsbtTab,
+                  showWallet: showWalletTab,
+                },
+              ),
+            ),
           );
           setMpcDone(true);
         })
@@ -1937,7 +1971,17 @@ const MobileNostrPairing = ({navigation}: any) => {
           dbg(localNpub, 'PSBT signing error', e);
           try {
             navigation.dispatch(
-              CommonActions.reset(getResetToMainTabsWallet({}, { showPlay, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab })),
+              CommonActions.reset(
+                getResetToMainTabsWallet(
+                  {},
+                  {
+                    showPlay,
+                    showUtxos: showUtxosTab,
+                    showPsbt: showPsbtTab,
+                    showWallet: showWalletTab,
+                  },
+                ),
+              ),
             );
           } catch (navError) {
             dbg('Error navigating after PSBT error:', navError);
@@ -1951,7 +1995,19 @@ const MobileNostrPairing = ({navigation}: any) => {
       Alert.alert('Error', error?.message || 'PSBT signing failed');
       setStatus('PSBT signing failed');
       try {
-        navigation.dispatch(CommonActions.reset(getResetToMainTabsWallet({}, { showPlay, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab })));
+        navigation.dispatch(
+          CommonActions.reset(
+            getResetToMainTabsWallet(
+              {},
+              {
+                showPlay,
+                showUtxos: showUtxosTab,
+                showPsbt: showPsbtTab,
+                showWallet: showWalletTab,
+              },
+            ),
+          ),
+        );
       } catch (navError) {
         dbg('Error navigating after PSBT error:', navError);
       }
@@ -5362,21 +5418,13 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 />
                                 <Image
                                   source={require('../assets/in-icon.png')}
-                                  style={[
-                                    iconBase,
-                                    {tintColor: accentColor},
-                                  ]}
+                                  style={[iconBase, {tintColor: accentColor}]}
                                   resizeMode="contain"
                                 />
                                 <View style={{flex: 1}}>
                                   <Text style={labelOurs} numberOfLines={1}>
                                     HD Wallet
                                   </Text>
-                                  {route.params?.derivationPath ? (
-                                    <Text style={pathText} numberOfLines={1}>
-                                      {route.params.derivationPath}
-                                    </Text>
-                                  ) : null}
                                 </View>
                                 <View style={{alignItems: 'flex-end'}}>
                                   <Text style={amtBTCOurs}>
@@ -5454,9 +5502,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 </View>
                                 <View style={{alignItems: 'flex-end'}}>
                                   <Text style={amtBTC}>
-                                    {sat2btcStr(
-                                      route.params?.satoshiAmount,
-                                    )}{' '}
+                                    {sat2btcStr(route.params?.satoshiAmount)}{' '}
                                     BTC
                                   </Text>
                                   <Text style={amtFiat}>
