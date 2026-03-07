@@ -181,6 +181,16 @@ const MobilesPairing = ({navigation}: any) => {
     deviceThree: false,
   });
   const [isBackupModalVisible, setIsBackupModalVisible] = useState(false);
+
+  // Pre-loaded UTXO preview for the send-BTC confirmation card.
+  type UTXOPreview = {address: string; value: number; derivationPath: string};
+  const [txPreview, setTxPreview] = useState<{
+    utxos: UTXOPreview[];
+    changeAddress: string;
+    totalInputSats: number;
+  } | null>(null);
+  const [_txPreviewLoading, setTxPreviewLoading] = useState(false);
+
   const allChecked = Object.values(checks).every(Boolean);
   const allBackupChecked = isTrio
     ? backupChecks.deviceOne &&
@@ -232,6 +242,53 @@ const MobilesPairing = ({navigation}: any) => {
     };
     clearCacheForSetup();
   }, [setupMode]);
+
+  // Pre-fetch UTXOs + change address so the confirmation card can show real inputs.
+  useEffect(() => {
+    if (!isSendBitcoin) {
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      setTxPreviewLoading(true);
+      try {
+        const net = (route.params?.network || 'mainnet').trim();
+        const addrType = (route.params?.addressType || 'segwit-native').trim();
+        const apiUrl =
+          (await LocalCache.getItem(`api_${net}`)) ||
+          (net === 'testnet3' || net === 'testnet'
+            ? 'https://mempool.space/testnet/api'
+            : 'https://mempool.space/api');
+        const [utxos, chg] = await Promise.all([
+          WalletService.getInstance().fetchUtxosWithPaths(net, addrType, apiUrl),
+          WalletService.getInstance().getNextChangeAddress(net, addrType),
+        ]);
+        if (!cancelled) {
+          const totalInputSats = utxos.reduce((s, u) => s + u.value, 0);
+          setTxPreview({
+            utxos: utxos.map(u => ({
+              address: u.address,
+              value: u.value,
+              derivationPath: u.derivationPath,
+            })),
+            changeAddress: chg || '',
+            totalInputSats,
+          });
+        }
+      } catch {
+        // Non-critical: falls back to generic "HD Wallet" row.
+      } finally {
+        if (!cancelled) {
+          setTxPreviewLoading(false);
+        }
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [isSendBitcoin, route.params?.network, route.params?.addressType]);
+
   // Initialize network and derivation path immediately when component loads (for send Bitcoin mode)
   const stringToHex = (str: string) => {
     return Array.from(str)
@@ -4249,39 +4306,91 @@ const MobilesPairing = ({navigation}: any) => {
                           color: theme.colors.textSecondary,
                           textAlign: 'right' as const,
                         };
+                        const changeSats =
+                          txPreview && txPreview.totalInputSats > 0
+                            ? txPreview.totalInputSats -
+                              Number(route.params.satoshiAmount) -
+                              Number(route.params.satoshiFees)
+                            : 0;
+                        const accentBar = (
+                          <View
+                            style={{
+                              position: 'absolute',
+                              left: 0,
+                              top: 0,
+                              bottom: 0,
+                              width: 3,
+                              backgroundColor: accentColor,
+                              borderTopLeftRadius: 8,
+                              borderBottomLeftRadius: 8,
+                            }}
+                          />
+                        );
                         return (
                           <View style={{paddingTop: 8}}>
                             {/* Inputs */}
-                            <Text style={sectionTitle}>Inputs</Text>
-                            <View style={rowOurs}>
-                              <View
-                                style={{
-                                  position: 'absolute',
-                                  left: 0,
-                                  top: 0,
-                                  bottom: 0,
-                                  width: 3,
-                                  backgroundColor: accentColor,
-                                  borderTopLeftRadius: 8,
-                                  borderBottomLeftRadius: 8,
-                                }}
-                              />
-                              <Image
-                                source={require('../assets/in-icon.png')}
-                                style={[iconBase, {tintColor: accentColor}]}
-                                resizeMode="contain"
-                              />
-                              <View style={{flex: 1}}>
-                                <Text style={labelOurs} numberOfLines={1}>
-                                  HD Wallet
-                                </Text>
+                            <Text style={sectionTitle}>
+                              Inputs{txPreview && txPreview.utxos.length > 0
+                                ? ` (${txPreview.utxos.length})`
+                                : ''}
+                            </Text>
+                            {txPreview && txPreview.utxos.length > 0 ? (
+                              txPreview.utxos.map((u, idx) => (
+                                <AppPressable
+                                  key={`${u.address}-${idx}`}
+                                  style={[rowOurs, {marginBottom: idx < txPreview.utxos.length - 1 ? 3 : 4}]}
+                                  onPress={() =>
+                                    Linking.openURL(
+                                      `${explorerBase}/address/${u.address}`,
+                                    )
+                                  }>
+                                  {accentBar}
+                                  <Image
+                                    source={require('../assets/in-icon.png')}
+                                    style={[iconBase, {tintColor: accentColor}]}
+                                    resizeMode="contain"
+                                  />
+                                  <View style={{flex: 1}}>
+                                    <Text
+                                      style={[
+                                        labelOurs,
+                                        {textDecorationLine: 'underline'},
+                                      ]}
+                                      numberOfLines={1}
+                                      ellipsizeMode="middle">
+                                      {u.address}
+                                    </Text>
+                                    <Text style={pathText}>
+                                      {u.derivationPath}
+                                    </Text>
+                                  </View>
+                                  <View style={{alignItems: 'flex-end'}}>
+                                    <Text style={amtBTCOurs}>
+                                      {sat2btcStr(String(u.value))} BTC
+                                    </Text>
+                                  </View>
+                                </AppPressable>
+                              ))
+                            ) : (
+                              <View style={rowOurs}>
+                                {accentBar}
+                                <Image
+                                  source={require('../assets/in-icon.png')}
+                                  style={[iconBase, {tintColor: accentColor}]}
+                                  resizeMode="contain"
+                                />
+                                <View style={{flex: 1}}>
+                                  <Text style={labelOurs} numberOfLines={1}>
+                                    HD Wallet
+                                  </Text>
+                                </View>
+                                <View style={{alignItems: 'flex-end'}}>
+                                  <Text style={amtBTCOurs}>
+                                    {sat2btcStr(String(totalSats))} BTC
+                                  </Text>
+                                </View>
                               </View>
-                              <View style={{alignItems: 'flex-end'}}>
-                                <Text style={amtBTCOurs}>
-                                  {sat2btcStr(String(totalSats))} BTC
-                                </Text>
-                              </View>
-                            </View>
+                            )}
 
                             {/* Hub */}
                             <View
@@ -4393,6 +4502,56 @@ const MobilesPairing = ({navigation}: any) => {
                                 </Text>
                               </View>
                             </View>
+                            {/* Change output — only when we know the change address */}
+                            {txPreview && txPreview.changeAddress ? (
+                              <>
+                                <View
+                                  style={{
+                                    width: 1,
+                                    height: 8,
+                                    backgroundColor: theme.colors.border,
+                                    marginLeft: 17,
+                                    marginBottom: 2,
+                                  }}
+                                />
+                                <AppPressable
+                                  style={[rowOurs, {marginBottom: 0}]}
+                                  onPress={() =>
+                                    Linking.openURL(
+                                      `${explorerBase}/address/${txPreview.changeAddress}`,
+                                    )
+                                  }>
+                                  {accentBar}
+                                  <Image
+                                    source={require('../assets/in-icon.png')}
+                                    style={[
+                                      iconBase,
+                                      {tintColor: accentColor},
+                                    ]}
+                                    resizeMode="contain"
+                                  />
+                                  <View style={{flex: 1}}>
+                                    <Text
+                                      style={[
+                                        labelOurs,
+                                        {textDecorationLine: 'underline'},
+                                      ]}
+                                      numberOfLines={1}
+                                      ellipsizeMode="middle">
+                                      {txPreview.changeAddress}
+                                    </Text>
+                                    <Text style={subLabel}>change</Text>
+                                  </View>
+                                  <View style={{alignItems: 'flex-end'}}>
+                                    {changeSats > 0 && (
+                                      <Text style={amtBTCOurs}>
+                                        {sat2btcStr(String(changeSats))} BTC
+                                      </Text>
+                                    )}
+                                  </View>
+                                </AppPressable>
+                              </>
+                            ) : null}
                           </View>
                         );
                       })()}
