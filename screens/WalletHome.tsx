@@ -107,7 +107,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [computedFromAddress, setComputedFromAddress] = useState<string>(''); // Computed from address for send transaction
   const [btcPrice, setBtcPrice] = useState<string>('');
   const [btcRate, setBtcRate] = useState(0);
-  const [balanceBTC, setBalanceBTC] = useState<string>('0.00000000');
+  const [balanceBTC, setBalanceBTC] = useState<string>('-');
   const [balanceFiat, setBalanceFiat] = useState<string>('0');
   const [pendingSats, setPendingSats] = useState<number>(0);
   const [_party, setParty] = useState<string>('');
@@ -168,38 +168,35 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   });
   const extensionBindAlertShownRef = useRef(false);
 
-  const proceedWithExtensionBind = useCallback(
-    async (pairingCode: string) => {
-      try {
-        const keyshareJSON = await EncryptedStorage.getItem('keyshare');
-        if (!keyshareJSON) {
-          extensionBindAlertShownRef.current = false;
-          Alert.alert('Error', 'Keyshare not found.');
-          return;
-        }
-        const keyshare = JSON.parse(keyshareJSON);
-        const pubKey = keyshare.pub_key || '';
-        const chainCode = keyshare.chain_code_hex || '';
-        if (!pubKey || !chainCode) {
-          extensionBindAlertShownRef.current = false;
-          Alert.alert('Error', 'Keyshare info is not available.');
-          return;
-        }
-        const qrDataBase64 = await computeExtensionBindResponseQr(
-          pairingCode,
-          pubKey,
-          chainCode,
-        );
-        setExtensionResponseQrData(qrDataBase64);
-        setIsExtensionResponseQrVisible(true);
-      } catch (e) {
-        dbg('Extension bind from scan failed:', e);
+  const proceedWithExtensionBind = useCallback(async (pairingCode: string) => {
+    try {
+      const keyshareJSON = await EncryptedStorage.getItem('keyshare');
+      if (!keyshareJSON) {
         extensionBindAlertShownRef.current = false;
-        Alert.alert('Error', 'Failed to generate response QR.');
+        Alert.alert('Error', 'Keyshare not found.');
+        return;
       }
-    },
-    [],
-  );
+      const keyshare = JSON.parse(keyshareJSON);
+      const pubKey = keyshare.pub_key || '';
+      const chainCode = keyshare.chain_code_hex || '';
+      if (!pubKey || !chainCode) {
+        extensionBindAlertShownRef.current = false;
+        Alert.alert('Error', 'Keyshare info is not available.');
+        return;
+      }
+      const qrDataBase64 = await computeExtensionBindResponseQr(
+        pairingCode,
+        pubKey,
+        chainCode,
+      );
+      setExtensionResponseQrData(qrDataBase64);
+      setIsExtensionResponseQrVisible(true);
+    } catch (e) {
+      dbg('Extension bind from scan failed:', e);
+      extensionBindAlertShownRef.current = false;
+      Alert.alert('Error', 'Failed to generate response QR.');
+    }
+  }, []);
 
   const [initialSendAddress, setInitialSendAddress] = useState<string | null>(
     null,
@@ -374,32 +371,24 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       const apiUrl = `${cleanBaseApi}/api`;
       // Ensure native module has correct settings
       await BBMTLibNativeModule.setAPI(network, apiUrl);
-      // Set up timeout for API calls
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => {
-          setIsRefreshing(false);
-          reject(new Error('API refresh timed out'));
-        }, 5000); // 5 second timeout
-      });
+
       let freshData;
       setIsRefreshing(true);
       setIsBalanceLoading(true);
       setBalanceError(null);
       try {
         dbg('fetching bitcoin price and wallet balance...');
-        const effectiveAddressType = addressType || userAddressType || 'segwit-native';
-        freshData = await Promise.race([
-          Promise.all([
-            WalletService.getInstance().getBitcoinPrice(),
-            WalletService.getInstance().getWalletBalanceAggregate(
-              network,
-              effectiveAddressType,
-              btcRate,
-              _pendingSent,
-              true,
-            ),
-          ]),
-          timeoutPromise,
+        const effectiveAddressType =
+          addressType || userAddressType || 'segwit-native';
+        freshData = await Promise.all([
+          WalletService.getInstance().getBitcoinPrice(),
+          WalletService.getInstance().getWalletBalanceAggregate(
+            network,
+            effectiveAddressType,
+            btcRate,
+            _pendingSent,
+            true,
+          ),
         ]);
         if (Array.isArray(freshData) && freshData.length === 2) {
           const [freshPrice, freshBalance] = freshData;
@@ -412,9 +401,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             const normalizedBTC = freshBalance.btc || '0.00000000';
             const balanceNum = parseFloat(normalizedBTC);
             const finalBTC = balanceNum <= 0 ? '0.00000000' : normalizedBTC;
+            dbg('WalletHome: Final BTC:', finalBTC);
             setBalanceBTC(finalBTC);
             setPendingSats(freshBalance.pendingSats ?? 0);
-            const fiatBalance = Number(freshBalance.btc * rates[currency]);
+            const fiatBalance =
+              Number(freshBalance.btc) * Number(rates[currency] || 0);
             setBalanceFiat(Math.max(0, fiatBalance).toFixed(2));
             // Update cache timestamps with fresh data
             setCacheTimestamps({
@@ -455,17 +446,18 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       // Fall back to cached data only if fresh data fetch failed
       if (!freshData) {
         const cachedPricePromise = WalletService.getInstance().getCachePrice();
-        const effectiveAddressType = addressType || userAddressType || 'segwit-native';
-        const cachedBalancePromise =
-          WalletService.getInstance().getCachedAggregateBalance(
-            network,
-            effectiveAddressType,
-          ).then(
-            c => c ?? WalletService.getInstance().getWalletBalance(
-              addr,
-              btcRate,
-              _pendingSent,
-            ),
+        const effectiveAddressType =
+          addressType || userAddressType || 'segwit-native';
+        const cachedBalancePromise = WalletService.getInstance()
+          .getCachedAggregateBalance(network, effectiveAddressType)
+          .then(
+            c =>
+              c ??
+              WalletService.getInstance().getWalletBalance(
+                addr,
+                btcRate,
+                _pendingSent,
+              ),
           );
         const cachedResults = await Promise.all([
           cachedPricePromise,
@@ -492,6 +484,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               // Haptic feedback on balance update
               HapticFeedback.light();
             }
+            dbg('WalletHome: Final BTC (cached):', finalBTC);
             setBalanceBTC(finalBTC);
             setPendingSats(cachedBalance.pendingSats ?? 0);
             const fiatBalance =
@@ -515,10 +508,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       // the wallet has used, including the one just received on.
       try {
         const addrType = addressType || userAddressType || 'segwit-native';
-        const freshAddrs = await WalletService.getInstance().getHdAddressesWithPaths(
-          network,
-          addrType,
-        );
+        const freshAddrs =
+          await WalletService.getInstance().getHdAddressesWithPaths(
+            network,
+            addrType,
+          );
         const freshList = freshAddrs.map(a => a.address);
         setWalletAddresses(prev => {
           const same =
@@ -578,9 +572,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       try {
         const ws = WalletService.getInstance();
         const restoreDoneKey = `hd_restore_done_${network}_${effectiveType}`;
-        const restoreDone = (await LocalCache.getItem(restoreDoneKey)) === 'yes';
+        const restoreDone =
+          (await LocalCache.getItem(restoreDoneKey)) === 'yes';
         if (!restoreDone) {
-          dbg('[WalletHome] HD restore not done for', network, effectiveType, '- running discovery');
+          dbg(
+            '[WalletHome] HD restore not done for',
+            network,
+            effectiveType,
+            '- running discovery',
+          );
           const apiUrl =
             (await LocalCache.getItem('api')) ||
             (network === 'mainnet'
@@ -637,13 +637,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       // Fetch aggregate balance (all HD addresses)
       const effectiveAddressType =
         addressType || userAddressType || 'segwit-native';
-      const balancePromise = WalletService.getInstance().getWalletBalanceAggregate(
-        network,
-        effectiveAddressType,
-        btcRate,
-        _pendingSent,
-        true,
-      );
+      const balancePromise =
+        WalletService.getInstance().getWalletBalanceAggregate(
+          network,
+          effectiveAddressType,
+          btcRate,
+          _pendingSent,
+          true,
+        );
       const balanceResult = await Promise.race([
         balancePromise,
         timeoutPromise,
@@ -659,6 +660,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         const normalizedBTC = (balanceResult as any).btc || '0.00000000';
         const balanceNum = parseFloat(normalizedBTC);
         const finalBTC = balanceNum <= 0 ? '0.00000000' : normalizedBTC;
+        dbg('checkBalanceForSend: Final BTC:', finalBTC);
         setBalanceBTC(finalBTC);
         if (btcRate > 0) {
           const fiatBalance = Number((balanceResult as any).btc) * btcRate;
@@ -791,7 +793,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         }
         const ks = JSON.parse(jks);
         const useLegacyPath = isLegacyWallet(ks.created_at);
-        const externalIndex = await getExternalIndex(newNetwork, currentAddressType);
+        const externalIndex = await getExternalIndex(
+          newNetwork,
+          currentAddressType,
+        );
         const path = getReceivePath(
           newNetwork,
           currentAddressType,
@@ -936,7 +941,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         }
         // Clear existing state
         setAddress('');
-        setBalanceBTC('0.00000000');
+        dbg('WalletHome: Setting balance to -');
+        setBalanceBTC('-');
         setBalanceFiat('0');
         setPendingSats(0);
         setBtcPrice('');
@@ -953,7 +959,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         const currentAddressType =
           (await LocalCache.getItem('addressType')) || 'segwit-native';
         const useLegacyPath = isLegacyWallet(ks.created_at);
-        const externalIndex = await getExternalIndex(network, currentAddressType);
+        const externalIndex = await getExternalIndex(
+          network,
+          currentAddressType,
+        );
         const path = getReceivePath(
           network,
           currentAddressType,
@@ -1035,7 +1044,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         } catch {
           try {
             const fallback =
-              await WalletService.getInstance().transactionsFromCache(btcAddress);
+              await WalletService.getInstance().transactionsFromCache(
+                btcAddress,
+              );
             setInitialTransactions(Array.isArray(fallback) ? fallback : []);
           } catch {}
         }
@@ -1056,11 +1067,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           const cachedBal =
             cachedAggregate ??
             (await WalletService.getInstance().getBal(btcAddress));
-          const cachedTxs =
-            await WalletService.getInstance().transactionsFromCacheForWallet(
-              actualNet,
-              addrType,
-            ).catch(() =>
+          const cachedTxs = await WalletService.getInstance()
+            .transactionsFromCacheForWallet(actualNet, addrType)
+            .catch(() =>
               WalletService.getInstance().transactionsFromCache(btcAddress),
             );
           const currency = (await LocalCache.getItem('currency')) || 'USD';
@@ -1085,6 +1094,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               const normalizedBTC = cachedBal.btc || '0.00000000';
               const balanceNum = parseFloat(normalizedBTC);
               const finalBTC = balanceNum <= 0 ? '0.00000000' : normalizedBTC;
+              dbg('reinitializeWallet: Final BTC (cached):', finalBTC);
               setBalanceBTC(finalBTC);
               setPendingSats(cachedBal.pendingSats ?? 0);
               const r =
@@ -1480,18 +1490,41 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           ks = JSON.parse(jks);
         } catch (error) {
           dbg('Error parsing keyshare:', error);
-          navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
+          navigation.reset(
+            getResetToMainTabsWallet(
+              {},
+              {
+                showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
+                showUtxos: showUtxosTab,
+                showPsbt: showPsbtTab,
+                showWallet: showWalletTab,
+              },
+            ),
+          );
           return;
         }
         if (!ks.pub_key || !ks.chain_code_hex || !ks.local_party_key) {
           dbg('Invalid pub_key or chain_code_hex or local_party_key');
-          navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
+          navigation.reset(
+            getResetToMainTabsWallet(
+              {},
+              {
+                showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
+                showUtxos: showUtxosTab,
+                showPsbt: showPsbtTab,
+                showWallet: showWalletTab,
+              },
+            ),
+          );
           return;
         }
         const currentAddressType =
           (await LocalCache.getItem('addressType')) || 'segwit-native';
         const useLegacyPath = isLegacyWallet(ks.created_at);
-        const externalIndex = await getExternalIndex(network, currentAddressType);
+        const externalIndex = await getExternalIndex(
+          network,
+          currentAddressType,
+        );
         const path = getReceivePath(
           network,
           currentAddressType,
@@ -1598,6 +1631,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           const normalizedBTC = cachedBal.btc || '0.00000000';
           const balanceNum = parseFloat(normalizedBTC);
           const finalBTC = balanceNum <= 0 ? '0.00000000' : normalizedBTC;
+          dbg('WalletHome: Final BTC (cachedBal):', finalBTC);
           setBalanceBTC(finalBTC);
           const r =
             (priceResponse?.rates?.[currency] as number) ||
@@ -1638,7 +1672,18 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       }
     };
     init();
-  }, [showErrorToast, isInitialized, address, navigation, network, activeNetwork, showMempoolPlayground, showUtxosTab, showPsbtTab, showWalletTab]);
+  }, [
+    showErrorToast,
+    isInitialized,
+    address,
+    navigation,
+    network,
+    activeNetwork,
+    showMempoolPlayground,
+    showUtxosTab,
+    showPsbtTab,
+    showWalletTab,
+  ]);
   // Remove the old interval effect since we're handling it in CacheIndicator now
   // Initial data fetch only when initialized and address is set
   useEffect(() => {
@@ -1991,16 +2036,16 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
       // Support BIP-21: "bitcoin:<address>" or "bitcoin:<address>?amount=..."
       const addressCandidate = trimmed.startsWith('bitcoin:')
-        ? trimmed.replace(/^bitcoin:/i, '').split('?')[0].trim()
+        ? trimmed
+            .replace(/^bitcoin:/i, '')
+            .split('?')[0]
+            .trim()
         : trimmed;
       const networkForValidation =
-        network === 'testnet3' ? 'testnet' : (network || 'mainnet');
+        network === 'testnet3' ? 'testnet' : network || 'mainnet';
       if (
         addressCandidate &&
-        validateBitcoinAddressEnhanced(
-          addressCandidate,
-          networkForValidation,
-        )
+        validateBitcoinAddressEnhanced(addressCandidate, networkForValidation)
       ) {
         setInitialSendAddress(addressCandidate);
         setIsSendModalVisible(true);
@@ -2022,8 +2067,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         lastInvalidQrRef.current = {data: qrData, time: now};
         const currentLabel =
           networkForValidation === 'mainnet' ? 'mainnet' : 'testnet';
-        const addressLabel =
-          otherNetwork === 'mainnet' ? 'mainnet' : 'testnet';
+        const addressLabel = otherNetwork === 'mainnet' ? 'mainnet' : 'testnet';
         Alert.alert(
           'Wrong network',
           `This address is for ${addressLabel} but you're on ${currentLabel}. Switch network in Settings or scan an address for ${currentLabel}.`,
@@ -2031,90 +2075,93 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         return;
       }
       const decoded = decodeSendBitcoinQR(qrData) as {
-      toAddress: string;
-      amountSats: string;
-      feeSats: string;
-      spendingHash?: string;
-      addressType?: string;
-      derivationPath?: string;
-      network?: string;
-    } | null;
-    if (
-      !decoded ||
-      !decoded.toAddress ||
-      !decoded.amountSats ||
-      !decoded.feeSats
-    ) {
-      const now = Date.now();
+        toAddress: string;
+        amountSats: string;
+        feeSats: string;
+        spendingHash?: string;
+        addressType?: string;
+        derivationPath?: string;
+        network?: string;
+      } | null;
       if (
-        lastInvalidQrRef.current.data === qrData &&
-        now - lastInvalidQrRef.current.time < 2000
+        !decoded ||
+        !decoded.toAddress ||
+        !decoded.amountSats ||
+        !decoded.feeSats
       ) {
+        const now = Date.now();
+        if (
+          lastInvalidQrRef.current.data === qrData &&
+          now - lastInvalidQrRef.current.time < 2000
+        ) {
+          return;
+        }
+        lastInvalidQrRef.current = {data: qrData, time: now};
+        Alert.alert(
+          'Invalid QR Code',
+          'The scanned QR code does not contain valid send bitcoin data. Please scan the QR code from the device that initiated the transaction.',
+        );
         return;
       }
-      lastInvalidQrRef.current = {data: qrData, time: now};
-      Alert.alert(
-        'Invalid QR Code',
-        'The scanned QR code does not contain valid send bitcoin data. Please scan the QR code from the device that initiated the transaction.',
-      );
-      return;
-    }
-    // Validate Bitcoin address
-    if (!validateBitcoinAddress(decoded.toAddress)) {
-      Alert.alert(
-        'Invalid Address',
-        'The scanned QR code contains an invalid Bitcoin address.',
-      );
-      return;
-    }
-    // Convert to Big for consistency
-    const amountSats = Big(decoded.amountSats);
-    const feeSats = Big(decoded.feeSats);
-    if (amountSats.lte(0) || feeSats.lte(0)) {
-      Alert.alert(
-        'Invalid Amount',
-        'The scanned QR code contains invalid amount or fee values.',
-      );
-      return;
-    }
-    // Store address type, derivation path, and network from QR code if available
-    // These are critical to ensure the second device uses the same source address and network
-    dbg('=== WalletHome: Processing scanned QR code data ===', {
-      decoded: {
-        toAddress: decoded.toAddress,
-        amountSats: decoded.amountSats,
-        feeSats: decoded.feeSats,
-        spendingHash: decoded.spendingHash,
-        addressType: decoded.addressType,
-        derivationPath: decoded.derivationPath,
-        network: decoded.network,
-      },
-    });
-    if (decoded.addressType) {
-      setScannedAddressType(decoded.addressType);
-      dbg('WalletHome: Address type from QR code:', decoded.addressType);
-    }
-    if (decoded.derivationPath) {
-      setCurrentDerivationPath(decoded.derivationPath);
-      dbg('WalletHome: Derivation path from QR code:', decoded.derivationPath);
-    }
-    if (decoded.network) {
-      // Keep native format from QR code (native module requires 'testnet3' not 'testnet')
-      setScannedNetwork(decoded.network);
-      dbg('WalletHome: Network from QR code:', decoded.network);
-    }
-    // Store params and mark as scanned from QR
-    setPendingSendParams({
-      to: decoded.toAddress,
-      amountSats,
-      feeSats,
-      spendingHash: decoded.spendingHash || '',
-    });
-    setScannedFromQR(true);
-    // Show transport selector immediately (no QR code shown since data came from scan)
-    setTimeout(() => {
-      setIsTransportModalVisible(true);
-    }, 300);
+      // Validate Bitcoin address
+      if (!validateBitcoinAddress(decoded.toAddress)) {
+        Alert.alert(
+          'Invalid Address',
+          'The scanned QR code contains an invalid Bitcoin address.',
+        );
+        return;
+      }
+      // Convert to Big for consistency
+      const amountSats = Big(decoded.amountSats);
+      const feeSats = Big(decoded.feeSats);
+      if (amountSats.lte(0) || feeSats.lte(0)) {
+        Alert.alert(
+          'Invalid Amount',
+          'The scanned QR code contains invalid amount or fee values.',
+        );
+        return;
+      }
+      // Store address type, derivation path, and network from QR code if available
+      // These are critical to ensure the second device uses the same source address and network
+      dbg('=== WalletHome: Processing scanned QR code data ===', {
+        decoded: {
+          toAddress: decoded.toAddress,
+          amountSats: decoded.amountSats,
+          feeSats: decoded.feeSats,
+          spendingHash: decoded.spendingHash,
+          addressType: decoded.addressType,
+          derivationPath: decoded.derivationPath,
+          network: decoded.network,
+        },
+      });
+      if (decoded.addressType) {
+        setScannedAddressType(decoded.addressType);
+        dbg('WalletHome: Address type from QR code:', decoded.addressType);
+      }
+      if (decoded.derivationPath) {
+        setCurrentDerivationPath(decoded.derivationPath);
+        dbg(
+          'WalletHome: Derivation path from QR code:',
+          decoded.derivationPath,
+        );
+      }
+      if (decoded.network) {
+        // Keep native format from QR code (native module requires 'testnet3' not 'testnet')
+        setScannedNetwork(decoded.network);
+        dbg('WalletHome: Network from QR code:', decoded.network);
+      }
+      // Store params and mark as scanned from QR
+      setPendingSendParams({
+        to: decoded.toAddress,
+        amountSats,
+        feeSats,
+        spendingHash: decoded.spendingHash || '',
+      });
+      setScannedFromQR(true);
+      // Show transport selector immediately (no QR code shown since data came from scan)
+      setTimeout(() => {
+        setIsTransportModalVisible(true);
+      }, 300);
     },
     [network],
   );
@@ -2196,7 +2243,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             <View style={styles.balanceContentContainer}>
               {balanceError && !isBlurred ? (
                 <View style={styles.balanceErrorContainer}>
-                  <AppText style={styles.balanceErrorText}>{balanceError}</AppText>
+                  <AppText style={styles.balanceErrorText}>
+                    {balanceError}
+                  </AppText>
                 </View>
               ) : (
                 <>
@@ -2321,9 +2370,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 }}
                 style={styles.balanceUnitToggle}
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-                accessibilityLabel={`Switch to ${
-                  showSats ? 'BTC' : 'sats'
-                }`}
+                accessibilityLabel={`Switch to ${showSats ? 'BTC' : 'sats'}`}
                 accessibilityRole="button">
                 <AppText style={styles.balanceUnitToggleText}>
                   {showSats ? '₿' : 'BTC'}
@@ -2422,8 +2469,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 try {
                   setIsReceiveBusy(true);
                   const ws = WalletService.getInstance();
-                  const effectiveAddressType =
-                    addressType || 'segwit-native';
+                  const effectiveAddressType = addressType || 'segwit-native';
                   const apiUrl =
                     apiBase ||
                     (network === 'mainnet'
@@ -2524,8 +2570,16 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         <TransactionList
           ref={transactionListRef}
           baseApi={apiBase}
-          address={walletAddressesReady && walletAddresses.length === 0 ? address : undefined}
-          addresses={walletAddressesReady && walletAddresses.length > 0 ? walletAddresses : undefined}
+          address={
+            walletAddressesReady && walletAddresses.length === 0
+              ? address
+              : undefined
+          }
+          addresses={
+            walletAddressesReady && walletAddresses.length > 0
+              ? walletAddresses
+              : undefined
+          }
           network={network}
           addressType={addressType || userAddressType}
           onUpdate={handleTransactionUpdate}
