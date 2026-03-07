@@ -792,6 +792,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     async (network: string, addressType: string) => {
       setIsRestoringIndexes(true);
       setRestoreProgress(null);
+      // Yield so the RestoringIndexesModal has time to mount and paint before we block on discovery.
+      await new Promise<void>(r => setTimeout(r, 100));
       try {
         const ws = WalletService.getInstance();
         const apiUrl =
