@@ -165,26 +165,38 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) (err error) {
 			}
 			queryDone <- true
 		}()
+		// Query all relays in parallel so a slow/offline relay does not block
+		// the others from being scanned within the timeout budget.
+		var wg sync.WaitGroup
 		for _, url := range relaysToQuery {
-			relay, err := s.client.GetPool().EnsureRelay(url)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "BBMTLog: Failed to ensure relay %s: %v\n", url, err)
-				continue
-			}
-			existingEvents, err := relay.QuerySync(queryCtx, filter)
-			if err == nil {
-				fmt.Fprintf(os.Stderr, "BBMTLog: Query on relay %s returned %d wrap events for session %s\n", url, len(existingEvents), s.cfg.SessionID)
+			wg.Add(1)
+			go func(relayURL string) {
+				defer wg.Done()
+				defer func() {
+					if r := recover(); r != nil {
+						fmt.Fprintf(os.Stderr, "BBMTLog: PANIC in AwaitPeers relay query goroutine (%s): %v\n", relayURL, r)
+					}
+				}()
+				relay, err := s.client.GetPool().EnsureRelay(relayURL)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "BBMTLog: Failed to ensure relay %s: %v\n", relayURL, err)
+					return
+				}
+				existingEvents, err := relay.QuerySync(queryCtx, filter)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "BBMTLog: Query on relay %s failed (non-fatal): %v\n", relayURL, err)
+					return
+				}
+				fmt.Fprintf(os.Stderr, "BBMTLog: Query on relay %s returned %d wrap events for session %s\n", relayURL, len(existingEvents), s.cfg.SessionID)
 				for _, wrapEvent := range existingEvents {
 					if wrapEvent == nil || wrapEvent.Kind != 1059 {
 						continue
 					}
-					// Unwrap and unseal to get sender
 					seal, err := unwrapGift(wrapEvent, s.cfg.LocalNsec)
 					if err != nil {
 						fmt.Fprintf(os.Stderr, "BBMTLog: Failed to unwrap gift from query: %v\n", err)
 						continue
 					}
-					// Verify seal is from an expected peer
 					sealSenderHex := seal.PubKey
 					sealSenderNpub := ""
 					for hex, npub := range expectedHex {
@@ -197,7 +209,6 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) (err error) {
 						fmt.Fprintf(os.Stderr, "BBMTLog: Seal from unexpected sender (hex: %s)\n", sealSenderHex)
 						continue
 					}
-					// Unseal to verify it's a ready message
 					sealSenderNpubBech32 := sealSenderNpub
 					for _, npub := range s.cfg.PeersNpub {
 						npubHex, err := npubToHex(npub)
@@ -211,7 +222,6 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) (err error) {
 						fmt.Fprintf(os.Stderr, "BBMTLog: Failed to unseal from query: %v\n", err)
 						continue
 					}
-					// Parse rumor content to verify it's a ready message
 					var readyMsg map[string]interface{}
 					if err := json.Unmarshal([]byte(rumor.Content), &readyMsg); err != nil {
 						continue
@@ -221,10 +231,9 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) (err error) {
 						seen.Store(sealSenderNpub, true)
 					}
 				}
-			} else {
-				fmt.Fprintf(os.Stderr, "BBMTLog: Query on relay %s failed (non-fatal): %v\n", url, err)
-			}
+			}(url)
 		}
+		wg.Wait()
 	}()
 
 	// Wait for initial query to complete (with timeout) before starting subscription
@@ -236,37 +245,46 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) (err error) {
 		fmt.Fprintf(os.Stderr, "BBMTLog: Initial query timeout, proceeding with subscription (found %d peers so far)\n", s.countSeen(&seen))
 	}
 
-	// Now start subscription to catch new events
-	// Retry subscription if it fails or channel closes (resilient to relay failures)
-	retryTicker := time.NewTicker(1 * time.Second)
-	defer retryTicker.Stop()
+	// Now start subscription to catch new events.
+	// Uses exponential backoff on failure: first retry immediate, then 500 ms, capped at 1 s.
+	subRetryDelay := time.Duration(0)
 
+	subscribe := func() (<-chan *Event, error) {
+		fmt.Fprintf(os.Stderr, "BBMTLog: Starting subscription for ready wraps for session %s\n", s.cfg.SessionID)
+		ch, err := s.client.Subscribe(ctx, filter)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Fprintf(os.Stderr, "BBMTLog: Subscription active for session %s\n", s.cfg.SessionID)
+		return ch, nil
+	}
+
+	// Establish first subscription.
 	var eventsCh <-chan *Event
-	subscriptionActive := false
-
-	// Retry loop for subscription
-	for !subscriptionActive {
+	for {
 		select {
 		case <-ctx.Done():
-			fmt.Fprintf(os.Stderr, "BBMTLog: AwaitPeers timed out during subscription (seen: %d/%d)\n", s.countSeen(&seen), len(expected))
+			fmt.Fprintf(os.Stderr, "BBMTLog: AwaitPeers timed out during subscription setup (seen: %d/%d)\n", s.countSeen(&seen), len(expected))
 			return fmt.Errorf("waiting for peers timed out: %w", ctx.Err())
 		default:
 		}
-
-		fmt.Fprintf(os.Stderr, "BBMTLog: Starting subscription for ready wraps for session %s\n", s.cfg.SessionID)
 		var err error
-		eventsCh, err = s.client.Subscribe(ctx, filter)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "BBMTLog: Subscribe failed: %v, retrying in 1 second...\n", err)
-			select {
-			case <-ctx.Done():
-				return fmt.Errorf("waiting for peers timed out: %w", ctx.Err())
-			case <-retryTicker.C:
-				continue // Retry subscription
-			}
+		eventsCh, err = subscribe()
+		if err == nil {
+			subRetryDelay = 0
+			break
 		}
-		subscriptionActive = true
-		fmt.Fprintf(os.Stderr, "BBMTLog: Subscription active for session %s\n", s.cfg.SessionID)
+		fmt.Fprintf(os.Stderr, "BBMTLog: Subscribe failed: %v, retrying in %v...\n", err, subRetryDelay)
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("waiting for peers timed out: %w", ctx.Err())
+		case <-time.After(subRetryDelay):
+		}
+		if subRetryDelay == 0 {
+			subRetryDelay = 500 * time.Millisecond
+		} else if subRetryDelay < time.Second {
+			subRetryDelay = time.Second
+		}
 	}
 
 	ticker := time.NewTicker(5 * time.Second)
@@ -280,37 +298,43 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) (err error) {
 			return fmt.Errorf("waiting for peers timed out: %w", ctx.Err())
 		case evt, ok := <-eventsCh:
 			if !ok {
-				// Channel closed (e.g., relay disconnection) - retry subscription
-				fmt.Fprintf(os.Stderr, "BBMTLog: Subscription channel closed, retrying subscription in 1 second...\n")
-				subscriptionActive = false
-				// Wait before retrying
+				// Channel closed — relay disconnected; resubscribe with backoff.
+				fmt.Fprintf(os.Stderr, "BBMTLog: Subscription channel closed, retrying in %v...\n", subRetryDelay)
 				select {
 				case <-ctx.Done():
 					return fmt.Errorf("waiting for peers timed out: %w", ctx.Err())
-				case <-retryTicker.C:
-					// Retry subscription
-					for !subscriptionActive {
-						select {
-						case <-ctx.Done():
-							return fmt.Errorf("waiting for peers timed out: %w", ctx.Err())
-						default:
-						}
-						var err error
-						eventsCh, err = s.client.Subscribe(ctx, filter)
-						if err != nil {
-							fmt.Fprintf(os.Stderr, "BBMTLog: Subscribe retry failed: %v, retrying in 1 second...\n", err)
-							select {
-							case <-ctx.Done():
-								return fmt.Errorf("waiting for peers timed out: %w", ctx.Err())
-							case <-retryTicker.C:
-								continue // Retry subscription
-							}
-						}
-						subscriptionActive = true
-						fmt.Fprintf(os.Stderr, "BBMTLog: Subscription re-established for session %s\n", s.cfg.SessionID)
-					}
-					continue // Continue processing events
+				case <-time.After(subRetryDelay):
 				}
+				if subRetryDelay == 0 {
+					subRetryDelay = 500 * time.Millisecond
+				} else if subRetryDelay < time.Second {
+					subRetryDelay = time.Second
+				}
+				// Re-establish subscription.
+				for {
+					select {
+					case <-ctx.Done():
+						return fmt.Errorf("waiting for peers timed out: %w", ctx.Err())
+					default:
+					}
+					var err error
+					eventsCh, err = subscribe()
+					if err == nil {
+						subRetryDelay = 0
+						break
+					}
+					fmt.Fprintf(os.Stderr, "BBMTLog: Subscribe retry failed: %v, retrying in %v...\n", err, subRetryDelay)
+					select {
+					case <-ctx.Done():
+						return fmt.Errorf("waiting for peers timed out: %w", ctx.Err())
+					case <-time.After(subRetryDelay):
+					}
+					if subRetryDelay < time.Second {
+						subRetryDelay = time.Second
+					}
+				}
+				fmt.Fprintf(os.Stderr, "BBMTLog: Subscription re-established for session %s\n", s.cfg.SessionID)
+				continue
 			}
 			if evt == nil || evt.Kind != 1059 {
 				continue
@@ -419,31 +443,42 @@ func (s *SessionCoordinator) PublishReady(ctx context.Context) (err error) {
 
 	fmt.Fprintf(os.Stderr, "BBMTLog: Publishing ready event for session %s, npub %s, expecting peers: %v\n", s.cfg.SessionID, s.cfg.LocalNpub, s.cfg.PeersNpub)
 
-	// Publish encrypted wrap to each peer using rumor/wrap/seal pattern
+	// Publish to every peer; continue even if one peer's publish fails so that
+	// the remaining peers still receive the ready signal.  Report the first
+	// error after all peers have been attempted.
+	var firstReadyErr error
 	for _, peerNpub := range s.cfg.PeersNpub {
-		// Step 1: Create rumor (kind:14) - unsigned event
 		rumor := createRumor(string(readyJSON), senderNpubHex)
 
-		// Step 2: Create seal (kind:13) - encrypt rumor with NIP-44
 		seal, err := createSeal(rumor, s.cfg.LocalNsec, peerNpub)
 		if err != nil {
-			return fmt.Errorf("create seal for peer %s: %w", peerNpub, err)
+			fmt.Fprintf(os.Stderr, "BBMTLog: Failed to create seal for peer %s: %v (continuing)\n", peerNpub, err)
+			if firstReadyErr == nil {
+				firstReadyErr = fmt.Errorf("create seal for peer %s: %w", peerNpub, err)
+			}
+			continue
 		}
 
-		// Step 3: Create wrap (kind:1059) - wrap seal in gift wrap
-		// Include session tag for filtering (must be added before signing)
 		wrap, err := createWrap(seal, peerNpub, s.cfg.SessionID, "")
 		if err != nil {
-			return fmt.Errorf("create wrap for peer %s: %w", peerNpub, err)
+			fmt.Fprintf(os.Stderr, "BBMTLog: Failed to create wrap for peer %s: %v (continuing)\n", peerNpub, err)
+			if firstReadyErr == nil {
+				firstReadyErr = fmt.Errorf("create wrap for peer %s: %w", peerNpub, err)
+			}
+			continue
 		}
 
 		fmt.Fprintf(os.Stderr, "BBMTLog: Publishing ready wrap to peer %s\n", peerNpub)
 
-		// Publish the wrap (kind:1059)
-		err = s.client.PublishWrap(ctx, wrap)
-		if err != nil {
-			return fmt.Errorf("publish ready wrap to peer %s: %w", peerNpub, err)
+		if err := s.client.PublishWrap(ctx, wrap); err != nil {
+			fmt.Fprintf(os.Stderr, "BBMTLog: Failed to publish ready wrap to peer %s: %v (continuing)\n", peerNpub, err)
+			if firstReadyErr == nil {
+				firstReadyErr = fmt.Errorf("publish ready wrap to peer %s: %w", peerNpub, err)
+			}
 		}
+	}
+	if firstReadyErr != nil {
+		return firstReadyErr
 	}
 
 	fmt.Fprintf(os.Stderr, "BBMTLog: Ready event published successfully to all peers with tag t=%s\n", s.cfg.SessionID)
@@ -483,31 +518,40 @@ func (s *SessionCoordinator) PublishComplete(ctx context.Context, phase string) 
 
 	fmt.Fprintf(os.Stderr, "BBMTLog: Publishing complete event for session %s, phase %s, npub %s, expecting peers: %v\n", s.cfg.SessionID, phase, s.cfg.LocalNpub, s.cfg.PeersNpub)
 
-	// Publish encrypted wrap to each peer using rumor/wrap/seal pattern
+	// Publish to every peer; continue past individual failures (same policy as PublishReady).
+	var firstCompleteErr error
 	for _, peerNpub := range s.cfg.PeersNpub {
-		// Step 1: Create rumor (kind:14) - unsigned event
 		rumor := createRumor(string(completeJSON), senderNpubHex)
 
-		// Step 2: Create seal (kind:13) - encrypt rumor with NIP-44
 		seal, err := createSeal(rumor, s.cfg.LocalNsec, peerNpub)
 		if err != nil {
-			return fmt.Errorf("create complete seal for peer %s: %w", peerNpub, err)
+			fmt.Fprintf(os.Stderr, "BBMTLog: Failed to create complete seal for peer %s: %v (continuing)\n", peerNpub, err)
+			if firstCompleteErr == nil {
+				firstCompleteErr = fmt.Errorf("create complete seal for peer %s: %w", peerNpub, err)
+			}
+			continue
 		}
 
-		// Step 3: Create wrap (kind:1059) - wrap seal in gift wrap
-		// Include session tag for filtering (must be added before signing)
 		wrap, err := createWrap(seal, peerNpub, s.cfg.SessionID, "")
 		if err != nil {
-			return fmt.Errorf("create complete wrap for peer %s: %w", peerNpub, err)
+			fmt.Fprintf(os.Stderr, "BBMTLog: Failed to create complete wrap for peer %s: %v (continuing)\n", peerNpub, err)
+			if firstCompleteErr == nil {
+				firstCompleteErr = fmt.Errorf("create complete wrap for peer %s: %w", peerNpub, err)
+			}
+			continue
 		}
 
 		fmt.Fprintf(os.Stderr, "BBMTLog: Publishing complete wrap (phase=%s) to peer %s\n", phase, peerNpub)
 
-		// Publish the wrap (kind:1059)
-		err = s.client.PublishWrap(ctx, wrap)
-		if err != nil {
-			return fmt.Errorf("publish complete wrap to peer %s: %w", peerNpub, err)
+		if err := s.client.PublishWrap(ctx, wrap); err != nil {
+			fmt.Fprintf(os.Stderr, "BBMTLog: Failed to publish complete wrap to peer %s: %v (continuing)\n", peerNpub, err)
+			if firstCompleteErr == nil {
+				firstCompleteErr = fmt.Errorf("publish complete wrap to peer %s: %w", peerNpub, err)
+			}
 		}
+	}
+	if firstCompleteErr != nil {
+		return firstCompleteErr
 	}
 
 	fmt.Fprintf(os.Stderr, "BBMTLog: Complete event (phase=%s) published successfully to all peers with tag t=%s\n", phase, s.cfg.SessionID)

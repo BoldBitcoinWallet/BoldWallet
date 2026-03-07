@@ -103,8 +103,9 @@ func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) (err 
 	cleanupTicker := time.NewTicker(30 * time.Second)
 	defer cleanupTicker.Stop()
 
-	retryTicker := time.NewTicker(1 * time.Second)
-	defer retryTicker.Stop()
+	// retryDelay implements exponential backoff for subscription failures:
+	// first retry is immediate (0s), then 500 ms, then capped at 1 s.
+	retryDelay := time.Duration(0)
 
 	// Helper function to process an event (unwrap, verify, and call handler)
 	processEvent := func(event *nostr.Event) (err error) {
@@ -225,16 +226,10 @@ func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) (err 
 		}
 		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump decoded chunk data: %d bytes\n", len(chunkData))
 
-		// Check if already processed
-		p.processedMu.Lock()
-		if p.processed[meta.Hash] {
-			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump message %s already processed, skipping\n", meta.Hash)
-			p.processedMu.Unlock()
-			return nil
-		}
-		p.processedMu.Unlock()
-
-		// Add chunk to assembler
+		// Add chunk to assembler.  The assembler is mutex-protected and
+		// idempotent for duplicate chunk indices, so concurrent goroutines
+		// (e.g. the parallel initial-query goroutines) can safely call Add
+		// simultaneously for the same message.
 		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump adding chunk %d/%d to assembler\n", meta.Index+1, meta.Total)
 		reassembled, complete := p.assembler.Add(meta, chunkData)
 		if !complete {
@@ -250,16 +245,22 @@ func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) (err 
 			return nil
 		}
 
-		// Reassemble the full message from chunks (chunks are plaintext now, not encrypted)
-		// The reassembled data is the full message body
 		plaintext := reassembled
 
-		// Mark as processed
+		// Atomically claim this message.  When the same event arrives from
+		// multiple relays simultaneously (parallel initial-query goroutines),
+		// both goroutines complete assembly independently.  The lock+check
+		// here ensures the TSS handler is called exactly once per message.
 		p.processedMu.Lock()
+		if p.processed[meta.Hash] {
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump message %s already dispatched by concurrent goroutine, skipping\n", meta.Hash)
+			p.processedMu.Unlock()
+			return nil
+		}
 		p.processed[meta.Hash] = true
 		p.processedMu.Unlock()
 
-		// Call handler with plaintext payload
+		// Exactly one goroutine per message hash reaches this point.
 		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump calling handler with %d bytes\n", len(plaintext))
 		if err := handler(plaintext); err != nil {
 			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump handler error: %v\n", err)
@@ -333,9 +334,10 @@ func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) (err 
 		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump initial query timeout, proceeding with subscription\n")
 	}
 
-	// Retry loop: resubscribe when channel closes (e.g., network disconnection)
+	// Retry loop: resubscribe when channel closes (e.g., network disconnection).
+	// Uses exponential backoff: first retry is immediate, then 500 ms, capped at 1 s.
 	for {
-		// Check if context is cancelled before attempting subscription
+		// Check if context is cancelled before attempting subscription.
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -345,18 +347,24 @@ func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) (err 
 		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump subscribing to session %s, local npub %s (hex: %s), expecting authors (hex): %v\n", p.cfg.SessionID, p.cfg.LocalNpub, localNpubHex, authorsHex)
 		events, err := p.client.Subscribe(ctx, filter)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to subscribe: %v, retrying in 1 second...\n", err)
-			// Wait for retry ticker or context cancellation
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to subscribe: %v, retrying in %v...\n", err, retryDelay)
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-retryTicker.C:
-				continue // Retry subscription
+			case <-time.After(retryDelay):
 			}
+			if retryDelay == 0 {
+				retryDelay = 500 * time.Millisecond
+			} else if retryDelay < time.Second {
+				retryDelay = time.Second
+			}
+			continue
 		}
+		// Successful subscription — reset backoff.
+		retryDelay = 0
 		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump subscription active\n")
 
-		// Process events from this subscription until channel closes
+		// Process events from this subscription until channel closes.
 		subscriptionActive := true
 		for subscriptionActive {
 			select {
@@ -366,32 +374,32 @@ func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) (err 
 				p.assembler.Cleanup()
 			case event, ok := <-events:
 				if !ok {
-					// Channel closed (e.g., network disconnection) - retry subscription
-					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump event channel closed (network may have disconnected), retrying subscription in 1 second...\n")
+					// Channel closed — relay disconnected; resubscribe with backoff.
+					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump event channel closed (network may have disconnected), retrying in %v...\n", retryDelay)
 					subscriptionActive = false
-					// Wait before retrying
 					select {
 					case <-ctx.Done():
 						return ctx.Err()
-					case <-retryTicker.C:
-						// Continue to outer loop to resubscribe
+					case <-time.After(retryDelay):
+					}
+					if retryDelay == 0 {
+						retryDelay = 500 * time.Millisecond
+					} else if retryDelay < time.Second {
+						retryDelay = time.Second
 					}
 					break
 				}
-				// Log that we received an event from the subscription channel
 				if event != nil {
 					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump received event from subscription channel: kind=%d, pubkey=%s, content_len=%d\n", event.Kind, event.PubKey, len(event.Content))
 				} else {
 					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump received nil event from subscription channel\n")
 					continue
 				}
-				// Process event using the helper function
 				if err := processEvent(event); err != nil {
-					// Handler error - return to stop processing
 					return err
 				}
 			}
 		}
-		// If we break out of the inner loop, we'll retry subscribing in the outer loop
+		// Inner loop exited — outer loop will resubscribe.
 	}
 }
