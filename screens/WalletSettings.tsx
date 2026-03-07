@@ -1086,6 +1086,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         setIsModalResetVisible(false);
         dbg('clearing cache storage...');
         await LocalCache.clear();
+        mempoolClient.invalidateAll();
         dbg('clearing encrypted storage...');
         // Prefer a full clear so we return to true first-launch state.
         // (If clear() is unavailable on some builds, fall back to removing known keys.)

@@ -565,23 +565,46 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     userAddressType,
   ]);
   // Load HD addresses for multi-address transaction list.
-  // walletAddressesReady is set to true once the async derivation has settled so
-  // that TransactionList is never given a single-address prop while we are still
-  // waiting for the full HD address list.
+  // If discovery has never been run for this (network, addressType), run it first
+  // so indexes are correct — otherwise getHdAddressesWithPaths returns only 1 receive + 1 change.
+  // walletAddressesReady is set to true once derivation has settled so TransactionList
+  // is never given a partial address list.
   useEffect(() => {
     if (!isInitialized || !network || !(addressType || userAddressType)) return;
     const effectiveType = addressType || userAddressType || 'segwit-native';
     setWalletAddressesReady(false);
-    WalletService.getInstance()
-      .getHdAddressesWithPaths(network, effectiveType)
-      .then(arr => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const ws = WalletService.getInstance();
+        const restoreDoneKey = `hd_restore_done_${network}_${effectiveType}`;
+        const restoreDone = (await LocalCache.getItem(restoreDoneKey)) === 'yes';
+        if (!restoreDone) {
+          dbg('[WalletHome] HD restore not done for', network, effectiveType, '- running discovery');
+          const apiUrl =
+            (await LocalCache.getItem('api')) ||
+            (network === 'mainnet'
+              ? 'https://mempool.space/api'
+              : 'https://mempool.space/testnet/api');
+          await ws.discoverHdIndexesForNetwork(network, effectiveType, apiUrl);
+        }
+        if (cancelled) return;
+        const arr = await ws.getHdAddressesWithPaths(network, effectiveType);
+        if (cancelled) return;
         setWalletAddresses(arr.map(a => a.address));
         setWalletAddressesReady(true);
-      })
-      .catch(() => {
-        setWalletAddresses([]);
-        setWalletAddressesReady(true);
-      });
+      } catch (e) {
+        dbg('[WalletHome] Address list load error', e);
+        if (!cancelled) {
+          setWalletAddresses([]);
+          setWalletAddressesReady(true);
+        }
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, [isInitialized, network, addressType, userAddressType]);
   // Update the ref whenever fetchData changes
   useEffect(() => {
@@ -1569,7 +1592,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             setBtcRate(r);
           }
         }
-        const cachedBal = await WalletService.getInstance().getBal(address);
+        const cachedBal = await WalletService.getInstance().getBal(btcAddress);
         if (cachedBal) {
           // Normalize balance to ensure no negative zero
           const normalizedBTC = cachedBal.btc || '0.00000000';
@@ -2645,6 +2668,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           onClose={() => {
             setIsReceiveModalVisible(false);
             setReceivePathInfo(null);
+            // Refresh balance and tx history after closing receive (e.g. after sharing address).
+            fetchDataRef.current?.();
           }}
           receivePathInfo={receivePathInfo}
         />
