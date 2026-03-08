@@ -101,6 +101,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     spendingHash: string;
     utxosJson?: string | null;
     utxoCount?: number;
+    changeAddress?: string | null;
   } | null>(null);
   const [currentDerivationPath, setCurrentDerivationPath] =
     useState<string>('');
@@ -1714,6 +1715,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     amountSats: Big,
     feeSats: Big,
     spendingHash: string,
+    utxosJson?: string | null,
+    changeAddress?: string | null,
   ) => {
     if (!isSending && amountSats.gt(0) && feeSats.gt(0) && to) {
       setIsSending(true);
@@ -1914,14 +1917,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       setCurrentDerivationPath(derivationPath);
       setComputedFromAddress(fromAddress);
       // Store params and show transport selector after a brief delay
-      setPendingSendParams(prev => ({
+      const parsedUtxoCount = (() => {
+        if (!utxosJson) return undefined;
+        try { return (JSON.parse(utxosJson) as unknown[]).length; } catch { return undefined; }
+      })();
+      setPendingSendParams({
         to,
         amountSats,
         feeSats,
         spendingHash,
-        utxosJson: prev?.utxosJson ?? null,
-        utxoCount: prev?.utxoCount,
-      }));
+        utxosJson: utxosJson ?? null,
+        utxoCount: parsedUtxoCount,
+        changeAddress: changeAddress ?? null,
+      });
       setTimeout(() => {
         setIsTransportModalVisible(true);
         setIsSending(false);
@@ -1993,6 +2001,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     };
     if (pendingSendParams.utxosJson && pendingSendParams.utxosJson.trim() !== '') {
       navigationParams.utxosJson = pendingSendParams.utxosJson;
+    }
+    if (pendingSendParams.changeAddress && pendingSendParams.changeAddress.trim() !== '') {
+      navigationParams.changeAddress = pendingSendParams.changeAddress;
     }
     dbg('=== WalletHome: Navigating to pairing screen ===', {
       routeName,
@@ -2095,6 +2106,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         derivationPath?: string;
         network?: string;
         utxosJson?: string;
+        changeAddress?: string;
       } | null;
       if (
         !decoded ||
@@ -2183,6 +2195,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         spendingHash: decoded.spendingHash || '',
         utxosJson: decoded.utxosJson || null,
         utxoCount,
+        changeAddress: decoded.changeAddress || null,
       });
       setScannedFromQR(true);
       // Show transport selector immediately (no QR code shown since data came from scan)
@@ -2732,6 +2745,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 selectedCurrency: selectedCurrency,
                 utxosJson: pendingSendParams.utxosJson || null,
                 utxoCount: pendingSendParams.utxoCount,
+                changeAddress: pendingSendParams.changeAddress || null,
               }
             : null
         }

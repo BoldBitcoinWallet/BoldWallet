@@ -21,6 +21,10 @@
   - **TransactionDetailsModal**: Inputs/outputs flow diagram (PSBT-style); internal (ours) outputs highlighted with theme accent; summary bar with fee; address path map for paths.
 - **Pairing screens**: Inputs/outputs flow in MobilesPairing and MobileNostrPairing; “Signing Path” instead of “From Address”; network badge and flow diagram aligned.
 - **RestoringIndexesModal**: Dedicated modal for index discovery progress.
+- **Deterministic co-signing via QR (changeAddress field)**: The send-bitcoin QR now encodes a 9th field (`changeAddress`); both the sender and the scanning device use the identical pre-computed change output in UI preview and in the native MPC call. `decodeSendBitcoinQR` / `encodeSendBitcoinQR` are fully backward-compatible with v1–v4 QRs (3–8 fields).
+- **Change address derivation path in outputs preview**: If a transaction output is the wallet's change address, its HD derivation path (e.g., `m/84'/0'/0'/1/3`) is displayed below the address in both MobilesPairing and MobileNostrPairing; `WalletService.getNextChangeAddressWithPath` returns `{address, path}` as a single atomic call.
+- **Address shortening in transaction previews**: All Bitcoin addresses in the inputs/outputs flow on MobilesPairing and MobileNostrPairing are displayed in a compact “first 4…last 4” format (e.g., `bc1q…xyz1`) via a new `shortenAddress` utility in `utils.js`.
+- **Abort functionality in MobileNostrPairing**: Full abort support added to the Nostr co-signing modal — abort button in the in-progress modal, `nostrAbortRef` reset at the start of each signing session, mid-flow abort checks after raw TX is produced, and suppressed error alerts when the user aborts intentionally; behaviour is now consistent with MobilesPairing.
 
 ### Changed
 - **`TransactionList`**: Migrated from `axios` to `MempoolClient`; manual `timeoutPromise` race removed (timeout now enforced inside `MempoolClient`).
@@ -40,6 +44,9 @@
 - **Receive index**: No longer advances on network errors; discovery records partial/failed state without bumping indexes; `bumpExternalIndexIfCurrentUsed` only when address is actually used.
 - **Fee estimation**: Multi-path UTXO set used for native fee estimation; “insufficient funds” handling and logging aligned with multi-path.
 - **Transaction list**: Removed legacy single-address consolidation detection and Ix row; correct merge/sort for multi-address pagination.
+- **Scanning device UTXO mismatch / session stall**: The scanning device now populates both the UI preview and the native MPC signing call directly from the UTXOs embedded in the QR code (enriched with `scriptpubkey` via a targeted API call); previously the scanner re-fetched UTXOs independently, causing mismatches that stalled co-signing sessions.
+- **Transaction inputs not shown on scanning device**: The `txPreview` effect now uses `route.params.utxosJson` when available, bypassing a cold-cache `fetchUtxosWithPaths` call that returned empty results on the scanner.
+- **Inconsistent change address between devices**: The sender’s pre-computed change address is now threaded end-to-end — from `SendBitcoinModal` → `WalletHome` → QR field 9 → `processScannedQRData` → `navigationParams` → pairing screens → native MPC call — guaranteeing both devices sign with the same change output.
 
 ### Technical Details
 - **Version**: `package.json` 3.0.0.
@@ -47,6 +54,9 @@
 - **`WalletBalance` interface**: Added optional `pendingSats?: number` (backward-compatible with cached entries).
 - **BBMTLib**: `go.mod`/`go.sum`; `tss/btc.go` (SpendingHashWithUTXOs, fee/UTXO); `tss/mpc_nostr.go`; iOS/Android native module updates; `Dockerfile.fips` (Go 1.25.x, TARGETARCH, cache mounts, WORKDIR /workspace).
 - **Context**: UserContext/WalletContext and utils.js updates for tabs and routing where applicable.
+- **QR format v5**: `encodeSendBitcoinQR` / `decodeSendBitcoinQR` in `utils.js` extended to 9 fields; `TransportModeSelector` passes `changeAddress`; `WalletHome.processScannedQRData` extracts and stores it in `pendingSendParams`.
+- **`shortenAddress` utility** (`utils.js`): Returns first 4…last 4 characters for addresses longer than 8 chars; used across pairing screen previews.
+- **`WalletService.getNextChangeAddressWithPath`**: New method returning `{address, path}`; `getNextChangeAddress` delegates to it for backward compatibility.
 
 ## [2.2.0] - 2026-02-15
 

@@ -41,6 +41,8 @@ interface SendBitcoinModalProps {
     amount: Big,
     estimatedFee: Big,
     spendingHash: string,
+    utxosJson?: string | null,
+    changeAddress?: string | null,
   ) => void;
   btcToFiatRate: Big;
   walletBalance: Big;
@@ -62,6 +64,10 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
 }) => {
   const isMountedRef = useRef(true);
   const visibleRef = useRef(visible);
+  /** Compact UTXOs (no scriptpubkey) captured at fee-estimation time, embedded in the QR. */
+  const lastUtxosJsonRef = useRef<string | null>(null);
+  /** Change address computed alongside UTXOs; passed through to co-signers via route params. */
+  const lastChangeAddressRef = useRef<string | null>(null);
   const [address, setAddress] = useState<string>('');
   const [btcAmount, setBtcAmount] = useState<Big>(Big(0));
   const [inBtcAmount, setInBtcAmount] = useState('');
@@ -478,6 +484,17 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
           );
           dbg('SendBitcoinModal: utxosWithPaths count', utxosWithPaths.length);
           utxosJson = JSON.stringify(utxosWithPaths);
+          // Compact form for QR (no scriptpubkey — enriched during signing)
+          lastUtxosJsonRef.current = JSON.stringify(
+            utxosWithPaths.map(u => ({
+              txid: u.txid,
+              vout: u.vout,
+              value: u.value,
+              derivation_path: u.derivationPath,
+              address: u.address,
+            })),
+          );
+          lastChangeAddressRef.current = changeAddress;
           changeAddress = await ws.getNextChangeAddress(
             activeNetwork,
             activeAddressType,
@@ -974,7 +991,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     }
     // Normalize to sats for sending
     const amountSats = btcAmount.times(E8);
-    onSend(address, amountSats, estimatedFee, spendingHash);
+    onSend(address, amountSats, estimatedFee, spendingHash, lastUtxosJsonRef.current, lastChangeAddressRef.current);
   };
   // Check if amount exceeds balance
   const amountExceedsBalance = btcAmount.gt(0) && btcAmount.gt(walletBalance);

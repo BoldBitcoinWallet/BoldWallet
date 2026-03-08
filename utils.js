@@ -116,6 +116,12 @@ export const dbg = (message, ...optionalParams) => {
 
 export const shorten = (x, y = 12) => `${x.slice(0, y)}...${x.slice(-y)}`;
 
+/** Shorten a Bitcoin address for display: first 4 + ... + last 4. */
+export const shortenAddress = (addr) =>
+  typeof addr === 'string' && addr.length > 8
+    ? `${addr.slice(0, 4)}...${addr.slice(-4)}`
+    : addr || '';
+
 /**
  * Generate all output descriptors (legacy, segwit-native, segwit-compatible)
  * @param {Object} nativeModule - The BBMTLibNativeModule instance
@@ -850,7 +856,7 @@ export const getKeyshareLabel = keyshare => {
 
 /**
  * Encode send bitcoin data into QR code format
- * Format: <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>
+ * Format: <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>|<network>|<utxosJson>|<changeAddress>
  * @param {string} toAddress - Bitcoin address to send to
  * @param {string|number} amountSats - Amount in satoshis
  * @param {string|number} feeSats - Fee in satoshis
@@ -859,6 +865,7 @@ export const getKeyshareLabel = keyshare => {
  * @param {string} derivationPath - Derivation path (e.g., "m/84'/0'/0'/0/0")
  * @param {string} network - Network identifier (e.g., 'mainnet', 'testnet3')
  * @param {string} utxosJson - Optional JSON string of utxosWithPaths used for spending/fee (may be large)
+ * @param {string} changeAddress - Optional pre-computed change address (ensures both devices use the same change output)
  * @returns {string} - Encoded QR data string
  */
 export const encodeSendBitcoinQR = (
@@ -870,17 +877,20 @@ export const encodeSendBitcoinQR = (
   derivationPath = '',
   network = '',
   utxosJson = '',
+  changeAddress = '',
 ) => {
   const amount = typeof amountSats === 'string' ? amountSats : amountSats.toString();
   const fee = typeof feeSats === 'string' ? feeSats : feeSats.toString();
-  return `${toAddress}|${amount}|${fee}|${spendingHash || ''}|${addressType || ''}|${derivationPath || ''}|${network || ''}|${utxosJson || ''}`;
+  return `${toAddress}|${amount}|${fee}|${spendingHash || ''}|${addressType || ''}|${derivationPath || ''}|${network || ''}|${utxosJson || ''}|${changeAddress || ''}`;
 };
 
 /**
  * Decode send bitcoin data from QR code format
- * Format (newest): <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>|<network>|<utxosJson>
- * Format (new): <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>
- * Format (old): <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>
+ * Format (v5): <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>|<network>|<utxosJson>|<changeAddress>
+ * Format (v4): <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>|<network>|<utxosJson>
+ * Format (v3): <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>|<network>
+ * Format (v2): <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>
+ * Format (v1): <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>
  * @param {string} qrData - QR code data string
  * @returns {Object|null} - Decoded data object or null if invalid
  */
@@ -890,15 +900,11 @@ export const decodeSendBitcoinQR = (qrData) => {
   }
 
   const parts = qrData.split('|');
-  // Support old format (3-4 parts), new format (6 parts), newest format (7 parts), and extended (8 parts with utxosJson)
-  if (parts.length < 3 || parts.length > 8) {
+  // Support all versions (3–9 parts)
+  if (parts.length < 3 || parts.length > 9) {
     return null;
   }
 
-  // Old format: <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>
-  // New format: <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>
-  // Newest format: <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>|<network>
-  // Extended: <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>|<network>|<utxosJson>
   const [
     toAddress,
     amountSats,
@@ -908,6 +914,7 @@ export const decodeSendBitcoinQR = (qrData) => {
     derivationPath = '',
     network = '',
     utxosJson = '',
+    changeAddress = '',
   ] = parts;
 
   // Validate address is not empty
@@ -931,5 +938,6 @@ export const decodeSendBitcoinQR = (qrData) => {
     derivationPath: derivationPath || '',
     network: network || '',
     utxosJson: utxosJson || '',
+    changeAddress: changeAddress || '',
   };
 };

@@ -344,6 +344,13 @@ export class WalletService {
     network: string,
     addressType: string,
   ): Promise<string> {
+    return (await this.getNextChangeAddressWithPath(network, addressType)).address;
+  }
+
+  public async getNextChangeAddressWithPath(
+    network: string,
+    addressType: string,
+  ): Promise<{address: string; path: string}> {
     const jks = await EncryptedStorage.getItem('keyshare');
     if (!jks) throw new Error('No keyshare found');
     const ks = JSON.parse(jks);
@@ -355,18 +362,19 @@ export class WalletService {
       ks.chain_code_hex,
       path,
     );
-    const changeAddress = await BBMTLibNativeModule.btcAddress(
+    const address = await BBMTLibNativeModule.btcAddress(
       btcPub,
       network,
       addressType,
     );
-    dbg('WalletService: getNextChangeAddress', {
+    dbg('WalletService: getNextChangeAddressWithPath', {
       network,
       addressType,
       changeIdx,
-      changeAddress: changeAddress?.slice(0, 12) + '...',
+      address: address?.slice(0, 12) + '...',
+      path,
     });
-    return changeAddress;
+    return {address, path};
   }
 
   /** Call after a send has been successfully broadcast to advance the change index. */

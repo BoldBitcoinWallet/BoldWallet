@@ -44,6 +44,7 @@ import {
   getNostrRelays,
   hexToString,
   getResetToMainTabsWallet,
+  shortenAddress,
 } from '../utils';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
@@ -81,6 +82,7 @@ type RouteParams = {
   derivationPath?: string; // Derivation path from QR code (ensures same source address)
   network?: string; // Network from QR code (ensures same network)
   utxosJson?: string; // Pre-selected UTXOs from QR (avoids re-fetch on scanner)
+  changeAddress?: string; // Pre-computed change address from sender (ensures consistency)
 };
 const MobileNostrPairing = ({navigation}: any) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
@@ -186,6 +188,7 @@ const MobileNostrPairing = ({navigation}: any) => {
   const [txPreview, setTxPreview] = useState<{
     utxos: UTXOPreview[];
     changeAddress: string;
+    changeAddressPath: string;
     totalInputSats: number;
   } | null>(null);
   const [_txPreviewLoading, setTxPreviewLoading] = useState(false);
@@ -284,17 +287,67 @@ const MobileNostrPairing = ({navigation}: any) => {
     let cancelled = false;
     const load = async () => {
       setTxPreviewLoading(true);
+      const net = (route.params?.network || 'mainnet').trim();
+      const addrType = (route.params?.addressType || 'segwit-native').trim();
       try {
-        const net = (route.params?.network || 'mainnet').trim();
-        const addrType = (route.params?.addressType || 'segwit-native').trim();
+        // When QR carries UTXOs, use them directly — no re-fetch needed.
+        const utxosFromQR = route.params?.utxosJson;
+        if (
+          utxosFromQR &&
+          typeof utxosFromQR === 'string' &&
+          utxosFromQR.trim() !== ''
+        ) {
+          const parsed = JSON.parse(utxosFromQR) as Array<{
+            txid: string;
+            vout: number;
+            value: number;
+            derivation_path?: string;
+            derivationPath?: string;
+            address: string;
+          }>;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const totalInputSats = parsed.reduce(
+              (s, u) => s + (u.value || 0),
+              0,
+            );
+            const chgFromParams = route.params?.changeAddress;
+            let chgAddress = '';
+            let chgPath = '';
+            if (chgFromParams && chgFromParams.trim() !== '') {
+              chgAddress = chgFromParams;
+              try {
+                const r = await WalletService.getInstance().getNextChangeAddressWithPath(net, addrType);
+                chgPath = r.path;
+              } catch {}
+            } else {
+              const r = await WalletService.getInstance().getNextChangeAddressWithPath(net, addrType);
+              chgAddress = r.address;
+              chgPath = r.path;
+            }
+            if (!cancelled) {
+              setTxPreview({
+                utxos: parsed.map(u => ({
+                  address: u.address,
+                  value: u.value,
+                  derivationPath: u.derivation_path ?? u.derivationPath ?? '',
+                })),
+                changeAddress: chgAddress,
+                changeAddressPath: chgPath,
+                totalInputSats,
+              });
+            }
+            return;
+          }
+        }
+        // Fallback: fresh fetch (sender device, or QR has no utxosJson).
         const apiUrl =
           (await LocalCache.getItem(`api_${net}`)) ||
           (net === 'testnet3' || net === 'testnet'
             ? 'https://mempool.space/testnet/api'
             : 'https://mempool.space/api');
-        const [utxos, chg] = await Promise.all([
+        const [utxos, chgResult] = await Promise.all([
           WalletService.getInstance().fetchUtxosWithPaths(net, addrType, apiUrl),
-          WalletService.getInstance().getNextChangeAddress(net, addrType),
+          WalletService.getInstance().getNextChangeAddressWithPath(net, addrType),
         ]);
         if (!cancelled) {
           const totalInputSats = utxos.reduce((s, u) => s + u.value, 0);
@@ -304,7 +357,8 @@ const MobileNostrPairing = ({navigation}: any) => {
               value: u.value,
               derivationPath: u.derivationPath,
             })),
-            changeAddress: chg || '',
+            changeAddress: chgResult?.address || '',
+            changeAddressPath: chgResult?.path || '',
             totalInputSats,
           });
         }
@@ -320,7 +374,13 @@ const MobileNostrPairing = ({navigation}: any) => {
     return () => {
       cancelled = true;
     };
-  }, [isSendBitcoin, route.params?.network, route.params?.addressType]);
+  }, [
+    isSendBitcoin,
+    route.params?.network,
+    route.params?.addressType,
+    route.params?.utxosJson,
+    route.params?.changeAddress,
+  ]);
 
   // Update relays when input changes (support both comma and newline separation)
   useEffect(() => {
@@ -585,9 +645,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         const statusDot =
           msg.step % 3 === 0 ? '.' : msg.step % 3 === 1 ? '..' : '...';
         if (utxoCount > 0 && utxoIndex > 0 && isSendBitcoin) {
-          setStatus(
-            `Signing input ${utxoIndex}/${utxoCount}${statusDot}`,
-          );
+          setStatus(`Signing input ${utxoIndex}/${utxoCount}${statusDot}`);
         } else {
           setStatus('Processing cryptographic operations' + statusDot);
         }
@@ -1400,6 +1458,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       Alert.alert('Error', 'Missing transaction parameters');
       return;
     }
+    nostrAbortRef.current = false;
     setIsPairing(true);
     setProgress(0);
     setStatus('Starting transaction signing...');
@@ -1710,45 +1769,84 @@ const MobileNostrPairing = ({navigation}: any) => {
       }
       const partiesNpubsCSV = allNpubs.sort().join(',');
       const relaysCSV = relays.join(',');
-      // HD: get next change address so change output goes to internal chain (no address reuse)
+      // HD: get next change address so change output goes to internal chain (no address reuse).
+      // Prefer the change address from route params (pre-computed by sender) to ensure both
+      // devices use the identical change output in the signed transaction.
       let changeAddress = '';
-      try {
-        changeAddress =
-          (await WalletService.getInstance().getNextChangeAddress(
-            net,
-            addressTypeToUse,
-          )) || '';
-      } catch (e) {
-        dbg(
-          'MobileNostrPairing: getNextChangeAddress failed, using legacy change to sender:',
-          e,
-        );
+      const changeAddressFromParams = route.params?.changeAddress;
+      if (changeAddressFromParams && changeAddressFromParams.trim() !== '') {
+        changeAddress = changeAddressFromParams.trim();
+      } else {
+        try {
+          changeAddress =
+            (await WalletService.getInstance().getNextChangeAddress(
+              net,
+              addressTypeToUse,
+            )) || '';
+        } catch (e) {
+          dbg(
+            'MobileNostrPairing: getNextChangeAddress failed, using legacy change to sender:',
+            e,
+          );
+        }
       }
 
       let rawTxHex: string;
       try {
         let utxosWithPathsJSON: string | null = null;
         const utxosJsonFromQR = route.params?.utxosJson;
-        if (utxosJsonFromQR && typeof utxosJsonFromQR === 'string' && utxosJsonFromQR.trim() !== '') {
+        if (
+          utxosJsonFromQR &&
+          typeof utxosJsonFromQR === 'string' &&
+          utxosJsonFromQR.trim() !== ''
+        ) {
           try {
             const parsed = JSON.parse(utxosJsonFromQR);
             if (Array.isArray(parsed) && parsed.length > 0) {
               const first = parsed[0];
-              if (first && typeof first.txid === 'string' && typeof first.vout === 'number' && typeof first.value === 'number') {
-                const forNative = parsed.map((u: any) => ({
+              if (
+                first &&
+                typeof first.txid === 'string' &&
+                typeof first.vout === 'number' &&
+                typeof first.value === 'number'
+              ) {
+                // Map to WalletService shape so enrichUtxosWithScriptpubkey can process them.
+                const asUtxos = parsed.map((u: any) => ({
                   txid: u.txid,
                   vout: u.vout,
                   value: u.value,
-                  derivation_path: u.derivation_path ?? u.derivationPath,
+                  derivationPath: u.derivation_path ?? u.derivationPath ?? '',
+                  address: u.address,
+                  scriptpubkey: u.scriptpubkey ?? '',
+                  chain: 'receive' as const,
+                  chainIndex: 0,
+                }));
+                const needsEnrichment = asUtxos.some(u => !u.scriptpubkey);
+                const enriched = needsEnrichment
+                  ? await WalletService.getInstance().enrichUtxosWithScriptpubkey(
+                      asUtxos,
+                      apiUrl,
+                    )
+                  : asUtxos;
+                const forNative = enriched.map((u: any) => ({
+                  txid: u.txid,
+                  vout: u.vout,
+                  value: u.value,
+                  derivation_path: u.derivationPath ?? u.derivation_path,
                   address: u.address,
                   scriptpubkey: u.scriptpubkey ?? '',
                 }));
                 utxosWithPathsJSON = JSON.stringify(forNative);
-                dbg('MobileNostrPairing: using UTXOs from QR (no re-fetch)');
+                dbg(
+                  'MobileNostrPairing: using UTXOs from QR (enriched)',
+                  forNative.length,
+                );
               }
             }
           } catch {
-            dbg('MobileNostrPairing: failed to use utxosJson from QR, will fetch');
+            dbg(
+              'MobileNostrPairing: failed to use utxosJson from QR, will fetch',
+            );
           }
         }
         if (!utxosWithPathsJSON) {
@@ -1828,7 +1926,12 @@ const MobileNostrPairing = ({navigation}: any) => {
           changeAddress,
         );
       }
-      if (!rawTxHex || typeof rawTxHex !== 'string' || rawTxHex.length % 2 !== 0 || !/^[a-fA-F0-9]+$/.test(rawTxHex)) {
+      if (
+        !rawTxHex ||
+        typeof rawTxHex !== 'string' ||
+        rawTxHex.length % 2 !== 0 ||
+        !/^[a-fA-F0-9]+$/.test(rawTxHex)
+      ) {
         throw new Error(rawTxHex || 'Invalid signed transaction');
       }
       broadcastSuccessPayloadRef.current = {
@@ -1849,6 +1952,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       };
       skipRestoreInFinallyRef.current = true;
       if (nostrAbortRef.current) {
+        setIsPairing(false);
         return;
       }
       setSignedTxRawHex(rawTxHex);
@@ -1908,6 +2012,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       );
       return;
     }
+    nostrAbortRef.current = false;
     setIsPairing(true);
     setProgress(0);
     setStatus('Starting PSBT signing...');
@@ -2049,6 +2154,10 @@ const MobileNostrPairing = ({navigation}: any) => {
         route.params.psbtBase64,
       )
         .then(async (signedPsbt: any) => {
+          if (nostrAbortRef.current) {
+            setIsPairing(false);
+            return;
+          }
           if (
             !signedPsbt ||
             signedPsbt.includes('error') ||
@@ -2081,7 +2190,12 @@ const MobileNostrPairing = ({navigation}: any) => {
           setMpcDone(true);
         })
         .catch(async (e: any) => {
-          Alert.alert('Operation Error', `Could not sign PSBT.\n${e?.message}`);
+          if (!nostrAbortRef.current) {
+            Alert.alert(
+              'Operation Error',
+              `Could not sign PSBT.\n${e?.message}`,
+            );
+          }
           dbg(localNpub, 'PSBT signing error', e);
           try {
             navigation.dispatch(
@@ -3142,6 +3256,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     checkboxLabel: {
       fontSize: theme.fontSizes?.base || 14,
       color: theme.colors.text,
+      marginTop: 6,
       flex: 1,
     },
     preparingModalContent: {
@@ -5537,7 +5652,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                             <View style={{paddingTop: 4}}>
                               {/* Inputs */}
                               <Text style={sectionTitle}>
-                                Inputs{txPreview && txPreview.utxos.length > 0
+                                Inputs
+                                {txPreview && txPreview.utxos.length > 0
                                   ? ` (${txPreview.utxos.length})`
                                   : ''}
                               </Text>
@@ -5545,7 +5661,15 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 txPreview.utxos.map((u, idx) => (
                                   <AppPressable
                                     key={`${u.address}-${idx}`}
-                                    style={[rowOurs, {marginBottom: idx < txPreview.utxos.length - 1 ? 3 : 4}]}
+                                    style={[
+                                      rowOurs,
+                                      {
+                                        marginBottom:
+                                          idx < txPreview.utxos.length - 1
+                                            ? 3
+                                            : 4,
+                                      },
+                                    ]}
                                     onPress={() =>
                                       Linking.openURL(
                                         `${explorerBase}/address/${u.address}`,
@@ -5568,7 +5692,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                         ]}
                                         numberOfLines={1}
                                         ellipsizeMode="middle">
-                                        {u.address}
+                                        {shortenAddress(u.address)}
                                       </Text>
                                       <Text style={pathText}>
                                         {u.derivationPath}
@@ -5665,7 +5789,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                     ]}
                                     numberOfLines={1}
                                     ellipsizeMode="middle">
-                                    {toAddr}
+                                    {shortenAddress(toAddr)}
                                   </Text>
                                   <Text style={subLabel}>recipient</Text>
                                 </View>
@@ -5749,9 +5873,16 @@ const MobileNostrPairing = ({navigation}: any) => {
                                         ]}
                                         numberOfLines={1}
                                         ellipsizeMode="middle">
-                                        {txPreview.changeAddress}
+                                        {shortenAddress(
+                                          txPreview.changeAddress,
+                                        )}
                                       </Text>
                                       <Text style={subLabel}>change</Text>
+                                      {txPreview.changeAddressPath ? (
+                                        <Text style={pathText}>
+                                          {txPreview.changeAddressPath}
+                                        </Text>
+                                      ) : null}
                                     </View>
                                     <View style={{alignItems: 'flex-end'}}>
                                       {changeSats > 0 && (
@@ -5916,7 +6047,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                       <AppPressable
                         style={[
                           styles.modalButton,
-                          {backgroundColor: theme.colors.danger},
+                          {backgroundColor: theme.colors.secondary},
                         ]}
                         onPress={abortActiveNostrMpc}>
                         <Text style={styles.buttonText}>Abort</Text>
@@ -5988,6 +6119,18 @@ const MobileNostrPairing = ({navigation}: any) => {
                       Time elapsed: {prepCounter} seconds
                     </Text>
                   </View>
+                  {(isSendBitcoin || isSignPSBT) && (
+                    <View style={styles.modalActions}>
+                      <AppPressable
+                        style={[
+                          styles.modalButton,
+                          {backgroundColor: theme.colors.secondary},
+                        ]}
+                        onPress={abortActiveNostrMpc}>
+                        <Text style={styles.buttonText}>Abort</Text>
+                      </AppPressable>
+                    </View>
+                  )}
                 </View>
               </View>
             </Modal>
@@ -6288,10 +6431,14 @@ const MobileNostrPairing = ({navigation}: any) => {
                 p.addressTypeToUse,
               );
             } catch (e) {
-              dbg('MobileNostrPairing: incrementChangeIndexAfterSend failed:', e);
+              dbg(
+                'MobileNostrPairing: incrementChangeIndexAfterSend failed:',
+                e,
+              );
             }
             const pendingTxs = JSON.parse(
-              (await LocalCache.getItem(`${p.senderAddress}-pendingTxs`)) || '{}',
+              (await LocalCache.getItem(`${p.senderAddress}-pendingTxs`)) ||
+                '{}',
             );
             pendingTxs[txId] = {
               txid: txId,
@@ -6329,13 +6476,19 @@ const MobileNostrPairing = ({navigation}: any) => {
                   p.originalApiUrl,
                 );
                 await LocalCache.setItem('api', p.originalApiUrl);
-                if (p.originalWalletServiceNetwork && p.originalWalletServiceApiUrl) {
+                if (
+                  p.originalWalletServiceNetwork &&
+                  p.originalWalletServiceApiUrl
+                ) {
                   const ws = WalletService.getInstance();
                   (ws as any).currentNetwork = p.originalWalletServiceNetwork;
                   (ws as any).currentApiUrl = p.originalWalletServiceApiUrl;
                 }
               } catch (e) {
-                dbg('MobileNostrPairing: Error restoring network after broadcast:', e);
+                dbg(
+                  'MobileNostrPairing: Error restoring network after broadcast:',
+                  e,
+                );
               }
             }
           } finally {

@@ -32,6 +32,7 @@ interface TransportModeSelectorProps {
     selectedCurrency?: string; // Currency symbol for display
     utxosJson?: string | null; // Optional JSON of utxosWithPaths (when multi-path UTXOs were used)
     utxoCount?: number; // Optional count of UTXOs in utxosJson
+    changeAddress?: string | null; // Pre-computed change address (ensures both devices use the same output)
   } | null;
   showQRCode?: boolean; // Whether to show QR code (false when data came from scan)
 }
@@ -384,6 +385,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                   sendBitcoinData.derivationPath || '',
                   sendBitcoinData.network || '',
                   sendBitcoinData.utxosJson || '',
+                  sendBitcoinData.changeAddress || '',
                 );
                 return (
                   <View style={styles.qrCodeSection}>

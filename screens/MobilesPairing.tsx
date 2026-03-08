@@ -47,6 +47,7 @@ import {
   getPinnedRemoteIPs,
   hexToString,
   getResetToMainTabsWallet,
+  shortenAddress,
 } from '../utils';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
@@ -155,6 +156,7 @@ const MobilesPairing = ({navigation}: any) => {
     derivationPath?: string; // Derivation path from QR code (ensures same source address)
     network?: string; // Network from QR code (ensures same network)
     utxosJson?: string; // Pre-selected UTXOs from QR (avoids re-fetch on scanner)
+    changeAddress?: string; // Pre-computed change address from sender (ensures consistency)
   };
   const route = useRoute<RouteProp<{params: RouteParams}>>();
   const isFocused = useIsFocused();
@@ -189,6 +191,7 @@ const MobilesPairing = ({navigation}: any) => {
   const [txPreview, setTxPreview] = useState<{
     utxos: UTXOPreview[];
     changeAddress: string;
+    changeAddressPath: string;
     totalInputSats: number;
   } | null>(null);
   const [_txPreviewLoading, setTxPreviewLoading] = useState(false);
@@ -306,17 +309,68 @@ const MobilesPairing = ({navigation}: any) => {
     let cancelled = false;
     const load = async () => {
       setTxPreviewLoading(true);
+      const net = (route.params?.network || 'mainnet').trim();
+      const addrType = (route.params?.addressType || 'segwit-native').trim();
       try {
-        const net = (route.params?.network || 'mainnet').trim();
-        const addrType = (route.params?.addressType || 'segwit-native').trim();
+        // When QR carries UTXOs, use them directly — no re-fetch needed.
+        const utxosFromQR = route.params?.utxosJson;
+        if (
+          utxosFromQR &&
+          typeof utxosFromQR === 'string' &&
+          utxosFromQR.trim() !== ''
+        ) {
+          const parsed = JSON.parse(utxosFromQR) as Array<{
+            txid: string;
+            vout: number;
+            value: number;
+            derivation_path?: string;
+            derivationPath?: string;
+            address: string;
+          }>;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const totalInputSats = parsed.reduce(
+              (s, u) => s + (u.value || 0),
+              0,
+            );
+            const chgFromParams = route.params?.changeAddress;
+            let chgAddress = '';
+            let chgPath = '';
+            if (chgFromParams && chgFromParams.trim() !== '') {
+              chgAddress = chgFromParams;
+              // derive the path for display from WalletService (index doesn't change, just the path string)
+              try {
+                const r = await WalletService.getInstance().getNextChangeAddressWithPath(net, addrType);
+                chgPath = r.path;
+              } catch {}
+            } else {
+              const r = await WalletService.getInstance().getNextChangeAddressWithPath(net, addrType);
+              chgAddress = r.address;
+              chgPath = r.path;
+            }
+            if (!cancelled) {
+              setTxPreview({
+                utxos: parsed.map(u => ({
+                  address: u.address,
+                  value: u.value,
+                  derivationPath: u.derivation_path ?? u.derivationPath ?? '',
+                })),
+                changeAddress: chgAddress,
+                changeAddressPath: chgPath,
+                totalInputSats,
+              });
+            }
+            return;
+          }
+        }
+        // Fallback: fresh fetch (sender device, or QR has no utxosJson).
         const apiUrl =
           (await LocalCache.getItem(`api_${net}`)) ||
           (net === 'testnet3' || net === 'testnet'
             ? 'https://mempool.space/testnet/api'
             : 'https://mempool.space/api');
-        const [utxos, chg] = await Promise.all([
+        const [utxos, chgResult] = await Promise.all([
           WalletService.getInstance().fetchUtxosWithPaths(net, addrType, apiUrl),
-          WalletService.getInstance().getNextChangeAddress(net, addrType),
+          WalletService.getInstance().getNextChangeAddressWithPath(net, addrType),
         ]);
         if (!cancelled) {
           const totalInputSats = utxos.reduce((s, u) => s + u.value, 0);
@@ -326,7 +380,8 @@ const MobilesPairing = ({navigation}: any) => {
               value: u.value,
               derivationPath: u.derivationPath,
             })),
-            changeAddress: chg || '',
+            changeAddress: chgResult?.address || '',
+            changeAddressPath: chgResult?.path || '',
             totalInputSats,
           });
         }
@@ -342,7 +397,13 @@ const MobilesPairing = ({navigation}: any) => {
     return () => {
       cancelled = true;
     };
-  }, [isSendBitcoin, route.params?.network, route.params?.addressType]);
+  }, [
+    isSendBitcoin,
+    route.params?.network,
+    route.params?.addressType,
+    route.params?.utxosJson,
+    route.params?.changeAddress,
+  ]);
 
   // Initialize network and derivation path immediately when component loads (for send Bitcoin mode)
   const stringToHex = (str: string) => {
@@ -909,27 +970,60 @@ const MobilesPairing = ({navigation}: any) => {
           let utxosWithPathsJSON: string | null = null;
           let pendingKeyMultiPath = senderAddress;
           const utxosJsonFromQR = route.params?.utxosJson;
-          if (utxosJsonFromQR && typeof utxosJsonFromQR === 'string' && utxosJsonFromQR.trim() !== '') {
+          if (
+            utxosJsonFromQR &&
+            typeof utxosJsonFromQR === 'string' &&
+            utxosJsonFromQR.trim() !== ''
+          ) {
             try {
               const parsed = JSON.parse(utxosJsonFromQR);
               if (Array.isArray(parsed) && parsed.length > 0) {
                 const first = parsed[0];
-                if (first && typeof first.txid === 'string' && typeof first.vout === 'number' && typeof first.value === 'number') {
-                  const forNative = parsed.map((u: any) => ({
+                if (
+                  first &&
+                  typeof first.txid === 'string' &&
+                  typeof first.vout === 'number' &&
+                  typeof first.value === 'number'
+                ) {
+                  // Map to WalletService shape so enrichUtxosWithScriptpubkey can process them.
+                  const asUtxos = parsed.map((u: any) => ({
                     txid: u.txid,
                     vout: u.vout,
                     value: u.value,
-                    derivation_path: u.derivation_path ?? u.derivationPath,
+                    derivationPath: u.derivation_path ?? u.derivationPath ?? '',
+                    address: u.address,
+                    scriptpubkey: u.scriptpubkey ?? '',
+                    chain: 'receive' as const,
+                    chainIndex: 0,
+                  }));
+                  // Enrich scriptpubkeys if missing (QR omits them to keep QR compact).
+                  const needsEnrichment = asUtxos.some(u => !u.scriptpubkey);
+                  const enriched = needsEnrichment
+                    ? await WalletService.getInstance().enrichUtxosWithScriptpubkey(
+                        asUtxos,
+                        apiUrl,
+                      )
+                    : asUtxos;
+                  const forNative = enriched.map((u: any) => ({
+                    txid: u.txid,
+                    vout: u.vout,
+                    value: u.value,
+                    derivation_path: u.derivationPath ?? u.derivation_path,
                     address: u.address,
                     scriptpubkey: u.scriptpubkey ?? '',
                   }));
                   utxosWithPathsJSON = JSON.stringify(forNative);
                   pendingKeyMultiPath = forNative[0]?.address || senderAddress;
-                  dbg('MobilesPairing: using UTXOs from QR (no re-fetch)');
+                  dbg(
+                    'MobilesPairing: using UTXOs from QR (enriched)',
+                    forNative.length,
+                  );
                 }
               }
             } catch {
-              dbg('MobilesPairing: failed to use utxosJson from QR, will fetch');
+              dbg(
+                'MobilesPairing: failed to use utxosJson from QR, will fetch',
+              );
             }
           }
           if (!utxosWithPathsJSON) {
@@ -962,13 +1056,17 @@ const MobilesPairing = ({navigation}: any) => {
               pendingKeyMultiPath = utxosWithPaths[0]?.address || senderAddress;
             }
           }
-          const changeAddress =
-            utxosWithPathsJSON
-              ? await WalletService.getInstance().getNextChangeAddress(
+          // Use change address from route params when available (sender pre-computed it;
+          // this ensures both devices show and use the identical change output).
+          const changeAddressFromParams = route.params?.changeAddress;
+          const changeAddress = utxosWithPathsJSON
+            ? changeAddressFromParams && changeAddressFromParams.trim() !== ''
+              ? changeAddressFromParams
+              : await WalletService.getInstance().getNextChangeAddress(
                   net,
                   addressTypeToUse,
                 )
-              : '';
+            : '';
           if (utxosWithPathsJSON && changeAddress) {
             const rawTxHex = await BBMTLibNativeModule.mpcSendBTCWithUTXOs(
               server,
@@ -987,7 +1085,12 @@ const MobilesPairing = ({navigation}: any) => {
               changeAddress,
             );
             dbg(partyID, 'signed tx (multi-path), len=', rawTxHex?.length);
-            if (!rawTxHex || typeof rawTxHex !== 'string' || rawTxHex.length % 2 !== 0 || !/^[a-fA-F0-9]+$/.test(rawTxHex)) {
+            if (
+              !rawTxHex ||
+              typeof rawTxHex !== 'string' ||
+              rawTxHex.length % 2 !== 0 ||
+              !/^[a-fA-F0-9]+$/.test(rawTxHex)
+            ) {
               throw rawTxHex || 'Invalid signed transaction';
             }
             usedMultiPath = true;
@@ -1042,7 +1145,12 @@ const MobilesPairing = ({navigation}: any) => {
             satoshiFees,
           );
           dbg(partyID, 'signed tx (single-path), len=', rawTxHexSingle?.length);
-          if (!rawTxHexSingle || typeof rawTxHexSingle !== 'string' || rawTxHexSingle.length % 2 !== 0 || !/^[a-fA-F0-9]+$/.test(rawTxHexSingle)) {
+          if (
+            !rawTxHexSingle ||
+            typeof rawTxHexSingle !== 'string' ||
+            rawTxHexSingle.length % 2 !== 0 ||
+            !/^[a-fA-F0-9]+$/.test(rawTxHexSingle)
+          ) {
             throw rawTxHexSingle || 'Invalid signed transaction';
           }
           broadcastSuccessPayloadRef.current = {
@@ -1192,9 +1300,7 @@ const MobilesPairing = ({navigation}: any) => {
       const statusDot =
         msg.step % 3 === 0 ? '.' : msg.step % 3 === 1 ? '..' : '...';
       if (utxoCount > 0 && utxoIndex > 0 && isSendBitcoin) {
-        setStatus(
-          `Signing input ${utxoIndex}/${utxoCount}${statusDot}`,
-        );
+        setStatus(`Signing input ${utxoIndex}/${utxoCount}${statusDot}`);
       } else {
         setStatus('Processing cryptographic operations' + statusDot);
       }
@@ -2233,6 +2339,7 @@ const MobilesPairing = ({navigation}: any) => {
       color: theme.colors.text,
       flex: 1,
       textAlign: 'left',
+      marginTop: 6,
       lineHeight: 18,
     },
     deviceContainer: {
@@ -4179,46 +4286,6 @@ const MobilesPairing = ({navigation}: any) => {
                           </Text>
                         </View>
                       </View>
-                      {route.params?.derivationPath && (
-                        <View
-                          style={[
-                            styles.transactionItem,
-                            {paddingVertical: 2, marginBottom: 3},
-                          ]}>
-                          <View
-                            style={{
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                            }}>
-                            <Text
-                              style={[
-                                styles.transactionLabel,
-                                {
-                                  fontSize: theme.fontSizes?.sm || 12,
-                                  lineHeight: 14,
-                                },
-                              ]}>
-                              Signing Path
-                            </Text>
-                            <Text
-                              style={{
-                                fontSize: theme.fontSizes?.xs || 10,
-                                fontFamily: theme.fontFamilies?.monospace,
-                                color:
-                                  theme.colors.background === '#ffffff'
-                                    ? theme.colors.primary
-                                    : theme.colors.bitcoinOrange,
-                                marginLeft: 6,
-                                textAlign: 'right',
-                                flex: 1,
-                                flexShrink: 1,
-                              }}>
-                              {route.params.derivationPath}
-                            </Text>
-                          </View>
-                        </View>
-                      )}
                       {/* Transaction Flow */}
                       {(() => {
                         const accentColor =
@@ -4333,7 +4400,8 @@ const MobilesPairing = ({navigation}: any) => {
                           <View style={{paddingTop: 8}}>
                             {/* Inputs */}
                             <Text style={sectionTitle}>
-                              Inputs{txPreview && txPreview.utxos.length > 0
+                              Inputs
+                              {txPreview && txPreview.utxos.length > 0
                                 ? ` (${txPreview.utxos.length})`
                                 : ''}
                             </Text>
@@ -4341,7 +4409,15 @@ const MobilesPairing = ({navigation}: any) => {
                               txPreview.utxos.map((u, idx) => (
                                 <AppPressable
                                   key={`${u.address}-${idx}`}
-                                  style={[rowOurs, {marginBottom: idx < txPreview.utxos.length - 1 ? 3 : 4}]}
+                                  style={[
+                                    rowOurs,
+                                    {
+                                      marginBottom:
+                                        idx < txPreview.utxos.length - 1
+                                          ? 3
+                                          : 4,
+                                    },
+                                  ]}
                                   onPress={() =>
                                     Linking.openURL(
                                       `${explorerBase}/address/${u.address}`,
@@ -4361,7 +4437,7 @@ const MobilesPairing = ({navigation}: any) => {
                                       ]}
                                       numberOfLines={1}
                                       ellipsizeMode="middle">
-                                      {u.address}
+                                      {shortenAddress(u.address)}
                                     </Text>
                                     <Text style={pathText}>
                                       {u.derivationPath}
@@ -4458,7 +4534,7 @@ const MobilesPairing = ({navigation}: any) => {
                                   ]}
                                   numberOfLines={1}
                                   ellipsizeMode="middle">
-                                  {toAddr}
+                                  {shortenAddress(toAddr)}
                                 </Text>
                                 <Text style={subLabel}>recipient</Text>
                               </View>
@@ -4527,10 +4603,7 @@ const MobilesPairing = ({navigation}: any) => {
                                   {accentBar}
                                   <Image
                                     source={require('../assets/in-icon.png')}
-                                    style={[
-                                      iconBase,
-                                      {tintColor: accentColor},
-                                    ]}
+                                    style={[iconBase, {tintColor: accentColor}]}
                                     resizeMode="contain"
                                   />
                                   <View style={{flex: 1}}>
@@ -4541,9 +4614,14 @@ const MobilesPairing = ({navigation}: any) => {
                                       ]}
                                       numberOfLines={1}
                                       ellipsizeMode="middle">
-                                      {txPreview.changeAddress}
+                                      {shortenAddress(txPreview.changeAddress)}
                                     </Text>
                                     <Text style={subLabel}>change</Text>
+                                    {txPreview.changeAddressPath ? (
+                                      <Text style={pathText}>
+                                        {txPreview.changeAddressPath}
+                                      </Text>
+                                    ) : null}
                                   </View>
                                   <View style={{alignItems: 'flex-end'}}>
                                     {changeSats > 0 && (
@@ -4837,7 +4915,7 @@ const MobilesPairing = ({navigation}: any) => {
                               <AppPressable
                                 style={[
                                   styles.modalButton,
-                                  {backgroundColor: theme.colors.danger},
+                                  {backgroundColor: theme.colors.secondary},
                                 ]}
                                 onPress={abortActiveMpc}>
                                 <Text style={styles.buttonText}>Abort</Text>
@@ -4951,7 +5029,10 @@ const MobilesPairing = ({navigation}: any) => {
                 (ws as any).currentNetwork = p.originalNetwork;
                 (ws as any).currentApiUrl = p.originalApiUrl;
               } catch (e) {
-                dbg('MobilesPairing: Error restoring network after broadcast:', e);
+                dbg(
+                  'MobilesPairing: Error restoring network after broadcast:',
+                  e,
+                );
               }
             }
             if (p.isMaster) {
