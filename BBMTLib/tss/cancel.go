@@ -136,4 +136,3 @@ func CancelMpcSession(sessionID string) (string, error) {
 
 	return "ok", nil
 }
-

@@ -49,4 +49,3 @@ func CancelNostrMpc() (string, error) {
 	cancel()
 	return "ok", nil
 }
-
