@@ -691,6 +691,37 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     }
   }
 
+  @objc func cancelMpcSession(
+    _ sessionID: String,
+    resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async {
+      var error: NSError?
+      let output = TssCancelMpcSession(sessionID, &error)
+      if error == nil {
+        resolver(output)
+      } else {
+        rejecter("CANCEL_MPC_ERROR", error!.localizedDescription, error)
+      }
+    }
+  }
+
+  @objc func cancelNostrMpc(
+    _ resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async {
+      var error: NSError?
+      let output = TssCancelNostrMpc(&error)
+      if error == nil {
+        resolver(output)
+      } else {
+        rejecter("CANCEL_NOSTR_MPC_ERROR", error!.localizedDescription, error)
+      }
+    }
+  }
+
   @objc func disableLogging(
     _ tag: String, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock

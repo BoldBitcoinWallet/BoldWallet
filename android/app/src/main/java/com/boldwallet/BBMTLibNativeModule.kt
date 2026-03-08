@@ -414,6 +414,26 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun cancelMpcSession(sessionID: String, promise: Promise) {
+        try {
+            val out = Tss.cancelMpcSession(sessionID)
+            promise.resolve(out)
+        } catch (e: Throwable) {
+            promise.reject("CANCEL_MPC_ERROR", "Failed to cancel MPC session: ${e.message}", e)
+        }
+    }
+
+    @ReactMethod
+    fun cancelNostrMpc(promise: Promise) {
+        try {
+            val out = Tss.cancelNostrMpc()
+            promise.resolve(out)
+        } catch (e: Throwable) {
+            promise.reject("CANCEL_NOSTR_MPC_ERROR", "Failed to cancel Nostr MPC: ${e.message}", e)
+        }
+    }
+
+    @ReactMethod
     fun runRelay(port: String, promise: Promise) {
         try {
             val result = Tss.runRelay(port)

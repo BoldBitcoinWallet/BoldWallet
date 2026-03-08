@@ -857,17 +857,28 @@ export const getKeyshareLabel = keyshare => {
  * @param {string} spendingHash - Spending hash (can be empty)
  * @param {string} addressType - Address type (e.g., 'segwit-native', 'legacy', 'segwit-compatible')
  * @param {string} derivationPath - Derivation path (e.g., "m/84'/0'/0'/0/0")
+ * @param {string} network - Network identifier (e.g., 'mainnet', 'testnet3')
+ * @param {string} utxosJson - Optional JSON string of utxosWithPaths used for spending/fee (may be large)
  * @returns {string} - Encoded QR data string
  */
-export const encodeSendBitcoinQR = (toAddress, amountSats, feeSats, spendingHash = '', addressType = '', derivationPath = '', network = '') => {
+export const encodeSendBitcoinQR = (
+  toAddress,
+  amountSats,
+  feeSats,
+  spendingHash = '',
+  addressType = '',
+  derivationPath = '',
+  network = '',
+  utxosJson = '',
+) => {
   const amount = typeof amountSats === 'string' ? amountSats : amountSats.toString();
   const fee = typeof feeSats === 'string' ? feeSats : feeSats.toString();
-  return `${toAddress}|${amount}|${fee}|${spendingHash || ''}|${addressType || ''}|${derivationPath || ''}|${network || ''}`;
+  return `${toAddress}|${amount}|${fee}|${spendingHash || ''}|${addressType || ''}|${derivationPath || ''}|${network || ''}|${utxosJson || ''}`;
 };
 
 /**
  * Decode send bitcoin data from QR code format
- * Format (newest): <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>|<network>
+ * Format (newest): <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>|<network>|<utxosJson>
  * Format (new): <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>
  * Format (old): <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>
  * @param {string} qrData - QR code data string
@@ -879,15 +890,25 @@ export const decodeSendBitcoinQR = (qrData) => {
   }
 
   const parts = qrData.split('|');
-  // Support old format (3-4 parts), new format (6 parts), and newest format (7 parts)
-  if (parts.length < 3 || parts.length > 7) {
+  // Support old format (3-4 parts), new format (6 parts), newest format (7 parts), and extended (8 parts with utxosJson)
+  if (parts.length < 3 || parts.length > 8) {
     return null;
   }
 
   // Old format: <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>
   // New format: <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>
   // Newest format: <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>|<network>
-  const [toAddress, amountSats, feeSats, spendingHash = '', addressType = '', derivationPath = '', network = ''] = parts;
+  // Extended: <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>|<network>|<utxosJson>
+  const [
+    toAddress,
+    amountSats,
+    feeSats,
+    spendingHash = '',
+    addressType = '',
+    derivationPath = '',
+    network = '',
+    utxosJson = '',
+  ] = parts;
 
   // Validate address is not empty
   if (!toAddress || toAddress.trim() === '') {
@@ -909,5 +930,6 @@ export const decodeSendBitcoinQR = (qrData) => {
     addressType: addressType || '',
     derivationPath: derivationPath || '',
     network: network || '',
+    utxosJson: utxosJson || '',
   };
 };

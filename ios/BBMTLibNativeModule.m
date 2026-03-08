@@ -312,4 +312,13 @@ RCT_EXTERN_METHOD(computeTxId:(NSString *)rawTxHex
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+// Cancel server-based MPC session (sessionID prefix)
+RCT_EXTERN_METHOD(cancelMpcSession:(NSString *)sessionID
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+// Cancel active Nostr MPC operation (best-effort)
+RCT_EXTERN_METHOD(cancelNostrMpc:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 @end

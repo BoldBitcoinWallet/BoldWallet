@@ -80,6 +80,7 @@ type RouteParams = {
   psbtBase64?: string; // For PSBT signing mode
   derivationPath?: string; // Derivation path from QR code (ensures same source address)
   network?: string; // Network from QR code (ensures same network)
+  utxosJson?: string; // Pre-selected UTXOs from QR (avoids re-fetch on scanner)
 };
 const MobileNostrPairing = ({navigation}: any) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
@@ -206,6 +207,31 @@ const MobileNostrPairing = ({navigation}: any) => {
     originalWalletServiceApiUrl?: string;
   } | null>(null);
   const skipRestoreInFinallyRef = useRef(false);
+  const nostrAbortRef = useRef(false);
+
+  const abortActiveNostrMpc = React.useCallback(() => {
+    Alert.alert(
+      'Abort signing?',
+      'This will stop the current Nostr MPC signing flow. You can retry anytime.',
+      [
+        {text: 'Keep signing', style: 'cancel'},
+        {
+          text: 'Abort',
+          style: 'destructive',
+          onPress: async () => {
+            nostrAbortRef.current = true;
+            setIsPairing(false);
+            setStatus('Aborted');
+            try {
+              await BBMTLibNativeModule.cancelNostrMpc();
+            } catch (e) {
+              dbg('MobileNostrPairing: cancelNostrMpc failed', e);
+            }
+          },
+        },
+      ],
+    );
+  }, []);
 
   const connectionQrRef = useRef<any>(null);
   // Connection details for sharing (hex encoded)
@@ -558,7 +584,13 @@ const MobileNostrPairing = ({navigation}: any) => {
         }
         const statusDot =
           msg.step % 3 === 0 ? '.' : msg.step % 3 === 1 ? '..' : '...';
-        setStatus('Processing cryptographic operations' + statusDot);
+        if (utxoCount > 0 && utxoIndex > 0 && isSendBitcoin) {
+          setStatus(
+            `Signing input ${utxoIndex}/${utxoCount}${statusDot}`,
+          );
+        } else {
+          setStatus('Processing cryptographic operations' + statusDot);
+        }
       } catch {
         // If parsing fails, it might be a log message, just log it
         dbg('TSS log:', message);
@@ -577,7 +609,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     return () => {
       subscription.remove();
     };
-  }, [isTrio]);
+  }, [isTrio, isSendBitcoin]);
   // Load keyshare and derive device info in send mode
   useEffect(() => {
     if (!isSendBitcoin && !isSignPSBT) return;
@@ -1695,28 +1727,55 @@ const MobileNostrPairing = ({navigation}: any) => {
 
       let rawTxHex: string;
       try {
-        const utxosWithPaths =
-          await WalletService.getInstance().fetchUtxosWithPaths(
-            net,
-            addressTypeToUse,
-            apiUrl,
-          );
-        if (utxosWithPaths.length > 0 && changeAddress) {
-          // Enrich UTXOs with scriptpubkey so Go skips FetchUTXODetails during signing.
-          const enriched =
-            await WalletService.getInstance().enrichUtxosWithScriptpubkey(
-              utxosWithPaths,
+        let utxosWithPathsJSON: string | null = null;
+        const utxosJsonFromQR = route.params?.utxosJson;
+        if (utxosJsonFromQR && typeof utxosJsonFromQR === 'string' && utxosJsonFromQR.trim() !== '') {
+          try {
+            const parsed = JSON.parse(utxosJsonFromQR);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const first = parsed[0];
+              if (first && typeof first.txid === 'string' && typeof first.vout === 'number' && typeof first.value === 'number') {
+                const forNative = parsed.map((u: any) => ({
+                  txid: u.txid,
+                  vout: u.vout,
+                  value: u.value,
+                  derivation_path: u.derivation_path ?? u.derivationPath,
+                  address: u.address,
+                  scriptpubkey: u.scriptpubkey ?? '',
+                }));
+                utxosWithPathsJSON = JSON.stringify(forNative);
+                dbg('MobileNostrPairing: using UTXOs from QR (no re-fetch)');
+              }
+            }
+          } catch {
+            dbg('MobileNostrPairing: failed to use utxosJson from QR, will fetch');
+          }
+        }
+        if (!utxosWithPathsJSON) {
+          const utxosWithPaths =
+            await WalletService.getInstance().fetchUtxosWithPaths(
+              net,
+              addressTypeToUse,
               apiUrl,
             );
-          const utxosForNative = enriched.map(u => ({
-            txid: u.txid,
-            vout: u.vout,
-            value: u.value,
-            derivation_path: u.derivationPath,
-            address: u.address,
-            scriptpubkey: u.scriptpubkey,
-          }));
-          const utxosWithPathsJSON = JSON.stringify(utxosForNative);
+          if (utxosWithPaths.length > 0 && changeAddress) {
+            const enriched =
+              await WalletService.getInstance().enrichUtxosWithScriptpubkey(
+                utxosWithPaths,
+                apiUrl,
+              );
+            const utxosForNative = enriched.map(u => ({
+              txid: u.txid,
+              vout: u.vout,
+              value: u.value,
+              derivation_path: u.derivationPath,
+              address: u.address,
+              scriptpubkey: u.scriptpubkey,
+            }));
+            utxosWithPathsJSON = JSON.stringify(utxosForNative);
+          }
+        }
+        if (utxosWithPathsJSON && changeAddress) {
           rawTxHex = await BBMTLibNativeModule.nostrMpcSendBTCWithUTXOs(
             relaysCSV,
             nsecToUse,
@@ -1789,10 +1848,15 @@ const MobileNostrPairing = ({navigation}: any) => {
         originalWalletServiceApiUrl,
       };
       skipRestoreInFinallyRef.current = true;
+      if (nostrAbortRef.current) {
+        return;
+      }
       setSignedTxRawHex(rawTxHex);
     } catch (error: any) {
       dbg('Send BTC error:', error);
-      Alert.alert('Error', error?.message || 'Transaction signing failed');
+      if (!nostrAbortRef.current) {
+        Alert.alert('Error', error?.message || 'Transaction signing failed');
+      }
       setStatus('Transaction signing failed');
     } finally {
       if (skipRestoreInFinallyRef.current) {
@@ -5847,6 +5911,18 @@ const MobileNostrPairing = ({navigation}: any) => {
                       Time elapsed: {prepCounter} seconds
                     </Text>
                   </View>
+                  {isSendBitcoin && (
+                    <View style={styles.modalActions}>
+                      <AppPressable
+                        style={[
+                          styles.modalButton,
+                          {backgroundColor: theme.colors.danger},
+                        ]}
+                        onPress={abortActiveNostrMpc}>
+                        <Text style={styles.buttonText}>Abort</Text>
+                      </AppPressable>
+                    </View>
+                  )}
                 </View>
               </View>
             </Modal>

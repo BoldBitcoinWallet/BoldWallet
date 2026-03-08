@@ -468,7 +468,7 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 	// Context for the pre-agreement phase
 	// Timeout: 16 seconds - fail fast if peer doesn't respond quickly
 	// With resilient relays, messages should arrive quickly if peer is online
-	ctx, cancel := context.WithTimeout(context.Background(), 16*time.Second)
+	ctx, cancel := context.WithTimeout(getActiveNostrCtx(), 16*time.Second)
 	defer cancel()
 
 	// Channel to receive peer's message
@@ -1373,8 +1373,17 @@ func runNostrKeygenInternal(cfg nostrtransport.Config, chaincode, ppmPath, local
 			result = ""
 		}
 	}()
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxTimeout)
+	rootCtx, rootCancel := context.WithCancel(context.Background())
+	setActiveNostrCtx(rootCtx, rootCancel)
+	defer func() {
+		clearActiveNostrCtx()
+		rootCancel()
+	}()
+
+	ctx, cancel := context.WithTimeout(rootCtx, cfg.MaxTimeout)
 	defer cancel()
+	registerCtxCancel(sessionID, cancel)
+	defer unregisterCtxCancel(sessionID)
 
 	// Get current status and increment step
 	status := getStatus(sessionID)
@@ -1449,6 +1458,8 @@ func runNostrKeygenInternal(cfg nostrtransport.Config, chaincode, ppmPath, local
 	if err != nil {
 		return "", fmt.Errorf("create TSS service: %w", err)
 	}
+	// Allow mobile to abort the active Nostr MPC operation.
+	tssService.cancelCh = ctx.Done()
 
 	Logln("BBMTLog", "starting message pump...")
 	// Create message pump
@@ -1594,8 +1605,17 @@ func runNostrKeysignInternal(cfg nostrtransport.Config, keyshare *LocalStateNost
 	status := Status{Step: 0, SeqNo: 0, Index: 0, Info: "initializing...", Type: "keysign", Done: false, Time: 0}
 	setStatus(sessionID, status)
 
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxTimeout)
+	rootCtx, rootCancel := context.WithCancel(context.Background())
+	setActiveNostrCtx(rootCtx, rootCancel)
+	defer func() {
+		clearActiveNostrCtx()
+		rootCancel()
+	}()
+
+	ctx, cancel := context.WithTimeout(rootCtx, cfg.MaxTimeout)
 	defer cancel()
+	registerCtxCancel(sessionID, cancel)
+	defer unregisterCtxCancel(sessionID)
 
 	// Create Nostr client
 	status.Step++
@@ -1663,6 +1683,8 @@ func runNostrKeysignInternal(cfg nostrtransport.Config, keyshare *LocalStateNost
 	if err != nil {
 		return "", fmt.Errorf("create TSS service: %w", err)
 	}
+	// Allow mobile to abort the active Nostr MPC operation.
+	tssService.cancelCh = ctx.Done()
 
 	// Create message pump
 	pump := nostrtransport.NewMessagePump(cfg, client)
@@ -1848,8 +1870,17 @@ func runNostrKeysignInternalWithSighash(cfg nostrtransport.Config, keyshare *Loc
 	status := Status{Step: 0, SeqNo: 0, Index: 0, Info: "initializing...", Type: "keysign", Done: false, Time: 0}
 	setStatus(sessionID, status)
 
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxTimeout)
+	rootCtx, rootCancel := context.WithCancel(context.Background())
+	setActiveNostrCtx(rootCtx, rootCancel)
+	defer func() {
+		clearActiveNostrCtx()
+		rootCancel()
+	}()
+
+	ctx, cancel := context.WithTimeout(rootCtx, cfg.MaxTimeout)
 	defer cancel()
+	registerCtxCancel(sessionID, cancel)
+	defer unregisterCtxCancel(sessionID)
 
 	// Create Nostr client
 	status.Step++
@@ -1920,6 +1951,8 @@ func runNostrKeysignInternalWithSighash(cfg nostrtransport.Config, keyshare *Loc
 	if err != nil {
 		return "", fmt.Errorf("create TSS service: %w", err)
 	}
+	// Allow mobile to abort the active Nostr MPC operation.
+	tssService.cancelCh = ctx.Done()
 
 	// Create message pump
 	pump := nostrtransport.NewMessagePump(cfg, client)

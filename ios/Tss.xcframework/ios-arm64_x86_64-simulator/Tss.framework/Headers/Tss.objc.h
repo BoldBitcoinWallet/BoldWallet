@@ -299,6 +299,21 @@ FOUNDATION_EXPORT NSString* _Nonnull TssAesDecrypt(NSString* _Nullable encrypted
 
 FOUNDATION_EXPORT NSString* _Nonnull TssAesEncrypt(NSString* _Nullable data, NSString* _Nullable key, NSError* _Nullable* _Nullable error);
 
+/**
+ * CancelMpcSession requests cancellation for a given base session ID.
+It cancels any currently-running derived sessions (prefix match) and ensures
+any future derived sessions start cancelled.
+
+Exposed to mobile via gomobile bind.
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssCancelMpcSession(NSString* _Nullable sessionID, NSError* _Nullable* _Nullable error);
+
+/**
+ * CancelNostrMpc cancels the currently running Nostr MPC operation (best-effort).
+Exposed to mobile via gomobile bind.
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssCancelNostrMpc(NSError* _Nullable* _Nullable error);
+
 FOUNDATION_EXPORT void TssClearSessionLog(NSString* _Nullable session);
 
 /**

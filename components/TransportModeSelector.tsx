@@ -30,6 +30,8 @@ interface TransportModeSelectorProps {
     fiatAmount?: string; // Fiat amount for display
     fiatFees?: string; // Fiat fees for display
     selectedCurrency?: string; // Currency symbol for display
+    utxosJson?: string | null; // Optional JSON of utxosWithPaths (when multi-path UTXOs were used)
+    utxoCount?: number; // Optional count of UTXOs in utxosJson
   } | null;
   showQRCode?: boolean; // Whether to show QR code (false when data came from scan)
 }
@@ -256,6 +258,13 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       gap: 10,
       width: '100%',
     },
+    transportSelectedHintRowWithMargin: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 10,
+      width: '100%',
+      marginTop: 8,
+    },
     transportSelectedHintIcon: {
       width: 20,
       height: 20,
@@ -374,6 +383,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                   sendBitcoinData.addressType || '',
                   sendBitcoinData.derivationPath || '',
                   sendBitcoinData.network || '',
+                  sendBitcoinData.utxosJson || '',
                 );
                 return (
                   <View style={styles.qrCodeSection}>
@@ -475,7 +485,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
               </AppPressable>
             </View>
             {/* Selected Transport Hint */}
-            {selectedTransport && description && description.length > 0 && (
+            {selectedTransport && (description?.length > 0 || sendBitcoinData?.utxoCount) && (
               <View style={styles.transportSelectedHint}>
                 <View style={styles.transportSelectedHintRow}>
                   <Image
@@ -503,6 +513,24 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                     </Text>
                   )}
                 </View>
+                {!!sendBitcoinData?.utxoCount && (
+                  <View
+                    style={styles.transportSelectedHintRowWithMargin}>
+                    <Image
+                      source={require('../assets/utxo-icon.png')}
+                      style={styles.transportSelectedHintIcon}
+                      resizeMode="contain"
+                    />
+                    <Text style={styles.transportSelectedHintText}>
+                      Using{' '}
+                      <Text style={styles.transportSelectedHintTextBold}>
+                        {sendBitcoinData.utxoCount} UTXO
+                        {sendBitcoinData.utxoCount === 1 ? '' : 's'}
+                      </Text>{' '}
+                      pre-selected from this wallet for a deterministic spend.
+                    </Text>
+                  </View>
+                )}
               </View>
             )}
             {/* Continue Button */}

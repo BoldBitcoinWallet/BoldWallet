@@ -99,6 +99,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     amountSats: Big;
     feeSats: Big;
     spendingHash: string;
+    utxosJson?: string | null;
+    utxoCount?: number;
   } | null>(null);
   const [currentDerivationPath, setCurrentDerivationPath] =
     useState<string>('');
@@ -1911,8 +1913,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       }
       setCurrentDerivationPath(derivationPath);
       setComputedFromAddress(fromAddress);
-      // Store params and show transport selector after a brief delay to ensure send modal is closed
-      setPendingSendParams({to, amountSats, feeSats, spendingHash});
+      // Store params and show transport selector after a brief delay
+      setPendingSendParams(prev => ({
+        to,
+        amountSats,
+        feeSats,
+        spendingHash,
+        utxosJson: prev?.utxosJson ?? null,
+        utxoCount: prev?.utxoCount,
+      }));
       setTimeout(() => {
         setIsTransportModalVisible(true);
         setIsSending(false);
@@ -1969,7 +1978,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
     const routeName =
       transport === 'local' ? 'Devices Pairing' : 'Nostr Connect';
-    const navigationParams = {
+    const navigationParams: Record<string, unknown> = {
       mode: 'send_btc',
       addressType: addressTypeToUse.trim(), // MANDATORY: address type from sender or QR
       toAddress,
@@ -1982,6 +1991,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       derivationPath: derivationPathToUse.trim(), // MANDATORY: derivation path from sender or QR
       network: networkToUse.trim(), // MANDATORY: network from sender or QR (native format)
     };
+    if (pendingSendParams.utxosJson && pendingSendParams.utxosJson.trim() !== '') {
+      navigationParams.utxosJson = pendingSendParams.utxosJson;
+    }
     dbg('=== WalletHome: Navigating to pairing screen ===', {
       routeName,
       transport,
@@ -2082,6 +2094,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         addressType?: string;
         derivationPath?: string;
         network?: string;
+        utxosJson?: string;
       } | null;
       if (
         !decoded ||
@@ -2150,12 +2163,26 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setScannedNetwork(decoded.network);
         dbg('WalletHome: Network from QR code:', decoded.network);
       }
+      // Optional: derive UTXO count when QR carries utxosJson
+      let utxoCount: number | undefined;
+      if (decoded.utxosJson) {
+        try {
+          const parsed = JSON.parse(decoded.utxosJson);
+          if (Array.isArray(parsed)) {
+            utxoCount = parsed.length;
+          }
+        } catch (e) {
+          dbg('WalletHome: Failed to parse utxosJson from QR', e);
+        }
+      }
       // Store params and mark as scanned from QR
       setPendingSendParams({
         to: decoded.toAddress,
         amountSats,
         feeSats,
         spendingHash: decoded.spendingHash || '',
+        utxosJson: decoded.utxosJson || null,
+        utxoCount,
       });
       setScannedFromQR(true);
       // Show transport selector immediately (no QR code shown since data came from scan)
@@ -2703,6 +2730,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   .div(1e8)
                   .toFixed(2),
                 selectedCurrency: selectedCurrency,
+                utxosJson: pendingSendParams.utxosJson || null,
+                utxoCount: pendingSendParams.utxoCount,
               }
             : null
         }

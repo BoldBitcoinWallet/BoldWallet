@@ -154,6 +154,7 @@ const MobilesPairing = ({navigation}: any) => {
     psbtBase64?: string; // For PSBT signing mode
     derivationPath?: string; // Derivation path from QR code (ensures same source address)
     network?: string; // Network from QR code (ensures same network)
+    utxosJson?: string; // Pre-selected UTXOs from QR (avoids re-fetch on scanner)
   };
   const route = useRoute<RouteProp<{params: RouteParams}>>();
   const isFocused = useIsFocused();
@@ -192,6 +193,8 @@ const MobilesPairing = ({navigation}: any) => {
   } | null>(null);
   const [_txPreviewLoading, setTxPreviewLoading] = useState(false);
   const [signedTxRawHex, setSignedTxRawHex] = useState<string | null>(null);
+  const mpcAbortRef = useRef(false);
+  const activeMpcSessionIdRef = useRef<string | null>(null);
   const broadcastSuccessPayloadRef = useRef<{
     multiPath: boolean;
     pendingKey: string;
@@ -211,6 +214,39 @@ const MobilesPairing = ({navigation}: any) => {
   } | null>(null);
 
   const allChecked = Object.values(checks).every(Boolean);
+
+  const abortActiveMpc = () => {
+    Alert.alert(
+      'Abort signing?',
+      'This will stop the current MPC signing flow. You can retry anytime.',
+      [
+        {text: 'Keep signing', style: 'cancel'},
+        {
+          text: 'Abort',
+          style: 'destructive',
+          onPress: async () => {
+            mpcAbortRef.current = true;
+            setDoingMPC(false);
+            setIsPairing(false);
+            setStatus('Aborted');
+            const sid = activeMpcSessionIdRef.current;
+            if (sid) {
+              try {
+                await BBMTLibNativeModule.cancelMpcSession(sid);
+              } catch (e) {
+                dbg('MobilesPairing: cancelMpcSession failed', e);
+              }
+            }
+            try {
+              stopRelay();
+            } catch {
+              // ignore
+            }
+          },
+        },
+      ],
+    );
+  };
   const allBackupChecked = isTrio
     ? backupChecks.deviceOne &&
       backupChecks.deviceTwo &&
@@ -756,6 +792,8 @@ const MobilesPairing = ({navigation}: any) => {
       }
       const partiesCSV = allParties.sort().join(',');
       const sessionID = await BBMTLibNativeModule.sha256(`${data}/${server}`);
+      activeMpcSessionIdRef.current = sessionID;
+      mpcAbortRef.current = false;
       const kp = JSON.parse(keypair);
       const encKey = peerPubkey;
       const decKey = kp.privateKey;
@@ -868,33 +906,70 @@ const MobilesPairing = ({navigation}: any) => {
 
         let usedMultiPath = false;
         try {
-          const utxosWithPaths =
-            await WalletService.getInstance().fetchUtxosWithPaths(
-              net,
-              addressTypeToUse,
-              apiUrl,
-            );
-          const changeAddress =
-            await WalletService.getInstance().getNextChangeAddress(
-              net,
-              addressTypeToUse,
-            );
-          if (utxosWithPaths.length > 0 && changeAddress) {
-            // Enrich UTXOs with scriptpubkey so Go skips FetchUTXODetails during signing.
-            const enriched =
-              await WalletService.getInstance().enrichUtxosWithScriptpubkey(
-                utxosWithPaths,
+          let utxosWithPathsJSON: string | null = null;
+          let pendingKeyMultiPath = senderAddress;
+          const utxosJsonFromQR = route.params?.utxosJson;
+          if (utxosJsonFromQR && typeof utxosJsonFromQR === 'string' && utxosJsonFromQR.trim() !== '') {
+            try {
+              const parsed = JSON.parse(utxosJsonFromQR);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                const first = parsed[0];
+                if (first && typeof first.txid === 'string' && typeof first.vout === 'number' && typeof first.value === 'number') {
+                  const forNative = parsed.map((u: any) => ({
+                    txid: u.txid,
+                    vout: u.vout,
+                    value: u.value,
+                    derivation_path: u.derivation_path ?? u.derivationPath,
+                    address: u.address,
+                    scriptpubkey: u.scriptpubkey ?? '',
+                  }));
+                  utxosWithPathsJSON = JSON.stringify(forNative);
+                  pendingKeyMultiPath = forNative[0]?.address || senderAddress;
+                  dbg('MobilesPairing: using UTXOs from QR (no re-fetch)');
+                }
+              }
+            } catch {
+              dbg('MobilesPairing: failed to use utxosJson from QR, will fetch');
+            }
+          }
+          if (!utxosWithPathsJSON) {
+            const utxosWithPaths =
+              await WalletService.getInstance().fetchUtxosWithPaths(
+                net,
+                addressTypeToUse,
                 apiUrl,
               );
-            const utxosForNative = enriched.map(u => ({
-              txid: u.txid,
-              vout: u.vout,
-              value: u.value,
-              derivation_path: u.derivationPath,
-              address: u.address,
-              scriptpubkey: u.scriptpubkey,
-            }));
-            const utxosWithPathsJSON = JSON.stringify(utxosForNative);
+            const changeAddress =
+              await WalletService.getInstance().getNextChangeAddress(
+                net,
+                addressTypeToUse,
+              );
+            if (utxosWithPaths.length > 0 && changeAddress) {
+              const enriched =
+                await WalletService.getInstance().enrichUtxosWithScriptpubkey(
+                  utxosWithPaths,
+                  apiUrl,
+                );
+              const utxosForNative = enriched.map(u => ({
+                txid: u.txid,
+                vout: u.vout,
+                value: u.value,
+                derivation_path: u.derivationPath,
+                address: u.address,
+                scriptpubkey: u.scriptpubkey,
+              }));
+              utxosWithPathsJSON = JSON.stringify(utxosForNative);
+              pendingKeyMultiPath = utxosWithPaths[0]?.address || senderAddress;
+            }
+          }
+          const changeAddress =
+            utxosWithPathsJSON
+              ? await WalletService.getInstance().getNextChangeAddress(
+                  net,
+                  addressTypeToUse,
+                )
+              : '';
+          if (utxosWithPathsJSON && changeAddress) {
             const rawTxHex = await BBMTLibNativeModule.mpcSendBTCWithUTXOs(
               server,
               partyID,
@@ -916,7 +991,7 @@ const MobilesPairing = ({navigation}: any) => {
               throw rawTxHex || 'Invalid signed transaction';
             }
             usedMultiPath = true;
-            const pendingKey = utxosWithPaths[0]?.address || senderAddress;
+            const pendingKey = pendingKeyMultiPath;
             broadcastSuccessPayloadRef.current = {
               multiPath: true,
               pendingKey,
@@ -934,6 +1009,10 @@ const MobilesPairing = ({navigation}: any) => {
               originalApiUrl,
               isMaster,
             };
+            if (mpcAbortRef.current) {
+              setDoingMPC(false);
+              return;
+            }
             setSignedTxRawHex(rawTxHex);
             setDoingMPC(false);
           }
@@ -983,12 +1062,18 @@ const MobilesPairing = ({navigation}: any) => {
             originalApiUrl,
             isMaster,
           };
+          if (mpcAbortRef.current) {
+            setDoingMPC(false);
+            return;
+          }
           setSignedTxRawHex(rawTxHexSingle);
           setDoingMPC(false);
         }
       }
     } catch (error: any) {
-      Alert.alert('Operation Error', error?.message || error);
+      if (!mpcAbortRef.current) {
+        Alert.alert('Operation Error', error?.message || error);
+      }
       dbg(localDevice, 'keysign error', error);
       // CRITICAL: Restore original network even on error
       if (originalNetwork && originalApiUrl) {
@@ -1021,14 +1106,14 @@ const MobilesPairing = ({navigation}: any) => {
       setDoingMPC(false);
     }
   };
-  function stopRelay() {
+  const stopRelay = useCallback(() => {
     try {
       BBMTLibNativeModule.stopRelay(localDevice);
       dbg(localDevice, 'relay stop:');
     } catch {
       dbg(localDevice, 'error stoping relay');
     }
-  }
+  }, [localDevice]);
   useEffect(() => {
     let subscription: EmitterSubscription | undefined;
     const logEmitter = new NativeEventEmitter(BBMTLibNativeModule);
@@ -1106,7 +1191,13 @@ const MobilesPairing = ({navigation}: any) => {
       }
       const statusDot =
         msg.step % 3 === 0 ? '.' : msg.step % 3 === 1 ? '..' : '...';
-      setStatus('Processing cryptographic operations' + statusDot);
+      if (utxoCount > 0 && utxoIndex > 0 && isSendBitcoin) {
+        setStatus(
+          `Signing input ${utxoIndex}/${utxoCount}${statusDot}`,
+        );
+      } else {
+        setStatus('Processing cryptographic operations' + statusDot);
+      }
     };
     if (Platform.OS === 'android') {
       subscription = logEmitter.addListener('BBMT_DROID', async log => {
@@ -1125,7 +1216,7 @@ const MobilesPairing = ({navigation}: any) => {
     return () => {
       subscription?.remove();
     };
-  }, [isTrio]);
+  }, [isTrio, isSendBitcoin]);
   useEffect(() => {
     if (isPreparing) {
       const interval = setInterval(() => {
@@ -4741,6 +4832,18 @@ const MobilesPairing = ({navigation}: any) => {
                               Time elapsed: {prepCounter} seconds
                             </Text>
                           </View>
+                          {isSendBitcoin && (
+                            <View style={styles.modalActions}>
+                              <AppPressable
+                                style={[
+                                  styles.modalButton,
+                                  {backgroundColor: theme.colors.danger},
+                                ]}
+                                onPress={abortActiveMpc}>
+                                <Text style={styles.buttonText}>Abort</Text>
+                              </AppPressable>
+                            </View>
+                          )}
                         </View>
                       </View>
                     </Modal>
