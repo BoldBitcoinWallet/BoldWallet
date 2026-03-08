@@ -53,6 +53,7 @@ import {useUser} from '../context/UserContext';
 import {waitMS, WalletService} from '../services/WalletService';
 import LocalCache from '../services/LocalCache';
 import BackupKeyshareModal from '../components/BackupKeyshareModal';
+import SignedTxBroadcastModal from '../components/SignedTxBroadcastModal';
 const {BBMTLibNativeModule} = NativeModules;
 // Helper component for connection line animation
 const ConnectionLineAnimatedView: React.FC<{
@@ -190,6 +191,24 @@ const MobilesPairing = ({navigation}: any) => {
     totalInputSats: number;
   } | null>(null);
   const [_txPreviewLoading, setTxPreviewLoading] = useState(false);
+  const [signedTxRawHex, setSignedTxRawHex] = useState<string | null>(null);
+  const broadcastSuccessPayloadRef = useRef<{
+    multiPath: boolean;
+    pendingKey: string;
+    toAddress: string;
+    satoshiAmount: string;
+    satoshiFees: string;
+    net: string;
+    addressTypeToUse: string;
+    showPlay: boolean;
+    showUtxosTab: boolean;
+    showPsbtTab: boolean;
+    showWalletTab: boolean;
+    senderAddress: string;
+    originalNetwork?: string;
+    originalApiUrl?: string;
+    isMaster?: boolean;
+  } | null>(null);
 
   const allChecked = Object.values(checks).every(Boolean);
   const allBackupChecked = isTrio
@@ -876,7 +895,7 @@ const MobilesPairing = ({navigation}: any) => {
               scriptpubkey: u.scriptpubkey,
             }));
             const utxosWithPathsJSON = JSON.stringify(utxosForNative);
-            const txId = await BBMTLibNativeModule.mpcSendBTCWithUTXOs(
+            const rawTxHex = await BBMTLibNativeModule.mpcSendBTCWithUTXOs(
               server,
               partyID,
               partiesCSV,
@@ -892,74 +911,30 @@ const MobilesPairing = ({navigation}: any) => {
               utxosWithPathsJSON,
               changeAddress,
             );
-            dbg(partyID, 'txID (multi-path)', txId);
-            const validTxID = /^[a-fA-F0-9]{64}$/.test(txId);
-            if (!validTxID) {
-              throw txId;
+            dbg(partyID, 'signed tx (multi-path), len=', rawTxHex?.length);
+            if (!rawTxHex || typeof rawTxHex !== 'string' || rawTxHex.length % 2 !== 0 || !/^[a-fA-F0-9]+$/.test(rawTxHex)) {
+              throw rawTxHex || 'Invalid signed transaction';
             }
             usedMultiPath = true;
-            try {
-              await WalletService.getInstance().incrementChangeIndexAfterSend(
-                net,
-                addressTypeToUse,
-              );
-            } catch (e) {
-              dbg('MobilesPairing: incrementChangeIndexAfterSend failed:', e);
-            }
             const pendingKey = utxosWithPaths[0]?.address || senderAddress;
-            const pendingTxs = JSON.parse(
-              (await LocalCache.getItem(`${pendingKey}-pendingTxs`)) || '{}',
-            );
-            pendingTxs[txId] = {
-              txid: txId,
-              from: pendingKey,
-              to: toAddress,
-              amount: satoshiAmount,
-              satoshiAmount: satoshiAmount,
-              satoshiFees: satoshiFees,
-              sentAt: Date.now(),
-              status: {confirmed: false, block_height: null},
+            broadcastSuccessPayloadRef.current = {
+              multiPath: true,
+              pendingKey,
+              toAddress,
+              satoshiAmount,
+              satoshiFees,
+              net,
+              addressTypeToUse,
+              showPlay,
+              showUtxosTab,
+              showPsbtTab,
+              showWalletTab,
+              senderAddress,
+              originalNetwork,
+              originalApiUrl,
+              isMaster,
             };
-            await LocalCache.setItem(
-              `${pendingKey}-pendingTxs`,
-              JSON.stringify(pendingTxs),
-            );
-            navigation.dispatch(
-              CommonActions.reset(
-                getResetToMainTabsWallet(
-                  {txId},
-                  {
-                    showPlay,
-                    showUtxos: showUtxosTab,
-                    showPsbt: showPsbtTab,
-                    showWallet: showWalletTab,
-                  },
-                ),
-              ),
-            );
-            setMpcDone(true);
-            if (originalNetwork && originalApiUrl) {
-              try {
-                await BBMTLibNativeModule.setBtcNetwork(originalNetwork);
-                await BBMTLibNativeModule.setAPI(
-                  originalNetwork,
-                  originalApiUrl,
-                );
-                await LocalCache.setItem('api', originalApiUrl);
-                const walletServiceRestore = WalletService.getInstance();
-                (walletServiceRestore as any).currentNetwork = originalNetwork;
-                (walletServiceRestore as any).currentApiUrl = originalApiUrl;
-              } catch (e) {
-                dbg(
-                  'MobilesPairing: Error restoring network after multi-path send:',
-                  e,
-                );
-              }
-            }
-            if (isMaster) {
-              await waitMS(2000);
-              stopRelay();
-            }
+            setSignedTxRawHex(rawTxHex);
             setDoingMPC(false);
           }
         } catch (multiPathErr) {
@@ -971,7 +946,7 @@ const MobilesPairing = ({navigation}: any) => {
 
         if (!usedMultiPath) {
           // Fallback: single-path (original flow)
-          await BBMTLibNativeModule.mpcSendBTC(
+          const rawTxHexSingle = await BBMTLibNativeModule.mpcSendBTC(
             server,
             partyID,
             partiesCSV,
@@ -986,93 +961,30 @@ const MobilesPairing = ({navigation}: any) => {
             toAddress,
             satoshiAmount,
             satoshiFees,
-          )
-            .then(async (txId: any) => {
-              dbg(partyID, 'txID', txId);
-              const validTxID = /^[a-fA-F0-9]{64}$/.test(txId);
-              if (!validTxID) {
-                throw txId;
-              }
-              // Save pending transaction
-              const pendingTxs = JSON.parse(
-                (await LocalCache.getItem(`${senderAddress}-pendingTxs`)) ||
-                  '{}',
-              );
-              pendingTxs[txId] = {
-                txid: txId,
-                from: senderAddress,
-                to: toAddress,
-                amount: satoshiAmount,
-                satoshiAmount: satoshiAmount,
-                satoshiFees: satoshiFees,
-                sentAt: Date.now(),
-                status: {
-                  confirmed: false,
-                  block_height: null,
-                },
-              };
-              await LocalCache.setItem(
-                `${senderAddress}-pendingTxs`,
-                JSON.stringify(pendingTxs),
-              );
-              navigation.dispatch(
-                CommonActions.reset(
-                  getResetToMainTabsWallet(
-                    {txId},
-                    {
-                      showPlay,
-                      showUtxos: showUtxosTab,
-                      showPsbt: showPsbtTab,
-                      showWallet: showWalletTab,
-                    },
-                  ),
-                ),
-              );
-              setMpcDone(true);
-            })
-            .catch((e: any) => {
-              Alert.alert(
-                'Operation Error',
-                `Could not sign and send transaction.\n${e?.message}`,
-              );
-              dbg(partyID, 'keysign error', e);
-            })
-            .finally(async () => {
-              // CRITICAL: Restore original network after transaction completes (success or failure)
-              // This ensures the device's active network remains unchanged
-              if (originalNetwork && originalApiUrl) {
-                try {
-                  await BBMTLibNativeModule.setBtcNetwork(originalNetwork);
-                  await BBMTLibNativeModule.setAPI(
-                    originalNetwork,
-                    originalApiUrl,
-                  );
-                  // Restore LocalCache 'api' key to original network's API
-                  await LocalCache.setItem('api', originalApiUrl);
-                  // Restore WalletService internal state
-                  const walletServiceRestore = WalletService.getInstance();
-                  (walletServiceRestore as any).currentNetwork =
-                    originalNetwork;
-                  (walletServiceRestore as any).currentApiUrl = originalApiUrl;
-                  dbg(
-                    'MobilesPairing: Restored original network:',
-                    originalNetwork,
-                    'API:',
-                    originalApiUrl,
-                  );
-                } catch (restoreError) {
-                  dbg(
-                    'MobilesPairing: Error restoring original network:',
-                    restoreError,
-                  );
-                }
-              }
-              if (isMaster) {
-                await waitMS(2000);
-                stopRelay();
-              }
-              setDoingMPC(false);
-            });
+          );
+          dbg(partyID, 'signed tx (single-path), len=', rawTxHexSingle?.length);
+          if (!rawTxHexSingle || typeof rawTxHexSingle !== 'string' || rawTxHexSingle.length % 2 !== 0 || !/^[a-fA-F0-9]+$/.test(rawTxHexSingle)) {
+            throw rawTxHexSingle || 'Invalid signed transaction';
+          }
+          broadcastSuccessPayloadRef.current = {
+            multiPath: false,
+            pendingKey: senderAddress,
+            toAddress,
+            satoshiAmount,
+            satoshiFees,
+            net,
+            addressTypeToUse,
+            showPlay,
+            showUtxosTab,
+            showPsbtTab,
+            showWalletTab,
+            senderAddress,
+            originalNetwork,
+            originalApiUrl,
+            isMaster,
+          };
+          setSignedTxRawHex(rawTxHexSingle);
+          setDoingMPC(false);
         }
       }
     } catch (error: any) {
@@ -4871,6 +4783,87 @@ const MobilesPairing = ({navigation}: any) => {
       <BackupKeyshareModal
         visible={isBackupModalVisible}
         onClose={() => setIsBackupModalVisible(false)}
+      />
+      {/* Signed tx: copy / share / broadcast — on Broadcast success we run post-broadcast logic */}
+      <SignedTxBroadcastModal
+        visible={!!signedTxRawHex}
+        rawTxHex={signedTxRawHex ?? ''}
+        onBroadcastSuccess={async (txId: string) => {
+          const p = broadcastSuccessPayloadRef.current;
+          if (!p) {
+            setSignedTxRawHex(null);
+            return;
+          }
+          try {
+            if (p.multiPath) {
+              try {
+                await WalletService.getInstance().incrementChangeIndexAfterSend(
+                  p.net,
+                  p.addressTypeToUse,
+                );
+              } catch (e) {
+                dbg('MobilesPairing: incrementChangeIndexAfterSend failed:', e);
+              }
+            }
+            const pendingTxs = JSON.parse(
+              (await LocalCache.getItem(`${p.pendingKey}-pendingTxs`)) || '{}',
+            );
+            pendingTxs[txId] = {
+              txid: txId,
+              from: p.pendingKey,
+              to: p.toAddress,
+              amount: p.satoshiAmount,
+              satoshiAmount: p.satoshiAmount,
+              satoshiFees: p.satoshiFees,
+              sentAt: Date.now(),
+              status: {confirmed: false, block_height: null},
+            };
+            await LocalCache.setItem(
+              `${p.pendingKey}-pendingTxs`,
+              JSON.stringify(pendingTxs),
+            );
+            navigation.dispatch(
+              CommonActions.reset(
+                getResetToMainTabsWallet(
+                  {txId},
+                  {
+                    showPlay: p.showPlay,
+                    showUtxos: p.showUtxosTab,
+                    showPsbt: p.showPsbtTab,
+                    showWallet: p.showWalletTab,
+                  },
+                ),
+              ),
+            );
+            setMpcDone(true);
+            if (p.originalNetwork && p.originalApiUrl) {
+              try {
+                await BBMTLibNativeModule.setBtcNetwork(p.originalNetwork);
+                await BBMTLibNativeModule.setAPI(
+                  p.originalNetwork,
+                  p.originalApiUrl,
+                );
+                await LocalCache.setItem('api', p.originalApiUrl);
+                const ws = WalletService.getInstance();
+                (ws as any).currentNetwork = p.originalNetwork;
+                (ws as any).currentApiUrl = p.originalApiUrl;
+              } catch (e) {
+                dbg('MobilesPairing: Error restoring network after broadcast:', e);
+              }
+            }
+            if (p.isMaster) {
+              await waitMS(2000);
+              stopRelay();
+            }
+          } finally {
+            broadcastSuccessPayloadRef.current = null;
+            setSignedTxRawHex(null);
+          }
+        }}
+        onClose={() => {
+          broadcastSuccessPayloadRef.current = null;
+          setSignedTxRawHex(null);
+        }}
       />
     </SafeAreaView>
   );

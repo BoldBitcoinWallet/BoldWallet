@@ -660,6 +660,37 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     }
   }
 
+  @objc func postTx(
+    _ rawTxHex: String,
+    resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      var error: NSError?
+      let txid = TssPostTx(rawTxHex, &error)
+      if error == nil {
+        self?.sendLogEvent("postTx", txid)
+        resolver(txid)
+      } else {
+        rejecter("POST_TX_ERROR", error!.localizedDescription, error)
+      }
+    }
+  }
+
+  @objc func computeTxId(
+    _ rawTxHex: String,
+    resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    var error: NSError?
+    let txid = TssComputeTxId(rawTxHex, &error)
+    if error == nil {
+      resolver(txid)
+    } else {
+      rejecter("COMPUTE_TXID_ERROR", error!.localizedDescription, error)
+    }
+  }
+
   @objc func disableLogging(
     _ tag: String, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock

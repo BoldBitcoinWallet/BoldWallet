@@ -302,4 +302,14 @@ RCT_EXTERN_METHOD(parsePSBTDetails:(NSString *)psbtBase64
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+// Broadcast a signed raw tx hex; returns txid on success
+RCT_EXTERN_METHOD(postTx:(NSString *)rawTxHex
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+// Compute txid from raw tx hex (for filename before broadcast)
+RCT_EXTERN_METHOD(computeTxId:(NSString *)rawTxHex
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 @end

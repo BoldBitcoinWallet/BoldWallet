@@ -390,6 +390,30 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun postTx(rawTxHex: String, promise: Promise) {
+        Thread {
+            try {
+                val txid = Tss.postTx(rawTxHex)
+                ld("postTx", txid)
+                promise.resolve(txid)
+            } catch (e: Throwable) {
+                ld("postTx", "error: ${e.stackTraceToString()}")
+                promise.reject("POST_TX_ERROR", "Failed to broadcast: ${e.message}", e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun computeTxId(rawTxHex: String, promise: Promise) {
+        try {
+            val txid = Tss.computeTxId(rawTxHex)
+            promise.resolve(txid)
+        } catch (e: Throwable) {
+            promise.reject("COMPUTE_TXID_ERROR", "Failed to compute txid: ${e.message}", e)
+        }
+    }
+
+    @ReactMethod
     fun runRelay(port: String, promise: Promise) {
         try {
             val result = Tss.runRelay(port)

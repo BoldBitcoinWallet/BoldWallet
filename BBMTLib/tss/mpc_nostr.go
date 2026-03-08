@@ -1131,16 +1131,9 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	}
 
 	rawTx := hex.EncodeToString(signedTx.Bytes())
-	Logln("Raw Transaction:", rawTx)
-
-	txid, err := PostTx(rawTx)
-	if err != nil {
-		Logf("Error broadcasting transaction: %v", err)
-		return "", fmt.Errorf("failed to broadcast transaction: %w", err)
-	}
-	mpcHook("txid:"+txid, sessionID, utxoSession, utxoIndex, utxoCount, true)
-	Logf("Transaction broadcasted successfully, txid: %s", txid)
-	return txid, nil
+	Logln("Raw Transaction (signed, not broadcast)")
+	mpcHook("signed", sessionID, utxoSession, utxoIndex, utxoCount, true)
+	return rawTx, nil
 }
 
 // runNostrMpcSendBTCInternalWithUTXOs implements multi-path Nostr MPC send using pre-fetched UTXOs.
@@ -1363,12 +1356,10 @@ func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, 
 	if err := tx.Serialize(&signedTx); err != nil {
 		return "", fmt.Errorf("failed to serialize transaction: %w", err)
 	}
-	txid, err := PostTx(hex.EncodeToString(signedTx.Bytes()))
-	if err != nil {
-		return "", fmt.Errorf("failed to broadcast: %w", err)
-	}
-	mpcHook("txid:"+txid, sessionID, "", utxoCount, utxoCount, true)
-	return txid, nil
+	rawTx := hex.EncodeToString(signedTx.Bytes())
+	Logln("Raw Transaction (signed, not broadcast)")
+	mpcHook("signed", sessionID, "", utxoCount, utxoCount, true)
+	return rawTx, nil
 }
 
 // runNostrKeygenInternal is the internal implementation of Nostr keygen.

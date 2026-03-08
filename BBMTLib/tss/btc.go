@@ -284,6 +284,17 @@ func RecommendedFees(feeType string) (int, error) {
 	return 0, errors.New("failed to get fees")
 }
 
+// ComputeTxId returns the txid (reversed double-SHA256 of serialized tx) for a raw tx hex.
+// Used by the app to name the shared file before broadcasting.
+func ComputeTxId(rawTxHex string) (string, error) {
+	rawTx, err := hex.DecodeString(rawTxHex)
+	if err != nil {
+		return "", fmt.Errorf("invalid raw tx hex: %w", err)
+	}
+	hash := chainhash.DoubleHashH(rawTx)
+	return hash.String(), nil
+}
+
 func PostTx(rawTxHex string) (string, error) {
 	const maxRetries = 4
 	var lastErr error
@@ -1472,16 +1483,9 @@ func MpcSendBTC(
 	}
 
 	rawTx := hex.EncodeToString(signedTx.Bytes())
-	Logln("Raw Transaction:", rawTx)
-
-	txid, err := PostTx(rawTx)
-	if err != nil {
-		Logf("Error broadcasting transaction: %v", err)
-		return "", fmt.Errorf("failed to broadcast transaction: %w", err)
-	}
-	mpcHook("txid:"+txid, session, utxoSession, utxoIndex, utxoCount, true)
-	Logf("Transaction broadcasted successfully, txid: %s", txid)
-	return txid, nil
+	Logln("Raw Transaction (signed, not broadcast)")
+	mpcHook("signed", session, utxoSession, utxoIndex, utxoCount, true)
+	return rawTx, nil
 }
 
 // MpcSendBTCWithUTXOs is the multi-path variant: uses pre-fetched UTXOs with per-input derivation paths.
@@ -1699,12 +1703,10 @@ func MpcSendBTCWithUTXOs(
 	if err := tx.Serialize(&signedTx); err != nil {
 		return "", fmt.Errorf("failed to serialize transaction: %w", err)
 	}
-	txid, err := PostTx(hex.EncodeToString(signedTx.Bytes()))
-	if err != nil {
-		return "", fmt.Errorf("failed to broadcast: %w", err)
-	}
-	mpcHook("txid:"+txid, session, "", utxoCount, utxoCount, true)
-	return txid, nil
+	rawTx := hex.EncodeToString(signedTx.Bytes())
+	Logln("Raw Transaction (signed, not broadcast)")
+	mpcHook("signed", session, "", utxoCount, utxoCount, true)
+	return rawTx, nil
 }
 
 func DecodeAddress(address string) (result string, err error) {
@@ -2328,17 +2330,13 @@ func ReplaceTransaction(
 		}
 	}
 
-	// Serialize and broadcast
+	// Serialize and return raw tx (app broadcasts via PostTx when user taps Broadcast)
 	var signedTx bytes.Buffer
 	if err := tx.Serialize(&signedTx); err != nil {
 		return "", fmt.Errorf("failed to serialize transaction: %w", err)
 	}
 
 	rawTx := hex.EncodeToString(signedTx.Bytes())
-	txid, err := PostTx(rawTx)
-	if err != nil {
-		return "", fmt.Errorf("failed to broadcast transaction: %w", err)
-	}
-
-	return txid, nil
+	Logln("Raw Transaction (signed, not broadcast)")
+	return rawTx, nil
 }

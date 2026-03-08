@@ -19,7 +19,8 @@ interface TransactionDetailsModalProps {
   transaction: any;
   baseApi: string;
   selectedCurrency: string;
-  btcRate: number;
+  /** Historical BTC rate at tx time; fiat shown only when set. */
+  historicalRate: number | null;
   getCurrencySymbol: (currency: string) => string;
   /** HD address → path map, used to annotate our inputs/outputs with derivation path. */
   addressPathMap?: Record<
@@ -43,7 +44,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   transaction,
   baseApi,
   selectedCurrency,
-  btcRate,
+  historicalRate,
   getCurrencySymbol,
   addressPathMap,
   status,
@@ -94,13 +95,12 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   if (!transaction || !status || !amounts) {
     return null;
   }
-  const getFiatAmount = (btcAmount: number) => {
-    if (!btcRate || btcRate <= 0) {
-      return '0.00';
-    }
-    const amount = btcAmount * btcRate;
+  const getFiatAmount = (btcAmount: number): string | null => {
+    if (historicalRate == null || historicalRate <= 0) return null;
+    const amount = btcAmount * historicalRate;
     return amount.toFixed(2);
   };
+  const hasFiat = historicalRate != null && historicalRate > 0;
   const isSent = status.text.includes('Sen') || transaction.sentAt;
   const amount = isSent ? amounts.sent : amounts.received;
   const hasValidAmount = typeof amount === 'number' && Number.isFinite(amount);
@@ -508,9 +508,9 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                   'Value',
                   isBlurred
                     ? '***'
-                    : `${getCurrencySymbol(selectedCurrency)}${getFiatAmount(
-                        amount,
-                      )}`,
+                    : hasFiat && getFiatAmount(amount) != null
+                    ? `${getCurrencySymbol(selectedCurrency)}${getFiatAmount(amount)}`
+                    : '—',
                 )}
             </View>
             {/* Transaction Flow Diagram */}
@@ -594,10 +594,10 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                                         formatted: balanceFormattingEnabled,
                                       })}
                                 </Text>
-                                {!isBlurred && btcRate > 0 && (
+                                {!isBlurred && hasFiat && (
                                   <Text style={styles.flowAmountFiat}>
                                     {getCurrencySymbol(selectedCurrency)}
-                                    {getFiatAmount(sats / 1e8)}
+                                    {getFiatAmount(sats / 1e8) ?? '—'}
                                   </Text>
                                 )}
                               </View>
@@ -702,10 +702,10 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                                         formatted: balanceFormattingEnabled,
                                       })}
                                 </Text>
-                                {!isBlurred && btcRate > 0 && (
+                                {!isBlurred && hasFiat && (
                                   <Text style={styles.flowAmountFiat}>
                                     {getCurrencySymbol(selectedCurrency)}
-                                    {getFiatAmount(sats / 1e8)}
+                                    {getFiatAmount(sats / 1e8) ?? '—'}
                                   </Text>
                                 )}
                               </View>
@@ -742,10 +742,10 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                                         formatted: balanceFormattingEnabled,
                                       })}
                                 </Text>
-                                {!isBlurred && btcRate > 0 && (
+                                {!isBlurred && hasFiat && (
                                   <Text style={styles.flowAmountFiat}>
                                     {getCurrencySymbol(selectedCurrency)}
-                                    {getFiatAmount(transaction.fee / 1e8)}
+                                    {getFiatAmount(transaction.fee / 1e8) ?? '—'}
                                   </Text>
                                 )}
                               </View>
@@ -797,9 +797,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                   `${formatBitcoinDisplay(transaction.fee / 1e8, {
                     inSats: showSats,
                     formatted: balanceFormattingEnabled,
-                  })} (${getCurrencySymbol(selectedCurrency)}${getFiatAmount(
-                    transaction.fee / 1e8,
-                  )})`,
+                  })} (${hasFiat && getFiatAmount(transaction.fee / 1e8) != null ? getCurrencySymbol(selectedCurrency) + getFiatAmount(transaction.fee / 1e8) : '—'})`,
                 )}
               {typeof transaction.size === 'number' &&
                 Number.isFinite(transaction.size) &&

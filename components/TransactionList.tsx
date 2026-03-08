@@ -37,6 +37,9 @@ import TransactionListSkeleton from './TransactionListSkeleton';
 import {WalletService} from '../services/WalletService';
 import TransactionDetailsModal from './TransactionDetailsModal';
 import LocalCache from '../services/LocalCache';
+import HistoricalPriceService, {
+  getHistoricalRateKey,
+} from '../services/HistoricalPriceService';
 // Add icon imports
 const inIcon = require('../assets/in-icon.png');
 const outIcon = require('../assets/out-icon.png');
@@ -248,7 +251,7 @@ const TransactionList = React.forwardRef<
       onUpdate,
       initialTransactions = [],
       selectedCurrency = 'USD',
-      btcRate = 0,
+      btcRate: _btcRate = 0,
       getCurrencySymbol = currency => currency,
       onPullRefresh,
       isBlurred = false,
@@ -291,6 +294,10 @@ const TransactionList = React.forwardRef<
       string,
       {derivationPath: string; chain: 'receive' | 'change'; index: number}
     > | null>(null);
+    /** Historical BTC rate per (currency_timestampDay) for confirmed txs; fiat shown only when present. */
+    const [historicalRatesMap, setHistoricalRatesMap] = useState<
+      Record<string, number>
+    >({});
     // Load derivation paths for our HD addresses so we can show path per tx row
     useEffect(() => {
       let cancelled = false;
@@ -331,6 +338,59 @@ const TransactionList = React.forwardRef<
         cancelled = true;
       };
     }, [network, addressType]);
+    // Fetch historical rates for confirmed txs so we can show fiat at tx-time (not current rate).
+    useEffect(() => {
+      if (!baseApi || !selectedCurrency || transactions.length === 0) return;
+      const keysToFetch = new Set<string>();
+      for (const tx of transactions) {
+        if (tx.sentAt) continue; // pending
+        const blockTime = tx.status?.block_time;
+        if (typeof blockTime !== 'number' || !Number.isFinite(blockTime))
+          continue;
+        keysToFetch.add(getHistoricalRateKey(selectedCurrency, blockTime));
+      }
+      if (selectedTransaction?.status?.block_time && !selectedTransaction.sentAt) {
+        keysToFetch.add(
+          getHistoricalRateKey(
+            selectedCurrency,
+            selectedTransaction.status.block_time,
+          ),
+        );
+      }
+      let cancelled = false;
+      (async () => {
+        for (const key of keysToFetch) {
+          if (cancelled) break;
+          const [, currency, tsStr] = key.match(
+            /^historical_price_(.+)_(\d+)$/,
+          ) ?? [null, selectedCurrency, ''];
+          const timestamp = parseInt(tsStr, 10);
+          if (currency && !Number.isNaN(timestamp)) {
+            const rate = await HistoricalPriceService.getHistoricalRate(
+              currency,
+              timestamp,
+              baseApi,
+            );
+            if (cancelled) break;
+            if (rate != null && rate > 0) {
+              setHistoricalRatesMap(prev =>
+                prev[key] === rate ? prev : { ...prev, [key]: rate },
+              );
+            }
+          }
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [
+      baseApi,
+      selectedCurrency,
+      transactions,
+      selectedTransaction?.txid,
+      selectedTransaction?.status?.block_time,
+      selectedTransaction?.sentAt,
+    ]);
     const getTransactionAmounts = useCallback(
       (tx: any, addrOrAddrs?: string | string[]) => {
         const checkAddr = (a: string) =>
@@ -1320,19 +1380,26 @@ const TransactionList = React.forwardRef<
             ? consolidateIcon
             : pendingIcon
           : statusIcon;
-        // Calculate amount in selected currency with proper formatting
+        // Historical rate at tx time (confirmed only); no fiat for pending or when rate missing.
+        const blockTime = item.sentAt ? null : item.status?.block_time;
+        const historicalKey =
+          typeof blockTime === 'number' && Number.isFinite(blockTime)
+            ? getHistoricalRateKey(selectedCurrency, blockTime)
+            : null;
+        const historicalRate =
+          historicalKey != null ? historicalRatesMap[historicalKey] : null;
         const getFiatAmount = (btcAmount: number) => {
-          if (!btcRate || btcRate <= 0) {
-            return '0.00';
-          }
-          const amount = btcAmount * btcRate;
-          return presentFiat(amount);
+          if (historicalRate == null || historicalRate <= 0) return null;
+          return presentFiat(btcAmount * historicalRate);
         };
-        const fiatAmount = isConsolidation
-          ? getFiatAmount(received)
-          : status.includes('Sen')
-          ? getFiatAmount(sent)
-          : getFiatAmount(received);
+        const fiatAmount =
+          historicalRate != null && historicalRate > 0
+            ? isConsolidation
+              ? getFiatAmount(received)
+              : status.includes('Sen')
+              ? getFiatAmount(sent)
+              : getFiatAmount(received)
+            : null;
         return (
           <AppPressable
             style={({pressed}) => [
@@ -1404,7 +1471,9 @@ const TransactionList = React.forwardRef<
                 <Text style={styles.fiatAmount}>
                   {isBlurred
                     ? '***'
-                    : `${getCurrencySymbol(selectedCurrency)}${fiatAmount}`}
+                    : fiatAmount != null
+                    ? `${getCurrencySymbol(selectedCurrency)}${fiatAmount}`
+                    : '—'}
                 </Text>
               </View>
             )}
@@ -1448,7 +1517,7 @@ const TransactionList = React.forwardRef<
         isBlurred,
         getCurrencySymbol,
         selectedCurrency,
-        btcRate,
+        historicalRatesMap,
         balanceFormattingEnabled,
         showSats,
       ],
@@ -1540,7 +1609,17 @@ const TransactionList = React.forwardRef<
             }}
             baseApi={baseApi}
             selectedCurrency={selectedCurrency}
-            btcRate={btcRate}
+            historicalRate={
+              selectedTransaction?.sentAt ||
+              selectedTransaction?.status?.block_time == null
+                ? null
+                : historicalRatesMap[
+                    getHistoricalRateKey(
+                      selectedCurrency,
+                      selectedTransaction.status.block_time,
+                    )
+                  ] ?? null
+            }
             getCurrencySymbol={getCurrencySymbol}
             status={
               selectedTransaction

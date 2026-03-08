@@ -301,6 +301,12 @@ FOUNDATION_EXPORT NSString* _Nonnull TssAesEncrypt(NSString* _Nullable data, NSS
 
 FOUNDATION_EXPORT void TssClearSessionLog(NSString* _Nullable session);
 
+/**
+ * ComputeTxId returns the txid (reversed double-SHA256 of serialized tx) for a raw tx hex.
+Used by the app to name the shared file before broadcasting.
+ */
+FOUNDATION_EXPORT NSString* _Nonnull TssComputeTxId(NSString* _Nullable rawTxHex, NSError* _Nullable* _Nullable error);
+
 // skipped function Contains with unsupported parameter or return types
 
 

@@ -97,6 +97,8 @@ const TTL_RULES: ReadonlyArray<[RegExp, number]> = [
   [/\/v1\/fees\/recommended/, 60_000],
   // BTC price endpoint.
   [/\/v1\/prices/, 60_000],
+  // Historical price is immutable (past date); cache 7 days.
+  [/\/v1\/historical-price\?/, 7 * 24 * 60 * 60 * 1000],
 ];
 
 function ttlForUrl(url: string): number {
