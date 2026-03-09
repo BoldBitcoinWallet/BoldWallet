@@ -102,6 +102,42 @@ class UtxoRepository {
     }
   }
 
+  /**
+   * Get every UTXO stored for a network, optionally scoped to a specific HD address type.
+   * Used when HD addresses have not been derived yet (e.g. key not yet loaded).
+   *
+   * Address type maps to BIP-purpose derivation path prefix:
+   *   segwit-native → m/84'  (P2WPKH, bech32)
+   *   segwit         → m/49'  (P2SH-P2WPKH, wrapped segwit)
+   *   legacy         → m/44'  (P2PKH)
+   * When omitted all stored UTXOs for the network are returned.
+   */
+  getUtxosForNetwork(network: string, addressType?: string): StoredUtxo[] {
+    const purposeByType: Record<string, string> = {
+      'segwit-native': "m/84'",
+      segwit: "m/49'",
+      legacy: "m/44'",
+    };
+    const pathPrefix = addressType ? purposeByType[addressType] : undefined;
+    try {
+      const {rows} = pathPrefix
+        ? database.execute(
+            `SELECT * FROM utxos
+             WHERE network = ? AND derivation_path LIKE ?
+             ORDER BY value_sats DESC`,
+            [network, `${pathPrefix}%`],
+          )
+        : database.execute(
+            'SELECT * FROM utxos WHERE network = ? ORDER BY value_sats DESC',
+            [network],
+          );
+      return rows.map(this._rowToUtxo);
+    } catch (err) {
+      dbg('UtxoRepository.getUtxosForNetwork error', err);
+      return [];
+    }
+  }
+
   /** Total confirmed satoshis across all addresses for a network. */
   getTotalSats(network: string): number {
     try {

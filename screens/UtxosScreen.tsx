@@ -47,6 +47,50 @@ export type UtxoWithPath = ApiUtxo & {
   chainIndex: number;
 };
 
+/**
+ * Convert StoredUtxo rows from the DB into the UtxoWithPath shape used by the UI.
+ * Chain and index are resolved from the addressesWithPaths lookup first; if the
+ * address is not found there (e.g. pre-load without fresh derivation), they are
+ * parsed directly from the stored derivation path (e.g. "m/84'/0'/0'/1/3" →
+ * chain=change, index=3).
+ * The result is sorted: receive before change, by chain index, newest confirmed first.
+ */
+function storedToUtxoWithPath(
+  stored: ReturnType<typeof utxoRepository.getUtxosForAddresses>,
+  addressesWithPaths: Array<{
+    address: string;
+    derivationPath: string;
+    chain: 'receive' | 'change';
+    index: number;
+  }>,
+): UtxoWithPath[] {
+  const mapped: UtxoWithPath[] = stored.map(u => {
+    const info = addressesWithPaths.find(a => a.address === u.address);
+    const parts = (u.derivationPath ?? '').split('/');
+    const chainNum = parseInt(parts.at(-2) ?? '', 10);
+    const chainIdx = parseInt(parts.at(-1) ?? '', 10);
+    return {
+      txid: u.txid,
+      vout: u.vout,
+      value: u.valueSats,
+      status: {
+        confirmed: u.isConfirmed,
+        block_height: u.blockHeight ?? undefined,
+      },
+      address: u.address,
+      derivationPath: u.derivationPath ?? info?.derivationPath ?? '',
+      chain: info?.chain ?? (chainNum === 1 ? 'change' : 'receive'),
+      chainIndex: info?.index ?? (Number.isNaN(chainIdx) ? 0 : chainIdx),
+    };
+  });
+  mapped.sort((a, b) => {
+    if (a.chain !== b.chain) return a.chain === 'receive' ? -1 : 1;
+    if (a.chainIndex !== b.chainIndex) return a.chainIndex - b.chainIndex;
+    return (b.status?.block_time ?? 0) - (a.status?.block_time ?? 0);
+  });
+  return mapped;
+}
+
 function addressMatchesNetwork(addr: string, isTestnetApi: boolean): boolean {
   if (!addr) return false;
   if (isTestnetApi) {
@@ -138,11 +182,12 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
     }
 
     if (addressesWithPaths.length === 0) {
-      // No addresses derived yet — show whatever the DB has (may be empty on first launch).
-      const allNetworkUtxos = utxoRepository.getUtxosForAddresses([], network);
-      if (allNetworkUtxos.length === 0) {
-        setUtxosWithPath([]);
-      }
+      // No addresses derived yet — show whatever the DB has for this network + address type.
+      const allNetworkUtxos = utxoRepository.getUtxosForNetwork(
+        network,
+        addressType || 'segwit-native',
+      );
+      setUtxosWithPath(storedToUtxoWithPath(allNetworkUtxos, []));
       setUtxoFetchTimestamp(Date.now());
       setLoading(false);
       setRefreshing(false);
@@ -150,34 +195,17 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
     }
 
     try {
-      const merged: UtxoWithPath[] = [];
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 20000);
-      for (const {
-        address,
-        derivationPath,
-        chain,
-        index,
-      } of addressesWithPaths) {
+      for (const {address, derivationPath} of addressesWithPaths) {
         if (!addressMatchesNetwork(address, isTestnetApi)) continue;
         try {
-          const utxoUrl = `${apiUrl}/address/${encodeURIComponent(
-            address,
-          )}/utxo`;
+          const utxoUrl = `${apiUrl}/address/${encodeURIComponent(address)}/utxo`;
           const res = await fetch(utxoUrl, {signal: controller.signal});
           if (!res.ok) continue;
           const rawList: ApiUtxo[] = await res.json();
           if (!Array.isArray(rawList)) continue;
-          for (const u of rawList) {
-            merged.push({
-              ...u,
-              address,
-              derivationPath,
-              chain,
-              chainIndex: index,
-            });
-          }
-          // Persist each address's UTXOs to DB immediately so offline fallback works.
+          // Persist to DB (full replace per address — mempool always returns the complete UTXO set).
           const now = Date.now();
           utxoRepository.replaceUtxosForAddress(
             address,
@@ -196,53 +224,33 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
             })),
           );
         } catch {
-          // skip failed address — DB data preserved for it
+          // Skip failed address — its existing DB rows are preserved for it.
         }
       }
       clearTimeout(timeoutId);
-      // Sort: receive first, then change; by chain index; then by block_time desc (newest first)
-      merged.sort((a, b) => {
-        if (a.chain !== b.chain) return a.chain === 'receive' ? -1 : 1;
-        if (a.chainIndex !== b.chainIndex) return a.chainIndex - b.chainIndex;
-        const ta = a.status?.block_time ?? 0;
-        const tb = b.status?.block_time ?? 0;
-        return tb - ta;
-      });
-      setUtxosWithPath(merged);
+      // DB-first: read the complete truth from DB after all writes.
+      // Addresses that succeeded have fresh rows; addresses that failed still have
+      // their previous rows — the DB is always the best available picture.
+      const allFromDB = utxoRepository.getUtxosForAddresses(
+        addressesWithPaths.map(a => a.address),
+        network,
+      );
+      setUtxosWithPath(storedToUtxoWithPath(allFromDB, addressesWithPaths));
       setUtxoFetchTimestamp(Date.now());
     } catch (e: any) {
-      // API failure — fall back to DB so the list is never empty when offline.
-      const addrs = addressesWithPaths.map(a => a.address);
-      const stored = utxoRepository.getUtxosForAddresses(addrs, network);
-      if (stored.length > 0) {
-        const dbUtxos: UtxoWithPath[] = stored.map(u => {
-          const info = addressesWithPaths.find(a => a.address === u.address);
-          return {
-            txid: u.txid,
-            vout: u.vout,
-            value: u.valueSats,
-            status: {
-              confirmed: u.isConfirmed,
-              block_height: u.blockHeight ?? undefined,
-            },
-            address: u.address,
-            derivationPath: u.derivationPath ?? info?.derivationPath ?? '',
-            chain: info?.chain ?? 'receive',
-            chainIndex: info?.index ?? 0,
-          };
-        });
-        setUtxosWithPath(dbUtxos);
-        // Show a subtle offline indicator but keep the list visible.
+      // Outer catch: something threw outside the per-address inner catch
+      // (e.g. unexpected JS error). Read from DB as the safe fallback.
+      const stored = utxoRepository.getUtxosForAddresses(
+        addressesWithPaths.map(a => a.address),
+        network,
+      );
+      setUtxosWithPath(storedToUtxoWithPath(stored, addressesWithPaths));
+      if (stored.length === 0) {
         setFetchError(
-          e?.name === 'AbortError' ? 'Request timed out — showing cached data' : null,
+          e?.name === 'AbortError'
+            ? 'Request timed out'
+            : (e?.message || 'Failed to load UTXOs'),
         );
-      } else {
-        // DB also empty — show the error.
-        if (e?.name === 'AbortError') {
-          setFetchError('Request timed out');
-        } else {
-          setFetchError(e?.message || 'Failed to load UTXOs');
-        }
       }
     } finally {
       setLoading(false);
@@ -266,36 +274,8 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
             network,
           );
           if (!cancelled && stored.length > 0) {
-            const preloaded: UtxoWithPath[] = stored.map(u => {
-              const info = addrs.find(a => a.address === u.address);
-              const parts = (u.derivationPath ?? '').split('/');
-              const chainNum = parseInt(parts.at(-2) ?? '', 10);
-              const chainIdx = parseInt(parts.at(-1) ?? '', 10);
-              return {
-                txid: u.txid,
-                vout: u.vout,
-                value: u.valueSats,
-                status: {
-                  confirmed: u.isConfirmed,
-                  block_height: u.blockHeight ?? undefined,
-                },
-                address: u.address,
-                derivationPath: u.derivationPath ?? info?.derivationPath ?? '',
-                chain: info?.chain ?? (chainNum === 1 ? 'change' : 'receive'),
-                chainIndex:
-                  info?.index ?? (Number.isNaN(chainIdx) ? 0 : chainIdx),
-              };
-            });
-            preloaded.sort((a, b) => {
-              if (a.chain !== b.chain) return a.chain === 'receive' ? -1 : 1;
-              if (a.chainIndex !== b.chainIndex)
-                return a.chainIndex - b.chainIndex;
-              return (
-                (b.status?.block_time ?? 0) - (a.status?.block_time ?? 0)
-              );
-            });
             hadCachedData = true;
-            setUtxosWithPath(preloaded);
+            setUtxosWithPath(storedToUtxoWithPath(stored, addrs));
             setLoading(false); // cached list visible; API will update in background
           }
         }
