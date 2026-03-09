@@ -1,5 +1,46 @@
 # Changelog
 
+## [3.0.1] - 2026-02-28
+
+### Added
+- **SQLite persistence layer** — full migration from file-based `LocalCache` to a WAL-mode SQLite database (`@op-engineering/op-sqlite`) as the single source of truth for all wallet data.
+  - **Repository pattern**: `AppConfigRepository`, `WalletRepository`, `BalanceRepository`, `TransactionRepository`, `UtxoRepository`, `PriceRepository`, `SyncRepository` — each owns its table schema and CRUD operations.
+  - **Background sync infrastructure**: `SyncCoordinator` orchestrates `BalanceSyncer`, `TransactionSyncer`, `UtxoSyncer`, and `PriceSyncer`; runs on foreground + configurable intervals; failures are silent and retried on next foreground event.
+  - **Database-first rule enforced everywhere**: `API → write DB → UI reads DB`. UI never reads directly from API responses; any API error falls back to cached DB state.
+- **Atomic wallet reset + reindex + pre-sync** (`runRestoreIndexing` in WalletSettings): the entire pipeline — HD index discovery, balance sync, transaction sync, UTXO sync, and aggregate balance computation — must succeed fully before navigating to WalletHome. On any failure the function throws, the caller shows a `Toast` error, and navigation is aborted (rollback semantics).
+  - `RestoringIndexesModal` now shows a `phase` label during post-discovery sync steps ("Syncing balances…", "Syncing transactions…", "Syncing UTXOs…").
+  - All callers (network switch, address-type switch, Clear Cache) wrapped in `try/catch` with descriptive error toasts; navigation only fires after full success.
+- **Aggregate balance pre-computed and persisted** after the balance sync phase of `runRestoreIndexing`; WalletHome reads the pre-computed row on first render via `getCachedAggregateBalance` with no extra API call.
+- **`Database.clearWalletCacheData()`**: selective clear that wipes fetched data (`address_balances`, `utxos`, `transactions`, and related tables) while preserving `hd_state` and `wallet_addresses`; used for network/address-type switches so discovery always has the previous correct indexes as a baseline.
+- **UTXO `block_time` persistence**: `utxos` table now stores `block_time`; `StoredUtxo`, `UtxoRepository.replaceUtxosForAddress`, and `storedToUtxoWithPath` propagate the value end-to-end so the "Confirmed / Unconfirmed" label in `UtxosScreen` matches the summary card.
+- **Historical vs. current fiat prices for transactions**: confirmed transactions use the block-time historical rate from `PriceRepository`; pending/unconfirmed transactions fall back to the current live `btcRate`; `TransactionList` fetches missing historical rates in batch.
+- **Full wallet reset on `ShowcaseScreen` load**: clears all SQLite wallet tables, in-memory and HTTP caches, and relevant `EncryptedStorage` preference keys (preserving `keyshare`) so each new import starts from a guaranteed clean state.
+- **`MempoolClient` TTL tuning**: default TTL reduced from 30 s to **5 s** for balance, transaction, and UTXO endpoints; fee-rate endpoint set to **30 s**.
+
+### Changed
+- **WalletHome balance always visible**: balance text is shown from the first frame using a pulsing `Animated.View` opacity during loading; the balance is never replaced with a shimmer or blank slot.
+- **Instant balance on lock/unlock**: `reinitializeWallet` now reads `balanceRepository.getBalance('aggregate_…')` synchronously at startup — before any `await` — so the cached BTC (and fiat if `btcRate` is already in state) is painted in the same render batch as the loading start; no flash of `0` or `'-'`.
+- **UTXO screen consistency**: `UtxosScreen` always reads the full UTXO set from `UtxoRepository` after API writes complete (not from a mutable in-memory `merged` array); fallback on API failure reads from DB; preload on mount uses the same `storedToUtxoWithPath` helper for consistent sorting and status mapping.
+- **Transaction list merge-not-replace**: API results are merged into existing state using `sortTxs`; the list count can only grow, never shrink, even on partial API responses.
+- **`runRestoreIndexing` cache invalidation order**: `mempoolClient.invalidateAll()` and `ws.invalidateAddressCache()` are flushed **before** `discoverHdIndexesForNetwork` so every address-used check hits the network with fresh data.
+- **`WalletSettings` network toggle**: now wrapped in `try/catch`; sets `newNetwork` (not `activeNetwork`) in navigation reset to prevent stale-closure bug.
+
+### Fixed
+- **Balance zeroing on refresh**: `getWalletBalanceAggregate` now persists per-address balances on each successful API response and falls back to the per-address DB entry on `!res.ok` or network error; a complete API failure returns the stored aggregate instead of `0.00000000`.
+- **Transaction count decreasing after refresh**: `setTransactions` uses a functional update that merges API results with existing state; transactions are inserted with `INSERT OR IGNORE` / UPSERT so rows can only accumulate.
+- **UTXO screen random / empty entries**: eliminated by always writing API responses to DB per-address and then reading the full address set from DB as the final source; partial API failures no longer produce half-populated lists.
+- **Fiat price always showing "-"**: fixed a `keysToFetch` regex mismatch that prevented historical rate fetches; block-time is now stored directly in a `Map` and looked up without regex parsing.
+- **Wallet reindex instant-close + 0 balance**: `clearWalletCacheData()` (not `clearWalletData()`) preserves `hd_state` during switches, so discovery uses prior correct indexes as a baseline; discovery failures abort navigation rather than landing on WalletHome with empty state.
+- **UTXO confirmed/unconfirmed mismatch**: `block_time` is now written to the `utxos` table and read back through `storedToUtxoWithPath`; the summary count and the list label now agree.
+- **`UtxoRepository.getUtxosForNetwork` address-type filtering**: fallback query accepts an optional `addressType` and filters by `derivation_path` prefix so only UTXOs relevant to the active HD wallet type are returned.
+
+### Technical Details
+- **Version**: `package.json` 3.0.1; Android `versionCode` 51 / `versionName` 3.0.1.
+- **New files**: `services/Database.ts`, `services/LocalCacheMigration.ts`, `services/repositories/` (6 repositories), `services/sync/` (`BalanceSyncer`, `TransactionSyncer`, `UtxoSyncer`, `PriceSyncer`, `SyncCoordinator`).
+- **`StoredUtxo` interface**: added `blockTime: number | null`; `utxos` DDL adds `block_time INTEGER` with an `ALTER TABLE … ADD COLUMN` migration guard.
+- **`RestoringIndexesModal`**: new optional `phase?: string` prop; title switches between "Restoring indexes" and "Syncing wallet" depending on phase.
+- **`PendingTxData` interface**: typed interface for pending transaction objects shared between `TransactionRepository` and `TransactionList`.
+
 ## [3.0.0] - 2026-03-04
 
 ### Added
