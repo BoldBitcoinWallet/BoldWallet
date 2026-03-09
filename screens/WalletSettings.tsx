@@ -787,22 +787,38 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       return newState;
     });
   };
-  // Run HD index discovery + cache pre-warm for (network, addressType). Same as Clear Cache.
-  // Call after changing address type or network so WalletHome loads correct balance and tx list.
+  /**
+   * Full wallet reset + HD re-index for a given (network, addressType).
+   * Used by network switch, address-type switch, and Clear Cache — all three
+   * paths must behave identically:
+   *   1. Wipe all wallet DB tables (UTXOs, balances, transactions, HD state, …)
+   *      so the new config starts from a guaranteed clean slate.
+   *   2. Re-discover HD indexes from the chain.
+   *   3. Pre-warm in-memory address cache and invalidate HTTP cache.
+   *   4. Re-persist network / api / addressType to appConfigRepository so that
+   *      WalletHome reads the correct values after navigation.reset.
+   */
   const runRestoreIndexing = useCallback(
-    async (network: string, addressType: string) => {
+    async (network: string, addressType: string, resolvedApiUrl?: string) => {
       setIsRestoringIndexes(true);
       setRestoreProgress(null);
-      // Yield so the RestoringIndexesModal has time to mount and paint before we block on discovery.
+      // Yield so the RestoringIndexesModal has time to mount and paint before
+      // we block on discovery.
       await new Promise<void>(r => setTimeout(r, 100));
       try {
+        // Step 1 — clear all wallet DB data for a clean slate.
+        database.clearWalletData();
+
         const ws = WalletService.getInstance();
         const apiUrl =
+          resolvedApiUrl ||
           appConfigRepository.get(`api_${network}`) ||
           appConfigRepository.get('api') ||
           (network === 'mainnet'
             ? 'https://mempool.space/api'
             : 'https://mempool.space/testnet/api');
+
+        // Step 2 — HD index discovery (gap-limit scan on-chain).
         await ws.discoverHdIndexesForNetwork(
           network,
           addressType,
@@ -810,9 +826,17 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           (chain, index, gapIndex) =>
             setRestoreProgress({chain, index, gapIndex}),
         );
+
+        // Step 3 — pre-warm in-memory caches.
         ws.invalidateAddressCache();
         await ws.getHdAddressesWithPaths(network, addressType);
         mempoolClient.invalidateAll();
+
+        // Step 4 — re-persist config so WalletHome reads correct values.
+        appConfigRepository.set(CONFIG_KEYS.NETWORK, network);
+        appConfigRepository.set('api', apiUrl);
+        appConfigRepository.set(`api_${network}`, apiUrl);
+        appConfigRepository.set(CONFIG_KEYS.ADDRESS_TYPE, addressType);
       } finally {
         setIsRestoringIndexes(false);
         setRestoreProgress(null);
@@ -950,7 +974,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       getResetToMainTabsWallet(
         {},
         {
-          showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
+          showPlay: newNetwork === 'mainnet' && showMempoolPlayground,
           showUtxos: showUtxosTab,
           showPsbt: showPsbtTab,
           showWallet: showWalletTab,
@@ -2551,50 +2575,20 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               style={[styles.button, styles.deleteButton]}
               onPress={async () => {
                 try {
-                  setIsRestoringIndexes(true);
-                  setRestoreProgress(null);
-                  dbg('WalletSettings: Storage clear - clearing SQLite wallet data');
-                  database.clearWalletData();
-                  dbg(
-                    'WalletSettings: LocalCache cleared, running restore discovery',
-                    {
-                      network: activeNetwork,
-                      addressType: activeAddressType,
-                    },
-                  );
-                  // Restore discovery: re-scan chain to repopulate HD indexes
-                  const ws = WalletService.getInstance();
+                  dbg('WalletSettings: Clear Cache pressed', {
+                    network: activeNetwork,
+                    addressType: activeAddressType,
+                  });
                   const apiUrl =
                     activeApiProvider ||
                     (activeNetwork === 'mainnet'
                       ? 'https://mempool.space/api'
                       : 'https://mempool.space/testnet/api');
-                  await ws.discoverHdIndexesForNetwork(
+                  await runRestoreIndexing(
                     activeNetwork,
                     activeAddressType,
                     apiUrl,
-                    (chain, index, gapIndex) =>
-                      setRestoreProgress({chain, index, gapIndex}),
                   );
-                  dbg(
-                    'WalletSettings: Restore discovery done, re-persisting network/api',
-                  );
-                  // Pre-warm the in-memory HD address cache and wipe stale HTTP
-                  // cache entries — same post-discovery pattern as UserPreferenceScreen.
-                  // Without this, WalletHome loads with a cold hdAddressCache
-                  // (causing a 2-5 s derivation delay and premature single-address
-                  // TransactionList fetch) and the mempoolClient cache still holds
-                  // discovery-era /txs snapshots that mask the real transaction history.
-                  ws.invalidateAddressCache();
-                  await ws.getHdAddressesWithPaths(
-                    activeNetwork,
-                    activeAddressType,
-                  );
-                  mempoolClient.invalidateAll();
-                  // Re-persist network/api so app continues to work
-                  appConfigRepository.set(CONFIG_KEYS.NETWORK, activeNetwork);
-                  appConfigRepository.set('api', apiUrl);
-                  appConfigRepository.set(CONFIG_KEYS.ADDRESS_TYPE, activeAddressType);
                   setUsageSize({fileCount: 0, mb: '0.00 MB'});
                   dbg('WalletSettings: Storage clear complete');
                   Alert.alert('Cache Cleared', 'Cache cleared successfully.');
@@ -2616,9 +2610,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     'Error',
                     'Failed to clear cache. Please try again.',
                   );
-                } finally {
-                  setIsRestoringIndexes(false);
-                  setRestoreProgress(null);
                 }
               }}
               android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
