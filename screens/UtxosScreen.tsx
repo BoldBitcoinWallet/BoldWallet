@@ -20,6 +20,7 @@ import {
   HeaderNetwork,
 } from '../components/Header';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
+import utxoRepository from '../services/repositories/UtxoRepository';
 import {WalletService} from '../services/WalletService';
 import {presentFiat, getCurrencySymbol} from '../utils';
 import AppPressable from '../components/AppPressable';
@@ -114,7 +115,6 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const fetchUtxos = useCallback(async () => {
     const base = apiBase?.trim();
     if (!base) {
-      setUtxosWithPath([]);
       setFetchError('No API configured');
       setLoading(false);
       return;
@@ -123,19 +123,33 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
     const apiUrl = `${cleanBase}/api`;
     const isTestnetApi = /\/testnet(\/|$)/.test(apiUrl);
     setFetchError(null);
+
+    // Resolve HD addresses once, outside the try block so the catch can use them.
+    let addressesWithPaths: Awaited<
+      ReturnType<typeof WalletService.prototype.getHdAddressesWithPaths>
+    > = [];
     try {
-      const walletService = WalletService.getInstance();
-      const addressesWithPaths = await walletService.getHdAddressesWithPaths(
+      addressesWithPaths = await WalletService.getInstance().getHdAddressesWithPaths(
         network,
         addressType || 'segwit-native',
       );
-      if (addressesWithPaths.length === 0) {
+    } catch {
+      // Derivation failed — fall through to DB-only path below.
+    }
+
+    if (addressesWithPaths.length === 0) {
+      // No addresses derived yet — show whatever the DB has (may be empty on first launch).
+      const allNetworkUtxos = utxoRepository.getUtxosForAddresses([], network);
+      if (allNetworkUtxos.length === 0) {
         setUtxosWithPath([]);
-        setUtxoFetchTimestamp(Date.now());
-        setLoading(false);
-        setRefreshing(false);
-        return;
       }
+      setUtxoFetchTimestamp(Date.now());
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
+    try {
       const merged: UtxoWithPath[] = [];
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 20000);
@@ -163,8 +177,26 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
               chainIndex: index,
             });
           }
+          // Persist each address's UTXOs to DB immediately so offline fallback works.
+          const now = Date.now();
+          utxoRepository.replaceUtxosForAddress(
+            address,
+            network,
+            rawList.map(u => ({
+              txid: u.txid,
+              vout: u.vout,
+              address,
+              network,
+              valueSats: u.value,
+              scriptPubkey: null,
+              derivationPath,
+              isConfirmed: u.status?.confirmed ?? true,
+              blockHeight: u.status?.block_height ?? null,
+              fetchedAt: now,
+            })),
+          );
         } catch {
-          // skip failed address
+          // skip failed address — DB data preserved for it
         }
       }
       clearTimeout(timeoutId);
@@ -179,12 +211,39 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
       setUtxosWithPath(merged);
       setUtxoFetchTimestamp(Date.now());
     } catch (e: any) {
-      if (e?.name === 'AbortError') {
-        setFetchError('Request timed out');
+      // API failure — fall back to DB so the list is never empty when offline.
+      const addrs = addressesWithPaths.map(a => a.address);
+      const stored = utxoRepository.getUtxosForAddresses(addrs, network);
+      if (stored.length > 0) {
+        const dbUtxos: UtxoWithPath[] = stored.map(u => {
+          const info = addressesWithPaths.find(a => a.address === u.address);
+          return {
+            txid: u.txid,
+            vout: u.vout,
+            value: u.valueSats,
+            status: {
+              confirmed: u.isConfirmed,
+              block_height: u.blockHeight ?? undefined,
+            },
+            address: u.address,
+            derivationPath: u.derivationPath ?? info?.derivationPath ?? '',
+            chain: info?.chain ?? 'receive',
+            chainIndex: info?.index ?? 0,
+          };
+        });
+        setUtxosWithPath(dbUtxos);
+        // Show a subtle offline indicator but keep the list visible.
+        setFetchError(
+          e?.name === 'AbortError' ? 'Request timed out — showing cached data' : null,
+        );
       } else {
-        setFetchError(e?.message || 'Failed to load UTXOs');
+        // DB also empty — show the error.
+        if (e?.name === 'AbortError') {
+          setFetchError('Request timed out');
+        } else {
+          setFetchError(e?.message || 'Failed to load UTXOs');
+        }
       }
-      setUtxosWithPath([]);
     } finally {
       setLoading(false);
       setRefreshing(false);

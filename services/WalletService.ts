@@ -1419,6 +1419,7 @@ export class WalletService {
 
       let confirmedSats = new Big(0);
       let mempoolSats = new Big(0);
+      let successCount = 0;
       for (const addr of addresses) {
         try {
           const res = await mempoolClient.get<{
@@ -1429,6 +1430,7 @@ export class WalletService {
           if (!res.ok) {
             continue;
           }
+          successCount++;
           const {chain_stats, mempool_stats} = res.data;
           const addrConfirmed =
             chain_stats.funded_txo_sum - chain_stats.spent_txo_sum;
@@ -1442,6 +1444,16 @@ export class WalletService {
           }
         } catch {
           // skip failed address, continue with the rest
+        }
+      }
+
+      // All per-address API calls failed silently — avoid returning a false zero.
+      // Serve from DB instead so the UI preserves the last known good balance.
+      if (successCount === 0 && addresses.length > 0) {
+        const cached = await this.getCachedAggregateBalance(network, addressType);
+        if (cached) {
+          dbg('WalletService: All addresses failed — returning cached aggregate balance');
+          return cached;
         }
       }
 
@@ -1671,6 +1683,12 @@ export class WalletService {
           cursors[addr] = null;
           continue;
         }
+        // Persist to DB immediately with the real Bitcoin address as the key.
+        // This ensures loadFromCache() can serve offline reads keyed by address,
+        // and aligns with TransactionSyncer's namespace.
+        if (data.length > 0) {
+          await this.setTxs(addr, data);
+        }
         for (const tx of data) {
           if (!seen.has(tx.txid)) {
             seen.add(tx.txid);
@@ -1737,6 +1755,8 @@ export class WalletService {
           updatedCursors[addr] = null;
           continue;
         }
+        // Persist each page to DB with the real Bitcoin address key.
+        await this.setTxs(addr, data);
         for (const tx of data) {
           if (!seen.has(tx.txid)) {
             seen.add(tx.txid);
@@ -1807,9 +1827,34 @@ export class WalletService {
     network: string,
     addressType: string,
   ): Promise<any[]> {
+    // Primary path: synthetic wallet-level key written by updateTransactionsCacheForWallet.
     const cacheKey = this.walletTxsCacheKey(network, addressType);
     const txs = await this.getTxs(cacheKey);
-    return txs.transactions;
+    if (txs.transactions.length > 0) {
+      return txs.transactions;
+    }
+    // Fallback: look up by real Bitcoin addresses (written by fetchTransactionsForAddresses
+    // with real-address keys, and by TransactionSyncer).  Requires keyshare to derive addresses.
+    try {
+      const addrs = await this.getHdAddressesWithPaths(network, addressType);
+      if (addrs.length === 0) return [];
+      const rows = transactionRepository.getTransactionsForAddresses(
+        addrs.map(a => a.address),
+        network,
+      );
+      if (rows.length === 0) return [];
+      return rows
+        .map(r => {
+          try {
+            return JSON.parse(r.rawJson);
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
   }
 
   public async updateTransactionsCacheForWallet(

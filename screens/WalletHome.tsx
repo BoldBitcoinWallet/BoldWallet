@@ -76,7 +76,7 @@ import {
   HeaderNetwork,
 } from '../components/Header';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
-import transactionRepository from '../services/repositories/TransactionRepository';
+
 import walletRepository from '../services/repositories/WalletRepository';
 import {getExternalIndex} from '../services/HdIndexService';
 import syncCoordinator from '../services/sync/SyncCoordinator';
@@ -221,7 +221,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   // Animation and visual feedback states
   const [isBalanceLoading, setIsBalanceLoading] = useState(false);
   const balanceUpdateAnimation = useSharedValue(1);
-  const shimmerOpacity = useSharedValue(0.3);
+  const shimmerOpacity = useSharedValue(1.0);
   const [balanceError, setBalanceError] = useState<string | null>(null);
   const previousBalanceRef = useRef<string>('0.00000000');
   // Helper function for showing error toasts
@@ -577,7 +577,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     const load = async () => {
       try {
         const ws = WalletService.getInstance();
-        const restoreDoneKey = `hd_restore_done_${network}_${effectiveType}`;
         const restoreDone =
           walletRepository.getHdState(network, effectiveType)?.restoreDone === true;
         if (!restoreDone) {
@@ -1365,7 +1364,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     setAddressType(appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'segwit-native');
     setSelectedCurrency(appConfigRepository.get(CONFIG_KEYS.CURRENCY) || 'USD');
     setIsBlurred(appConfigRepository.get(CONFIG_KEYS.BALANCE_HIDDEN) === 'true');
-  });
+  }, []);
   // Simplified focus effect - just refresh data when screen comes into focus
   useFocusEffect(
     useCallback(() => {
@@ -2229,19 +2228,20 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     opacity: balanceUpdateAnimation.value,
   }));
 
-  // Pulse shimmer while balance is loading.
+  // Pulse the balance text opacity while loading so the value stays readable
+  // but the user can see a refresh is in progress.
   useEffect(() => {
     if (isBalanceLoading) {
       shimmerOpacity.value = withRepeat(
         withSequence(
-          withTiming(0.65, {duration: 700}),
-          withTiming(0.25, {duration: 700}),
+          withTiming(1.0, {duration: 600}),
+          withTiming(0.45, {duration: 600}),
         ),
         -1,
         false,
       );
     } else {
-      shimmerOpacity.value = withTiming(0.3, {duration: 150});
+      shimmerOpacity.value = withTiming(1.0, {duration: 200});
     }
   }, [isBalanceLoading, shimmerOpacity]);
 
@@ -2323,11 +2323,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                       }`}
                       accessibilityHint="Double tap to toggle balance visibility"
                       accessibilityRole="button">
-                      {isBalanceLoading && !isBlurred ? (
-                        <Animated.View
-                          style={[styles.shimmerBTC, shimmerAnimStyle]}
-                        />
-                      ) : (
+                      <Animated.View style={shimmerAnimStyle}>
                         <Text
                           style={styles.balanceBTC}
                           numberOfLines={1}
@@ -2343,7 +2339,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                                 formatted: balanceFormattingEnabled,
                               })}
                         </Text>
-                      )}
+                      </Animated.View>
                     </AppPressable>
                   </Animated.View>
                   {btcRate > 0 && (
@@ -2376,11 +2372,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                         }`}
                         accessibilityHint="Double tap to toggle balance visibility"
                         accessibilityRole="button">
-                        {isBalanceLoading && !isBlurred ? (
-                          <Animated.View
-                            style={[styles.shimmerFiat, shimmerAnimStyle]}
-                          />
-                        ) : (
+                        <Animated.View style={shimmerAnimStyle}>
                           <Text
                             style={styles.balanceFiat}
                             numberOfLines={1}
@@ -2402,11 +2394,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                                     : symbol + formattedFiat;
                                 })()}
                           </Text>
-                        )}
+                        </Animated.View>
                       </AppPressable>
                     </Animated.View>
                   )}
-                  {!isBlurred && !isBalanceLoading && pendingSats !== 0 && (
+                  {!isBlurred && pendingSats !== 0 && (
                     <View style={styles.pendingChip}>
                       <AppText style={styles.pendingChipText}>
                         {pendingSats > 0
@@ -2531,7 +2523,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                     (network === 'mainnet'
                       ? 'https://mempool.space/api'
                       : 'https://mempool.space/testnet/api');
-                  const restoreDoneKey = `hd_restore_done_${network}_${effectiveAddressType}`;
                   const restoreDone =
                     walletRepository.getHdState(network, effectiveAddressType)?.restoreDone === true;
 

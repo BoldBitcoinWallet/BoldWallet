@@ -341,42 +341,34 @@ const TransactionList = React.forwardRef<
     // Fetch historical rates for confirmed txs so we can show fiat at tx-time (not current rate).
     useEffect(() => {
       if (!baseApi || !selectedCurrency || transactions.length === 0) return;
-      const keysToFetch = new Set<string>();
+      // Map key → raw block_time so we never have to re-parse the key string.
+      const keysToFetch = new Map<string, number>();
       for (const tx of transactions) {
-        if (tx.sentAt) continue; // pending
+        if (tx.sentAt) continue; // pending — will use live rate
         const blockTime = tx.status?.block_time;
         if (typeof blockTime !== 'number' || !Number.isFinite(blockTime))
           continue;
-        keysToFetch.add(getHistoricalRateKey(selectedCurrency, blockTime));
+        const key = getHistoricalRateKey(selectedCurrency, blockTime);
+        keysToFetch.set(key, blockTime);
       }
       if (selectedTransaction?.status?.block_time && !selectedTransaction.sentAt) {
-        keysToFetch.add(
-          getHistoricalRateKey(
-            selectedCurrency,
-            selectedTransaction.status.block_time,
-          ),
-        );
+        const bt = selectedTransaction.status.block_time;
+        keysToFetch.set(getHistoricalRateKey(selectedCurrency, bt), bt);
       }
       let cancelled = false;
       (async () => {
-        for (const key of keysToFetch) {
+        for (const [key, blockTime] of keysToFetch) {
           if (cancelled) break;
-          const [, currency, tsStr] = key.match(
-            /^historical_price_(.+)_(\d+)$/,
-          ) ?? [null, selectedCurrency, ''];
-          const timestamp = parseInt(tsStr, 10);
-          if (currency && !Number.isNaN(timestamp)) {
-            const rate = await HistoricalPriceService.getHistoricalRate(
-              currency,
-              timestamp,
-              baseApi,
+          const rate = await HistoricalPriceService.getHistoricalRate(
+            selectedCurrency,
+            blockTime,
+            baseApi,
+          );
+          if (cancelled) break;
+          if (rate != null && rate > 0) {
+            setHistoricalRatesMap(prev =>
+              prev[key] === rate ? prev : {...prev, [key]: rate},
             );
-            if (cancelled) break;
-            if (rate != null && rate > 0) {
-              setHistoricalRatesMap(prev =>
-                prev[key] === rate ? prev : { ...prev, [key]: rate },
-              );
-            }
           }
         }
       })();
@@ -675,11 +667,26 @@ const TransactionList = React.forwardRef<
           }
           if (isMounted.current) {
             dbg(
-              'TransactionList: Setting',
+              'TransactionList: Merging',
               newTransactions.length,
-              'transactions to state',
+              'API transactions into state',
             );
-            setTransactions(newTransactions);
+            // Merge API page into existing state — never replace, so historical
+            // txs loaded via fetchMore are preserved even when the API returns a
+            // shorter first page.
+            setTransactions(prev => {
+              if (prev.length === 0) {
+                return newTransactions;
+              }
+              const merged = new Map(
+                prev.map((tx: any) => [tx.txid, tx]),
+              );
+              for (const tx of newTransactions) {
+                // API data takes precedence: updates confirmation status, block height, etc.
+                merged.set(tx.txid, tx);
+              }
+              return sortTxs(Array.from(merged.values()));
+            });
             setHasMoreTransactions(
               isMultiAddress ? multiHasMore : newTransactions.length > 0,
             );
@@ -811,7 +818,8 @@ const TransactionList = React.forwardRef<
               : await WalletService.getInstance().transactionsFromCache(
                   address || '',
                 );
-          if (mounted && cached.length > 0) {
+          // Only pre-populate if no live fetch has already set newer data.
+          if (mounted && cached.length > 0 && !isFetching.current) {
             setTransactions(cached);
           }
         } catch {
@@ -1391,20 +1399,28 @@ const TransactionList = React.forwardRef<
             ? consolidateIcon
             : pendingIcon
           : statusIcon;
-        // Historical rate at tx time (confirmed only); no fiat for pending or when rate missing.
-        const blockTime = item.sentAt ? null : item.status?.block_time;
+        // Historical rate at tx time for confirmed txs; current live rate for pending/unconfirmed.
+        const isPendingTx = !!item.sentAt || !item.status?.confirmed;
+        const blockTime = isPendingTx ? null : item.status?.block_time;
         const historicalKey =
           typeof blockTime === 'number' && Number.isFinite(blockTime)
             ? getHistoricalRateKey(selectedCurrency, blockTime)
             : null;
         const historicalRate =
-          historicalKey != null ? historicalRatesMap[historicalKey] : null;
+          historicalKey != null ? historicalRatesMap[historicalKey] ?? null : null;
+        // Pending/unconfirmed txs fall back to the current live rate from WalletHome.
+        const effectiveRate =
+          historicalRate != null && historicalRate > 0
+            ? historicalRate
+            : isPendingTx && _btcRate > 0
+            ? _btcRate
+            : null;
         const getFiatAmount = (btcAmount: number) => {
-          if (historicalRate == null || historicalRate <= 0) return null;
-          return presentFiat(btcAmount * historicalRate);
+          if (effectiveRate == null || effectiveRate <= 0) return null;
+          return presentFiat(btcAmount * effectiveRate);
         };
         const fiatAmount =
-          historicalRate != null && historicalRate > 0
+          effectiveRate != null && effectiveRate > 0
             ? isConsolidation
               ? getFiatAmount(received)
               : status.includes('Sen')
@@ -1620,17 +1636,22 @@ const TransactionList = React.forwardRef<
             }}
             baseApi={baseApi}
             selectedCurrency={selectedCurrency}
-            historicalRate={
-              selectedTransaction?.sentAt ||
-              selectedTransaction?.status?.block_time == null
-                ? null
-                : historicalRatesMap[
+            historicalRate={(() => {
+              const selTx = selectedTransaction;
+              // Confirmed: use historical rate at block time.
+              if (!selTx?.sentAt && selTx?.status?.block_time != null) {
+                return (
+                  historicalRatesMap[
                     getHistoricalRateKey(
                       selectedCurrency,
-                      selectedTransaction.status.block_time,
+                      selTx.status.block_time,
                     )
                   ] ?? null
-            }
+                );
+              }
+              // Pending / unconfirmed: show value at current live rate.
+              return _btcRate > 0 ? _btcRate : null;
+            })()}
             getCurrencySymbol={getCurrencySymbol}
             status={
               selectedTransaction
