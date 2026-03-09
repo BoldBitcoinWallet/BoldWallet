@@ -618,7 +618,14 @@ export class WalletService {
     addressType: string,
   ): Promise<HdAddressWithPath[]> {
     const jks = await EncryptedStorage.getItem('keyshare');
-    if (!jks) return [];
+    if (!jks) {
+      dbg(
+        '[BALANCE] getHdAddressesWithPaths: keyshare not in EncryptedStorage — returning [].',
+        'network:', network, 'addressType:', addressType,
+        '(iOS Keychain may still be initialising after device unlock)',
+      );
+      return [];
+    }
     const ks = JSON.parse(jks);
     const useLegacyPath = isLegacyWallet(ks.created_at);
     const externalIdx = await getExternalIndex(network, addressType);
@@ -1417,6 +1424,20 @@ export class WalletService {
       );
       const addresses = addressesWithPaths.map(a => a.address);
 
+      // Guard: if the address list is empty the keyshare was not accessible
+      // (e.g. iOS Keychain still initialising immediately after device unlock).
+      // Fall back to the stored aggregate rather than returning 0.
+      if (addresses.length === 0) {
+        dbg(
+          '[BALANCE] getWalletBalanceAggregate: address list is EMPTY — keyshare unavailable.',
+          'network:', network, 'addressType:', addressType,
+          'Falling back to cached aggregate instead of returning 0.',
+        );
+        const cached = await this.getCachedAggregateBalance(network, addressType);
+        dbg('[BALANCE] getWalletBalanceAggregate: cached aggregate =', cached ? cached.btc + ' BTC' : 'NOT FOUND');
+        if (cached) return cached;
+      }
+
       let confirmedSats = new Big(0);
       let mempoolSats = new Big(0);
       let successCount = 0;
@@ -1473,12 +1494,24 @@ export class WalletService {
       // If every single address failed (no API response at all) and we have
       // a prior aggregate stored, return it rather than showing 0.
       if (successCount === 0 && addresses.length > 0) {
+        dbg(
+          '[BALANCE] getWalletBalanceAggregate: ALL', addresses.length,
+          'address API calls failed (successCount=0) — falling back to cached aggregate.',
+          'network:', network, 'addressType:', addressType,
+        );
         const cached = await this.getCachedAggregateBalance(network, addressType);
-        if (cached) {
-          dbg('WalletService: All addresses failed — returning cached aggregate balance');
-          return cached;
-        }
+        dbg('[BALANCE] getWalletBalanceAggregate: cached aggregate =', cached ? cached.btc + ' BTC' : 'NOT FOUND');
+        if (cached) return cached;
       }
+
+      dbg(
+        '[BALANCE] getWalletBalanceAggregate: API result —',
+        'addresses:', addresses.length,
+        'successCount:', successCount,
+        'confirmed:', confirmedSats.toFixed(0), 'sats',
+        'mempool:', mempoolSats.toFixed(0), 'sats',
+        'network:', network, 'addressType:', addressType,
+      );
 
       const totalSats = confirmedSats.add(mempoolSats);
       const balanceAfterPending = totalSats.sub(pendingSent);
