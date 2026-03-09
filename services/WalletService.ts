@@ -1420,6 +1420,16 @@ export class WalletService {
       let confirmedSats = new Big(0);
       let mempoolSats = new Big(0);
       let successCount = 0;
+
+      const applyAddrCache = (addr: string) => {
+        // Use last-known per-address balance from DB when the API call fails.
+        const cached = balanceRepository.getBalance(addr, network);
+        if (!cached || cached.fetchedAt === 0) return;
+        const confirmedPart = cached.balanceSats - cached.pendingSats;
+        if (confirmedPart > 0) confirmedSats = confirmedSats.add(confirmedPart);
+        if (cached.pendingSats !== 0) mempoolSats = mempoolSats.add(cached.pendingSats);
+      };
+
       for (const addr of addresses) {
         try {
           const res = await mempoolClient.get<{
@@ -1428,6 +1438,9 @@ export class WalletService {
           }>(`${cleanApi}/address/${encodeURIComponent(addr)}`);
 
           if (!res.ok) {
+            // Transient HTTP error — fall back to this address's DB balance so
+            // its sats are not silently dropped from the aggregate.
+            applyAddrCache(addr);
             continue;
           }
           successCount++;
@@ -1442,13 +1455,23 @@ export class WalletService {
           if (Number.isFinite(addrMempool) && addrMempool !== 0) {
             mempoolSats = mempoolSats.add(addrMempool);
           }
+          // Persist fresh per-address balance so future refreshes have a fallback.
+          balanceRepository.setBalance({
+            address: addr,
+            network,
+            balanceSats: Math.max(0, addrConfirmed) + Math.max(0, addrMempool),
+            pendingSats: addrMempool,
+            hasNonzero: addrConfirmed > 0 || addrMempool > 0,
+            fetchedAt: Date.now(),
+          });
         } catch {
-          // skip failed address, continue with the rest
+          // Network error — fall back to DB for this address.
+          applyAddrCache(addr);
         }
       }
 
-      // All per-address API calls failed silently — avoid returning a false zero.
-      // Serve from DB instead so the UI preserves the last known good balance.
+      // If every single address failed (no API response at all) and we have
+      // a prior aggregate stored, return it rather than showing 0.
       if (successCount === 0 && addresses.length > 0) {
         const cached = await this.getCachedAggregateBalance(network, addressType);
         if (cached) {

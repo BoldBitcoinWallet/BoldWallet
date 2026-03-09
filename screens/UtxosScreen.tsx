@@ -251,9 +251,70 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
   }, [apiBase, network, addressType]);
 
   useEffect(() => {
-    setLoading(true);
-    fetchUtxos();
-  }, [fetchUtxos]);
+    let cancelled = false;
+    (async () => {
+      // Phase 1 — read from DB immediately so the list is never blank on launch.
+      let hadCachedData = false;
+      try {
+        const addrs = await WalletService.getInstance().getHdAddressesWithPaths(
+          network,
+          addressType || 'segwit-native',
+        );
+        if (!cancelled && addrs.length > 0) {
+          const stored = utxoRepository.getUtxosForAddresses(
+            addrs.map(a => a.address),
+            network,
+          );
+          if (!cancelled && stored.length > 0) {
+            const preloaded: UtxoWithPath[] = stored.map(u => {
+              const info = addrs.find(a => a.address === u.address);
+              const parts = (u.derivationPath ?? '').split('/');
+              const chainNum = parseInt(parts.at(-2) ?? '', 10);
+              const chainIdx = parseInt(parts.at(-1) ?? '', 10);
+              return {
+                txid: u.txid,
+                vout: u.vout,
+                value: u.valueSats,
+                status: {
+                  confirmed: u.isConfirmed,
+                  block_height: u.blockHeight ?? undefined,
+                },
+                address: u.address,
+                derivationPath: u.derivationPath ?? info?.derivationPath ?? '',
+                chain: info?.chain ?? (chainNum === 1 ? 'change' : 'receive'),
+                chainIndex:
+                  info?.index ?? (Number.isNaN(chainIdx) ? 0 : chainIdx),
+              };
+            });
+            preloaded.sort((a, b) => {
+              if (a.chain !== b.chain) return a.chain === 'receive' ? -1 : 1;
+              if (a.chainIndex !== b.chainIndex)
+                return a.chainIndex - b.chainIndex;
+              return (
+                (b.status?.block_time ?? 0) - (a.status?.block_time ?? 0)
+              );
+            });
+            hadCachedData = true;
+            setUtxosWithPath(preloaded);
+            setLoading(false); // cached list visible; API will update in background
+          }
+        }
+      } catch {
+        // Pre-load failed — API fetch below will still populate the list
+      }
+
+      // Phase 2 — live API fetch (updates the already-visible cached list).
+      if (!cancelled) {
+        if (!hadCachedData) {
+          setLoading(true); // no cached data yet — show spinner
+        }
+        fetchUtxos();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchUtxos, network, addressType]);
 
   const headerLeft = useCallback(
     () => (
