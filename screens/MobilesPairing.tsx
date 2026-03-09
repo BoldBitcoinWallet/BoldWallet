@@ -52,7 +52,9 @@ import {
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {waitMS, WalletService} from '../services/WalletService';
-import LocalCache from '../services/LocalCache';
+import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
+import database from '../services/Database';
+import transactionRepository from '../services/repositories/TransactionRepository';
 import BackupKeyshareModal from '../components/BackupKeyshareModal';
 import SignedTxBroadcastModal from '../components/SignedTxBroadcastModal';
 const {BBMTLibNativeModule} = NativeModules;
@@ -278,16 +280,16 @@ const MobilesPairing = ({navigation}: any) => {
       if (setupMode === 'duo' || setupMode === 'trio') {
         try {
           dbg('=== MobilesPairing: Clearing all cache for wallet setup');
-          // Clear LocalCache
-          await LocalCache.clear();
-          dbg('LocalCache cleared successfully');
+          // Clear SQLite wallet data
+          database.clearWalletData();
+          dbg('SQLite wallet data cleared');
           // Clear stale EncryptedStorage items (but keep keyshare if it exists for signing)
           // We clear btcPub as it will be regenerated with the new keyshare
           await EncryptedStorage.removeItem('btcPub');
           dbg('Cleared stale btcPub from EncryptedStorage');
           // Clear WalletService cache
           try {
-            await LocalCache.removeItem('walletCache');
+            // stale key removed;
             dbg('WalletService cache cleared');
           } catch (error) {
             dbg('Error clearing WalletService cache:', error);
@@ -364,7 +366,7 @@ const MobilesPairing = ({navigation}: any) => {
         }
         // Fallback: fresh fetch (sender device, or QR has no utxosJson).
         const apiUrl =
-          (await LocalCache.getItem(`api_${net}`)) ||
+          (appConfigRepository.get(`api_${net}`)) ||
           (net === 'testnet3' || net === 'testnet'
             ? 'https://mempool.space/testnet/api'
             : 'https://mempool.space/api');
@@ -739,13 +741,13 @@ const MobilesPairing = ({navigation}: any) => {
       // For PSBT signing, network comes from app state, not route params
       if (isSignPSBT) {
         // Get network from LocalCache (app's current network state)
-        net = (await LocalCache.getItem('network')) || 'mainnet';
+        net = (appConfigRepository.get(CONFIG_KEYS.NETWORK)) || 'mainnet';
         dbg(
           'MobilesPairing: PSBT signing - using network from app state:',
           net,
         );
         // Set network and API in BBMTLib for this transaction
-        let apiUrl = await LocalCache.getItem(`api_${net}`);
+        let apiUrl = appConfigRepository.get(`api_${net}`);
         if (!apiUrl) {
           apiUrl =
             net === 'testnet3' || net === 'testnet'
@@ -806,8 +808,8 @@ const MobilesPairing = ({navigation}: any) => {
           satoshiFees,
         });
         // Store original network/API
-        originalNetwork = (await LocalCache.getItem('network')) || 'mainnet';
-        const cachedApi = await LocalCache.getItem(`api_${originalNetwork}`);
+        originalNetwork = (appConfigRepository.get(CONFIG_KEYS.NETWORK)) || 'mainnet';
+        const cachedApi = appConfigRepository.get(`api_${originalNetwork}`);
         originalApiUrl = cachedApi || '';
         if (!originalApiUrl) {
           originalApiUrl =
@@ -816,7 +818,7 @@ const MobilesPairing = ({navigation}: any) => {
               : 'https://mempool.space/api';
         }
         // Set network and API in BBMTLib for this transaction
-        let apiUrl = await LocalCache.getItem(`api_${net}`);
+        let apiUrl = appConfigRepository.get(`api_${net}`);
         if (!apiUrl) {
           apiUrl =
             net === 'testnet3' || net === 'testnet'
@@ -827,13 +829,13 @@ const MobilesPairing = ({navigation}: any) => {
         await BBMTLibNativeModule.setAPI(net, apiUrl);
         // CRITICAL: Update LocalCache 'api' key so any balance/UTXO fetches use correct API
         // This ensures operations use the network from route params, not device's current network
-        await LocalCache.setItem('api', apiUrl);
+        appConfigRepository.set('api', apiUrl);
         dbg('MobilesPairing: Set network and API in BBMTLib:', net, apiUrl);
       }
       // Store original network/API (for both PSBT and send BTC modes)
       if (isSignPSBT) {
-        originalNetwork = (await LocalCache.getItem('network')) || 'mainnet';
-        const cachedApi = await LocalCache.getItem(`api_${originalNetwork}`);
+        originalNetwork = (appConfigRepository.get(CONFIG_KEYS.NETWORK)) || 'mainnet';
+        const cachedApi = appConfigRepository.get(`api_${originalNetwork}`);
         originalApiUrl = cachedApi || '';
         if (!originalApiUrl) {
           originalApiUrl =
@@ -960,7 +962,7 @@ const MobilesPairing = ({navigation}: any) => {
         }
 
         const apiUrl =
-          (await LocalCache.getItem(`api_${net}`)) ||
+          (appConfigRepository.get(`api_${net}`)) ||
           (net === 'testnet3' || net === 'testnet'
             ? 'https://mempool.space/testnet/api'
             : 'https://mempool.space/api');
@@ -1189,7 +1191,7 @@ const MobilesPairing = ({navigation}: any) => {
           await BBMTLibNativeModule.setBtcNetwork(originalNetwork);
           await BBMTLibNativeModule.setAPI(originalNetwork, originalApiUrl);
           // Restore LocalCache 'api' key to original network's API
-          await LocalCache.setItem('api', originalApiUrl);
+          appConfigRepository.set('api', originalApiUrl);
           // Restore WalletService internal state
           const walletServiceError = WalletService.getInstance();
           (walletServiceError as any).currentNetwork = originalNetwork;
@@ -1407,7 +1409,7 @@ const MobilesPairing = ({navigation}: any) => {
       const deviceName = await DeviceInfo.getDeviceName();
       setLocalDevice(deviceName);
       setStatus('Starting peer discovery...');
-      await LocalCache.setItem('peerFound', '');
+      appConfigRepository.set('peerFound', '');
       const promises = [
         listenForPeerPromise(
           kp,
@@ -1433,7 +1435,7 @@ const MobilesPairing = ({navigation}: any) => {
       let result = await Promise.race(promises);
       while (!result && Date.now() < until) {
         dbg('checking peer...');
-        result = await LocalCache.getItem('peerFound');
+        result = appConfigRepository.get('peerFound');
         if (result) {
           dbg('checking peer ok...');
           break;
@@ -1450,7 +1452,7 @@ const MobilesPairing = ({navigation}: any) => {
           const extraWaitUntil = Date.now() + 3000; // wait up to 3s more
           while (Date.now() < extraWaitUntil && raws.length < 2) {
             await waitMS(300);
-            const updated = await LocalCache.getItem('peerFound');
+            const updated = appConfigRepository.get('peerFound');
             raws = (updated || result || '').split('|').filter(Boolean);
           }
         }
@@ -1607,7 +1609,7 @@ const MobilesPairing = ({navigation}: any) => {
           masterHost: resolvedMasterHost,
         });
         await Promise.allSettled(promises).then(() =>
-          LocalCache.removeItem('peerFound'),
+          appConfigRepository.remove('peerFound'),
         );
       } else {
         setStatus('Pairing timed out. Please try again.');
@@ -1669,7 +1671,7 @@ const MobilesPairing = ({navigation}: any) => {
         String(timeout),
         isTrio ? 'trio' : 'duo',
       );
-      await LocalCache.setItem('peerFound', result);
+      appConfigRepository.set('peerFound', result);
       return result;
     } catch (error) {
       dbg('ListenForPeer Error:', error);
@@ -1703,7 +1705,7 @@ const MobilesPairing = ({navigation}: any) => {
     });
     while (Date.now() < until) {
       try {
-        let peerFound = await LocalCache.getItem('peerFound');
+        let peerFound = appConfigRepository.get('peerFound');
         if (peerFound) {
           dbg('discoverPeer already found');
           return peerFound;
@@ -1723,7 +1725,7 @@ const MobilesPairing = ({navigation}: any) => {
         );
         if (result) {
           dbg('discoverPeer result', result);
-          await LocalCache.setItem('peerFound', result);
+          appConfigRepository.set('peerFound', result);
           return result;
         }
       } catch (error) {
@@ -4987,7 +4989,7 @@ const MobilesPairing = ({navigation}: any) => {
               }
             }
             const pendingTxs = JSON.parse(
-              (await LocalCache.getItem(`${p.pendingKey}-pendingTxs`)) || '{}',
+              JSON.stringify(transactionRepository.getPendingTxMap(p.pendingKey, p.net || 'mainnet')),
             );
             pendingTxs[txId] = {
               txid: txId,
@@ -4999,10 +5001,7 @@ const MobilesPairing = ({navigation}: any) => {
               sentAt: Date.now(),
               status: {confirmed: false, block_height: null},
             };
-            await LocalCache.setItem(
-              `${p.pendingKey}-pendingTxs`,
-              JSON.stringify(pendingTxs),
-            );
+            transactionRepository.setPendingTxMap(p.pendingKey, p.net || 'mainnet', pendingTxs);
             navigation.dispatch(
               CommonActions.reset(
                 getResetToMainTabsWallet(
@@ -5024,7 +5023,7 @@ const MobilesPairing = ({navigation}: any) => {
                   p.originalNetwork,
                   p.originalApiUrl,
                 );
-                await LocalCache.setItem('api', p.originalApiUrl);
+                appConfigRepository.set('api', p.originalApiUrl);
                 const ws = WalletService.getInstance();
                 (ws as any).currentNetwork = p.originalNetwork;
                 (ws as any).currentApiUrl = p.originalApiUrl;

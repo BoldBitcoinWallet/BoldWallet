@@ -2,7 +2,7 @@ import React, {createContext, useContext, useState, useEffect} from 'react';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {NativeModules} from 'react-native';
 import {dbg, getReceivePath, isLegacyWallet} from '../utils';
-import LocalCache from '../services/LocalCache';
+import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {getExternalIndex} from '../services/HdIndexService';
 const {BBMTLibNativeModule} = NativeModules;
 interface WalletContextType {
@@ -24,13 +24,11 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
   const handleAddressTypeChange = async (type: string) => {
     try {
       dbg('WalletContext: Changing address type to:', type);
-      await LocalCache.setItem('addressType', type);
+      appConfigRepository.set(CONFIG_KEYS.ADDRESS_TYPE, type);
       setAddressType(type);
-      // Refresh wallet to generate new address
       await refreshWallet();
     } catch (error) {
       dbg('WalletContext: Error changing address type:', error);
-      dbg('Error changing address type:', error);
     }
   };
   const refreshWallet = async () => {
@@ -42,15 +40,12 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
         return;
       }
       const ks = JSON.parse(jks);
-      // Get current network
-      let net = await LocalCache.getItem('network');
-      if (!net) {
-        net = 'mainnet';
-        await LocalCache.setItem('network', net);
+      let net = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
+      if (!appConfigRepository.get(CONFIG_KEYS.NETWORK)) {
+        appConfigRepository.set(CONFIG_KEYS.NETWORK, net);
       }
       dbg('WalletContext: Current network:', net);
-      // Get current address type for path calculation
-      const storedAddressType = await LocalCache.getItem('addressType');
+      const storedAddressType = appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE);
       const currentAddressType = (storedAddressType as string) || 'segwit-native';
       // Check if this is a legacy wallet (created before migration timestamp)
       const useLegacyPath = isLegacyWallet(ks.created_at);
@@ -81,15 +76,12 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
       // Update state
       setAddress(btcAddress);
       setNetwork(net!!);
-      // Handle API URL
       let base = netParams.split('@')[1];
-      // Ensure base URL doesn't end with a slash
       if (base.endsWith('/')) {
         base = base.substring(0, base.length - 1);
       }
-      let api = await LocalCache.getItem('api');
+      let api = appConfigRepository.get('api');
       if (api) {
-        // Ensure API URL doesn't end with a slash
         if (api.endsWith('/')) {
           api = api.substring(0, api.length - 1);
         }
@@ -98,7 +90,7 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
         setBaseApi(api);
       } else {
         dbg('WalletContext: Using default API URL:', base);
-        await LocalCache.setItem('api', base);
+        appConfigRepository.set('api', base);
         setBaseApi(base);
       }
       dbg('WalletContext: Wallet refresh completed');

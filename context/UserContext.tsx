@@ -7,7 +7,7 @@ import React, {
   useState,
 } from 'react';
 import EncryptedStorage from 'react-native-encrypted-storage';
-import LocalCache from '../services/LocalCache';
+import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {BBMTLibNativeModule} from '../native_modules';
 import {getReceivePath, isLegacyWallet, dbg} from '../utils';
 import {getExternalIndex} from '../services/HdIndexService';
@@ -162,69 +162,31 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     };
     loadBalanceFormatting();
   }, []);
-  // Load mempool playground tab preference (Settings; default off)
+  // Load tab preferences from SQLite (synchronous reads)
   useEffect(() => {
-    const loadShowMempoolPlayground = async () => {
-      try {
-        const stored = await LocalCache.getItem('mempool_playground_enabled');
-        setShowMempoolPlaygroundState(stored === 'true');
-      } catch {
-        setShowMempoolPlaygroundState(false);
-      }
-    };
-    loadShowMempoolPlayground();
+    try {
+      setShowMempoolPlaygroundState(appConfigRepository.getBool(CONFIG_KEYS.TAB_MEMPOOL_ENABLED, false));
+      setShowUtxosTabState(appConfigRepository.getBool(CONFIG_KEYS.TAB_UTXOS_ENABLED, false));
+      setShowPsbtTabState(appConfigRepository.getBool(CONFIG_KEYS.TAB_PSBT_ENABLED, false));
+      const walletEnabled = appConfigRepository.get(CONFIG_KEYS.TAB_WALLET_ENABLED);
+      setShowWalletTabState(walletEnabled !== 'false');
+    } catch {
+      // defaults already set by useState
+    }
   }, []);
-  // Load UTXOs tab preference (Settings; default off)
-  useEffect(() => {
-    const loadShowUtxosTab = async () => {
-      try {
-        const stored = await LocalCache.getItem('utxos_tab_enabled');
-        setShowUtxosTabState(stored === 'true');
-      } catch {
-        setShowUtxosTabState(false);
-      }
-    };
-    loadShowUtxosTab();
-  }, []);
-  // Load PSBT tab preference (Settings; default off)
-  useEffect(() => {
-    const loadShowPsbtTab = async () => {
-      try {
-        const stored = await LocalCache.getItem('psbt_tab_enabled');
-        setShowPsbtTabState(stored === 'true');
-      } catch {
-        setShowPsbtTabState(false);
-      }
-    };
-    loadShowPsbtTab();
-  }, []);
-  // Load Wallet tab preference (Settings; default on)
-  useEffect(() => {
-    const loadShowWalletTab = async () => {
-      try {
-        const stored = await LocalCache.getItem('wallet_tab_enabled');
-        setShowWalletTabState(stored !== 'false');
-      } catch {
-        setShowWalletTabState(true);
-      }
-    };
-    loadShowWalletTab();
-  }, []);
-  // Initialize network/api from cache (migrated from NetworkContext)
+  // Initialize network/api from SQLite (synchronous reads)
   useEffect(() => {
     const initializeNetwork = async () => {
       try {
-        const net = (await LocalCache.getItem('network')) || 'mainnet';
+        const net = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
         setNetwork(net);
-        let api = await LocalCache.getItem(`api_${net}`);
+        let api = appConfigRepository.get(`api_${net}`) || appConfigRepository.get('api');
         if (!api) {
-          api =
-            (await LocalCache.getItem('api')) ||
-            (net === 'testnet3'
-              ? 'https://mempool.space/testnet/api'
-              : 'https://mempool.space/api');
-          await LocalCache.setItem('api', api);
-          await LocalCache.setItem(`api_${net}`, api);
+          api = net === 'testnet3'
+            ? 'https://mempool.space/testnet/api'
+            : 'https://mempool.space/api';
+          appConfigRepository.set('api', api);
+          appConfigRepository.set(`api_${net}`, api);
         }
         setApiBase(api);
         await BBMTLibNativeModule.setAPI(net, api);
@@ -303,9 +265,7 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     });
     try {
       // Load address type
-      const storedType = (await LocalCache.getItem(
-        'addressType',
-      )) as AddressType | null;
+      const storedType = appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) as AddressType | null;
       const currentAddressType = (storedType as AddressType) || 'segwit-native';
       dbg(`[UserContext] refresh() - Address type loaded:`, {
         timestamp: Date.now(),
@@ -413,27 +373,21 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
   const handleSetActiveNetwork = useCallback(
     async (newNetwork: string) => {
       try {
-        // Save current API for the current network before switching
-        const currentApi = apiBase;
-        if (currentApi) {
-          await LocalCache.setItem(`api_${network}`, currentApi);
+        if (apiBase) {
+          appConfigRepository.set(`api_${network}`, apiBase);
         }
-        // Cache the new network
-        await LocalCache.setItem('network', newNetwork);
-        // Try to get the previously selected API for this network, fallback to default
-        let nextApi = await LocalCache.getItem(`api_${newNetwork}`);
+        appConfigRepository.set(CONFIG_KEYS.NETWORK, newNetwork);
+        let nextApi = appConfigRepository.get(`api_${newNetwork}`);
         if (!nextApi) {
           nextApi =
             newNetwork === 'testnet3'
               ? 'https://mempool.space/testnet/api'
               : 'https://mempool.space/api';
         }
-        // Cache and update state
-        await LocalCache.setItem(`api_${newNetwork}`, nextApi);
-        await LocalCache.setItem('api', nextApi);
+        appConfigRepository.set(`api_${newNetwork}`, nextApi);
+        appConfigRepository.set('api', nextApi);
         setNetwork(newNetwork);
         setApiBase(nextApi);
-        // Update native module
         await BBMTLibNativeModule.setAPI(newNetwork, nextApi);
       } catch {
         // no-op
@@ -443,14 +397,12 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
   );
   const handleSetActiveAddressType = useCallback(
     async (newType: AddressType) => {
-      await LocalCache.setItem('addressType', newType);
+      appConfigRepository.set(CONFIG_KEYS.ADDRESS_TYPE, newType);
       setActiveAddressTypeState(newType);
-      // Clear cached btcPub so it will be re-derived with the new address type
       await EncryptedStorage.removeItem('btcPub');
-      // Refresh to derive new addresses with the new address type
       await refresh();
       if (activeAddress) {
-        await LocalCache.setItem('currentAddress', activeAddress);
+        appConfigRepository.set(CONFIG_KEYS.CURRENT_ADDRESS, activeAddress);
       }
     },
     [activeAddress, refresh],
@@ -458,8 +410,8 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
   const handleSetActiveApiProvider = useCallback(
     async (newApi: string) => {
       try {
-        await LocalCache.setItem(`api_${network}`, newApi);
-        await LocalCache.setItem('api', newApi);
+        appConfigRepository.set(`api_${network}`, newApi);
+        appConfigRepository.set('api', newApi);
         setApiBase(newApi);
         await BBMTLibNativeModule.setAPI(network, newApi);
       } catch {
@@ -486,35 +438,19 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
   }, []);
   const setShowMempoolPlayground = useCallback(async (value: boolean) => {
     setShowMempoolPlaygroundState(value);
-    try {
-      await LocalCache.setItem('mempool_playground_enabled', value ? 'true' : 'false');
-    } catch {
-      // no-op
-    }
+    appConfigRepository.setBool(CONFIG_KEYS.TAB_MEMPOOL_ENABLED, value);
   }, []);
   const setShowUtxosTab = useCallback(async (value: boolean) => {
     setShowUtxosTabState(value);
-    try {
-      await LocalCache.setItem('utxos_tab_enabled', value ? 'true' : 'false');
-    } catch {
-      // no-op
-    }
+    appConfigRepository.setBool(CONFIG_KEYS.TAB_UTXOS_ENABLED, value);
   }, []);
   const setShowPsbtTab = useCallback(async (value: boolean) => {
     setShowPsbtTabState(value);
-    try {
-      await LocalCache.setItem('psbt_tab_enabled', value ? 'true' : 'false');
-    } catch {
-      // no-op
-    }
+    appConfigRepository.setBool(CONFIG_KEYS.TAB_PSBT_ENABLED, value);
   }, []);
   const setShowWalletTab = useCallback(async (value: boolean) => {
     setShowWalletTabState(value);
-    try {
-      await LocalCache.setItem('wallet_tab_enabled', value ? 'true' : 'false');
-    } catch {
-      // no-op
-    }
+    appConfigRepository.setBool(CONFIG_KEYS.TAB_WALLET_ENABLED, value);
   }, []);
   const value: UserContextType = {
     btcPub,

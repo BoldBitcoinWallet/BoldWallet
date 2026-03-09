@@ -46,7 +46,8 @@ import {
 import {useTheme} from '../theme';
 import {WalletService} from '../services/WalletService';
 import mempoolClient from '../services/MempoolClient';
-import LocalCache from '../services/LocalCache';
+import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
+import database from '../services/Database';
 import LegalModal from '../components/LegalModal';
 import BackupKeyshareModal from '../components/BackupKeyshareModal';
 import RestoringIndexesModal from '../components/RestoringIndexesModal';
@@ -797,8 +798,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       try {
         const ws = WalletService.getInstance();
         const apiUrl =
-          (await LocalCache.getItem(`api_${network}`)) ||
-          (await LocalCache.getItem('api')) ||
+          appConfigRepository.get(`api_${network}`) ||
+          appConfigRepository.get('api') ||
           (network === 'mainnet'
             ? 'https://mempool.space/api'
             : 'https://mempool.space/testnet/api');
@@ -850,9 +851,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     setAppVersion(DeviceInfo.getVersion());
     setBuildNumber(DeviceInfo.getBuildNumber());
     setHapticsEnabledState(areHapticsEnabled());
-    LocalCache.usageSize().then(size => {
-      setUsageSize(size);
-    });
+    setUsageSize({fileCount: 0, mb: '0.00 MB'});
     // Initialize debug logging state from module-level ref
     setDebugLoggingEnabledState(isDebugLoggingEnabled());
     // Load dev debug enabled preference
@@ -913,56 +912,24 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('Failed to parse keyshare for settings screen:', error);
       }
     });
-    // Load network and corresponding cached API
-    LocalCache.getItem('network').then(async net => {
+    // Load network and corresponding cached API (synchronous SQLite reads)
+    (() => {
+      const net = appConfigRepository.get(CONFIG_KEYS.NETWORK);
       dbg('=== Loading settings for network:', net);
       setIsTestnet(net !== 'mainnet');
-      // Clear any pending API changes when switching networks
       setPendingAPI('');
-      // Try to get the cached API for this network
-      const cachedApi = await LocalCache.getItem(`api_${net}`);
-      dbg(`Cached API for ${net}:`, cachedApi);
-      if (cachedApi) {
-        setBaseAPI(cachedApi);
-        setPendingAPI(cachedApi); // Initialize pending API to current API
-        // Update the current API cache
-        await LocalCache.setItem('api', cachedApi);
-        // Update native module with the cached API
-        if (net) {
-          await BBMTLibNativeModule.setAPI(net, cachedApi);
-        }
-        dbg(`=== Loaded cached API for ${net}:`, cachedApi);
-      } else {
-        // Fallback to current API or default
-        const currentApi = await LocalCache.getItem('api');
-        dbg('Current API (fallback):', currentApi);
-        if (currentApi) {
-          setBaseAPI(currentApi);
-          setPendingAPI(currentApi); // Initialize pending API to current API
-          // Cache it for this network
-          await LocalCache.setItem(`api_${net}`, currentApi);
-          // Update native module
-          if (net) {
-            await BBMTLibNativeModule.setAPI(net, currentApi);
-          }
-          dbg(`=== Cached current API for ${net}:`, currentApi);
-        } else {
-          // Use default API for the network
-          const defaultApi =
-            net === 'mainnet'
-              ? 'https://mempool.space/api'
-              : 'https://mempool.space/testnet/api';
-          setBaseAPI(defaultApi);
-          setPendingAPI(defaultApi); // Initialize pending API to default API
-          await LocalCache.setItem('api', defaultApi);
-          await LocalCache.setItem(`api_${net}`, defaultApi);
-          if (net) {
-            await BBMTLibNativeModule.setAPI(net, defaultApi);
-          }
-          dbg(`=== Using default API for ${net}:`, defaultApi);
-        }
+      let resolvedApi = appConfigRepository.get(`api_${net}`) || appConfigRepository.get('api');
+      if (!resolvedApi) {
+        resolvedApi = net === 'mainnet'
+          ? 'https://mempool.space/api'
+          : 'https://mempool.space/testnet/api';
+        appConfigRepository.set('api', resolvedApi);
+        if (net) appConfigRepository.set(`api_${net}`, resolvedApi);
       }
-    });
+      setBaseAPI(resolvedApi);
+      setPendingAPI(resolvedApi);
+      if (net) BBMTLibNativeModule.setAPI(net, resolvedApi);
+    })();
     // Load Nostr relays (from cache if available, otherwise fetch dynamically)
     getNostrRelays(false).then(relays => {
       const relaysCSV = relays.join(',');
@@ -1011,22 +978,16 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   };
   const resetAPI = async () => {
     dbg('resetAPI called');
-    const net = await LocalCache.getItem('network');
+    const net = appConfigRepository.get(CONFIG_KEYS.NETWORK);
     const api =
       net === 'mainnet'
-        ? 'https://mempool.space/api' // MAINNET_APIS[0]
-        : 'https://mempool.space/testnet/api'; // TESTNET_APIS[0]
-    dbg('Resetting to default API for network:', net, 'API:', api);
-    // Clear pending API selection and set to new API
+        ? 'https://mempool.space/api'
+        : 'https://mempool.space/testnet/api';
     setPendingAPI(api);
-    // Update local state
     setBaseAPI(api);
-    dbg('Local state updated with API:', api);
-    // Cache the API setting for the current network
     if (net) {
-      await LocalCache.setItem(`api_${net}`, api);
-      await LocalCache.setItem('api', api);
-      dbg(`API cached for network ${net}:`, api);
+      appConfigRepository.set(`api_${net}`, api);
+      appConfigRepository.set('api', api);
     }
     // Update native module
     if (net) {
@@ -1164,8 +1125,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       try {
         setIsDeleting(true);
         setIsModalResetVisible(false);
-        dbg('clearing cache storage...');
-        await LocalCache.clear();
+        dbg('clearing SQLite wallet data...');
+        database.clearWalletData();
         mempoolClient.invalidateAll();
         dbg('clearing encrypted storage...');
         // Prefer a full clear so we return to true first-launch state.
@@ -2592,8 +2553,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 try {
                   setIsRestoringIndexes(true);
                   setRestoreProgress(null);
-                  dbg('WalletSettings: Storage clear - clearing LocalCache');
-                  await LocalCache.clear();
+                  dbg('WalletSettings: Storage clear - clearing SQLite wallet data');
+                  database.clearWalletData();
                   dbg(
                     'WalletSettings: LocalCache cleared, running restore discovery',
                     {
@@ -2631,10 +2592,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   );
                   mempoolClient.invalidateAll();
                   // Re-persist network/api so app continues to work
-                  await LocalCache.setItem('network', activeNetwork);
-                  await LocalCache.setItem('api', apiUrl);
-                  await LocalCache.setItem('addressType', activeAddressType);
-                  setUsageSize(await LocalCache.usageSize());
+                  appConfigRepository.set(CONFIG_KEYS.NETWORK, activeNetwork);
+                  appConfigRepository.set('api', apiUrl);
+                  appConfigRepository.set(CONFIG_KEYS.ADDRESS_TYPE, activeAddressType);
+                  setUsageSize({fileCount: 0, mb: '0.00 MB'});
                   dbg('WalletSettings: Storage clear complete');
                   Alert.alert('Cache Cleared', 'Cache cleared successfully.');
                   navigation.reset(
@@ -3153,7 +3114,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                         return;
                       }
                       const relaysCSV = relays.join(',');
-                      await LocalCache.setItem('nostr_relays', relaysCSV);
+                      appConfigRepository.set('nostr_relays', relaysCSV);
                       setNostrRelays(relaysCSV);
                       Alert.alert(
                         'Success',

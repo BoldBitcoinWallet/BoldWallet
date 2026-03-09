@@ -23,7 +23,9 @@ import {useTheme} from '../theme';
 import {dbg, isLegacyWallet} from '../utils';
 import LegalModal from '../components/LegalModal';
 import TransportModeSelector from '../components/TransportModeSelector';
-import LocalCache from '../services/LocalCache';
+import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
+import database from '../services/Database';
+import transactionRepository from '../services/repositories/TransactionRepository';
 import {useUser} from '../context/UserContext';
 const {BBMTLibNativeModule} = NativeModules;
 const ShowcaseScreen = ({navigation}: any) => {
@@ -52,16 +54,16 @@ const ShowcaseScreen = ({navigation}: any) => {
     const clearAllCache = async () => {
       try {
         dbg('=== ShowcaseScreen: Clearing all cache for wallet import');
-        // Clear LocalCache
-        await LocalCache.clear();
-        dbg('LocalCache cleared successfully');
+        // Clear SQLite wallet data
+        database.clearWalletData();
+        dbg('SQLite wallet data cleared');
         // Clear stale EncryptedStorage items (but keep keyshare if it exists)
         // We clear btcPub as it will be regenerated with the imported keyshare
         await EncryptedStorage.removeItem('btcPub');
         dbg('Cleared stale btcPub from EncryptedStorage');
         // Clear WalletService cache
         try {
-          await LocalCache.removeItem('walletCache');
+          // stale key removed;
           dbg('WalletService cache cleared');
         } catch (error) {
           dbg('Error clearing WalletService cache:', error);
@@ -187,10 +189,7 @@ const ShowcaseScreen = ({navigation}: any) => {
         // Reset legacy wallet modal flag for new wallet
         // If legacy wallet, set to "no" (show modal); if not legacy, set to "yes" (won't show anyway)
         const isLegacy = isLegacyWallet(ks.created_at);
-        await LocalCache.setItem(
-          'legacyWalletModalDoNotRemind',
-          isLegacy ? 'no' : 'yes',
-        );
+        appConfigRepository.set(CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND, isLegacy ? 'no' : 'yes');
         // CRITICAL: Always reset network to mainnet on keyshare import
         // This ensures a clean state and proper address derivation for the new wallet
         dbg('=== Keyshare imported: Resetting network to mainnet');

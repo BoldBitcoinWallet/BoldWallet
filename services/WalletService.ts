@@ -8,8 +8,12 @@ import {
   GAP_LIMIT,
   isLegacyWallet,
 } from '../utils';
-import LocalCache from './LocalCache';
 import mempoolClient from './MempoolClient';
+import appConfigRepository, {CONFIG_KEYS} from './repositories/AppConfigRepository';
+import balanceRepository from './repositories/BalanceRepository';
+import transactionRepository from './repositories/TransactionRepository';
+import priceRepository from './repositories/PriceRepository';
+import walletRepository from './repositories/WalletRepository';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {
   getChangeIndex,
@@ -220,37 +224,82 @@ export class WalletService {
     }
   }
   private async setBal(address: string, balance: WalletBalance) {
-    await LocalCache.setItem(
-      `wallet_balance_${address}`,
-      JSON.stringify({...balance, timestamp: balance.timestamp ?? Date.now()}),
-    );
+    const sats = Math.round((parseFloat(balance.btc) || 0) * 100_000_000);
+    balanceRepository.setBalance({
+      address,
+      network: this.currentNetwork,
+      balanceSats: sats,
+      pendingSats: balance.pendingSats ?? 0,
+      hasNonzero: balance.hasNonZeroBalance,
+      fetchedAt: balance.timestamp ?? Date.now(),
+    });
   }
   private async setTxs(address: string, transactions: Transaction[]) {
-    await LocalCache.setItem(
-      `wallet_transactions_${address}`,
-      JSON.stringify({transactions, timestamp: Date.now()}),
-    );
+    const now = Date.now();
+    for (const tx of transactions) {
+      const status = tx.status ?? {};
+      transactionRepository.upsertTransaction(
+        {
+          txid: tx.txid,
+          network: this.currentNetwork,
+          blockHeight: status.block_height ?? null,
+          blockHash: null,
+          blockTime: status.block_time ?? tx.timestamp ?? null,
+          isConfirmed: status.confirmed === true,
+          feeSats: tx.fee ?? null,
+          size: null,
+          weight: null,
+          version: null,
+          locktime: null,
+          rawJson: JSON.stringify(tx),
+          fetchedAt: now,
+        },
+        [{txid: tx.txid, network: this.currentNetwork, address, netSats: null}],
+      );
+    }
   }
   public async getBal(address: string): Promise<WalletBalance> {
-    const balance = await LocalCache.getItem(`wallet_balance_${address}`);
-    return JSON.parse(
-      balance ||
-        '{"btc":"0.00000000","usd":"$0.00","hasNonZeroBalance":false,"timestamp":0}',
-    );
+    const stored = balanceRepository.getBalance(address, this.currentNetwork);
+    if (!stored) {
+      return {btc: '0.00000000', usd: '$0.00', hasNonZeroBalance: false, timestamp: 0};
+    }
+    return {
+      btc: (stored.balanceSats / 1e8).toFixed(8),
+      usd: '$0.00',
+      hasNonZeroBalance: stored.hasNonzero,
+      timestamp: stored.fetchedAt,
+      pendingSats: stored.pendingSats,
+    };
   }
   public async getTxs(address: string): Promise<CachedTransactionData> {
-    const txs = await LocalCache.getItem(`wallet_transactions_${address}`);
-    return txs ? JSON.parse(txs) : {transactions: [], timestamp: 0};
+    const txs = transactionRepository.getTransactionsForAddress(address, this.currentNetwork);
+    if (!txs.length) return {transactions: [], timestamp: 0};
+    const transactions: Transaction[] = txs.map(r => {
+      try {
+        return JSON.parse(r.rawJson) as Transaction;
+      } catch {
+        return {
+          txid: r.txid,
+          timestamp: r.blockTime ?? undefined,
+          amount: 0,
+          fee: r.feeSats ?? 0,
+          status: {confirmed: r.isConfirmed, block_height: r.blockHeight ?? undefined, block_time: r.blockTime ?? undefined},
+          type: 'receive',
+          address,
+        };
+      }
+    });
+    return {transactions, timestamp: Date.now()};
   }
   private async setPrice(price: {
     price: string;
     rate: number;
     rates: {[key: string]: number};
   }) {
-    await LocalCache.setItem(
-      'price',
-      JSON.stringify({...price, timestamp: Date.now()}),
-    );
+    priceRepository.setCurrentRates(price.rates);
+    if (!price.rates.USD && price.rate) {
+      priceRepository.setCurrentRate('USD', price.rate);
+    }
   }
   public async getCachePrice(): Promise<{
     price: string;
@@ -258,23 +307,26 @@ export class WalletService {
     rates: {[key: string]: number};
     timestamp: number;
   }> {
-    const price = await LocalCache.getItem('price');
-    return price
-      ? JSON.parse(price)
+    const cached = priceRepository.getCachedPrice('USD');
+    return cached
+      ? cached
       : {price: '$0.00', rate: 0, rates: {}, timestamp: 0};
   }
   private async getStoredState() {
     try {
-      const network = (await LocalCache.getItem('network')) || 'mainnet';
-      const addressType = (await LocalCache.getItem('addressType')) || 'legacy';
-      let api = await LocalCache.getItem('api');
+      const network = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
+      const addressType = appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'legacy';
+      let api = appConfigRepository.get(`api_${network}`);
+      if (!api) {
+        api = appConfigRepository.get('api');
+      }
       if (!api) {
         api =
           network === 'mainnet'
             ? 'https://mempool.space/api'
             : 'https://mempool.space/testnet/api';
       }
-      const address = await LocalCache.getItem('currentAddress');
+      const address = appConfigRepository.get(CONFIG_KEYS.CURRENT_ADDRESS);
       return {
         network,
         addressType,
@@ -294,16 +346,16 @@ export class WalletService {
   }) {
     try {
       if (state.network) {
-        await LocalCache.setItem('network', state.network);
+        appConfigRepository.set(CONFIG_KEYS.NETWORK, state.network);
       }
       if (state.addressType) {
-        await LocalCache.setItem('addressType', state.addressType);
+        appConfigRepository.set(CONFIG_KEYS.ADDRESS_TYPE, state.addressType);
       }
       if (state.api) {
-        await LocalCache.setItem('api', state.api);
+        appConfigRepository.set('api', state.api);
       }
       if (state.address) {
-        await LocalCache.setItem('currentAddress', state.address);
+        appConfigRepository.set(CONFIG_KEYS.CURRENT_ADDRESS, state.address);
       }
       dbg('WalletService: Saved state to storage:', state);
     } catch (error) {
@@ -952,18 +1004,8 @@ export class WalletService {
         durationMs,
       });
       // Mark restore discovery as completed for this (network, addressType) pair
-      await LocalCache.setItem(
-        `hd_restore_done_${network}_${addressType}`,
-        'yes',
-      );
-      await LocalCache.setItem(
-        `hd_discovery_status_${network}_${addressType}`,
-        'ok',
-      );
-      await LocalCache.setItem(
-        `hd_discovery_last_at_${network}_${addressType}`,
-        String(Date.now()),
-      );
+      walletRepository.setRestoreDone(network, addressType, true);
+      walletRepository.setDiscoveryStatus(network, addressType, 'ok', Date.now());
     } else {
       dbg(
         'WalletService: Restore discovery aborted, keeping previous HD indexes',
@@ -977,14 +1019,7 @@ export class WalletService {
           durationMs,
         },
       );
-      await LocalCache.setItem(
-        `hd_discovery_status_${network}_${addressType}`,
-        discoveryStatus,
-      );
-      await LocalCache.setItem(
-        `hd_discovery_last_at_${network}_${addressType}`,
-        String(Date.now()),
-      );
+      walletRepository.setDiscoveryStatus(network, addressType, discoveryStatus, Date.now());
     }
 
     dbg('WalletService: discoverHdIndexesForNetwork COMPLETE', {
@@ -1137,8 +1172,7 @@ export class WalletService {
       this.fetchTimeout = {};
       // Clear persistent storage
       try {
-        await LocalCache.removeItem('walletCache');
-        dbg('WalletService: Cleared persistent cache');
+        dbg('WalletService: Cleared persistent cache (walletCache key deprecated)');
       } catch (error) {
         dbg('WalletService: Error clearing persistent cache:', error);
       }
@@ -1274,7 +1308,7 @@ export class WalletService {
         throw new Error('Invalid pending amount');
       }
       BBMTLibNativeModule.setAPI(this.currentNetwork, this.currentApiUrl);
-      const api = await LocalCache.getItem('api');
+      const api = appConfigRepository.get('api') || this.currentApiUrl;
       if (!api) {
         dbg('WalletService: No API URL found');
         throw new Error('No API URL found');
@@ -1372,7 +1406,7 @@ export class WalletService {
           timestamp: Date.now(),
         };
       }
-      const api = await LocalCache.getItem('api');
+      const api = appConfigRepository.get('api') || this.currentApiUrl;
       if (!api) throw new Error('No API URL found');
       const cleanApi = api.replace(/\/+$/, '');
 
@@ -1436,8 +1470,16 @@ export class WalletService {
         timestamp: Date.now(),
         pendingSats: pendingSatsValue,
       };
-      const cacheKey = `wallet_balance_aggregate_${network}_${addressType}`;
-      await LocalCache.setItem(cacheKey, JSON.stringify(result));
+      // Persist aggregate under a virtual address key for the HD wallet
+      const aggAddress = `aggregate_${network}_${addressType}`;
+      balanceRepository.setBalance({
+        address: aggAddress,
+        network,
+        balanceSats: Math.round(Number(newBalance) * 1e8),
+        pendingSats: pendingSatsValue,
+        hasNonzero: hasNonZeroBalance,
+        fetchedAt: result.timestamp,
+      });
       dbg('WalletService: getWalletBalanceAggregate result:', result);
       return result;
     } catch (error) {
@@ -1460,14 +1502,16 @@ export class WalletService {
     network: string,
     addressType: string,
   ): Promise<WalletBalance | null> {
-    const cacheKey = `wallet_balance_aggregate_${network}_${addressType}`;
-    const raw = await LocalCache.getItem(cacheKey);
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw) as WalletBalance;
-    } catch {
-      return null;
-    }
+    const aggAddress = `aggregate_${network}_${addressType}`;
+    const stored = balanceRepository.getBalance(aggAddress, network);
+    if (!stored) return null;
+    return {
+      btc: (stored.balanceSats / 1e8).toFixed(8),
+      usd: '$0.00',
+      hasNonZeroBalance: stored.hasNonzero,
+      timestamp: stored.fetchedAt,
+      pendingSats: stored.pendingSats,
+    };
   }
 
   public getTransactionDetails(

@@ -21,7 +21,7 @@ import Animated, {
 import AppPressable from '../components/AppPressable';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
-import LocalCache from '../services/LocalCache';
+import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {
   HeaderPriceButton,
   HeaderProvider,
@@ -218,7 +218,7 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
 
   // Header: same as WalletHome – price (left), provider (center), network (right)
   useEffect(() => {
-    LocalCache.getItem('currency').then(c => setSelectedCurrency(c || 'USD'));
+    setSelectedCurrency(appConfigRepository.get(CONFIG_KEYS.CURRENCY) || 'USD');
   }, []);
   useEffect(() => {
     if (!apiBase) return;

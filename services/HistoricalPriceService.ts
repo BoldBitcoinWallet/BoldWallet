@@ -3,28 +3,23 @@
  * Used by transaction list and details to show fiat at the time of the tx (not current rate).
  *
  * - Cache key: currency + timestamp rounded to UTC day (one rate per day per currency).
- * - In-memory map for fast lookups; LocalCache for persistence across app restarts.
+ * - In-memory map for fast lookups; PriceRepository (SQLite) for persistence.
  * - Fetches via MempoolClient (GET /api/v1/historical-price?currency=...&timestamp=...).
  */
 
 import mempoolClient from './MempoolClient';
-import LocalCache from './LocalCache';
+import priceRepository, {toDayTimestamp} from './repositories/PriceRepository';
 import {dbg} from '../utils';
 
-const CACHE_KEY_PREFIX = 'historical_price_';
-/** Round timestamp to UTC day (Unix seconds) to reduce cache keys. */
-const SEC_PER_DAY = 86400;
-
-function cacheKey(currency: string, timestampUnixSec: number): string {
-  const day = Math.floor(timestampUnixSec / SEC_PER_DAY) * SEC_PER_DAY;
-  return `${CACHE_KEY_PREFIX}${currency}_${day}`;
-}
-
-/** In-memory cache: key -> rate (price per 1 BTC). */
+/** In-memory cache: "<currency>_<dayTimestamp>" -> rate */
 const memoryCache = new Map<string, number>();
 
+function memKey(currency: string, timestampUnixSec: number): string {
+  return `${currency}_${toDayTimestamp(timestampUnixSec)}`;
+}
+
 export interface HistoricalPriceResponse {
-  prices?: Array<{ time?: number; [currency: string]: number | undefined }>;
+  prices?: Array<{time?: number; [currency: string]: number | undefined}>;
 }
 
 class HistoricalPriceService {
@@ -39,29 +34,33 @@ class HistoricalPriceService {
 
   /**
    * Returns the BTC rate (fiat per 1 BTC) at the given timestamp, or null if unavailable.
-   * Uses in-memory cache then LocalCache, then fetches via API and persists.
-   * Timestamp is rounded to UTC day for cache key (one rate per day).
+   * Uses in-memory cache → SQLite → API.
    */
   async getHistoricalRate(
     currency: string,
     timestampUnixSec: number,
     baseApi: string,
   ): Promise<number | null> {
-    const key = cacheKey(currency, timestampUnixSec);
+    const key = memKey(currency, timestampUnixSec);
+
+    // 1. In-memory cache
     const mem = memoryCache.get(key);
     if (mem != null && mem > 0) {
       return mem;
     }
-    const persisted = await LocalCache.getItem(key);
-    if (persisted != null) {
-      const rate = parseFloat(persisted);
-      if (Number.isFinite(rate) && rate > 0) {
-        memoryCache.set(key, rate);
-        return rate;
-      }
+
+    // 2. SQLite persistence
+    const persisted = priceRepository.getHistoricalRate(currency, timestampUnixSec);
+    if (persisted != null && persisted > 0) {
+      memoryCache.set(key, persisted);
+      return persisted;
     }
+
+    // 3. Fetch from API
     const base = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
-    const url = `${base}/api/v1/historical-price?currency=${encodeURIComponent(currency)}&timestamp=${Math.floor(timestampUnixSec)}`;
+    const url = `${base}/api/v1/historical-price?currency=${encodeURIComponent(
+      currency,
+    )}&timestamp=${Math.floor(timestampUnixSec)}`;
     try {
       const res = await mempoolClient.get<HistoricalPriceResponse>(url);
       if (!res.ok || !res.data?.prices?.length) {
@@ -73,7 +72,7 @@ class HistoricalPriceService {
         return null;
       }
       memoryCache.set(key, rate);
-      await LocalCache.setItem(key, String(rate));
+      priceRepository.setHistoricalRate(currency, timestampUnixSec, rate);
       return rate;
     } catch (e) {
       dbg('HistoricalPriceService: fetch failed', url.slice(-60), e);
@@ -82,22 +81,28 @@ class HistoricalPriceService {
   }
 
   /**
-   * Sync get for in-memory/local cache only. Returns null if not cached (no network).
-   * Use when rendering to avoid flashing; background fetch can fill in later.
+   * Sync get from in-memory cache only. Returns null if not cached.
    */
   getCachedRateSync(currency: string, timestampUnixSec: number): number | null {
-    const key = cacheKey(currency, timestampUnixSec);
-    return memoryCache.get(key) ?? null;
+    const key = memKey(currency, timestampUnixSec);
+    // Try memory first, then SQLite synchronously
+    const mem = memoryCache.get(key);
+    if (mem != null) return mem;
+    const db = priceRepository.getHistoricalRate(currency, timestampUnixSec);
+    if (db != null) {
+      memoryCache.set(key, db);
+    }
+    return db;
   }
 
-  /** Preload rates from LocalCache into memory for the given keys (e.g. on app start). */
-  async hydrateKeys(keys: string[]): Promise<void> {
-    for (const key of keys) {
+  /** Pre-warm in-memory cache from SQLite for the given currency × timestamps. */
+  hydrateKeys(currency: string, timestampsUnixSec: number[]): void {
+    for (const ts of timestampsUnixSec) {
+      const key = memKey(currency, ts);
       if (memoryCache.has(key)) continue;
-      const val = await LocalCache.getItem(key);
-      if (val != null) {
-        const rate = parseFloat(val);
-        if (Number.isFinite(rate) && rate > 0) memoryCache.set(key, rate);
+      const rate = priceRepository.getHistoricalRate(currency, ts);
+      if (rate != null && rate > 0) {
+        memoryCache.set(key, rate);
       }
     }
   }
@@ -107,7 +112,7 @@ export function getHistoricalRateKey(
   currency: string,
   timestampUnixSec: number,
 ): string {
-  return cacheKey(currency, timestampUnixSec);
+  return memKey(currency, timestampUnixSec);
 }
 
 export default HistoricalPriceService.getInstance();

@@ -48,7 +48,9 @@ import {
 } from '../utils';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
-import LocalCache from '../services/LocalCache';
+import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
+import database from '../services/Database';
+import transactionRepository from '../services/repositories/TransactionRepository';
 import {WalletService} from '../services/WalletService';
 import RNFS from 'react-native-fs';
 const {BBMTLibNativeModule} = NativeModules;
@@ -341,7 +343,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         }
         // Fallback: fresh fetch (sender device, or QR has no utxosJson).
         const apiUrl =
-          (await LocalCache.getItem(`api_${net}`)) ||
+          (appConfigRepository.get(`api_${net}`)) ||
           (net === 'testnet3' || net === 'testnet'
             ? 'https://mempool.space/testnet/api'
             : 'https://mempool.space/api');
@@ -397,16 +399,16 @@ const MobileNostrPairing = ({navigation}: any) => {
       if (setupMode === 'duo' || setupMode === 'trio') {
         try {
           dbg('=== MobileNostrPairing: Clearing all cache for wallet setup');
-          // Clear LocalCache
-          await LocalCache.clear();
-          dbg('LocalCache cleared successfully');
+          // Clear SQLite wallet data
+          database.clearWalletData();
+          dbg('SQLite wallet data cleared');
           // Clear stale EncryptedStorage items (but keep keyshare if it exists for signing)
           // We clear btcPub as it will be regenerated with the new keyshare
           await EncryptedStorage.removeItem('btcPub');
           dbg('Cleared stale btcPub from EncryptedStorage');
           // Clear WalletService cache
           try {
-            await LocalCache.removeItem('walletCache');
+            // stale key removed;
             dbg('WalletService cache cleared');
           } catch (error) {
             dbg('Error clearing WalletService cache:', error);
@@ -1337,7 +1339,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       // Prepare relays CSV
       const relaysCSV = relays.join(',');
       // Save relays to cache
-      await LocalCache.setItem('nostr_relays', relaysCSV);
+      appConfigRepository.set('nostr_relays', relaysCSV);
       // Log detailed info for debugging trio mode
       dbg('Starting Nostr keygen with:', {
         relays: relaysCSV,
@@ -1520,8 +1522,8 @@ const MobileNostrPairing = ({navigation}: any) => {
         satoshiFees,
       });
       // Store original network/API
-      originalNetwork = (await LocalCache.getItem('network')) || 'mainnet';
-      const cachedApi = await LocalCache.getItem(`api_${originalNetwork}`);
+      originalNetwork = (appConfigRepository.get(CONFIG_KEYS.NETWORK)) || 'mainnet';
+      const cachedApi = appConfigRepository.get(`api_${originalNetwork}`);
       originalApiUrl = cachedApi || '';
       if (!originalApiUrl) {
         originalApiUrl =
@@ -1531,7 +1533,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       }
       // Set network and API in BBMTLib for this transaction
       // Use normalized network (native format) for API lookup and BBMTLib
-      let apiUrl = await LocalCache.getItem(`api_${net}`);
+      let apiUrl = appConfigRepository.get(`api_${net}`);
       if (!apiUrl) {
         apiUrl =
           net === 'testnet3' || net === 'testnet'
@@ -1542,7 +1544,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       await BBMTLibNativeModule.setAPI(net, apiUrl);
       // CRITICAL: Update LocalCache 'api' key so WalletService.getWalletBalance uses correct API
       // This ensures balance fetch uses the network from route params, not device's current network
-      await LocalCache.setItem('api', apiUrl);
+      appConfigRepository.set('api', apiUrl);
       // CRITICAL: Temporarily update WalletService internal state so getWalletBalance uses correct network
       // This is needed because getWalletBalance uses this.currentNetwork for address validation
       const walletService = WalletService.getInstance();
@@ -1973,7 +1975,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         try {
           await BBMTLibNativeModule.setBtcNetwork(originalNetwork);
           await BBMTLibNativeModule.setAPI(originalNetwork, originalApiUrl);
-          await LocalCache.setItem('api', originalApiUrl);
+          appConfigRepository.set('api', originalApiUrl);
           if (originalWalletServiceNetwork && originalWalletServiceApiUrl) {
             const walletService = WalletService.getInstance();
             (walletService as any).currentNetwork =
@@ -6436,10 +6438,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                 e,
               );
             }
-            const pendingTxs = JSON.parse(
-              (await LocalCache.getItem(`${p.senderAddress}-pendingTxs`)) ||
-                '{}',
-            );
+            const pendingTxs = transactionRepository.getPendingTxMap(p.senderAddress, p.net || 'mainnet');
             pendingTxs[txId] = {
               txid: txId,
               from: p.senderAddress,
@@ -6450,10 +6449,7 @@ const MobileNostrPairing = ({navigation}: any) => {
               sentAt: Date.now(),
               status: {confirmed: false, block_height: null},
             };
-            await LocalCache.setItem(
-              `${p.senderAddress}-pendingTxs`,
-              JSON.stringify(pendingTxs),
-            );
+            transactionRepository.setPendingTxMap(p.senderAddress, p.net || 'mainnet', pendingTxs);
             navigation.dispatch(
               CommonActions.reset(
                 getResetToMainTabsWallet(
@@ -6475,7 +6471,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                   p.originalNetwork,
                   p.originalApiUrl,
                 );
-                await LocalCache.setItem('api', p.originalApiUrl);
+                appConfigRepository.set('api', p.originalApiUrl);
                 if (
                   p.originalWalletServiceNetwork &&
                   p.originalWalletServiceApiUrl

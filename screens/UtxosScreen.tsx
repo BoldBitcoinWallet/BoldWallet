@@ -19,7 +19,7 @@ import {
   HeaderProvider,
   HeaderNetwork,
 } from '../components/Header';
-import LocalCache from '../services/LocalCache';
+import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {WalletService} from '../services/WalletService';
 import {presentFiat, getCurrencySymbol} from '../utils';
 import AppPressable from '../components/AppPressable';
@@ -77,7 +77,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
 
   useEffect(() => {
     const loadCurrency = async () => {
-      const stored = await LocalCache.getItem('currency');
+      const stored = appConfigRepository.get(CONFIG_KEYS.CURRENCY);
       if (stored) setSelectedCurrency(stored);
     };
     loadCurrency();

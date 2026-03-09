@@ -3,8 +3,8 @@
 # min_api: 24
 # common_typos_disable
 # {"id":"com.android.tools.r8.mapping","version":"2.2"}
-# pg_map_id: 1c47e3fbe567ae5cd04653d5998753dc4bbeaa749090c8a0788c3d9d7f381563
-# pg_map_hash: SHA-256 1c47e3fbe567ae5cd04653d5998753dc4bbeaa749090c8a0788c3d9d7f381563
+# pg_map_id: dc6b07e432130166a8d44c5e2c3d7af548793a59f181597c8f739087c72f6bcf
+# pg_map_hash: SHA-256 dc6b07e432130166a8d44c5e2c3d7af548793a59f181597c8f739087c72f6bcf
 android.app.AppComponentFactory -> android.app.AppComponentFactory:
 # {"id":"com.android.tools.r8.synthesized"}
     void <clinit>() -> <clinit>
@@ -72214,68 +72214,77 @@ com.boldwallet.BBMTLibNativeModule -> com.boldwallet.BBMTLibNativeModule:
       # {"id":"com.android.tools.r8.synthesized"}
     6:8:void addListener(java.lang.String):42:42 -> addListener
     9:12:void addListener(java.lang.String):43:43 -> addListener
-    18:21:void aesDecrypt(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):803:803 -> aesDecrypt
-    22:27:void aesDecrypt(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):804:804 -> aesDecrypt
-    28:32:void aesDecrypt(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):805:805 -> aesDecrypt
-    33:56:void aesDecrypt(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):807:807 -> aesDecrypt
-    57:64:void aesDecrypt(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):808:808 -> aesDecrypt
-    18:21:void aesEncrypt(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):791:791 -> aesEncrypt
-    22:27:void aesEncrypt(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):792:792 -> aesEncrypt
-    28:32:void aesEncrypt(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):793:793 -> aesEncrypt
-    33:56:void aesEncrypt(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):795:795 -> aesEncrypt
-    57:64:void aesEncrypt(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):796:796 -> aesEncrypt
+    18:21:void aesDecrypt(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):847:847 -> aesDecrypt
+    22:27:void aesDecrypt(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):848:848 -> aesDecrypt
+    28:32:void aesDecrypt(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):849:849 -> aesDecrypt
+    33:56:void aesDecrypt(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):851:851 -> aesDecrypt
+    57:64:void aesDecrypt(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):852:852 -> aesDecrypt
+    18:21:void aesEncrypt(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):835:835 -> aesEncrypt
+    22:27:void aesEncrypt(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):836:836 -> aesEncrypt
+    28:32:void aesEncrypt(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):837:837 -> aesEncrypt
+    33:56:void aesEncrypt(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):839:839 -> aesEncrypt
+    57:64:void aesEncrypt(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):840:840 -> aesEncrypt
     1:1:void $r8$lambda$9HwaGS7WMYk8QFnKHOhXQ6FJ6A4(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> b
       # {"id":"com.android.tools.r8.synthesized"}
-    24:40:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):752:752 -> btcAddress
-    41:47:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):756:756 -> btcAddress
-    48:56:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):752:752 -> btcAddress
-    57:61:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):754:754 -> btcAddress
-    62:70:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):752:752 -> btcAddress
-    71:75:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):755:755 -> btcAddress
-    76:83:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):752:752 -> btcAddress
-    84:88:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):758:758 -> btcAddress
-    89:91:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):759:759 -> btcAddress
-    92:95:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):753:753 -> btcAddress
-    96:101:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):762:762 -> btcAddress
-    102:107:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):765:765 -> btcAddress
-    108:133:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):768:768 -> btcAddress
-    134:160:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):771:771 -> btcAddress
-    1:1:void $r8$lambda$FCXavbYEgzO7tzV7C_0Mgpi42UE(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> c
+    24:40:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):796:796 -> btcAddress
+    41:47:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):800:800 -> btcAddress
+    48:56:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):796:796 -> btcAddress
+    57:61:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):798:798 -> btcAddress
+    62:70:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):796:796 -> btcAddress
+    71:75:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):799:799 -> btcAddress
+    76:83:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):796:796 -> btcAddress
+    84:88:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):802:802 -> btcAddress
+    89:91:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):803:803 -> btcAddress
+    92:95:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):797:797 -> btcAddress
+    96:101:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):806:806 -> btcAddress
+    102:107:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):809:809 -> btcAddress
+    108:133:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):812:812 -> btcAddress
+    134:160:void btcAddress(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):815:815 -> btcAddress
+    1:1:void $r8$lambda$Gx6yPS5fI-L6PowRwR2UmFfB4WY(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> c
       # {"id":"com.android.tools.r8.synthesized"}
+    11:14:void cancelMpcSession(java.lang.String,com.facebook.react.bridge.Promise):419:419 -> cancelMpcSession
+    15:19:void cancelMpcSession(java.lang.String,com.facebook.react.bridge.Promise):420:420 -> cancelMpcSession
+    20:46:void cancelMpcSession(java.lang.String,com.facebook.react.bridge.Promise):422:422 -> cancelMpcSession
+    6:9:void cancelNostrMpc(com.facebook.react.bridge.Promise):429:429 -> cancelNostrMpc
+    10:14:void cancelNostrMpc(com.facebook.react.bridge.Promise):430:430 -> cancelNostrMpc
+    15:41:void cancelNostrMpc(com.facebook.react.bridge.Promise):432:432 -> cancelNostrMpc
+    11:14:void computeTxId(java.lang.String,com.facebook.react.bridge.Promise):409:409 -> computeTxId
+    15:19:void computeTxId(java.lang.String,com.facebook.react.bridge.Promise):410:410 -> computeTxId
+    20:46:void computeTxId(java.lang.String,com.facebook.react.bridge.Promise):412:412 -> computeTxId
     1:1:void $r8$lambda$H9LP91VnYDcTFfOzktwcvIZte_c(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> d
       # {"id":"com.android.tools.r8.synthesized"}
-    24:27:void derivePubkey(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):715:715 -> derivePubkey
-    28:33:void derivePubkey(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):716:716 -> derivePubkey
-    34:38:void derivePubkey(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):717:717 -> derivePubkey
-    39:62:void derivePubkey(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):719:719 -> derivePubkey
-    63:89:void derivePubkey(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):720:720 -> derivePubkey
+    24:27:void derivePubkey(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):759:759 -> derivePubkey
+    28:33:void derivePubkey(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):760:760 -> derivePubkey
+    34:38:void derivePubkey(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):761:761 -> derivePubkey
+    39:62:void derivePubkey(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):763:763 -> derivePubkey
+    63:89:void derivePubkey(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):764:764 -> derivePubkey
     12:13:void disableLogging(java.lang.String,com.facebook.react.bridge.Promise):83:83 -> disableLogging
     14:16:void disableLogging(java.lang.String,com.facebook.react.bridge.Promise):84:84 -> disableLogging
     17:20:void disableLogging(java.lang.String,com.facebook.react.bridge.Promise):85:85 -> disableLogging
-    49:50:void discoverPeers(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):461:461 -> discoverPeers
-    51:60:void discoverPeers$lambda$13(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):470:470 -> discoverPeers
-    51:60:void discoverPeers(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):470 -> discoverPeers
-    61:63:void discoverPeers(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):461:461 -> discoverPeers
-    64:67:void discoverPeers$lambda$13(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):470:470 -> discoverPeers
-    64:67:void discoverPeers(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):470 -> discoverPeers
-    1:2:void discoverPeers$lambda$13(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):462:462 -> discoverPeers$lambda$13
-    3:6:void discoverPeers$lambda$13(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):463:463 -> discoverPeers$lambda$13
-    7:12:void discoverPeers$lambda$13(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):464:464 -> discoverPeers$lambda$13
-    13:18:void discoverPeers$lambda$13(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):465:465 -> discoverPeers$lambda$13
-    19:42:void discoverPeers$lambda$13(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):467:467 -> discoverPeers$lambda$13
-    43:48:void discoverPeers$lambda$13(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):468:468 -> discoverPeers$lambda$13
-    1:1:void $r8$lambda$P_ox8NfA03LlcrLL4G6LGMT-AhE(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> e
+    49:50:void discoverPeers(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):505:505 -> discoverPeers
+    51:60:void discoverPeers$lambda$14(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):514:514 -> discoverPeers
+    51:60:void discoverPeers(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):514 -> discoverPeers
+    61:63:void discoverPeers(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):505:505 -> discoverPeers
+    64:67:void discoverPeers$lambda$14(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):514:514 -> discoverPeers
+    64:67:void discoverPeers(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):514 -> discoverPeers
+    1:2:void discoverPeers$lambda$14(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):506:506 -> discoverPeers$lambda$14
+    3:6:void discoverPeers$lambda$14(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):507:507 -> discoverPeers$lambda$14
+    7:12:void discoverPeers$lambda$14(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):508:508 -> discoverPeers$lambda$14
+    13:18:void discoverPeers$lambda$14(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):509:509 -> discoverPeers$lambda$14
+    19:42:void discoverPeers$lambda$14(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):511:511 -> discoverPeers$lambda$14
+    43:48:void discoverPeers$lambda$14(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):512:512 -> discoverPeers$lambda$14
+    1:1:void $r8$lambda$MQa_hMCLJQF7UmAI2nG1QrPVs8Y(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> e
       # {"id":"com.android.tools.r8.synthesized"}
-    8:11:void eciesKeypair(com.facebook.react.bridge.Promise):779:779 -> eciesKeypair
-    12:17:void eciesKeypair(com.facebook.react.bridge.Promise):780:780 -> eciesKeypair
-    18:22:void eciesKeypair(com.facebook.react.bridge.Promise):781:781 -> eciesKeypair
-    23:46:void eciesKeypair(com.facebook.react.bridge.Promise):783:783 -> eciesKeypair
-    47:54:void eciesKeypair(com.facebook.react.bridge.Promise):784:784 -> eciesKeypair
-    23:26:void encodeXpub(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):727:727 -> encodeXpub
-    27:32:void encodeXpub(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):728:728 -> encodeXpub
-    33:37:void encodeXpub(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):729:729 -> encodeXpub
-    38:61:void encodeXpub(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):731:731 -> encodeXpub
-    62:88:void encodeXpub(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):732:732 -> encodeXpub
+    8:11:void eciesKeypair(com.facebook.react.bridge.Promise):823:823 -> eciesKeypair
+    12:17:void eciesKeypair(com.facebook.react.bridge.Promise):824:824 -> eciesKeypair
+    18:22:void eciesKeypair(com.facebook.react.bridge.Promise):825:825 -> eciesKeypair
+    23:46:void eciesKeypair(com.facebook.react.bridge.Promise):827:827 -> eciesKeypair
+    47:54:void eciesKeypair(com.facebook.react.bridge.Promise):828:828 -> eciesKeypair
+    23:26:void encodeXpub(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):771:771 -> encodeXpub
+    27:32:void encodeXpub(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):772:772 -> encodeXpub
+    33:37:void encodeXpub(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):773:773 -> encodeXpub
+    38:61:void encodeXpub(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):775:775 -> encodeXpub
+    62:88:void encodeXpub(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):776:776 -> encodeXpub
     26:27:void estimateFeeWithUTXOs(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):204:204 -> estimateFeeWithUTXOs
     28:38:void estimateFeeWithUTXOs$lambda$5(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):218:218 -> estimateFeeWithUTXOs
     28:38:void estimateFeeWithUTXOs(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):218 -> estimateFeeWithUTXOs
@@ -72301,104 +72310,104 @@ com.boldwallet.BBMTLibNativeModule -> com.boldwallet.BBMTLibNativeModule:
     17:21:void estimateFees$lambda$4(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):188:188 -> estimateFees$lambda$4
     22:45:void estimateFees$lambda$4(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):190:190 -> estimateFees$lambda$4
     46:49:void estimateFees$lambda$4(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):191:191 -> estimateFees$lambda$4
-    1:1:void $r8$lambda$QTk4xmlvP4UZmJiXqSL99DHQhro(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> f
+    1:1:void $r8$lambda$OmYaHwyzJtKsPj-QpElJnHCRFZI(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> f
       # {"id":"com.android.tools.r8.synthesized"}
-    21:22:void fetchData(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):433:433 -> fetchData
-    23:32:void fetchData$lambda$11(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):442:442 -> fetchData
-    23:32:void fetchData(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):442 -> fetchData
-    33:35:void fetchData(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):433:433 -> fetchData
-    36:39:void fetchData$lambda$11(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):442:442 -> fetchData
-    36:39:void fetchData(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):442 -> fetchData
-    1:2:void fetchData$lambda$11(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):434:434 -> fetchData$lambda$11
-    3:6:void fetchData$lambda$11(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):435:435 -> fetchData$lambda$11
-    7:12:void fetchData$lambda$11(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):436:436 -> fetchData$lambda$11
-    13:17:void fetchData$lambda$11(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):437:437 -> fetchData$lambda$11
-    18:41:void fetchData$lambda$11(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):439:439 -> fetchData$lambda$11
-    42:47:void fetchData$lambda$11(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):440:440 -> fetchData$lambda$11
-    1:1:void $r8$lambda$QlFN1oPC9XjS3brw_jHAHS06IZ8(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> g
+    21:22:void fetchData(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):477:477 -> fetchData
+    23:32:void fetchData$lambda$12(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):486:486 -> fetchData
+    23:32:void fetchData(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):486 -> fetchData
+    33:35:void fetchData(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):477:477 -> fetchData
+    36:39:void fetchData$lambda$12(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):486:486 -> fetchData
+    36:39:void fetchData(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):486 -> fetchData
+    1:2:void fetchData$lambda$12(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):478:478 -> fetchData$lambda$12
+    3:6:void fetchData$lambda$12(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):479:479 -> fetchData$lambda$12
+    7:12:void fetchData$lambda$12(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):480:480 -> fetchData$lambda$12
+    13:17:void fetchData$lambda$12(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):481:481 -> fetchData$lambda$12
+    18:41:void fetchData$lambda$12(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):483:483 -> fetchData$lambda$12
+    42:47:void fetchData$lambda$12(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):484:484 -> fetchData$lambda$12
+    1:1:void $r8$lambda$P_ox8NfA03LlcrLL4G6LGMT-AhE(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> g
       # {"id":"com.android.tools.r8.synthesized"}
     1:12:java.util.Map getConstants():77:77 -> getConstants
     13:17:java.util.Map getConstants():76:76 -> getConstants
-    23:30:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):477:477 -> getLanIp
-    31:56:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):484:484 -> getLanIp
-    57:80:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):486:486 -> getLanIp
-    81:84:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):487:487 -> getLanIp
-    85:109:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):488:488 -> getLanIp
-    110:119:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):489:489 -> getLanIp
-    120:129:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):490:490 -> getLanIp
-    130:137:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):493:493 -> getLanIp
-    138:145:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):497:497 -> getLanIp
-    146:201:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):500:500 -> getLanIp
-    202:209:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):517:517 -> getLanIp
-    210:217:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):518:518 -> getLanIp
-    218:225:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):519:519 -> getLanIp
-    226:231:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):520:520 -> getLanIp
-    232:234:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):521:521 -> getLanIp
-    235:240:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):527:527 -> getLanIp
-    241:243:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):530:530 -> getLanIp
-    244:269:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):531:531 -> getLanIp
-    270:273:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):535:535 -> getLanIp
+    23:30:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):521:521 -> getLanIp
+    31:56:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):528:528 -> getLanIp
+    57:80:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):530:530 -> getLanIp
+    81:84:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):531:531 -> getLanIp
+    85:109:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):532:532 -> getLanIp
+    110:119:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):533:533 -> getLanIp
+    120:129:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):534:534 -> getLanIp
+    130:137:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):537:537 -> getLanIp
+    138:145:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):541:541 -> getLanIp
+    146:201:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):544:544 -> getLanIp
+    202:209:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):561:561 -> getLanIp
+    210:217:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):562:562 -> getLanIp
+    218:225:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):563:563 -> getLanIp
+    226:231:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):564:564 -> getLanIp
+    232:234:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):565:565 -> getLanIp
+    235:240:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):571:571 -> getLanIp
+    241:243:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):574:574 -> getLanIp
+    244:269:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):575:575 -> getLanIp
+    270:273:void getLanIp(java.lang.String,com.facebook.react.bridge.Promise):579:579 -> getLanIp
     1:3:java.lang.String getName():65:65 -> getName
-    28:31:void getOutputDescriptor(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):739:739 -> getOutputDescriptor
-    32:37:void getOutputDescriptor(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):740:740 -> getOutputDescriptor
-    38:42:void getOutputDescriptor(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):741:741 -> getOutputDescriptor
-    43:66:void getOutputDescriptor(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):743:743 -> getOutputDescriptor
-    67:93:void getOutputDescriptor(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):744:744 -> getOutputDescriptor
-    1:1:void $r8$lambda$SubPChAgUX_Pgzrn3hHEZuaQz-s(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> h
+    28:31:void getOutputDescriptor(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):783:783 -> getOutputDescriptor
+    32:37:void getOutputDescriptor(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):784:784 -> getOutputDescriptor
+    38:42:void getOutputDescriptor(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):785:785 -> getOutputDescriptor
+    43:66:void getOutputDescriptor(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):787:787 -> getOutputDescriptor
+    67:93:void getOutputDescriptor(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):788:788 -> getOutputDescriptor
+    1:1:void $r8$lambda$QweISMD0qITobKRW4fvIv9VgjE0(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> h
       # {"id":"com.android.tools.r8.synthesized"}
-    11:12:void hexToNpub(java.lang.String,com.facebook.react.bridge.Promise):575:575 -> hexToNpub
-    13:17:void hexToNpub$lambda$15(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):584:584 -> hexToNpub
-    13:17:void hexToNpub(java.lang.String,com.facebook.react.bridge.Promise):584 -> hexToNpub
-    18:20:void hexToNpub(java.lang.String,com.facebook.react.bridge.Promise):575:575 -> hexToNpub
-    21:24:void hexToNpub$lambda$15(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):584:584 -> hexToNpub
-    21:24:void hexToNpub(java.lang.String,com.facebook.react.bridge.Promise):584 -> hexToNpub
-    1:2:void hexToNpub$lambda$15(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):576:576 -> hexToNpub$lambda$15
-    3:6:void hexToNpub$lambda$15(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):577:577 -> hexToNpub$lambda$15
-    7:12:void hexToNpub$lambda$15(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):578:578 -> hexToNpub$lambda$15
-    13:17:void hexToNpub$lambda$15(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):579:579 -> hexToNpub$lambda$15
-    18:41:void hexToNpub$lambda$15(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):581:581 -> hexToNpub$lambda$15
-    42:49:void hexToNpub$lambda$15(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):582:582 -> hexToNpub$lambda$15
-    1:1:void $r8$lambda$XAc66uJeOwh6TeCNVqupGQXMVqw(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> i
+    11:12:void hexToNpub(java.lang.String,com.facebook.react.bridge.Promise):619:619 -> hexToNpub
+    13:17:void hexToNpub$lambda$16(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):628:628 -> hexToNpub
+    13:17:void hexToNpub(java.lang.String,com.facebook.react.bridge.Promise):628 -> hexToNpub
+    18:20:void hexToNpub(java.lang.String,com.facebook.react.bridge.Promise):619:619 -> hexToNpub
+    21:24:void hexToNpub$lambda$16(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):628:628 -> hexToNpub
+    21:24:void hexToNpub(java.lang.String,com.facebook.react.bridge.Promise):628 -> hexToNpub
+    1:2:void hexToNpub$lambda$16(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):620:620 -> hexToNpub$lambda$16
+    3:6:void hexToNpub$lambda$16(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):621:621 -> hexToNpub$lambda$16
+    7:12:void hexToNpub$lambda$16(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):622:622 -> hexToNpub$lambda$16
+    13:17:void hexToNpub$lambda$16(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):623:623 -> hexToNpub$lambda$16
+    18:41:void hexToNpub$lambda$16(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):625:625 -> hexToNpub$lambda$16
+    42:49:void hexToNpub$lambda$16(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):626:626 -> hexToNpub$lambda$16
+    1:1:void $r8$lambda$S-ev3EsYCGwV8XtG6KFJr84whBU(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> i
       # {"id":"com.android.tools.r8.synthesized"}
-    1:15:boolean isClassC(java.lang.String):557:557 -> isClassC
+    1:15:boolean isClassC(java.lang.String):601:601 -> isClassC
     16:20:java.util.List kotlin.collections.CollectionsKt___CollectionsKt.mapNotNull(java.lang.Iterable,kotlin.jvm.functions.Function1):1617:1617 -> isClassC
-    16:20:boolean isClassC(java.lang.String):557 -> isClassC
+    16:20:boolean isClassC(java.lang.String):601 -> isClassC
     21:34:void kotlin.collections.CollectionsKt___CollectionsKt.forEach(java.lang.Iterable,kotlin.jvm.functions.Function1):1869:1869 -> isClassC
-    21:34:boolean isClassC(java.lang.String):557 -> isClassC
+    21:34:boolean isClassC(java.lang.String):601 -> isClassC
     35:36:java.util.Collection kotlin.collections.CollectionsKt___CollectionsKt.mapNotNullTo(java.lang.Iterable,java.util.Collection,kotlin.jvm.functions.Function1):1625:1625 -> isClassC
-    35:36:boolean isClassC(java.lang.String):557 -> isClassC
-    37:42:boolean isClassC(java.lang.String):557:557 -> isClassC
+    35:36:boolean isClassC(java.lang.String):601 -> isClassC
+    37:42:boolean isClassC(java.lang.String):601:601 -> isClassC
     43:46:java.util.Collection kotlin.collections.CollectionsKt___CollectionsKt.mapNotNullTo(java.lang.Iterable,java.util.Collection,kotlin.jvm.functions.Function1):1625:1625 -> isClassC
-    43:46:boolean isClassC(java.lang.String):557 -> isClassC
-    47:75:boolean isClassC(java.lang.String):558:558 -> isClassC
-    1:3:boolean isSameSubnet(java.lang.String,java.lang.String):542:542 -> isSameSubnet
-    4:16:boolean isSameSubnet(java.lang.String,java.lang.String):543:543 -> isSameSubnet
-    17:29:boolean isSameSubnet(java.lang.String,java.lang.String):544:544 -> isSameSubnet
-    30:44:boolean isSameSubnet(java.lang.String,java.lang.String):548:548 -> isSameSubnet
-    45:59:boolean isSameSubnet(java.lang.String,java.lang.String):549:549 -> isSameSubnet
-    60:75:boolean isSameSubnet(java.lang.String,java.lang.String):550:550 -> isSameSubnet
-    1:1:void $r8$lambda$XzUDB8YXzTvZalAUBgX5-C2Zsis(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> j
+    43:46:boolean isClassC(java.lang.String):601 -> isClassC
+    47:75:boolean isClassC(java.lang.String):602:602 -> isClassC
+    1:3:boolean isSameSubnet(java.lang.String,java.lang.String):586:586 -> isSameSubnet
+    4:16:boolean isSameSubnet(java.lang.String,java.lang.String):587:587 -> isSameSubnet
+    17:29:boolean isSameSubnet(java.lang.String,java.lang.String):588:588 -> isSameSubnet
+    30:44:boolean isSameSubnet(java.lang.String,java.lang.String):592:592 -> isSameSubnet
+    45:59:boolean isSameSubnet(java.lang.String,java.lang.String):593:593 -> isSameSubnet
+    60:75:boolean isSameSubnet(java.lang.String,java.lang.String):594:594 -> isSameSubnet
+    1:1:void $r8$lambda$SubPChAgUX_Pgzrn3hHEZuaQz-s(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> j
       # {"id":"com.android.tools.r8.synthesized"}
-    1:1:void $r8$lambda$YN0a_Kn31BykV2b58eRsCMeXZ_U(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> k
+    1:1:void $r8$lambda$Veyq-fwVSz9xazu7Xc_otw_wRk8(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> k
       # {"id":"com.android.tools.r8.synthesized"}
-    1:1:void $r8$lambda$_EgUWYTQ3IfoRCQHizSMc046e2w(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> l
+    1:1:void $r8$lambda$WveLL6qnv5rP_9U4melZQCIUYIA(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> l
       # {"id":"com.android.tools.r8.synthesized"}
     1:4:void ld(java.lang.String,java.lang.String):69:69 -> ld
     5:7:void ld(java.lang.String,java.lang.String):70:70 -> ld
     8:11:void ld(java.lang.String,java.lang.String):71:71 -> ld
-    31:32:void listenForPeers(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):447:447 -> listenForPeers
-    33:44:void listenForPeers$lambda$12(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):456:456 -> listenForPeers
-    33:44:void listenForPeers(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):456 -> listenForPeers
-    45:47:void listenForPeers(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):447:447 -> listenForPeers
-    48:51:void listenForPeers$lambda$12(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):456:456 -> listenForPeers
-    48:51:void listenForPeers(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):456 -> listenForPeers
-    1:2:void listenForPeers$lambda$12(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):448:448 -> listenForPeers$lambda$12
-    3:6:void listenForPeers$lambda$12(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):449:449 -> listenForPeers$lambda$12
-    7:12:void listenForPeers$lambda$12(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):450:450 -> listenForPeers$lambda$12
-    13:17:void listenForPeers$lambda$12(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):451:451 -> listenForPeers$lambda$12
-    18:41:void listenForPeers$lambda$12(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):453:453 -> listenForPeers$lambda$12
-    42:47:void listenForPeers$lambda$12(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):454:454 -> listenForPeers$lambda$12
-    1:1:void $r8$lambda$auoHhHD7wUJpHa5oHSvk1DlV6EM(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> m
+    31:32:void listenForPeers(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):491:491 -> listenForPeers
+    33:44:void listenForPeers$lambda$13(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):500:500 -> listenForPeers
+    33:44:void listenForPeers(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):500 -> listenForPeers
+    45:47:void listenForPeers(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):491:491 -> listenForPeers
+    48:51:void listenForPeers$lambda$13(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):500:500 -> listenForPeers
+    48:51:void listenForPeers(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):500 -> listenForPeers
+    1:2:void listenForPeers$lambda$13(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):492:492 -> listenForPeers$lambda$13
+    3:6:void listenForPeers$lambda$13(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):493:493 -> listenForPeers$lambda$13
+    7:12:void listenForPeers$lambda$13(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):494:494 -> listenForPeers$lambda$13
+    13:17:void listenForPeers$lambda$13(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):495:495 -> listenForPeers$lambda$13
+    18:41:void listenForPeers$lambda$13(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):497:497 -> listenForPeers$lambda$13
+    42:47:void listenForPeers$lambda$13(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):498:498 -> listenForPeers$lambda$13
+    1:1:void $r8$lambda$XzUDB8YXzTvZalAUBgX5-C2Zsis(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> m
       # {"id":"com.android.tools.r8.synthesized"}
     1:1:void mpcSendBTC(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):240:240 -> mpcSendBTC
     2:2:void mpcSendBTC$lambda$6(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):262:262 -> mpcSendBTC
@@ -72420,48 +72429,48 @@ com.boldwallet.BBMTLibNativeModule -> com.boldwallet.BBMTLibNativeModule:
     1:2:void mpcSendBTCWithUTXOs$lambda$7(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):284:285 -> mpcSendBTCWithUTXOs$lambda$7
     3:4:void mpcSendBTCWithUTXOs$lambda$7(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):301:302 -> mpcSendBTCWithUTXOs$lambda$7
     5:6:void mpcSendBTCWithUTXOs$lambda$7(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):304:305 -> mpcSendBTCWithUTXOs$lambda$7
-    67:68:void mpcSignPSBT(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):839:839 -> mpcSignPSBT
-    69:76:void mpcSignPSBT$lambda$20(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):858:858 -> mpcSignPSBT
-    69:76:void mpcSignPSBT(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):858 -> mpcSignPSBT
-    77:79:void mpcSignPSBT(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):839:839 -> mpcSignPSBT
-    80:83:void mpcSignPSBT$lambda$20(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):858:858 -> mpcSignPSBT
-    80:83:void mpcSignPSBT(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):858 -> mpcSignPSBT
-    1:4:void mpcSignPSBT$lambda$20(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):841:841 -> mpcSignPSBT$lambda$20
-    5:12:void mpcSignPSBT$lambda$20(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):852:852 -> mpcSignPSBT$lambda$20
-    13:18:void mpcSignPSBT$lambda$20(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):853:853 -> mpcSignPSBT$lambda$20
-    19:44:void mpcSignPSBT$lambda$20(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):855:855 -> mpcSignPSBT$lambda$20
-    45:71:void mpcSignPSBT$lambda$20(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):856:856 -> mpcSignPSBT$lambda$20
-    67:68:void mpcTssSetup(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):664:664 -> mpcTssSetup
-    69:76:void mpcTssSetup$lambda$18(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):683:683 -> mpcTssSetup
-    69:76:void mpcTssSetup(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):683 -> mpcTssSetup
-    77:79:void mpcTssSetup(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):664:664 -> mpcTssSetup
-    80:83:void mpcTssSetup$lambda$18(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):683:683 -> mpcTssSetup
-    80:83:void mpcTssSetup(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):683 -> mpcTssSetup
-    1:2:void mpcTssSetup$lambda$18(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):665:665 -> mpcTssSetup$lambda$18
-    3:6:void mpcTssSetup$lambda$18(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):666:666 -> mpcTssSetup$lambda$18
-    7:13:void mpcTssSetup$lambda$18(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):677:677 -> mpcTssSetup$lambda$18
-    14:19:void mpcTssSetup$lambda$18(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):678:678 -> mpcTssSetup$lambda$18
-    20:43:void mpcTssSetup$lambda$18(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):680:680 -> mpcTssSetup$lambda$18
-    44:70:void mpcTssSetup$lambda$18(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):681:681 -> mpcTssSetup$lambda$18
-    1:1:void $r8$lambda$b_pbpXQBNkaFG7zl1OlWI7knxVU(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> n
+    67:68:void mpcSignPSBT(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):883:883 -> mpcSignPSBT
+    69:76:void mpcSignPSBT$lambda$21(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):902:902 -> mpcSignPSBT
+    69:76:void mpcSignPSBT(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):902 -> mpcSignPSBT
+    77:79:void mpcSignPSBT(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):883:883 -> mpcSignPSBT
+    80:83:void mpcSignPSBT$lambda$21(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):902:902 -> mpcSignPSBT
+    80:83:void mpcSignPSBT(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):902 -> mpcSignPSBT
+    1:4:void mpcSignPSBT$lambda$21(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):885:885 -> mpcSignPSBT$lambda$21
+    5:12:void mpcSignPSBT$lambda$21(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):896:896 -> mpcSignPSBT$lambda$21
+    13:18:void mpcSignPSBT$lambda$21(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):897:897 -> mpcSignPSBT$lambda$21
+    19:44:void mpcSignPSBT$lambda$21(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):899:899 -> mpcSignPSBT$lambda$21
+    45:71:void mpcSignPSBT$lambda$21(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):900:900 -> mpcSignPSBT$lambda$21
+    67:68:void mpcTssSetup(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):708:708 -> mpcTssSetup
+    69:76:void mpcTssSetup$lambda$19(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):727:727 -> mpcTssSetup
+    69:76:void mpcTssSetup(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):727 -> mpcTssSetup
+    77:79:void mpcTssSetup(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):708:708 -> mpcTssSetup
+    80:83:void mpcTssSetup$lambda$19(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):727:727 -> mpcTssSetup
+    80:83:void mpcTssSetup(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):727 -> mpcTssSetup
+    1:2:void mpcTssSetup$lambda$19(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):709:709 -> mpcTssSetup$lambda$19
+    3:6:void mpcTssSetup$lambda$19(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):710:710 -> mpcTssSetup$lambda$19
+    7:13:void mpcTssSetup$lambda$19(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):721:721 -> mpcTssSetup$lambda$19
+    14:19:void mpcTssSetup$lambda$19(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):722:722 -> mpcTssSetup$lambda$19
+    20:43:void mpcTssSetup$lambda$19(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):724:724 -> mpcTssSetup$lambda$19
+    44:70:void mpcTssSetup$lambda$19(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):725:725 -> mpcTssSetup$lambda$19
+    1:1:void $r8$lambda$YJrwbQyh_Zve7xQgmvfhUpmvMFM(java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> n
       # {"id":"com.android.tools.r8.synthesized"}
-    58:59:void nostrJoinKeysign(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):630:630 -> nostrJoinKeysign
-    60:68:void nostrJoinKeysign$lambda$17(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):648:648 -> nostrJoinKeysign
-    60:68:void nostrJoinKeysign(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):648 -> nostrJoinKeysign
-    69:71:void nostrJoinKeysign(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):630:630 -> nostrJoinKeysign
-    72:75:void nostrJoinKeysign$lambda$17(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):648:648 -> nostrJoinKeysign
-    72:75:void nostrJoinKeysign(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):648 -> nostrJoinKeysign
-    1:2:void nostrJoinKeysign$lambda$17(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):631:631 -> nostrJoinKeysign$lambda$17
-    3:6:void nostrJoinKeysign$lambda$17(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):632:632 -> nostrJoinKeysign$lambda$17
-    7:12:void nostrJoinKeysign$lambda$17(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):642:642 -> nostrJoinKeysign$lambda$17
-    13:18:void nostrJoinKeysign$lambda$17(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):643:643 -> nostrJoinKeysign$lambda$17
-    19:42:void nostrJoinKeysign$lambda$17(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):645:645 -> nostrJoinKeysign$lambda$17
-    43:69:void nostrJoinKeysign$lambda$17(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):646:646 -> nostrJoinKeysign$lambda$17
-    8:11:void nostrKeypair(com.facebook.react.bridge.Promise):564:564 -> nostrKeypair
-    12:17:void nostrKeypair(com.facebook.react.bridge.Promise):565:565 -> nostrKeypair
-    18:22:void nostrKeypair(com.facebook.react.bridge.Promise):566:566 -> nostrKeypair
-    23:46:void nostrKeypair(com.facebook.react.bridge.Promise):568:568 -> nostrKeypair
-    47:54:void nostrKeypair(com.facebook.react.bridge.Promise):569:569 -> nostrKeypair
+    58:59:void nostrJoinKeysign(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):674:674 -> nostrJoinKeysign
+    60:68:void nostrJoinKeysign$lambda$18(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):692:692 -> nostrJoinKeysign
+    60:68:void nostrJoinKeysign(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):692 -> nostrJoinKeysign
+    69:71:void nostrJoinKeysign(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):674:674 -> nostrJoinKeysign
+    72:75:void nostrJoinKeysign$lambda$18(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):692:692 -> nostrJoinKeysign
+    72:75:void nostrJoinKeysign(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):692 -> nostrJoinKeysign
+    1:2:void nostrJoinKeysign$lambda$18(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):675:675 -> nostrJoinKeysign$lambda$18
+    3:6:void nostrJoinKeysign$lambda$18(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):676:676 -> nostrJoinKeysign$lambda$18
+    7:12:void nostrJoinKeysign$lambda$18(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):686:686 -> nostrJoinKeysign$lambda$18
+    13:18:void nostrJoinKeysign$lambda$18(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):687:687 -> nostrJoinKeysign$lambda$18
+    19:42:void nostrJoinKeysign$lambda$18(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):689:689 -> nostrJoinKeysign$lambda$18
+    43:69:void nostrJoinKeysign$lambda$18(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):690:690 -> nostrJoinKeysign$lambda$18
+    8:11:void nostrKeypair(com.facebook.react.bridge.Promise):608:608 -> nostrKeypair
+    12:17:void nostrKeypair(com.facebook.react.bridge.Promise):609:609 -> nostrKeypair
+    18:22:void nostrKeypair(com.facebook.react.bridge.Promise):610:610 -> nostrKeypair
+    23:46:void nostrKeypair(com.facebook.react.bridge.Promise):612:612 -> nostrKeypair
+    47:54:void nostrKeypair(com.facebook.react.bridge.Promise):613:613 -> nostrKeypair
     1:1:void nostrMpcSendBTC(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):327:327 -> nostrMpcSendBTC
     2:2:void nostrMpcSendBTC$lambda$8(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):350:350 -> nostrMpcSendBTC
     2:2:void nostrMpcSendBTC(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):350 -> nostrMpcSendBTC
@@ -72485,89 +72494,101 @@ com.boldwallet.BBMTLibNativeModule -> com.boldwallet.BBMTLibNativeModule:
     48:51:void nostrMpcSendBTCWithUTXOs$lambda$9(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):384:384 -> nostrMpcSendBTCWithUTXOs$lambda$9
     52:75:void nostrMpcSendBTCWithUTXOs$lambda$9(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):386:386 -> nostrMpcSendBTCWithUTXOs$lambda$9
     76:102:void nostrMpcSendBTCWithUTXOs$lambda$9(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):387:387 -> nostrMpcSendBTCWithUTXOs$lambda$9
-    40:41:void nostrMpcSignPSBT(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):871:871 -> nostrMpcSignPSBT
-    42:52:void nostrMpcSignPSBT$lambda$21(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):887:887 -> nostrMpcSignPSBT
-    42:52:void nostrMpcSignPSBT(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):887 -> nostrMpcSignPSBT
-    53:55:void nostrMpcSignPSBT(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):871:871 -> nostrMpcSignPSBT
-    56:59:void nostrMpcSignPSBT$lambda$21(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):887:887 -> nostrMpcSignPSBT
-    56:59:void nostrMpcSignPSBT(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):887 -> nostrMpcSignPSBT
-    1:2:void nostrMpcSignPSBT$lambda$21(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):872:872 -> nostrMpcSignPSBT$lambda$21
-    3:6:void nostrMpcSignPSBT$lambda$21(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):873:873 -> nostrMpcSignPSBT$lambda$21
-    7:12:void nostrMpcSignPSBT$lambda$21(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):881:881 -> nostrMpcSignPSBT$lambda$21
-    13:18:void nostrMpcSignPSBT$lambda$21(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):882:882 -> nostrMpcSignPSBT$lambda$21
-    19:42:void nostrMpcSignPSBT$lambda$21(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):884:884 -> nostrMpcSignPSBT$lambda$21
-    43:69:void nostrMpcSignPSBT$lambda$21(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):885:885 -> nostrMpcSignPSBT$lambda$21
-    49:50:void nostrMpcTssSetup(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):598:598 -> nostrMpcTssSetup
-    51:60:void nostrMpcTssSetup$lambda$16(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):615:615 -> nostrMpcTssSetup
-    51:60:void nostrMpcTssSetup(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):615 -> nostrMpcTssSetup
-    61:63:void nostrMpcTssSetup(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):598:598 -> nostrMpcTssSetup
-    64:67:void nostrMpcTssSetup$lambda$16(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):615:615 -> nostrMpcTssSetup
-    64:67:void nostrMpcTssSetup(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):615 -> nostrMpcTssSetup
-    1:2:void nostrMpcTssSetup$lambda$16(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):599:599 -> nostrMpcTssSetup$lambda$16
-    3:6:void nostrMpcTssSetup$lambda$16(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):600:600 -> nostrMpcTssSetup$lambda$16
-    7:12:void nostrMpcTssSetup$lambda$16(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):609:609 -> nostrMpcTssSetup$lambda$16
-    13:18:void nostrMpcTssSetup$lambda$16(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):610:610 -> nostrMpcTssSetup$lambda$16
-    19:42:void nostrMpcTssSetup$lambda$16(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):612:612 -> nostrMpcTssSetup$lambda$16
-    43:69:void nostrMpcTssSetup$lambda$16(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):613:613 -> nostrMpcTssSetup$lambda$16
-    1:1:void $r8$lambda$csdDpL7HuiTdcVH6_wTMIqsS12E(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> o
+    40:41:void nostrMpcSignPSBT(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):915:915 -> nostrMpcSignPSBT
+    42:52:void nostrMpcSignPSBT$lambda$22(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):931:931 -> nostrMpcSignPSBT
+    42:52:void nostrMpcSignPSBT(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):931 -> nostrMpcSignPSBT
+    53:55:void nostrMpcSignPSBT(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):915:915 -> nostrMpcSignPSBT
+    56:59:void nostrMpcSignPSBT$lambda$22(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):931:931 -> nostrMpcSignPSBT
+    56:59:void nostrMpcSignPSBT(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):931 -> nostrMpcSignPSBT
+    1:2:void nostrMpcSignPSBT$lambda$22(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):916:916 -> nostrMpcSignPSBT$lambda$22
+    3:6:void nostrMpcSignPSBT$lambda$22(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):917:917 -> nostrMpcSignPSBT$lambda$22
+    7:12:void nostrMpcSignPSBT$lambda$22(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):925:925 -> nostrMpcSignPSBT$lambda$22
+    13:18:void nostrMpcSignPSBT$lambda$22(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):926:926 -> nostrMpcSignPSBT$lambda$22
+    19:42:void nostrMpcSignPSBT$lambda$22(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):928:928 -> nostrMpcSignPSBT$lambda$22
+    43:69:void nostrMpcSignPSBT$lambda$22(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):929:929 -> nostrMpcSignPSBT$lambda$22
+    49:50:void nostrMpcTssSetup(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):642:642 -> nostrMpcTssSetup
+    51:60:void nostrMpcTssSetup$lambda$17(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):659:659 -> nostrMpcTssSetup
+    51:60:void nostrMpcTssSetup(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):659 -> nostrMpcTssSetup
+    61:63:void nostrMpcTssSetup(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):642:642 -> nostrMpcTssSetup
+    64:67:void nostrMpcTssSetup$lambda$17(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):659:659 -> nostrMpcTssSetup
+    64:67:void nostrMpcTssSetup(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):659 -> nostrMpcTssSetup
+    1:2:void nostrMpcTssSetup$lambda$17(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):643:643 -> nostrMpcTssSetup$lambda$17
+    3:6:void nostrMpcTssSetup$lambda$17(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):644:644 -> nostrMpcTssSetup$lambda$17
+    7:12:void nostrMpcTssSetup$lambda$17(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):653:653 -> nostrMpcTssSetup$lambda$17
+    13:18:void nostrMpcTssSetup$lambda$17(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):654:654 -> nostrMpcTssSetup$lambda$17
+    19:42:void nostrMpcTssSetup$lambda$17(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):656:656 -> nostrMpcTssSetup$lambda$17
+    43:69:void nostrMpcTssSetup$lambda$17(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):657:657 -> nostrMpcTssSetup$lambda$17
+    1:1:void $r8$lambda$YN0a_Kn31BykV2b58eRsCMeXZ_U(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> o
       # {"id":"com.android.tools.r8.synthesized"}
     3:8:void onGoLog(java.lang.String):37:37 -> onGoLog
     3:7:void onMessage(java.lang.String):31:31 -> onMessage
     8:11:void onMessage(java.lang.String):33:33 -> onMessage
-    1:1:void $r8$lambda$dl6PcLYFVD3gMYWDd7-CXMDlB8E(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> p
+    1:1:void $r8$lambda$b_pbpXQBNkaFG7zl1OlWI7knxVU(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> p
       # {"id":"com.android.tools.r8.synthesized"}
-    11:12:void parsePSBTDetails(java.lang.String,com.facebook.react.bridge.Promise):892:892 -> parsePSBTDetails
-    13:17:void parsePSBTDetails$lambda$22(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):901:901 -> parsePSBTDetails
-    13:17:void parsePSBTDetails(java.lang.String,com.facebook.react.bridge.Promise):901 -> parsePSBTDetails
-    18:20:void parsePSBTDetails(java.lang.String,com.facebook.react.bridge.Promise):892:892 -> parsePSBTDetails
-    21:24:void parsePSBTDetails$lambda$22(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):901:901 -> parsePSBTDetails
-    21:24:void parsePSBTDetails(java.lang.String,com.facebook.react.bridge.Promise):901 -> parsePSBTDetails
-    1:2:void parsePSBTDetails$lambda$22(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):893:893 -> parsePSBTDetails$lambda$22
-    3:6:void parsePSBTDetails$lambda$22(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):894:894 -> parsePSBTDetails$lambda$22
-    7:12:void parsePSBTDetails$lambda$22(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):895:895 -> parsePSBTDetails$lambda$22
-    13:17:void parsePSBTDetails$lambda$22(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):896:896 -> parsePSBTDetails$lambda$22
-    18:41:void parsePSBTDetails$lambda$22(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):898:898 -> parsePSBTDetails$lambda$22
-    42:68:void parsePSBTDetails$lambda$22(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):899:899 -> parsePSBTDetails$lambda$22
-    16:17:void preparams(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):688:688 -> preparams
-    18:22:void preparams$lambda$19(java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):697:697 -> preparams
-    18:22:void preparams(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):697 -> preparams
-    23:25:void preparams(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):688:688 -> preparams
-    26:29:void preparams$lambda$19(java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):697:697 -> preparams
-    26:29:void preparams(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):697 -> preparams
-    1:2:void preparams$lambda$19(java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):689:689 -> preparams$lambda$19
-    3:10:void preparams$lambda$19(java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):690:690 -> preparams$lambda$19
-    11:17:void preparams$lambda$19(java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):691:691 -> preparams$lambda$19
-    18:26:void preparams$lambda$19(java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):692:692 -> preparams$lambda$19
-    27:50:void preparams$lambda$19(java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):694:694 -> preparams$lambda$19
-    51:77:void preparams$lambda$19(java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):695:695 -> preparams$lambda$19
-    31:32:void publishData(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):419:419 -> publishData
-    33:44:void publishData$lambda$10(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):428:428 -> publishData
-    33:44:void publishData(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):428 -> publishData
-    45:47:void publishData(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):419:419 -> publishData
-    48:51:void publishData$lambda$10(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):428:428 -> publishData
-    48:51:void publishData(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):428 -> publishData
-    1:2:void publishData$lambda$10(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):420:420 -> publishData$lambda$10
-    3:6:void publishData$lambda$10(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):421:421 -> publishData$lambda$10
-    7:12:void publishData$lambda$10(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):422:422 -> publishData$lambda$10
-    13:17:void publishData$lambda$10(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):423:423 -> publishData$lambda$10
-    18:41:void publishData$lambda$10(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):425:425 -> publishData$lambda$10
-    42:47:void publishData$lambda$10(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):426:426 -> publishData$lambda$10
-    1:1:void $r8$lambda$mGXK2FRfVG9abGVhx16ywOPdlaw(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> q
+    11:12:void parsePSBTDetails(java.lang.String,com.facebook.react.bridge.Promise):936:936 -> parsePSBTDetails
+    13:17:void parsePSBTDetails$lambda$23(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):945:945 -> parsePSBTDetails
+    13:17:void parsePSBTDetails(java.lang.String,com.facebook.react.bridge.Promise):945 -> parsePSBTDetails
+    18:20:void parsePSBTDetails(java.lang.String,com.facebook.react.bridge.Promise):936:936 -> parsePSBTDetails
+    21:24:void parsePSBTDetails$lambda$23(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):945:945 -> parsePSBTDetails
+    21:24:void parsePSBTDetails(java.lang.String,com.facebook.react.bridge.Promise):945 -> parsePSBTDetails
+    1:2:void parsePSBTDetails$lambda$23(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):937:937 -> parsePSBTDetails$lambda$23
+    3:6:void parsePSBTDetails$lambda$23(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):938:938 -> parsePSBTDetails$lambda$23
+    7:12:void parsePSBTDetails$lambda$23(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):939:939 -> parsePSBTDetails$lambda$23
+    13:17:void parsePSBTDetails$lambda$23(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):940:940 -> parsePSBTDetails$lambda$23
+    18:41:void parsePSBTDetails$lambda$23(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):942:942 -> parsePSBTDetails$lambda$23
+    42:68:void parsePSBTDetails$lambda$23(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):943:943 -> parsePSBTDetails$lambda$23
+    11:12:void postTx(java.lang.String,com.facebook.react.bridge.Promise):394:394 -> postTx
+    13:17:void postTx$lambda$10(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):403:403 -> postTx
+    13:17:void postTx(java.lang.String,com.facebook.react.bridge.Promise):403 -> postTx
+    18:20:void postTx(java.lang.String,com.facebook.react.bridge.Promise):394:394 -> postTx
+    21:24:void postTx$lambda$10(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):403:403 -> postTx
+    21:24:void postTx(java.lang.String,com.facebook.react.bridge.Promise):403 -> postTx
+    1:2:void postTx$lambda$10(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):395:395 -> postTx$lambda$10
+    3:6:void postTx$lambda$10(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):396:396 -> postTx$lambda$10
+    7:12:void postTx$lambda$10(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):397:397 -> postTx$lambda$10
+    13:17:void postTx$lambda$10(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):398:398 -> postTx$lambda$10
+    18:41:void postTx$lambda$10(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):400:400 -> postTx$lambda$10
+    42:68:void postTx$lambda$10(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):401:401 -> postTx$lambda$10
+    16:17:void preparams(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):732:732 -> preparams
+    18:22:void preparams$lambda$20(java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):741:741 -> preparams
+    18:22:void preparams(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):741 -> preparams
+    23:25:void preparams(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):732:732 -> preparams
+    26:29:void preparams$lambda$20(java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):741:741 -> preparams
+    26:29:void preparams(java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):741 -> preparams
+    1:2:void preparams$lambda$20(java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):733:733 -> preparams$lambda$20
+    3:10:void preparams$lambda$20(java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):734:734 -> preparams$lambda$20
+    11:17:void preparams$lambda$20(java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):735:735 -> preparams$lambda$20
+    18:26:void preparams$lambda$20(java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):736:736 -> preparams$lambda$20
+    27:50:void preparams$lambda$20(java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):738:738 -> preparams$lambda$20
+    51:77:void preparams$lambda$20(java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):739:739 -> preparams$lambda$20
+    31:32:void publishData(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):463:463 -> publishData
+    33:44:void publishData$lambda$11(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):472:472 -> publishData
+    33:44:void publishData(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):472 -> publishData
+    45:47:void publishData(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):463:463 -> publishData
+    48:51:void publishData$lambda$11(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):472:472 -> publishData
+    48:51:void publishData(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):472 -> publishData
+    1:2:void publishData$lambda$11(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):464:464 -> publishData$lambda$11
+    3:6:void publishData$lambda$11(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):465:465 -> publishData$lambda$11
+    7:12:void publishData$lambda$11(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):466:466 -> publishData$lambda$11
+    13:17:void publishData$lambda$11(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):467:467 -> publishData$lambda$11
+    18:41:void publishData$lambda$11(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):469:469 -> publishData$lambda$11
+    42:47:void publishData$lambda$11(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):470:470 -> publishData$lambda$11
+    1:1:void $r8$lambda$nlnmf2XV_JudacQ98578T5aJVLw(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> q
       # {"id":"com.android.tools.r8.synthesized"}
-    1:1:void $r8$lambda$ow0RJvm4JgOQPi-NCXse4PkqoqM(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> r
+    1:1:void $r8$lambda$uXgLVjJtHXK_nlQ1a2oapEibDao(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> r
       # {"id":"com.android.tools.r8.synthesized"}
-    28:31:void recoverPubkey(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):703:703 -> recoverPubkey
-    32:37:void recoverPubkey(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):704:704 -> recoverPubkey
-    38:42:void recoverPubkey(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):705:705 -> recoverPubkey
-    43:66:void recoverPubkey(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):707:707 -> recoverPubkey
-    67:93:void recoverPubkey(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):708:708 -> recoverPubkey
+    28:31:void recoverPubkey(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):747:747 -> recoverPubkey
+    32:37:void recoverPubkey(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):748:748 -> recoverPubkey
+    38:42:void recoverPubkey(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):749:749 -> recoverPubkey
+    43:66:void recoverPubkey(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):751:751 -> recoverPubkey
+    67:93:void recoverPubkey(java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):752:752 -> recoverPubkey
     2:5:void removeListeners(int):48:48 -> removeListeners
-    13:16:void runRelay(java.lang.String,com.facebook.react.bridge.Promise):395:395 -> runRelay
-    17:22:void runRelay(java.lang.String,com.facebook.react.bridge.Promise):396:396 -> runRelay
-    23:27:void runRelay(java.lang.String,com.facebook.react.bridge.Promise):397:397 -> runRelay
-    28:51:void runRelay(java.lang.String,com.facebook.react.bridge.Promise):399:399 -> runRelay
-    52:55:void runRelay(java.lang.String,com.facebook.react.bridge.Promise):400:400 -> runRelay
-    1:1:void $r8$lambda$wTFd9zvGEfnxPIsFJCvLGI9HXuA(java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> s
+    13:16:void runRelay(java.lang.String,com.facebook.react.bridge.Promise):439:439 -> runRelay
+    17:22:void runRelay(java.lang.String,com.facebook.react.bridge.Promise):440:440 -> runRelay
+    23:27:void runRelay(java.lang.String,com.facebook.react.bridge.Promise):441:441 -> runRelay
+    28:51:void runRelay(java.lang.String,com.facebook.react.bridge.Promise):443:443 -> runRelay
+    52:55:void runRelay(java.lang.String,com.facebook.react.bridge.Promise):444:444 -> runRelay
+    1:1:void $r8$lambda$uooOAXrab9CoIOkRvYjCHatsE-E(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> s
       # {"id":"com.android.tools.r8.synthesized"}
     1:4:void sendLogEvent(java.lang.String,java.lang.String):53:53 -> sendLogEvent
     5:9:void sendLogEvent(java.lang.String,java.lang.String):54:54 -> sendLogEvent
@@ -72596,11 +72617,11 @@ com.boldwallet.BBMTLibNativeModule -> com.boldwallet.BBMTLibNativeModule:
     23:27:void setFeePolicy(java.lang.String,com.facebook.react.bridge.Promise):106:106 -> setFeePolicy
     28:51:void setFeePolicy(java.lang.String,com.facebook.react.bridge.Promise):108:108 -> setFeePolicy
     52:55:void setFeePolicy(java.lang.String,com.facebook.react.bridge.Promise):109:109 -> setFeePolicy
-    13:16:void sha256(java.lang.String,com.facebook.react.bridge.Promise):815:815 -> sha256
-    17:22:void sha256(java.lang.String,com.facebook.react.bridge.Promise):816:816 -> sha256
-    23:27:void sha256(java.lang.String,com.facebook.react.bridge.Promise):817:817 -> sha256
-    28:51:void sha256(java.lang.String,com.facebook.react.bridge.Promise):819:819 -> sha256
-    52:78:void sha256(java.lang.String,com.facebook.react.bridge.Promise):820:820 -> sha256
+    13:16:void sha256(java.lang.String,com.facebook.react.bridge.Promise):859:859 -> sha256
+    17:22:void sha256(java.lang.String,com.facebook.react.bridge.Promise):860:860 -> sha256
+    23:27:void sha256(java.lang.String,com.facebook.react.bridge.Promise):861:861 -> sha256
+    28:51:void sha256(java.lang.String,com.facebook.react.bridge.Promise):863:863 -> sha256
+    52:78:void sha256(java.lang.String,com.facebook.react.bridge.Promise):864:864 -> sha256
     21:22:void spendingHash(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):152:152 -> spendingHash
     23:32:void spendingHash$lambda$2(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):163:163 -> spendingHash
     23:32:void spendingHash(java.lang.String,java.lang.String,java.lang.String,com.facebook.react.bridge.Promise):163 -> spendingHash
@@ -72626,18 +72647,20 @@ com.boldwallet.BBMTLibNativeModule -> com.boldwallet.BBMTLibNativeModule:
     13:17:void spendingHashWithUTXOs$lambda$3(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):172:172 -> spendingHashWithUTXOs$lambda$3
     18:41:void spendingHashWithUTXOs$lambda$3(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):174:174 -> spendingHashWithUTXOs$lambda$3
     42:45:void spendingHashWithUTXOs$lambda$3(java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):175:175 -> spendingHashWithUTXOs$lambda$3
-    13:16:void stopRelay(java.lang.String,com.facebook.react.bridge.Promise):407:407 -> stopRelay
-    17:39:void stopRelay(java.lang.String,com.facebook.react.bridge.Promise):408:408 -> stopRelay
-    40:44:void stopRelay(java.lang.String,com.facebook.react.bridge.Promise):409:409 -> stopRelay
-    45:68:void stopRelay(java.lang.String,com.facebook.react.bridge.Promise):411:411 -> stopRelay
-    69:72:void stopRelay(java.lang.String,com.facebook.react.bridge.Promise):412:412 -> stopRelay
-    1:1:void $r8$lambda$yfuTnDG8wDelbXr06W1mAOYv-E4(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> t
+    13:16:void stopRelay(java.lang.String,com.facebook.react.bridge.Promise):451:451 -> stopRelay
+    17:39:void stopRelay(java.lang.String,com.facebook.react.bridge.Promise):452:452 -> stopRelay
+    40:44:void stopRelay(java.lang.String,com.facebook.react.bridge.Promise):453:453 -> stopRelay
+    45:68:void stopRelay(java.lang.String,com.facebook.react.bridge.Promise):455:455 -> stopRelay
+    69:72:void stopRelay(java.lang.String,com.facebook.react.bridge.Promise):456:456 -> stopRelay
+    1:1:void $r8$lambda$v8RyqVPXSPRS7r38urcbmX0RJXs(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> t
       # {"id":"com.android.tools.r8.synthesized"}
     13:16:void totalUTXO(java.lang.String,com.facebook.react.bridge.Promise):116:116 -> totalUTXO
     17:22:void totalUTXO(java.lang.String,com.facebook.react.bridge.Promise):117:117 -> totalUTXO
     23:27:void totalUTXO(java.lang.String,com.facebook.react.bridge.Promise):118:118 -> totalUTXO
     28:51:void totalUTXO(java.lang.String,com.facebook.react.bridge.Promise):120:120 -> totalUTXO
     52:55:void totalUTXO(java.lang.String,com.facebook.react.bridge.Promise):121:121 -> totalUTXO
+    1:1:void $r8$lambda$y_oXvc5y9cfdul0_BQMNGwJIP2k(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> u
+      # {"id":"com.android.tools.r8.synthesized"}
 com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda0 -> com.boldwallet.a:
 # {"id":"sourceFile","fileName":"R8$$SyntheticClass"}
 # {"id":"com.android.tools.r8.synthesized"}
@@ -72906,7 +72929,7 @@ com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda19 -> com.boldwallet.
       # {"id":"com.android.tools.r8.synthesized"}
     1:1:void run():0:0 -> run
       # {"id":"com.android.tools.r8.synthesized"}
-com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda2 -> com.boldwallet.m:
+com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda2 -> com.boldwallet.n:
 # {"id":"sourceFile","fileName":"R8$$SyntheticClass"}
 # {"id":"com.android.tools.r8.synthesized"}
     java.lang.String com.boldwallet.BBMTLibNativeModule$$InternalSyntheticLambda$1$274b62fafc34a84aa3b2b4352258b3b889bdd0ff3c91d6abe60fd42c79251e32$0.f$0 -> d
@@ -72919,7 +72942,20 @@ com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda2 -> com.boldwallet.m
       # {"id":"com.android.tools.r8.synthesized"}
     1:1:void run():0:0 -> run
       # {"id":"com.android.tools.r8.synthesized"}
-com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda3 -> com.boldwallet.n:
+com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda20 -> com.boldwallet.m:
+# {"id":"sourceFile","fileName":"R8$$SyntheticClass"}
+# {"id":"com.android.tools.r8.synthesized"}
+    java.lang.String com.boldwallet.BBMTLibNativeModule$$InternalSyntheticLambda$1$f7c2fbbabcc7abec31e98f1faa2a4000af8a17f5f5cf75500ff3524916c96576$0.f$0 -> d
+      # {"id":"com.android.tools.r8.synthesized"}
+    com.boldwallet.BBMTLibNativeModule com.boldwallet.BBMTLibNativeModule$$InternalSyntheticLambda$1$f7c2fbbabcc7abec31e98f1faa2a4000af8a17f5f5cf75500ff3524916c96576$0.f$1 -> e
+      # {"id":"com.android.tools.r8.synthesized"}
+    com.facebook.react.bridge.Promise com.boldwallet.BBMTLibNativeModule$$InternalSyntheticLambda$1$f7c2fbbabcc7abec31e98f1faa2a4000af8a17f5f5cf75500ff3524916c96576$0.f$2 -> f
+      # {"id":"com.android.tools.r8.synthesized"}
+    1:1:void <init>(java.lang.String,com.boldwallet.BBMTLibNativeModule,com.facebook.react.bridge.Promise):0:0 -> <init>
+      # {"id":"com.android.tools.r8.synthesized"}
+    1:1:void run():0:0 -> run
+      # {"id":"com.android.tools.r8.synthesized"}
+com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda3 -> com.boldwallet.o:
 # {"id":"sourceFile","fileName":"R8$$SyntheticClass"}
 # {"id":"com.android.tools.r8.synthesized"}
     java.lang.String com.boldwallet.BBMTLibNativeModule$$InternalSyntheticLambda$1$4204f4fb0a00f31ad06dff900c75bd10a8baa18fae7b5925c9b4eb3601c5ccdf$0.f$0 -> d
@@ -72956,7 +72992,7 @@ com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda3 -> com.boldwallet.n
       # {"id":"com.android.tools.r8.synthesized"}
     1:1:void run():0:0 -> run
       # {"id":"com.android.tools.r8.synthesized"}
-com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda4 -> com.boldwallet.o:
+com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda4 -> com.boldwallet.p:
 # {"id":"sourceFile","fileName":"R8$$SyntheticClass"}
 # {"id":"com.android.tools.r8.synthesized"}
     java.lang.String com.boldwallet.BBMTLibNativeModule$$InternalSyntheticLambda$1$468f8fc0141e15c891ae1b7290faf0fc5f150619576cdfbbd25b16673fda6939$0.f$0 -> d
@@ -72969,7 +73005,7 @@ com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda4 -> com.boldwallet.o
       # {"id":"com.android.tools.r8.synthesized"}
     1:1:void run():0:0 -> run
       # {"id":"com.android.tools.r8.synthesized"}
-com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda5 -> com.boldwallet.p:
+com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda5 -> com.boldwallet.q:
 # {"id":"sourceFile","fileName":"R8$$SyntheticClass"}
 # {"id":"com.android.tools.r8.synthesized"}
     java.lang.String com.boldwallet.BBMTLibNativeModule$$InternalSyntheticLambda$1$546c374b82bea37566d68638a69fbce1948911ce0db3cf677796e137660a1f80$0.f$0 -> d
@@ -73002,7 +73038,7 @@ com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda5 -> com.boldwallet.p
       # {"id":"com.android.tools.r8.synthesized"}
     1:1:void run():0:0 -> run
       # {"id":"com.android.tools.r8.synthesized"}
-com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda6 -> com.boldwallet.q:
+com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda6 -> com.boldwallet.r:
 # {"id":"sourceFile","fileName":"R8$$SyntheticClass"}
 # {"id":"com.android.tools.r8.synthesized"}
     java.lang.String com.boldwallet.BBMTLibNativeModule$$InternalSyntheticLambda$1$6ecf0fe02e06b6f28d3eab08dc839f4b10adbd10d7a7887d1ae2037beb65b8a4$0.f$0 -> d
@@ -73019,7 +73055,7 @@ com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda6 -> com.boldwallet.q
       # {"id":"com.android.tools.r8.synthesized"}
     1:1:void run():0:0 -> run
       # {"id":"com.android.tools.r8.synthesized"}
-com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda7 -> com.boldwallet.r:
+com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda7 -> com.boldwallet.s:
 # {"id":"sourceFile","fileName":"R8$$SyntheticClass"}
 # {"id":"com.android.tools.r8.synthesized"}
     java.lang.String com.boldwallet.BBMTLibNativeModule$$InternalSyntheticLambda$1$7010fa270982d74d6460fae9793350b2caea8046c53f3feaadd801c1fe1e310e$0.f$0 -> d
@@ -73058,7 +73094,7 @@ com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda7 -> com.boldwallet.r
       # {"id":"com.android.tools.r8.synthesized"}
     1:1:void run():0:0 -> run
       # {"id":"com.android.tools.r8.synthesized"}
-com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda8 -> com.boldwallet.s:
+com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda8 -> com.boldwallet.t:
 # {"id":"sourceFile","fileName":"R8$$SyntheticClass"}
 # {"id":"com.android.tools.r8.synthesized"}
     java.lang.String com.boldwallet.BBMTLibNativeModule$$InternalSyntheticLambda$1$7725d450759678c6d9be24f76e642d4eb475989368a915c7305834df1ce77ef2$0.f$0 -> d
@@ -73087,7 +73123,7 @@ com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda8 -> com.boldwallet.s
       # {"id":"com.android.tools.r8.synthesized"}
     1:1:void run():0:0 -> run
       # {"id":"com.android.tools.r8.synthesized"}
-com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda9 -> com.boldwallet.t:
+com.boldwallet.BBMTLibNativeModule$$ExternalSyntheticLambda9 -> com.boldwallet.u:
 # {"id":"sourceFile","fileName":"R8$$SyntheticClass"}
 # {"id":"com.android.tools.r8.synthesized"}
     java.lang.String com.boldwallet.BBMTLibNativeModule$$InternalSyntheticLambda$1$86dfb80bb0ba8bdd0c415c8ac0f435e6ada4b978296afabd555ac03039be9e98$0.f$0 -> d
@@ -73230,7 +73266,7 @@ com.boldwallet.MainApplication -> com.boldwallet.MainApplication:
     75:82:com.facebook.react.ReactHost reactHost_delegate$lambda$1(com.boldwallet.MainApplication):29:29 -> reactHost_delegate$lambda$1
     83:98:com.facebook.react.ReactHost reactHost_delegate$lambda$1(com.boldwallet.MainApplication):21:21 -> reactHost_delegate$lambda$1
     99:103:com.facebook.react.ReactHost reactHost_delegate$lambda$1(com.boldwallet.MainApplication):19:19 -> reactHost_delegate$lambda$1
-com.boldwallet.MainApplication$$ExternalSyntheticLambda0 -> com.boldwallet.u:
+com.boldwallet.MainApplication$$ExternalSyntheticLambda0 -> com.boldwallet.v:
 # {"id":"sourceFile","fileName":"R8$$SyntheticClass"}
 # {"id":"com.android.tools.r8.synthesized"}
     com.boldwallet.MainApplication com.boldwallet.MainApplication$$InternalSyntheticLambda$1$c34d62ab7f87fbba2ec12a60f8979a51f9b7d50ed1c4299660909eff58f1cb90$0.f$0 -> d
@@ -216743,18 +216779,22 @@ tss.UTXO -> tss.UTXO:
     48:57:java.lang.String toString():74:74 -> toString
 tss.UTXOWithPath -> tss.UTXOWithPath:
 # {"id":"sourceFile","fileName":"UTXOWithPath.java"}
-    1:4:void <clinit>():14:14 -> <clinit>
-    1:1:void <init>(int):23:23 -> <init>
-    2:2:void <init>():25:25 -> <init>
-    4:8:boolean equals(java.lang.Object):35:35 -> equals
-    9:10:boolean equals(java.lang.Object):38:38 -> equals
-    11:14:boolean equals(java.lang.Object):41:41 -> equals
-    15:23:boolean equals(java.lang.Object):42:42 -> equals
-    24:33:boolean equals(java.lang.Object):47:47 -> equals
-    1:13:int hashCode():54:54 -> hashCode
-    1:5:int incRefnum():19:19 -> incRefnum
-    6:8:int incRefnum():20:20 -> incRefnum
-    1:5:java.lang.String toString():58:58 -> toString
-    6:15:java.lang.String toString():59:59 -> toString
-    16:32:java.lang.String toString():60:60 -> toString
-    33:42:java.lang.String toString():61:61 -> toString
+    1:4:void <clinit>():16:16 -> <clinit>
+    1:1:void <init>(int):25:25 -> <init>
+    2:2:void <init>():27:27 -> <init>
+    4:8:boolean equals(java.lang.Object):40:40 -> equals
+    9:10:boolean equals(java.lang.Object):43:43 -> equals
+    11:14:boolean equals(java.lang.Object):46:46 -> equals
+    15:23:boolean equals(java.lang.Object):47:47 -> equals
+    24:30:boolean equals(java.lang.Object):52:52 -> equals
+    31:34:boolean equals(java.lang.Object):55:55 -> equals
+    35:43:boolean equals(java.lang.Object):56:56 -> equals
+    44:53:boolean equals(java.lang.Object):61:61 -> equals
+    1:17:int hashCode():68:68 -> hashCode
+    1:5:int incRefnum():21:21 -> incRefnum
+    6:8:int incRefnum():22:22 -> incRefnum
+    1:5:java.lang.String toString():72:72 -> toString
+    6:15:java.lang.String toString():73:73 -> toString
+    16:32:java.lang.String toString():74:74 -> toString
+    33:47:java.lang.String toString():75:75 -> toString
+    48:57:java.lang.String toString():76:76 -> toString

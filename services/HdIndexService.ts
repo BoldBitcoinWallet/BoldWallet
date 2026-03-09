@@ -1,88 +1,77 @@
 /**
  * HD wallet index persistence: external (receive) and internal (change) chain indexes.
+ *
  * Keys are scoped by network and addressType so switching network/type keeps separate indexes.
+ *
+ * Migration: previously backed by LocalCache (file-based). Now backed by SQLite via
+ * WalletRepository. The public API is synchronous to avoid cascading async changes
+ * throughout the call-sites. WalletRepository.execute() is synchronous (op-sqlite).
+ *
+ * NOTE: All functions remain async-compatible (returning Promise) so existing call-sites
+ * that use `await` require no changes.
  */
-import LocalCache from './LocalCache';
+import walletRepository from './repositories/WalletRepository';
 import {dbg} from '../utils';
 
-const KEY_EXTERNAL = (network: string, addressType: string) =>
-  `hd_external_index_${network}_${addressType}`;
-const KEY_CHANGE = (network: string, addressType: string) =>
-  `hd_change_index_${network}_${addressType}`;
-const KEY_MAX_USED_EXTERNAL = (network: string, addressType: string) =>
-  `hd_max_used_external_${network}_${addressType}`;
-
-export async function getExternalIndex(
+export function getExternalIndex(
   network: string,
   addressType: string,
 ): Promise<number> {
-  const key = KEY_EXTERNAL(network, addressType);
-  const raw = await LocalCache.getItem(key);
-  if (raw == null || raw === '') return 0;
-  const n = parseInt(raw, 10);
-  return Number.isNaN(n) ? 0 : Math.max(0, n);
+  return Promise.resolve(walletRepository.getExternalIndex(network, addressType));
 }
 
-export async function setExternalIndex(
+export function setExternalIndex(
   network: string,
   addressType: string,
   value: number,
 ): Promise<void> {
-  const key = KEY_EXTERNAL(network, addressType);
-  await LocalCache.setItem(key, String(Math.max(0, Math.floor(value))));
+  walletRepository.setExternalIndex(network, addressType, value);
   dbg('HdIndexService: setExternalIndex', {network, addressType, value});
+  return Promise.resolve();
 }
 
-export async function getChangeIndex(
+export function getChangeIndex(
   network: string,
   addressType: string,
 ): Promise<number> {
-  const key = KEY_CHANGE(network, addressType);
-  const raw = await LocalCache.getItem(key);
-  if (raw == null || raw === '') return 0;
-  const n = parseInt(raw, 10);
-  return Number.isNaN(n) ? 0 : Math.max(0, n);
+  return Promise.resolve(walletRepository.getChangeIndex(network, addressType));
 }
 
-export async function setChangeIndex(
+export function setChangeIndex(
   network: string,
   addressType: string,
   value: number,
 ): Promise<void> {
-  const key = KEY_CHANGE(network, addressType);
-  await LocalCache.setItem(key, String(Math.max(0, Math.floor(value))));
+  walletRepository.setChangeIndex(network, addressType, value);
   dbg('HdIndexService: setChangeIndex', {network, addressType, value});
+  return Promise.resolve();
 }
 
-export async function getMaxUsedExternal(
+export function getMaxUsedExternal(
   network: string,
   addressType: string,
 ): Promise<number> {
-  const key = KEY_MAX_USED_EXTERNAL(network, addressType);
-  const raw = await LocalCache.getItem(key);
-  if (raw == null || raw === '') return 0;
-  const n = parseInt(raw, 10);
-  return Number.isNaN(n) ? 0 : Math.max(0, n);
+  return Promise.resolve(walletRepository.getMaxUsedExternal(network, addressType));
 }
 
-export async function setMaxUsedExternal(
+export function setMaxUsedExternal(
   network: string,
   addressType: string,
   value: number,
 ): Promise<void> {
-  const key = KEY_MAX_USED_EXTERNAL(network, addressType);
-  await LocalCache.setItem(key, String(Math.max(0, Math.floor(value))));
+  walletRepository.setMaxUsedExternal(network, addressType, value);
+  return Promise.resolve();
 }
 
 /**
  * Call only after a send transaction has been successfully broadcast.
  * Increments the change index so the next send uses a fresh internal address.
  */
-export async function incrementChangeIndexAfterSend(
+export function incrementChangeIndexAfterSend(
   network: string,
   addressType: string,
 ): Promise<void> {
-  const next = (await getChangeIndex(network, addressType)) + 1;
-  await setChangeIndex(network, addressType, next);
+  const next = walletRepository.incrementChangeIndex(network, addressType);
   dbg('HdIndexService: incrementChangeIndexAfterSend', {network, addressType, next});
+  return Promise.resolve();
 }

@@ -25,7 +25,7 @@ import Big from 'big.js';
 import {dbg, decodeSendBitcoinQR, formatBitcoinDisplay} from '../utils';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
-import LocalCache from '../services/LocalCache';
+import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {
   validateBitcoinAddressEnhanced,
@@ -739,7 +739,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   const debouncedGetFee = useMemo(() => debounce(getFee, 1000), [getFee]);
   useEffect(() => {
     const initFee = async () => {
-      const feeOption = await LocalCache.getItem('feeStrategy');
+      const feeOption = appConfigRepository.get(CONFIG_KEYS.FEE_STRATEGY);
       // Always default to 'eco' if no fee strategy is set or if it was 'min'
       const defaultFee = feeOption && feeOption !== 'min' ? feeOption : 'eco';
       setFeeStrategy(defaultFee);
@@ -951,7 +951,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     setFeeStrategy(value);
     dbg('setting fee strategy to', value);
     BBMTLibNativeModule.setFeePolicy(value);
-    LocalCache.setItem('feeStrategy', value);
+    appConfigRepository.set(CONFIG_KEYS.FEE_STRATEGY, value);
     // Dismiss keyboard when fee strategy changes (triggers new fee estimation)
     Keyboard.dismiss();
   };

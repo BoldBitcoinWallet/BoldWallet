@@ -26,7 +26,7 @@ import * as RNFS from 'react-native-fs';
 import QRCodeModal from '../components/QRCodeModal';
 import SignedPSBTModal from './SignedPSBTModal';
 import {WalletService} from '../services/WalletService';
-import LocalCache from '../services/LocalCache';
+import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import CurrencySelector from '../components/CurrencySelector';
 import {createStyles as createGlobalStyles} from '../components/Styles';
 const {BBMTLibNativeModule} = NativeModules;
@@ -313,7 +313,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   useEffect(() => {
     const fetchPrice = async () => {
       try {
-        const currency = (await LocalCache.getItem('currency')) || 'USD';
+        const currency = appConfigRepository.get(CONFIG_KEYS.CURRENCY) || 'USD';
         setSelectedCurrency(currency);
         const walletService = WalletService.getInstance();
         await walletService.initialize();
@@ -333,7 +333,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   }, []);
   const handleCurrencySelect = async (currency: {code: string}) => {
     setSelectedCurrency(currency.code);
-    await LocalCache.setItem('currency', currency.code);
+    appConfigRepository.set(CONFIG_KEYS.CURRENCY, currency.code);
     if (priceData[currency.code]) {
       const formattedPrice = priceData[currency.code].toFixed(2);
       setBtcPrice(formattedPrice);

@@ -36,7 +36,7 @@ import {COMMON_FONT_CONFIGS} from '../theme/fonts';
 import TransactionListSkeleton from './TransactionListSkeleton';
 import {WalletService} from '../services/WalletService';
 import TransactionDetailsModal from './TransactionDetailsModal';
-import LocalCache from '../services/LocalCache';
+import transactionRepository from '../services/repositories/TransactionRepository';
 import HistoricalPriceService, {
   getHistoricalRateKey,
 } from '../services/HistoricalPriceService';
@@ -516,15 +516,12 @@ const TransactionList = React.forwardRef<
             !addrToCheck ||
             !addressMatchesNetwork(addrToCheck, isTestnetApi)
           ) {
-            dbg('TransactionList: address/baseApi mismatch; skipping fetch', {
+            dbg('TransactionList: address/baseApi mismatch; loading from DB', {
               address: addrToCheck,
               url,
             });
-            if (isMounted.current) {
-              setTransactions([]);
-              setHasMoreTransactions(false);
-              setIsRefreshing(false);
-            }
+            // Show cached data rather than blanking the list on a mismatch
+            await loadFromCache();
             return;
           }
           dbg(
@@ -554,7 +551,13 @@ const TransactionList = React.forwardRef<
             const response = await mempoolClient.get<any[]>(apiUrl, {
               signal: abortController.current.signal,
             });
-            responseData = response.ok ? response.data : [];
+            if (!response.ok) {
+              // HTTP-level error (not a thrown exception) — fall back to DB
+              dbg('TransactionList: non-ok response, loading from DB');
+              await loadFromCache();
+              return;
+            }
+            responseData = response.data ?? [];
           }
           dbg(
             'TransactionList: Received response with',
@@ -565,20 +568,16 @@ const TransactionList = React.forwardRef<
             dbg('Component unmounted, skipping state updates');
             return;
           }
-          const cached = await (async () => {
+          const cached = (() => {
             if (isMultiAddress && addresses!.length > 0) {
               const merged: Record<string, any> = {};
               for (const addr of addresses!) {
-                const p = JSON.parse(
-                  (await LocalCache.getItem(`${addr}-pendingTxs`)) || '{}',
-                );
+                const p = transactionRepository.getPendingTxMap(addr, network || 'mainnet');
                 Object.assign(merged, p);
               }
               return merged;
             }
-            return JSON.parse(
-              (await LocalCache.getItem(`${address}-pendingTxs`)) || '{}',
-            );
+            return transactionRepository.getPendingTxMap(address!, network || 'mainnet');
           })();
           const addrForAmounts = isMultiAddress ? addresses! : address;
           let pending = 0;
@@ -597,16 +596,7 @@ const TransactionList = React.forwardRef<
             if (cached[tx.txid]) {
               delete cached[tx.txid];
               for (const a of addrsToUpdate) {
-                const p = JSON.parse(
-                  (await LocalCache.getItem(`${a}-pendingTxs`)) || '{}',
-                );
-                if (p[tx.txid]) {
-                  delete p[tx.txid];
-                  await LocalCache.setItem(
-                    `${a}-pendingTxs`,
-                    JSON.stringify(p),
-                  );
-                }
+                transactionRepository.removePending(tx.txid, network || 'mainnet');
               }
             }
           }
@@ -806,11 +796,31 @@ const TransactionList = React.forwardRef<
         setIsRefreshing(false);
         return;
       }
-      // Reset list when address or baseApi changes to prevent showing stale rows
-      setTransactions([]);
+      // Pre-populate from DB so cached rows are visible while the live fetch runs.
+      // This replaces the eager setTransactions([]) that left the list empty on
+      // address/network change and on first mount while offline.
+      let mounted = true;
+      (async () => {
+        try {
+          const cached =
+            isMultiAddress && network && addressType
+              ? await WalletService.getInstance().transactionsFromCacheForWallet(
+                  network,
+                  addressType,
+                )
+              : await WalletService.getInstance().transactionsFromCache(
+                  address || '',
+                );
+          if (mounted && cached.length > 0) {
+            setTransactions(cached);
+          }
+        } catch {
+          // Non-critical — the live fetch will populate state when connectivity
+          // is available.
+        }
+      })();
       setHasMoreTransactions(true);
       setLastSeenTxId(null);
-      let mounted = true;
 
       const controller = new AbortController();
       abortController.current = controller;
@@ -994,21 +1004,25 @@ const TransactionList = React.forwardRef<
           `${cleanBaseApi}/address/${address}/txs/chain/${lastSeenTxId}`,
           {signal: abortController.current?.signal},
         );
-        const newTransactions = response.ok ? response.data : [];
+        if (!response.ok) {
+          // API error during pagination — leave hasMoreTransactions true so
+          // the user can retry without losing the ability to paginate.
+          dbg('fetchMore: non-ok response, keeping pagination state');
+          return;
+        }
+        const newTransactions = response.data ?? [];
         dbg('Received more transactions:', newTransactions.length);
         if (!isMounted.current) {
           dbg('Component unmounted during fetch more');
           return;
         }
-        // Only set hasMoreTransactions to false if we get no new transactions
+        // Only set hasMoreTransactions to false on a genuine empty page
         if (newTransactions.length === 0) {
           dbg('No more transactions to load');
           setHasMoreTransactions(false);
           return;
         }
-        const cached = JSON.parse(
-          (await LocalCache.getItem(`${address}-pendingTxs`)) || '{}',
-        );
+        const cached = transactionRepository.getPendingTxMap(address!, network || 'mainnet');
         dbg('Cached transactions for fetch more:', Object.keys(cached).length);
         setTransactions(prevTransactions => {
           try {
@@ -1037,10 +1051,7 @@ const TransactionList = React.forwardRef<
               if (cached[tx.txid]) {
                 delete cached[tx.txid];
                 dbg('delete from cache in fetch more', tx.txid);
-                LocalCache.setItem(
-                  `${address}-pendingTxs`,
-                  JSON.stringify(cached),
-                );
+                transactionRepository.removePending(tx.txid, network || 'mainnet');
               }
             });
             // Add cached transactions
