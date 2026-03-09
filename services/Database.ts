@@ -85,6 +85,7 @@ const SCHEMA_STATEMENTS = [
     derivation_path TEXT,
     is_confirmed    INTEGER NOT NULL DEFAULT 1,
     block_height    INTEGER,
+    block_time      INTEGER,
     fetched_at      INTEGER NOT NULL,
     PRIMARY KEY (txid, vout)
   )`,
@@ -213,6 +214,24 @@ class DatabaseService {
         for (const stmt of SCHEMA_STATEMENTS) {
           this._db.executeSync(stmt);
         }
+
+        // Column migrations — ALTER TABLE ADD COLUMN fails silently if the
+        // column already exists (SQLite throws "duplicate column name").
+        // Wrap each one individually so a single failure never aborts the rest.
+        const COLUMN_MIGRATIONS = [
+          // v3.1: store block_time alongside block_height in utxos so the UI
+          // can display human-readable timestamps for confirmed UTXOs loaded
+          // from the DB (without this the row always showed "Unconfirmed").
+          'ALTER TABLE utxos ADD COLUMN block_time INTEGER',
+        ];
+        for (const stmt of COLUMN_MIGRATIONS) {
+          try {
+            this._db.executeSync(stmt);
+          } catch {
+            // Column already present — safe to ignore.
+          }
+        }
+
         dbg('DatabaseService: schema ready');
       } catch (err) {
         dbg('DatabaseService: open error — attempting recovery', err);
@@ -300,6 +319,36 @@ class DatabaseService {
       }
     });
     dbg('DatabaseService: wallet data cleared');
+  }
+
+  /**
+   * Clear fetched/cached wallet data while preserving HD discovery state.
+   *
+   * Used for network-switch, address-type switch, and "Clear Cache" so that:
+   *  • hd_state (externalIndex, changeIndex, restoreDone) is kept as a
+   *    baseline for the next discoverHdIndexesForNetwork run.  If discovery
+   *    fails the old correct indexes are still in DB, not replaced by 0.
+   *  • wallet_addresses is kept so WalletHome can derive the current receive
+   *    address immediately while the fresh API fetch completes.
+   *
+   * For full wallet reset (delete / new import) use clearWalletData() instead.
+   */
+  clearWalletCacheData(): void {
+    this.transaction(tx => {
+      for (const table of [
+        'address_balances',
+        'utxos',
+        'transactions',
+        'transaction_addresses',
+        'tx_inputs',
+        'tx_outputs',
+        'pending_transactions',
+        'sync_metadata',
+      ]) {
+        tx.execute(`DELETE FROM ${table}`);
+      }
+    });
+    dbg('DatabaseService: wallet cache data cleared (hd_state preserved)');
   }
 }
 

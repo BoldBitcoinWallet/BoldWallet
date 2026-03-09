@@ -78,6 +78,7 @@ import {
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 
 import walletRepository from '../services/repositories/WalletRepository';
+import balanceRepository from '../services/repositories/BalanceRepository';
 import {getExternalIndex} from '../services/HdIndexService';
 import syncCoordinator from '../services/sync/SyncCoordinator';
 import {
@@ -944,17 +945,39 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           setIsInitialized(true);
           return;
         }
-        // Clear existing state
+        // Reset address slots so stale receive addresses are not shown while
+        // the new ones are being derived.  Do NOT clear balance/price — show
+        // the last-known DB value instead so the user never sees 0 on unlock.
         setAddress('');
-        dbg('WalletHome: Setting balance to -');
-        setBalanceBTC('-');
-        setBalanceFiat('-');
-        setPendingSats(0);
-        setBtcPrice('');
-        setBtcRate(0);
         setLegacyAddress('');
         setSegwitAddress('');
         setSegwitCompatibleAddress('');
+
+        // Synchronously preload the aggregate balance from SQLite so the
+        // balance is visible immediately (before any async work completes).
+        // This prevents the balance from flashing '-' / 0 on lock-unlock.
+        {
+          const earlyAddressType =
+            appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'segwit-native';
+          const earlyNet =
+            network || appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
+          const earlyAgg = balanceRepository.getBalance(
+            `aggregate_${earlyNet}_${earlyAddressType}`,
+            earlyNet,
+          );
+          if (earlyAgg && earlyAgg.balanceSats > 0) {
+            const earlyBTC = (earlyAgg.balanceSats / 1e8).toFixed(8);
+            setBalanceBTC(earlyBTC);
+            setPendingSats(earlyAgg.pendingSats ?? 0);
+            // Fiat: reuse whatever btcRate is already in state (non-zero after
+            // first successful fetch); skip if rate not available yet.
+            if (btcRate > 0) {
+              const earlyFiat = (earlyAgg.balanceSats / 1e8) * btcRate;
+              setBalanceFiat(Math.max(0, earlyFiat).toFixed(2));
+            }
+          }
+        }
+
         // Do NOT clear persistent cache here; we need it for offline startup
         // Only ensure service is initialized to read existing caches
         // Initialize WalletService

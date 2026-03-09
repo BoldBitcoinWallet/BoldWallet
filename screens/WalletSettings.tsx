@@ -44,10 +44,17 @@ import {
   getResetToMainTabsWallet,
 } from '../utils';
 import {useTheme} from '../theme';
-import {WalletService} from '../services/WalletService';
+import {waitMS, WalletService} from '../services/WalletService';
 import mempoolClient from '../services/MempoolClient';
-import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
+import appConfigRepository, {
+  CONFIG_KEYS,
+} from '../services/repositories/AppConfigRepository';
 import database from '../services/Database';
+import walletRepository from '../services/repositories/WalletRepository';
+import balanceRepository from '../services/repositories/BalanceRepository';
+import balanceSyncer from '../services/sync/BalanceSyncer';
+import transactionSyncer from '../services/sync/TransactionSyncer';
+import utxoSyncer from '../services/sync/UtxoSyncer';
 import LegalModal from '../components/LegalModal';
 import BackupKeyshareModal from '../components/BackupKeyshareModal';
 import RestoringIndexesModal from '../components/RestoringIndexesModal';
@@ -729,9 +736,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [hasNostr, setHasNostr] = useState(false);
   const [isRestoringIndexes, setIsRestoringIndexes] = useState(false);
   const [restoreProgress, setRestoreProgress] = useState<{
-    chain: 'external' | 'internal';
-    index: number;
-    gapIndex: number;
+    chain?: 'external' | 'internal';
+    index?: number;
+    gapIndex?: number;
+    /** Free-text label shown during post-discovery sync phases. */
+    phase?: string;
   } | null>(null);
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
   const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
@@ -788,26 +797,40 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     });
   };
   /**
-   * Full wallet reset + HD re-index for a given (network, addressType).
-   * Used by network switch, address-type switch, and Clear Cache — all three
-   * paths must behave identically:
-   *   1. Wipe all wallet DB tables (UTXOs, balances, transactions, HD state, …)
-   *      so the new config starts from a guaranteed clean slate.
-   *   2. Re-discover HD indexes from the chain.
-   *   3. Pre-warm in-memory address cache and invalidate HTTP cache.
-   *   4. Re-persist network / api / addressType to appConfigRepository so that
-   *      WalletHome reads the correct values after navigation.reset.
+   * Atomic wallet reset + HD re-index + full pre-sync for a given
+   * (network, addressType).
+   *
+   * The whole operation is treated as a transaction:
+   *   • If HD index discovery fails the function THROWS so the caller can
+   *     show an error toast and abort navigation.  The old hd_state
+   *     (preserved by clearWalletCacheData) remains valid.
+   *   • Only when discovery succeeds does the function continue to the
+   *     balance / transaction / UTXO pre-sync so WalletHome arrives with
+   *     fully populated DB data on first render — no extra refresh needed.
+   *
+   * Phase sequence (reflected in the progress modal):
+   *   1. clearWalletCacheData  — wipe stale fetched data, keep hd_state
+   *   2. Invalidate HTTP + address caches
+   *   3. discoverHdIndexesForNetwork — gap-limit scan (throws on failure)
+   *   4. Sync balances          — shown as "Syncing balances…"
+   *   5. Sync transactions      — shown as "Syncing transactions…"
+   *   6. Sync UTXOs             — shown as "Syncing UTXOs…"
+   *   7. Re-persist config
    */
   const runRestoreIndexing = useCallback(
     async (network: string, addressType: string, resolvedApiUrl?: string) => {
       setIsRestoringIndexes(true);
       setRestoreProgress(null);
-      // Yield so the RestoringIndexesModal has time to mount and paint before
-      // we block on discovery.
-      await new Promise<void>(r => setTimeout(r, 100));
+      // Yield so the RestoringIndexesModal has time to mount and paint.
+      await waitMS(250);
+
       try {
-        // Step 1 — clear all wallet DB data for a clean slate.
-        database.clearWalletData();
+        // ── Step 1: clear cached data, preserve hd_state ──────────────────
+        // clearWalletCacheData() keeps hd_state so the old correct indexes
+        // survive as prevExternalIndex inside discoverHdIndexesForNetwork.
+        // If discovery later fails on a slow network the wallet retains the
+        // last-known correct index instead of collapsing to 0.
+        database.clearWalletCacheData();
 
         const ws = WalletService.getInstance();
         const apiUrl =
@@ -818,7 +841,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             ? 'https://mempool.space/api'
             : 'https://mempool.space/testnet/api');
 
-        // Step 2 — HD index discovery (gap-limit scan on-chain).
+        // ── Step 2: flush in-memory caches before discovery ───────────────
+        // Every isAddressUsed call inside discoverHdIndexesForNetwork must
+        // hit the network directly — no stale 5-second mempoolClient entries
+        // can cause incorrect gap-limit decisions.
+        mempoolClient.invalidateAll();
+        ws.invalidateAddressCache();
+        await waitMS(250);
+
+        // ── Step 3: HD index discovery ────────────────────────────────────
         await ws.discoverHdIndexesForNetwork(
           network,
           addressType,
@@ -827,12 +858,65 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             setRestoreProgress({chain, index, gapIndex}),
         );
 
-        // Step 3 — pre-warm in-memory caches.
-        ws.invalidateAddressCache();
-        await ws.getHdAddressesWithPaths(network, addressType);
-        mempoolClient.invalidateAll();
+        // Guard: if discovery did not complete successfully restoreDone is
+        // not set.  Throw so the caller can show a toast and NOT navigate.
+        const hdState = walletRepository.getHdState(network, addressType);
+        if (!hdState?.restoreDone) {
+          throw new Error(
+            'Index discovery incomplete — network may be unreachable. Please try again.',
+          );
+        }
 
-        // Step 4 — re-persist config so WalletHome reads correct values.
+        // ── Step 4: derive + cache HD address list ────────────────────────
+        const addressesWithPaths = await ws.getHdAddressesWithPaths(
+          network,
+          addressType,
+        );
+
+        // ── Step 5: pre-sync balances ─────────────────────────────────────
+        setRestoreProgress({phase: 'Syncing balances…'});
+        await balanceSyncer.syncAddresses(
+          addressesWithPaths.map(a => ({
+            address: a.address,
+            network,
+          })),
+          apiUrl,
+        );
+
+        // Compute and persist the aggregate balance immediately so WalletHome
+        // can read a correct total from getCachedAggregateBalance on first
+        // render without making another API round-trip.
+        // getAggregateBalance sums all per-address rows written by balanceSyncer
+        // above (excluding the virtual aggregate key which doesn't exist yet
+        // because clearWalletCacheData wiped the table before sync started).
+        const agg = balanceRepository.getAggregateBalance(network);
+        balanceRepository.setBalance({
+          address: `aggregate_${network}_${addressType}`,
+          network,
+          balanceSats: agg.balanceSats,
+          pendingSats: agg.pendingSats,
+          hasNonzero: agg.hasNonzero,
+          fetchedAt: agg.fetchedAt || Date.now(),
+        });
+
+        // ── Step 6: pre-sync transactions ─────────────────────────────────
+        setRestoreProgress({phase: 'Syncing transactions…'});
+        for (const {address} of addressesWithPaths) {
+          await transactionSyncer.syncAddress(address, network, apiUrl);
+        }
+
+        // ── Step 7: pre-sync UTXOs ────────────────────────────────────────
+        setRestoreProgress({phase: 'Syncing UTXOs…'});
+        await utxoSyncer.syncAddresses(
+          addressesWithPaths.map(a => ({
+            address: a.address,
+            network,
+            derivationPath: a.derivationPath,
+          })),
+          apiUrl,
+        );
+
+        // ── Step 8: re-persist config ─────────────────────────────────────
         appConfigRepository.set(CONFIG_KEYS.NETWORK, network);
         appConfigRepository.set('api', apiUrl);
         appConfigRepository.set(`api_${network}`, apiUrl);
@@ -942,11 +1026,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       dbg('=== Loading settings for network:', net);
       setIsTestnet(net !== 'mainnet');
       setPendingAPI('');
-      let resolvedApi = appConfigRepository.get(`api_${net}`) || appConfigRepository.get('api');
+      let resolvedApi =
+        appConfigRepository.get(`api_${net}`) || appConfigRepository.get('api');
       if (!resolvedApi) {
-        resolvedApi = net === 'mainnet'
-          ? 'https://mempool.space/api'
-          : 'https://mempool.space/testnet/api';
+        resolvedApi =
+          net === 'mainnet'
+            ? 'https://mempool.space/api'
+            : 'https://mempool.space/testnet/api';
         appConfigRepository.set('api', resolvedApi);
         if (net) appConfigRepository.set(`api_${net}`, resolvedApi);
       }
@@ -968,7 +1054,21 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     const newNetwork = value ? 'testnet3' : 'mainnet';
     const networkName = value ? 'Testnet' : 'Mainnet';
     await setActiveNetwork(newNetwork);
-    await runRestoreIndexing(newNetwork, activeAddressType);
+    try {
+      await runRestoreIndexing(newNetwork, activeAddressType);
+    } catch (e) {
+      dbg('Network toggle: sync failed', e);
+      Toast.show({
+        type: 'error',
+        text1: 'Sync failed',
+        text2:
+          e instanceof Error
+            ? e.message
+            : 'Network switch could not complete. Please try again.',
+        visibilityTime: 5000,
+      });
+      return;
+    }
     dbg('Network toggle: Navigating to Wallet tab');
     navigation.reset(
       getResetToMainTabsWallet(
@@ -2574,43 +2674,54 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             <AppPressable
               style={[styles.button, styles.deleteButton]}
               onPress={async () => {
+                dbg('WalletSettings: Clear Cache pressed', {
+                  network: activeNetwork,
+                  addressType: activeAddressType,
+                });
+                const apiUrl =
+                  activeApiProvider ||
+                  (activeNetwork === 'mainnet'
+                    ? 'https://mempool.space/api'
+                    : 'https://mempool.space/testnet/api');
                 try {
-                  dbg('WalletSettings: Clear Cache pressed', {
-                    network: activeNetwork,
-                    addressType: activeAddressType,
-                  });
-                  const apiUrl =
-                    activeApiProvider ||
-                    (activeNetwork === 'mainnet'
-                      ? 'https://mempool.space/api'
-                      : 'https://mempool.space/testnet/api');
                   await runRestoreIndexing(
                     activeNetwork,
                     activeAddressType,
                     apiUrl,
                   );
-                  setUsageSize({fileCount: 0, mb: '0.00 MB'});
-                  dbg('WalletSettings: Storage clear complete');
-                  Alert.alert('Cache Cleared', 'Cache cleared successfully.');
-                  navigation.reset(
-                    getResetToMainTabsWallet(
-                      {},
-                      {
-                        showPlay:
-                          activeNetwork === 'mainnet' && showMempoolPlayground,
-                        showUtxos: showUtxosTab,
-                        showPsbt: showPsbtTab,
-                        showWallet: showWalletTab,
-                      },
-                    ),
-                  );
                 } catch (e) {
-                  dbg('Error clearing cache', e);
-                  Alert.alert(
-                    'Error',
-                    'Failed to clear cache. Please try again.',
-                  );
+                  dbg('Clear cache: sync failed', e);
+                  Toast.show({
+                    type: 'error',
+                    text1: 'Sync failed',
+                    text2:
+                      e instanceof Error
+                        ? e.message
+                        : 'Cache clear could not complete. Please try again.',
+                    visibilityTime: 5000,
+                  });
+                  return;
                 }
+                setUsageSize({fileCount: 0, mb: '0.00 MB'});
+                dbg('WalletSettings: Storage clear complete');
+                Toast.show({
+                  type: 'success',
+                  text1: 'Cache cleared',
+                  text2: 'Wallet synced successfully.',
+                  visibilityTime: 3000,
+                });
+                navigation.reset(
+                  getResetToMainTabsWallet(
+                    {},
+                    {
+                      showPlay:
+                        activeNetwork === 'mainnet' && showMempoolPlayground,
+                      showUtxos: showUtxosTab,
+                      showPsbt: showPsbtTab,
+                      showWallet: showWalletTab,
+                    },
+                  ),
+                );
               }}
               android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
               <View style={styles.buttonContent}>
@@ -2757,25 +2868,34 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     styles.addressTypeOptionSelected,
                 ]}
                 onPress={async () => {
+                  await setActiveAddressType('legacy');
                   try {
-                    await setActiveAddressType('legacy');
                     await runRestoreIndexing(activeNetwork, 'legacy');
-                    navigation.reset(
-                      getResetToMainTabsWallet(
-                        {},
-                        {
-                          showPlay:
-                            activeNetwork === 'mainnet' &&
-                            showMempoolPlayground,
-                          showUtxos: showUtxosTab,
-                          showPsbt: showPsbtTab,
-                          showWallet: showWalletTab,
-                        },
-                      ),
-                    );
                   } catch (e) {
-                    dbg('Error setting address type:', e);
+                    dbg('Address type switch (legacy): sync failed', e);
+                    Toast.show({
+                      type: 'error',
+                      text1: 'Sync failed',
+                      text2:
+                        e instanceof Error
+                          ? e.message
+                          : 'Address type switch could not complete. Please try again.',
+                      visibilityTime: 5000,
+                    });
+                    return;
                   }
+                  navigation.reset(
+                    getResetToMainTabsWallet(
+                      {},
+                      {
+                        showPlay:
+                          activeNetwork === 'mainnet' && showMempoolPlayground,
+                        showUtxos: showUtxosTab,
+                        showPsbt: showPsbtTab,
+                        showWallet: showWalletTab,
+                      },
+                    ),
+                  );
                 }}
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <Image
@@ -2799,25 +2919,34 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     styles.addressTypeOptionSelected,
                 ]}
                 onPress={async () => {
+                  await setActiveAddressType('segwit-native');
                   try {
-                    await setActiveAddressType('segwit-native');
                     await runRestoreIndexing(activeNetwork, 'segwit-native');
-                    navigation.reset(
-                      getResetToMainTabsWallet(
-                        {},
-                        {
-                          showPlay:
-                            activeNetwork === 'mainnet' &&
-                            showMempoolPlayground,
-                          showUtxos: showUtxosTab,
-                          showPsbt: showPsbtTab,
-                          showWallet: showWalletTab,
-                        },
-                      ),
-                    );
                   } catch (e) {
-                    dbg('Error setting address type:', e);
+                    dbg('Address type switch (segwit-native): sync failed', e);
+                    Toast.show({
+                      type: 'error',
+                      text1: 'Sync failed',
+                      text2:
+                        e instanceof Error
+                          ? e.message
+                          : 'Address type switch could not complete. Please try again.',
+                      visibilityTime: 5000,
+                    });
+                    return;
                   }
+                  navigation.reset(
+                    getResetToMainTabsWallet(
+                      {},
+                      {
+                        showPlay:
+                          activeNetwork === 'mainnet' && showMempoolPlayground,
+                        showUtxos: showUtxosTab,
+                        showPsbt: showPsbtTab,
+                        showWallet: showWalletTab,
+                      },
+                    ),
+                  );
                 }}
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <Image
@@ -2841,28 +2970,40 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     styles.addressTypeOptionSelected,
                 ]}
                 onPress={async () => {
+                  await setActiveAddressType('segwit-compatible');
                   try {
-                    await setActiveAddressType('segwit-compatible');
                     await runRestoreIndexing(
                       activeNetwork,
                       'segwit-compatible',
                     );
-                    navigation.reset(
-                      getResetToMainTabsWallet(
-                        {},
-                        {
-                          showPlay:
-                            activeNetwork === 'mainnet' &&
-                            showMempoolPlayground,
-                          showUtxos: showUtxosTab,
-                          showPsbt: showPsbtTab,
-                          showWallet: showWalletTab,
-                        },
-                      ),
-                    );
                   } catch (e) {
-                    dbg('Error setting address type:', e);
+                    dbg(
+                      'Address type switch (segwit-compatible): sync failed',
+                      e,
+                    );
+                    Toast.show({
+                      type: 'error',
+                      text1: 'Sync failed',
+                      text2:
+                        e instanceof Error
+                          ? e.message
+                          : 'Address type switch could not complete. Please try again.',
+                      visibilityTime: 5000,
+                    });
+                    return;
                   }
+                  navigation.reset(
+                    getResetToMainTabsWallet(
+                      {},
+                      {
+                        showPlay:
+                          activeNetwork === 'mainnet' && showMempoolPlayground,
+                        showUtxos: showUtxosTab,
+                        showPsbt: showPsbtTab,
+                        showWallet: showWalletTab,
+                      },
+                    ),
+                  );
                 }}
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <Image
@@ -3524,6 +3665,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         chain={restoreProgress?.chain}
         index={restoreProgress?.index}
         gapIndex={restoreProgress?.gapIndex}
+        phase={restoreProgress?.phase}
       />
       <BackupKeyshareModal
         visible={isBackupModalVisible}

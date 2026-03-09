@@ -12,10 +12,12 @@
  *      still in-flight, both await the same Promise.  Only one HTTP request
  *      is made.
  *
- * TTL is 30 s by default.  Certain endpoints carry different defaults:
- *   - /tx/{txid}          5 min  (confirmed tx content is immutable)
- *   - /v1/fees/recommended 60 s  (updates ~every block)
+ * TTL defaults:
+ *   - /address/…           5 s   (balance, UTXOs, transactions — default)
+ *   - /v1/fees/recommended 30 s  (updates ~every block, no need to hammer)
  *   - /v1/prices           60 s  (price ticks slowly relative to UI refresh)
+ *   - /tx/{txid}           5 min (confirmed tx content is immutable)
+ *   - /v1/historical-price 7 d   (past-date price is immutable)
  *
  * Usage:
  *   import mempoolClient from './MempoolClient';
@@ -84,7 +86,8 @@ interface CacheEntry {
 // Per-endpoint TTL configuration
 // ---------------------------------------------------------------------------
 
-const DEFAULT_TTL_MS = 30_000; // 30 s
+/** Default TTL — applies to balance, UTXO, and transaction endpoints. */
+const DEFAULT_TTL_MS = 5_000; // 5 s
 
 /**
  * URL pattern → TTL overrides (evaluated in order, first match wins).
@@ -93,9 +96,9 @@ const DEFAULT_TTL_MS = 30_000; // 30 s
 const TTL_RULES: ReadonlyArray<[RegExp, number]> = [
   // Confirmed tx content is immutable — long TTL, rare re-fetch.
   [/\/tx\/[a-fA-F0-9]{64}$/, 300_000],
-  // Fee rate refreshes on each block (~10 min), 60 s is fresh enough for UI.
-  [/\/v1\/fees\/recommended/, 60_000],
-  // BTC price endpoint.
+  // Fee rates refresh on each block (~10 min); 30 s is responsive without hammering.
+  [/\/v1\/fees\/recommended/, 30_000],
+  // BTC price endpoint — slow-moving relative to UI refresh rate.
   [/\/v1\/prices/, 60_000],
   // Historical price is immutable (past date); cache 7 days.
   [/\/v1\/historical-price\?/, 7 * 24 * 60 * 60 * 1000],

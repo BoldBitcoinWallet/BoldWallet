@@ -18,6 +18,7 @@ export interface StoredUtxo {
   derivationPath: string | null;
   isConfirmed: boolean;
   blockHeight: number | null;
+  blockTime: number | null;
   fetchedAt: number;
 }
 
@@ -41,14 +42,15 @@ class UtxoRepository {
           tx.execute(
             `INSERT INTO utxos
                (txid, vout, address, network, value_sats, script_pubkey,
-                derivation_path, is_confirmed, block_height, fetched_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                derivation_path, is_confirmed, block_height, block_time, fetched_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               u.txid, u.vout, u.address, u.network,
               u.valueSats, u.scriptPubkey ?? null,
               u.derivationPath ?? null,
               u.isConfirmed ? 1 : 0,
               u.blockHeight ?? null,
+              u.blockTime ?? null,
               u.fetchedAt,
             ],
           );
@@ -162,6 +164,7 @@ class UtxoRepository {
       derivationPath: (r.derivation_path as string) ?? null,
       isConfirmed: (r.is_confirmed as number) === 1,
       blockHeight: (r.block_height as number) ?? null,
+      blockTime: (r.block_time as number) ?? null,
       fetchedAt: r.fetched_at as number,
     };
   }

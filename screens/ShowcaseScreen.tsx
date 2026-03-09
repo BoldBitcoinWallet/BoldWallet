@@ -25,7 +25,8 @@ import LegalModal from '../components/LegalModal';
 import TransportModeSelector from '../components/TransportModeSelector';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import database from '../services/Database';
-import transactionRepository from '../services/repositories/TransactionRepository';
+import {WalletService} from '../services/WalletService';
+import mempoolClient from '../services/MempoolClient';
 import {useUser} from '../context/UserContext';
 const {BBMTLibNativeModule} = NativeModules;
 const ShowcaseScreen = ({navigation}: any) => {
@@ -49,28 +50,43 @@ const ShowcaseScreen = ({navigation}: any) => {
   const fadeAnim = useRef(new Animated.Value(0.6)).current;
   const connectorAnim = useRef(new Animated.Value(0)).current;
   const connectorLoopRef = useRef(null as Animated.CompositeAnimation | null);
-  // Clear all app cache on component mount (wallet import screen)
+  // Full reset on mount: wipe all wallet DB tables, all in-memory caches, and
+  // all user-preference EncryptedStorage entries so the import starts from a
+  // guaranteed clean slate. The keyshare itself is preserved so a user who
+  // already onboarded can land here without losing their key material.
   useEffect(() => {
     const clearAllCache = async () => {
       try {
-        dbg('=== ShowcaseScreen: Clearing all cache for wallet import');
-        // Clear SQLite wallet data
+        dbg('=== ShowcaseScreen: Full reset for wallet import');
+
+        // 1. Wipe all SQLite wallet tables (UTXOs, balances, transactions,
+        //    HD indexes, sync metadata, pending txs, …).
         database.clearWalletData();
         dbg('SQLite wallet data cleared');
-        // Clear stale EncryptedStorage items (but keep keyshare if it exists)
-        // We clear btcPub as it will be regenerated with the imported keyshare
-        await EncryptedStorage.removeItem('btcPub');
-        dbg('Cleared stale btcPub from EncryptedStorage');
-        // Clear WalletService cache
-        try {
-          // stale key removed;
-          dbg('WalletService cache cleared');
-        } catch (error) {
-          dbg('Error clearing WalletService cache:', error);
-        }
-        dbg('=== ShowcaseScreen: Cache clearing completed');
+
+        // 2. Wipe in-memory caches so stale data never leaks into the new
+        //    wallet session.
+        const ws = WalletService.getInstance();
+        ws.invalidateAddressCache();
+        mempoolClient.invalidateAll();
+        dbg('In-memory caches cleared');
+
+        // 3. Clear all EncryptedStorage preference items.  btcPub will be
+        //    re-derived from the newly imported keyshare; the rest are user
+        //    preferences that should reset to defaults for a fresh wallet.
+        await Promise.allSettled([
+          EncryptedStorage.removeItem('btcPub'),
+          EncryptedStorage.removeItem('bitcoin_display_sats'),
+          EncryptedStorage.removeItem('balance_formatting_enabled'),
+          EncryptedStorage.removeItem('app_icon_preference'),
+          EncryptedStorage.removeItem('devDebugEnabled'),
+          EncryptedStorage.removeItem('psbt_mode_first_visit'),
+        ]);
+        dbg('EncryptedStorage preferences cleared');
+
+        dbg('=== ShowcaseScreen: Full reset completed');
       } catch (err) {
-        dbg('Error clearing app cache:', err);
+        dbg('ShowcaseScreen: Error during full reset:', err);
       }
     };
     clearAllCache();

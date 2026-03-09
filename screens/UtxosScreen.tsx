@@ -76,6 +76,7 @@ function storedToUtxoWithPath(
       status: {
         confirmed: u.isConfirmed,
         block_height: u.blockHeight ?? undefined,
+        block_time: u.blockTime ?? undefined,
       },
       address: u.address,
       derivationPath: u.derivationPath ?? info?.derivationPath ?? '',
@@ -220,6 +221,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
               derivationPath,
               isConfirmed: u.status?.confirmed ?? true,
               blockHeight: u.status?.block_height ?? null,
+              blockTime: u.status?.block_time ?? null,
               fetchedAt: now,
             })),
           );
