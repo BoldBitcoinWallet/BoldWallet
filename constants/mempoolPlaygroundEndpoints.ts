@@ -43,6 +43,18 @@ export const MEMPOOL_PLAYGROUND_SECTIONS: PlaygroundSection[] = [
         description:
           'Returns bitcoin latest price denominated in main currencies.',
       },
+      {
+        id: 'historical-price',
+        label: 'GET Historical Price',
+        method: 'GET',
+        pathTemplate: '/api/v1/historical-price',
+        description:
+          'Returns bitcoin price at a given timestamp (Unix seconds). Use for historical fiat value.',
+        queryParams: [
+          { name: 'currency', placeholder: 'USD', optional: false },
+          { name: 'timestamp', placeholder: '1699999999', optional: false },
+        ],
+      },
     ],
   },
   {

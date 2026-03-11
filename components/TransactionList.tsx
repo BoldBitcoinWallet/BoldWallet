@@ -37,6 +37,8 @@ import TransactionListSkeleton from './TransactionListSkeleton';
 import {WalletService} from '../services/WalletService';
 import TransactionDetailsModal from './TransactionDetailsModal';
 import transactionRepository from '../services/repositories/TransactionRepository';
+import apiQueue from '../services/ApiQueue';
+import transactionSyncer from '../services/sync/TransactionSyncer';
 import HistoricalPriceService, {
   getHistoricalRateKey,
 } from '../services/HistoricalPriceService';
@@ -351,7 +353,10 @@ const TransactionList = React.forwardRef<
         const key = getHistoricalRateKey(selectedCurrency, blockTime);
         keysToFetch.set(key, blockTime);
       }
-      if (selectedTransaction?.status?.block_time && !selectedTransaction.sentAt) {
+      if (
+        selectedTransaction?.status?.block_time &&
+        !selectedTransaction.sentAt
+      ) {
         const bt = selectedTransaction.status.block_time;
         keysToFetch.set(getHistoricalRateKey(selectedCurrency, bt), bt);
       }
@@ -427,6 +432,25 @@ const TransactionList = React.forwardRef<
         };
       },
       [isOurAddress],
+    );
+    // Shared sort: pending (no block_height) first, then block_height descending.
+    const sortTxs = useCallback(
+      (txs: any[]): any[] =>
+        [...txs].sort((a, b) => {
+          const aPending = !a.status?.block_height;
+          const bPending = !b.status?.block_height;
+          if (aPending && !bPending) {
+            return -1;
+          }
+          if (!aPending && bPending) {
+            return 1;
+          }
+          if (aPending && bPending) {
+            return (b.sentAt || 0) - (a.sentAt || 0);
+          }
+          return (b.status.block_height || 0) - (a.status.block_height || 0);
+        }),
+      [],
     );
     // Memoize fetchTransactions to prevent unnecessary re-renders
     const memoizedFetchTransactions = useCallback(
@@ -527,6 +551,41 @@ const TransactionList = React.forwardRef<
           const cleanBaseApi = url.replace(/\/+$/, '').replace(/\/api\/?$/, '');
           let responseData: any[];
           let multiHasMore = false;
+          if (isMultiAddress && addresses && addresses.length > 0 && network) {
+            try {
+              await apiQueue.enqueue('Fetching transactions…', () =>
+                transactionSyncer.syncAddressesAtomic(
+                  addresses.map(a => ({address: a, network})),
+                  `${cleanBaseApi}/api`,
+                ),
+              );
+              const cursors =
+                WalletService.getInstance().getTransactionCursorsForAddresses(
+                  network,
+                  addresses,
+                );
+              if (isMounted.current) {
+                setAddressCursors(cursors);
+                setHasMoreTransactions(
+                  Object.values(cursors).some(c => c !== null),
+                );
+              }
+              await loadFromCache();
+              return;
+            } catch (e) {
+              dbg('TransactionList: atomic tx sync failed', e);
+              if (isMounted.current && !silent) {
+                Toast.show({
+                  type: 'info',
+                  text1: 'Could not fetch transactions',
+                  text2: 'Using cached data.',
+                  position: 'top',
+                });
+              }
+              await loadFromCache();
+              return;
+            }
+          }
           if (isMultiAddress && addresses && addresses.length > 0) {
             const result =
               await WalletService.getInstance().fetchTransactionsForAddresses(
@@ -534,7 +593,6 @@ const TransactionList = React.forwardRef<
                 addresses,
               );
             responseData = result.txs;
-            // Store per-address cursors so fetchMore can page each address independently
             setAddressCursors(result.cursors);
             multiHasMore = Object.values(result.cursors).some(c => c !== null);
           } else {
@@ -564,12 +622,18 @@ const TransactionList = React.forwardRef<
             if (isMultiAddress && addresses!.length > 0) {
               const merged: Record<string, any> = {};
               for (const addr of addresses!) {
-                const p = transactionRepository.getPendingTxMap(addr, network || 'mainnet');
+                const p = transactionRepository.getPendingTxMap(
+                  addr,
+                  network || 'mainnet',
+                );
                 Object.assign(merged, p);
               }
               return merged;
             }
-            return transactionRepository.getPendingTxMap(address!, network || 'mainnet');
+            return transactionRepository.getPendingTxMap(
+              address!,
+              network || 'mainnet',
+            );
           })();
           const addrForAmounts = isMultiAddress ? addresses! : address;
           let pending = 0;
@@ -583,13 +647,13 @@ const TransactionList = React.forwardRef<
               return tx;
             });
           // Update cache - remove confirmed txs from pending
-          const addrsToUpdate = isMultiAddress ? addresses! : [address!];
           for (const tx of responseData) {
             if (cached[tx.txid]) {
               delete cached[tx.txid];
-              for (const a of addrsToUpdate) {
-                transactionRepository.removePending(tx.txid, network || 'mainnet');
-              }
+              transactionRepository.removePending(
+                tx.txid,
+                network || 'mainnet',
+              );
             }
           }
           const workingData = [...responseData];
@@ -678,9 +742,7 @@ const TransactionList = React.forwardRef<
               if (prev.length === 0) {
                 return newTransactions;
               }
-              const merged = new Map(
-                prev.map((tx: any) => [tx.txid, tx]),
-              );
+              const merged = new Map(prev.map((tx: any) => [tx.txid, tx]));
               for (const tx of newTransactions) {
                 // API data takes precedence: updates confirmation status, block height, etc.
                 merged.set(tx.txid, tx);
@@ -734,6 +796,7 @@ const TransactionList = React.forwardRef<
         addressType,
         getTransactionAmounts,
         onUpdate,
+        sortTxs,
       ],
     );
     // For user pull-to-refresh
@@ -870,6 +933,8 @@ const TransactionList = React.forwardRef<
       address,
       addresses,
       isMultiAddress,
+      network,
+      addressType,
       baseApi,
       memoizedFetchTransactions,
     ]);
@@ -895,25 +960,6 @@ const TransactionList = React.forwardRef<
         };
       },
       [isOurAddress],
-    );
-    // Shared sort: pending (no block_height) first, then block_height descending.
-    const sortTxs = useCallback(
-      (txs: any[]): any[] =>
-        [...txs].sort((a, b) => {
-          const aPending = !a.status?.block_height;
-          const bPending = !b.status?.block_height;
-          if (aPending && !bPending) {
-            return -1;
-          }
-          if (!aPending && bPending) {
-            return 1;
-          }
-          if (aPending && bPending) {
-            return (b.sentAt || 0) - (a.sentAt || 0);
-          }
-          return (b.status.block_height || 0) - (a.status.block_height || 0);
-        }),
-      [],
     );
 
     const fetchMore = useCallback(async () => {
@@ -1030,7 +1076,10 @@ const TransactionList = React.forwardRef<
           setHasMoreTransactions(false);
           return;
         }
-        const cached = transactionRepository.getPendingTxMap(address!, network || 'mainnet');
+        const cached = transactionRepository.getPendingTxMap(
+          address!,
+          network || 'mainnet',
+        );
         dbg('Cached transactions for fetch more:', Object.keys(cached).length);
         setTransactions(prevTransactions => {
           try {
@@ -1059,7 +1108,10 @@ const TransactionList = React.forwardRef<
               if (cached[tx.txid]) {
                 delete cached[tx.txid];
                 dbg('delete from cache in fetch more', tx.txid);
-                transactionRepository.removePending(tx.txid, network || 'mainnet');
+                transactionRepository.removePending(
+                  tx.txid,
+                  network || 'mainnet',
+                );
               }
             });
             // Add cached transactions
@@ -1407,7 +1459,9 @@ const TransactionList = React.forwardRef<
             ? getHistoricalRateKey(selectedCurrency, blockTime)
             : null;
         const historicalRate =
-          historicalKey != null ? historicalRatesMap[historicalKey] ?? null : null;
+          historicalKey != null
+            ? historicalRatesMap[historicalKey] ?? null
+            : null;
         // Pending/unconfirmed txs fall back to the current live rate from WalletHome.
         const effectiveRate =
           historicalRate != null && historicalRate > 0
@@ -1523,6 +1577,7 @@ const TransactionList = React.forwardRef<
         addresses,
         isMultiAddress,
         isOurAddress,
+        _btcRate,
         appTheme.colors.background,
         appTheme.colors.bitcoinOrange,
         styles.transactionRow,

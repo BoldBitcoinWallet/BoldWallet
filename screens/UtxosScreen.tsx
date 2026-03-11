@@ -10,6 +10,7 @@ import {
   Linking,
   Alert,
 } from 'react-native';
+import Toast from 'react-native-toast-message';
 import moment from 'moment';
 import {useTheme, themes} from '../theme';
 import {COMMON_FONT_CONFIGS} from '../theme/fonts';
@@ -22,6 +23,7 @@ import {
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import utxoRepository from '../services/repositories/UtxoRepository';
 import {WalletService} from '../services/WalletService';
+import utxoSyncer from '../services/sync/UtxoSyncer';
 import {presentFiat, getCurrencySymbol} from '../utils';
 import AppPressable from '../components/AppPressable';
 import {CacheIndicator} from '../components/CacheIndicator';
@@ -120,6 +122,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const [utxosWithPath, setUtxosWithPath] = useState<UtxoWithPath[]>([]);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [utxoFetchTimestamp, setUtxoFetchTimestamp] = useState<number>(0);
+  const [refreshStatusMessage, setRefreshStatusMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const loadCurrency = async () => {
@@ -195,68 +198,48 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
       return;
     }
 
+    setRefreshStatusMessage('Fetching UTXOs…');
+
+    const addressesForSyncer = addressesWithPaths
+      .filter(({address}) => addressMatchesNetwork(address, isTestnetApi))
+      .map(({address, derivationPath}) => ({
+        address,
+        network,
+        derivationPath: derivationPath ?? undefined,
+      }));
+
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000);
-      for (const {address, derivationPath} of addressesWithPaths) {
-        if (!addressMatchesNetwork(address, isTestnetApi)) continue;
-        try {
-          const utxoUrl = `${apiUrl}/address/${encodeURIComponent(address)}/utxo`;
-          const res = await fetch(utxoUrl, {signal: controller.signal});
-          if (!res.ok) continue;
-          const rawList: ApiUtxo[] = await res.json();
-          if (!Array.isArray(rawList)) continue;
-          // Persist to DB (full replace per address — mempool always returns the complete UTXO set).
-          const now = Date.now();
-          utxoRepository.replaceUtxosForAddress(
-            address,
-            network,
-            rawList.map(u => ({
-              txid: u.txid,
-              vout: u.vout,
-              address,
-              network,
-              valueSats: u.value,
-              scriptPubkey: null,
-              derivationPath,
-              isConfirmed: u.status?.confirmed ?? true,
-              blockHeight: u.status?.block_height ?? null,
-              blockTime: u.status?.block_time ?? null,
-              fetchedAt: now,
-            })),
-          );
-        } catch {
-          // Skip failed address — its existing DB rows are preserved for it.
-        }
+      if (addressesForSyncer.length > 0) {
+        await utxoSyncer.syncAddresses(addressesForSyncer, apiUrl);
       }
-      clearTimeout(timeoutId);
-      // DB-first: read the complete truth from DB after all writes.
-      // Addresses that succeeded have fresh rows; addresses that failed still have
-      // their previous rows — the DB is always the best available picture.
       const allFromDB = utxoRepository.getUtxosForAddresses(
         addressesWithPaths.map(a => a.address),
         network,
       );
       setUtxosWithPath(storedToUtxoWithPath(allFromDB, addressesWithPaths));
       setUtxoFetchTimestamp(Date.now());
+      setFetchError(null);
     } catch (e: any) {
-      // Outer catch: something threw outside the per-address inner catch
-      // (e.g. unexpected JS error). Read from DB as the safe fallback.
+      Toast.show({
+        type: 'error',
+        text1: 'Could not fetch UTXOs',
+        text2: 'Using cached data.',
+        visibilityTime: 4000,
+      });
       const stored = utxoRepository.getUtxosForAddresses(
         addressesWithPaths.map(a => a.address),
         network,
       );
       setUtxosWithPath(storedToUtxoWithPath(stored, addressesWithPaths));
-      if (stored.length === 0) {
-        setFetchError(
-          e?.name === 'AbortError'
-            ? 'Request timed out'
-            : (e?.message || 'Failed to load UTXOs'),
-        );
-      }
+      setFetchError(
+        e?.name === 'AbortError'
+          ? 'Request timed out'
+          : (e?.message || 'Failed to load UTXOs'),
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setRefreshStatusMessage(null);
     }
   }, [apiBase, network, addressType]);
 
@@ -415,8 +398,28 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
       StyleSheet.create({
         container: {flex: 1},
         flexOne: {flex: 1},
+        utxoHeaderStyle: {
+          padding: 0,
+          backgroundColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.primaryOverlay95
+              : theme.colors.whiteOverlay15,
+          borderRadius: 14,
+          alignItems: 'stretch' as const,
+          margin: 16,
+          borderWidth: 1,
+          borderColor: theme.colors.whiteOverlay30,
+          position: 'relative' as const,
+          zIndex: 3,
+          elevation: 6,
+          shadowColor: theme.colors.shadowColor,
+          shadowOffset: {width: 0, height: 3},
+          shadowOpacity: 0.15,
+          shadowRadius: 6,
+          overflow: 'visible' as const,
+        },
         listHeader: {
-          marginTop: 10,
+          marginTop: 0,
         },
         cacheIndicatorWrap: {
           marginHorizontal: -16,
@@ -515,12 +518,16 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
         summaryCard: {
           borderRadius: 12,
           borderWidth: 1,
-          paddingHorizontal: 14,
-          paddingVertical: 12,
-          marginHorizontal: 16,
-          marginTop: 12,
+          paddingHorizontal: 16,
+          paddingVertical: 14,
+          marginHorizontal: 0,
+          marginTop: 0,
           marginBottom: 0,
           gap: 6,
+        },
+        summaryCardWrap: {
+          paddingHorizontal: 16,
+          paddingVertical: 12,
         },
         summaryRow: {
           flexDirection: 'row',
@@ -534,12 +541,10 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
         summaryLabel: {
           fontSize: theme.fontSizes?.sm || 12,
           fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
-          opacity: 0.75,
         },
         summaryCount: {
           fontSize: theme.fontSizes?.xs || 11,
           fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
-          opacity: 0.55,
           marginLeft: 6,
         },
         summaryBtc: {
@@ -550,7 +555,6 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
         summaryFiat: {
           fontSize: theme.fontSizes?.xs || 11,
           fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
-          opacity: 0.55,
           marginTop: 1,
           textAlign: 'right',
         },
@@ -773,35 +777,53 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
   return (
     <View
       style={[styles.container, {backgroundColor: theme.colors.background}]}>
-      {/* Balance summary card — static, sits above the scrollable list */}
-      <View
-        style={[
-          styles.summaryCard,
-          {backgroundColor: cardBg, borderColor: cardBorder},
-        ]}>
-        {/* Total row */}
-        <View style={styles.summaryRow}>
-          <Text style={[styles.summaryLabel, {color: theme.colors.text}]}>
-            Total
-          </Text>
-          <View style={styles.summaryRight}>
-            <Text style={[styles.summaryBtc, {color: theme.colors.text}]}>
-              {balanceSummary.fmt(balanceSummary.totalSats)} BTC
-            </Text>
-            {balanceSummary.fiat(balanceSummary.totalSats) && (
-              <Text
-                style={[
-                  styles.summaryFiat,
-                  {color: theme.colors.textSecondary},
-                ]}>
-                {balanceSummary.fiat(balanceSummary.totalSats)}
+      {/* Top card — dedicated UTXO header */}
+      
+        <View style={styles.utxoHeaderStyle}>
+          <View
+            style={[
+              styles.summaryCard,
+              {
+                backgroundColor: isDarkMode
+                  ? theme.colors.blackOverlay30
+                  : theme.colors.whiteOverlay08,
+                borderColor: isDarkMode
+                  ? theme.colors.whiteOverlay25
+                  : theme.colors.whiteOverlay15,
+              },
+            ]}>
+            {/* Total row */}
+            <View style={styles.summaryRow}>
+              <Text style={[styles.summaryLabel, {color: theme.colors.textOnPrimary}]}>
+                Total
               </Text>
-            )}
-          </View>
-        </View>
+              <View style={styles.summaryRight}>
+                <Text style={[styles.summaryBtc, {color: theme.colors.textOnPrimary}]}>
+                  {balanceSummary.fmt(balanceSummary.totalSats)} BTC
+                </Text>
+                {balanceSummary.fiat(balanceSummary.totalSats) && (
+                  <Text
+                    style={[
+                      styles.summaryFiat,
+                      {color: theme.colors.textSecondary},
+                    ]}>
+                    {balanceSummary.fiat(balanceSummary.totalSats)}
+                  </Text>
+                )}
+              </View>
+            </View>
 
-        {/* Divider */}
-        <View style={[styles.summaryDivider, {backgroundColor: cardBorder}]} />
+            {/* Divider — theme border for dark/light */}
+            <View
+              style={[
+                styles.summaryDivider,
+                {
+                  backgroundColor: isDarkMode
+                    ? theme.colors.border + '99'
+                    : theme.colors.border + '66',
+                },
+              ]}
+            />
 
         {/* Confirmed row */}
         <View style={styles.summaryRow}>
@@ -812,7 +834,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
             <Text
               style={[
                 styles.summaryCount,
-                {color: theme.colors.textSecondary},
+                {color: theme.colors.textOnPrimary},
               ]}>
               {balanceSummary.confirmedCount}{' '}
               {balanceSummary.confirmedCount === 1 ? 'UTXO' : 'UTXOs'}
@@ -867,7 +889,9 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </View>
         )}
-      </View>
+          </View>
+        </View>
+      
 
       <FlatList
         style={styles.flexOne}
@@ -885,6 +909,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 onRefresh={onRefresh}
                 theme={theme}
                 isRefreshing={refreshing}
+                statusMessage={refreshStatusMessage ?? undefined}
                 usingCache={
                   !refreshing &&
                   utxoFetchTimestamp > 0 &&

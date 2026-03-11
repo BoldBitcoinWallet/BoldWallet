@@ -14,6 +14,7 @@ import balanceRepository from './repositories/BalanceRepository';
 import transactionRepository from './repositories/TransactionRepository';
 import priceRepository from './repositories/PriceRepository';
 import walletRepository from './repositories/WalletRepository';
+import syncRepository from './repositories/SyncRepository';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {
   getChangeIndex,
@@ -1438,18 +1439,16 @@ export class WalletService {
         if (cached) return cached;
       }
 
+      // ATOMIC: collect all in memory; only write when every address succeeds.
+      const perAddressBalances: Array<{
+        address: string;
+        balanceSats: number;
+        pendingSats: number;
+        hasNonzero: boolean;
+        fetchedAt: number;
+      }> = [];
       let confirmedSats = new Big(0);
       let mempoolSats = new Big(0);
-      let successCount = 0;
-
-      const applyAddrCache = (addr: string) => {
-        // Use last-known per-address balance from DB when the API call fails.
-        const cached = balanceRepository.getBalance(addr, network);
-        if (!cached || cached.fetchedAt === 0) return;
-        const confirmedPart = cached.balanceSats - cached.pendingSats;
-        if (confirmedPart > 0) confirmedSats = confirmedSats.add(confirmedPart);
-        if (cached.pendingSats !== 0) mempoolSats = mempoolSats.add(cached.pendingSats);
-      };
 
       for (const addr of addresses) {
         try {
@@ -1458,56 +1457,69 @@ export class WalletService {
             mempool_stats: {funded_txo_sum: number; spent_txo_sum: number};
           }>(`${cleanApi}/address/${encodeURIComponent(addr)}`);
 
-          if (!res.ok) {
-            // Transient HTTP error — fall back to this address's DB balance so
-            // its sats are not silently dropped from the aggregate.
-            applyAddrCache(addr);
-            continue;
+          if (!res.ok || !res.data) {
+            dbg('[BALANCE] getWalletBalanceAggregate: address failed', addr.slice(0, 10), res.status);
+            const cached = await this.getCachedAggregateBalance(network, addressType);
+            if (cached) return cached;
+            return {
+              btc: '0.00000000',
+              usd: '$0.00',
+              hasNonZeroBalance: false,
+              timestamp: Date.now(),
+              pendingSats: 0,
+            };
           }
-          successCount++;
+
           const {chain_stats, mempool_stats} = res.data;
           const addrConfirmed =
             chain_stats.funded_txo_sum - chain_stats.spent_txo_sum;
           const addrMempool =
             mempool_stats.funded_txo_sum - mempool_stats.spent_txo_sum;
+          const balanceSats = Math.max(0, addrConfirmed) + Math.max(0, addrMempool);
+          const now = Date.now();
+
           if (Number.isFinite(addrConfirmed) && addrConfirmed > 0) {
             confirmedSats = confirmedSats.add(addrConfirmed);
           }
           if (Number.isFinite(addrMempool) && addrMempool !== 0) {
             mempoolSats = mempoolSats.add(addrMempool);
           }
-          // Persist fresh per-address balance so future refreshes have a fallback.
-          balanceRepository.setBalance({
+
+          perAddressBalances.push({
             address: addr,
-            network,
-            balanceSats: Math.max(0, addrConfirmed) + Math.max(0, addrMempool),
+            balanceSats,
             pendingSats: addrMempool,
             hasNonzero: addrConfirmed > 0 || addrMempool > 0,
-            fetchedAt: Date.now(),
+            fetchedAt: now,
           });
-        } catch {
-          // Network error — fall back to DB for this address.
-          applyAddrCache(addr);
+        } catch (err) {
+          dbg('[BALANCE] getWalletBalanceAggregate: network error for', addr.slice(0, 10), err);
+          const cached = await this.getCachedAggregateBalance(network, addressType);
+          if (cached) return cached;
+          return {
+            btc: '0.00000000',
+            usd: '$0.00',
+            hasNonZeroBalance: false,
+            timestamp: Date.now(),
+            pendingSats: 0,
+          };
         }
       }
 
-      // If every single address failed (no API response at all) and we have
-      // a prior aggregate stored, return it rather than showing 0.
-      if (successCount === 0 && addresses.length > 0) {
-        dbg(
-          '[BALANCE] getWalletBalanceAggregate: ALL', addresses.length,
-          'address API calls failed (successCount=0) — falling back to cached aggregate.',
-          'network:', network, 'addressType:', addressType,
-        );
-        const cached = await this.getCachedAggregateBalance(network, addressType);
-        dbg('[BALANCE] getWalletBalanceAggregate: cached aggregate =', cached ? cached.btc + ' BTC' : 'NOT FOUND');
-        if (cached) return cached;
-      }
+      // All addresses succeeded — write per-address + aggregate in one go
+      const bals = perAddressBalances.map(b => ({
+        address: b.address,
+        network,
+        balanceSats: b.balanceSats,
+        pendingSats: b.pendingSats,
+        hasNonzero: b.hasNonzero,
+        fetchedAt: b.fetchedAt,
+      }));
+      balanceRepository.setBalances(bals);
 
       dbg(
-        '[BALANCE] getWalletBalanceAggregate: API result —',
+        '[BALANCE] getWalletBalanceAggregate: API result (atomic write) —',
         'addresses:', addresses.length,
-        'successCount:', successCount,
         'confirmed:', confirmedSats.toFixed(0), 'sats',
         'mempool:', mempoolSats.toFixed(0), 'sats',
         'network:', network, 'addressType:', addressType,
@@ -1525,12 +1537,6 @@ export class WalletService {
         usdAmount = this.formatUSD(totalSats.mul(btcRate).div(1e8).toNumber());
       }
       const pendingSatsValue = mempoolSats.toNumber();
-      dbg('WalletService: getWalletBalanceAggregate', {
-        addresses: addresses.length,
-        confirmedSats: confirmedSats.toFixed(0),
-        pendingSats: pendingSatsValue,
-        newBalance,
-      });
       const result: WalletBalance = {
         btc: newBalance,
         usd: usdAmount,
@@ -1538,7 +1544,6 @@ export class WalletService {
         timestamp: Date.now(),
         pendingSats: pendingSatsValue,
       };
-      // Persist aggregate under a virtual address key for the HD wallet
       const aggAddress = `aggregate_${network}_${addressType}`;
       balanceRepository.setBalance({
         address: aggAddress,
@@ -1776,6 +1781,22 @@ export class WalletService {
       'addresses',
     );
     return {txs: merged, cursors};
+  }
+
+  /**
+   * Returns per-address transaction chain cursors from the sync repository
+   * (e.g. after transactionSyncer.syncAddressesAtomic).
+   */
+  public getTransactionCursorsForAddresses(
+    network: string,
+    addresses: string[],
+  ): Record<string, string | null> {
+    const out: Record<string, string | null> = {};
+    for (const addr of addresses) {
+      const c = syncRepository.getCursor('transactions', `${addr}_${network}`);
+      out[addr] = c ?? null;
+    }
+    return out;
   }
 
   /**

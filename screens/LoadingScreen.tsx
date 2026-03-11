@@ -10,6 +10,7 @@ import {
   Pressable,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import DeviceInfo from 'react-native-device-info';
 import {useTheme} from '../theme';
 
 // Error boundary for particle animation - on old/slow devices rendering many Animated.Image can crash
@@ -39,6 +40,13 @@ const LoadingScreen = ({onRetry}: any) => {
   const {theme} = useTheme();
   const [loading, setLoading] = useState(false);
   const [particlesEnabled, setParticlesEnabled] = useState(true);
+  const [versionBuild, setVersionBuild] = useState<string>('');
+  useEffect(() => {
+    Promise.all([
+      DeviceInfo.getVersion(),
+      DeviceInfo.getBuildNumber(),
+    ]).then(([v, b]) => setVersionBuild(`${v}:${b}`));
+  }, []);
   const fadeAnim = useRef(new Animated.Value(0.6)).current;
   const buttonScale = useRef(new Animated.Value(1)).current;
   const iconPulse = useRef(new Animated.Value(1)).current;
@@ -421,6 +429,13 @@ const LoadingScreen = ({onRetry}: any) => {
       opacity: 0.8,
       marginBottom: 8,
     },
+    versionBuildText: {
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.textSecondary,
+      opacity: 0.8,
+      marginBottom: 12,
+    },
     bottomContainer: {
       alignItems: 'center',
       width: '100%',
@@ -539,6 +554,9 @@ const LoadingScreen = ({onRetry}: any) => {
           </Animated.View>
         </View>
         <View style={styles.bottomContainer}>
+          {versionBuild ? (
+            <Text style={styles.versionBuildText}>{versionBuild}</Text>
+          ) : null}
           <Animated.View
             style={[
               styles.buttonAnimatedContainer,

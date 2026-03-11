@@ -81,6 +81,7 @@ import walletRepository from '../services/repositories/WalletRepository';
 import balanceRepository from '../services/repositories/BalanceRepository';
 import {getExternalIndex} from '../services/HdIndexService';
 import syncCoordinator from '../services/sync/SyncCoordinator';
+import apiQueue from '../services/ApiQueue';
 import {
   parsePairingCodeFromScannedData,
   computeExtensionBindResponseQr,
@@ -149,6 +150,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     balance: 0,
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [apiQueueLabel, setApiQueueLabel] = useState<string | null>(null);
   const [isCheckingBalanceForSend, setIsCheckingBalanceForSend] =
     useState(false);
   const [isCurrencySelectorVisible, setIsCurrencySelectorVisible] =
@@ -320,6 +322,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     uxSegwitTestnet,
     uxSegwitCompTestnet,
   ]);
+  useEffect(() => {
+    const unsub = apiQueue.subscribe(state => {
+      setApiQueueLabel(state?.label ?? null);
+    });
+    return unsub;
+  }, []);
   const fetchData = useCallback(async () => {
     try {
       dbg('[BALANCE] fetchData: called —',
@@ -393,16 +401,22 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('fetching bitcoin price and wallet balance...');
         const effectiveAddressType =
           addressType || userAddressType || 'segwit-native';
-        freshData = await Promise.all([
-          WalletService.getInstance().getBitcoinPrice(),
-          WalletService.getInstance().getWalletBalanceAggregate(
-            network,
-            effectiveAddressType,
-            btcRate,
-            _pendingSent,
-            true,
-          ),
-        ]);
+        const freshBalance = await apiQueue.enqueue(
+          'Fetching balance…',
+          () =>
+            WalletService.getInstance().getWalletBalanceAggregate(
+              network,
+              effectiveAddressType,
+              btcRate,
+              _pendingSent,
+              true,
+            ),
+        );
+        const freshPrice = await apiQueue.enqueue(
+          'Fetching fiat rate…',
+          () => WalletService.getInstance().getBitcoinPrice(),
+        );
+        freshData = [freshPrice, freshBalance];
         if (Array.isArray(freshData) && freshData.length === 2) {
           const [freshPrice, freshBalance] = freshData;
           const rates = freshPrice.rates;
@@ -480,6 +494,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       }
       // Fall back to cached data only if fresh data fetch failed
       if (!freshData) {
+        Toast.show({
+          type: 'info',
+          text1: 'Could not fetch latest data',
+          text2: 'Using cached data.',
+          position: 'top',
+        });
         const cachedPricePromise = WalletService.getInstance().getCachePrice();
         const effectiveAddressType =
           addressType || userAddressType || 'segwit-native';
@@ -2715,9 +2735,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       <CacheIndicator
         ref={cacheIndicatorRef}
         timestamps={cacheTimestamps}
+        statusMessage={apiQueueLabel ?? undefined}
         onRefresh={() => {
-          // Trigger the same behavior as a user pull-to-refresh on the list
-          transactionListRef.current?.refresh?.();
+          fetchData().then(() => transactionListRef.current?.refresh?.());
         }}
         theme={theme}
         isRefreshing={isRefreshing}

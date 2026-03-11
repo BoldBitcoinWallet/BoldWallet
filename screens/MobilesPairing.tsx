@@ -5046,6 +5046,7 @@ const MobilesPairing = ({navigation}: any) => {
         onClose={() => {
           broadcastSuccessPayloadRef.current = null;
           setSignedTxRawHex(null);
+          navigation.goBack();
         }}
       />
     </SafeAreaView>

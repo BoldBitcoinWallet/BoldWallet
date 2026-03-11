@@ -1,13 +1,17 @@
 /**
  * BalanceSyncer — fetches per-address confirmed + mempool balances and writes to SQLite.
  *
+ * ATOMIC: All addresses must succeed; otherwise nothing is written (no partial data).
+ * On 429: retry with backoff (see rateLimitRetry); then throw if still failing.
  * Sync schedule: on app foreground + every 30 s.
  * Sequential per address to avoid mempool.space rate limits.
  */
 import mempoolClient from '../MempoolClient';
 import balanceRepository from '../repositories/BalanceRepository';
 import syncRepository from '../repositories/SyncRepository';
+import {INTER_ADDRESS_DELAY_MS, sleep, with429Retry} from './rateLimitRetry';
 import {dbg} from '../../utils';
+import type {AddressBalance} from '../repositories/BalanceRepository';
 
 export interface AddressEntry {
   address: string;
@@ -19,7 +23,19 @@ interface MempoolAddressResponse {
   mempool_stats: {funded_txo_sum: number; spent_txo_sum: number};
 }
 
+/** Thrown when any address fetch fails (atomic: no DB writes). */
+export class BalanceSyncError extends Error {
+  constructor(message: string, public readonly failedAddress?: string) {
+    super(message);
+    this.name = 'BalanceSyncError';
+  }
+}
+
 class BalanceSyncer {
+  /**
+   * Fetch all addresses; only if every one succeeds, write all to DB.
+   * On any failure throws BalanceSyncError and writes nothing.
+   */
   async syncAddresses(
     addresses: AddressEntry[],
     apiBase: string,
@@ -27,11 +43,25 @@ class BalanceSyncer {
     if (!addresses.length) return;
     const cleanApi = apiBase.replace(/\/+$/, '');
 
-    for (const {address, network} of addresses) {
+    const results: AddressBalance[] = [];
+
+    for (let i = 0; i < addresses.length; i++) {
+      const {address, network} = addresses[i];
+      if (i > 0) {
+        await sleep(INTER_ADDRESS_DELAY_MS);
+      }
       try {
         const url = `${cleanApi}/address/${encodeURIComponent(address)}`;
-        const res = await mempoolClient.get<MempoolAddressResponse>(url);
-        if (!res.ok || !res.data) continue;
+        const res = await with429Retry<MempoolAddressResponse>(
+          'BalanceSyncer',
+          () => mempoolClient.get<MempoolAddressResponse>(url),
+        );
+        if (!res.ok || !res.data) {
+          throw new BalanceSyncError(
+            `Balance fetch failed for address (${res.status ?? 'error'})`,
+            address,
+          );
+        }
 
         const {chain_stats, mempool_stats} = res.data;
         const confirmedSats =
@@ -43,7 +73,7 @@ class BalanceSyncer {
         const balanceSats = Math.max(0, confirmedSats);
         const now = Date.now();
 
-        balanceRepository.setBalance({
+        results.push({
           address,
           network,
           balanceSats,
@@ -51,19 +81,23 @@ class BalanceSyncer {
           hasNonzero: balanceSats > 0 || pendingSats > 0,
           fetchedAt: now,
         });
-
-        syncRepository.updateCursor('balance', `${address}_${network}`, null, 'ok');
-        dbg('BalanceSyncer: synced', address.slice(0, 10), balanceSats, 'sats');
+        dbg('BalanceSyncer: fetched', address.slice(0, 10), balanceSats, 'sats');
       } catch (err) {
+        if (err instanceof BalanceSyncError) throw err;
         dbg('BalanceSyncer: error for', address.slice(0, 10), err);
-        syncRepository.updateCursor(
-          'balance',
-          `${address}_${network}`,
-          null,
-          'failed',
+        throw new BalanceSyncError(
+          err instanceof Error ? err.message : 'Balance fetch failed',
+          address,
         );
       }
     }
+
+    // All succeeded — write in one transaction
+    balanceRepository.setBalances(results);
+    for (const {address, network} of addresses) {
+      syncRepository.updateCursor('balance', `${address}_${network}`, null, 'ok');
+    }
+    dbg('BalanceSyncer: atomic write complete', results.length, 'addresses');
   }
 }
 

@@ -579,9 +579,20 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   onPress={() => {
                     setEndpointPickerSectionId(section.id);
                   }}
-                  style={[styles.dropdown, {borderColor, backgroundColor: theme.colors.background}]}>
+                  style={[
+                    styles.dropdown,
+                    {
+                      borderColor,
+                      backgroundColor: isDarkMode
+                        ? (theme.colors.cardBackground ?? theme.colors.background)
+                        : theme.colors.background,
+                    },
+                  ]}>
                   <Text
-                    style={[styles.dropdownLabel, {color: theme.colors.text}]}
+                    style={[
+                      styles.dropdownLabel,
+                      {color: theme.colors.text},
+                    ]}
                     numberOfLines={1}>
                     {endpoint?.label ?? 'Select endpoint'}
                   </Text>

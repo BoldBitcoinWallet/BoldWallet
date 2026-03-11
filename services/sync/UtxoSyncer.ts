@@ -1,14 +1,14 @@
 /**
  * UtxoSyncer — full replace UTXO set for each address from mempool.space.
  *
- * mempool.space always returns the complete current UTXO set for an address,
- * so a full delete + insert is the correct strategy.
- *
- * Sync schedule: on app foreground + before any send operation.
+ * ATOMIC: All addresses must succeed; otherwise nothing is written (no partial data).
+ * On 429: retry with backoff (see rateLimitRetry); then throw if still failing.
+ * mempool.space always returns the complete current UTXO set per address.
  */
 import mempoolClient from '../MempoolClient';
 import utxoRepository from '../repositories/UtxoRepository';
 import syncRepository from '../repositories/SyncRepository';
+import {INTER_ADDRESS_DELAY_MS, sleep, with429Retry} from './rateLimitRetry';
 import {dbg} from '../../utils';
 import type {StoredUtxo} from '../repositories/UtxoRepository';
 
@@ -30,7 +30,19 @@ export interface AddressEntry {
   derivationPath?: string;
 }
 
+/** Thrown when any address UTXO fetch fails (atomic: no DB writes). */
+export class UtxoSyncError extends Error {
+  constructor(message: string, public readonly failedAddress?: string) {
+    super(message);
+    this.name = 'UtxoSyncError';
+  }
+}
+
 class UtxoSyncer {
+  /**
+   * Fetch UTXOs for all addresses; only if every one succeeds, write all to DB.
+   * On any failure throws UtxoSyncError and writes nothing.
+   */
   async syncAddresses(
     addresses: AddressEntry[],
     apiBase: string,
@@ -38,11 +50,25 @@ class UtxoSyncer {
     if (!addresses.length) return;
     const cleanApi = apiBase.replace(/\/+$/, '');
 
-    for (const {address, network, derivationPath} of addresses) {
+    const results: Array<{address: string; network: string; derivationPath: string | null; utxos: StoredUtxo[]}> = [];
+
+    for (let i = 0; i < addresses.length; i++) {
+      const {address, network, derivationPath} = addresses[i];
+      if (i > 0) {
+        await sleep(INTER_ADDRESS_DELAY_MS);
+      }
       try {
         const url = `${cleanApi}/address/${encodeURIComponent(address)}/utxo`;
-        const res = await mempoolClient.get<ApiUtxo[]>(url);
-        if (!res.ok || !Array.isArray(res.data)) continue;
+        const res = await with429Retry<ApiUtxo[]>(
+          'UtxoSyncer',
+          () => mempoolClient.get<ApiUtxo[]>(url),
+        );
+        if (!res.ok || !Array.isArray(res.data)) {
+          throw new UtxoSyncError(
+            `UTXO fetch failed for address (${res.status ?? 'error'})`,
+            address,
+          );
+        }
 
         const now = Date.now();
         const utxos: StoredUtxo[] = res.data.map(u => ({
@@ -55,22 +81,28 @@ class UtxoSyncer {
           derivationPath: derivationPath ?? null,
           isConfirmed: u.status?.confirmed ?? true,
           blockHeight: u.status?.block_height ?? null,
+          blockTime: u.status?.block_time ?? null,
           fetchedAt: now,
         }));
 
-        utxoRepository.replaceUtxosForAddress(address, network, utxos);
-        syncRepository.updateCursor('utxos', `${address}_${network}`, null, 'ok');
-        dbg('UtxoSyncer: synced', address.slice(0, 10), utxos.length, 'UTXOs');
+        results.push({address, network, derivationPath: derivationPath ?? null, utxos});
+        dbg('UtxoSyncer: fetched', address.slice(0, 10), utxos.length, 'UTXOs');
       } catch (err) {
+        if (err instanceof UtxoSyncError) throw err;
         dbg('UtxoSyncer: error for', address.slice(0, 10), err);
-        syncRepository.updateCursor(
-          'utxos',
-          `${address}_${network}`,
-          null,
-          'failed',
+        throw new UtxoSyncError(
+          err instanceof Error ? err.message : 'UTXO fetch failed',
+          address,
         );
       }
     }
+
+    // All succeeded — write each address's UTXOs (order doesn't matter; no partial state)
+    for (const {address, network, utxos} of results) {
+      utxoRepository.replaceUtxosForAddress(address, network, utxos);
+      syncRepository.updateCursor('utxos', `${address}_${network}`, null, 'ok');
+    }
+    dbg('UtxoSyncer: atomic write complete', results.length, 'addresses');
   }
 }
 

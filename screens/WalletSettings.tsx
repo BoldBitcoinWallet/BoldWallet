@@ -52,9 +52,9 @@ import appConfigRepository, {
 import database from '../services/Database';
 import walletRepository from '../services/repositories/WalletRepository';
 import balanceRepository from '../services/repositories/BalanceRepository';
-import balanceSyncer from '../services/sync/BalanceSyncer';
-import transactionSyncer from '../services/sync/TransactionSyncer';
-import utxoSyncer from '../services/sync/UtxoSyncer';
+import balanceSyncer, {BalanceSyncError} from '../services/sync/BalanceSyncer';
+import transactionSyncer, {TxSyncError} from '../services/sync/TransactionSyncer';
+import utxoSyncer, {UtxoSyncError} from '../services/sync/UtxoSyncer';
 import LegalModal from '../components/LegalModal';
 import BackupKeyshareModal from '../components/BackupKeyshareModal';
 import RestoringIndexesModal from '../components/RestoringIndexesModal';
@@ -65,6 +65,22 @@ import Toast from 'react-native-toast-message';
 import {useRoute, useFocusEffect, RouteProp} from '@react-navigation/native';
 
 type SettingsParams = {expandSection?: string};
+
+function syncFailureToast(
+  e: unknown,
+  fallbackText2: string,
+): {text1: string; text2: string} {
+  if (e instanceof BalanceSyncError)
+    return {text1: 'Could not fetch balance', text2: 'Using cached data.'};
+  if (e instanceof UtxoSyncError)
+    return {text1: 'Could not fetch UTXOs', text2: 'Using cached data.'};
+  if (e instanceof TxSyncError)
+    return {text1: 'Could not fetch transactions', text2: 'Using cached data.'};
+  return {
+    text1: 'Sync failed',
+    text2: e instanceof Error ? e.message : fallbackText2,
+  };
+}
 
 interface CollapsibleSectionProps {
   title: string;
@@ -899,11 +915,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           fetchedAt: agg.fetchedAt || Date.now(),
         });
 
-        // ── Step 6: pre-sync transactions ─────────────────────────────────
+        // ── Step 6: pre-sync transactions (atomic) ────────────────────────
         setRestoreProgress({phase: 'Syncing transactions…'});
-        for (const {address} of addressesWithPaths) {
-          await transactionSyncer.syncAddress(address, network, apiUrl);
-        }
+        await transactionSyncer.syncAddressesAtomic(
+          addressesWithPaths.map(a => ({address: a.address, network})),
+          apiUrl,
+        );
 
         // ── Step 7: pre-sync UTXOs ────────────────────────────────────────
         setRestoreProgress({phase: 'Syncing UTXOs…'});
@@ -1058,15 +1075,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       await runRestoreIndexing(newNetwork, activeAddressType);
     } catch (e) {
       dbg('Network toggle: sync failed', e);
-      Toast.show({
-        type: 'error',
-        text1: 'Sync failed',
-        text2:
-          e instanceof Error
-            ? e.message
-            : 'Network switch could not complete. Please try again.',
-        visibilityTime: 5000,
-      });
+      const {text1, text2} = syncFailureToast(
+        e,
+        'Network switch could not complete. Please try again.',
+      );
+      Toast.show({type: 'error', text1, text2, visibilityTime: 5000});
       return;
     }
     dbg('Network toggle: Navigating to Wallet tab');
@@ -2691,15 +2704,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   );
                 } catch (e) {
                   dbg('Clear cache: sync failed', e);
-                  Toast.show({
-                    type: 'error',
-                    text1: 'Sync failed',
-                    text2:
-                      e instanceof Error
-                        ? e.message
-                        : 'Cache clear could not complete. Please try again.',
-                    visibilityTime: 5000,
-                  });
+                  const {text1, text2} = syncFailureToast(
+                    e,
+                    'Cache clear could not complete. Please try again.',
+                  );
+                  Toast.show({type: 'error', text1, text2, visibilityTime: 5000});
                   return;
                 }
                 setUsageSize({fileCount: 0, mb: '0.00 MB'});
@@ -2873,15 +2882,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     await runRestoreIndexing(activeNetwork, 'legacy');
                   } catch (e) {
                     dbg('Address type switch (legacy): sync failed', e);
-                    Toast.show({
-                      type: 'error',
-                      text1: 'Sync failed',
-                      text2:
-                        e instanceof Error
-                          ? e.message
-                          : 'Address type switch could not complete. Please try again.',
-                      visibilityTime: 5000,
-                    });
+                    const {text1, text2} = syncFailureToast(
+                      e,
+                      'Address type switch could not complete. Please try again.',
+                    );
+                    Toast.show({type: 'error', text1, text2, visibilityTime: 5000});
                     return;
                   }
                   navigation.reset(
@@ -2924,15 +2929,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     await runRestoreIndexing(activeNetwork, 'segwit-native');
                   } catch (e) {
                     dbg('Address type switch (segwit-native): sync failed', e);
-                    Toast.show({
-                      type: 'error',
-                      text1: 'Sync failed',
-                      text2:
-                        e instanceof Error
-                          ? e.message
-                          : 'Address type switch could not complete. Please try again.',
-                      visibilityTime: 5000,
-                    });
+                    const {text1, text2} = syncFailureToast(
+                      e,
+                      'Address type switch could not complete. Please try again.',
+                    );
+                    Toast.show({type: 'error', text1, text2, visibilityTime: 5000});
                     return;
                   }
                   navigation.reset(
@@ -2981,15 +2982,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                       'Address type switch (segwit-compatible): sync failed',
                       e,
                     );
-                    Toast.show({
-                      type: 'error',
-                      text1: 'Sync failed',
-                      text2:
-                        e instanceof Error
-                          ? e.message
-                          : 'Address type switch could not complete. Please try again.',
-                      visibilityTime: 5000,
-                    });
+                    const {text1, text2} = syncFailureToast(
+                      e,
+                      'Address type switch could not complete. Please try again.',
+                    );
+                    Toast.show({type: 'error', text1, text2, visibilityTime: 5000});
                     return;
                   }
                   navigation.reset(

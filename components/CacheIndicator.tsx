@@ -20,12 +20,14 @@ interface CacheIndicatorProps {
   theme: any;
   isRefreshing?: boolean;
   usingCache?: boolean; // explicitly indicate cached mode (e.g., offline)
+  /** When isRefreshing, show this instead of generic "Refreshing..." (e.g. "Fetching balance…"). */
+  statusMessage?: string;
 }
 export interface CacheIndicatorHandle {
   press: () => void;
 }
 export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorProps>(
-  ({timestamps, onRefresh, theme, isRefreshing = false, usingCache = false}, ref) => {
+  ({timestamps, onRefresh, theme, isRefreshing = false, usingCache = false, statusMessage}, ref) => {
     const latestTimestamp = Math.max(timestamps.price, timestamps.balance);
     const shimmerValue = useRef(new Animated.Value(-100)).current;
     const shimmerAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
@@ -213,7 +215,7 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
                     : theme.colors.bitcoinOrange),
             }}>
             {isRefreshing
-              ? 'Refreshing...'
+              ? (statusMessage ?? 'Refreshing...')
               : 'Tap to refresh'
             }
           </Text>

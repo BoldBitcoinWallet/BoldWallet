@@ -64,6 +64,23 @@ function combineSignals(
   return combined.signal;
 }
 
+/**
+ * Parse Retry-After header: integer seconds or HTTP-date.
+ * Returns seconds to wait (1–120) or null if unparseable.
+ */
+function parseRetryAfter(value: string | null): number | null {
+  if (value == null || value.trim() === '') return null;
+  const trimmed = value.trim();
+  const asNum = parseInt(trimmed, 10);
+  if (!Number.isNaN(asNum) && asNum > 0) return asNum;
+  const asDate = Date.parse(trimmed);
+  if (!Number.isNaN(asDate)) {
+    const seconds = Math.ceil((asDate - Date.now()) / 1000);
+    return seconds > 0 ? seconds : null;
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -75,6 +92,8 @@ export interface MempoolResponse<T = unknown> {
   status: number;
   /** Parsed JSON body. Only meaningful when ok === true. */
   data: T;
+  /** When status === 429, server may send Retry-After; we parse it to seconds (1–120). */
+  retryAfterSeconds?: number;
 }
 
 interface CacheEntry {
@@ -87,7 +106,7 @@ interface CacheEntry {
 // ---------------------------------------------------------------------------
 
 /** Default TTL — applies to balance, UTXO, and transaction endpoints. */
-const DEFAULT_TTL_MS = 5_000; // 5 s
+const DEFAULT_TTL_MS = 15_000; // 15 s
 
 /**
  * URL pattern → TTL overrides (evaluated in order, first match wins).
@@ -100,8 +119,8 @@ const TTL_RULES: ReadonlyArray<[RegExp, number]> = [
   [/\/v1\/fees\/recommended/, 30_000],
   // BTC price endpoint — slow-moving relative to UI refresh rate.
   [/\/v1\/prices/, 60_000],
-  // Historical price is immutable (past date); cache 7 days.
-  [/\/v1\/historical-price\?/, 7 * 24 * 60 * 60 * 1000],
+  // Historical price is immutable (past date); cache 30 days.
+  [/\/v1\/historical-price\?/, 30 * 24 * 60 * 60 * 1000],
 ];
 
 function ttlForUrl(url: string): number {
@@ -219,7 +238,20 @@ class MempoolClient {
 
         // Non-2xx: do NOT cache — transient errors must not persist.
         dbg('MempoolClient: non-ok response', res.status, url.slice(-80));
-        return {ok: false, status: res.status, data: null as unknown};
+        const out: MempoolResponse<unknown> = {
+          ok: false,
+          status: res.status,
+          data: null as unknown,
+        };
+        if (res.status === 429) {
+          const raw = res.headers.get('Retry-After');
+          const seconds = parseRetryAfter(raw);
+          if (seconds != null) {
+            out.retryAfterSeconds = Math.min(120, Math.max(1, seconds));
+            dbg('MempoolClient: 429 Retry-After', raw, '→', out.retryAfterSeconds, 's');
+          }
+        }
+        return out as MempoolResponse<T>;
       } catch (err) {
         // Network error, timeout, or abort: propagate so callers can handle it.
         dbg('MempoolClient: fetch error', url.slice(-80), err);
