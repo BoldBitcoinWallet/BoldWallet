@@ -1,6 +1,6 @@
 # Changelog
 
-## [3.0.1] - 2026-02-28
+## [3.0.2] - 2026-02-28
 
 ### Added
 - **SQLite persistence layer** — full migration from file-based `LocalCache` to a WAL-mode SQLite database (`@op-engineering/op-sqlite`) as the single source of truth for all wallet data.
@@ -56,7 +56,7 @@
 - **MobilesPairing modal close navigation**: closing the signed TX broadcast modal (Copy/Share/Broadcast) now navigates back to the previous screen instead of leaving the user stranded.
 
 ### Technical Details
-- **Version**: `package.json` 3.0.1; Android `versionCode` 51 / `versionName` 3.0.1.
+- **Version**: `package.json` 3.0.2; Android `versionCode` 52 / `versionName` 3.0.2; iOS build 52 / `MARKETING_VERSION` 3.0.2.
 - **New files**: `services/Database.ts`, `services/LocalCacheMigration.ts`, `services/repositories/` (6 repositories), `services/sync/` (`BalanceSyncer`, `TransactionSyncer`, `UtxoSyncer`, `PriceSyncer`, `SyncCoordinator`), `services/ApiQueue.ts`, `services/sync/rateLimitRetry.ts`.
 - **`StoredUtxo` interface**: added `blockTime: number | null`; `utxos` DDL adds `block_time INTEGER` with an `ALTER TABLE … ADD COLUMN` migration guard.
 - **`RestoringIndexesModal`**: new optional `phase?: string` and `progress?: { current: number; total: number }` props; title switches between "Restoring indexes" and "Syncing wallet" depending on phase.
