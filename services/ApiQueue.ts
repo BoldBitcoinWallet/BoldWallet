@@ -18,13 +18,18 @@ export type ApiQueueLabel =
 export interface ApiQueueState {
   label: ApiQueueLabel | null;
   startedAt: number;
+  /** When set, show progress e.g. "3/5" next to the label. */
+  progress?: { current: number; total: number };
 }
+
+export type SetProgressFn = (current: number, total: number) => void;
 
 type Subscriber = (state: ApiQueueState) => void;
 
 interface QueuedJob {
   label: ApiQueueLabel;
-  job: () => Promise<unknown>;
+  /** Receives setProgress to report current/total during the job. */
+  job: (setProgress: SetProgressFn) => Promise<unknown>;
   resolve: (value: unknown) => void;
   reject: (err: unknown) => void;
 }
@@ -62,13 +67,17 @@ class ApiQueue {
 
   /**
    * Enqueue a job. It runs when its turn comes (after previous jobs finish).
+   * The job receives setProgress(current, total) to report progress (e.g. 3/5 addresses).
    * Returns a promise that resolves with the job result or rejects with the job error.
    */
-  enqueue<T>(label: ApiQueueLabel, job: () => Promise<T>): Promise<T> {
+  enqueue<T>(
+    label: ApiQueueLabel,
+    job: (setProgress: SetProgressFn) => Promise<T>,
+  ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       this._queue.push({
         label,
-        job: job as () => Promise<unknown>,
+        job: job as (setProgress: SetProgressFn) => Promise<unknown>,
         resolve: resolve as (value: unknown) => void,
         reject,
       });
@@ -81,10 +90,16 @@ class ApiQueue {
 
     const next = this._queue.shift()!;
     const {label, job, resolve, reject} = next;
-    this._notify({label, startedAt: Date.now()});
+    const state: ApiQueueState = {label, startedAt: Date.now()};
+    this._notify(state);
     dbg('ApiQueue: running', label);
 
-    job()
+    const setProgress: SetProgressFn = (current, total) => {
+      if (this._running)
+        this._notify({...this._running, progress: {current, total}});
+    };
+
+    job(setProgress)
       .then(result => {
         this._notify(null);
         dbg('ApiQueue: finished', label);

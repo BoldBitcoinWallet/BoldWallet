@@ -42,10 +42,9 @@ const LoadingScreen = ({onRetry}: any) => {
   const [particlesEnabled, setParticlesEnabled] = useState(true);
   const [versionBuild, setVersionBuild] = useState<string>('');
   useEffect(() => {
-    Promise.all([
-      DeviceInfo.getVersion(),
-      DeviceInfo.getBuildNumber(),
-    ]).then(([v, b]) => setVersionBuild(`${v}:${b}`));
+    Promise.all([DeviceInfo.getVersion(), DeviceInfo.getBuildNumber()]).then(
+      ([v, b]) => setVersionBuild(`v${v} • ${b}`),
+    );
   }, []);
   const fadeAnim = useRef(new Animated.Value(0.6)).current;
   const buttonScale = useRef(new Animated.Value(1)).current;
@@ -434,7 +433,7 @@ const LoadingScreen = ({onRetry}: any) => {
       fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.textSecondary,
       opacity: 0.8,
-      marginBottom: 12,
+      marginTop: 12,
     },
     bottomContainer: {
       alignItems: 'center',
@@ -554,9 +553,6 @@ const LoadingScreen = ({onRetry}: any) => {
           </Animated.View>
         </View>
         <View style={styles.bottomContainer}>
-          {versionBuild ? (
-            <Text style={styles.versionBuildText}>{versionBuild}</Text>
-          ) : null}
           <Animated.View
             style={[
               styles.buttonAnimatedContainer,
@@ -602,6 +598,9 @@ const LoadingScreen = ({onRetry}: any) => {
               )}
             </Pressable>
           </Animated.View>
+          {versionBuild ? (
+            <Text style={styles.versionBuildText}>{versionBuild}</Text>
+          ) : null}
         </View>
       </View>
     </SafeAreaView>

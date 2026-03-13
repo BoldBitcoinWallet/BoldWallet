@@ -39,13 +39,16 @@ class BalanceSyncer {
   async syncAddresses(
     addresses: AddressEntry[],
     apiBase: string,
+    onProgress?: (current: number, total: number) => void,
   ): Promise<void> {
     if (!addresses.length) return;
     const cleanApi = apiBase.replace(/\/+$/, '');
+    const total = addresses.length;
 
     const results: AddressBalance[] = [];
 
     for (let i = 0; i < addresses.length; i++) {
+      onProgress?.(i + 1, total);
       const {address, network} = addresses[i];
       if (i > 0) {
         await sleep(INTER_ADDRESS_DELAY_MS);

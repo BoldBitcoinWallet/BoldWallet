@@ -8,9 +8,8 @@ import {GAP_LIMIT} from '../utils';
  * Non-dismissible modal shown during restore discovery / chain indexing.
  * Used when clearing storage or importing keyshare.
  *
- * phase — optional free-text label displayed instead of the chain scan
- *         progress when a post-discovery sync step is running
- *         (e.g. "Syncing balances…", "Syncing transactions…").
+ * phase — optional free-text label (e.g. "Syncing balances…", "Syncing transactions…").
+ * progress — when set with phase, show address progress e.g. "3/5".
  */
 const RestoringIndexesModal: React.FC<{
   visible: boolean;
@@ -18,7 +17,8 @@ const RestoringIndexesModal: React.FC<{
   index?: number;
   gapIndex?: number;
   phase?: string;
-}> = ({visible, chain, index = 0, gapIndex = 0, phase}) => {
+  progress?: { current: number; total: number };
+}> = ({visible, chain, index = 0, gapIndex = 0, phase, progress}) => {
   const {theme} = useTheme();
   const chainLabel = chain === 'external' ? 'Receive' : chain === 'internal' ? 'Change' : null;
   const styles = StyleSheet.create({
@@ -79,7 +79,9 @@ const RestoringIndexesModal: React.FC<{
           </AppText>
           <AppText style={styles.subtitle} tone="muted">
             {phase
-              ? phase
+              ? progress
+                ? `${phase} ${progress.current}/${progress.total}`
+                : phase
               : chainLabel
               ? `Scanning ${chainLabel} chain… index ${index}, gap ${gapIndex}/${GAP_LIMIT}`
               : 'Scanning chain for addresses…'}

@@ -553,11 +553,14 @@ const TransactionList = React.forwardRef<
           let multiHasMore = false;
           if (isMultiAddress && addresses && addresses.length > 0 && network) {
             try {
-              await apiQueue.enqueue('Fetching transactions…', () =>
-                transactionSyncer.syncAddressesAtomic(
-                  addresses.map(a => ({address: a, network})),
-                  `${cleanBaseApi}/api`,
-                ),
+              await apiQueue.enqueue(
+                'Fetching transactions…',
+                setProgress =>
+                  transactionSyncer.syncAddressesAtomic(
+                    addresses.map(a => ({address: a, network})),
+                    `${cleanBaseApi}/api`,
+                    setProgress,
+                  ),
               );
               const cursors =
                 WalletService.getInstance().getTransactionCursorsForAddresses(

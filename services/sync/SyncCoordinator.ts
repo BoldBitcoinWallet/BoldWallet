@@ -18,16 +18,18 @@
  *   syncCoordinator.stop();
  */
 import {AppState, type AppStateStatus} from 'react-native';
-import balanceSyncer, {type AddressEntry as BalanceEntry} from './BalanceSyncer';
+import balanceSyncer, {
+  type AddressEntry as BalanceEntry,
+} from './BalanceSyncer';
 import transactionSyncer from './TransactionSyncer';
 import utxoSyncer, {type AddressEntry as UtxoEntry} from './UtxoSyncer';
 import priceSyncer from './PriceSyncer';
 import {dbg} from '../../utils';
 
 const BALANCE_INTERVAL_MS = 30_000;
-const PRICE_INTERVAL_MS  = 60_000;
-const UTXO_INTERVAL_MS   = 60_000;
-const TX_INTERVAL_MS     = 120_000;
+const PRICE_INTERVAL_MS = 120_000;
+const UTXO_INTERVAL_MS = 120_000;
+const TX_INTERVAL_MS = 120_000;
 
 export interface SyncConfig {
   addresses: Array<{address: string; network: string; derivationPath?: string}>;
@@ -43,7 +45,9 @@ class SyncCoordinator {
   private _txTimer: ReturnType<typeof setInterval> | null = null;
   private _utxoTimer: ReturnType<typeof setInterval> | null = null;
   private _priceTimer: ReturnType<typeof setInterval> | null = null;
-  private _appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
+  private _appStateSubscription: ReturnType<
+    typeof AppState.addEventListener
+  > | null = null;
   private _running = false;
 
   /**
@@ -59,10 +63,13 @@ class SyncCoordinator {
     this._syncAll();
 
     // Schedule periodic syncs
-    this._balanceTimer = setInterval(() => this._syncBalances(), BALANCE_INTERVAL_MS);
-    this._priceTimer   = setInterval(() => this._syncPrice(),    PRICE_INTERVAL_MS);
-    this._utxoTimer    = setInterval(() => this._syncUtxos(),    UTXO_INTERVAL_MS);
-    this._txTimer      = setInterval(() => this._syncTxs(),      TX_INTERVAL_MS);
+    this._balanceTimer = setInterval(
+      () => this._syncBalances(),
+      BALANCE_INTERVAL_MS,
+    );
+    this._priceTimer = setInterval(() => this._syncPrice(), PRICE_INTERVAL_MS);
+    this._utxoTimer = setInterval(() => this._syncUtxos(), UTXO_INTERVAL_MS);
+    this._txTimer = setInterval(() => this._syncTxs(), TX_INTERVAL_MS);
 
     // Resume sync when app comes to foreground
     this._appStateSubscription = AppState.addEventListener(
@@ -75,7 +82,12 @@ class SyncCoordinator {
       },
     );
 
-    dbg('SyncCoordinator: started', config.addresses.length, 'addresses on', config.network);
+    dbg(
+      'SyncCoordinator: started',
+      config.addresses.length,
+      'addresses on',
+      config.network,
+    );
   }
 
   /** Update the config without restarting timers (e.g. addresses changed). */
@@ -86,10 +98,22 @@ class SyncCoordinator {
   /** Stop all timers and release listeners. */
   stop(): void {
     this._running = false;
-    if (this._balanceTimer) { clearInterval(this._balanceTimer); this._balanceTimer = null; }
-    if (this._txTimer)      { clearInterval(this._txTimer);      this._txTimer      = null; }
-    if (this._utxoTimer)    { clearInterval(this._utxoTimer);    this._utxoTimer    = null; }
-    if (this._priceTimer)   { clearInterval(this._priceTimer);   this._priceTimer   = null; }
+    if (this._balanceTimer) {
+      clearInterval(this._balanceTimer);
+      this._balanceTimer = null;
+    }
+    if (this._txTimer) {
+      clearInterval(this._txTimer);
+      this._txTimer = null;
+    }
+    if (this._utxoTimer) {
+      clearInterval(this._utxoTimer);
+      this._utxoTimer = null;
+    }
+    if (this._priceTimer) {
+      clearInterval(this._priceTimer);
+      this._priceTimer = null;
+    }
     if (this._appStateSubscription) {
       this._appStateSubscription.remove();
       this._appStateSubscription = null;
@@ -126,7 +150,11 @@ class SyncCoordinator {
     if (!this._config) return;
     try {
       for (const {address, network} of this._config.addresses) {
-        await transactionSyncer.syncAddress(address, network, this._config.apiBase);
+        await transactionSyncer.syncAddress(
+          address,
+          network,
+          this._config.apiBase,
+        );
       }
     } catch (err) {
       dbg('SyncCoordinator: tx sync error', err);

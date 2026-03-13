@@ -7,39 +7,65 @@
   - **Repository pattern**: `AppConfigRepository`, `WalletRepository`, `BalanceRepository`, `TransactionRepository`, `UtxoRepository`, `PriceRepository`, `SyncRepository` — each owns its table schema and CRUD operations.
   - **Background sync infrastructure**: `SyncCoordinator` orchestrates `BalanceSyncer`, `TransactionSyncer`, `UtxoSyncer`, and `PriceSyncer`; runs on foreground + configurable intervals; failures are silent and retried on next foreground event.
   - **Database-first rule enforced everywhere**: `API → write DB → UI reads DB`. UI never reads directly from API responses; any API error falls back to cached DB state.
+- **Central API Queue (`ApiQueue`)** — global singleton that serializes all logical API operations (balance, price, UTXOs, transactions) so they execute one at a time; subscribers are notified with the running operation label and progress for UI status display.
+- **Atomic sync operations** — `BalanceSyncer`, `UtxoSyncer`, and `TransactionSyncer` now collect all address data in memory and only commit to DB when **every** address succeeds; on any failure nothing is written (`BalanceSyncError`, `UtxoSyncError`, `TxSyncError`), preserving data consistency.
+- **429 rate-limit retry with backoff** — new `rateLimitRetry` module: automatic retry on HTTP 429 (up to 2 retries / 3 attempts), respects `Retry-After` header (1–120 s), inter-address throttling delay (300 ms) to reduce rate-limit triggers; applied across all syncers.
+- **`MempoolClient` `Retry-After` support** — parses `Retry-After` header (integer seconds or HTTP-date) from 429 responses, exposes `retryAfterSeconds` on `MempoolResponse`.
+- **Progress indicators** — `CacheIndicator` and `RestoringIndexesModal` now show `current/total` progress (e.g. "3/5") during multi-address sync operations; progress floats right in `CacheIndicator`.
+- **CacheIndicator status messages** — shows the currently running `ApiQueue` operation label (e.g. "Fetching balance…", "Fetching fiat rate…") instead of generic "Refreshing...".
+- **Descriptive sync failure toasts** — specific Toast messages for each sync type ("Could not fetch balance", "Could not fetch UTXOs", "Could not fetch transactions") with "Using cached data." fallback, replacing generic "Sync failed".
 - **Atomic wallet reset + reindex + pre-sync** (`runRestoreIndexing` in WalletSettings): the entire pipeline — HD index discovery, balance sync, transaction sync, UTXO sync, and aggregate balance computation — must succeed fully before navigating to WalletHome. On any failure the function throws, the caller shows a `Toast` error, and navigation is aborted (rollback semantics).
-  - `RestoringIndexesModal` now shows a `phase` label during post-discovery sync steps ("Syncing balances…", "Syncing transactions…", "Syncing UTXOs…").
+  - `RestoringIndexesModal` now shows a `phase` label and progress during post-discovery sync steps ("Syncing balances… 3/5", "Syncing transactions…", "Syncing UTXOs…").
   - All callers (network switch, address-type switch, Clear Cache) wrapped in `try/catch` with descriptive error toasts; navigation only fires after full success.
 - **Aggregate balance pre-computed and persisted** after the balance sync phase of `runRestoreIndexing`; WalletHome reads the pre-computed row on first render via `getCachedAggregateBalance` with no extra API call.
+- **Balance DB-first floor guard** — when the fresh API returns 0 BTC, `fetchData` cross-checks against the stored DB aggregate to prevent transient 0-balance display (e.g. right after device unlock when iOS Keychain is still initialising).
+- **Pre-skeleton DB balance seed** — on cold start, balance is read synchronously from DB and set in state before the loading skeleton appears, eliminating flash of `0` or `'-'`.
 - **`Database.clearWalletCacheData()`**: selective clear that wipes fetched data (`address_balances`, `utxos`, `transactions`, and related tables) while preserving `hd_state` and `wallet_addresses`; used for network/address-type switches so discovery always has the previous correct indexes as a baseline.
 - **UTXO `block_time` persistence**: `utxos` table now stores `block_time`; `StoredUtxo`, `UtxoRepository.replaceUtxosForAddress`, and `storedToUtxoWithPath` propagate the value end-to-end so the "Confirmed / Unconfirmed" label in `UtxosScreen` matches the summary card.
 - **Historical vs. current fiat prices for transactions**: confirmed transactions use the block-time historical rate from `PriceRepository`; pending/unconfirmed transactions fall back to the current live `btcRate`; `TransactionList` fetches missing historical rates in batch.
 - **Full wallet reset on `ShowcaseScreen` load**: clears all SQLite wallet tables, in-memory and HTTP caches, and relevant `EncryptedStorage` preference keys (preserving `keyshare`) so each new import starts from a guaranteed clean state.
-- **`MempoolClient` TTL tuning**: default TTL reduced from 30 s to **5 s** for balance, transaction, and UTXO endpoints; fee-rate endpoint set to **30 s**.
+- **LoadingScreen version:build** — app version and build number displayed at the bottom center of the loading screen.
+- **Mempool Playground: GET Historical Price** — new endpoint for querying BTC price at a given Unix timestamp with currency parameter.
 
 ### Changed
+- **UtxosScreen dedicated header style** — top summary card uses a new `utxoHeaderStyle` with glassmorphism effects, dedicated padding, theme-aware text colours for dark/light mode, and proper border/shadow; replaces reuse of `walletHeaderStyle`.
+- **UtxosScreen refresh via `UtxoSyncer`** — replaced the manual per-address fetch loop with `utxoSyncer.syncAddresses`, ensuring 429 retry, inter-address throttling, and atomic write benefits.
+- **UTXO derivation path right-aligned** — chain badge row uses `flexDirection: 'row'` with `justifyContent: 'space-between'`; derivation path floats right.
+- **TransactionList atomic sync via `ApiQueue`** — multi-address transaction refresh uses `transactionSyncer.syncAddressesAtomic` through the `ApiQueue`, showing "Fetching transactions…" status in `CacheIndicator`.
+- **`WalletService` atomic balance writes** — `getWalletBalanceAggregate` collects all per-address balances in memory and writes them atomically; when the address list is empty (keyshare unavailable), falls back to cached aggregate instead of returning 0.
+- **`MempoolClient` TTL adjustments** — default TTL set to **15 s** for balance/UTXO/transaction endpoints; historical price cache extended from 7 days to **30 days**; fee-rate endpoint at **30 s**.
 - **WalletHome balance always visible**: balance text is shown from the first frame using a pulsing `Animated.View` opacity during loading; the balance is never replaced with a shimmer or blank slot.
 - **Instant balance on lock/unlock**: `reinitializeWallet` now reads `balanceRepository.getBalance('aggregate_…')` synchronously at startup — before any `await` — so the cached BTC (and fiat if `btcRate` is already in state) is painted in the same render batch as the loading start; no flash of `0` or `'-'`.
-- **UTXO screen consistency**: `UtxosScreen` always reads the full UTXO set from `UtxoRepository` after API writes complete (not from a mutable in-memory `merged` array); fallback on API failure reads from DB; preload on mount uses the same `storedToUtxoWithPath` helper for consistent sorting and status mapping.
 - **Transaction list merge-not-replace**: API results are merged into existing state using `sortTxs`; the list count can only grow, never shrink, even on partial API responses.
 - **`runRestoreIndexing` cache invalidation order**: `mempoolClient.invalidateAll()` and `ws.invalidateAddressCache()` are flushed **before** `discoverHdIndexesForNetwork` so every address-used check hits the network with fresh data.
 - **`WalletSettings` network toggle**: now wrapped in `try/catch`; sets `newNetwork` (not `activeNetwork`) in navigation reset to prevent stale-closure bug.
+- **Mempool Playground dropdown**: dark mode background explicitly uses `cardBackground` for better visibility.
+- **WalletHome `CacheIndicator` refresh** — "Tap to refresh" now triggers `fetchData` (balance + price via ApiQueue) followed by transaction list refresh, instead of only refreshing transactions.
+- **Focus guard against duplicate fetches** — `useFocusEffect` checks both `isReinitInProgressRef` and `isFetchInProgressRef` to prevent racing parallel fetches.
 
 ### Fixed
-- **Balance zeroing on refresh**: `getWalletBalanceAggregate` now persists per-address balances on each successful API response and falls back to the per-address DB entry on `!res.ok` or network error; a complete API failure returns the stored aggregate instead of `0.00000000`.
+- **Fiat currency reset on cold start**: user's selected currency (e.g. EUR) was overwritten to USD on every app restart; the initialisation code now only defaults to USD when no preference is saved.
+- **Balance zeroing on refresh**: `getWalletBalanceAggregate` now persists per-address balances atomically and falls back to the stored aggregate on any single-address failure; a complete API failure returns the cached aggregate instead of `0.00000000`.
 - **Transaction count decreasing after refresh**: `setTransactions` uses a functional update that merges API results with existing state; transactions are inserted with `INSERT OR IGNORE` / UPSERT so rows can only accumulate.
+- **TransactionSyncer not truly atomic**: on `!res.ok` (e.g. 429 after retries), the old code would `break` and still write partial data; now throws `TxSyncError` so nothing is written.
 - **UTXO screen random / empty entries**: eliminated by always writing API responses to DB per-address and then reading the full address set from DB as the final source; partial API failures no longer produce half-populated lists.
 - **Fiat price always showing "-"**: fixed a `keysToFetch` regex mismatch that prevented historical rate fetches; block-time is now stored directly in a `Map` and looked up without regex parsing.
 - **Wallet reindex instant-close + 0 balance**: `clearWalletCacheData()` (not `clearWalletData()`) preserves `hd_state` during switches, so discovery uses prior correct indexes as a baseline; discovery failures abort navigation rather than landing on WalletHome with empty state.
 - **UTXO confirmed/unconfirmed mismatch**: `block_time` is now written to the `utxos` table and read back through `storedToUtxoWithPath`; the summary count and the list label now agree.
 - **`UtxoRepository.getUtxosForNetwork` address-type filtering**: fallback query accepts an optional `addressType` and filters by `derivation_path` prefix so only UTXOs relevant to the active HD wallet type are returned.
+- **MobilesPairing modal close navigation**: closing the signed TX broadcast modal (Copy/Share/Broadcast) now navigates back to the previous screen instead of leaving the user stranded.
 
 ### Technical Details
 - **Version**: `package.json` 3.0.1; Android `versionCode` 51 / `versionName` 3.0.1.
-- **New files**: `services/Database.ts`, `services/LocalCacheMigration.ts`, `services/repositories/` (6 repositories), `services/sync/` (`BalanceSyncer`, `TransactionSyncer`, `UtxoSyncer`, `PriceSyncer`, `SyncCoordinator`).
+- **New files**: `services/Database.ts`, `services/LocalCacheMigration.ts`, `services/repositories/` (6 repositories), `services/sync/` (`BalanceSyncer`, `TransactionSyncer`, `UtxoSyncer`, `PriceSyncer`, `SyncCoordinator`), `services/ApiQueue.ts`, `services/sync/rateLimitRetry.ts`.
 - **`StoredUtxo` interface**: added `blockTime: number | null`; `utxos` DDL adds `block_time INTEGER` with an `ALTER TABLE … ADD COLUMN` migration guard.
-- **`RestoringIndexesModal`**: new optional `phase?: string` prop; title switches between "Restoring indexes" and "Syncing wallet" depending on phase.
+- **`RestoringIndexesModal`**: new optional `phase?: string` and `progress?: { current: number; total: number }` props; title switches between "Restoring indexes" and "Syncing wallet" depending on phase.
+- **`CacheIndicator`**: new optional `statusMessage?: string` and `progress?: { current: number; total: number }` props; progress displayed right-aligned.
 - **`PendingTxData` interface**: typed interface for pending transaction objects shared between `TransactionRepository` and `TransactionList`.
+- **Error classes**: `BalanceSyncError`, `UtxoSyncError`, `TxSyncError` — each carries `failedAddress` for targeted diagnostics.
+- **`ApiQueue`**: `ApiQueueState` includes `label` and optional `progress`; `enqueue<T>(label, job)` returns `Promise<T>`; subscribers notified on start/complete/error.
+- **`rateLimitRetry`**: `with429Retry<T>(label, request)`, `sleep(ms)`, constants `RATE_LIMIT_DELAY_MS` (5 s), `MAX_429_RETRIES` (2), `INTER_ADDRESS_DELAY_MS` (300 ms).
+- **`MempoolResponse<T>`**: added `retryAfterSeconds?: number`; `parseRetryAfter(value)` handles both integer-seconds and HTTP-date formats.
 
 ## [3.0.0] - 2026-03-04
 

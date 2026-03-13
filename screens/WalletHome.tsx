@@ -150,7 +150,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     balance: 0,
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [apiQueueLabel, setApiQueueLabel] = useState<string | null>(null);
+  const [apiQueueState, setApiQueueState] = useState<{
+    label: string | null;
+    progress?: { current: number; total: number };
+  } | null>(null);
   const [isCheckingBalanceForSend, setIsCheckingBalanceForSend] =
     useState(false);
   const [isCurrencySelectorVisible, setIsCurrencySelectorVisible] =
@@ -324,7 +327,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   ]);
   useEffect(() => {
     const unsub = apiQueue.subscribe(state => {
-      setApiQueueLabel(state?.label ?? null);
+      setApiQueueState(
+        state?.label != null
+          ? {
+              label: state.label,
+              progress: state.progress,
+            }
+          : null,
+      );
     });
     return unsub;
   }, []);
@@ -403,13 +413,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           addressType || userAddressType || 'segwit-native';
         const freshBalance = await apiQueue.enqueue(
           'Fetching balance…',
-          () =>
+          setProgress =>
             WalletService.getInstance().getWalletBalanceAggregate(
               network,
               effectiveAddressType,
               btcRate,
               _pendingSent,
               true,
+              setProgress,
             ),
         );
         const freshPrice = await apiQueue.enqueue(
@@ -417,8 +428,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           () => WalletService.getInstance().getBitcoinPrice(),
         );
         freshData = [freshPrice, freshBalance];
-        if (Array.isArray(freshData) && freshData.length === 2) {
-          const [freshPrice, freshBalance] = freshData;
+        if (freshPrice && freshBalance) {
           const rates = freshPrice.rates;
           if (rates && rates[currency]) {
             setPriceData(rates);
@@ -1669,16 +1679,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           appConfigRepository.set(CONFIG_KEYS.ADDRESS_TYPE, addrType);
           dbg('WalletHome: Setting default address type to segwit-native');
         }
-        // Set default currency if not set
-        let currency = (appConfigRepository.get(CONFIG_KEYS.CURRENCY)) || 'USD';
-        // Get available currencies from price data
+        // Set default currency if not set; preserve the user's existing choice
+        let currency = appConfigRepository.get(CONFIG_KEYS.CURRENCY);
         const priceResponse = await walletService.getBitcoinPrice();
-        const availableCurrencies = Object.keys(priceResponse.rates);
-        currency = availableCurrencies.includes('USD')
-          ? 'USD'
-          : availableCurrencies[0];
-        appConfigRepository.set(CONFIG_KEYS.CURRENCY, currency);
-        dbg('WalletHome: Setting default currency to', currency);
+        if (!currency) {
+          const availableCurrencies = Object.keys(priceResponse.rates);
+          currency = availableCurrencies.includes('USD')
+            ? 'USD'
+            : availableCurrencies[0] || 'USD';
+          appConfigRepository.set(CONFIG_KEYS.CURRENCY, currency);
+          dbg('WalletHome: Setting default currency to', currency);
+        } else {
+          dbg('WalletHome: Using saved currency', currency);
+        }
         const netParams = await BBMTLibNativeModule.setBtcNetwork(net);
         net = netParams.split('@')[0];
         // Generate all address types
@@ -2735,7 +2748,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       <CacheIndicator
         ref={cacheIndicatorRef}
         timestamps={cacheTimestamps}
-        statusMessage={apiQueueLabel ?? undefined}
+        statusMessage={apiQueueState?.label ?? undefined}
+        progress={apiQueueState?.progress}
         onRefresh={() => {
           fetchData().then(() => transactionListRef.current?.refresh?.());
         }}

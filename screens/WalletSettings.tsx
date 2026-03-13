@@ -757,6 +757,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     gapIndex?: number;
     /** Free-text label shown during post-discovery sync phases. */
     phase?: string;
+    /** Address progress e.g. { current: 3, total: 5 } for "3/5". */
+    progress?: { current: number; total: number };
   } | null>(null);
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
   const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
@@ -897,6 +899,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             network,
           })),
           apiUrl,
+          (current, total) =>
+            setRestoreProgress(prev =>
+              prev ? {...prev, progress: {current, total}} : null,
+            ),
         );
 
         // Compute and persist the aggregate balance immediately so WalletHome
@@ -920,6 +926,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         await transactionSyncer.syncAddressesAtomic(
           addressesWithPaths.map(a => ({address: a.address, network})),
           apiUrl,
+          (current, total) =>
+            setRestoreProgress(prev =>
+              prev ? {...prev, progress: {current, total}} : null,
+            ),
         );
 
         // ── Step 7: pre-sync UTXOs ────────────────────────────────────────
@@ -931,6 +941,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             derivationPath: a.derivationPath,
           })),
           apiUrl,
+          (current, total) =>
+            setRestoreProgress(prev =>
+              prev ? {...prev, progress: {current, total}} : null,
+            ),
         );
 
         // ── Step 8: re-persist config ─────────────────────────────────────
@@ -3663,6 +3677,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         index={restoreProgress?.index}
         gapIndex={restoreProgress?.gapIndex}
         phase={restoreProgress?.phase}
+        progress={restoreProgress?.progress}
       />
       <BackupKeyshareModal
         visible={isBackupModalVisible}

@@ -54,9 +54,11 @@ class TransactionSyncer {
   async syncAddressesAtomic(
     addresses: Array<{address: string; network: string}>,
     apiBase: string,
+    onProgress?: (current: number, total: number) => void,
   ): Promise<void> {
     if (!addresses.length) return;
     const cleanApi = apiBase.replace(/\/+$/, '');
+    const total = addresses.length;
     const knownTxids = transactionRepository.getKnownTxids(
       addresses[0]?.network ?? 'mainnet',
     );
@@ -64,6 +66,7 @@ class TransactionSyncer {
     const cursors: Array<{entityKey: string; cursor: string | null}> = [];
 
     for (let addrIndex = 0; addrIndex < addresses.length; addrIndex++) {
+      onProgress?.(addrIndex + 1, total);
       if (addrIndex > 0) {
         await sleep(INTER_ADDRESS_DELAY_MS);
       }

@@ -22,12 +22,25 @@ interface CacheIndicatorProps {
   usingCache?: boolean; // explicitly indicate cached mode (e.g., offline)
   /** When isRefreshing, show this instead of generic "Refreshing..." (e.g. "Fetching balance…"). */
   statusMessage?: string;
+  /** When isRefreshing and set, append " current/total" (e.g. "Fetching balance… 3/5"). */
+  progress?: { current: number; total: number };
 }
 export interface CacheIndicatorHandle {
   press: () => void;
 }
 export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorProps>(
-  ({timestamps, onRefresh, theme, isRefreshing = false, usingCache = false, statusMessage}, ref) => {
+  (
+    {
+      timestamps,
+      onRefresh,
+      theme,
+      isRefreshing = false,
+      usingCache = false,
+      statusMessage,
+      progress,
+    },
+    ref,
+  ) => {
     const latestTimestamp = Math.max(timestamps.price, timestamps.balance);
     const shimmerValue = useRef(new Animated.Value(-100)).current;
     const shimmerAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
@@ -194,7 +207,7 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
             />
           </View>
         )}
-        <View style={createStyles(theme).refreshText}>
+        <View style={[createStyles(theme).refreshText, isRefreshing && styles.flexFill]}>
           <Image
             source={require('../assets/refresh-icon.png')}
             style={[
@@ -216,9 +229,21 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
             }}>
             {isRefreshing
               ? (statusMessage ?? 'Refreshing...')
-              : 'Tap to refresh'
-            }
+              : 'Tap to refresh'}
           </Text>
+          {isRefreshing && progress ? (
+            <Text
+              style={[
+                styles.progressText,
+                {
+                  color: theme.colors.textSecondary,
+                  fontSize: theme.fontSizes?.xs || 11,
+                  fontFamily: theme.fontFamilies?.medium,
+                },
+              ]}>
+              {progress.current}/{progress.total}
+            </Text>
+          ) : null}
         </View>
         {!isRefreshing && (
           <View style={styles.timeContainer}>
@@ -264,5 +289,12 @@ const styles = StyleSheet.create({
     width: 16,
     height: 16,
     marginLeft: 4,
+  },
+  flexFill: {
+    flex: 1,
+  },
+  progressText: {
+    marginLeft: 'auto',
+    paddingLeft: 6,
   },
 });

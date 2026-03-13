@@ -1394,6 +1394,7 @@ export class WalletService {
     btcRate: number,
     pendingSent: number = 0,
     _force: boolean = false,
+    onProgress?: (current: number, total: number) => void,
   ): Promise<WalletBalance> {
     try {
       dbg('WalletService: getWalletBalanceAggregate', {
@@ -1449,8 +1450,11 @@ export class WalletService {
       }> = [];
       let confirmedSats = new Big(0);
       let mempoolSats = new Big(0);
+      const total = addresses.length;
 
-      for (const addr of addresses) {
+      for (let i = 0; i < addresses.length; i++) {
+        const addr = addresses[i];
+        onProgress?.(i + 1, total);
         try {
           const res = await mempoolClient.get<{
             chain_stats: {funded_txo_sum: number; spent_txo_sum: number};
