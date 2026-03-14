@@ -1914,40 +1914,41 @@ export class WalletService {
     network: string,
     addressType: string,
   ): Promise<any[]> {
-    // Primary path: synthetic wallet-level key written by updateTransactionsCacheForWallet.
-    const cacheKey = this.walletTxsCacheKey(network, addressType);
-    const txs = await this.getTxs(cacheKey);
-    if (txs.transactions.length > 0) {
-      return txs.transactions;
-    }
-    // Fallback: look up by real Bitcoin addresses (written by fetchTransactionsForAddresses
-    // with real-address keys, and by TransactionSyncer).  Requires keyshare to derive addresses.
+    // Primary path: query by real HD addresses — this is the authoritative source
+    // because TransactionSyncer writes here on every sync cycle.
     try {
       const addrs = await this.getHdAddressesWithPaths(network, addressType);
-      if (addrs.length === 0) return [];
-      const rows = transactionRepository.getTransactionsForAddresses(
-        addrs.map(a => a.address),
-        network,
-      );
-      if (rows.length === 0) return [];
-      return rows
-        .map(r => {
-          try {
-            const parsed = JSON.parse(r.rawJson);
-            if (r.isConfirmed && parsed.status) {
-              parsed.status.confirmed = true;
-              if (r.blockHeight) parsed.status.block_height = r.blockHeight;
-              if (r.blockTime) parsed.status.block_time = r.blockTime;
-            }
-            return parsed;
-          } catch {
-            return null;
-          }
-        })
-        .filter(Boolean);
+      if (addrs.length > 0) {
+        const rows = transactionRepository.getTransactionsForAddresses(
+          addrs.map(a => a.address),
+          network,
+        );
+        if (rows.length > 0) {
+          return rows
+            .map(r => {
+              try {
+                const parsed = JSON.parse(r.rawJson);
+                if (r.isConfirmed && parsed.status) {
+                  parsed.status.confirmed = true;
+                  if (r.blockHeight) parsed.status.block_height = r.blockHeight;
+                  if (r.blockTime) parsed.status.block_time = r.blockTime;
+                }
+                return parsed;
+              } catch {
+                return null;
+              }
+            })
+            .filter(Boolean);
+        }
+      }
     } catch {
-      return [];
+      // Fall through to synthetic cache below.
     }
+    // Fallback: synthetic wallet-level key written by updateTransactionsCacheForWallet.
+    // Used when keyshare is unavailable (e.g. during early launch before Keychain unlocks).
+    const cacheKey = this.walletTxsCacheKey(network, addressType);
+    const txs = await this.getTxs(cacheKey);
+    return txs.transactions;
   }
 
   public async updateTransactionsCacheForWallet(

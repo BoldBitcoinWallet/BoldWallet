@@ -17,6 +17,8 @@ const clockIcon = require('../assets/clock-icon.png');
 interface CacheIndicatorProps {
   timestamps: CacheTimestamp;
   onRefresh: () => void;
+  /** Long-press triggers a deep refresh (e.g. HD re-discovery + normal refresh). */
+  onLongPress?: () => void;
   theme: any;
   isRefreshing?: boolean;
   usingCache?: boolean; // explicitly indicate cached mode (e.g., offline)
@@ -33,6 +35,7 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
     {
       timestamps,
       onRefresh,
+      onLongPress,
       theme,
       isRefreshing = false,
       usingCache = false,
@@ -194,6 +197,7 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
         onPress={() => {
           onRefresh();
         }}
+        onLongPress={onLongPress}
         disabled={isRefreshing}>
         {isRefreshing && (
           <View style={createStyles(theme).shimmerContainer}>

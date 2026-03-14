@@ -80,7 +80,7 @@ import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConf
 import walletRepository from '../services/repositories/WalletRepository';
 import balanceRepository from '../services/repositories/BalanceRepository';
 import {getExternalIndex} from '../services/HdIndexService';
-import syncCoordinator from '../services/sync/SyncCoordinator';
+import syncCoordinator, {type SyncStatus} from '../services/sync/SyncCoordinator';
 import apiQueue from '../services/ApiQueue';
 import {
   parsePairingCodeFromScannedData,
@@ -150,6 +150,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     balance: 0,
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [apiQueueState, setApiQueueState] = useState<{
     label: string | null;
     progress?: { current: number; total: number };
@@ -1870,6 +1871,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('[WalletHome] SyncCoordinator discovered new addresses', newAddrs.length);
         setWalletAddresses(newAddrs);
       },
+      onSyncStatus: setSyncStatus,
     });
     return () => {
       syncCoordinator.stop();
@@ -2754,15 +2756,40 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       <CacheIndicator
         ref={cacheIndicatorRef}
         timestamps={cacheTimestamps}
-        statusMessage={apiQueueState?.label ?? undefined}
-        progress={apiQueueState?.progress}
+        statusMessage={syncStatus?.label ?? apiQueueState?.label ?? undefined}
+        progress={syncStatus?.progress ?? apiQueueState?.progress}
         onRefresh={() => {
           fetchData().then(() => transactionListRef.current?.refresh?.());
         }}
+        onLongPress={async () => {
+          const effectiveType = addressType || userAddressType || 'segwit-native';
+          const api = apiBase || (appConfigRepository.get('api')) ||
+            (network === 'mainnet' ? 'https://mempool.space/api' : 'https://mempool.space/testnet/api');
+          setIsRefreshing(true);
+          try {
+            dbg('[WalletHome] Long-press: running HD re-discovery');
+            setSyncStatus({label: 'Discovering addresses…'});
+            await WalletService.getInstance().discoverHdIndexesForNetwork(
+              network, effectiveType, api,
+              (chain) => setSyncStatus({
+                label: `Scanning ${chain === 'external' ? 'receive' : 'change'} addresses…`,
+              }),
+            );
+            setSyncStatus(null);
+            const arr = await WalletService.getInstance().getHdAddressesWithPaths(network, effectiveType);
+            setWalletAddresses(arr.map(a => a.address));
+          } catch (e) {
+            dbg('[WalletHome] Long-press HD discovery error', e);
+            setSyncStatus(null);
+          }
+          await fetchData();
+          transactionListRef.current?.refresh?.();
+        }}
         theme={theme}
-        isRefreshing={isRefreshing}
+        isRefreshing={isRefreshing || !!syncStatus}
         usingCache={
           !isRefreshing &&
+          !syncStatus &&
           cacheTimestamps.price > 0 &&
           cacheTimestamps.balance > 0 &&
           Date.now() -

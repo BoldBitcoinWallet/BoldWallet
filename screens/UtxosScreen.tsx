@@ -26,7 +26,7 @@ import appConfigRepository, {
 import utxoRepository from '../services/repositories/UtxoRepository';
 import {WalletService} from '../services/WalletService';
 import utxoSyncer from '../services/sync/UtxoSyncer';
-import {presentFiat, getCurrencySymbol} from '../utils';
+import {presentFiat, getCurrencySymbol, dbg} from '../utils';
 import AppPressable from '../components/AppPressable';
 import {CacheIndicator} from '../components/CacheIndicator';
 import CurrencySelector from '../components/CurrencySelector';
@@ -1004,6 +1004,26 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
         <CacheIndicator
           timestamps={{price: 0, balance: utxoFetchTimestamp}}
           onRefresh={onRefresh}
+          onLongPress={async () => {
+            const effectiveType = addressType || 'segwit-native';
+            const api = apiBase?.trim()?.replace(/\/+$/, '')?.replace(/\/api\/?$/, '') || 'https://mempool.space';
+            setRefreshing(true);
+            try {
+              dbg('[UtxosScreen] Long-press: running HD re-discovery');
+              setRefreshStatusMessage('Discovering addresses…');
+              await WalletService.getInstance().discoverHdIndexesForNetwork(
+                network, effectiveType, `${api}/api`,
+                (chain) => setRefreshStatusMessage(
+                  `Scanning ${chain === 'external' ? 'receive' : 'change'} addresses…`,
+                ),
+              );
+              setRefreshStatusMessage(null);
+            } catch (e) {
+              dbg('[UtxosScreen] Long-press HD discovery error', e);
+              setRefreshStatusMessage(null);
+            }
+            onRefresh();
+          }}
           theme={theme}
           isRefreshing={refreshing}
           statusMessage={refreshStatusMessage ?? undefined}

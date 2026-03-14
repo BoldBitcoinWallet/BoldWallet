@@ -35,6 +35,11 @@ const UTXO_INTERVAL_MS = 120_000;
 const TX_INTERVAL_MS = 120_000;
 const HD_DISCOVERY_STALE_MS = 2 * 60 * 60 * 1000; // 2 hours
 
+export interface SyncStatus {
+  label: string;
+  progress?: {current: number; total: number};
+}
+
 export interface SyncConfig {
   addresses: Array<{address: string; network: string; derivationPath?: string}>;
   network: string;
@@ -44,6 +49,8 @@ export interface SyncConfig {
   onSyncComplete?: () => void;
   /** Called when HD discovery finds new addresses so the UI can refresh. */
   onAddressesChanged?: (addresses: string[]) => void;
+  /** Called with current sync operation status for CacheIndicator UI. null = idle. */
+  onSyncStatus?: (status: SyncStatus | null) => void;
 }
 
 class SyncCoordinator {
@@ -67,8 +74,8 @@ class SyncCoordinator {
     this._config = config;
     this._running = true;
 
-    // Immediate first sync
-    this._syncAll();
+    // Immediate first sync — force HD re-discovery to fix any stale/diverged indexes
+    this._syncAll(true);
 
     // Schedule periodic syncs
     this._hdDiscoveryTimer = setInterval(
@@ -140,9 +147,9 @@ class SyncCoordinator {
 
   // ── Private helpers ────────────────────────────────────────────────────────
 
-  private async _syncAll(): Promise<void> {
+  private async _syncAll(forceHdDiscovery = false): Promise<void> {
     // HD discovery first — may expand the address set for subsequent syncs
-    await this._syncHdDiscovery();
+    await this._syncHdDiscovery(forceHdDiscovery);
 
     await Promise.all([
       this._syncBalances(),
@@ -153,25 +160,39 @@ class SyncCoordinator {
     this._config?.onSyncComplete?.();
   }
 
-  private async _syncHdDiscovery(): Promise<void> {
+  private async _syncHdDiscovery(force = false): Promise<void> {
     if (!this._config) return;
     const {network, addressType, apiBase} = this._config;
     try {
       const hdState = walletRepository.getHdState(network, addressType);
       const restoreDone = hdState?.restoreDone === true;
       if (!restoreDone) return; // first-run discovery is handled by WalletHome
-      const stale =
-        !hdState?.discoveryLastAt ||
-        Date.now() - hdState.discoveryLastAt > HD_DISCOVERY_STALE_MS;
-      if (!stale) return;
+
+      if (!force) {
+        const stale =
+          !hdState?.discoveryLastAt ||
+          Date.now() - hdState.discoveryLastAt > HD_DISCOVERY_STALE_MS;
+        if (!stale) return;
+      }
 
       dbg(
         'SyncCoordinator: HD indexes stale — re-discovering',
         network,
         addressType,
       );
+      this._config.onSyncStatus?.({label: 'Discovering addresses…'});
       const ws = WalletService.getInstance();
-      await ws.discoverHdIndexesForNetwork(network, addressType, apiBase);
+      await ws.discoverHdIndexesForNetwork(
+        network,
+        addressType,
+        apiBase,
+        (chain) => {
+          this._config?.onSyncStatus?.({
+            label: `Scanning ${chain === 'external' ? 'receive' : 'change'} addresses…`,
+          });
+        },
+      );
+      this._config.onSyncStatus?.(null);
 
       const arr = await ws.getHdAddressesWithPaths(network, addressType);
       const newAddrs = arr.map(a => a.address);
@@ -195,6 +216,7 @@ class SyncCoordinator {
       }
     } catch (err) {
       dbg('SyncCoordinator: HD discovery error', err);
+      this._config?.onSyncStatus?.(null);
     }
   }
 
