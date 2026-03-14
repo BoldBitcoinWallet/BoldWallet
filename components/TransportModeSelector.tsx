@@ -1,12 +1,5 @@
 import React, {useState} from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Modal,
-  Image,
-  ScrollView,
-} from 'react-native';
+import {View, Text, StyleSheet, Modal, Image, ScrollView} from 'react-native';
 import AppPressable from './AppPressable';
 import StaticQRCode from './StaticQRCode';
 import {useTheme} from '../theme';
@@ -309,7 +302,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
     },
     qrCodeSection: {
       marginBottom: 12,
-      padding: 16,
+      paddingTop: 6,
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.white
@@ -324,9 +317,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       fontSize: theme.fontSizes?.sm || 12,
       fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.textSecondary,
-      marginBottom: 10,
       textAlign: 'center',
-      paddingHorizontal: 8,
     },
     qrCodeContainer: {
       backgroundColor: 'white',
@@ -358,7 +349,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                 setSelectedTransport(null);
                 onClose();
               }}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
               <Text style={styles.closeButtonText}>✕</Text>
             </AppPressable>
           </View>
@@ -394,7 +385,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                     </Text>
                     <StaticQRCode
                       value={qrData}
-                      size={180}
+                      size={260}
                       copyContent={qrData}
                       toastMessage="Send data copied to clipboard"
                       copyDisabled={true}
@@ -412,7 +403,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                     styles.transportOptionCardSelected,
                 ]}
                 onPress={() => handleSelect('local')}
-                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <View style={styles.transportOptionContent}>
                   <View style={styles.transportOptionIconWrapper}>
                     <Image
@@ -451,7 +442,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                     styles.transportOptionCardSelected,
                 ]}
                 onPress={() => handleSelect('nostr')}
-                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <View style={styles.transportOptionContent}>
                   <View style={styles.transportOptionIconWrapper}>
                     <View style={styles.nostrIconContainer}>
@@ -487,7 +478,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
               </AppPressable>
             </View>
             {/* Selected Transport Hint */}
-            {selectedTransport && (description?.length > 0 || sendBitcoinData?.utxoCount) && (
+            {selectedTransport && description?.length > 0 && (
               <View style={styles.transportSelectedHint}>
                 <View style={styles.transportSelectedHintRow}>
                   <Image
@@ -515,26 +506,9 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                     </Text>
                   )}
                 </View>
-                {!!sendBitcoinData?.utxoCount && (
-                  <View
-                    style={styles.transportSelectedHintRowWithMargin}>
-                    <Image
-                      source={require('../assets/utxo-icon.png')}
-                      style={styles.transportSelectedHintIcon}
-                      resizeMode="contain"
-                    />
-                    <Text style={styles.transportSelectedHintText}>
-                      Using{' '}
-                      <Text style={styles.transportSelectedHintTextBold}>
-                        {sendBitcoinData.utxoCount} UTXO
-                        {sendBitcoinData.utxoCount === 1 ? '' : 's'}
-                      </Text>{' '}
-                      pre-selected from this wallet for a deterministic spend.
-                    </Text>
-                  </View>
-                )}
               </View>
             )}
+
             {/* Continue Button */}
             <AppPressable
               style={[
@@ -543,7 +517,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
               ]}
               onPress={handleContinue}
               disabled={!selectedTransport}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
               <Text style={styles.continueButtonText}>Continue →</Text>
             </AppPressable>
           </ScrollView>

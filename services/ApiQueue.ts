@@ -9,10 +9,10 @@
 import {dbg} from '../utils';
 
 export type ApiQueueLabel =
-  | 'Fetching balance…'
-  | 'Fetching UTXOs…'
-  | 'Fetching transactions…'
-  | 'Fetching fiat rate…'
+  | 'Syncing balance…'
+  | 'Syncing UTXOs…'
+  | 'Syncing transactions…'
+  | 'Syncing fiat rate…'
   | string;
 
 export interface ApiQueueState {

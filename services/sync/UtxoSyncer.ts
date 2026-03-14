@@ -24,6 +24,9 @@ interface ApiUtxo {
   };
 }
 
+/** Skip API call if the DB row was synced within this window. */
+const UTXO_DB_TTL_MS = 60_000; // 60 s
+
 export interface AddressEntry {
   address: string;
   network: string;
@@ -53,11 +56,19 @@ class UtxoSyncer {
     const total = addresses.length;
 
     const results: Array<{address: string; network: string; derivationPath: string | null; utxos: StoredUtxo[]}> = [];
+    let skipped = 0;
 
     for (let i = 0; i < addresses.length; i++) {
       onProgress?.(i + 1, total);
       const {address, network, derivationPath} = addresses[i];
-      if (i > 0) {
+
+      const entityKey = `${address}_${network}`;
+      if (syncRepository.isFresh('utxos', entityKey, UTXO_DB_TTL_MS)) {
+        skipped++;
+        continue;
+      }
+
+      if (results.length > 0) {
         await sleep(INTER_ADDRESS_DELAY_MS);
       }
       try {
@@ -100,12 +111,16 @@ class UtxoSyncer {
       }
     }
 
-    // All succeeded — write each address's UTXOs (order doesn't matter; no partial state)
+    if (!results.length) {
+      if (skipped > 0) dbg('UtxoSyncer: all', skipped, 'addresses fresh — skipped');
+      return;
+    }
+
     for (const {address, network, utxos} of results) {
       utxoRepository.replaceUtxosForAddress(address, network, utxos);
       syncRepository.updateCursor('utxos', `${address}_${network}`, null, 'ok');
     }
-    dbg('UtxoSyncer: atomic write complete', results.length, 'addresses');
+    dbg('UtxoSyncer: wrote', results.length, 'addresses (skipped', skipped, 'fresh)');
   }
 }
 

@@ -170,6 +170,17 @@ const SCHEMA_STATEMENTS = [
     PRIMARY KEY (currency, day_timestamp)
   )`,
 
+  // ── Fee Rates (single-row cache for /v1/fees/recommended) ───────────────────
+  `CREATE TABLE IF NOT EXISTS fee_rates (
+    id         INTEGER PRIMARY KEY DEFAULT 1,
+    fastest    INTEGER NOT NULL,
+    half_hour  INTEGER NOT NULL,
+    hour       INTEGER NOT NULL,
+    economy    INTEGER NOT NULL,
+    minimum    INTEGER NOT NULL,
+    fetched_at INTEGER NOT NULL
+  )`,
+
   // ── Sync Metadata (new — pagination cursors + per-address sync state) ─────────
   `CREATE TABLE IF NOT EXISTS sync_metadata (
     entity_type    TEXT NOT NULL,
@@ -333,6 +344,39 @@ class DatabaseService {
    *
    * For full wallet reset (delete / new import) use clearWalletData() instead.
    */
+  /**
+   * Return the logical database size using SQLite PRAGMAs.
+   * page_count × page_size gives the total allocated size;
+   * subtracting freelist_count gives the actually-used portion.
+   */
+  getSizeBytes(): {totalBytes: number; usedBytes: number; freeBytes: number} {
+    const pageSize =
+      (this.db.executeSync('PRAGMA page_size').rows?.[0] as any)?.page_size ??
+      4096;
+    const pageCount =
+      (this.db.executeSync('PRAGMA page_count').rows?.[0] as any)
+        ?.page_count ?? 0;
+    const freePages =
+      (this.db.executeSync('PRAGMA freelist_count').rows?.[0] as any)
+        ?.freelist_count ?? 0;
+    const totalBytes = pageCount * pageSize;
+    const freeBytes = freePages * pageSize;
+    return {totalBytes, usedBytes: totalBytes - freeBytes, freeBytes};
+  }
+
+  /** Return row-count per user-data table (excludes sqlite internals). */
+  getTableRowCounts(): Array<{table: string; rows: number}> {
+    const tables = this.execute(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+    ).rows as Array<{name: string}>;
+    return tables.map(({name}) => {
+      const count =
+        (this.execute(`SELECT COUNT(*) as cnt FROM "${name}"`).rows[0] as any)
+          ?.cnt ?? 0;
+      return {table: name, rows: Number(count)};
+    });
+  }
+
   clearWalletCacheData(): void {
     this.transaction(tx => {
       for (const table of [

@@ -24,6 +24,9 @@ type AddressLink = TxAddressMapping;
 const PAGE_SIZE = 25;
 const MAX_PAGES_PER_ADDRESS = 20;
 
+/** Skip API call if the DB was synced within this window. */
+const TX_DB_TTL_MS = 60_000; // 60 s
+
 interface ApiTx {
   txid: string;
   status?: {
@@ -205,8 +208,13 @@ class TransactionSyncer {
     network: string,
     apiBase: string,
   ): Promise<void> {
-    const cleanApi = apiBase.replace(/\/+$/, '');
     const entityKey = `${address}_${network}`;
+    if (syncRepository.isFresh('transactions', entityKey, TX_DB_TTL_MS)) {
+      dbg('TransactionSyncer: fresh — skipping', address.slice(0, 10));
+      return;
+    }
+
+    const cleanApi = apiBase.replace(/\/+$/, '');
     const savedCursor = syncRepository.getCursor('transactions', entityKey);
     let cursor: string | null = null; // Phase 1: always start fresh from top
     let forwardDone = false;

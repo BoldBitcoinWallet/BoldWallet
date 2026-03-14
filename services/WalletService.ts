@@ -189,7 +189,7 @@ const validateNumber = (value: any): boolean => {
 export class WalletService {
   private static instance: WalletService;
   private readonly API_TIMEOUT = 5000; // 5 seconds timeout
-  private abortController = new AbortController();
+  private abortControllers: Map<string, AbortController> = new Map();
   private currentAddress: string | null = null;
   private currentNetwork: string = 'mainnet'; // Default to mainnet
   private currentAddressType: string = 'legacy'; // Default to legacy
@@ -218,6 +218,11 @@ export class WalletService {
       }
       // Initialize network state from storage
       await this.initializeNetworkState();
+      // Seed MempoolClient's public host list for round-robin failover.
+      // Fire-and-forget — get() uses the hardcoded default until this resolves.
+      getMainnetAPIList()
+        .then(bases => mempoolClient.setPublicBases(bases))
+        .catch(() => {});
       dbg('WalletService: Initialization completed successfully');
     } catch (error) {
       dbg('WalletService: Error during initialization:', error);
@@ -811,14 +816,15 @@ export class WalletService {
   private async isAddressUsed(
     address: string,
     apiUrl: string,
+    timeout: number = 8000,
   ): Promise<boolean> {
     const baseUrl = apiUrl.replace(/\/+$/, '');
     const url = `${baseUrl}/address/${address}/txs`;
     try {
       const response = await this.withTimeout(
         `txs-${address.slice(0, 12)}`,
-        mempoolClient.get(url, {signal: this.abortController.signal}),
-        5000,
+        (signal) => mempoolClient.get(url, {signal}),
+        timeout,
       );
       if (!response.ok) {
         dbg('WalletService: isAddressUsed fetch failed', {
@@ -883,16 +889,44 @@ export class WalletService {
     let discoveryStatus: 'ok' | 'partial' | 'failed' = 'ok';
     const startedAt = Date.now();
 
+    // Load previously scanned addresses so retries skip already-checked indexes.
+    // wallet_addresses survives clearWalletCacheData(), making resume free.
+    const knownExternal = new Map<number, boolean>();
+    for (const a of walletRepository.getAddresses(network, addressType, 0)) {
+      knownExternal.set(a.idx, a.isUsed);
+    }
+    const knownChange = new Map<number, boolean>();
+    for (const a of walletRepository.getAddresses(network, addressType, 1)) {
+      knownChange.set(a.idx, a.isUsed);
+    }
+
     dbg('WalletService: Restore discovery - scanning external chain', {
       network,
       addressType,
       useLegacyPath,
+      cachedExternal: knownExternal.size,
+      cachedChange: knownChange.size,
     });
 
-    // External chain: scan until GAP_LIMIT consecutive unused
+    // External chain: scan until GAP_LIMIT consecutive unused.
+    // Each address check gets one retry on timeout before aborting the chain.
     try {
       let consecutiveUnused = 0;
       for (let i = 0; consecutiveUnused < GAP_LIMIT; i++) {
+        // Resume: use cached result from a previous (partial) run.
+        const cached = knownExternal.get(i);
+        if (cached !== undefined) {
+          if (cached) {
+            discoveredMaxUsedExternal = i;
+            consecutiveUnused = 0;
+          } else {
+            consecutiveUnused++;
+          }
+          onProgress?.('external', i, consecutiveUnused);
+          continue;
+        }
+
+        // Not in DB — derive address and check via API.
         const path = getReceivePath(network, addressType, useLegacyPath, i);
         const pub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,
@@ -907,21 +941,40 @@ export class WalletService {
         try {
           onProgress?.('external', i, consecutiveUnused);
           const used = await this.isAddressUsed(addr, apiUrl);
+          walletRepository.upsertAddress({
+            network, addressType, chain: 0, idx: i, address: addr, isUsed: used,
+          });
           if (used) {
             discoveredMaxUsedExternal = i;
             consecutiveUnused = 0;
           } else {
             consecutiveUnused++;
           }
-        } catch (error) {
-          dbg('WalletService: Restore discovery external error', {
-            network,
-            addressType,
-            index: i,
-            error,
+        } catch {
+          dbg('WalletService: Restore discovery external error, retrying', {
+            network, addressType, index: i,
           });
-          discoveryStatus = 'partial';
-          break;
+          try {
+            await waitMS(1500);
+            const retryUrl = `${apiUrl.replace(/\/+$/, '')}/address/${addr}/txs`;
+            mempoolClient.evictInflight(retryUrl);
+            const used = await this.isAddressUsed(addr, apiUrl);
+            walletRepository.upsertAddress({
+              network, addressType, chain: 0, idx: i, address: addr, isUsed: used,
+            });
+            if (used) {
+              discoveredMaxUsedExternal = i;
+              consecutiveUnused = 0;
+            } else {
+              consecutiveUnused++;
+            }
+          } catch (retryError) {
+            dbg('WalletService: Restore discovery external error after retry', {
+              network, addressType, index: i, error: retryError,
+            });
+            discoveryStatus = 'partial';
+            break;
+          }
         }
       }
     } catch (error) {
@@ -945,6 +998,19 @@ export class WalletService {
       try {
         let consecutiveUnused = 0;
         for (let i = 0; consecutiveUnused < GAP_LIMIT; i++) {
+          // Resume: use cached result from a previous (partial) run.
+          const cached = knownChange.get(i);
+          if (cached !== undefined) {
+            if (cached) {
+              discoveredMaxUsedChange = i;
+              consecutiveUnused = 0;
+            } else {
+              consecutiveUnused++;
+            }
+            onProgress?.('internal', i, consecutiveUnused);
+            continue;
+          }
+
           const path = getChangePath(network, addressType, useLegacyPath, i);
           const pub = await BBMTLibNativeModule.derivePubkey(
             ks.pub_key,
@@ -959,21 +1025,40 @@ export class WalletService {
           try {
             onProgress?.('internal', i, consecutiveUnused);
             const used = await this.isAddressUsed(addr, apiUrl);
+            walletRepository.upsertAddress({
+              network, addressType, chain: 1, idx: i, address: addr, isUsed: used,
+            });
             if (used) {
               discoveredMaxUsedChange = i;
               consecutiveUnused = 0;
             } else {
               consecutiveUnused++;
             }
-          } catch (error) {
-            dbg('WalletService: Restore discovery internal error', {
-              network,
-              addressType,
-              index: i,
-              error,
+          } catch {
+            dbg('WalletService: Restore discovery internal error, retrying', {
+              network, addressType, index: i,
             });
-            discoveryStatus = 'partial';
-            break;
+            try {
+              await waitMS(1500);
+              const retryUrl = `${apiUrl.replace(/\/+$/, '')}/address/${addr}/txs`;
+              mempoolClient.evictInflight(retryUrl);
+              const used = await this.isAddressUsed(addr, apiUrl);
+              walletRepository.upsertAddress({
+                network, addressType, chain: 1, idx: i, address: addr, isUsed: used,
+              });
+              if (used) {
+                discoveredMaxUsedChange = i;
+                consecutiveUnused = 0;
+              } else {
+                consecutiveUnused++;
+              }
+            } catch (retryError) {
+              dbg('WalletService: Restore discovery internal error after retry', {
+                network, addressType, index: i, error: retryError,
+              });
+              discoveryStatus = 'partial';
+              break;
+            }
           }
         }
       } catch (error) {
@@ -988,7 +1073,11 @@ export class WalletService {
 
     const durationMs = Date.now() - startedAt;
 
-    if (discoveryStatus === 'ok') {
+    // Commit discovered indexes even for partial results.
+    // Previously, partial discovery threw away everything — meaning if the API
+    // timed out at index 5 but we found used addresses at indexes 0-3, those
+    // results were lost and the wallet showed 0 balance.
+    if (discoveryStatus === 'ok' || (discoveryStatus === 'partial' && discoveredMaxUsedExternal >= 0)) {
       const externalNext = Math.max(
         0,
         discoveredMaxUsedExternal + 1,
@@ -1002,24 +1091,27 @@ export class WalletService {
           Math.max(prevMaxUsedExternal, discoveredMaxUsedExternal, 0),
         );
       }
-      const changeNext = Math.max(
-        0,
-        discoveredMaxUsedChange + 1,
-        prevChangeIndex,
-      );
-      await setChangeIndex(network, addressType, changeNext);
-      dbg('WalletService: Restore discovery DONE (committed indexes)', {
+      if (discoveryStatus === 'ok') {
+        const changeNext = Math.max(
+          0,
+          discoveredMaxUsedChange + 1,
+          prevChangeIndex,
+        );
+        await setChangeIndex(network, addressType, changeNext);
+      }
+      dbg('WalletService: Restore discovery committed indexes', {
         network,
         addressType,
+        discoveryStatus,
         discoveredMaxUsedExternal,
         externalNext,
         discoveredMaxUsedChange,
-        changeNext,
         durationMs,
       });
-      // Mark restore discovery as completed for this (network, addressType) pair
-      walletRepository.setRestoreDone(network, addressType, true);
-      walletRepository.setDiscoveryStatus(network, addressType, 'ok', Date.now());
+      if (discoveryStatus === 'ok') {
+        walletRepository.setRestoreDone(network, addressType, true);
+      }
+      walletRepository.setDiscoveryStatus(network, addressType, discoveryStatus, Date.now());
     } else {
       dbg(
         'WalletService: Restore discovery aborted, keeping previous HD indexes',
@@ -1046,28 +1138,38 @@ export class WalletService {
     this.invalidateAddressCache(network, addressType);
   }
 
-  // Add method to cancel ongoing fetches
   private cancelOngoingFetches(key: string) {
-    if (this.fetchInProgress[key]) {
-      this.abortController.abort();
-      this.abortController = new AbortController();
-      this.fetchInProgress[key] = false;
-      if (this.fetchTimeout[key]) {
-        clearTimeout(this.fetchTimeout[key]);
-        delete this.fetchTimeout[key];
-      }
+    const ctrl = this.abortControllers.get(key);
+    if (ctrl) {
+      ctrl.abort();
+      this.abortControllers.delete(key);
+    }
+    this.fetchInProgress[key] = false;
+    if (this.fetchTimeout[key]) {
+      clearTimeout(this.fetchTimeout[key]);
+      delete this.fetchTimeout[key];
     }
   }
-  // Add method to handle API timeouts
+  /**
+   * Run a promise factory with a per-key AbortController and timeout.
+   * The factory receives an AbortSignal scoped to this key — aborting one
+   * key does NOT cancel requests for other keys (fixes the shared-controller
+   * cascade where e.g. a price fetch aborting would kill discovery fetches).
+   */
   private async withTimeout<T>(
     key: string,
-    promise: Promise<T>,
+    factory: Promise<T> | ((signal: AbortSignal) => Promise<T>),
     timeout: number = this.API_TIMEOUT,
   ): Promise<T> {
     this.cancelOngoingFetches(key);
     this.fetchInProgress[key] = true;
+    const ctrl = new AbortController();
+    this.abortControllers.set(key, ctrl);
+    const promise =
+      typeof factory === 'function' ? factory(ctrl.signal) : factory;
     const timeoutPromise = new Promise<T>((_, reject) => {
       this.fetchTimeout[key] = setTimeout(() => {
+        ctrl.abort();
         this.fetchInProgress[key] = false;
         reject(new Error(`API call timed out after ${timeout}ms`));
       }, timeout);
@@ -1090,8 +1192,21 @@ export class WalletService {
     timestamp: number;
   }> {
     try {
+      // DB-level TTL: return cached price when it was written recently.
+      const cachedPrice = priceRepository.getCachedPrice('USD');
+      if (cachedPrice && cachedPrice.timestamp && Date.now() - cachedPrice.timestamp < 45_000) {
+        dbg('WalletService.getBitcoinPrice: DB fresh — returning cached');
+        return {
+          price: this.formatUSD(cachedPrice.rate),
+          rate: cachedPrice.rate,
+          rates: cachedPrice.rates,
+          timestamp: cachedPrice.timestamp,
+        };
+      }
+
       // Get the list of mainnet API endpoints
       const apiEndpoints = await getMainnetAPIList();
+      mempoolClient.setPublicBases(apiEndpoints);
       dbg(
         'WalletService: Attempting to fetch BTC price using round-robin from APIs:',
         apiEndpoints,
@@ -1106,7 +1221,7 @@ export class WalletService {
           dbg('WalletService: Trying price API URL:', priceUrl);
           const response = await this.withTimeout(
             'price',
-            mempoolClient.get(priceUrl, {signal: this.abortController.signal}),
+            (signal) => mempoolClient.get(priceUrl, {signal}),
           );
           if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
@@ -1184,6 +1299,10 @@ export class WalletService {
         clearTimeout(timeout),
       );
       this.fetchTimeout = {};
+      for (const ctrl of this.abortControllers.values()) {
+        ctrl.abort();
+      }
+      this.abortControllers.clear();
       // Clear persistent storage
       try {
         dbg('WalletService: Cleared persistent cache (walletCache key deprecated)');
@@ -1421,6 +1540,19 @@ export class WalletService {
           timestamp: Date.now(),
         };
       }
+
+      // DB-level TTL: if the aggregate was written recently, return it
+      // without touching the network. Both this method and BalanceSyncer
+      // stamp sync_metadata on success, so they share freshness state.
+      const aggKey = `aggregate_${network}_${addressType}`;
+      if (!_force && syncRepository.isFresh('balance', aggKey, 20_000)) {
+        const cached = await this.getCachedAggregateBalance(network, addressType);
+        if (cached) {
+          dbg('[BALANCE] getWalletBalanceAggregate: DB fresh — returning cached');
+          return cached;
+        }
+      }
+
       const api = appConfigRepository.get('api') || this.currentApiUrl;
       if (!api) throw new Error('No API URL found');
       const cleanApi = api.replace(/\/+$/, '');
@@ -1526,6 +1658,11 @@ export class WalletService {
         fetchedAt: b.fetchedAt,
       }));
       balanceRepository.setBalances(bals);
+      // Stamp sync_metadata so BalanceSyncer knows these addresses are fresh.
+      for (const b of bals) {
+        syncRepository.updateCursor('balance', `${b.address}_${network}`, null, 'ok');
+      }
+      syncRepository.updateCursor('balance', `aggregate_${network}_${addressType}`, null, 'ok');
 
       dbg(
         '[BALANCE] getWalletBalanceAggregate: API result (atomic write) —',
@@ -1682,7 +1819,12 @@ export class WalletService {
     });
   }
   public abortTransactionFetch() {
-    this.abortController.abort();
+    for (const [key, ctrl] of this.abortControllers) {
+      if (key.startsWith('txs-')) {
+        ctrl.abort();
+        this.abortControllers.delete(key);
+      }
+    }
   }
   public async updateTransactionsCache(
     address: string,

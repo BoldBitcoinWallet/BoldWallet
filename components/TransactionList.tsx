@@ -554,7 +554,7 @@ const TransactionList = React.forwardRef<
           if (isMultiAddress && addresses && addresses.length > 0 && network) {
             try {
               await apiQueue.enqueue(
-                'Fetching transactions…',
+                'Syncing transactions…',
                 setProgress =>
                   transactionSyncer.syncAddressesAtomic(
                     addresses.map(a => ({address: a, network})),

@@ -804,6 +804,19 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     fileCount: 0,
     mb: '0.00 MB',
   });
+  const refreshUsageSize = useCallback(() => {
+    try {
+      const {totalBytes} = database.getSizeBytes();
+      const tables = database.getTableRowCounts();
+      const totalRows = tables.reduce((sum, t) => sum + t.rows, 0);
+      setUsageSize({
+        fileCount: totalRows,
+        mb: `${(totalBytes / (1024 * 1024)).toFixed(2)} MB`,
+      });
+    } catch (e) {
+      dbg('refreshUsageSize: failed', e);
+    }
+  }, []);
   const toggleSection = (section: string) => {
     setExpandedSections(prev => {
       const newState = Object.keys(prev).reduce((acc, key) => {
@@ -990,7 +1003,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     setAppVersion(DeviceInfo.getVersion());
     setBuildNumber(DeviceInfo.getBuildNumber());
     setHapticsEnabledState(areHapticsEnabled());
-    setUsageSize({fileCount: 0, mb: '0.00 MB'});
+    refreshUsageSize();
     // Initialize debug logging state from module-level ref
     setDebugLoggingEnabledState(isDebugLoggingEnabled());
     // Load dev debug enabled preference
@@ -1014,7 +1027,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       buildNumberClickCountRef.current = 0;
       setBuildNumberClickCount(0);
     };
-  }, []);
+  }, [refreshUsageSize]);
   // Load saved icon preference on component mount
   useEffect(() => {
     const loadIconPreference = async () => {
@@ -1082,13 +1095,17 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   }, []);
   const toggleNetwork = async (value: boolean) => {
     dbg('=== Network toggle started:', value ? 'testnet' : 'mainnet');
+    const previousNetwork = value ? 'mainnet' : 'testnet3';
     const newNetwork = value ? 'testnet3' : 'mainnet';
     const networkName = value ? 'Testnet' : 'Mainnet';
+    setIsTestnet(value);
     await setActiveNetwork(newNetwork);
     try {
       await runRestoreIndexing(newNetwork, activeAddressType);
     } catch (e) {
-      dbg('Network toggle: sync failed', e);
+      dbg('Network toggle: sync failed — reverting to', previousNetwork);
+      await setActiveNetwork(previousNetwork);
+      setIsTestnet(!value);
       const {text1, text2} = syncFailureToast(
         e,
         'Network switch could not complete. Please try again.',
@@ -2693,7 +2710,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             styles={styles}
             theme={theme}>
             <View style={styles.apiItem}>
-              <Text style={styles.apiName}>Cache Maintenance</Text>
               <Text style={styles.apiDescription}>
                 Clear cached balances and history.
               </Text>
@@ -2725,7 +2741,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   Toast.show({type: 'error', text1, text2, visibilityTime: 5000});
                   return;
                 }
-                setUsageSize({fileCount: 0, mb: '0.00 MB'});
+                refreshUsageSize();
                 dbg('WalletSettings: Storage clear complete');
                 Toast.show({
                   type: 'success',

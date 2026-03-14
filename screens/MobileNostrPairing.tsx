@@ -48,7 +48,9 @@ import {
 } from '../utils';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
-import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
+import appConfigRepository, {
+  CONFIG_KEYS,
+} from '../services/repositories/AppConfigRepository';
 import database from '../services/Database';
 import transactionRepository from '../services/repositories/TransactionRepository';
 import {WalletService} from '../services/WalletService';
@@ -194,6 +196,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     totalInputSats: number;
   } | null>(null);
   const [_txPreviewLoading, setTxPreviewLoading] = useState(false);
+  const [txDetailsExpanded, setTxDetailsExpanded] = useState(false);
   const [signedTxRawHex, setSignedTxRawHex] = useState<string | null>(null);
   const broadcastSuccessPayloadRef = useRef<{
     senderAddress: string;
@@ -318,11 +321,19 @@ const MobileNostrPairing = ({navigation}: any) => {
             if (chgFromParams && chgFromParams.trim() !== '') {
               chgAddress = chgFromParams;
               try {
-                const r = await WalletService.getInstance().getNextChangeAddressWithPath(net, addrType);
+                const r =
+                  await WalletService.getInstance().getNextChangeAddressWithPath(
+                    net,
+                    addrType,
+                  );
                 chgPath = r.path;
               } catch {}
             } else {
-              const r = await WalletService.getInstance().getNextChangeAddressWithPath(net, addrType);
+              const r =
+                await WalletService.getInstance().getNextChangeAddressWithPath(
+                  net,
+                  addrType,
+                );
               chgAddress = r.address;
               chgPath = r.path;
             }
@@ -343,13 +354,20 @@ const MobileNostrPairing = ({navigation}: any) => {
         }
         // Fallback: fresh fetch (sender device, or QR has no utxosJson).
         const apiUrl =
-          (appConfigRepository.get(`api_${net}`)) ||
+          appConfigRepository.get(`api_${net}`) ||
           (net === 'testnet3' || net === 'testnet'
             ? 'https://mempool.space/testnet/api'
             : 'https://mempool.space/api');
         const [utxos, chgResult] = await Promise.all([
-          WalletService.getInstance().fetchUtxosWithPaths(net, addrType, apiUrl),
-          WalletService.getInstance().getNextChangeAddressWithPath(net, addrType),
+          WalletService.getInstance().fetchUtxosWithPaths(
+            net,
+            addrType,
+            apiUrl,
+          ),
+          WalletService.getInstance().getNextChangeAddressWithPath(
+            net,
+            addrType,
+          ),
         ]);
         if (!cancelled) {
           const totalInputSats = utxos.reduce((s, u) => s + u.value, 0);
@@ -1522,7 +1540,8 @@ const MobileNostrPairing = ({navigation}: any) => {
         satoshiFees,
       });
       // Store original network/API
-      originalNetwork = (appConfigRepository.get(CONFIG_KEYS.NETWORK)) || 'mainnet';
+      originalNetwork =
+        appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
       const cachedApi = appConfigRepository.get(`api_${originalNetwork}`);
       originalApiUrl = cachedApi || '';
       if (!originalApiUrl) {
@@ -5500,46 +5519,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                           borderWidth: 1.5,
                           borderColor: theme.colors.border,
                         }}>
-                        {/* Network Badge */}
-                        <View
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            marginBottom: 6,
-                            paddingVertical: 2,
-                          }}>
-                          <View
-                            style={{
-                              backgroundColor:
-                                theme.colors.background === '#ffffff'
-                                  ? theme.colors.primary + '20'
-                                  : theme.colors.bitcoinOrange + '20',
-                              paddingHorizontal: 6,
-                              paddingVertical: 2,
-                              borderRadius: 4,
-                            }}>
-                            <Text
-                              style={{
-                                fontSize: theme.fontSizes?.xs || 10,
-                                fontFamily: theme.fontFamilies?.bold,
-                                color:
-                                  theme.colors.background === '#ffffff'
-                                    ? theme.colors.primary
-                                    : theme.colors.bitcoinOrange,
-                                textTransform: 'uppercase',
-                                letterSpacing: 0.5,
-                              }}>
-                              {(() => {
-                                const net = route.params?.network || '';
-                                const normalizedNet =
-                                  net === 'testnet3' ? 'testnet' : net;
-                                return normalizedNet === 'testnet'
-                                  ? 'Testnet'
-                                  : 'Mainnet';
-                              })()}
-                            </Text>
-                          </View>
-                        </View>
                         {/* Transaction Flow */}
                         {(() => {
                           const accentColor =
@@ -5594,7 +5573,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           };
                           const labelStyle = {
                             fontSize: theme.fontSizes?.sm || 12,
-                            fontFamily: theme.fontFamilies?.bold,
+                            fontFamily: theme.fontFamilies?.monospaceBold,
                             color: theme.colors.text,
                           };
                           const labelOurs = {
@@ -5609,14 +5588,14 @@ const MobileNostrPairing = ({navigation}: any) => {
                           };
                           const subLabel = {
                             fontSize: theme.fontSizes?.xs || 10,
-                            fontFamily: theme.fontFamilies?.regular,
+                            fontFamily: theme.fontFamilies?.monospace,
                             color: theme.colors.textSecondary,
                             fontStyle: 'italic' as const,
                             marginTop: 1,
                           };
                           const amtBTC = {
                             fontSize: theme.fontSizes?.sm || 12,
-                            fontFamily: theme.fontFamilies?.bold,
+                            fontFamily: theme.fontFamilies?.monospaceBold,
                             color: theme.colors.text,
                             textAlign: 'right' as const,
                           };
@@ -5626,7 +5605,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           };
                           const amtFiat = {
                             fontSize: theme.fontSizes?.xs || 10,
-                            fontFamily: theme.fontFamilies?.regular,
+                            fontFamily: theme.fontFamilies?.monospace,
                             color: theme.colors.textSecondary,
                             textAlign: 'right' as const,
                           };
@@ -5652,196 +5631,203 @@ const MobileNostrPairing = ({navigation}: any) => {
                           );
                           return (
                             <View style={{paddingTop: 4}}>
-                              {/* Inputs */}
-                              <Text style={sectionTitle}>
-                                Inputs
-                                {txPreview && txPreview.utxos.length > 0
-                                  ? ` (${txPreview.utxos.length})`
-                                  : ''}
-                              </Text>
-                              {txPreview && txPreview.utxos.length > 0 ? (
-                                txPreview.utxos.map((u, idx) => (
+                              <AppPressable
+                                onPress={() =>
+                                  setTxDetailsExpanded(prev => !prev)
+                                }
+                                style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  paddingVertical: 6,
+                                  marginBottom: 4,
+                                }}>
+                                <Text
+                                  style={{
+                                    fontSize: theme.fontSizes?.sm || 12,
+                                    fontFamily: theme.fontFamilies?.bold,
+                                    color: theme.colors.textSecondary,
+                                    textTransform: 'uppercase',
+                                    letterSpacing: 0.5,
+                                  }}>
+                                  Spending {sat2btcStr(String(totalSats))} BTC (
+                                  {route.params?.selectedCurrency}{' '}
+                                  {formatFiat(route.params?.fiatAmount)}){' '}
+                                  {net === 'testnet' ? '(Testnet)' : ''}
+                                </Text>
+
+                                <Text
+                                  style={{
+                                    fontSize: 10,
+                                    color: theme.colors.textSecondary,
+                                  }}>
+                                  {txDetailsExpanded ? '▼' : '▶'}
+                                </Text>
+                              </AppPressable>
+                              {txDetailsExpanded && (
+                                <>
+                                  {/* Inputs */}
+                                  <Text style={sectionTitle}>
+                                    Inputs
+                                    {txPreview && txPreview.utxos.length > 0
+                                      ? ` (${txPreview.utxos.length})`
+                                      : ''}
+                                  </Text>
+                                  {txPreview && txPreview.utxos.length > 0 ? (
+                                    txPreview.utxos.map((u, idx) => (
+                                      <AppPressable
+                                        key={`${u.address}-${idx}`}
+                                        style={[
+                                          rowOurs,
+                                          {
+                                            marginBottom:
+                                              idx < txPreview.utxos.length - 1
+                                                ? 3
+                                                : 4,
+                                          },
+                                        ]}
+                                        onPress={() =>
+                                          Linking.openURL(
+                                            `${explorerBase}/address/${u.address}`,
+                                          )
+                                        }>
+                                        {accentBar}
+                                        <Image
+                                          source={require('../assets/in-icon.png')}
+                                          style={[
+                                            iconBase,
+                                            {tintColor: accentColor},
+                                          ]}
+                                          resizeMode="contain"
+                                        />
+                                        <View style={{flex: 1}}>
+                                          <Text
+                                            style={[
+                                              labelOurs,
+                                              {textDecorationLine: 'underline'},
+                                            ]}
+                                            numberOfLines={1}
+                                            ellipsizeMode="middle">
+                                            {shortenAddress(u.address)}
+                                          </Text>
+                                          <Text style={pathText}>
+                                            {u.derivationPath}
+                                          </Text>
+                                        </View>
+                                        <View style={{alignItems: 'flex-end'}}>
+                                          <Text style={amtBTCOurs}>
+                                            {sat2btcStr(String(u.value))} BTC
+                                          </Text>
+                                        </View>
+                                      </AppPressable>
+                                    ))
+                                  ) : (
+                                    <View style={rowOurs}>
+                                      {accentBar}
+                                      <Image
+                                        source={require('../assets/in-icon.png')}
+                                        style={[
+                                          iconBase,
+                                          {tintColor: accentColor},
+                                        ]}
+                                        resizeMode="contain"
+                                      />
+                                      <View style={{flex: 1}}>
+                                        <Text
+                                          style={labelOurs}
+                                          numberOfLines={1}>
+                                          HD Wallet
+                                        </Text>
+                                      </View>
+                                      <View style={{alignItems: 'flex-end'}}>
+                                        <Text style={amtBTCOurs}>
+                                          {sat2btcStr(String(totalSats))} BTC
+                                        </Text>
+                                      </View>
+                                    </View>
+                                  )}
+
+                                  {/* Hub */}
+                                  <View
+                                    style={{
+                                      alignItems: 'center',
+                                      paddingVertical: 8,
+                                    }}>
+                                    <View
+                                      style={{
+                                        width: 28,
+                                        height: 28,
+                                        borderRadius: 14,
+                                        backgroundColor: accentColor + '20',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                      }}>
+                                      <Text
+                                        style={{
+                                          fontSize: 14,
+                                          color: accentColor,
+                                          fontFamily: theme.fontFamilies?.bold,
+                                        }}>
+                                        ↓
+                                      </Text>
+                                    </View>
+                                    <Text
+                                      style={{
+                                        fontSize: theme.fontSizes?.xs || 10,
+                                        fontFamily: theme.fontFamilies?.bold,
+                                        color: theme.colors.textSecondary,
+                                        textTransform: 'uppercase',
+                                        letterSpacing: 0.5,
+                                        marginTop: 4,
+                                      }}>
+                                      Transaction
+                                    </Text>
+                                  </View>
+
+                                  {/* Outputs */}
+                                  <Text style={sectionTitle}>Outputs</Text>
+                                  {/* Recipient */}
                                   <AppPressable
-                                    key={`${u.address}-${idx}`}
-                                    style={[
-                                      rowOurs,
-                                      {
-                                        marginBottom:
-                                          idx < txPreview.utxos.length - 1
-                                            ? 3
-                                            : 4,
-                                      },
-                                    ]}
+                                    style={rowBase}
                                     onPress={() =>
                                       Linking.openURL(
-                                        `${explorerBase}/address/${u.address}`,
+                                        `${explorerBase}/address/${toAddr}`,
                                       )
                                     }>
-                                    {accentBar}
                                     <Image
-                                      source={require('../assets/in-icon.png')}
+                                      source={require('../assets/bitcoin-icon.png')}
                                       style={[
                                         iconBase,
-                                        {tintColor: accentColor},
+                                        {tintColor: theme.colors.textSecondary},
                                       ]}
                                       resizeMode="contain"
                                     />
                                     <View style={{flex: 1}}>
                                       <Text
                                         style={[
-                                          labelOurs,
+                                          labelStyle,
                                           {textDecorationLine: 'underline'},
                                         ]}
                                         numberOfLines={1}
                                         ellipsizeMode="middle">
-                                        {shortenAddress(u.address)}
+                                        {shortenAddress(toAddr)}
                                       </Text>
-                                      <Text style={pathText}>
-                                        {u.derivationPath}
-                                      </Text>
+                                      <Text style={subLabel}>recipient</Text>
                                     </View>
                                     <View style={{alignItems: 'flex-end'}}>
-                                      <Text style={amtBTCOurs}>
-                                        {sat2btcStr(String(u.value))} BTC
+                                      <Text style={amtBTC}>
+                                        {sat2btcStr(
+                                          route.params?.satoshiAmount,
+                                        )}{' '}
+                                        BTC
+                                      </Text>
+                                      <Text style={amtFiat}>
+                                        {route.params?.selectedCurrency || ''}{' '}
+                                        {formatFiat(route.params?.fiatAmount)}
                                       </Text>
                                     </View>
                                   </AppPressable>
-                                ))
-                              ) : (
-                                <View style={rowOurs}>
-                                  {accentBar}
-                                  <Image
-                                    source={require('../assets/in-icon.png')}
-                                    style={[iconBase, {tintColor: accentColor}]}
-                                    resizeMode="contain"
-                                  />
-                                  <View style={{flex: 1}}>
-                                    <Text style={labelOurs} numberOfLines={1}>
-                                      HD Wallet
-                                    </Text>
-                                  </View>
-                                  <View style={{alignItems: 'flex-end'}}>
-                                    <Text style={amtBTCOurs}>
-                                      {sat2btcStr(String(totalSats))} BTC
-                                    </Text>
-                                  </View>
-                                </View>
-                              )}
-
-                              {/* Hub */}
-                              <View
-                                style={{
-                                  alignItems: 'center',
-                                  paddingVertical: 8,
-                                }}>
-                                <View
-                                  style={{
-                                    width: 28,
-                                    height: 28,
-                                    borderRadius: 14,
-                                    backgroundColor: accentColor + '20',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                  }}>
-                                  <Text
-                                    style={{
-                                      fontSize: 14,
-                                      color: accentColor,
-                                      fontFamily: theme.fontFamilies?.bold,
-                                    }}>
-                                    ↓
-                                  </Text>
-                                </View>
-                                <Text
-                                  style={{
-                                    fontSize: theme.fontSizes?.xs || 10,
-                                    fontFamily: theme.fontFamilies?.bold,
-                                    color: theme.colors.textSecondary,
-                                    textTransform: 'uppercase',
-                                    letterSpacing: 0.5,
-                                    marginTop: 4,
-                                  }}>
-                                  Transaction
-                                </Text>
-                              </View>
-
-                              {/* Outputs */}
-                              <Text style={sectionTitle}>Outputs</Text>
-                              {/* Recipient */}
-                              <AppPressable
-                                style={rowBase}
-                                onPress={() =>
-                                  Linking.openURL(
-                                    `${explorerBase}/address/${toAddr}`,
-                                  )
-                                }>
-                                <Image
-                                  source={require('../assets/bitcoin-icon.png')}
-                                  style={[
-                                    iconBase,
-                                    {tintColor: theme.colors.textSecondary},
-                                  ]}
-                                  resizeMode="contain"
-                                />
-                                <View style={{flex: 1}}>
-                                  <Text
-                                    style={[
-                                      labelStyle,
-                                      {textDecorationLine: 'underline'},
-                                    ]}
-                                    numberOfLines={1}
-                                    ellipsizeMode="middle">
-                                    {shortenAddress(toAddr)}
-                                  </Text>
-                                  <Text style={subLabel}>recipient</Text>
-                                </View>
-                                <View style={{alignItems: 'flex-end'}}>
-                                  <Text style={amtBTC}>
-                                    {sat2btcStr(route.params?.satoshiAmount)}{' '}
-                                    BTC
-                                  </Text>
-                                  <Text style={amtFiat}>
-                                    {route.params?.selectedCurrency || ''}{' '}
-                                    {formatFiat(route.params?.fiatAmount)}
-                                  </Text>
-                                </View>
-                              </AppPressable>
-                              {/* Connector */}
-                              <View
-                                style={{
-                                  width: 1,
-                                  height: 8,
-                                  backgroundColor: theme.colors.border,
-                                  marginLeft: 17,
-                                  marginBottom: 2,
-                                }}
-                              />
-                              {/* Fee */}
-                              <View style={rowBase}>
-                                <Image
-                                  source={require('../assets/send-icon.png')}
-                                  style={[
-                                    iconBase,
-                                    {tintColor: theme.colors.textSecondary},
-                                  ]}
-                                  resizeMode="contain"
-                                />
-                                <View style={{flex: 1}}>
-                                  <Text style={labelStyle}>Fee</Text>
-                                </View>
-                                <View style={{alignItems: 'flex-end'}}>
-                                  <Text style={amtBTC}>
-                                    {sat2btcStr(route.params?.satoshiFees)} BTC
-                                  </Text>
-                                  <Text style={amtFiat}>
-                                    {route.params?.selectedCurrency || ''}{' '}
-                                    {formatFiat(route.params?.fiatFees)}
-                                  </Text>
-                                </View>
-                              </View>
-                              {/* Change output — only when we know the change address */}
-                              {txPreview && txPreview.changeAddress ? (
-                                <>
+                                  {/* Connector */}
                                   <View
                                     style={{
                                       width: 1,
@@ -5851,51 +5837,90 @@ const MobileNostrPairing = ({navigation}: any) => {
                                       marginBottom: 2,
                                     }}
                                   />
-                                  <AppPressable
-                                    style={[rowOurs, {marginBottom: 0}]}
-                                    onPress={() =>
-                                      Linking.openURL(
-                                        `${explorerBase}/address/${txPreview.changeAddress}`,
-                                      )
-                                    }>
-                                    {accentBar}
+                                  {/* Fee */}
+                                  <View style={rowBase}>
                                     <Image
-                                      source={require('../assets/in-icon.png')}
+                                      source={require('../assets/send-icon.png')}
                                       style={[
                                         iconBase,
-                                        {tintColor: accentColor},
+                                        {tintColor: theme.colors.textSecondary},
                                       ]}
                                       resizeMode="contain"
                                     />
                                     <View style={{flex: 1}}>
-                                      <Text
-                                        style={[
-                                          labelOurs,
-                                          {textDecorationLine: 'underline'},
-                                        ]}
-                                        numberOfLines={1}
-                                        ellipsizeMode="middle">
-                                        {shortenAddress(
-                                          txPreview.changeAddress,
-                                        )}
-                                      </Text>
-                                      <Text style={subLabel}>change</Text>
-                                      {txPreview.changeAddressPath ? (
-                                        <Text style={pathText}>
-                                          {txPreview.changeAddressPath}
-                                        </Text>
-                                      ) : null}
+                                      <Text style={labelStyle}>Fee</Text>
                                     </View>
                                     <View style={{alignItems: 'flex-end'}}>
-                                      {changeSats > 0 && (
-                                        <Text style={amtBTCOurs}>
-                                          {sat2btcStr(String(changeSats))} BTC
-                                        </Text>
-                                      )}
+                                      <Text style={amtBTC}>
+                                        {sat2btcStr(route.params?.satoshiFees)}{' '}
+                                        BTC
+                                      </Text>
+                                      <Text style={amtFiat}>
+                                        {route.params?.selectedCurrency || ''}{' '}
+                                        {formatFiat(route.params?.fiatFees)}
+                                      </Text>
                                     </View>
-                                  </AppPressable>
+                                  </View>
+                                  {/* Change output — only when we know the change address */}
+                                  {txPreview && txPreview.changeAddress ? (
+                                    <>
+                                      <View
+                                        style={{
+                                          width: 1,
+                                          height: 8,
+                                          backgroundColor: theme.colors.border,
+                                          marginLeft: 17,
+                                          marginBottom: 2,
+                                        }}
+                                      />
+                                      <AppPressable
+                                        style={[rowOurs, {marginBottom: 0}]}
+                                        onPress={() =>
+                                          Linking.openURL(
+                                            `${explorerBase}/address/${txPreview.changeAddress}`,
+                                          )
+                                        }>
+                                        {accentBar}
+                                        <Image
+                                          source={require('../assets/in-icon.png')}
+                                          style={[
+                                            iconBase,
+                                            {tintColor: accentColor},
+                                          ]}
+                                          resizeMode="contain"
+                                        />
+                                        <View style={{flex: 1}}>
+                                          <Text
+                                            style={[
+                                              labelOurs,
+                                              {textDecorationLine: 'underline'},
+                                            ]}
+                                            numberOfLines={1}
+                                            ellipsizeMode="middle">
+                                            {shortenAddress(
+                                              txPreview.changeAddress,
+                                            )}
+                                          </Text>
+                                          <Text style={subLabel}>change</Text>
+                                          {txPreview.changeAddressPath ? (
+                                            <Text style={pathText}>
+                                              {txPreview.changeAddressPath}
+                                            </Text>
+                                          ) : null}
+                                        </View>
+                                        <View style={{alignItems: 'flex-end'}}>
+                                          {changeSats > 0 && (
+                                            <Text style={amtBTCOurs}>
+                                              {sat2btcStr(String(changeSats))}{' '}
+                                              BTC
+                                            </Text>
+                                          )}
+                                        </View>
+                                      </AppPressable>
+                                    </>
+                                  ) : null}
                                 </>
-                              ) : null}
+                              )}
                             </View>
                           );
                         })()}
@@ -6438,7 +6463,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                 e,
               );
             }
-            const pendingTxs = transactionRepository.getPendingTxMap(p.senderAddress, p.net || 'mainnet');
+            const pendingTxs = transactionRepository.getPendingTxMap(
+              p.senderAddress,
+              p.net || 'mainnet',
+            );
             pendingTxs[txId] = {
               txid: txId,
               from: p.senderAddress,
@@ -6449,7 +6477,11 @@ const MobileNostrPairing = ({navigation}: any) => {
               sentAt: Date.now(),
               status: {confirmed: false, block_height: null},
             };
-            transactionRepository.setPendingTxMap(p.senderAddress, p.net || 'mainnet', pendingTxs);
+            transactionRepository.setPendingTxMap(
+              p.senderAddress,
+              p.net || 'mainnet',
+              pendingTxs,
+            );
             navigation.dispatch(
               CommonActions.reset(
                 getResetToMainTabsWallet(
@@ -6495,6 +6527,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         onClose={() => {
           broadcastSuccessPayloadRef.current = null;
           setSignedTxRawHex(null);
+          navigation.goBack();
         }}
       />
     </SafeAreaView>

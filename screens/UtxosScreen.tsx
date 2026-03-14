@@ -24,6 +24,7 @@ import appConfigRepository, {
   CONFIG_KEYS,
 } from '../services/repositories/AppConfigRepository';
 import utxoRepository from '../services/repositories/UtxoRepository';
+import priceRepository from '../services/repositories/PriceRepository';
 import {WalletService} from '../services/WalletService';
 import utxoSyncer from '../services/sync/UtxoSyncer';
 import database from '../services/Database';
@@ -146,29 +147,33 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
     loadCurrency();
   }, []);
 
-  // Use same price source as WalletHome (WalletService.getBitcoinPrice)
+  // DB-first: seed price from SQLite immediately, then refresh via API.
   useEffect(() => {
     let cancelled = false;
+    const currency = selectedCurrency || 'USD';
+
+    // Phase 1 — instant DB read
+    const cached = priceRepository.getCachedPrice(currency);
+    if (cached) {
+      setPriceData(cached.rates);
+      setBtcPrice(String(cached.rate));
+      setBtcRate(cached.rate);
+    }
+
+    // Phase 2 — background API refresh → DB → UI
     WalletService.getInstance()
       .getBitcoinPrice()
       .then(({rates}) => {
         if (cancelled) return;
         if (rates) setPriceData(rates);
-        const currency = selectedCurrency || 'USD';
         const rate = rates?.[currency] ?? rates?.USD ?? 0;
         if (typeof rate === 'number' && rate > 0) {
           setBtcPrice(String(rate));
           setBtcRate(rate);
-        } else {
-          setBtcPrice('');
-          setBtcRate(0);
         }
       })
       .catch(() => {
-        if (!cancelled) {
-          setBtcPrice('');
-          setBtcRate(0);
-        }
+        // API failed — DB data (if any) is already showing
       });
     return () => {
       cancelled = true;
@@ -214,7 +219,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
       return;
     }
 
-    setRefreshStatusMessage('Fetching UTXOs…');
+    setRefreshStatusMessage('Syncing UTXOs…');
 
     const addressesForSyncer = addressesWithPaths
       .filter(({address}) => addressMatchesNetwork(address, isTestnetApi))
@@ -423,23 +428,32 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
         flexOne: {flex: 1},
         utxoHeaderStyle: {
           padding: 0,
-          backgroundColor:
-            theme.colors.background === '#ffffff'
-              ? theme.colors.primaryOverlay95
-              : theme.colors.whiteOverlay15,
-          borderRadius: 14,
+          backgroundColor: isDarkMode
+            ? 'rgba(255,255,255,0.07)'
+            : 'rgba(26,43,60,0.88)',
+          borderRadius: 16,
           alignItems: 'stretch' as const,
           margin: 16,
-          borderWidth: 1,
-          borderColor: theme.colors.whiteOverlay30,
+          borderWidth: isDarkMode ? 1 : 0.5,
+          borderColor: isDarkMode
+            ? 'rgba(255,255,255,0.18)'
+            : 'rgba(255,255,255,0.12)',
+          borderTopWidth: isDarkMode ? 1.5 : 0.5,
+          borderTopColor: isDarkMode
+            ? 'rgba(255,255,255,0.30)'
+            : 'rgba(255,255,255,0.18)',
+          borderLeftWidth: isDarkMode ? 1.5 : 0.5,
+          borderLeftColor: isDarkMode
+            ? 'rgba(255,255,255,0.22)'
+            : 'rgba(255,255,255,0.15)',
           position: 'relative' as const,
           zIndex: 3,
-          elevation: 6,
-          shadowColor: theme.colors.shadowColor,
-          shadowOffset: {width: 0, height: 3},
-          shadowOpacity: 0.15,
-          shadowRadius: 6,
-          overflow: 'visible' as const,
+          elevation: isDarkMode ? 8 : 4,
+          shadowColor: isDarkMode ? '#000' : 'rgba(26,43,60,0.35)',
+          shadowOffset: {width: 0, height: isDarkMode ? 6 : 4},
+          shadowOpacity: isDarkMode ? 0.35 : 0.15,
+          shadowRadius: isDarkMode ? 12 : 8,
+          overflow: 'hidden' as const,
         },
         listHeader: {
           marginTop: 0,
@@ -542,13 +556,8 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           textAlign: 'right' as const,
         },
         summaryCard: {
-          borderRadius: 12,
-          borderWidth: 1,
           paddingHorizontal: 16,
           paddingVertical: 14,
-          marginHorizontal: 0,
-          marginTop: 0,
-          marginBottom: 0,
           gap: 6,
         },
         summaryCardWrap: {
@@ -572,11 +581,16 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           paddingHorizontal: 8,
           paddingVertical: 3,
           borderRadius: 10,
+          borderWidth: isDarkMode ? 0.5 : 0,
+          borderColor: 'rgba(255,255,255,0.12)',
+          backgroundColor: isDarkMode
+            ? 'rgba(255,255,255,0.08)'
+            : 'rgba(255,255,255,0.10)',
         },
         countBadgeText: {
           fontSize: theme.fontSizes?.xs || 10,
           fontFamily: theme.fontFamilies?.medium,
-          opacity: 0.8,
+          opacity: 0.85,
         },
         heroTotalWrap: {
           alignItems: 'center',
@@ -600,8 +614,11 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           alignItems: 'center',
         },
         summaryDivider: {
-          height: 1,
-          marginVertical: 6,
+          height: StyleSheet.hairlineWidth,
+          marginVertical: 8,
+          backgroundColor: isDarkMode
+            ? 'rgba(255,255,255,0.15)'
+            : 'rgba(255,255,255,0.12)',
         },
         summaryLabel: {
           fontSize: theme.fontSizes?.sm || 12,
@@ -680,7 +697,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
         },
       }),
-    [theme],
+    [theme, isDarkMode],
   );
 
   const renderUtxoItem = useCallback(
@@ -849,18 +866,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
       {/* Top card — dedicated UTXO header */}
 
       <View style={styles.utxoHeaderStyle}>
-        <View
-          style={[
-            styles.summaryCard,
-            {
-              backgroundColor: isDarkMode
-                ? theme.colors.blackOverlay30
-                : theme.colors.whiteOverlay08,
-              borderColor: isDarkMode
-                ? theme.colors.whiteOverlay25
-                : theme.colors.whiteOverlay15,
-            },
-          ]}>
+        <View style={styles.summaryCard}>
           {/* Title row */}
           <View style={styles.summaryTitleRow}>
             <Text
@@ -870,15 +876,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
               ]}>
               UTXO Balance
             </Text>
-            <View
-              style={[
-                styles.countBadge,
-                {
-                  backgroundColor: isDarkMode
-                    ? theme.colors.whiteOverlay12
-                    : theme.colors.blackOverlay10,
-                },
-              ]}>
+            <View style={styles.countBadge}>
               <Text
                 style={[
                   styles.countBadgeText,
@@ -913,16 +911,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           </View>
 
           {/* Divider */}
-          <View
-            style={[
-              styles.summaryDivider,
-              {
-                backgroundColor: isDarkMode
-                  ? theme.colors.border + '99'
-                  : theme.colors.border + '66',
-              },
-            ]}
-          />
+          <View style={styles.summaryDivider} />
 
           {/* Confirmed row */}
           <View style={styles.summaryRow}>

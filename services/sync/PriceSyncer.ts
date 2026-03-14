@@ -8,8 +8,18 @@ import mempoolClient from '../MempoolClient';
 import priceRepository from '../repositories/PriceRepository';
 import {dbg} from '../../utils';
 
+/** Skip API call if the DB price was fetched within this window. */
+const PRICE_DB_TTL_MS = 45_000; // 45 s
+
 class PriceSyncer {
   async syncCurrentPrice(apiBase: string): Promise<void> {
+    // Check DB freshness before hitting the API.
+    const cached = priceRepository.getCachedPrice('USD');
+    if (cached && cached.timestamp > 0 && Date.now() - cached.timestamp < PRICE_DB_TTL_MS) {
+      dbg('PriceSyncer: price fresh in DB — skipped');
+      return;
+    }
+
     // Always use mainnet price endpoint
     const base = apiBase.replace(/\/+$/, '').replace(/\/testnet\/?/, '');
     const url = `${base}/v1/prices`;

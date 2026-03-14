@@ -124,6 +124,16 @@ class SyncRepository {
     }
   }
 
+  /**
+   * Returns true if the entity was successfully synced within `ttlMs`
+   * milliseconds.  Callers use this to skip redundant API calls when
+   * the DB already holds fresh-enough data.
+   */
+  isFresh(entityType: EntityType, entityKey: string, ttlMs: number): boolean {
+    const last = this.getLastSyncedAt(entityType, entityKey);
+    return last > 0 && Date.now() - last < ttlMs;
+  }
+
   private _rowToMeta(r: Record<string, unknown>): SyncMeta {
     return {
       entityType: r.entity_type as EntityType,

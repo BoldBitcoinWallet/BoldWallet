@@ -13,6 +13,9 @@ import {INTER_ADDRESS_DELAY_MS, sleep, with429Retry} from './rateLimitRetry';
 import {dbg} from '../../utils';
 import type {AddressBalance} from '../repositories/BalanceRepository';
 
+/** Skip API call if the DB row was synced within this window. */
+const BALANCE_DB_TTL_MS = 20_000; // 20 s
+
 export interface AddressEntry {
   address: string;
   network: string;
@@ -46,11 +49,20 @@ class BalanceSyncer {
     const total = addresses.length;
 
     const results: AddressBalance[] = [];
+    let skipped = 0;
 
     for (let i = 0; i < addresses.length; i++) {
       onProgress?.(i + 1, total);
       const {address, network} = addresses[i];
-      if (i > 0) {
+
+      // DB-level TTL: skip addresses whose data was synced recently.
+      const entityKey = `${address}_${network}`;
+      if (syncRepository.isFresh('balance', entityKey, BALANCE_DB_TTL_MS)) {
+        skipped++;
+        continue;
+      }
+
+      if (results.length > 0) {
         await sleep(INTER_ADDRESS_DELAY_MS);
       }
       try {
@@ -95,12 +107,17 @@ class BalanceSyncer {
       }
     }
 
-    // All succeeded — write in one transaction
+    if (!results.length) {
+      if (skipped > 0) dbg('BalanceSyncer: all', skipped, 'addresses fresh — skipped');
+      return;
+    }
+
+    // All fetched addresses succeeded — write in one transaction
     balanceRepository.setBalances(results);
-    for (const {address, network} of addresses) {
+    for (const {address, network} of results) {
       syncRepository.updateCursor('balance', `${address}_${network}`, null, 'ok');
     }
-    dbg('BalanceSyncer: atomic write complete', results.length, 'addresses');
+    dbg('BalanceSyncer: wrote', results.length, 'addresses (skipped', skipped, 'fresh)');
   }
 }
 

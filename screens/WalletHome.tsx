@@ -21,7 +21,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import QRScanner from '../components/QRScanner';
 import {
-  useFocusEffect,
   useNavigation,
   useRoute,
   RouteProp,
@@ -79,6 +78,7 @@ import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConf
 
 import walletRepository from '../services/repositories/WalletRepository';
 import balanceRepository from '../services/repositories/BalanceRepository';
+import priceRepository from '../services/repositories/PriceRepository';
 import {getExternalIndex} from '../services/HdIndexService';
 import syncCoordinator, {type SyncStatus} from '../services/sync/SyncCoordinator';
 import apiQueue from '../services/ApiQueue';
@@ -145,6 +145,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [_segwitAddress, setSegwitAddress] = React.useState('');
   const [addressType, setAddressType] = React.useState('');
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
+  const isInitializedRef = useRef(false);
   const [isSending, setIsSending] = useState<boolean>(false);
   const [_error, setError] = useState<string>('');
   const [cacheTimestamps, setCacheTimestamps] = useState<CacheTimestamp>({
@@ -341,287 +342,166 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     });
     return unsub;
   }, []);
-  const fetchData = useCallback(async () => {
-    try {
-      dbg('[BALANCE] fetchData: called —',
-        'isInitialized:', isInitialized,
-        'isFetchInProgress:', isFetchInProgressRef.current,
-        'isReinitInProgress:', isReinitInProgressRef.current,
-      );
-      if (!isInitialized) {
-        dbg('[BALANCE] fetchData: SKIPPED — not initialized');
-        return;
-      }
-      if (isFetchInProgressRef.current || isReinitInProgressRef.current) {
-        dbg('[BALANCE] fetchData: SKIPPED —',
-          isFetchInProgressRef.current ? 'fetch already in progress' : 'reinit in progress',
-        );
-        return;
-      }
-      // Mark fetch as in progress
-      isFetchInProgressRef.current = true;
-      dbg('=== Starting data fetch...');
-      // CRITICAL: Prefer userActiveAddress from UserContext (single source of truth)
-      // This prevents using stale/wrong addresses during state updates
-      const addr =
-        userActiveAddress ||
-        address ||
-        (appConfigRepository.get(CONFIG_KEYS.CURRENT_ADDRESS));
-      const baseApi = apiBase || (appConfigRepository.get('api'));
-      const currency = (appConfigRepository.get(CONFIG_KEYS.CURRENCY)) || 'USD';
-      dbg(`[WalletHome] fetchData - Using address:`, {
-        timestamp: Date.now(),
-        userActiveAddress: userActiveAddress
-          ? `${userActiveAddress.substring(
-              0,
-              8,
-            )}...${userActiveAddress.substring(userActiveAddress.length - 8)}`
-          : 'EMPTY',
-        localAddress: address
-          ? `${address.substring(0, 8)}...${address.substring(
-              address.length - 8,
-            )}`
-          : 'EMPTY',
-        finalAddress: addr
-          ? `${addr.substring(0, 8)}...${addr.substring(addr.length - 8)}`
-          : 'EMPTY',
-        addressSource: userActiveAddress
-          ? 'UserContext'
-          : address
-          ? 'localState'
-          : 'cache',
-      });
-      if (!addr || !baseApi) {
-        dbg('WalletHome: Missing wallet address or baseApi', {
-          address: addr,
-          apiBase: baseApi,
-        });
-        setLoading(false);
-        setIsRefreshing(false);
-        return;
-      }
-      // Set up API URL
-      const cleanBaseApi = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
-      const apiUrl = `${cleanBaseApi}/api`;
-      // Ensure native module has correct settings
-      await BBMTLibNativeModule.setAPI(network, apiUrl);
+  // DB → UI: read balance and price from SQLite and update React state.
+  // This is the single source of truth for what the UI displays.
+  // Called after init, after API syncs, and after SyncCoordinator cycles.
+  const refreshFromDB = useCallback(() => {
+    const currency = appConfigRepository.get(CONFIG_KEYS.CURRENCY) || 'USD';
+    const effectiveType = addressType || userAddressType || 'segwit-native';
 
-      let freshData;
-      setIsRefreshing(true);
-      setIsBalanceLoading(true);
-      setBalanceError(null);
-      try {
-        dbg('fetching bitcoin price and wallet balance...');
-        const effectiveAddressType =
-          addressType || userAddressType || 'segwit-native';
-        const freshBalance = await apiQueue.enqueue(
-          'Fetching balance…',
-          setProgress =>
-            WalletService.getInstance().getWalletBalanceAggregate(
-              network,
-              effectiveAddressType,
-              btcRate,
-              _pendingSent,
-              true,
-              setProgress,
-            ),
-        );
-        const freshPrice = await apiQueue.enqueue(
-          'Fetching fiat rate…',
-          () => WalletService.getInstance().getBitcoinPrice(),
-        );
-        freshData = [freshPrice, freshBalance];
-        if (freshPrice && freshBalance) {
-          const rates = freshPrice.rates;
-          if (rates && rates[currency]) {
-            setPriceData(rates);
-            setBtcPrice(rates[currency].toString());
-            setBtcRate(rates[currency] || 0);
-            // Normalize balance to ensure no negative zero
-            const normalizedBTC = freshBalance.btc || '0.00000000';
-            const balanceNum = parseFloat(normalizedBTC);
-            // DB-first floor: if the API returned 0 cross-check the stored
-            // aggregate. The API can return 0 transiently right after device
-            // unlock (iOS Keychain not yet ready → empty address list).
-            // Only display 0 if the DB also confirms 0.
-            let finalBTC = balanceNum <= 0 ? '0.00000000' : normalizedBTC;
-            if (balanceNum <= 0) {
-              const effectiveType = addressType || userAddressType || 'segwit-native';
-              const dbFloor = balanceRepository.getBalance(
-                `aggregate_${network}_${effectiveType}`,
-                network,
-              );
-              dbg(
-                '[BALANCE] fetchData: fresh API returned 0 — checking DB floor.',
-                'DB aggregate key:', `aggregate_${network}_${effectiveType}`,
-                'DB sats:', dbFloor ? dbFloor.balanceSats : 'NOT FOUND',
-              );
-              if (dbFloor && dbFloor.balanceSats > 0) {
-                finalBTC = (dbFloor.balanceSats / 1e8).toFixed(8);
-                dbg('[BALANCE] fetchData: DB floor applied — showing', finalBTC, 'BTC instead of 0');
-              } else {
-                dbg('[BALANCE] fetchData: DB floor also 0 or not found — showing 0.00000000');
-              }
-            }
-            dbg('[BALANCE] fetchData: final BTC (fresh path):', finalBTC);
-            setBalanceBTC(finalBTC);
-            setPendingSats(freshBalance.pendingSats ?? 0);
-            const fiatBalance =
-              Number(freshBalance.btc) * Number(rates[currency] || 0);
-            setBalanceFiat(Math.max(0, fiatBalance).toFixed(2) || '-');
-            // Update cache timestamps with fresh data
-            setCacheTimestamps({
-              price: freshPrice.timestamp,
-              balance: freshBalance.timestamp,
-            });
-          } else {
-            setBtcPrice('-');
-            setBalanceFiat('-');
-          }
-        } else {
-          freshData = null;
-        }
-      } catch (error) {
-        dbg('WalletHome: Error fetching fresh data:', error);
-        // Show offline-only if we detect no internet
-        try {
-          const ping = await fetch('https://mempool.space/favicon.ico', {
-            method: 'HEAD',
-          });
-          if (!ping.ok) {
-            Toast.show({
-              type: 'error',
-              text1: 'No internet',
-              text2: 'Using cached data',
-              position: 'top',
-            });
-          }
-        } catch {
-          Toast.show({
-            type: 'error',
-            text1: 'No internet',
-            text2: 'Using cached data',
-            position: 'top',
-          });
-        }
+    // Sum per-address balances for the known wallet addresses.
+    // The SyncCoordinator writes per-address entries; summing them
+    // gives the correct total for the current address type.
+    let totalSats = 0;
+    let totalPending = 0;
+    let newestFetch = 0;
+    const addrs = walletAddresses.length > 0
+      ? walletAddresses
+      : address ? [address] : [];
+
+    for (const a of addrs) {
+      const stored = balanceRepository.getBalance(a, network);
+      if (stored) {
+        totalSats += stored.balanceSats;
+        totalPending += stored.pendingSats;
+        if (stored.fetchedAt > newestFetch) newestFetch = stored.fetchedAt;
       }
-      // Fall back to cached data only if fresh data fetch failed
-      if (!freshData) {
-        Toast.show({
-          type: 'info',
-          text1: 'Could not fetch latest data',
-          text2: 'Using cached data.',
-          position: 'top',
-        });
-        const cachedPricePromise = WalletService.getInstance().getCachePrice();
-        const effectiveAddressType =
-          addressType || userAddressType || 'segwit-native';
-        const cachedBalancePromise = WalletService.getInstance()
-          .getCachedAggregateBalance(network, effectiveAddressType)
-          .then(
-            c =>
-              c ??
-              WalletService.getInstance().getWalletBalance(
-                addr,
-                btcRate,
-                _pendingSent,
-              ),
-          );
-        const cachedResults = await Promise.all([
-          cachedPricePromise,
-          cachedBalancePromise,
-        ]);
-        const cachedPrice = cachedResults[0];
-        const cachedBalance = cachedResults[1];
-        if (cachedPrice && cachedBalance) {
-          const rates = cachedPrice.rates || {};
-          if (rates && rates[currency]) {
-            setPriceData(rates);
-            setBtcPrice(rates[currency].toString());
-            setBtcRate(rates[currency] || 0);
-            // Normalize balance to ensure no negative zero
-            const normalizedBTC = cachedBalance.btc || '0.00000000';
-            const balanceNum = parseFloat(normalizedBTC);
-            const finalBTC = balanceNum <= 0 ? '-' : normalizedBTC;
-            // Animate balance update if it changed
-            if (finalBTC !== previousBalanceRef.current) {
-              // Trigger fade animation
-              balanceUpdateAnimation.value = 0;
-              balanceUpdateAnimation.value = withTiming(1, {duration: 300});
-              previousBalanceRef.current = finalBTC;
-              // Haptic feedback on balance update
-              HapticFeedback.light();
-            }
-            dbg('WalletHome: Final BTC (cached):', finalBTC);
-            setBalanceBTC(finalBTC);
-            setPendingSats(cachedBalance.pendingSats ?? 0);
-            const fiatBalance =
-              Number(cachedBalance.btc) * Number(rates[currency]);
-            setBalanceFiat(Math.max(0, fiatBalance).toFixed(2) || '-');
-            setCacheTimestamps({
-              price: cachedPrice.timestamp,
-              balance: cachedBalance.timestamp,
-            });
-            setBalanceError(null); // Clear any previous errors
-          } else {
-            setBtcPrice('-');
-            setBalanceFiat('-');
-          }
-        }
-      }
-      // Sync walletAddresses with the current HD index state.
-      // bumpExternalIndexIfCurrentUsed may advance indexes between renders
-      // but the walletAddresses effect only fires on specific dep changes.
-      // Refreshing here ensures the TransactionList always covers every address
-      // the wallet has used, including the one just received on.
-      try {
-        const addrType = addressType || userAddressType || 'segwit-native';
-        const freshAddrs =
-          await WalletService.getInstance().getHdAddressesWithPaths(
-            network,
-            addrType,
-          );
-        const freshList = freshAddrs.map(a => a.address);
-        setWalletAddresses(prev => {
-          const same =
-            prev.length === freshList.length &&
-            prev.every((a, i) => a === freshList[i]);
-          return same ? prev : freshList;
-        });
-        setWalletAddressesReady(true);
-      } catch {
-        // Non-critical — address list failure does not affect balance display.
-      }
-    } catch (error: any) {
-      dbg('WalletHome: Error fetching data:', error);
-      let errMsg = 'Unknown error';
-      if (
-        error &&
-        typeof error === 'object' &&
-        'message' in error &&
-        typeof (error as any).message === 'string'
-      ) {
-        errMsg = (error as any).message || 'Unknown error';
-      }
-      setError(errMsg);
-      setBalanceError('Failed to load balance');
-      showErrorToast('Failed to fetch data');
-    } finally {
-      setLoading(false);
-      setIsBalanceLoading(false);
-      setIsRefreshing(false);
-      isFetchInProgressRef.current = false;
-      dbg('=== Data fetch completed');
     }
+
+    // Fallback: synthetic aggregate written by getWalletBalanceAggregate
+    if (newestFetch === 0) {
+      const agg = balanceRepository.getBalance(
+        `aggregate_${network}_${effectiveType}`,
+        network,
+      );
+      if (agg) {
+        totalSats = agg.balanceSats;
+        totalPending = agg.pendingSats;
+        newestFetch = agg.fetchedAt;
+      }
+    }
+
+    const btc = (totalSats / 1e8).toFixed(8);
+    const balStr = totalSats > 0 ? btc : newestFetch > 0 ? '0.00000000' : '-';
+    if (balStr !== previousBalanceRef.current && previousBalanceRef.current !== '0.00000000') {
+      balanceUpdateAnimation.value = 0;
+      balanceUpdateAnimation.value = withTiming(1, {duration: 300});
+      HapticFeedback.light();
+    }
+    previousBalanceRef.current = balStr;
+    setBalanceBTC(balStr);
+    setPendingSats(totalPending);
+
+    // Price from DB
+    const dbPrice = priceRepository.getCachedPrice(currency);
+    if (dbPrice && dbPrice.rate > 0) {
+      setPriceData(dbPrice.rates);
+      setBtcPrice(dbPrice.rate.toString());
+      setBtcRate(dbPrice.rate);
+      const fiat = (totalSats / 1e8) * dbPrice.rate;
+      setBalanceFiat(Math.max(0, fiat).toFixed(2));
+      setCacheTimestamps({ price: dbPrice.timestamp, balance: newestFetch });
+    }
+
+    setBalanceError(null);
+    dbg('[BALANCE] refreshFromDB:', {
+      addresses: addrs.length,
+      totalSats,
+      totalPending,
+      btcDisplay: balStr,
+      priceRate: dbPrice?.rate ?? 0,
+    });
+  }, [
+    network,
+    addressType,
+    userAddressType,
+    walletAddresses,
+    address,
+    balanceUpdateAnimation,
+  ]);
+  const refreshFromDBRef = useRef(refreshFromDB);
+  useEffect(() => { refreshFromDBRef.current = refreshFromDB; }, [refreshFromDB]);
+
+  // API → DB → UI: trigger API calls that write to DB, then refresh UI from DB.
+  // Even if APIs fail, refreshFromDB still runs and shows whatever is in the DB.
+  const fetchData = useCallback(async () => {
+    if (!isInitializedRef.current) {
+      dbg('[BALANCE] fetchData: SKIPPED — not initialized');
+      return;
+    }
+    if (isFetchInProgressRef.current || isReinitInProgressRef.current) {
+      dbg('[BALANCE] fetchData: SKIPPED —',
+        isFetchInProgressRef.current ? 'fetch in progress' : 'reinit in progress',
+      );
+      return;
+    }
+    isFetchInProgressRef.current = true;
+    setIsRefreshing(true);
+    setIsBalanceLoading(true);
+
+    const baseApi = apiBase || appConfigRepository.get('api');
+    if (!baseApi || !network) {
+      refreshFromDBRef.current();
+      isFetchInProgressRef.current = false;
+      setLoading(false);
+      setIsRefreshing(false);
+      setIsBalanceLoading(false);
+      return;
+    }
+
+    // Ensure native module has correct API URL
+    const cleanBaseApi = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
+    const apiUrl = `${cleanBaseApi}/api`;
+    await BBMTLibNativeModule.setAPI(network, apiUrl);
+
+    try {
+      const effectiveAddressType = addressType || userAddressType || 'segwit-native';
+      // API → DB: getWalletBalanceAggregate writes per-address + aggregate to SQLite
+      await apiQueue.enqueue(
+        'Syncing balance…',
+        setProgress =>
+          WalletService.getInstance().getWalletBalanceAggregate(
+            network, effectiveAddressType, btcRate, _pendingSent, true, setProgress,
+          ),
+      );
+      // API → DB: getBitcoinPrice writes rates to price_rates table
+      await apiQueue.enqueue(
+        'Syncing fiat rate…',
+        () => WalletService.getInstance().getBitcoinPrice(),
+      );
+    } catch (error) {
+      dbg('[BALANCE] fetchData: API sync error (will read from DB):', error);
+    }
+
+    // DB → UI: always read from DB regardless of API success
+    refreshFromDBRef.current();
+
+    // Sync walletAddresses with the current HD index state
+    try {
+      const addrType = addressType || userAddressType || 'segwit-native';
+      const freshAddrs = await WalletService.getInstance().getHdAddressesWithPaths(
+        network, addrType,
+      );
+      const freshList = freshAddrs.map(a => a.address);
+      setWalletAddresses(prev => {
+        const same = prev.length === freshList.length && prev.every((a, i) => a === freshList[i]);
+        return same ? prev : freshList;
+      });
+      setWalletAddressesReady(true);
+    } catch {
+      // Non-critical
+    }
+
+    setLoading(false);
+    setIsBalanceLoading(false);
+    setIsRefreshing(false);
+    isFetchInProgressRef.current = false;
+    dbg('=== Data fetch completed');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    isInitialized,
     network,
     btcRate,
     _pendingSent,
-    showErrorToast,
-    userActiveAddress,
-    address,
     apiBase,
     addressType,
     userAddressType,
@@ -716,6 +596,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         balancePromise,
         timeoutPromise,
       ]);
+      // API wrote to DB — refresh UI from DB
+      refreshFromDBRef.current();
       if (
         balanceResult &&
         typeof balanceResult === 'object' &&
@@ -723,16 +605,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       ) {
         const newBalance = parseFloat((balanceResult as any).btc || '0');
         dbg('checkBalanceForSend: Balance fetched:', newBalance);
-        // Update balance state - normalize to ensure no negative zero
-        const normalizedBTC = (balanceResult as any).btc || '0.00000000';
-        const balanceNum = parseFloat(normalizedBTC);
-        const finalBTC = balanceNum <= 0 ? '-' : normalizedBTC;
-        dbg('checkBalanceForSend: Final BTC:', finalBTC);
-        setBalanceBTC(finalBTC);
-        if (btcRate > 0) {
-          const fiatBalance = Number((balanceResult as any).btc) * btcRate;
-          setBalanceFiat(Math.max(0, fiatBalance).toFixed(2) || '-');
-        }
         return newBalance;
       }
       return 0;
@@ -947,32 +819,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     },
     [addressType, userAddressType, address],
   );
-  // Initialize component and sync with NetworkContext
-  useEffect(() => {
-    const initializeOnMount = async () => {
-      try {
-        dbg(
-          '=== Component mount - Initializing with current NetworkContext state',
-        );
-        dbg('Current network from context:', network);
-        dbg('Current API from context:', apiBase);
-        // Wait for NetworkContext to be properly initialized
-        if (network && apiBase) {
-          dbg('Mount - NetworkContext is ready, updating address if needed');
-          await updateAddressForNetwork(network);
-          await updateAddressTypeModal(network);
-        } else {
-          dbg('Mount - NetworkContext not ready yet, waiting...', {
-            network,
-            apiBase,
-          });
-        }
-      } catch (error) {
-        dbg('Mount initialization - Error:', error);
-      }
-    };
-    initializeOnMount();
-  }, [network, apiBase, updateAddressForNetwork, updateAddressTypeModal]);
   // Comprehensive re-initialization function
   const reinitializeWallet = useCallback(
     async (forceReinit: boolean = false) => {
@@ -1003,6 +849,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         if (!jks) {
           dbg('WalletHome: No keyshare found during re-initialization');
           setLoading(false);
+          isInitializedRef.current = true;
           setIsInitialized(true);
           return;
         }
@@ -1014,39 +861,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setSegwitAddress('');
         setSegwitCompatibleAddress('');
 
-        // Synchronously preload the aggregate balance from SQLite so the
-        // balance is visible immediately (before any async work completes).
-        // This prevents the balance from flashing '-' / 0 on lock-unlock.
-        {
-          const earlyAddressType =
-            appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'segwit-native';
-          const earlyNet =
-            network || appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
-          const earlyAgg = balanceRepository.getBalance(
-            `aggregate_${earlyNet}_${earlyAddressType}`,
-            earlyNet,
-          );
-          dbg(
-            '[BALANCE] reinitializeWallet: DB early-preload —',
-            'key:', `aggregate_${earlyNet}_${earlyAddressType}`,
-            'found:', earlyAgg ? (earlyAgg.balanceSats + ' sats') : 'NOT FOUND',
-            'btcRate in state:', btcRate,
-          );
-          if (earlyAgg && earlyAgg.balanceSats > 0) {
-            const earlyBTC = (earlyAgg.balanceSats / 1e8).toFixed(8);
-            dbg('[BALANCE] reinitializeWallet: setting balance from DB early-preload:', earlyBTC, 'BTC');
-            setBalanceBTC(earlyBTC);
-            setPendingSats(earlyAgg.pendingSats ?? 0);
-            // Fiat: reuse whatever btcRate is already in state (non-zero after
-            // first successful fetch); skip if rate not available yet.
-            if (btcRate > 0) {
-              const earlyFiat = (earlyAgg.balanceSats / 1e8) * btcRate;
-              setBalanceFiat(Math.max(0, earlyFiat).toFixed(2));
-            }
-          } else {
-            dbg('[BALANCE] reinitializeWallet: DB early-preload found 0 or nothing — balance NOT updated from DB at this stage.');
-          }
-        }
+        // DB → UI: preload balance/price from SQLite immediately (no async work).
+        // Prevents balance flashing '-' / 0 on lock-unlock.
+        refreshFromDBRef.current();
 
         // Do NOT clear persistent cache here; we need it for offline startup
         // Only ensure service is initialized to read existing caches
@@ -1154,71 +971,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           await BBMTLibNativeModule.setAPI(actualNet, api);
           dbg('API set for network:', actualNet, 'API:', api);
         }
-        // Initialize UI directly from persistent wallet cache (exact v1.3.2 analogy)
-        try {
-          const cachedPrice = await WalletService.getInstance().getCachePrice();
-          const cachedAggregate =
-            await WalletService.getInstance().getCachedAggregateBalance(
-              actualNet,
-              addrType,
-            );
-          const cachedBal =
-            cachedAggregate ??
-            (await WalletService.getInstance().getBal(btcAddress));
-          const cachedTxs = await WalletService.getInstance()
-            .transactionsFromCacheForWallet(actualNet, addrType)
-            .catch(() =>
-              WalletService.getInstance().transactionsFromCache(btcAddress),
-            );
-          const currency = (appConfigRepository.get(CONFIG_KEYS.CURRENCY)) || 'USD';
-          if (cachedBal.timestamp > 0) {
-            // timestamps
-            setCacheTimestamps({
-              price: cachedPrice.timestamp,
-              balance: cachedBal.timestamp,
-            });
-            // price
-            if (cachedPrice.timestamp > 0) {
-              setPriceData(cachedPrice.rates);
-              const r = cachedPrice.rates[currency] || cachedPrice.rate || 0;
-              if (r && r > 0) {
-                setBtcPrice(r.toString());
-                setBtcRate(r);
-              }
-            }
-            // balance
-            if (cachedBal.timestamp > 0) {
-              // Normalize balance to ensure no negative zero
-              const normalizedBTC = cachedBal.btc || '0.00000000';
-              const balanceNum = parseFloat(normalizedBTC);
-              const finalBTC = balanceNum <= 0 ? '-' : normalizedBTC;
-              dbg('reinitializeWallet: Final BTC (cached):', finalBTC);
-              setBalanceBTC(finalBTC);
-              setPendingSats(cachedBal.pendingSats ?? 0);
-              const r =
-                (cachedPrice.rates?.[currency] as number) ||
-                (cachedPrice.rate as number) ||
-                0;
-              if (r && Number(cachedBal.btc) >= 0) {
-                const fiatBalance = Number(cachedBal.btc) * r;
-                setBalanceFiat(Math.max(0, fiatBalance).toFixed(2) || '-');
-              }
-            }
-            // initial transactions
-            if (Array.isArray(cachedTxs) && cachedTxs.length > 0) {
-              setInitialTransactions(cachedTxs);
-            } else {
-              // fallback to WalletService snapshots if persistent cache not found
-              setCacheTimestamps({
-                price: cachedPrice.timestamp,
-                balance: cachedBal.timestamp,
-              });
-            }
-          }
-        } catch (error) {
-          dbg('reinitializeWallet: Error re-initializing wallet:', error);
-          showErrorToast('Failed to re-initialize wallet. Please try again.');
-        }
+        // DB → UI: read balance/price from SQLite
+        refreshFromDBRef.current();
       } finally {
         setLoading(false);
         isReinitInProgressRef.current = false;
@@ -1229,82 +983,42 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       // "clear cache" always shows 0 BTC until the user pulls to refresh.
       await fetchDataRef.current?.();
     },
-    [network, apiBase, showErrorToast, address, btcRate],
+    [network, apiBase, address],
   );
-  // Listen for navigation state changes to detect returning from settings
+  // Listen for navigation state changes to detect returning from settings.
+  // Guarded by isInitializedRef so the very first focus (mount) is a no-op —
+  // the init effect handles initial boot.  Subsequent focuses (e.g. returning
+  // from Settings) run reinitializeWallet which re-derives addresses & fetches
+  // live data.
   useEffect(() => {
     const unsubscribe = nav.addListener('focus', async () => {
-      const focusTime = Date.now();
+      if (!isInitializedRef.current) {
+        dbg('[WalletHome] Focus - skipping, init effect in progress');
+        return;
+      }
+      if (!network || !apiBase) {
+        return;
+      }
       dbg(
-        '[WalletHome] === Navigation focus - Screen came into focus, reinitializing wallet',
+        '[WalletHome] === Navigation focus - reinitializing wallet',
         {
-          timestamp: focusTime,
+          timestamp: Date.now(),
           network,
           apiBase,
-          currentAddress: address
-            ? `${address.substring(0, 8)}...${address.substring(
-                address.length - 8,
-              )}`
-            : 'EMPTY',
-          userActiveAddress: userActiveAddress
-            ? `${userActiveAddress.substring(
-                0,
-                8,
-              )}...${userActiveAddress.substring(userActiveAddress.length - 8)}`
-            : 'EMPTY',
-          stackTrace: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
         },
       );
-      // Full re-initialization when returning from settings
-      // This ensures everything is properly set up for the current network
-      if (network && apiBase) {
-        dbg(
-          '[WalletHome] Focus - NetworkContext is ready, performing full re-initialization',
-          {
-            timestamp: Date.now(),
-            network,
-            apiBase,
-          },
-        );
-        await reinitializeWallet(true);
-      }
+      await reinitializeWallet(true);
     });
     return unsubscribe;
-  }, [nav, network, apiBase, reinitializeWallet, address, userActiveAddress]);
-  // Listen for app state changes (simplified)
+  }, [nav, network, apiBase, reinitializeWallet]);
+  // Listen for app state changes — just refresh balance/price on resume.
+  // Address derivation is unnecessary here (nothing changes while backgrounded).
+  // SyncCoordinator has its own AppState listener for background sync.
   useEffect(() => {
-    const handleAppStateChange = async (nextAppState: string) => {
-      if (nextAppState === 'active') {
-        const resumeTime = Date.now();
-        dbg('[WalletHome] === App resumed, refreshing data', {
-          timestamp: resumeTime,
-          network,
-          apiBase,
-          currentAddress: address
-            ? `${address.substring(0, 8)}...${address.substring(
-                address.length - 8,
-              )}`
-            : 'EMPTY',
-          userActiveAddress: userActiveAddress
-            ? `${userActiveAddress.substring(
-                0,
-                8,
-              )}...${userActiveAddress.substring(userActiveAddress.length - 8)}`
-            : 'EMPTY',
-          addressType,
-          userAddressType,
-        });
-        // Simply refresh data on app resume
-        if (network && apiBase) {
-          dbg(
-            '[BALANCE] AppState active — scheduling fetchData.',
-            'isReinitInProgress:', isReinitInProgressRef.current,
-            'isFetchInProgress:', isFetchInProgressRef.current,
-          );
-          updateAddressForNetwork(network);
-          updateAddressTypeModal(network);
-          fetchDataRef.current?.();
-        }
+    const handleAppStateChange = (nextAppState: string) => {
+      if (nextAppState === 'active' && isInitializedRef.current && network && apiBase) {
+        dbg('[WalletHome] === App resumed, scheduling fetchData');
+        fetchDataRef.current?.();
       }
     };
     const subscription = AppState.addEventListener(
@@ -1314,16 +1028,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     return () => {
       subscription?.remove();
     };
-  }, [
-    network,
-    apiBase,
-    updateAddressForNetwork,
-    updateAddressTypeModal,
-    address,
-    userActiveAddress,
-    addressType,
-    userAddressType,
-  ]);
+  }, [network, apiBase]);
   // No periodic check needed - NetworkContext is the single source of truth
   const cacheIndicatorRef = useRef<CacheIndicatorHandle>(null);
   const {theme} = useTheme();
@@ -1459,49 +1164,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     setSelectedCurrency(appConfigRepository.get(CONFIG_KEYS.CURRENCY) || 'USD');
     setIsBlurred(appConfigRepository.get(CONFIG_KEYS.BALANCE_HIDDEN) === 'true');
   }, []);
-  // Simplified focus effect - just refresh data when screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      dbg('=== Home screen focused, refreshing data');
-      // Guard: skip if reinitializeWallet is already running (the focus nav
-      // listener fires concurrently and calls reinitializeWallet which calls
-      // fetchData at the end — a duplicate fetch here would race with it and
-      // could overwrite the correct balance with a transient 0).
-      if (
-        network &&
-        apiBase &&
-        !isReinitInProgressRef.current &&
-        !isFetchInProgressRef.current
-      ) {
-        dbg('[BALANCE] useFocusEffect: no active reinit or fetch — calling fetchData');
-        updateAddressForNetwork(network);
-        updateAddressTypeModal(network);
-        fetchDataRef.current?.();
-      } else {
-        dbg(
-          '[BALANCE] useFocusEffect: SKIPPED fetchData —',
-          'isReinitInProgress:', isReinitInProgressRef.current,
-          'isFetchInProgress:', isFetchInProgressRef.current,
-          'network:', network, 'apiBase:', !!apiBase,
-        );
-      }
-    }, [network, apiBase, updateAddressForNetwork, updateAddressTypeModal]),
-  );
-  // Watch for network changes: derive address for that network, update modal previews, then refresh data
-  useEffect(() => {
-    if (network && apiBase && !isReinitInProgressRef.current) {
-      (async () => {
-        try {
-          await updateAddressForNetwork(network);
-          await updateAddressTypeModal(network);
-        } catch (e) {
-          dbg('Error updating address for network change', e);
-        } finally {
-          fetchDataRef.current?.();
-        }
-      })();
-    }
-  }, [network, apiBase, updateAddressForNetwork, updateAddressTypeModal]);
   // Check for txId in route params and show success alert with explorer link
   useEffect(() => {
     const txId = route.params?.txId;
@@ -1562,16 +1224,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const handleCurrencySelect = async (currency: {code: string}) => {
     setSelectedCurrency(currency.code);
     appConfigRepository.set(CONFIG_KEYS.CURRENCY, currency.code);
-    if (priceData[currency.code]) {
-      const formattedPrice = priceData[currency.code].toFixed(2);
-      setBtcPrice(formattedPrice);
-      setBtcRate(priceData[currency.code]);
-      // Update fiat balance with new currency rate
-      if (balanceBTC) {
-        const newBalance = Number(balanceBTC) * priceData[currency.code];
-        setBalanceFiat(newBalance.toFixed(2) || '-');
-      }
-    }
+    refreshFromDBRef.current();
   };
   // Add effect to initialize app
   useEffect(() => {
@@ -1588,19 +1241,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             network || appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
           const initAddrType =
             appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'segwit-native';
-          const initAgg = balanceRepository.getBalance(
-            `aggregate_${initNet}_${initAddrType}`,
-            initNet,
-          );
-          dbg(
-            '[BALANCE] init: pre-skeleton DB seed —',
-            'key:', `aggregate_${initNet}_${initAddrType}`,
-            'found:', initAgg ? initAgg.balanceSats + ' sats' : 'NOT FOUND',
-          );
-          if (initAgg && initAgg.balanceSats > 0) {
-            setBalanceBTC((initAgg.balanceSats / 1e8).toFixed(8));
-            setPendingSats(initAgg.pendingSats ?? 0);
-          }
+          dbg('[BALANCE] init: pre-skeleton DB seed via refreshFromDB');
+          refreshFromDBRef.current();
         }
 
         setLoading(true);
@@ -1608,6 +1250,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         if (!jks) {
           dbg('WalletHome: No keyshare found during initialization');
           setLoading(false);
+          isInitializedRef.current = true;
           setIsInitialized(true);
           navigation.reset({index: 0, routes: [{name: 'Welcome'}]});
           return;
@@ -1682,9 +1325,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           appConfigRepository.set(CONFIG_KEYS.ADDRESS_TYPE, addrType);
           dbg('WalletHome: Setting default address type to segwit-native');
         }
-        // Set default currency if not set; preserve the user's existing choice
+        // Use cached price for fast init — the live price will be fetched by
+        // fetchData() right after isInitialized is set to true.  Calling
+        // getBitcoinPrice() here would block initialization for 5-35 s while
+        // the round-robin tries every endpoint on a slow connection.
         let currency = appConfigRepository.get(CONFIG_KEYS.CURRENCY);
-        const priceResponse = await walletService.getBitcoinPrice();
+        const priceResponse = await walletService.getCachePrice();
         if (!currency) {
           const availableCurrencies = Object.keys(priceResponse.rates);
           currency = availableCurrencies.includes('USD')
@@ -1748,56 +1394,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         } else {
           appConfigRepository.set('api', base);
         }
-        // Initialize cache timestamps from WalletService (works offline)
-        // Seed UI with cached price/balance immediately (no network needed)
-        if (priceResponse && priceResponse.rates) {
-          setPriceData(priceResponse.rates);
-          const r = priceResponse.rates[currency] || priceResponse.rate || 0;
-          if (r && r > 0) {
-            setBtcPrice(r.toString());
-            setBtcRate(r);
-          }
-        }
-        // Use HD aggregate balance (all addresses) as the source of truth.
-        // getBal(singleAddress) only covers ONE receive address and returns 0
-        // for HD wallets where balance is spread across many addresses —
-        // that 0 would overwrite the correct early-preload value.
-        const cachedAggregate =
-          await WalletService.getInstance().getCachedAggregateBalance(
-            net || 'mainnet',
-            addrType || 'segwit-native',
-          );
-        const cachedBal =
-          cachedAggregate ??
-          (await WalletService.getInstance().getBal(btcAddress));
-        dbg(
-          '[BALANCE] init: cache seed —',
-          'aggregate found:', cachedAggregate ? cachedAggregate.btc + ' BTC' : 'NO',
-          'fallback getBal:', !cachedAggregate ? 'yes' : 'no',
-          'final btc:', cachedBal.btc,
-        );
-        if (cachedBal) {
-          // Normalize balance to ensure no negative zero
-          const normalizedBTC = cachedBal.btc || '0.00000000';
-          const balanceNum = parseFloat(normalizedBTC);
-          const finalBTC = balanceNum <= 0 ? '-' : normalizedBTC;
-          dbg('[BALANCE] init: setBalanceBTC =', finalBTC);
-          setBalanceBTC(finalBTC);
-          setPendingSats(cachedBal.pendingSats ?? 0);
-          const r =
-            (priceResponse?.rates?.[currency] as number) ||
-            (priceResponse?.rate as number) ||
-            0;
-          if (r && Number(cachedBal.btc) > 0) {
-            const fiatBalance = Number(cachedBal.btc) * r;
-            setBalanceFiat(Math.max(0, fiatBalance).toFixed(2));
-          }
-        }
-        setCacheTimestamps({
-          price: priceResponse.timestamp,
-          balance: priceResponse.timestamp,
-        });
+        // DB → UI: seed price + balance from SQLite
+        refreshFromDBRef.current();
         setLoading(false);
+        isInitializedRef.current = true;
         setIsInitialized(true);
         // Check if this is a legacy wallet and show migration modal if needed
         // Modal shows by default unless user checked "do not remind" (flag = "yes")
@@ -1833,25 +1433,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     showPsbtTab,
     showWalletTab,
   ]);
-  // Remove the old interval effect since we're handling it in CacheIndicator now
-  // Initial data fetch only when initialized and address is set
-  useEffect(() => {
-    if (!isInitialized || !address) {
-      return;
-    }
-    // Only fetch once when initialized
-    let mounted = true;
-    const initialFetch = async () => {
-      if (mounted && fetchDataRef.current) {
-        await fetchDataRef.current();
-      }
-    };
-    initialFetch();
-    return () => {
-      mounted = false;
-    };
-  }, [isInitialized, address, activeNetwork, showMempoolPlayground]);
-
   // Start background sync once the full HD address set is known.
   // SyncCoordinator writes deltas to SQLite; the UI reads from the DB.
   useEffect(() => {
@@ -1869,6 +1450,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       network,
       addressType: effectiveAddrType,
       apiBase: `${cleanApi}/api`,
+      onSyncComplete: () => {
+        dbg('[WalletHome] SyncCoordinator cycle complete — refreshing UI from DB');
+        refreshFromDBRef.current();
+      },
       onAddressesChanged: (newAddrs: string[]) => {
         dbg('[WalletHome] SyncCoordinator discovered new addresses', newAddrs.length);
         setWalletAddresses(newAddrs);

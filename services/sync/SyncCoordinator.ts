@@ -28,11 +28,11 @@ import {WalletService} from '../WalletService';
 import walletRepository from '../repositories/WalletRepository';
 import {dbg} from '../../utils';
 
-const BALANCE_INTERVAL_MS = 30_000;
+const BALANCE_INTERVAL_MS = 120_000;
 const HD_DISCOVERY_INTERVAL_MS = 1_200_000; // 20 minutes
-const PRICE_INTERVAL_MS = 120_000;
-const UTXO_INTERVAL_MS = 120_000;
-const TX_INTERVAL_MS = 120_000;
+const PRICE_INTERVAL_MS = 240_000;
+const UTXO_INTERVAL_MS = 180_000;
+const TX_INTERVAL_MS = 180_000;
 const HD_DISCOVERY_STALE_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 export interface SyncStatus {
@@ -186,9 +186,11 @@ class SyncCoordinator {
         network,
         addressType,
         apiBase,
-        (chain) => {
+        chain => {
           this._config?.onSyncStatus?.({
-            label: `Scanning ${chain === 'external' ? 'receive' : 'change'} addresses…`,
+            label: `Scanning ${
+              chain === 'external' ? 'receive' : 'change'
+            } addresses…`,
           });
         },
       );
@@ -251,10 +253,25 @@ class SyncCoordinator {
   private async _syncUtxos(): Promise<void> {
     if (!this._config) return;
     try {
+      // Resolve derivation paths from the cached HD address list so the
+      // utxos table stores them (needed by getUtxosForNetwork filtering).
+      let pathMap: Map<string, string> | undefined;
+      try {
+        const hdAddrs =
+          await WalletService.getInstance().getHdAddressesWithPaths(
+            this._config.network,
+            this._config.addressType || 'segwit-native',
+          );
+        pathMap = new Map(hdAddrs.map(a => [a.address, a.derivationPath]));
+      } catch {
+        // Derivation unavailable — fall through with whatever config has
+      }
+
       const entries: UtxoEntry[] = this._config.addresses.map(a => ({
         address: a.address,
         network: a.network,
-        derivationPath: a.derivationPath,
+        derivationPath:
+          a.derivationPath || pathMap?.get(a.address) || undefined,
       }));
       await utxoSyncer.syncAddresses(entries, this._config.apiBase);
     } catch (err) {

@@ -7,13 +7,19 @@
  *   1. CACHE — A successful (HTTP 200) response is reused for subsequent
  *      identical requests within the TTL window.  Failed responses are never
  *      cached, so a transient error never poisons the cache.
+ *      Cache keys are host-independent: the same endpoint path served by
+ *      different public hosts shares a single entry.
  *
  *   2. DEDUP — If two callers request the same URL while the first request is
  *      still in-flight, both await the same Promise.  Only one HTTP request
  *      is made.
  *
+ *   3. FAILOVER — When the current API host is a known public mempool instance,
+ *      a failed request is automatically retried on alternative public hosts
+ *      (round-robin).  Custom (user-set) API bases are never failed-over.
+ *
  * TTL defaults:
- *   - /address/…           5 s   (balance, UTXOs, transactions — default)
+ *   - /address/…           15 s  (balance, UTXOs, transactions — default)
  *   - /v1/fees/recommended 30 s  (updates ~every block, no need to hammer)
  *   - /v1/prices           60 s  (price ticks slowly relative to UI refresh)
  *   - /tx/{txid}           5 min (confirmed tx content is immutable)
@@ -81,6 +87,25 @@ function parseRetryAfter(value: string | null): number | null {
   return null;
 }
 
+/**
+ * Strips protocol://host[:port] from a URL, returning only /path?query.
+ * This makes cache keys host-independent so the same endpoint served by
+ * different public API hosts shares a single cache entry.
+ *
+ *   'https://mempool.space/api/address/bc1q.../txs'  → '/api/address/bc1q.../txs'
+ *   'https://other.host/testnet/api/v1/prices'       → '/testnet/api/v1/prices'
+ */
+function stripHost(url: string): string {
+  const m = url.match(/^https?:\/\/[^/]+(\/.*)/);
+  return m ? m[1] : url;
+}
+
+/** Extract protocol + host[:port] from a URL. */
+function extractHost(url: string): string {
+  const m = url.match(/^(https?:\/\/[^/]+)/);
+  return m ? m[1] : '';
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -133,15 +158,17 @@ function ttlForUrl(url: string): number {
 }
 
 // ---------------------------------------------------------------------------
-// Cache key
+// Cache key — host-independent
 // ---------------------------------------------------------------------------
 
 /**
- * Builds a stable string key from URL + optional request body.
- * Query parameters are already part of the URL string.
+ * Builds a stable string key from the URL's path (+query) and optional body.
+ * The host portion is stripped so the same endpoint served by different hosts
+ * (e.g. mempool.space vs a mirror) shares a single cache entry and TTL.
  */
 function buildKey(url: string, body?: string): string {
-  return body ? `${url}\x00${body}` : url;
+  const path = stripHost(url);
+  return body ? `${path}\x00${body}` : path;
 }
 
 // ---------------------------------------------------------------------------
@@ -151,15 +178,24 @@ function buildKey(url: string, body?: string): string {
 class MempoolClient {
   private static _instance: MempoolClient;
 
-  /** Successful response cache, keyed by buildKey(). */
+  /** Successful response cache, keyed by buildKey() (host-independent). */
   private readonly _cache = new Map<string, CacheEntry>();
 
   /**
    * In-flight request deduplication.
-   * A key present here means an HTTP request is already running for that URL.
-   * New callers receive the same Promise, so only one network round-trip runs.
+   * Key is host-independent, so concurrent requests for the same endpoint
+   * via different hosts share a single in-flight promise.
    */
   private readonly _inflight = new Map<string, Promise<MempoolResponse<unknown>>>();
+
+  /**
+   * Known public API hosts (protocol + hostname, no trailing /api).
+   * Requests targeting one of these hosts will failover to the others on error.
+   */
+  private _publicHosts: string[] = [];
+
+  /** Round-robin index for distributing failover attempts. */
+  private _rrIndex = 0;
 
   private constructor() {}
 
@@ -168,6 +204,59 @@ class MempoolClient {
       MempoolClient._instance = new MempoolClient();
     }
     return MempoolClient._instance;
+  }
+
+  // -------------------------------------------------------------------------
+  // Public host configuration (for round-robin failover)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Register the known public API base URLs (e.g. from getMainnetAPIList).
+   * Accepts URLs with or without a trailing `/api` — the suffix is stripped
+   * to produce bare host strings for matching against request URLs.
+   *
+   * When a request targeting one of these hosts fails, MempoolClient will
+   * transparently retry on the other public hosts before giving up.
+   * Custom (user-set) API bases that are NOT in this list are never
+   * failed-over — the single host is used as-is.
+   */
+  setPublicBases(bases: string[]): void {
+    const hosts = [
+      ...new Set(
+        bases
+          .map(b => b.replace(/\/+$/, '').replace(/\/api\/?$/, ''))
+          .filter(Boolean),
+      ),
+    ];
+    if (hosts.length > 0) {
+      this._publicHosts = hosts;
+      dbg('MempoolClient: public hosts updated —', hosts);
+    }
+  }
+
+  /**
+   * Return alternative URLs for round-robin failover.
+   * Empty array if the URL is on a custom host or testnet.
+   */
+  private _getFailoverUrls(url: string): string[] {
+    if (this._publicHosts.length <= 1) return [];
+    // Testnet only has one known host — no failover targets.
+    if (url.includes('/testnet/')) return [];
+
+    const host = extractHost(url);
+    if (!host) return [];
+    if (!this._publicHosts.includes(host)) return [];
+
+    const path = url.slice(host.length);
+    const alts: string[] = [];
+    for (let i = 1; i <= this._publicHosts.length; i++) {
+      const idx = (this._rrIndex + i) % this._publicHosts.length;
+      if (this._publicHosts[idx] !== host) {
+        alts.push(this._publicHosts[idx] + path);
+      }
+    }
+    this._rrIndex = (this._rrIndex + 1) % this._publicHosts.length;
+    return alts;
   }
 
   // -------------------------------------------------------------------------
@@ -206,58 +295,91 @@ class MempoolClient {
       return existing as Promise<MempoolResponse<T>>;
     }
 
-    // 3. Issue a new request -----------------------------------------------
+    // 3. Issue a new request (with failover for public hosts) --------------
     const ttl = init?.ttl ?? ttlForUrl(url);
 
     // Strip the custom `ttl` field so it is not forwarded to fetch().
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const {ttl: _ttl, signal: callerSignal, ...restInit} = (init ?? {}) as RequestInit & {ttl?: number};
 
+    const urls = [url, ...this._getFailoverUrls(url)];
+
     const promise = (async (): Promise<MempoolResponse<unknown>> => {
-      // Create a per-request timeout controller and combine with caller's signal.
-      const timeoutController = new AbortController();
-      const timeoutId = setTimeout(
-        () => timeoutController.abort(),
-        FETCH_TIMEOUT_MS,
-      );
-      const signal = combineSignals(callerSignal as AbortSignal | undefined, timeoutController.signal);
+      let lastResult: MempoolResponse<unknown> | null = null;
+      let lastError: unknown = null;
 
       try {
-        const res = await fetch(url, {...restInit, signal});
-
-        if (res.ok) {
-          const data = (await res.json()) as unknown;
-          this._cache.set(key, {data, expiresAt: Date.now() + ttl});
-          dbg(
-            'MempoolClient: cached',
-            url.slice(-80),
-            `(ttl ${ttl / 1000}s)`,
+        for (let attempt = 0; attempt < urls.length; attempt++) {
+          const tryUrl = urls[attempt];
+          const timeoutController = new AbortController();
+          const timeoutId = setTimeout(
+            () => timeoutController.abort(),
+            FETCH_TIMEOUT_MS,
           );
-          return {ok: true, status: res.status, data};
-        }
+          const signal = combineSignals(
+            callerSignal as AbortSignal | undefined,
+            timeoutController.signal,
+          );
 
-        // Non-2xx: do NOT cache — transient errors must not persist.
-        dbg('MempoolClient: non-ok response', res.status, url.slice(-80));
-        const out: MempoolResponse<unknown> = {
-          ok: false,
-          status: res.status,
-          data: null as unknown,
-        };
-        if (res.status === 429) {
-          const raw = res.headers.get('Retry-After');
-          const seconds = parseRetryAfter(raw);
-          if (seconds != null) {
-            out.retryAfterSeconds = Math.min(120, Math.max(1, seconds));
-            dbg('MempoolClient: 429 Retry-After', raw, '→', out.retryAfterSeconds, 's');
+          try {
+            const res = await fetch(tryUrl, {...restInit, signal});
+            clearTimeout(timeoutId);
+
+            if (res.ok) {
+              const data = (await res.json()) as unknown;
+              this._cache.set(key, {data, expiresAt: Date.now() + ttl});
+              dbg(
+                'MempoolClient: cached',
+                tryUrl.slice(-80),
+                `(ttl ${ttl / 1000}s)`,
+              );
+              return {ok: true, status: res.status, data};
+            }
+
+            // Non-2xx: do NOT cache — transient errors must not persist.
+            dbg('MempoolClient: non-ok response', res.status, tryUrl.slice(-80));
+            const out: MempoolResponse<unknown> = {
+              ok: false,
+              status: res.status,
+              data: null as unknown,
+            };
+            if (res.status === 429) {
+              const raw = res.headers.get('Retry-After');
+              const seconds = parseRetryAfter(raw);
+              if (seconds != null) {
+                out.retryAfterSeconds = Math.min(120, Math.max(1, seconds));
+                dbg('MempoolClient: 429 Retry-After', raw, '→', out.retryAfterSeconds, 's');
+              }
+            }
+            lastResult = out;
+
+            // Failover on server errors (5xx / 429), NOT on 4xx (client error).
+            if ((res.status >= 500 || res.status === 429) && attempt < urls.length - 1) {
+              dbg('MempoolClient: failover →', urls[attempt + 1].slice(-80));
+              continue;
+            }
+            return out;
+          } catch (err) {
+            clearTimeout(timeoutId);
+            lastError = err;
+            dbg('MempoolClient: fetch error', tryUrl.slice(-80), err);
+
+            // Explicit caller abort — stop immediately, don't failover.
+            if ((callerSignal as AbortSignal | undefined)?.aborted) {
+              throw err;
+            }
+
+            if (attempt < urls.length - 1) {
+              dbg('MempoolClient: failover →', urls[attempt + 1].slice(-80));
+              continue;
+            }
           }
         }
-        return out as MempoolResponse<T>;
-      } catch (err) {
-        // Network error, timeout, or abort: propagate so callers can handle it.
-        dbg('MempoolClient: fetch error', url.slice(-80), err);
-        throw err;
+
+        // All URLs exhausted.
+        if (lastResult) return lastResult;
+        throw lastError;
       } finally {
-        clearTimeout(timeoutId);
         // Always remove the in-flight entry so future callers get a fresh attempt.
         this._inflight.delete(key);
       }
@@ -272,23 +394,38 @@ class MempoolClient {
   // -------------------------------------------------------------------------
 
   /**
-   * Removes all cache entries whose key begins with `urlPrefix`.
-   * Useful after a transaction is broadcast to immediately allow fresh UTXO
-   * and balance data for a specific address.
+   * Removes all cache entries whose key begins with the endpoint-path form
+   * of `urlPrefix`.  Callers can pass a full URL — the host is stripped
+   * automatically before matching.
    *
    * Example:
    *   mempoolClient.invalidate(`${apiBase}/api/address/${address}`);
    */
   invalidate(urlPrefix: string): void {
+    const prefix = stripHost(urlPrefix);
     let count = 0;
     for (const key of this._cache.keys()) {
-      if (key.startsWith(urlPrefix)) {
+      if (key.startsWith(prefix)) {
         this._cache.delete(key);
         count++;
       }
     }
     if (count > 0) {
-      dbg('MempoolClient: invalidated', count, 'entries matching', urlPrefix);
+      dbg('MempoolClient: invalidated', count, 'entries matching', prefix);
+    }
+  }
+
+  /**
+   * Evicts in-flight dedup entries whose key begins with `urlPrefix`
+   * (host-stripped automatically).
+   * Call before retrying a request that was deduped to a stale/failing fetch.
+   */
+  evictInflight(urlPrefix: string): void {
+    const prefix = stripHost(urlPrefix);
+    for (const key of this._inflight.keys()) {
+      if (key.startsWith(prefix)) {
+        this._inflight.delete(key);
+      }
     }
   }
 
