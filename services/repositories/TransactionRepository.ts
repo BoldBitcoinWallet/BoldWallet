@@ -148,6 +148,28 @@ class TransactionRepository {
     }
   }
 
+  /**
+   * Ensure transaction_addresses rows exist for the given mappings.
+   * Cheap no-op when the links already exist (INSERT OR IGNORE).
+   */
+  ensureAddressLinks(links: TxAddressMapping[]): void {
+    if (!links.length) return;
+    try {
+      database.transaction(svc => {
+        for (const m of links) {
+          svc.execute(
+            `INSERT OR IGNORE INTO transaction_addresses
+               (txid, network, address, net_sats)
+             VALUES (?, ?, ?, ?)`,
+            [m.txid, m.network, m.address, m.netSats ?? null],
+          );
+        }
+      });
+    } catch (err) {
+      dbg('TransactionRepository.ensureAddressLinks error', err);
+    }
+  }
+
   /** Get all transactions touching a given address, ordered newest first. */
   getTransactionsForAddress(
     address: string,

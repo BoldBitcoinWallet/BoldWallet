@@ -19,6 +19,7 @@ import syncRepository from '../repositories/SyncRepository';
 import {INTER_ADDRESS_DELAY_MS, sleep, with429Retry} from './rateLimitRetry';
 import {dbg} from '../../utils';
 import type {TxRecord, TxAddressMapping} from '../repositories/TransactionRepository';
+type AddressLink = TxAddressMapping;
 
 const PAGE_SIZE = 25;
 const MAX_PAGES_PER_ADDRESS = 20;
@@ -65,6 +66,7 @@ class TransactionSyncer {
       addresses[0]?.network ?? 'mainnet',
     );
     const allBatches: Array<{tx: TxRecord; addresses: TxAddressMapping[]}> = [];
+    const missingLinks: AddressLink[] = [];
     const cursors: Array<{entityKey: string; cursor: string | null}> = [];
 
     for (let addrIndex = 0; addrIndex < addresses.length; addrIndex++) {
@@ -123,6 +125,12 @@ class TransactionSyncer {
                   apiTx.status.block_hash,
                 );
               }
+              missingLinks.push({
+                txid: apiTx.txid,
+                network,
+                address,
+                netSats: this._computeNetSats(apiTx, address),
+              });
               continue;
             }
             hasNew = true;
@@ -178,6 +186,9 @@ class TransactionSyncer {
     for (const batch of allBatches) {
       transactionRepository.upsertTransactionBatch([batch]);
     }
+    if (missingLinks.length) {
+      transactionRepository.ensureAddressLinks(missingLinks);
+    }
     for (const {entityKey, cursor} of cursors) {
       syncRepository.updateCursor('transactions', entityKey, cursor, 'ok');
     }
@@ -226,6 +237,7 @@ class TransactionSyncer {
         }
 
         const batch: Array<{tx: TxRecord; addresses: TxAddressMapping[]}> = [];
+        const links: AddressLink[] = [];
         let hasNew = false;
 
         for (const apiTx of page) {
@@ -244,6 +256,12 @@ class TransactionSyncer {
                 apiTx.status.block_hash,
               );
             }
+            links.push({
+              txid: apiTx.txid,
+              network,
+              address,
+              netSats: this._computeNetSats(apiTx, address),
+            });
             continue;
           }
 
@@ -275,6 +293,9 @@ class TransactionSyncer {
 
         if (batch.length) {
           transactionRepository.upsertTransactionBatch(batch);
+        }
+        if (links.length) {
+          transactionRepository.ensureAddressLinks(links);
         }
 
         const lastConfirmed = [...page]
