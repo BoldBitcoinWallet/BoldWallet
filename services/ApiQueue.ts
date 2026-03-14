@@ -85,6 +85,19 @@ class ApiQueue {
     });
   }
 
+  /**
+   * Drop all pending jobs and reject them. The currently running job (if any)
+   * is NOT aborted — it will finish naturally but its result is discarded by
+   * the caller since the network/context has changed.
+   */
+  clear(): void {
+    const pending = this._queue.splice(0);
+    for (const {label, reject} of pending) {
+      reject(new Error(`ApiQueue cleared — job "${label}" dropped`));
+    }
+    dbg('ApiQueue: cleared', pending.length, 'pending jobs');
+  }
+
   private _drain(): void {
     if (this._running || this._queue.length === 0) return;
 

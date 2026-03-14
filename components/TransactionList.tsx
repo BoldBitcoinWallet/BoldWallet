@@ -855,23 +855,20 @@ const TransactionList = React.forwardRef<
     }, [isRefreshing]);
     // Fix transaction refresh handling
     useEffect(() => {
-      const hasAddress = address || (isMultiAddress && addresses!.length > 0);
+      const hasAddress = address || (isMultiAddress && addresses && addresses.length > 0);
       if (!hasAddress || !baseApi || baseApi === '') {
         dbg('Skipping transaction fetch - address/baseApi not initialized', {
           address,
           addresses: isMultiAddress ? addresses?.length : 0,
           baseApi,
         });
-        setTransactions([]);
-        setHasMoreTransactions(true);
-        setLastSeenTxId(null);
+        // Don't wipe existing transactions — the addresses may be temporarily
+        // undefined during a state transition. Preserve whatever is on screen.
         setLoading(false);
         setIsRefreshing(false);
         return;
       }
       // Pre-populate from DB so cached rows are visible while the live fetch runs.
-      // This replaces the eager setTransactions([]) that left the list empty on
-      // address/network change and on first mount while offline.
       let mounted = true;
       (async () => {
         try {
@@ -884,8 +881,7 @@ const TransactionList = React.forwardRef<
               : await WalletService.getInstance().transactionsFromCache(
                   address || '',
                 );
-          // Only pre-populate if no live fetch has already set newer data.
-          if (mounted && cached.length > 0 && !isFetching.current) {
+          if (mounted && cached.length > 0) {
             setTransactions(cached);
           }
         } catch {

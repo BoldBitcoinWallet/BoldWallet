@@ -20,11 +20,7 @@ import Animated, {
   useAnimatedStyle,
 } from 'react-native-reanimated';
 import QRScanner from '../components/QRScanner';
-import {
-  useNavigation,
-  useRoute,
-  RouteProp,
-} from '@react-navigation/native';
+import {useNavigation, useRoute, RouteProp} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {AppState} from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
@@ -46,7 +42,6 @@ import {
   getCurrencySymbol,
   HapticFeedback,
   getKeyshareLabel,
-  getDerivePathForNetwork,
   getReceivePath,
   isLegacyWallet,
   decodeSendBitcoinQR,
@@ -74,13 +69,17 @@ import {
   HeaderProvider,
   HeaderNetwork,
 } from '../components/Header';
-import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
+import appConfigRepository, {
+  CONFIG_KEYS,
+} from '../services/repositories/AppConfigRepository';
 
 import walletRepository from '../services/repositories/WalletRepository';
 import balanceRepository from '../services/repositories/BalanceRepository';
 import priceRepository from '../services/repositories/PriceRepository';
 import {getExternalIndex} from '../services/HdIndexService';
-import syncCoordinator, {type SyncStatus} from '../services/sync/SyncCoordinator';
+import syncCoordinator, {
+  type SyncStatus,
+} from '../services/sync/SyncCoordinator';
 import apiQueue from '../services/ApiQueue';
 import database from '../services/Database';
 import mempoolClient from '../services/MempoolClient';
@@ -96,8 +95,12 @@ type RouteParams = {
 };
 const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
-  const [address, setAddress] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(true);
+  // Seed from persisted config so the wallet UI can render immediately
+  const cachedAddress =
+    appConfigRepository.get(CONFIG_KEYS.CURRENT_ADDRESS) || '';
+  const hasCachedData = cachedAddress.length > 0;
+  const [address, setAddress] = useState<string>(cachedAddress);
+  const [loading, setLoading] = useState<boolean>(!hasCachedData);
   const [isSendModalVisible, setIsSendModalVisible] = useState<boolean>(false);
   const [isTransportModalVisible, setIsTransportModalVisible] =
     useState<boolean>(false);
@@ -121,7 +124,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [balanceFiat, setBalanceFiat] = useState<string>('0');
   const [pendingSats, setPendingSats] = useState<number>(0);
   const [_party, setParty] = useState<string>('');
-  const [isBlurred, setIsBlurred] = useState<boolean>(false);
+  const [isBlurred, setIsBlurred] = useState<boolean>(
+    appConfigRepository.get(CONFIG_KEYS.BALANCE_HIDDEN) === 'true',
+  );
   const [isReceiveModalVisible, setIsReceiveModalVisible] = useState(false);
   const [isRestoringIndexes, setIsRestoringIndexes] = useState(false);
   const [restoreProgress, setRestoreProgress] = useState<{
@@ -143,11 +148,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     React.useState(false);
   const [_legacyAddress, setLegacyAddress] = React.useState('');
   const [_segwitAddress, setSegwitAddress] = React.useState('');
-  const [addressType, setAddressType] = React.useState('');
+  const [addressType, setAddressType] = React.useState(
+    appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || '',
+  );
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
   const isInitializedRef = useRef(false);
   const [isSending, setIsSending] = useState<boolean>(false);
-  const [_error, setError] = useState<string>('');
+  const [_error, _setError] = useState<string>('');
   const [cacheTimestamps, setCacheTimestamps] = useState<CacheTimestamp>({
     price: 0,
     balance: 0,
@@ -156,13 +163,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [apiQueueState, setApiQueueState] = useState<{
     label: string | null;
-    progress?: { current: number; total: number };
+    progress?: {current: number; total: number};
   } | null>(null);
   const [isCheckingBalanceForSend, setIsCheckingBalanceForSend] =
     useState(false);
   const [isCurrencySelectorVisible, setIsCurrencySelectorVisible] =
     useState(false);
-  const [selectedCurrency, setSelectedCurrency] = useState('');
+  const [selectedCurrency, setSelectedCurrency] = useState(
+    appConfigRepository.get(CONFIG_KEYS.CURRENCY) || 'USD',
+  );
   const [isQRScannerVisible, setIsQRScannerVisible] = useState(false);
   const [extensionResponseQrData, setExtensionResponseQrData] = useState<
     string | null
@@ -222,12 +231,25 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [_segwitCompatibleAddress, setSegwitCompatibleAddress] =
     React.useState('');
   const [initialTransactions, setInitialTransactions] = useState<any[]>([]);
-  const [walletAddresses, setWalletAddresses] = useState<string[]>([]);
-  // true once getHdAddressesWithPaths has resolved for the first time.
-  // TransactionList must not fire in single-address mode while HD derivation is
-  // still running (2-5 s when hdAddressCache is cold), otherwise it fetches only
-  // the current receive address (likely unused, 0 txs) and caches that stale result.
-  const [walletAddressesReady, setWalletAddressesReady] = useState(false);
+  // Seed walletAddresses from DB synchronously so refreshFromDB / SyncCoordinator
+  // can use them before the async HD derivation completes.
+  const [walletAddresses, setWalletAddresses] = useState<string[]>(() => {
+    if (!hasCachedData) return [];
+    const initNet = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
+    const initType =
+      appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'segwit-native';
+    const receive = walletRepository.getAddresses(initNet, initType, 0);
+    const change = walletRepository.getAddresses(initNet, initType, 1);
+    return [...receive, ...change].map(a => a.address);
+  });
+  const [walletAddressesReady, setWalletAddressesReady] = useState(() => {
+    if (!hasCachedData) return false;
+    const initNet = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
+    const initType =
+      appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'segwit-native';
+    const hdState = walletRepository.getHdState(initNet, initType);
+    return !!hdState?.restoreDone;
+  });
   // Animation and visual feedback states
   const [isBalanceLoading, setIsBalanceLoading] = useState(false);
   const balanceUpdateAnimation = useSharedValue(1);
@@ -355,9 +377,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     let totalSats = 0;
     let totalPending = 0;
     let newestFetch = 0;
-    const addrs = walletAddresses.length > 0
-      ? walletAddresses
-      : address ? [address] : [];
+    const addrs =
+      walletAddresses.length > 0 ? walletAddresses : address ? [address] : [];
 
     for (const a of addrs) {
       const stored = balanceRepository.getBalance(a, network);
@@ -383,7 +404,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
     const btc = (totalSats / 1e8).toFixed(8);
     const balStr = totalSats > 0 ? btc : newestFetch > 0 ? '0.00000000' : '-';
-    if (balStr !== previousBalanceRef.current && previousBalanceRef.current !== '0.00000000') {
+    if (
+      balStr !== previousBalanceRef.current &&
+      previousBalanceRef.current !== '0.00000000'
+    ) {
       balanceUpdateAnimation.value = 0;
       balanceUpdateAnimation.value = withTiming(1, {duration: 300});
       HapticFeedback.light();
@@ -400,7 +424,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       setBtcRate(dbPrice.rate);
       const fiat = (totalSats / 1e8) * dbPrice.rate;
       setBalanceFiat(Math.max(0, fiat).toFixed(2));
-      setCacheTimestamps({ price: dbPrice.timestamp, balance: newestFetch });
+      setCacheTimestamps({price: dbPrice.timestamp, balance: newestFetch});
     }
 
     setBalanceError(null);
@@ -420,7 +444,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     balanceUpdateAnimation,
   ]);
   const refreshFromDBRef = useRef(refreshFromDB);
-  useEffect(() => { refreshFromDBRef.current = refreshFromDB; }, [refreshFromDB]);
+  useEffect(() => {
+    refreshFromDBRef.current = refreshFromDB;
+  }, [refreshFromDB]);
 
   // API → DB → UI: trigger API calls that write to DB, then refresh UI from DB.
   // Even if APIs fail, refreshFromDB still runs and shows whatever is in the DB.
@@ -430,8 +456,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       return;
     }
     if (isFetchInProgressRef.current || isReinitInProgressRef.current) {
-      dbg('[BALANCE] fetchData: SKIPPED —',
-        isFetchInProgressRef.current ? 'fetch in progress' : 'reinit in progress',
+      dbg(
+        '[BALANCE] fetchData: SKIPPED —',
+        isFetchInProgressRef.current
+          ? 'fetch in progress'
+          : 'reinit in progress',
       );
       return;
     }
@@ -455,19 +484,22 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     await BBMTLibNativeModule.setAPI(network, apiUrl);
 
     try {
-      const effectiveAddressType = addressType || userAddressType || 'segwit-native';
+      const effectiveAddressType =
+        addressType || userAddressType || 'segwit-native';
       // API → DB: getWalletBalanceAggregate writes per-address + aggregate to SQLite
-      await apiQueue.enqueue(
-        'Syncing balance…',
-        setProgress =>
-          WalletService.getInstance().getWalletBalanceAggregate(
-            network, effectiveAddressType, btcRate, _pendingSent, true, setProgress,
-          ),
+      await apiQueue.enqueue('Syncing balance…', setProgress =>
+        WalletService.getInstance().getWalletBalanceAggregate(
+          network,
+          effectiveAddressType,
+          btcRate,
+          _pendingSent,
+          true,
+          setProgress,
+        ),
       );
       // API → DB: getBitcoinPrice writes rates to price_rates table
-      await apiQueue.enqueue(
-        'Syncing fiat rate…',
-        () => WalletService.getInstance().getBitcoinPrice(),
+      await apiQueue.enqueue('Syncing fiat rate…', () =>
+        WalletService.getInstance().getBitcoinPrice(),
       );
     } catch (error) {
       dbg('[BALANCE] fetchData: API sync error (will read from DB):', error);
@@ -479,12 +511,16 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     // Sync walletAddresses with the current HD index state
     try {
       const addrType = addressType || userAddressType || 'segwit-native';
-      const freshAddrs = await WalletService.getInstance().getHdAddressesWithPaths(
-        network, addrType,
-      );
+      const freshAddrs =
+        await WalletService.getInstance().getHdAddressesWithPaths(
+          network,
+          addrType,
+        );
       const freshList = freshAddrs.map(a => a.address);
       setWalletAddresses(prev => {
-        const same = prev.length === freshList.length && prev.every((a, i) => a === freshList[i]);
+        const same =
+          prev.length === freshList.length &&
+          prev.every((a, i) => a === freshList[i]);
         return same ? prev : freshList;
       });
       setWalletAddressesReady(true);
@@ -497,15 +533,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     setIsRefreshing(false);
     isFetchInProgressRef.current = false;
     dbg('=== Data fetch completed');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    network,
-    btcRate,
-    _pendingSent,
-    apiBase,
-    addressType,
-    userAddressType,
-  ]);
+  }, [network, btcRate, _pendingSent, apiBase, addressType, userAddressType]);
   // Load HD addresses for multi-address transaction list.
   // If discovery has never been run for this (network, addressType), run it first
   // so indexes are correct — otherwise getHdAddressesWithPaths returns only 1 receive + 1 change.
@@ -514,13 +542,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   useEffect(() => {
     if (!isInitialized || !network || !(addressType || userAddressType)) return;
     const effectiveType = addressType || userAddressType || 'segwit-native';
-    setWalletAddressesReady(false);
+    const restoreDone =
+      walletRepository.getHdState(network, effectiveType)?.restoreDone === true;
+    // Only blank out the address list when we need full HD discovery.
+    // When restoreDone is true the derive resolves from cache in <5 ms and
+    // the DB-seeded addresses are already valid — flipping to false would
+    // cause TransactionList to wipe its cached rows for no reason.
+    if (!restoreDone) {
+      setWalletAddressesReady(false);
+    }
     let cancelled = false;
     const load = async () => {
       try {
         const ws = WalletService.getInstance();
-        const restoreDone =
-          walletRepository.getHdState(network, effectiveType)?.restoreDone === true;
         if (!restoreDone) {
           dbg(
             '[WalletHome] HD restore not done for',
@@ -529,7 +563,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             '- running discovery',
           );
           const apiUrl =
-            (appConfigRepository.get('api')) ||
+            appConfigRepository.get('api') ||
             (network === 'mainnet'
               ? 'https://mempool.space/api'
               : 'https://mempool.space/testnet/api');
@@ -564,8 +598,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       const addr =
         userActiveAddress ||
         address ||
-        (appConfigRepository.get(CONFIG_KEYS.CURRENT_ADDRESS));
-      const baseApi = apiBase || (appConfigRepository.get('api'));
+        appConfigRepository.get(CONFIG_KEYS.CURRENT_ADDRESS);
+      const baseApi = apiBase || appConfigRepository.get('api');
       if (!addr || !baseApi) {
         dbg('checkBalanceForSend: Missing wallet address or baseApi');
         return 0;
@@ -622,203 +656,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     addressType,
     userAddressType,
   ]);
-  // Function to update address type modal with new network addresses
-  const updateAddressTypeModal = useCallback(
-    async (newNetwork: string) => {
-      try {
-        dbg(
-          '=== updateAddressTypeModal: Updating addresses for network:',
-          newNetwork,
-        );
-        // Always derive btcPub fresh to ensure it matches the current address type
-        // This ensures consistency when the address type might have changed
-        let btcPub: string | null = null;
-        const jks = await EncryptedStorage.getItem('keyshare');
-        if (!jks) {
-          dbg('No keyshare found for address generation');
-          return;
-        }
-        const ks = JSON.parse(jks);
-        // Get current address type for derivation path - use state or cache
-        const currentAddressType =
-          addressType ||
-          (appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE)) ||
-          'segwit-native';
-        // Check if this is a legacy wallet (created before migration timestamp)
-        const useLegacyPath = isLegacyWallet(ks.created_at);
-        // Use newNetwork (not network) to ensure we're using the correct network
-        const path = getDerivePathForNetwork(
-          newNetwork,
-          currentAddressType,
-          useLegacyPath,
-        );
-        btcPub = await BBMTLibNativeModule.derivePubkey(
-          ks.pub_key,
-          ks.chain_code_hex,
-          path,
-        );
-        // Store it for future use
-        if (btcPub) {
-          await EncryptedStorage.setItem('btcPub', btcPub);
-          dbg('btcPub derived and stored for address type modal');
-        }
-        if (btcPub) {
-          // Generate addresses for all types for the new network
-          // Use correct address type constants: 'legacy', 'segwit-native', 'segwit-compatible'
-          const [legacyAddr, segwitAddr, segwitCompatibleAddr] =
-            await Promise.all([
-              BBMTLibNativeModule.btcAddress(btcPub!, newNetwork, 'legacy'),
-              BBMTLibNativeModule.btcAddress(
-                btcPub!,
-                newNetwork,
-                'segwit-native',
-              ),
-              BBMTLibNativeModule.btcAddress(
-                btcPub!,
-                newNetwork,
-                'segwit-compatible',
-              ),
-            ]);
-          if (legacyAddr) setLegacyAddress(legacyAddr);
-          if (segwitAddr) setSegwitAddress(segwitAddr);
-          if (segwitCompatibleAddr)
-            setSegwitCompatibleAddress(segwitCompatibleAddr);
-          dbg('Address type modal updated for network:', newNetwork);
-          dbg('Legacy:', legacyAddr);
-          dbg('Segwit:', segwitAddr);
-          dbg('Nested SegWit:', segwitCompatibleAddr);
-        } else {
-          dbg('Could not get or derive btcPub for address generation');
-        }
-      } catch (error) {
-        dbg('updateAddressTypeModal: Error updating addresses:', error);
-      }
-    },
-    [addressType],
-  );
-  // Function to update address for the new network
-  const updateAddressForNetwork = useCallback(
-    async (newNetwork: string) => {
-      try {
-        dbg(
-          '=== updateAddressForNetwork: Updating address for network:',
-          newNetwork,
-        );
-        // Get the current address type - prefer UserContext (single source of truth),
-        // then state, then cache, then default
-        const currentAddressType =
-          userAddressType ||
-          addressType ||
-          (appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE)) ||
-          'segwit-native';
-        dbg(
-          'Using address type:',
-          currentAddressType,
-          'for network:',
-          newNetwork,
-          '(from UserContext:',
-          userAddressType,
-          ', from state:',
-          addressType,
-          ')',
-        );
-        // Always derive btcPub fresh to ensure it matches the current address type
-        // This prevents issues where btcPub was derived with a different address type
-        let btcPub: string | null = null;
-        const jks = await EncryptedStorage.getItem('keyshare');
-        if (!jks) {
-          dbg('No keyshare found for address generation');
-          return;
-        }
-        const ks = JSON.parse(jks);
-        const useLegacyPath = isLegacyWallet(ks.created_at);
-        const externalIndex = await getExternalIndex(
-          newNetwork,
-          currentAddressType,
-        );
-        const path = getReceivePath(
-          newNetwork,
-          currentAddressType,
-          useLegacyPath,
-          externalIndex,
-        );
-        btcPub = await BBMTLibNativeModule.derivePubkey(
-          ks.pub_key,
-          ks.chain_code_hex,
-          path,
-        );
-        // Store it for future use
-        if (btcPub) {
-          await EncryptedStorage.setItem('btcPub', btcPub);
-          dbg(
-            'btcPub derived and stored with address type:',
-            currentAddressType,
-          );
-        }
-        if (btcPub) {
-          // Set up network parameters before generating address
-          const netParams = await BBMTLibNativeModule.setBtcNetwork(newNetwork);
-          const actualNet = netParams.split('@')[0];
-          const newAddress = await BBMTLibNativeModule.btcAddress(
-            btcPub!,
-            actualNet,
-            currentAddressType,
-          );
-          if (newAddress) {
-            const timestamp = Date.now();
-            dbg(
-              '[WalletHome] updateAddressForNetwork: Generated new address:',
-              {
-                timestamp,
-                address: newAddress,
-                shortAddress: `${newAddress.substring(
-                  0,
-                  8,
-                )}...${newAddress.substring(newAddress.length - 8)}`,
-                network: newNetwork,
-                addressType: currentAddressType,
-                derivationPath: path,
-                stackTrace: new Error().stack
-                  ?.split('\n')
-                  .slice(1, 4)
-                  .join(' -> '),
-              },
-            );
-            // Update state and cache
-            dbg(`[WalletHome] setAddress() called with:`, {
-              timestamp: Date.now(),
-              address: newAddress,
-              shortAddress: `${newAddress.substring(
-                0,
-                8,
-              )}...${newAddress.substring(newAddress.length - 8)}`,
-              previousAddress: address
-                ? `${address.substring(0, 8)}...${address.substring(
-                    address.length - 8,
-                  )}`
-                : 'EMPTY',
-            });
-            setAddress(newAddress);
-            appConfigRepository.set(CONFIG_KEYS.CURRENT_ADDRESS, newAddress);
-            appConfigRepository.set(CONFIG_KEYS.NETWORK, newNetwork);
-            // Also update the address type display if needed
-            if (newNetwork === 'testnet3') {
-              dbg('Testnet address generated and cached:', newAddress);
-            } else {
-              dbg('Mainnet address generated and cached:', newAddress);
-            }
-          } else {
-            dbg('Failed to generate address for network:', newNetwork);
-          }
-        } else {
-          dbg('Could not get or derive btcPub for address generation');
-        }
-      } catch (error) {
-        dbg('updateAddressForNetwork: Error updating address:', error);
-      }
-    },
-    [addressType, userAddressType, address],
-  );
   // Comprehensive re-initialization function
   const reinitializeWallet = useCallback(
     async (forceReinit: boolean = false) => {
@@ -872,7 +709,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         await walletService.initialize();
         const ks = JSON.parse(jks);
         const currentAddressType =
-          (appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE)) || 'segwit-native';
+          appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'segwit-native';
         const useLegacyPath = isLegacyWallet(ks.created_at);
         const externalIndex = await getExternalIndex(
           network,
@@ -895,11 +732,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('btcPub derived and stored during re-initialization');
         // Get current network from NetworkContext
         const net =
-          network || (appConfigRepository.get(CONFIG_KEYS.NETWORK)) || 'mainnet';
+          network || appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
         dbg('Re-initializing for network:', net);
         // Get current address type
         const addrType =
-          (appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE)) || 'segwit-native';
+          appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'segwit-native';
         setAddressType(addrType);
         // Set up network parameters
         const netParams = await BBMTLibNativeModule.setBtcNetwork(net);
@@ -966,7 +803,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           } catch {}
         }
         // Set up API URL from NetworkContext
-        const api = apiBase || (appConfigRepository.get('api'));
+        const api = apiBase || appConfigRepository.get('api');
         if (api) {
           await BBMTLibNativeModule.setAPI(actualNet, api);
           dbg('API set for network:', actualNet, 'API:', api);
@@ -999,14 +836,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       if (!network || !apiBase) {
         return;
       }
-      dbg(
-        '[WalletHome] === Navigation focus - reinitializing wallet',
-        {
-          timestamp: Date.now(),
-          network,
-          apiBase,
-        },
-      );
+      dbg('[WalletHome] === Navigation focus - reinitializing wallet', {
+        timestamp: Date.now(),
+        network,
+        apiBase,
+      });
       await reinitializeWallet(true);
     });
     return unsubscribe;
@@ -1016,7 +850,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   // SyncCoordinator has its own AppState listener for background sync.
   useEffect(() => {
     const handleAppStateChange = (nextAppState: string) => {
-      if (nextAppState === 'active' && isInitializedRef.current && network && apiBase) {
+      if (
+        nextAppState === 'active' &&
+        isInitializedRef.current &&
+        network &&
+        apiBase
+      ) {
         dbg('[WalletHome] === App resumed, scheduling fetchData');
         fetchDataRef.current?.();
       }
@@ -1159,11 +998,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     };
     checkPermission();
   }, []);
-  useEffect(() => {
-    setAddressType(appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'segwit-native');
-    setSelectedCurrency(appConfigRepository.get(CONFIG_KEYS.CURRENCY) || 'USD');
-    setIsBlurred(appConfigRepository.get(CONFIG_KEYS.BALANCE_HIDDEN) === 'true');
-  }, []);
+  // addressType, selectedCurrency, isBlurred are seeded from appConfigRepository
+  // in their useState initializers — no effect needed.
   // Check for txId in route params and show success alert with explorer link
   useEffect(() => {
     const txId = route.params?.txId;
@@ -1233,17 +1069,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         return;
       }
       try {
-        // Synchronously seed the balance from DB BEFORE setLoading(true) so
-        // that when the WalletSkeleton lifts the correct value is already in
-        // state — not the '-' written by getBal(singleAddress) below.
-        {
-          const initNet =
-            network || appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
-          const initAddrType =
-            appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'segwit-native';
-          dbg('[BALANCE] init: pre-skeleton DB seed via refreshFromDB');
-          refreshFromDBRef.current();
-        }
+        // Seed balance + price from DB before the async native init chain.
+        // State initializers already seeded address/addressType/walletAddresses
+        // from appConfigRepository + walletRepository, so refreshFromDB will
+        // find the right per-address balance rows immediately.
+        dbg('[BALANCE] init: pre-skeleton DB seed via refreshFromDB');
+        refreshFromDBRef.current();
 
         setLoading(true);
         const jks = await EncryptedStorage.getItem('keyshare');
@@ -1292,7 +1123,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           return;
         }
         const currentAddressType =
-          (appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE)) || 'segwit-native';
+          appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'segwit-native';
         const useLegacyPath = isLegacyWallet(ks.created_at);
         const externalIndex = await getExternalIndex(
           network,
@@ -1402,7 +1233,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         // Check if this is a legacy wallet and show migration modal if needed
         // Modal shows by default unless user checked "do not remind" (flag = "yes")
         if (useLegacyPath) {
-          const doNotRemind = appConfigRepository.get(CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND);
+          const doNotRemind = appConfigRepository.get(
+            CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND,
+          );
           if (doNotRemind !== 'yes') {
             // Small delay to ensure UI is ready
             setTimeout(() => {
@@ -1439,7 +1272,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     if (!walletAddressesReady || !apiBase || !network) {
       return;
     }
-    const addrs = walletAddresses.length > 0 ? walletAddresses : address ? [address] : [];
+    const addrs =
+      walletAddresses.length > 0 ? walletAddresses : address ? [address] : [];
     if (addrs.length === 0) {
       return;
     }
@@ -1451,11 +1285,16 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       addressType: effectiveAddrType,
       apiBase: `${cleanApi}/api`,
       onSyncComplete: () => {
-        dbg('[WalletHome] SyncCoordinator cycle complete — refreshing UI from DB');
+        dbg(
+          '[WalletHome] SyncCoordinator cycle complete — refreshing UI from DB',
+        );
         refreshFromDBRef.current();
       },
       onAddressesChanged: (newAddrs: string[]) => {
-        dbg('[WalletHome] SyncCoordinator discovered new addresses', newAddrs.length);
+        dbg(
+          '[WalletHome] SyncCoordinator discovered new addresses',
+          newAddrs.length,
+        );
         setWalletAddresses(newAddrs);
       },
       onSyncStatus: setSyncStatus,
@@ -1463,11 +1302,22 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     return () => {
       syncCoordinator.stop();
     };
-  }, [walletAddressesReady, walletAddresses, address, network, apiBase, addressType, userAddressType]);
+  }, [
+    walletAddressesReady,
+    walletAddresses,
+    address,
+    network,
+    apiBase,
+    addressType,
+    userAddressType,
+  ]);
   const handleBlurred = () => {
     const blurr = !isBlurred;
     setIsBlurred(blurr);
-    appConfigRepository.set(CONFIG_KEYS.BALANCE_HIDDEN, blurr ? 'true' : 'false');
+    appConfigRepository.set(
+      CONFIG_KEYS.BALANCE_HIDDEN,
+      blurr ? 'true' : 'false',
+    );
   };
   const handleSend = async (
     to: string,
@@ -1678,7 +1528,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       // Store params and show transport selector after a brief delay
       const parsedUtxoCount = (() => {
         if (!utxosJson) return undefined;
-        try { return (JSON.parse(utxosJson) as unknown[]).length; } catch { return undefined; }
+        try {
+          return (JSON.parse(utxosJson) as unknown[]).length;
+        } catch {
+          return undefined;
+        }
       })();
       setPendingSendParams({
         to,
@@ -1758,10 +1612,16 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       derivationPath: derivationPathToUse.trim(), // MANDATORY: derivation path from sender or QR
       network: networkToUse.trim(), // MANDATORY: network from sender or QR (native format)
     };
-    if (pendingSendParams.utxosJson && pendingSendParams.utxosJson.trim() !== '') {
+    if (
+      pendingSendParams.utxosJson &&
+      pendingSendParams.utxosJson.trim() !== ''
+    ) {
       navigationParams.utxosJson = pendingSendParams.utxosJson;
     }
-    if (pendingSendParams.changeAddress && pendingSendParams.changeAddress.trim() !== '') {
+    if (
+      pendingSendParams.changeAddress &&
+      pendingSendParams.changeAddress.trim() !== ''
+    ) {
       navigationParams.changeAddress = pendingSendParams.changeAddress;
     }
     dbg('=== WalletHome: Navigating to pairing screen ===', {
@@ -2269,7 +2129,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                       ? 'https://mempool.space/api'
                       : 'https://mempool.space/testnet/api');
                   const restoreDone =
-                    walletRepository.getHdState(network, effectiveAddressType)?.restoreDone === true;
+                    walletRepository.getHdState(network, effectiveAddressType)
+                      ?.restoreDone === true;
 
                   // Only run full restore discovery once per (network, addressType)
                   if (!restoreDone) {
@@ -2349,25 +2210,41 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           fetchData().then(() => transactionListRef.current?.refresh?.());
         }}
         onLongPress={async () => {
-          const effectiveType = addressType || userAddressType || 'segwit-native';
-          const api = apiBase || (appConfigRepository.get('api')) ||
-            (network === 'mainnet' ? 'https://mempool.space/api' : 'https://mempool.space/testnet/api');
+          const effectiveType =
+            addressType || userAddressType || 'segwit-native';
+          const api =
+            apiBase ||
+            appConfigRepository.get('api') ||
+            (network === 'mainnet'
+              ? 'https://mempool.space/api'
+              : 'https://mempool.space/testnet/api');
           setIsRefreshing(true);
           try {
-            dbg('[WalletHome] Long-press: clearing wallet cache + full reconstruction');
+            dbg(
+              '[WalletHome] Long-press: clearing wallet cache + full reconstruction',
+            );
             setSyncStatus({label: 'Clearing cache…'});
             database.clearWalletCacheData();
             mempoolClient.invalidateAll();
             WalletService.getInstance().invalidateAddressCache();
             setSyncStatus({label: 'Discovering addresses…'});
             await WalletService.getInstance().discoverHdIndexesForNetwork(
-              network, effectiveType, api,
-              (chain) => setSyncStatus({
-                label: `Scanning ${chain === 'external' ? 'receive' : 'change'} addresses…`,
-              }),
+              network,
+              effectiveType,
+              api,
+              chain =>
+                setSyncStatus({
+                  label: `Scanning ${
+                    chain === 'external' ? 'receive' : 'change'
+                  } addresses…`,
+                }),
             );
             setSyncStatus({label: 'Rebuilding wallet data…'});
-            const arr = await WalletService.getInstance().getHdAddressesWithPaths(network, effectiveType);
+            const arr =
+              await WalletService.getInstance().getHdAddressesWithPaths(
+                network,
+                effectiveType,
+              );
             setWalletAddresses(arr.map(a => a.address));
           } catch (e) {
             dbg('[WalletHome] Long-press reconstruction error', e);

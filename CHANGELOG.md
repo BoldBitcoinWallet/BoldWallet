@@ -1,5 +1,52 @@
 # Changelog
 
+## [3.0.4] - 2026-03-15
+
+### Added
+- **Pure-TypeScript fee estimation (`feeUtils.ts`)** — fee calculation fully ported from Go to TypeScript, eliminating the native bridge round-trip during send flow. Covers UTXO selection (smallest-first), two-pass vbyte estimation for P2PKH/P2SH/P2WPKH/P2TR, dust-threshold enforcement, and change-output handling. Fee rates are fetched from the mempool API with a 30-second DB-backed cache (`fee_rates` table).
+- **DB-level TTL freshness checks** — every syncer (`BalanceSyncer`, `UtxoSyncer`, `TransactionSyncer`, `PriceSyncer`) now checks `sync_metadata.last_synced_at` before making API calls; when data is fresh the network round-trip is skipped entirely and the cached DB result is returned, dramatically reducing redundant API traffic on app resume and screen transitions.
+- **`SyncRepository.isFresh(entityType, entityKey, ttlMs)`** — generic freshness helper queried by all syncers and `WalletService` aggregate methods.
+- **Host-independent API caching in `MempoolClient`** — cache keys are derived from the URL path only (`stripHost`), so switching between public mempool hosts (round-robin) still benefits from cached responses.
+- **Round-robin failover for public API endpoints** — when the configured API base is a known public mempool host, `MempoolClient` automatically cycles through all available public hosts on failure, improving reliability without user configuration.
+- **`MempoolClient.invalidateAll()`** — bulk cache eviction used during network/address-type switches.
+- **`MempoolClient.evictInflight(urlPrefix)`** — targeted eviction of in-flight deduplication entries to force fresh requests on retry.
+- **`ApiQueue.clear()`** — drops all pending (not yet started) jobs from the queue; called on network/address-type switch to prevent stale background work from the previous network bleeding into the new session.
+- **Progressive HD index persistence** — `discoverHdIndexesForNetwork` now reads previously scanned addresses from `wallet_addresses` at the start and skips native key derivation + API calls for known indexes, resuming from the last gap position. New discoveries are progressively persisted via `walletRepository.upsertAddress()`.
+- **Fast-switch for network/address-type changes** — `canFastSwitch` in `WalletSettings` checks `walletRepository.getHdState().restoreDone`; when `true`, `fastSwitch` updates config, stops old sync workers, clears the API queue, and navigates directly to `WalletHome` — bypassing the full `runRestoreIndexing` flow.
+- **`Database.invalidateSyncMetadataForAddressType(network, addressType)`** — surgical invalidation that only deletes `sync_metadata` rows for the relevant addresses while preserving all cached balance, UTXO, and transaction data for instant display.
+- **Synchronous DB-first initialization in `WalletHome`** — `address`, `addressType`, `selectedCurrency`, `isBlurred`, `walletAddresses`, and `walletAddressesReady` are all initialized from `appConfigRepository` and `walletRepository` in their `useState` calls, so the wallet UI renders immediately on unlock or address-type switch without showing a loading skeleton.
+
+### Changed
+- **`WalletHome` DB-first architecture enforced** — UI state is always read from SQLite via `refreshFromDB`; API calls write to DB only; `SyncCoordinator.onSyncComplete` triggers `refreshFromDB` to reflect background updates. Five redundant `useEffect` hooks removed.
+- **`WalletHome` init no longer blocks on native calls** — `loading` state starts as `false` when cached data exists; the keyshare/native init runs in the background while the DB-seeded UI is already visible.
+- **`walletAddressesReady` flip-flop eliminated** — `setWalletAddressesReady(false)` is now only called when `restoreDone` is `false` (actual HD discovery needed); when `restoreDone` is `true`, the DB-seeded address list stays visible while the fast cache-hit derive runs silently.
+- **`TransactionList` preserves data across state transitions** — removed `setTransactions([])` when addresses are temporarily `undefined` during network/address-type switches; DB pre-populate no longer guarded by `!isFetching.current`, so cached transactions always show instantly regardless of live fetch status.
+- **`UtxosScreen` price loading is DB-first** — synchronously reads cached price from `priceRepository.getCachedPrice()` on mount, then refreshes from API in background.
+- **`SendBitcoinModal` fee estimation uses DB-cached UTXOs** — `getFee` fetches HD addresses and UTXOs from DB first; only falls back to a live API fetch if the DB is empty. Input-based cache guard (`lastFeeInputsRef`) prevents redundant re-estimation; debounced function stabilized with ref pattern.
+- **`SyncCoordinator._syncUtxos`** now retrieves and passes `derivationPath` from `WalletService.getHdAddressesWithPaths()`, ensuring the `utxos` table has correct derivation paths for spend operations.
+- **Network/address-type switch cleanup** — both `fastSwitch` and `runRestoreIndexing` now call `syncCoordinator.stop()` + `apiQueue.clear()` before proceeding, preventing stale background jobs from the previous network.
+- **`WalletSettings` network toggle consistency** — optimistic UI update with revert on failure: `setIsTestnet` and `setActiveNetwork` are called immediately, then rolled back if `runRestoreIndexing` fails.
+- **Per-key `AbortController` in `WalletService`** — `withTimeout` uses isolated abort controllers per operation instead of sharing one, preventing a single timeout from cascading across unrelated calls.
+- **Dead code removed from `WalletHome`** — unused `updateAddressTypeModal`, `updateAddressForNetwork` functions and `getDerivePathForNetwork` import removed.
+
+### Fixed
+- **Balance showing 0 on UI after restore** — `fetchData` callback used `isInitializedRef.current` (ref) instead of `isInitialized` (stale closure), ensuring it runs as soon as initialization completes.
+- **Stale in-flight deduplication in `MempoolClient`** — `evictInflight` clears cached promises before retry, forcing a fresh HTTP request instead of returning a stale dedup result.
+- **Transaction list empty for ~90 seconds on app unlock** — three compounding issues fixed: (1) `walletAddressesReady` no longer flips to `false` when `restoreDone` is already `true`; (2) `TransactionList` DB pre-populate not blocked by `isFetching.current`; (3) existing transactions preserved during transient address `undefined` states.
+- **Stale testnet sync jobs running after switching to mainnet** — `ApiQueue.clear()` now drops pending jobs and `SyncCoordinator.stop()` halts timers before navigation, preventing old-network work from bleeding through.
+- **Fee estimation "No UTXOs available" error** — `SyncCoordinator` now passes `derivationPath` to `UtxoSyncer`, ensuring UTXO table entries have correct paths for spend operations.
+- **Fee estimation UI flickering** — input-based cache guard prevents re-estimation when inputs haven't changed; stable debounce ref prevents timer resets on every render.
+- **`UtxosScreen` price not loading from DB on mount** — added synchronous read from `priceRepository.getCachedPrice()` before async API refresh.
+- **Lint warnings** — removed unused `error` bindings in catch blocks, unused function declarations, and stale eslint-disable comments.
+
+### Technical Details
+- **Version**: `package.json` 3.0.4; Android `versionCode` 54 / `versionName` 3.0.4; iOS build 54 / `MARKETING_VERSION` 3.0.4.
+- **New file**: `services/feeUtils.ts` — `fetchFeeRates`, `detectAddressType`, `estimateVbytes`, `selectUtxos`, `pickRate`, `estimateFee`.
+- **New DB table**: `fee_rates` (`id`, `rates_json`, `fetched_at`).
+- **Modified files** (20): `components/TransactionList.tsx`, `components/TransportModeSelector.tsx`, `screens/MobileNostrPairing.tsx`, `screens/MobilesPairing.tsx`, `screens/SendBitcoinModal.tsx`, `screens/UtxosScreen.tsx`, `screens/WalletHome.tsx`, `screens/WalletSettings.tsx`, `services/ApiQueue.ts`, `services/Database.ts`, `services/MempoolClient.ts`, `services/WalletService.ts`, `services/repositories/SyncRepository.ts`, `services/sync/BalanceSyncer.ts`, `services/sync/PriceSyncer.ts`, `services/sync/SyncCoordinator.ts`, `services/sync/TransactionSyncer.ts`, `services/sync/UtxoSyncer.ts`.
+
+---
+
 ## [3.0.3] - 2026-03-14
 
 ### Added

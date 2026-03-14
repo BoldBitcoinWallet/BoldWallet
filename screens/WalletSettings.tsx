@@ -53,8 +53,12 @@ import database from '../services/Database';
 import walletRepository from '../services/repositories/WalletRepository';
 import balanceRepository from '../services/repositories/BalanceRepository';
 import balanceSyncer, {BalanceSyncError} from '../services/sync/BalanceSyncer';
-import transactionSyncer, {TxSyncError} from '../services/sync/TransactionSyncer';
+import transactionSyncer, {
+  TxSyncError,
+} from '../services/sync/TransactionSyncer';
 import utxoSyncer, {UtxoSyncError} from '../services/sync/UtxoSyncer';
+import syncCoordinator from '../services/sync/SyncCoordinator';
+import apiQueue from '../services/ApiQueue';
 import LegalModal from '../components/LegalModal';
 import BackupKeyshareModal from '../components/BackupKeyshareModal';
 import RestoringIndexesModal from '../components/RestoringIndexesModal';
@@ -758,7 +762,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     /** Free-text label shown during post-discovery sync phases. */
     phase?: string;
     /** Address progress e.g. { current: 3, total: 5 } for "3/5". */
-    progress?: { current: number; total: number };
+    progress?: {current: number; total: number};
   } | null>(null);
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
   const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
@@ -850,18 +854,18 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
    */
   const runRestoreIndexing = useCallback(
     async (network: string, addressType: string, resolvedApiUrl?: string) => {
+      syncCoordinator.stop();
+      apiQueue.clear();
       setIsRestoringIndexes(true);
       setRestoreProgress(null);
       // Yield so the RestoringIndexesModal has time to mount and paint.
       await waitMS(250);
 
       try {
-        // ── Step 1: clear cached data, preserve hd_state ──────────────────
-        // clearWalletCacheData() keeps hd_state so the old correct indexes
-        // survive as prevExternalIndex inside discoverHdIndexesForNetwork.
-        // If discovery later fails on a slow network the wallet retains the
-        // last-known correct index instead of collapsing to 0.
-        database.clearWalletCacheData();
+        // ── Step 1: invalidate sync freshness so syncers re-fetch ─────────
+        // The actual balance/UTXO/tx rows stay in the DB for instant display;
+        // they get overwritten by the UPSERT sync steps below.
+        database.invalidateSyncMetadataForAddressType(network, addressType);
 
         const ws = WalletService.getInstance();
         const apiUrl =
@@ -972,6 +976,64 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     },
     [],
   );
+
+  /** Check whether the target network+addressType was already fully discovered.
+   *  If so we can skip the expensive runRestoreIndexing and go straight to
+   *  WalletHome, which reads cached DB data and starts SyncCoordinator. */
+  const canFastSwitch = useCallback(
+    (network: string, addrType: string): boolean => {
+      const hdState = walletRepository.getHdState(network, addrType);
+      return !!hdState?.restoreDone;
+    },
+    [],
+  );
+
+  /** Persist config for the new network/addressType and navigate to WalletHome.
+   *  SyncCoordinator on WalletHome will refresh stale data in the background. */
+  const fastSwitch = useCallback(
+    (network: string, addrType: string) => {
+      const apiUrl =
+        appConfigRepository.get(`api_${network}`) ||
+        appConfigRepository.get('api') ||
+        (network === 'mainnet'
+          ? 'https://mempool.space/api'
+          : 'https://mempool.space/testnet/api');
+
+      appConfigRepository.set(CONFIG_KEYS.NETWORK, network);
+      appConfigRepository.set('api', apiUrl);
+      appConfigRepository.set(`api_${network}`, apiUrl);
+      appConfigRepository.set(CONFIG_KEYS.ADDRESS_TYPE, addrType);
+
+      syncCoordinator.stop();
+      apiQueue.clear();
+      mempoolClient.invalidateAll();
+
+      dbg('fastSwitch: already restored, navigating directly', {
+        network,
+        addrType,
+      });
+
+      navigation.reset(
+        getResetToMainTabsWallet(
+          {},
+          {
+            showPlay: network === 'mainnet' && showMempoolPlayground,
+            showUtxos: showUtxosTab,
+            showPsbt: showPsbtTab,
+            showWallet: showWalletTab,
+          },
+        ),
+      );
+    },
+    [
+      navigation,
+      showMempoolPlayground,
+      showUtxosTab,
+      showPsbtTab,
+      showWalletTab,
+    ],
+  );
+
   // Expand section when opened from header network button (e.g. expandSection: 'advanced' for Network Providers)
   useEffect(() => {
     const section = route.params?.expandSection;
@@ -1100,35 +1162,39 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     const networkName = value ? 'Testnet' : 'Mainnet';
     setIsTestnet(value);
     await setActiveNetwork(newNetwork);
-    try {
-      await runRestoreIndexing(newNetwork, activeAddressType);
-    } catch (e) {
-      dbg('Network toggle: sync failed — reverting to', previousNetwork);
-      await setActiveNetwork(previousNetwork);
-      setIsTestnet(!value);
-      const {text1, text2} = syncFailureToast(
-        e,
-        'Network switch could not complete. Please try again.',
+
+    // Fast path: wallet already discovered for this combo — skip full restore
+    if (canFastSwitch(newNetwork, activeAddressType)) {
+      fastSwitch(newNetwork, activeAddressType);
+    } else {
+      try {
+        await runRestoreIndexing(newNetwork, activeAddressType);
+      } catch (e) {
+        dbg('Network toggle: sync failed — reverting to', previousNetwork);
+        await setActiveNetwork(previousNetwork);
+        setIsTestnet(!value);
+        const {text1, text2} = syncFailureToast(
+          e,
+          'Network switch could not complete. Please try again.',
+        );
+        Toast.show({type: 'error', text1, text2, visibilityTime: 5000});
+        return;
+      }
+      dbg('Network toggle: Navigating to Wallet tab');
+      navigation.reset(
+        getResetToMainTabsWallet(
+          {},
+          {
+            showPlay: newNetwork === 'mainnet' && showMempoolPlayground,
+            showUtxos: showUtxosTab,
+            showPsbt: showPsbtTab,
+            showWallet: showWalletTab,
+          },
+        ),
       );
-      Toast.show({type: 'error', text1, text2, visibilityTime: 5000});
-      return;
     }
-    dbg('Network toggle: Navigating to Wallet tab');
-    navigation.reset(
-      getResetToMainTabsWallet(
-        {},
-        {
-          showPlay: newNetwork === 'mainnet' && showMempoolPlayground,
-          showUtxos: showUtxosTab,
-          showPsbt: showPsbtTab,
-          showWallet: showWalletTab,
-        },
-      ),
-    );
-    // Show brief feedback alert after a brief delay to ensure navigation completes
+
     setTimeout(() => {
-      // warn user if test net bitcoin is not real
-      // add i understand button to the alert
       if (newNetwork === 'mainnet') {
         Alert.alert(
           `Switched to ${networkName}`,
@@ -2738,7 +2804,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     e,
                     'Cache clear could not complete. Please try again.',
                   );
-                  Toast.show({type: 'error', text1, text2, visibilityTime: 5000});
+                  Toast.show({
+                    type: 'error',
+                    text1,
+                    text2,
+                    visibilityTime: 5000,
+                  });
                   return;
                 }
                 refreshUsageSize();
@@ -2908,6 +2979,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 ]}
                 onPress={async () => {
                   await setActiveAddressType('legacy');
+                  if (canFastSwitch(activeNetwork, 'legacy')) {
+                    fastSwitch(activeNetwork, 'legacy');
+                    return;
+                  }
                   try {
                     await runRestoreIndexing(activeNetwork, 'legacy');
                   } catch (e) {
@@ -2916,7 +2991,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                       e,
                       'Address type switch could not complete. Please try again.',
                     );
-                    Toast.show({type: 'error', text1, text2, visibilityTime: 5000});
+                    Toast.show({
+                      type: 'error',
+                      text1,
+                      text2,
+                      visibilityTime: 5000,
+                    });
                     return;
                   }
                   navigation.reset(
@@ -2955,6 +3035,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 ]}
                 onPress={async () => {
                   await setActiveAddressType('segwit-native');
+                  if (canFastSwitch(activeNetwork, 'segwit-native')) {
+                    fastSwitch(activeNetwork, 'segwit-native');
+                    return;
+                  }
                   try {
                     await runRestoreIndexing(activeNetwork, 'segwit-native');
                   } catch (e) {
@@ -2963,7 +3047,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                       e,
                       'Address type switch could not complete. Please try again.',
                     );
-                    Toast.show({type: 'error', text1, text2, visibilityTime: 5000});
+                    Toast.show({
+                      type: 'error',
+                      text1,
+                      text2,
+                      visibilityTime: 5000,
+                    });
                     return;
                   }
                   navigation.reset(
@@ -3002,6 +3091,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 ]}
                 onPress={async () => {
                   await setActiveAddressType('segwit-compatible');
+                  if (canFastSwitch(activeNetwork, 'segwit-compatible')) {
+                    fastSwitch(activeNetwork, 'segwit-compatible');
+                    return;
+                  }
                   try {
                     await runRestoreIndexing(
                       activeNetwork,
@@ -3016,7 +3109,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                       e,
                       'Address type switch could not complete. Please try again.',
                     );
-                    Toast.show({type: 'error', text1, text2, visibilityTime: 5000});
+                    Toast.show({
+                      type: 'error',
+                      text1,
+                      text2,
+                      visibilityTime: 5000,
+                    });
                     return;
                   }
                   navigation.reset(

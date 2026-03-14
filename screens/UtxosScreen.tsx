@@ -892,10 +892,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           {/* Hero total */}
           <View style={styles.heroTotalWrap}>
             <Text
-              style={[
-                styles.heroTotalBtc,
-                {color: theme.colors.textOnPrimary},
-              ]}
+              style={[styles.heroTotalBtc, {color: theme.colors.textOnPrimary}]}
               numberOfLines={1}
               adjustsFontSizeToFit>
               {balanceSummary.fmt(balanceSummary.totalSats)} BTC
@@ -918,10 +915,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           <View style={styles.summaryRow}>
             <View style={styles.summaryLabelRow}>
               <View
-                style={[
-                  styles.statusDot,
-                  {backgroundColor: receivedColor},
-                ]}
+                style={[styles.statusDot, {backgroundColor: receivedColor}]}
               />
               <Text style={[styles.summaryLabel, {color: receivedColor}]}>
                 Confirmed
@@ -998,20 +992,31 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           onRefresh={onRefresh}
           onLongPress={async () => {
             const effectiveType = addressType || 'segwit-native';
-            const api = apiBase?.trim()?.replace(/\/+$/, '')?.replace(/\/api\/?$/, '') || 'https://mempool.space';
+            const api =
+              apiBase
+                ?.trim()
+                ?.replace(/\/+$/, '')
+                ?.replace(/\/api\/?$/, '') || 'https://mempool.space';
             setRefreshing(true);
             try {
-              dbg('[UtxosScreen] Long-press: clearing wallet cache + full reconstruction');
+              dbg(
+                '[UtxosScreen] Long-press: clearing wallet cache + full reconstruction',
+              );
               setRefreshStatusMessage('Clearing cache…');
               database.clearWalletCacheData();
               mempoolClient.invalidateAll();
               WalletService.getInstance().invalidateAddressCache();
               setRefreshStatusMessage('Discovering addresses…');
               await WalletService.getInstance().discoverHdIndexesForNetwork(
-                network, effectiveType, `${api}/api`,
-                (chain) => setRefreshStatusMessage(
-                  `Scanning ${chain === 'external' ? 'receive' : 'change'} addresses…`,
-                ),
+                network,
+                effectiveType,
+                `${api}/api`,
+                chain =>
+                  setRefreshStatusMessage(
+                    `Scanning ${
+                      chain === 'external' ? 'receive' : 'change'
+                    } addresses…`,
+                  ),
               );
               setRefreshStatusMessage('Rebuilding wallet data…');
             } catch (e) {

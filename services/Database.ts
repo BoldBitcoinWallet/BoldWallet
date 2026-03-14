@@ -354,8 +354,8 @@ class DatabaseService {
       (this.db.executeSync('PRAGMA page_size').rows?.[0] as any)?.page_size ??
       4096;
     const pageCount =
-      (this.db.executeSync('PRAGMA page_count').rows?.[0] as any)
-        ?.page_count ?? 0;
+      (this.db.executeSync('PRAGMA page_count').rows?.[0] as any)?.page_count ??
+      0;
     const freePages =
       (this.db.executeSync('PRAGMA freelist_count').rows?.[0] as any)
         ?.freelist_count ?? 0;
@@ -393,6 +393,42 @@ class DatabaseService {
       }
     });
     dbg('DatabaseService: wallet cache data cleared (hd_state preserved)');
+  }
+
+  /**
+   * Invalidate sync_metadata for a specific network + address type combo
+   * so syncers re-fetch from the API, while keeping the actual cached
+   * balance/UTXO/transaction rows intact for instant UI display.
+   */
+  invalidateSyncMetadataForAddressType(
+    network: string,
+    addressType: string,
+  ): void {
+    const {rows} = this.execute(
+      'SELECT address FROM wallet_addresses WHERE network = ? AND address_type = ?',
+      [network, addressType],
+    );
+    const addrs: string[] = rows.map(r => r.address as string);
+    if (addrs.length === 0) {
+      dbg('DatabaseService: invalidateSyncMetadata — no addresses found');
+      return;
+    }
+
+    const keys = addrs.flatMap(a => [`${a}_${network}`, a]);
+    const placeholders = keys.map(() => '?').join(',');
+
+    this.execute(
+      `DELETE FROM sync_metadata WHERE entity_key IN (${placeholders})`,
+      keys,
+    );
+    dbg(
+      'DatabaseService: invalidated sync_metadata for',
+      addrs.length,
+      'addresses (',
+      network,
+      addressType,
+      ')',
+    );
   }
 }
 
