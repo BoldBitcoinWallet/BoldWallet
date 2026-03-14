@@ -82,6 +82,8 @@ import balanceRepository from '../services/repositories/BalanceRepository';
 import {getExternalIndex} from '../services/HdIndexService';
 import syncCoordinator, {type SyncStatus} from '../services/sync/SyncCoordinator';
 import apiQueue from '../services/ApiQueue';
+import database from '../services/Database';
+import mempoolClient from '../services/MempoolClient';
 import {
   parsePairingCodeFromScannedData,
   computeExtensionBindResponseQr,
@@ -2767,7 +2769,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             (network === 'mainnet' ? 'https://mempool.space/api' : 'https://mempool.space/testnet/api');
           setIsRefreshing(true);
           try {
-            dbg('[WalletHome] Long-press: running HD re-discovery');
+            dbg('[WalletHome] Long-press: clearing wallet cache + full reconstruction');
+            setSyncStatus({label: 'Clearing cache…'});
+            database.clearWalletCacheData();
+            mempoolClient.invalidateAll();
+            WalletService.getInstance().invalidateAddressCache();
             setSyncStatus({label: 'Discovering addresses…'});
             await WalletService.getInstance().discoverHdIndexesForNetwork(
               network, effectiveType, api,
@@ -2775,13 +2781,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 label: `Scanning ${chain === 'external' ? 'receive' : 'change'} addresses…`,
               }),
             );
-            setSyncStatus(null);
+            setSyncStatus({label: 'Rebuilding wallet data…'});
             const arr = await WalletService.getInstance().getHdAddressesWithPaths(network, effectiveType);
             setWalletAddresses(arr.map(a => a.address));
           } catch (e) {
-            dbg('[WalletHome] Long-press HD discovery error', e);
-            setSyncStatus(null);
+            dbg('[WalletHome] Long-press reconstruction error', e);
           }
+          setSyncStatus(null);
           await fetchData();
           transactionListRef.current?.refresh?.();
         }}

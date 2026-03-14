@@ -1,5 +1,32 @@
 # Changelog
 
+## [3.0.3] - 2026-03-14
+
+### Added
+- **Periodic HD index re-discovery in `SyncCoordinator`** — background sync now includes automatic HD address discovery every 2 hours, ensuring change addresses and newly-used receive addresses are picked up across devices without manual intervention.
+- **Force HD discovery on app launch** — the first `SyncCoordinator` cycle always runs `discoverHdIndexesForNetwork` regardless of staleness, guaranteeing correct indexes after code updates that fix derivation bugs.
+- **HD discovery progress in `CacheIndicator`** — both automatic (SyncCoordinator) and manual (long-press) HD discovery now report status ("Discovering addresses…", "Scanning receive/change addresses…") via `onSyncStatus` callback, displayed in the CacheIndicator shimmer bar.
+- **Long-press full wallet reconstruction** — long-pressing `CacheIndicator` on WalletHome or UtxosScreen now performs a complete nuke-and-rebuild: clears all cached wallet DB data (transactions, balances, UTXOs, sync cursors, pending txs), flushes in-memory API and address caches, re-discovers HD indexes from the blockchain, and re-fetches all data fresh.
+- **`CacheIndicator` `onLongPress` prop** — the component now accepts an optional `onLongPress` handler, forwarded to the underlying `AppPressable`.
+- **`TransactionRepository.ensureAddressLinks`** — new bulk `INSERT OR IGNORE` method that backfills `transaction_addresses` rows for known transactions, ensuring every tx returned by the API is linked to its real Bitcoin address.
+- **`Database.clearWalletCacheData()`** used by long-press — selective wipe of all fetched data while preserving `hd_state` so discovery has correct indexes as a baseline.
+
+### Fixed
+- **Missing transaction on cross-device sync** — transactions could be invisible when their txid existed in the `transactions` table (from a prior synthetic-key write or migration) but lacked a `transaction_addresses` link to the real Bitcoin address. The `TransactionSyncer` now backfills address links for every known txid it encounters from the API, in both `syncAddressesAtomic` and `syncAddress`.
+- **Stale synthetic transaction cache hiding new data** — `transactionsFromCacheForWallet` previously read from a synthetic cache key (`wallet_txs_<network>_<addressType>`) first; if that had stale data from a prior session, newly-synced transactions were invisible. The method now queries by real HD addresses first (the authoritative source written by `TransactionSyncer`), falling back to the synthetic key only when the keyshare is unavailable.
+- **`TransactionSyncer` two-phase forward-pass** — always fetches the newest page (`/txs`, no cursor) before falling back to the stored cursor for backfill, ensuring transactions confirmed after the last sync are discovered.
+- **Confirmation status overlay from DB** — `getTxs` and `transactionsFromCacheForWallet` overlay authoritative `is_confirmed`, `block_height`, `block_time` from the DB onto parsed `rawJson`, preventing stale "Consolidating" labels on already-confirmed transactions.
+
+### Changed
+- **`transactionsFromCacheForWallet` priority inverted** — real HD address query (via `getTransactionsForAddresses`) is now the primary path; the synthetic wallet-level cache key is the fallback for early-boot scenarios when the keyshare is not yet available.
+- **`SyncCoordinator` now manages HD discovery lifecycle** — moved periodic re-discovery from a `WalletHome` `useEffect` into `SyncCoordinator._syncAll`, with configurable `HD_DISCOVERY_STALE_MS` (2 hours) and `onAddressesChanged` callback to update the UI address list.
+
+### Technical Details
+- **Version**: `package.json` 3.0.3; Android `versionCode` 53 / `versionName` 3.0.3; iOS build 53 / `MARKETING_VERSION` 3.0.3.
+- **Modified files**: `services/sync/TransactionSyncer.ts`, `services/sync/SyncCoordinator.ts`, `services/WalletService.ts`, `services/repositories/TransactionRepository.ts`, `components/CacheIndicator.tsx`, `screens/WalletHome.tsx`, `screens/UtxosScreen.tsx`.
+
+---
+
 ## [3.0.2] - 2026-02-28
 
 ### Added

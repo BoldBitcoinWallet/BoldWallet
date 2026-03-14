@@ -26,6 +26,8 @@ import appConfigRepository, {
 import utxoRepository from '../services/repositories/UtxoRepository';
 import {WalletService} from '../services/WalletService';
 import utxoSyncer from '../services/sync/UtxoSyncer';
+import database from '../services/Database';
+import mempoolClient from '../services/MempoolClient';
 import {presentFiat, getCurrencySymbol, dbg} from '../utils';
 import AppPressable from '../components/AppPressable';
 import {CacheIndicator} from '../components/CacheIndicator';
@@ -1009,7 +1011,11 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
             const api = apiBase?.trim()?.replace(/\/+$/, '')?.replace(/\/api\/?$/, '') || 'https://mempool.space';
             setRefreshing(true);
             try {
-              dbg('[UtxosScreen] Long-press: running HD re-discovery');
+              dbg('[UtxosScreen] Long-press: clearing wallet cache + full reconstruction');
+              setRefreshStatusMessage('Clearing cache…');
+              database.clearWalletCacheData();
+              mempoolClient.invalidateAll();
+              WalletService.getInstance().invalidateAddressCache();
               setRefreshStatusMessage('Discovering addresses…');
               await WalletService.getInstance().discoverHdIndexesForNetwork(
                 network, effectiveType, `${api}/api`,
@@ -1017,11 +1023,11 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   `Scanning ${chain === 'external' ? 'receive' : 'change'} addresses…`,
                 ),
               );
-              setRefreshStatusMessage(null);
+              setRefreshStatusMessage('Rebuilding wallet data…');
             } catch (e) {
-              dbg('[UtxosScreen] Long-press HD discovery error', e);
-              setRefreshStatusMessage(null);
+              dbg('[UtxosScreen] Long-press reconstruction error', e);
             }
+            setRefreshStatusMessage(null);
             onRefresh();
           }}
           theme={theme}
