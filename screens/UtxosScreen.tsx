@@ -433,7 +433,8 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
             : 'rgba(26,43,60,0.88)',
           borderRadius: 16,
           alignItems: 'stretch' as const,
-          margin: 16,
+          marginHorizontal: 16,
+          marginVertical: 12,
           borderWidth: isDarkMode ? 1 : 0.5,
           borderColor: isDarkMode
             ? 'rgba(255,255,255,0.18)'
