@@ -24,24 +24,32 @@ import balanceSyncer, {
 import transactionSyncer from './TransactionSyncer';
 import utxoSyncer, {type AddressEntry as UtxoEntry} from './UtxoSyncer';
 import priceSyncer from './PriceSyncer';
+import {WalletService} from '../WalletService';
+import walletRepository from '../repositories/WalletRepository';
 import {dbg} from '../../utils';
 
 const BALANCE_INTERVAL_MS = 30_000;
+const HD_DISCOVERY_INTERVAL_MS = 1_200_000; // 20 minutes
 const PRICE_INTERVAL_MS = 120_000;
 const UTXO_INTERVAL_MS = 120_000;
 const TX_INTERVAL_MS = 120_000;
+const HD_DISCOVERY_STALE_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 export interface SyncConfig {
   addresses: Array<{address: string; network: string; derivationPath?: string}>;
   network: string;
+  addressType: string;
   apiBase: string;
   /** Optional callback — called after each sync cycle completes. */
   onSyncComplete?: () => void;
+  /** Called when HD discovery finds new addresses so the UI can refresh. */
+  onAddressesChanged?: (addresses: string[]) => void;
 }
 
 class SyncCoordinator {
   private _config: SyncConfig | null = null;
   private _balanceTimer: ReturnType<typeof setInterval> | null = null;
+  private _hdDiscoveryTimer: ReturnType<typeof setInterval> | null = null;
   private _txTimer: ReturnType<typeof setInterval> | null = null;
   private _utxoTimer: ReturnType<typeof setInterval> | null = null;
   private _priceTimer: ReturnType<typeof setInterval> | null = null;
@@ -63,6 +71,11 @@ class SyncCoordinator {
     this._syncAll();
 
     // Schedule periodic syncs
+    this._hdDiscoveryTimer = setInterval(
+      () => this._syncHdDiscovery(),
+      HD_DISCOVERY_INTERVAL_MS,
+    );
+
     this._balanceTimer = setInterval(
       () => this._syncBalances(),
       BALANCE_INTERVAL_MS,
@@ -98,6 +111,10 @@ class SyncCoordinator {
   /** Stop all timers and release listeners. */
   stop(): void {
     this._running = false;
+    if (this._hdDiscoveryTimer) {
+      clearInterval(this._hdDiscoveryTimer);
+      this._hdDiscoveryTimer = null;
+    }
     if (this._balanceTimer) {
       clearInterval(this._balanceTimer);
       this._balanceTimer = null;
@@ -124,6 +141,9 @@ class SyncCoordinator {
   // ── Private helpers ────────────────────────────────────────────────────────
 
   private async _syncAll(): Promise<void> {
+    // HD discovery first — may expand the address set for subsequent syncs
+    await this._syncHdDiscovery();
+
     await Promise.all([
       this._syncBalances(),
       this._syncTxs(),
@@ -131,6 +151,51 @@ class SyncCoordinator {
       this._syncPrice(),
     ]);
     this._config?.onSyncComplete?.();
+  }
+
+  private async _syncHdDiscovery(): Promise<void> {
+    if (!this._config) return;
+    const {network, addressType, apiBase} = this._config;
+    try {
+      const hdState = walletRepository.getHdState(network, addressType);
+      const restoreDone = hdState?.restoreDone === true;
+      if (!restoreDone) return; // first-run discovery is handled by WalletHome
+      const stale =
+        !hdState?.discoveryLastAt ||
+        Date.now() - hdState.discoveryLastAt > HD_DISCOVERY_STALE_MS;
+      if (!stale) return;
+
+      dbg(
+        'SyncCoordinator: HD indexes stale — re-discovering',
+        network,
+        addressType,
+      );
+      const ws = WalletService.getInstance();
+      await ws.discoverHdIndexesForNetwork(network, addressType, apiBase);
+
+      const arr = await ws.getHdAddressesWithPaths(network, addressType);
+      const newAddrs = arr.map(a => a.address);
+      const oldAddrs = this._config.addresses.map(a => a.address);
+      if (
+        newAddrs.length !== oldAddrs.length ||
+        newAddrs.some((a, i) => a !== oldAddrs[i])
+      ) {
+        dbg(
+          'SyncCoordinator: HD discovery found new addresses',
+          oldAddrs.length,
+          '->',
+          newAddrs.length,
+        );
+        this._config.addresses = arr.map(a => ({
+          address: a.address,
+          network,
+          derivationPath: a.derivationPath,
+        }));
+        this._config.onAddressesChanged?.(newAddrs);
+      }
+    } catch (err) {
+      dbg('SyncCoordinator: HD discovery error', err);
+    }
   }
 
   private async _syncBalances(): Promise<void> {

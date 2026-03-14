@@ -1,8 +1,10 @@
 /**
- * TransactionSyncer — incremental transaction history fetch using mempool.space chain cursors.
+ * TransactionSyncer — two-phase transaction history fetch using mempool.space.
  *
- * The mempool.space API supports paginated fetch:
- *   GET /address/:addr/txs/chain/:last_txid
+ * Phase 1 (forward): Always fetch from `/txs` (newest first, no cursor) so that
+ *   transactions confirmed *after* the previous sync are discovered.
+ * Phase 2 (backfill): If a stored cursor exists, continue from it to fetch older
+ *   history that wasn't covered by the initial sync (wallets with >25 txs/address).
  *
  * ATOMIC sync: syncAddressesAtomic fetches all addresses into memory; only if every
  * address succeeds does it write all batches to DB. Otherwise throws TxSyncError.
@@ -72,7 +74,9 @@ class TransactionSyncer {
       }
       const {address, network} = addresses[addrIndex];
       const entityKey = `${address}_${network}`;
-      let cursor = syncRepository.getCursor('transactions', entityKey);
+      const savedCursor = syncRepository.getCursor('transactions', entityKey);
+      let cursor: string | null = null; // Phase 1: always start fresh from top
+      let forwardDone = false;
       let pages = 0;
 
       try {
@@ -93,7 +97,14 @@ class TransactionSyncer {
           }
 
           const page = res.data as ApiTx[];
-          if (!page.length) break;
+          if (!page.length) {
+            if (!forwardDone && savedCursor) {
+              forwardDone = true;
+              cursor = savedCursor;
+              continue;
+            }
+            break;
+          }
 
           let hasNew = false;
           for (const apiTx of page) {
@@ -143,7 +154,14 @@ class TransactionSyncer {
             .find(tx => tx.status?.confirmed);
           if (lastConfirmed) cursor = lastConfirmed.txid;
           pages++;
-          if (!hasNew || page.length < PAGE_SIZE) break;
+          if (!hasNew || page.length < PAGE_SIZE) {
+            if (!forwardDone && savedCursor) {
+              forwardDone = true;
+              cursor = savedCursor;
+              continue;
+            }
+            break;
+          }
         }
 
         cursors.push({entityKey, cursor});
@@ -178,7 +196,9 @@ class TransactionSyncer {
   ): Promise<void> {
     const cleanApi = apiBase.replace(/\/+$/, '');
     const entityKey = `${address}_${network}`;
-    let cursor = syncRepository.getCursor('transactions', entityKey);
+    const savedCursor = syncRepository.getCursor('transactions', entityKey);
+    let cursor: string | null = null; // Phase 1: always start fresh from top
+    let forwardDone = false;
     const knownTxids = transactionRepository.getKnownTxids(network);
     let newCount = 0;
     let pages = 0;
@@ -193,16 +213,24 @@ class TransactionSyncer {
           'TransactionSyncer',
           () => mempoolClient.get<ApiTx[]>(url),
         );
-        if (!res.ok || !Array.isArray(res.data) || !res.data.length) break;
+        if (!res.ok || !Array.isArray(res.data)) break;
 
         const page = res.data as ApiTx[];
+        if (!page.length) {
+          if (!forwardDone && savedCursor) {
+            forwardDone = true;
+            cursor = savedCursor;
+            continue;
+          }
+          break;
+        }
+
         const batch: Array<{tx: TxRecord; addresses: TxAddressMapping[]}> = [];
         let hasNew = false;
 
         for (const apiTx of page) {
           if (!apiTx.txid) continue;
           if (knownTxids.has(apiTx.txid)) {
-            // If already known and now confirmed, update confirmation status
             if (
               apiTx.status?.confirmed &&
               apiTx.status.block_height &&
@@ -249,7 +277,6 @@ class TransactionSyncer {
           transactionRepository.upsertTransactionBatch(batch);
         }
 
-        // Advance cursor to last confirmed txid in the page
         const lastConfirmed = [...page]
           .reverse()
           .find(tx => tx.status?.confirmed);
@@ -259,7 +286,14 @@ class TransactionSyncer {
         }
 
         pages++;
-        if (!hasNew || page.length < PAGE_SIZE) break;
+        if (!hasNew || page.length < PAGE_SIZE) {
+          if (!forwardDone && savedCursor) {
+            forwardDone = true;
+            cursor = savedCursor;
+            continue;
+          }
+          break;
+        }
       }
 
       syncRepository.updateCursor('transactions', entityKey, cursor ?? null, 'ok');

@@ -277,7 +277,13 @@ export class WalletService {
     if (!txs.length) return {transactions: [], timestamp: 0};
     const transactions: Transaction[] = txs.map(r => {
       try {
-        return JSON.parse(r.rawJson) as Transaction;
+        const parsed = JSON.parse(r.rawJson) as Transaction;
+        if (r.isConfirmed && parsed.status) {
+          parsed.status.confirmed = true;
+          if (r.blockHeight) parsed.status.block_height = r.blockHeight;
+          if (r.blockTime) parsed.status.block_time = r.blockTime;
+        }
+        return parsed;
       } catch {
         return {
           txid: r.txid,
@@ -1927,7 +1933,13 @@ export class WalletService {
       return rows
         .map(r => {
           try {
-            return JSON.parse(r.rawJson);
+            const parsed = JSON.parse(r.rawJson);
+            if (r.isConfirmed && parsed.status) {
+              parsed.status.confirmed = true;
+              if (r.blockHeight) parsed.status.block_height = r.blockHeight;
+              if (r.blockTime) parsed.status.block_time = r.blockTime;
+            }
+            return parsed;
           } catch {
             return null;
           }

@@ -1860,15 +1860,21 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       return;
     }
     const cleanApi = apiBase.replace(/\/+$/, '').replace(/\/api\/?$/, '');
+    const effectiveAddrType = addressType || userAddressType || 'segwit-native';
     syncCoordinator.start({
       addresses: addrs.map(a => ({address: a, network})),
       network,
+      addressType: effectiveAddrType,
       apiBase: `${cleanApi}/api`,
+      onAddressesChanged: (newAddrs: string[]) => {
+        dbg('[WalletHome] SyncCoordinator discovered new addresses', newAddrs.length);
+        setWalletAddresses(newAddrs);
+      },
     });
     return () => {
       syncCoordinator.stop();
     };
-  }, [walletAddressesReady, walletAddresses, address, network, apiBase]);
+  }, [walletAddressesReady, walletAddresses, address, network, apiBase, addressType, userAddressType]);
   const handleBlurred = () => {
     const blurr = !isBlurred;
     setIsBlurred(blurr);

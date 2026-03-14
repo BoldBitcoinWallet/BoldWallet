@@ -29,6 +29,7 @@ import utxoSyncer from '../services/sync/UtxoSyncer';
 import {presentFiat, getCurrencySymbol} from '../utils';
 import AppPressable from '../components/AppPressable';
 import {CacheIndicator} from '../components/CacheIndicator';
+import CurrencySelector from '../components/CurrencySelector';
 
 /** Mempool.space UTXO item: txid, vout, value (sats), status { confirmed, block_height?, block_hash?, block_time? }. */
 type ApiUtxo = {
@@ -119,6 +120,9 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const [btcPrice, setBtcPrice] = useState<string>('');
   const [btcRate, setBtcRate] = useState<number>(0);
   const [selectedCurrency, setSelectedCurrency] = useState<string>('USD');
+  const [priceData, setPriceData] = useState<{[key: string]: number}>({});
+  const [isCurrencySelectorVisible, setIsCurrencySelectorVisible] =
+    useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [utxosWithPath, setUtxosWithPath] = useState<UtxoWithPath[]>([]);
@@ -147,6 +151,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
       .getBitcoinPrice()
       .then(({rates}) => {
         if (cancelled) return;
+        if (rates) setPriceData(rates);
         const currency = selectedCurrency || 'USD';
         const rate = rates?.[currency] ?? rates?.USD ?? 0;
         if (typeof rate === 'number' && rate > 0) {
@@ -295,17 +300,27 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
     };
   }, [fetchUtxos, network, addressType]);
 
+  const handleCurrencySelect = useCallback(
+    (currency: {code: string}) => {
+      setSelectedCurrency(currency.code);
+      appConfigRepository.set(CONFIG_KEYS.CURRENCY, currency.code);
+      if (priceData[currency.code]) {
+        setBtcPrice(String(priceData[currency.code]));
+        setBtcRate(priceData[currency.code]);
+      }
+    },
+    [priceData],
+  );
+
   const headerLeft = useCallback(
     () => (
       <HeaderPriceButton
         btcPrice={btcPrice}
         selectedCurrency={selectedCurrency}
-        onCurrencyPress={() =>
-          navigation.navigate('Settings', {expandSection: 'advanced'})
-        }
+        onCurrencyPress={() => setIsCurrencySelectorVisible(true)}
       />
     ),
-    [btcPrice, selectedCurrency, navigation],
+    [btcPrice, selectedCurrency],
   );
   const headerTitle = useCallback(
     () => <HeaderProvider apiBase={apiBase} />,
@@ -538,6 +553,45 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           paddingHorizontal: 16,
           paddingVertical: 12,
         },
+        summaryTitleRow: {
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 4,
+        },
+        summaryTitle: {
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: theme.fontFamilies?.bold,
+          letterSpacing: 0.8,
+          textTransform: 'uppercase' as const,
+          opacity: 0.7,
+        },
+        countBadge: {
+          paddingHorizontal: 8,
+          paddingVertical: 3,
+          borderRadius: 10,
+        },
+        countBadgeText: {
+          fontSize: theme.fontSizes?.xs || 10,
+          fontFamily: theme.fontFamilies?.medium,
+          opacity: 0.8,
+        },
+        heroTotalWrap: {
+          alignItems: 'center',
+          paddingVertical: 6,
+          marginBottom: 2,
+        },
+        heroTotalBtc: {
+          fontSize: theme.fontSizes?.xl || 18,
+          fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
+          letterSpacing: -0.3,
+        },
+        heroTotalFiat: {
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
+          marginTop: 2,
+          opacity: 0.7,
+        },
         summaryRow: {
           flexDirection: 'row',
           justifyContent: 'space-between',
@@ -545,19 +599,20 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
         },
         summaryDivider: {
           height: 1,
-          marginVertical: 2,
+          marginVertical: 6,
         },
         summaryLabel: {
           fontSize: theme.fontSizes?.sm || 12,
           fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
         },
         summaryCount: {
-          fontSize: theme.fontSizes?.xs || 11,
+          fontSize: theme.fontSizes?.xs || 10,
           fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
-          marginLeft: 6,
+          marginLeft: 4,
+          opacity: 0.6,
         },
         summaryBtc: {
-          fontSize: theme.fontSizes?.md || 15,
+          fontSize: theme.fontSizes?.base || 14,
           fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
           letterSpacing: COMMON_FONT_CONFIGS.bitcoinAmountMono.letterSpacing,
         },
@@ -566,6 +621,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
           marginTop: 1,
           textAlign: 'right',
+          opacity: 0.6,
         },
         summaryRight: {
           alignItems: 'flex-end',
@@ -573,6 +629,19 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
         summaryLabelRow: {
           flexDirection: 'row',
           alignItems: 'center',
+        },
+        statusDot: {
+          width: 7,
+          height: 7,
+          borderRadius: 4,
+          marginRight: 6,
+        },
+        statusDotHollow: {
+          width: 7,
+          height: 7,
+          borderRadius: 4,
+          borderWidth: 1.5,
+          marginRight: 6,
         },
         emptyWrap: {
           paddingVertical: 32,
@@ -790,36 +859,58 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 : theme.colors.whiteOverlay15,
             },
           ]}>
-          {/* Total row */}
-          <View style={styles.summaryRow}>
+          {/* Title row */}
+          <View style={styles.summaryTitleRow}>
             <Text
               style={[
-                styles.summaryLabel,
+                styles.summaryTitle,
                 {color: theme.colors.textOnPrimary},
               ]}>
-              Total
+              UTXO Balance
             </Text>
-            <View style={styles.summaryRight}>
+            <View
+              style={[
+                styles.countBadge,
+                {
+                  backgroundColor: isDarkMode
+                    ? theme.colors.whiteOverlay12
+                    : theme.colors.blackOverlay10,
+                },
+              ]}>
               <Text
                 style={[
-                  styles.summaryBtc,
+                  styles.countBadgeText,
                   {color: theme.colors.textOnPrimary},
                 ]}>
-                {balanceSummary.fmt(balanceSummary.totalSats)} BTC
+                {utxosWithPath.length}{' '}
+                {utxosWithPath.length === 1 ? 'UTXO' : 'UTXOs'}
               </Text>
-              {balanceSummary.fiat(balanceSummary.totalSats) && (
-                <Text
-                  style={[
-                    styles.summaryFiat,
-                    {color: theme.colors.textSecondary},
-                  ]}>
-                  {balanceSummary.fiat(balanceSummary.totalSats)}
-                </Text>
-              )}
             </View>
           </View>
 
-          {/* Divider — theme border for dark/light */}
+          {/* Hero total */}
+          <View style={styles.heroTotalWrap}>
+            <Text
+              style={[
+                styles.heroTotalBtc,
+                {color: theme.colors.textOnPrimary},
+              ]}
+              numberOfLines={1}
+              adjustsFontSizeToFit>
+              {balanceSummary.fmt(balanceSummary.totalSats)} BTC
+            </Text>
+            {balanceSummary.fiat(balanceSummary.totalSats) && (
+              <Text
+                style={[
+                  styles.heroTotalFiat,
+                  {color: theme.colors.textOnPrimary},
+                ]}>
+                {balanceSummary.fiat(balanceSummary.totalSats)}
+              </Text>
+            )}
+          </View>
+
+          {/* Divider */}
           <View
             style={[
               styles.summaryDivider,
@@ -834,16 +925,21 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           {/* Confirmed row */}
           <View style={styles.summaryRow}>
             <View style={styles.summaryLabelRow}>
+              <View
+                style={[
+                  styles.statusDot,
+                  {backgroundColor: receivedColor},
+                ]}
+              />
               <Text style={[styles.summaryLabel, {color: receivedColor}]}>
-                ✓ Confirmed
+                Confirmed
               </Text>
               <Text
                 style={[
                   styles.summaryCount,
                   {color: theme.colors.textOnPrimary},
                 ]}>
-                {balanceSummary.confirmedCount}{' '}
-                {balanceSummary.confirmedCount === 1 ? 'UTXO' : 'UTXOs'}
+                {balanceSummary.confirmedCount}
               </Text>
             </View>
             <View style={styles.summaryRight}>
@@ -854,7 +950,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 <Text
                   style={[
                     styles.summaryFiat,
-                    {color: theme.colors.textSecondary},
+                    {color: theme.colors.textOnPrimary},
                   ]}>
                   {balanceSummary.fiat(balanceSummary.confirmedSats)}
                 </Text>
@@ -866,17 +962,22 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           {balanceSummary.unconfirmedCount > 0 && (
             <View style={styles.summaryRow}>
               <View style={styles.summaryLabelRow}>
+                <View
+                  style={[
+                    styles.statusDotHollow,
+                    {borderColor: theme.colors.warning},
+                  ]}
+                />
                 <Text
                   style={[styles.summaryLabel, {color: theme.colors.warning}]}>
-                  ⏳ Pending
+                  Pending
                 </Text>
                 <Text
                   style={[
                     styles.summaryCount,
                     {color: theme.colors.textSecondary},
                   ]}>
-                  {balanceSummary.unconfirmedCount}{' '}
-                  {balanceSummary.unconfirmedCount === 1 ? 'UTXO' : 'UTXOs'}
+                  {balanceSummary.unconfirmedCount}
                 </Text>
               </View>
               <View style={styles.summaryRight}>
@@ -945,6 +1046,13 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
             tintColor={theme.colors.textSecondary}
           />
         }
+      />
+      <CurrencySelector
+        visible={isCurrencySelectorVisible}
+        onClose={() => setIsCurrencySelectorVisible(false)}
+        onSelect={handleCurrencySelect}
+        currentCurrency={selectedCurrency}
+        availableCurrencies={priceData}
       />
     </View>
   );

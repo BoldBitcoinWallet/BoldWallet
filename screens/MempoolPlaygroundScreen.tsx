@@ -493,6 +493,10 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
         modalItemTextSelected: {
           fontFamily: theme.fontFamilies?.medium,
         },
+        modalItemSelected: {
+          borderWidth: 1,
+          borderRadius: 8,
+        },
         modalCancelBtn: {
           paddingVertical: 12,
           borderRadius: 8,
@@ -634,16 +638,20 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
                             }}
                             style={[
                               styles.modalItem,
-                              ep.id === selectedId && {
-                                backgroundColor: theme.colors.primary + '18',
-                              },
+                              ep.id === selectedId && [
+                                styles.modalItemSelected,
+                                {
+                                  backgroundColor: theme.colors.primary + '18',
+                                  borderColor: theme.colors.primary,
+                                },
+                              ],
                             ]}>
                             <Text
                               style={[
                                 styles.modalItemText,
                                 {color: theme.colors.text},
                                 ep.id === selectedId && [
-                                  {color: theme.colors.primary},
+                                  {color: theme.colors.textSecondary},
                                   styles.modalItemTextSelected,
                                 ],
                               ]}
