@@ -27,8 +27,8 @@ import utxoRepository from '../services/repositories/UtxoRepository';
 import priceRepository from '../services/repositories/PriceRepository';
 import {WalletService} from '../services/WalletService';
 import utxoSyncer from '../services/sync/UtxoSyncer';
-import database from '../services/Database';
 import mempoolClient from '../services/MempoolClient';
+import apiQueue from '../services/ApiQueue';
 import {presentFiat, getCurrencySymbol, dbg} from '../utils';
 import AppPressable from '../components/AppPressable';
 import {CacheIndicator} from '../components/CacheIndicator';
@@ -138,6 +138,9 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
     current: number;
     total: number;
   } | null>(null);
+  const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
+  const [lastSyncFailed, setLastSyncFailed] = useState(false);
+  const [abortRequested, setAbortRequested] = useState(false);
 
   useEffect(() => {
     const loadCurrency = async () => {
@@ -244,23 +247,31 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
       setUtxosWithPath(storedToUtxoWithPath(allFromDB, addressesWithPaths));
       setUtxoFetchTimestamp(Date.now());
       setFetchError(null);
+      setLastSyncFailed(false);
     } catch (e: any) {
+      const isTimeout =
+        e?.name === 'AbortError' || /timeout|aborted/i.test(e?.message ?? '');
+      const message = isTimeout
+        ? 'Request timed out — cached data'
+        : 'Sync failed — showing cached data';
+      setSyncErrorMessage(message);
+      setLastSyncFailed(true);
+      setFetchError(
+        e?.name === 'AbortError'
+          ? 'Request timed out'
+          : e?.message || 'Failed to load UTXOs',
+      );
       Toast.show({
-        type: 'error',
-        text1: 'Could not fetch UTXOs',
-        text2: 'Using cached data.',
-        visibilityTime: 4000,
+        type: 'info',
+        text1: 'Sync failed — showing cached data',
+        text2: 'Tap the bar to retry.',
+        position: 'top',
       });
       const stored = utxoRepository.getUtxosForAddresses(
         addressesWithPaths.map(a => a.address),
         network,
       );
       setUtxosWithPath(storedToUtxoWithPath(stored, addressesWithPaths));
-      setFetchError(
-        e?.name === 'AbortError'
-          ? 'Request timed out'
-          : e?.message || 'Failed to load UTXOs',
-      );
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -268,6 +279,16 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
       setRefreshProgress(null);
     }
   }, [apiBase, network, addressType]);
+
+  useEffect(() => {
+    if (!syncErrorMessage) return;
+    const t = setTimeout(() => setSyncErrorMessage(null), 4000);
+    return () => clearTimeout(t);
+  }, [syncErrorMessage]);
+
+  useEffect(() => {
+    if (!refreshing) setAbortRequested(false);
+  }, [refreshing]);
 
   useEffect(() => {
     let cancelled = false;
@@ -990,44 +1011,70 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
         <CacheIndicator
           timestamps={{price: 0, balance: utxoFetchTimestamp}}
           onRefresh={onRefresh}
-          onAbortRequested={() => mempoolClient.abortAll()}
-          onLongPress={async () => {
-            const effectiveType = addressType || 'segwit-native';
-            const api =
-              apiBase
-                ?.trim()
-                ?.replace(/\/+$/, '')
-                ?.replace(/\/api\/?$/, '') || 'https://mempool.space';
-            setRefreshing(true);
-            try {
-              dbg(
-                '[UtxosScreen] Long-press: clearing wallet cache + full reconstruction',
-              );
-              setRefreshStatusMessage('Clearing cache…');
-              database.clearWalletCacheData();
-              mempoolClient.invalidateAll();
-              WalletService.getInstance().invalidateAddressCache();
-              setRefreshStatusMessage('Discovering addresses…');
-              await WalletService.getInstance().discoverHdIndexesForNetwork(
-                network,
-                effectiveType,
-                `${api}/api`,
-                chain =>
-                  setRefreshStatusMessage(
-                    `Scanning ${
-                      chain === 'external' ? 'receive' : 'change'
-                    } addresses…`,
-                  ),
-              );
-              setRefreshStatusMessage('Rebuilding wallet data…');
-            } catch (e) {
-              dbg('[UtxosScreen] Long-press reconstruction error', e);
-            }
-            setRefreshStatusMessage(null);
-            onRefresh();
+          syncErrorMessage={syncErrorMessage}
+          lastSyncFailed={lastSyncFailed}
+          onAbortRequested={() => {
+            Alert.alert(
+              'Cancel sync?',
+              'Stop the current sync and show cached data?',
+              [
+                {text: 'No', style: 'cancel'},
+                {
+                  text: 'Yes',
+                  onPress: () => {
+                    setAbortRequested(true);
+                    mempoolClient.abortAll();
+                    apiQueue.clear();
+                  },
+                },
+              ],
+            );
+          }}
+          onLongPress={() => {
+            Alert.alert(
+              'Full sync',
+              'Re-scan all addresses and sync. Existing data is kept. Continue?',
+              [
+                {text: 'Cancel', style: 'cancel'},
+                {
+                  text: 'Continue',
+                  onPress: async () => {
+                    const effectiveType = addressType || 'segwit-native';
+                    const api =
+                      apiBase
+                        ?.trim()
+                        ?.replace(/\/+$/, '')
+                        ?.replace(/\/api\/?$/, '') || 'https://mempool.space';
+                    setRefreshing(true);
+                    try {
+                      dbg(
+                        '[UtxosScreen] Long-press: full sync (discovery + refresh)',
+                      );
+                      setRefreshStatusMessage('Discovering addresses…');
+                      await WalletService.getInstance().discoverHdIndexesForNetwork(
+                        network,
+                        effectiveType,
+                        `${api}/api`,
+                        chain =>
+                          setRefreshStatusMessage(
+                            `Scanning ${
+                              chain === 'external' ? 'receive' : 'change'
+                            } addresses…`,
+                          ),
+                      );
+                      setRefreshStatusMessage('Rebuilding wallet data…');
+                    } catch (e) {
+                      dbg('[UtxosScreen] Long-press reconstruction error', e);
+                    }
+                    setRefreshStatusMessage(null);
+                    onRefresh();
+                  },
+                },
+              ],
+            );
           }}
           theme={theme}
-          isRefreshing={refreshing}
+          isRefreshing={refreshing && !abortRequested}
           statusMessage={refreshStatusMessage ?? undefined}
           progress={refreshProgress ?? undefined}
           usingCache={

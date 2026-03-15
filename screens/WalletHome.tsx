@@ -81,7 +81,6 @@ import syncCoordinator, {
   type SyncStatus,
 } from '../services/sync/SyncCoordinator';
 import apiQueue from '../services/ApiQueue';
-import database from '../services/Database';
 import mempoolClient from '../services/MempoolClient';
 import {
   parsePairingCodeFromScannedData,
@@ -165,6 +164,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     label: string | null;
     progress?: {current: number; total: number};
   } | null>(null);
+  /** Temporary sync error message shown in CacheIndicator; cleared after 4s. */
+  const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
+  /** When true, CacheIndicator shows "Tap to retry" until next successful sync. */
+  const [lastSyncFailed, setLastSyncFailed] = useState(false);
+  /** Set when user confirms abort — hide refreshing state immediately until sync actually stops. */
+  const [abortRequested, setAbortRequested] = useState(false);
   const [isCheckingBalanceForSend, setIsCheckingBalanceForSend] =
     useState(false);
   const [isCurrencySelectorVisible, setIsCurrencySelectorVisible] =
@@ -506,8 +511,23 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       await apiQueue.enqueue('Syncing fiat rate…', () =>
         WalletService.getInstance().getBitcoinPrice(),
       );
+      setLastSyncFailed(false);
     } catch (error) {
       dbg('[BALANCE] fetchData: API sync error (will read from DB):', error);
+      const isTimeout =
+        (error as Error)?.name === 'AbortError' ||
+        /timeout|aborted/i.test((error as Error)?.message ?? '');
+      const message = isTimeout
+        ? 'Request timed out — cached data'
+        : 'Sync failed — showing cached data';
+      setSyncErrorMessage(message);
+      setLastSyncFailed(true);
+      Toast.show({
+        type: 'info',
+        text1: 'Sync failed — showing cached data',
+        text2: 'Tap the bar to retry.',
+        position: 'top',
+      });
     }
 
     // DB → UI: always read from DB regardless of API success
@@ -539,6 +559,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     isFetchInProgressRef.current = false;
     dbg('=== Data fetch completed');
   }, [network, btcRate, _pendingSent, apiBase, addressType, userAddressType]);
+
+  // Clear temporary sync error message after 4s so bar returns to normal
+  useEffect(() => {
+    if (!syncErrorMessage) return;
+    const t = setTimeout(() => setSyncErrorMessage(null), 4000);
+    return () => clearTimeout(t);
+  }, [syncErrorMessage]);
+
+  // Reset abortRequested once sync has actually stopped so next refresh works normally
+  useEffect(() => {
+    if (!isRefreshing && !syncStatus) setAbortRequested(false);
+  }, [isRefreshing, syncStatus]);
+
   // Load HD addresses for multi-address transaction list.
   // If discovery has never been run for this (network, addressType), run it first
   // so indexes are correct — otherwise getHdAddressesWithPaths returns only 1 receive + 1 change.
@@ -2211,59 +2244,88 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         timestamps={cacheTimestamps}
         statusMessage={syncStatus?.label ?? apiQueueState?.label ?? undefined}
         progress={syncStatus?.progress ?? apiQueueState?.progress}
+        syncErrorMessage={syncErrorMessage}
+        lastSyncFailed={lastSyncFailed}
         onRefresh={() => {
           fetchData();
         }}
-        onAbortRequested={() => mempoolClient.abortAll()}
-        onLongPress={async () => {
-          const effectiveType =
-            addressType || userAddressType || 'segwit-native';
-          const api =
-            apiBase ||
-            appConfigRepository.get('api') ||
-            (network === 'mainnet'
-              ? 'https://mempool.space/api'
-              : 'https://mempool.space/testnet/api');
-          setIsRefreshing(true);
-          try {
-            dbg(
-              '[WalletHome] Long-press: clearing wallet cache + full reconstruction',
-            );
-            setSyncStatus({label: 'Clearing cache…'});
-            database.clearWalletCacheData();
-            mempoolClient.invalidateAll();
-            WalletService.getInstance().invalidateAddressCache();
-            setSyncStatus({label: 'Discovering addresses…'});
-            await WalletService.getInstance().discoverHdIndexesForNetwork(
-              network,
-              effectiveType,
-              api,
-              chain =>
-                setSyncStatus({
-                  label: `Scanning ${
-                    chain === 'external' ? 'receive' : 'change'
-                  } addresses…`,
-                }),
-            );
-            setSyncStatus({label: 'Rebuilding wallet data…'});
-            const arr =
-              await WalletService.getInstance().getHdAddressesWithPaths(
-                network,
-                effectiveType,
-              );
-            setWalletAddresses(arr.map(a => a.address));
-          } catch (e) {
-            dbg('[WalletHome] Long-press reconstruction error', e);
-          }
-          setSyncStatus(null);
-          await fetchData(false); // full sync after long-press rebuild
-          transactionListRef.current?.refresh?.(true); // full address list for tx sync
+        onAbortRequested={() => {
+          Alert.alert(
+            'Cancel sync?',
+            'Stop the current sync and show cached data?',
+            [
+              {text: 'No', style: 'cancel'},
+              {
+                text: 'Yes',
+                onPress: () => {
+                  setAbortRequested(true);
+                  mempoolClient.abortAll();
+                  apiQueue.clear();
+                },
+              },
+            ],
+          );
+        }}
+        onLongPress={() => {
+            Alert.alert(
+              'Full sync',
+              'Re-scan all addresses and sync balances and transactions. Existing data is kept. Continue?',
+            [
+              {text: 'Cancel', style: 'cancel'},
+              {
+                text: 'Continue',
+                onPress: async () => {
+                  const effectiveType =
+                    addressType || userAddressType || 'segwit-native';
+                  const api =
+                    apiBase ||
+                    appConfigRepository.get('api') ||
+                    (network === 'mainnet'
+                      ? 'https://mempool.space/api'
+                      : 'https://mempool.space/testnet/api');
+                  setIsRefreshing(true);
+                  try {
+                    dbg(
+                      '[WalletHome] Long-press: full sync (discovery + balance + tx)',
+                    );
+                    setSyncStatus({label: 'Discovering addresses…'});
+                    await WalletService.getInstance().discoverHdIndexesForNetwork(
+                      network,
+                      effectiveType,
+                      api,
+                      chain =>
+                        setSyncStatus({
+                          label: `Scanning ${
+                            chain === 'external' ? 'receive' : 'change'
+                          } addresses…`,
+                        }),
+                    );
+                    setSyncStatus({label: 'Rebuilding wallet data…'});
+                    const arr =
+                      await WalletService.getInstance().getHdAddressesWithPaths(
+                        network,
+                        effectiveType,
+                      );
+                    setWalletAddresses(arr.map(a => a.address));
+                  } catch (e) {
+                    dbg('[WalletHome] Long-press reconstruction error', e);
+                  }
+                  setSyncStatus(null);
+                  await fetchData(false); // full sync after long-press rebuild
+                  transactionListRef.current?.refresh?.(true); // full address list for tx sync
+                },
+              },
+            ],
+          );
         }}
         theme={theme}
-        isRefreshing={isRefreshing || !!syncStatus}
+        isRefreshing={
+          (isRefreshing || !!syncStatus) && !abortRequested
+        }
         usingCache={
           !isRefreshing &&
           !syncStatus &&
+          !abortRequested &&
           cacheTimestamps.price > 0 &&
           cacheTimestamps.balance > 0 &&
           Date.now() -

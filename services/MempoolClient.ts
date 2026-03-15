@@ -16,9 +16,11 @@
  *
  *   3. FAILOVER — When the request URL's host is one of the known public mempool
  *      bases (set via setPublicBases, e.g. from getMainnetAPIList), a failed
- *      request is retried on other public hosts. When the user has set a custom
- *      API (not in that list) for privacy, failover is never used — only their
- *      single host is tried.
+ *      request is retried on other public hosts (round-robin). Applicable to all
+ *      get() calls that target a public host. We failover on 5xx/429 always; when
+ *      multiple URLs are in use we also failover on 4xx (e.g. 404 — some mirrors
+ *      may not support an endpoint). When the user has set a custom API (not in
+ *      that list) for privacy, failover is never used — only their single host is tried.
  *
  * TTL defaults:
  *   - /address/…           15 s  (balance, UTXOs, transactions — default)
@@ -297,7 +299,7 @@ class MempoolClient {
    */
   async get<T = unknown>(
     url: string,
-    init?: RequestInit & {ttl?: number},
+    init?: RequestInit & {ttl?: number; timeoutMs?: number},
   ): Promise<MempoolResponse<T>> {
     const bodyStr =
       init?.body != null ? String(init.body) : undefined;
@@ -322,9 +324,10 @@ class MempoolClient {
     // 3. Issue a new request (with failover for public hosts) --------------
     const ttl = init?.ttl ?? ttlForUrl(url);
 
-    // Strip the custom `ttl` field so it is not forwarded to fetch().
+    // Strip custom fields so they are not forwarded to fetch().
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const {ttl: _ttl, signal: callerSignal, ...restInit} = (init ?? {}) as RequestInit & {ttl?: number};
+    const {ttl: _ttl, timeoutMs: timeoutOverride, signal: callerSignal, ...restInit} = (init ?? {}) as RequestInit & {ttl?: number; timeoutMs?: number};
+    const fetchTimeoutMs = timeoutOverride ?? getFetchTimeoutMs();
 
     const urls = this._getUrlsToTryRoundRobin(url) ?? [url];
 
@@ -338,7 +341,7 @@ class MempoolClient {
           const timeoutController = new AbortController();
           const timeoutId = setTimeout(
             () => timeoutController.abort(),
-            getFetchTimeoutMs(),
+            fetchTimeoutMs,
           );
           const timeAndCaller = combineSignals(
             callerSignal as AbortSignal | undefined,
@@ -366,6 +369,7 @@ class MempoolClient {
 
             // Non-2xx: do NOT cache — transient errors must not persist.
             dbg('MempoolClient: non-ok response', res.status, tryUrl.slice(-80));
+            await res.text().catch(() => {}); // consume body before possible failover
             const out: MempoolResponse<unknown> = {
               ok: false,
               status: res.status,
@@ -381,10 +385,16 @@ class MempoolClient {
             }
             lastResult = out;
 
-            // Failover on server errors (5xx / 429), NOT on 4xx (client error).
-            if ((res.status >= 500 || res.status === 429) && attempt < urls.length - 1) {
-              dbg('MempoolClient: failover →', urls[attempt + 1].slice(-80));
-              continue;
+            // Failover: on 5xx/429 always try next; when round-robin (multiple URLs), also try next on 4xx (e.g. 404 — some mirrors may not support the endpoint).
+            if (attempt < urls.length - 1) {
+              const doFailover =
+                res.status >= 500 ||
+                res.status === 429 ||
+                (urls.length > 1 && !res.ok);
+              if (doFailover) {
+                dbg('MempoolClient: failover →', urls[attempt + 1].slice(-80));
+                continue;
+              }
             }
             return out;
           } catch (err) {

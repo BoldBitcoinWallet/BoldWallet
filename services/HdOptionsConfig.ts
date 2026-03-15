@@ -4,7 +4,6 @@
  * UI: WalletSettings → Wallet → HD Options.
  */
 import appConfigRepository from './repositories/AppConfigRepository';
-import {GAP_LIMIT, MIN_SCAN_INDEX} from '../utils';
 
 export const HD_OPTIONS_KEYS = {
   GAP_LIMIT: 'hd_gap_limit',
@@ -35,37 +34,55 @@ function parsePositiveInt(value: string | null, defaultVal: number): number {
 
 export function getGapLimit(): number {
   const v = appConfigRepository.get(HD_OPTIONS_KEYS.GAP_LIMIT);
-  return parsePositiveInt(v, GAP_LIMIT);
+  return parsePositiveInt(v, HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.GAP_LIMIT]);
 }
 
 export function getMinScanIndex(): number {
   const v = appConfigRepository.get(HD_OPTIONS_KEYS.MIN_SCAN_INDEX);
-  return parsePositiveInt(v, MIN_SCAN_INDEX);
+  return parsePositiveInt(
+    v,
+    HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.MIN_SCAN_INDEX],
+  );
 }
 
 export function getApiTimeoutMs(): number {
   const v = appConfigRepository.get(HD_OPTIONS_KEYS.API_TIMEOUT_MS);
-  return parsePositiveInt(v, HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.API_TIMEOUT_MS]);
+  return parsePositiveInt(
+    v,
+    HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.API_TIMEOUT_MS],
+  );
 }
 
 export function getUtxoEmptyCacheTtlMs(): number {
   const v = appConfigRepository.get(HD_OPTIONS_KEYS.UTXO_EMPTY_CACHE_TTL_MS);
-  return parsePositiveInt(v, HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.UTXO_EMPTY_CACHE_TTL_MS]);
+  return parsePositiveInt(
+    v,
+    HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.UTXO_EMPTY_CACHE_TTL_MS],
+  );
 }
 
 export function getFetchTimeoutMs(): number {
   const v = appConfigRepository.get(HD_OPTIONS_KEYS.FETCH_TIMEOUT_MS);
-  return parsePositiveInt(v, HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.FETCH_TIMEOUT_MS]);
+  return parsePositiveInt(
+    v,
+    HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.FETCH_TIMEOUT_MS],
+  );
 }
 
 export function getMempoolDefaultTtlMs(): number {
   const v = appConfigRepository.get(HD_OPTIONS_KEYS.MEMPOOL_DEFAULT_TTL_MS);
-  return parsePositiveInt(v, HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.MEMPOOL_DEFAULT_TTL_MS]);
+  return parsePositiveInt(
+    v,
+    HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.MEMPOOL_DEFAULT_TTL_MS],
+  );
 }
 
 export function getTransactionDbTtlMs(): number {
   const v = appConfigRepository.get(HD_OPTIONS_KEYS.TRANSACTION_DB_TTL_MS);
-  return parsePositiveInt(v, HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.TRANSACTION_DB_TTL_MS]);
+  return parsePositiveInt(
+    v,
+    HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.TRANSACTION_DB_TTL_MS],
+  );
 }
 
 /** Remove all HD option overrides so getters return defaults. */

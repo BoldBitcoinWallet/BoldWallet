@@ -117,7 +117,7 @@ export const dbg = (message, ...optionalParams) => {
 export const shorten = (x, y = 12) => `${x.slice(0, y)}...${x.slice(-y)}`;
 
 /** Shorten a Bitcoin address for display: first 4 + ... + last 4. */
-export const shortenAddress = (addr) =>
+export const shortenAddress = addr =>
   typeof addr === 'string' && addr.length > 8
     ? `${addr.slice(0, 4)}...${addr.slice(-4)}`
     : addr || '';
@@ -195,11 +195,9 @@ export const generateAllOutputDescriptors = async (
     // Determine primary descriptor based on address type
     let primary = outputDescriptors.legacy;
     if (addressType === 'segwit-native') {
-      primary =
-        outputDescriptors.segwitNative || outputDescriptors.legacy;
+      primary = outputDescriptors.segwitNative || outputDescriptors.legacy;
     } else if (addressType === 'segwit-compatible') {
-      primary =
-        outputDescriptors.segwitCompatible || outputDescriptors.legacy;
+      primary = outputDescriptors.segwitCompatible || outputDescriptors.legacy;
     }
 
     return {
@@ -222,12 +220,13 @@ export const generateAllOutputDescriptors = async (
  * @param {number|string|null|undefined} createdAt - Timestamp from keyshare.created_at
  * @returns {boolean} - true if legacy wallet (should use BIP44 for all address types)
  */
-export const isLegacyWallet = (createdAt) => {
+export const isLegacyWallet = createdAt => {
   if (!createdAt) {
     // If no timestamp, assume legacy for safety
     return true;
   }
-  const timestamp = typeof createdAt === 'string' ? parseInt(createdAt, 10) : createdAt;
+  const timestamp =
+    typeof createdAt === 'string' ? parseInt(createdAt, 10) : createdAt;
   // Wallets created after 1765894825732 use optimized paths (BIP84/BIP49)
   // Wallets created before or equal to this timestamp use BIP44 for all address types
   return timestamp <= 1765894825732;
@@ -247,14 +246,21 @@ export const isLegacyWallet = (createdAt) => {
  *   - New wallets with segwit-native: "m/84'/coinType'/account'/change/index" (BIP84)
  *   - New wallets with segwit-compatible: "m/49'/coinType'/account'/change/index" (BIP49)
  */
-export const getDerivePathForNetwork = (network, addressType = 'legacy', useLegacyPath = false, account = 0, change = 0, index = 0) => {
+export const getDerivePathForNetwork = (
+  network,
+  addressType = 'legacy',
+  useLegacyPath = false,
+  account = 0,
+  change = 0,
+  index = 0,
+) => {
   const coinType = network === 'mainnet' ? "0'" : "1'";
-  
+
   // Legacy wallets always use BIP44 for all address types (backward compatibility)
   if (useLegacyPath) {
     return `m/44'/${coinType}/${account}'/${change}/${index}`;
   }
-  
+
   // Determine BIP path based on address type for new wallets
   let bipPath;
   switch (addressType) {
@@ -269,15 +275,9 @@ export const getDerivePathForNetwork = (network, addressType = 'legacy', useLega
       bipPath = "44'"; // BIP44
       break;
   }
-  
+
   return `m/${bipPath}/${coinType}/${account}'/${change}/${index}`;
 };
-
-/** Standard BIP44/BIP84/BIP49 gap limit for address discovery (e.g. restore). */
-export const GAP_LIMIT = 5;
-
-/** Minimum indices to always scan for both receive and change chains. Ensures path 0 and old paths are never missed. */
-export const MIN_SCAN_INDEX = 20;
 
 /**
  * Derivation path for receive (external) address at given index.
@@ -286,8 +286,12 @@ export const MIN_SCAN_INDEX = 20;
  * @param {boolean} useLegacyPath - legacy wallet path
  * @param {number} index - address index (default 0)
  */
-export const getReceivePath = (network, addressType, useLegacyPath, index = 0) =>
-  getDerivePathForNetwork(network, addressType, useLegacyPath, 0, 0, index);
+export const getReceivePath = (
+  network,
+  addressType,
+  useLegacyPath,
+  index = 0,
+) => getDerivePathForNetwork(network, addressType, useLegacyPath, 0, 0, index);
 
 /**
  * Derivation path for change (internal) address at given index.
@@ -346,12 +350,12 @@ export const presentFiat = (amount, decimals = 2) => {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   });
-  
+
   // Remove .00 if it's a whole number
   if (formatted.endsWith('.00')) {
     return formatted.slice(0, -3);
   }
-  
+
   return formatted;
 };
 
@@ -391,7 +395,7 @@ export const formatBTC = (btcAmount, options = {}) => {
   if (isNaN(amount) || amount < 0) {
     return '0';
   }
-  
+
   // Handle zero amount
   if (amount === 0) {
     return '0';
@@ -403,7 +407,9 @@ export const formatBTC = (btcAmount, options = {}) => {
   const thinSpace = ',';
 
   // Format whole part: standard thousand separators (every 3 digits from right) using thin space
-  const formattedWhole = Number(wholePart).toLocaleString('en-US').replace(/,/g, thinSpace);
+  const formattedWhole = Number(wholePart)
+    .toLocaleString('en-US')
+    .replace(/,/g, thinSpace);
 
   // Determine smart precision based on amount size
   let targetDecimals = 8; // Default to full precision
@@ -441,34 +447,43 @@ export const formatBTC = (btcAmount, options = {}) => {
   let formattedDecimal = '';
   if (decimalPart) {
     // Pad to target decimals (or 8 if more precision needed)
-    const paddedDecimal = decimalPart.padEnd(Math.max(targetDecimals, 8), '0').slice(0, Math.max(targetDecimals, 8));
-    
+    const paddedDecimal = decimalPart
+      .padEnd(Math.max(targetDecimals, 8), '0')
+      .slice(0, Math.max(targetDecimals, 8));
+
     // Truncate to target decimals
     const truncatedDecimal = paddedDecimal.slice(0, targetDecimals);
-    
+
     // Apply custom comma formatting: first comma after 2 digits, then every 3 digits
     if (truncatedDecimal.length > 2) {
       const firstTwo = truncatedDecimal.slice(0, 2);
       const remaining = truncatedDecimal.slice(2);
-      
+
       // Group remaining digits in groups of 3
       const groups = [];
       for (let i = 0; i < remaining.length; i += 3) {
         groups.push(remaining.slice(i, i + 3));
       }
-      
+
       // Combine: first 2 digits, then thin space, then groups of 3 separated by thin spaces
-      formattedDecimal = firstTwo + (groups.length > 0 ? thinSpace + groups.join(thinSpace) : '');
+      formattedDecimal =
+        firstTwo +
+        (groups.length > 0 ? thinSpace + groups.join(thinSpace) : '');
     } else {
       formattedDecimal = truncatedDecimal;
     }
 
     // Remove trailing zeros if not requested
     if (!showTrailingZeros) {
-      formattedDecimal = formattedDecimal.replace(/0+$/, '').replace(new RegExp(thinSpace + '$'), '');
+      formattedDecimal = formattedDecimal
+        .replace(/0+$/, '')
+        .replace(new RegExp(thinSpace + '$'), '');
       // If all decimals removed, ensure we have at least the first two digits for consistency
       if (formattedDecimal === '' && truncatedDecimal.length > 0) {
-        formattedDecimal = truncatedDecimal.slice(0, Math.min(2, truncatedDecimal.length));
+        formattedDecimal = truncatedDecimal.slice(
+          0,
+          Math.min(2, truncatedDecimal.length),
+        );
       }
     }
   } else if (targetDecimals > 0 && showTrailingZeros) {
@@ -476,7 +491,8 @@ export const formatBTC = (btcAmount, options = {}) => {
     formattedDecimal = '00';
     if (targetDecimals > 2) {
       const remainingZeros = '0'.repeat(Math.min(targetDecimals - 2, 6));
-      formattedDecimal += thinSpace + remainingZeros.match(/.{1,3}/g)?.join(thinSpace) || '';
+      formattedDecimal +=
+        thinSpace + remainingZeros.match(/.{1,3}/g)?.join(thinSpace) || '';
     }
   }
 
@@ -493,14 +509,14 @@ export const formatBTC = (btcAmount, options = {}) => {
  * @param {string|number} satsAmount - The satoshi amount to format
  * @returns {string} Formatted satoshi amount
  */
-export const formatSats = (satsAmount) => {
+export const formatSats = satsAmount => {
   if (satsAmount === undefined || satsAmount === null || satsAmount === '') {
     return '0';
   }
 
   const amountStr = String(satsAmount);
   const amount = parseFloat(amountStr);
-  
+
   if (isNaN(amount) || amount < 0) {
     return '0';
   }
@@ -879,9 +895,14 @@ export const encodeSendBitcoinQR = (
   utxosJson = '',
   changeAddress = '',
 ) => {
-  const amount = typeof amountSats === 'string' ? amountSats : amountSats.toString();
+  const amount =
+    typeof amountSats === 'string' ? amountSats : amountSats.toString();
   const fee = typeof feeSats === 'string' ? feeSats : feeSats.toString();
-  return `${toAddress}|${amount}|${fee}|${spendingHash || ''}|${addressType || ''}|${derivationPath || ''}|${network || ''}|${utxosJson || ''}|${changeAddress || ''}`;
+  return `${toAddress}|${amount}|${fee}|${spendingHash || ''}|${
+    addressType || ''
+  }|${derivationPath || ''}|${network || ''}|${utxosJson || ''}|${
+    changeAddress || ''
+  }`;
 };
 
 /**
@@ -894,7 +915,7 @@ export const encodeSendBitcoinQR = (
  * @param {string} qrData - QR code data string
  * @returns {Object|null} - Decoded data object or null if invalid
  */
-export const decodeSendBitcoinQR = (qrData) => {
+export const decodeSendBitcoinQR = qrData => {
   if (!qrData || typeof qrData !== 'string') {
     return null;
   }

@@ -29,6 +29,10 @@ interface CacheIndicatorProps {
   statusMessage?: string;
   /** When isRefreshing and set, append " current/total" (e.g. "Fetching balance… 3/5"). */
   progress?: {current: number; total: number};
+  /** Temporary message after sync failure (e.g. "Sync failed — cached data"); parent clears after ~4s. */
+  syncErrorMessage?: string | null;
+  /** When true and not refreshing, show "Tap to retry" instead of "Tap to refresh". */
+  lastSyncFailed?: boolean;
 }
 export interface CacheIndicatorHandle {
   press: () => void;
@@ -48,6 +52,8 @@ export const CacheIndicator = forwardRef<
       usingCache = false,
       statusMessage,
       progress,
+      syncErrorMessage,
+      lastSyncFailed = false,
     },
     ref,
   ) => {
@@ -253,11 +259,19 @@ export const CacheIndicator = forwardRef<
             style={{
               color: isRefreshing
                 ? theme.colors.textSecondary
+                : syncErrorMessage
+                ? (theme.colors.warning ?? theme.colors.bitcoinOrange)
                 : theme.colors.background === '#ffffff'
                 ? theme.colors.accent
                 : theme.colors.bitcoinOrange,
             }}>
-            {isRefreshing ? statusMessage ?? 'Refreshing...' : 'Tap to refresh'}
+            {isRefreshing
+              ? statusMessage ?? 'Refreshing...'
+              : syncErrorMessage
+              ? syncErrorMessage
+              : lastSyncFailed
+              ? 'Tap to retry'
+              : 'Tap to refresh'}
           </Text>
           {isRefreshing && progress ? (
             <Text

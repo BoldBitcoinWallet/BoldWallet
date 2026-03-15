@@ -13,7 +13,9 @@ import {
   getUtxoEmptyCacheTtlMs,
 } from './HdOptionsConfig';
 import mempoolClient from './MempoolClient';
-import appConfigRepository, {CONFIG_KEYS} from './repositories/AppConfigRepository';
+import appConfigRepository, {
+  CONFIG_KEYS,
+} from './repositories/AppConfigRepository';
 import balanceRepository from './repositories/BalanceRepository';
 import transactionRepository from './repositories/TransactionRepository';
 import utxoRepository from './repositories/UtxoRepository';
@@ -270,7 +272,12 @@ export class WalletService {
   public async getBal(address: string): Promise<WalletBalance> {
     const stored = balanceRepository.getBalance(address, this.currentNetwork);
     if (!stored) {
-      return {btc: '0.00000000', usd: '$0.00', hasNonZeroBalance: false, timestamp: 0};
+      return {
+        btc: '0.00000000',
+        usd: '$0.00',
+        hasNonZeroBalance: false,
+        timestamp: 0,
+      };
     }
     return {
       btc: (stored.balanceSats / 1e8).toFixed(8),
@@ -281,7 +288,10 @@ export class WalletService {
     };
   }
   public async getTxs(address: string): Promise<CachedTransactionData> {
-    const txs = transactionRepository.getTransactionsForAddress(address, this.currentNetwork);
+    const txs = transactionRepository.getTransactionsForAddress(
+      address,
+      this.currentNetwork,
+    );
     if (!txs.length) return {transactions: [], timestamp: 0};
     const transactions: Transaction[] = txs.map(r => {
       try {
@@ -298,7 +308,11 @@ export class WalletService {
           timestamp: r.blockTime ?? undefined,
           amount: 0,
           fee: r.feeSats ?? 0,
-          status: {confirmed: r.isConfirmed, block_height: r.blockHeight ?? undefined, block_time: r.blockTime ?? undefined},
+          status: {
+            confirmed: r.isConfirmed,
+            block_height: r.blockHeight ?? undefined,
+            block_time: r.blockTime ?? undefined,
+          },
           type: 'receive',
           address,
         };
@@ -323,14 +337,13 @@ export class WalletService {
     timestamp: number;
   }> {
     const cached = priceRepository.getCachedPrice('USD');
-    return cached
-      ? cached
-      : {price: '$0.00', rate: 0, rates: {}, timestamp: 0};
+    return cached ? cached : {price: '$0.00', rate: 0, rates: {}, timestamp: 0};
   }
   private async getStoredState() {
     try {
       const network = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
-      const addressType = appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'legacy';
+      const addressType =
+        appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'legacy';
       let api = appConfigRepository.get(`api_${network}`);
       if (!api) {
         api = appConfigRepository.get('api');
@@ -411,7 +424,8 @@ export class WalletService {
     network: string,
     addressType: string,
   ): Promise<string> {
-    return (await this.getNextChangeAddressWithPath(network, addressType)).address;
+    return (await this.getNextChangeAddressWithPath(network, addressType))
+      .address;
   }
 
   public async getNextChangeAddressWithPath(
@@ -636,7 +650,10 @@ export class WalletService {
     if (!jks) {
       dbg(
         '[BALANCE] getHdAddressesWithPaths: keyshare not in EncryptedStorage — returning [].',
-        'network:', network, 'addressType:', addressType,
+        'network:',
+        network,
+        'addressType:',
+        addressType,
         '(iOS Keychain may still be initialising after device unlock)',
       );
       return [];
@@ -737,7 +754,10 @@ export class WalletService {
     const allAddresses = all.map(a => a.address);
 
     // Addresses holding UTXOs
-    const utxosInDb = utxoRepository.getUtxosForAddresses(allAddresses, network);
+    const utxosInDb = utxoRepository.getUtxosForAddresses(
+      allAddresses,
+      network,
+    );
     const utxoAddrSet = new Set(utxosInDb.map(u => u.address));
 
     // Addresses with pending (unconfirmed) transactions
@@ -883,14 +903,14 @@ export class WalletService {
   private async isAddressUsed(
     address: string,
     apiUrl: string,
-    timeout: number = 8000,
+    timeout: number = 10_000,
   ): Promise<boolean> {
     const baseUrl = apiUrl.replace(/\/+$/, '');
     const url = `${baseUrl}/address/${address}/txs`;
     try {
       const response = await this.withTimeout(
         `txs-${address.slice(0, 12)}`,
-        (signal) => mempoolClient.get(url, {signal}),
+        signal => mempoolClient.get(url, {signal, timeoutMs: timeout}),
         timeout,
       );
       if (!response.ok) {
@@ -1009,7 +1029,12 @@ export class WalletService {
           onProgress?.('external', i, consecutiveUnused);
           const used = await this.isAddressUsed(addr, apiUrl);
           walletRepository.upsertAddress({
-            network, addressType, chain: 0, idx: i, address: addr, isUsed: used,
+            network,
+            addressType,
+            chain: 0,
+            idx: i,
+            address: addr,
+            isUsed: used,
           });
           if (used) {
             discoveredMaxUsedExternal = i;
@@ -1019,15 +1044,25 @@ export class WalletService {
           }
         } catch {
           dbg('WalletService: Restore discovery external error, retrying', {
-            network, addressType, index: i,
+            network,
+            addressType,
+            index: i,
           });
           try {
             await waitMS(1500);
-            const retryUrl = `${apiUrl.replace(/\/+$/, '')}/address/${addr}/txs`;
+            const retryUrl = `${apiUrl.replace(
+              /\/+$/,
+              '',
+            )}/address/${addr}/txs`;
             mempoolClient.evictInflight(retryUrl);
             const used = await this.isAddressUsed(addr, apiUrl);
             walletRepository.upsertAddress({
-              network, addressType, chain: 0, idx: i, address: addr, isUsed: used,
+              network,
+              addressType,
+              chain: 0,
+              idx: i,
+              address: addr,
+              isUsed: used,
             });
             if (used) {
               discoveredMaxUsedExternal = i;
@@ -1037,7 +1072,10 @@ export class WalletService {
             }
           } catch (retryError) {
             dbg('WalletService: Restore discovery external error after retry', {
-              network, addressType, index: i, error: retryError,
+              network,
+              addressType,
+              index: i,
+              error: retryError,
             });
             discoveryStatus = 'partial';
             break;
@@ -1093,7 +1131,12 @@ export class WalletService {
             onProgress?.('internal', i, consecutiveUnused);
             const used = await this.isAddressUsed(addr, apiUrl);
             walletRepository.upsertAddress({
-              network, addressType, chain: 1, idx: i, address: addr, isUsed: used,
+              network,
+              addressType,
+              chain: 1,
+              idx: i,
+              address: addr,
+              isUsed: used,
             });
             if (used) {
               discoveredMaxUsedChange = i;
@@ -1103,15 +1146,25 @@ export class WalletService {
             }
           } catch {
             dbg('WalletService: Restore discovery internal error, retrying', {
-              network, addressType, index: i,
+              network,
+              addressType,
+              index: i,
             });
             try {
               await waitMS(1500);
-              const retryUrl = `${apiUrl.replace(/\/+$/, '')}/address/${addr}/txs`;
+              const retryUrl = `${apiUrl.replace(
+                /\/+$/,
+                '',
+              )}/address/${addr}/txs`;
               mempoolClient.evictInflight(retryUrl);
               const used = await this.isAddressUsed(addr, apiUrl);
               walletRepository.upsertAddress({
-                network, addressType, chain: 1, idx: i, address: addr, isUsed: used,
+                network,
+                addressType,
+                chain: 1,
+                idx: i,
+                address: addr,
+                isUsed: used,
               });
               if (used) {
                 discoveredMaxUsedChange = i;
@@ -1120,9 +1173,15 @@ export class WalletService {
                 consecutiveUnused++;
               }
             } catch (retryError) {
-              dbg('WalletService: Restore discovery internal error after retry', {
-                network, addressType, index: i, error: retryError,
-              });
+              dbg(
+                'WalletService: Restore discovery internal error after retry',
+                {
+                  network,
+                  addressType,
+                  index: i,
+                  error: retryError,
+                },
+              );
               discoveryStatus = 'partial';
               break;
             }
@@ -1144,7 +1203,10 @@ export class WalletService {
     // Previously, partial discovery threw away everything — meaning if the API
     // timed out at index 5 but we found used addresses at indexes 0-3, those
     // results were lost and the wallet showed 0 balance.
-    if (discoveryStatus === 'ok' || (discoveryStatus === 'partial' && discoveredMaxUsedExternal >= 0)) {
+    if (
+      discoveryStatus === 'ok' ||
+      (discoveryStatus === 'partial' && discoveredMaxUsedExternal >= 0)
+    ) {
       const externalNext = Math.max(
         0,
         discoveredMaxUsedExternal + 1,
@@ -1178,7 +1240,12 @@ export class WalletService {
       if (discoveryStatus === 'ok') {
         walletRepository.setRestoreDone(network, addressType, true);
       }
-      walletRepository.setDiscoveryStatus(network, addressType, discoveryStatus, Date.now());
+      walletRepository.setDiscoveryStatus(
+        network,
+        addressType,
+        discoveryStatus,
+        Date.now(),
+      );
     } else {
       dbg(
         'WalletService: Restore discovery aborted, keeping previous HD indexes',
@@ -1192,7 +1259,12 @@ export class WalletService {
           durationMs,
         },
       );
-      walletRepository.setDiscoveryStatus(network, addressType, discoveryStatus, Date.now());
+      walletRepository.setDiscoveryStatus(
+        network,
+        addressType,
+        discoveryStatus,
+        Date.now(),
+      );
     }
 
     dbg('WalletService: discoverHdIndexesForNetwork COMPLETE', {
@@ -1261,7 +1333,11 @@ export class WalletService {
     try {
       // DB-level TTL: return cached price when it was written recently.
       const cachedPrice = priceRepository.getCachedPrice('USD');
-      if (cachedPrice && cachedPrice.timestamp && Date.now() - cachedPrice.timestamp < 45_000) {
+      if (
+        cachedPrice &&
+        cachedPrice.timestamp &&
+        Date.now() - cachedPrice.timestamp < 45_000
+      ) {
         dbg('WalletService.getBitcoinPrice: DB fresh — returning cached');
         return {
           price: this.formatUSD(cachedPrice.rate),
@@ -1293,7 +1369,10 @@ export class WalletService {
           : apiEndpoints;
 
       if (userMainnetApi && !publicBases.has(userBase)) {
-        dbg('WalletService: Using custom mainnet API only for price (no public failover):', userMainnetApi);
+        dbg(
+          'WalletService: Using custom mainnet API only for price (no public failover):',
+          userMainnetApi,
+        );
       } else {
         dbg(
           'WalletService: Attempting to fetch BTC price using round-robin from APIs:',
@@ -1307,9 +1386,8 @@ export class WalletService {
           const priceUrl =
             baseApiUrl.replace(/\/testnet\/?$/, '') + '/v1/prices';
           dbg('WalletService: Trying price API URL:', priceUrl);
-          const response = await this.withTimeout(
-            'price',
-            (signal) => mempoolClient.get(priceUrl, {signal}),
+          const response = await this.withTimeout('price', signal =>
+            mempoolClient.get(priceUrl, {signal}),
           );
           if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
@@ -1393,7 +1471,9 @@ export class WalletService {
       this.abortControllers.clear();
       // Clear persistent storage
       try {
-        dbg('WalletService: Cleared persistent cache (walletCache key deprecated)');
+        dbg(
+          'WalletService: Cleared persistent cache (walletCache key deprecated)',
+        );
       } catch (error) {
         dbg('WalletService: Error clearing persistent cache:', error);
       }
@@ -1635,9 +1715,14 @@ export class WalletService {
       // stamp sync_metadata on success, so they share freshness state.
       const aggKey = `aggregate_${network}_${addressType}`;
       if (!_force && syncRepository.isFresh('balance', aggKey, 20_000)) {
-        const cached = await this.getCachedAggregateBalance(network, addressType);
+        const cached = await this.getCachedAggregateBalance(
+          network,
+          addressType,
+        );
         if (cached) {
-          dbg('[BALANCE] getWalletBalanceAggregate: DB fresh — returning cached');
+          dbg(
+            '[BALANCE] getWalletBalanceAggregate: DB fresh — returning cached',
+          );
           return cached;
         }
       }
@@ -1661,11 +1746,20 @@ export class WalletService {
       if (addresses.length === 0) {
         dbg(
           '[BALANCE] getWalletBalanceAggregate: address list is EMPTY — keyshare unavailable.',
-          'network:', network, 'addressType:', addressType,
+          'network:',
+          network,
+          'addressType:',
+          addressType,
           'Falling back to cached aggregate instead of returning 0.',
         );
-        const cached = await this.getCachedAggregateBalance(network, addressType);
-        dbg('[BALANCE] getWalletBalanceAggregate: cached aggregate =', cached ? cached.btc + ' BTC' : 'NOT FOUND');
+        const cached = await this.getCachedAggregateBalance(
+          network,
+          addressType,
+        );
+        dbg(
+          '[BALANCE] getWalletBalanceAggregate: cached aggregate =',
+          cached ? cached.btc + ' BTC' : 'NOT FOUND',
+        );
         if (cached) return cached;
       }
 
@@ -1691,8 +1785,15 @@ export class WalletService {
           }>(`${cleanApi}/address/${encodeURIComponent(addr)}`);
 
           if (!res.ok || !res.data) {
-            dbg('[BALANCE] getWalletBalanceAggregate: address failed', addr.slice(0, 10), res.status);
-            const cached = await this.getCachedAggregateBalance(network, addressType);
+            dbg(
+              '[BALANCE] getWalletBalanceAggregate: address failed',
+              addr.slice(0, 10),
+              res.status,
+            );
+            const cached = await this.getCachedAggregateBalance(
+              network,
+              addressType,
+            );
             if (cached) return cached;
             return {
               btc: '0.00000000',
@@ -1708,7 +1809,8 @@ export class WalletService {
             chain_stats.funded_txo_sum - chain_stats.spent_txo_sum;
           const addrMempool =
             mempool_stats.funded_txo_sum - mempool_stats.spent_txo_sum;
-          const balanceSats = Math.max(0, addrConfirmed) + Math.max(0, addrMempool);
+          const balanceSats =
+            Math.max(0, addrConfirmed) + Math.max(0, addrMempool);
           const now = Date.now();
 
           if (Number.isFinite(addrConfirmed) && addrConfirmed > 0) {
@@ -1726,8 +1828,15 @@ export class WalletService {
             fetchedAt: now,
           });
         } catch (err) {
-          dbg('[BALANCE] getWalletBalanceAggregate: network error for', addr.slice(0, 10), err);
-          const cached = await this.getCachedAggregateBalance(network, addressType);
+          dbg(
+            '[BALANCE] getWalletBalanceAggregate: network error for',
+            addr.slice(0, 10),
+            err,
+          );
+          const cached = await this.getCachedAggregateBalance(
+            network,
+            addressType,
+          );
           if (cached) return cached;
           return {
             btc: '0.00000000',
@@ -1751,16 +1860,34 @@ export class WalletService {
       balanceRepository.setBalances(bals);
       // Stamp sync_metadata so BalanceSyncer knows these addresses are fresh.
       for (const b of bals) {
-        syncRepository.updateCursor('balance', `${b.address}_${network}`, null, 'ok');
+        syncRepository.updateCursor(
+          'balance',
+          `${b.address}_${network}`,
+          null,
+          'ok',
+        );
       }
-      syncRepository.updateCursor('balance', `aggregate_${network}_${addressType}`, null, 'ok');
+      syncRepository.updateCursor(
+        'balance',
+        `aggregate_${network}_${addressType}`,
+        null,
+        'ok',
+      );
 
       dbg(
         '[BALANCE] getWalletBalanceAggregate: API result (atomic write) —',
-        'addresses:', addresses.length,
-        'confirmed:', confirmedSats.toFixed(0), 'sats',
-        'mempool:', mempoolSats.toFixed(0), 'sats',
-        'network:', network, 'addressType:', addressType,
+        'addresses:',
+        addresses.length,
+        'confirmed:',
+        confirmedSats.toFixed(0),
+        'sats',
+        'mempool:',
+        mempoolSats.toFixed(0),
+        'sats',
+        'network:',
+        network,
+        'addressType:',
+        addressType,
       );
 
       const totalSats = confirmedSats.add(mempoolSats);
