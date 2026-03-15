@@ -1,5 +1,25 @@
 # Changelog
 
+## [3.0.5] - 2026-03-15
+
+### Added
+- **Lightweight tap-to-refresh** — tap on the cache indicator (and background SyncCoordinator cycles) now sync only the **active address set** (recent receive/change index window, UTXO holders, pending-tx addresses, current receive). Full sync runs only on **long-press** on the cache indicator (clear cache + HD discovery + full balance/tx rebuild).
+- **`WalletService.getActiveAddressesWithPaths(network, addressType)`** — returns the subset of HD addresses used for lightweight sync: recent index window, addresses with UTXOs, addresses with pending txs, and current receive address.
+- **`getWalletBalanceAggregate(..., activeOnly)`** — when `activeOnly` is true, balance sync uses the active set instead of the full HD list.
+- **`versionbuild.sh`** — script to bump version and build across Android (`versionName`/`versionCode`), iOS (`MARKETING_VERSION`/`CURRENT_PROJECT_VERSION`), and `package.json`. Usage: `./versionbuild.sh <version> <build>` (e.g. `./versionbuild.sh 3.0.5 55`).
+
+### Changed
+- **`WalletHome.fetchData(activeOnly = true)`** — default tap-to-refresh and app-resume use lightweight sync; long-press reconstruction calls `fetchData(false)` for a full balance sync over all addresses.
+- **SyncCoordinator** — `_syncBalances`, `_syncTxs`, and `_syncUtxos` now use `getActiveAddressesWithPaths()` for the address list (with fallback to full config list when active is empty). HD discovery and price sync unchanged.
+- **TransactionList** — "Syncing transactions…" on unlock and refresh now uses the active address set for API sync (`syncAddressesAtomic` / `fetchTransactionsForAddresses`); display still uses the full wallet address list and DB cache.
+
+### Technical Details
+- **Version**: `package.json` 3.0.5; Android `versionCode` 55 / `versionName` 3.0.5; iOS build 55 / `MARKETING_VERSION` 3.0.5.
+- **New file**: `versionbuild.sh`.
+- **Modified files**: `screens/WalletHome.tsx`, `components/TransactionList.tsx`, `services/sync/SyncCoordinator.ts`, `services/WalletService.ts`, `android/app/build.gradle`, `ios/BoldWallet.xcodeproj/project.pbxproj`, `package.json`.
+
+---
+
 ## [3.0.4] - 2026-03-15
 
 ### Added
