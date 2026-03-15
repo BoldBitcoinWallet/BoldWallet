@@ -237,7 +237,7 @@ interface TransactionListProps {
   isBlurred?: boolean;
 }
 export interface TransactionListHandle {
-  refresh: () => Promise<void> | void;
+  refresh: (useFullList?: boolean) => Promise<void> | void;
 }
 const TransactionList = React.forwardRef<
   TransactionListHandle,
@@ -283,6 +283,8 @@ const TransactionList = React.forwardRef<
     const isMounted = useRef(true);
     const abortController = useRef<AbortController | null>(null);
     const isRefreshingRef = useRef(false);
+    /** When true, next sync uses full `addresses` (e.g. after long-press rebuild). */
+    const useFullSyncOnceRef = useRef(false);
     const ourAddresses = useMemo(
       () => (isMultiAddress ? new Set(addresses!) : null),
       [isMultiAddress, addresses],
@@ -553,19 +555,23 @@ const TransactionList = React.forwardRef<
           let multiHasMore = false;
           if (isMultiAddress && addresses && addresses.length > 0 && network) {
             try {
-              // Lightweight sync: only active address set (same as tap-to-refresh / SyncCoordinator)
-              const effectiveAddressType =
-                addressType || 'segwit-native';
+              // After long-press rebuild parent calls refresh(true) → use full list; else active set only
               let syncAddressList: string[];
-              const activeWithPaths =
-                await WalletService.getInstance().getActiveAddressesWithPaths(
-                  network,
-                  effectiveAddressType,
-                );
-              if (activeWithPaths.length > 0) {
-                syncAddressList = activeWithPaths.map(a => a.address);
-              } else {
+              if (useFullSyncOnceRef.current) {
+                useFullSyncOnceRef.current = false;
                 syncAddressList = addresses;
+              } else {
+                const effectiveAddressType =
+                  addressType || 'segwit-native';
+                const activeWithPaths =
+                  await WalletService.getInstance().getActiveAddressesWithPaths(
+                    network,
+                    effectiveAddressType,
+                  );
+                syncAddressList =
+                  activeWithPaths.length > 0
+                    ? activeWithPaths.map(a => a.address)
+                    : addresses;
               }
               await apiQueue.enqueue(
                 'Syncing transactions…',
@@ -604,17 +610,22 @@ const TransactionList = React.forwardRef<
             }
           }
           if (isMultiAddress && addresses && addresses.length > 0) {
-            // Lightweight: sync active set when we have network + addressType
-            let fetchList = addresses;
-            if (network && (addressType || 'segwit-native')) {
+            let fetchList: string[];
+            if (useFullSyncOnceRef.current) {
+              useFullSyncOnceRef.current = false;
+              fetchList = addresses;
+            } else if (network && (addressType || 'segwit-native')) {
               const activeWithPaths =
                 await WalletService.getInstance().getActiveAddressesWithPaths(
                   network,
                   addressType || 'segwit-native',
                 );
-              if (activeWithPaths.length > 0) {
-                fetchList = activeWithPaths.map(a => a.address);
-              }
+              fetchList =
+                activeWithPaths.length > 0
+                  ? activeWithPaths.map(a => a.address)
+                  : addresses;
+            } else {
+              fetchList = addresses;
             }
             const result =
               await WalletService.getInstance().fetchTransactionsForAddresses(
@@ -859,8 +870,10 @@ const TransactionList = React.forwardRef<
     useImperativeHandle(
       ref,
       () => ({
-        refresh: () => {
-          // Fire and forget; internal logic handles debouncing and state updates
+        refresh: (useFullList?: boolean) => {
+          if (useFullList === true) {
+            useFullSyncOnceRef.current = true;
+          }
           handlePullRefresh();
         },
       }),

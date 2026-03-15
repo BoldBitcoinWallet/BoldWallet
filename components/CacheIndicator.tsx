@@ -19,6 +19,8 @@ interface CacheIndicatorProps {
   onRefresh: () => void;
   /** Long-press triggers a deep refresh (e.g. HD re-discovery + normal refresh). */
   onLongPress?: () => void;
+  /** When pressed while isRefreshing, called to abort all in-flight API/sync work (e.g. mempoolClient.abortAll()). */
+  onAbortRequested?: () => void;
   theme: any;
   isRefreshing?: boolean;
   usingCache?: boolean; // explicitly indicate cached mode (e.g., offline)
@@ -36,6 +38,7 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
       timestamps,
       onRefresh,
       onLongPress,
+      onAbortRequested,
       theme,
       isRefreshing = false,
       usingCache = false,
@@ -52,11 +55,13 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
     // Expose a press() method to parent
     useImperativeHandle(ref, () => ({
       press: () => {
-        if (!isRefreshing) {
+        if (isRefreshing) {
+          onAbortRequested?.();
+        } else {
           onRefresh();
         }
       },
-    }), [onRefresh, isRefreshing]);
+    }), [onRefresh, onAbortRequested, isRefreshing]);
     useEffect(() => {
       // Stop any prior loop (prevents stacked animations on rapid toggles)
       shimmerAnimationRef.current?.stop?.();
@@ -195,10 +200,14 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
           isRefreshing && createStyles(theme).disabled,
         ]}
         onPress={() => {
-          onRefresh();
+          if (isRefreshing) {
+            onAbortRequested?.();
+          } else {
+            onRefresh();
+          }
         }}
         onLongPress={onLongPress}
-        disabled={isRefreshing}>
+        disabled={false}>
         {isRefreshing && (
           <View style={createStyles(theme).shimmerContainer}>
             <Animated.View

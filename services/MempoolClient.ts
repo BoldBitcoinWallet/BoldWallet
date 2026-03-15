@@ -203,6 +203,13 @@ class MempoolClient {
   /** Round-robin index for distributing failover attempts. */
   private _rrIndex = 0;
 
+  /**
+   * Session AbortController. All get() requests combine this with the caller
+   * signal. abortAll() aborts this so every in-flight request stops; then a
+   * new controller is created for subsequent requests.
+   */
+  private _sessionController = new AbortController();
+
   private constructor() {}
 
   static getInstance(): MempoolClient {
@@ -241,28 +248,38 @@ class MempoolClient {
   }
 
   /**
-   * Return alternative URLs for round-robin failover.
-   * Empty array if the URL is on a custom host or testnet.
+   * Aborts all in-flight API requests. Each get() in progress will reject with
+   * an abort error. New requests after this call use a fresh session and run
+   * normally. Call this when the user taps the cache indicator again while
+   * sync is in progress to stop all mempool API calls.
    */
-  private _getFailoverUrls(url: string): string[] {
-    if (this._publicHosts.length <= 1) return [];
-    // Testnet only has one known host — no failover targets.
-    if (url.includes('/testnet/')) return [];
+  abortAll(): void {
+    this._sessionController.abort();
+    this._sessionController = new AbortController();
+    dbg('MempoolClient: abortAll — all in-flight requests aborted');
+  }
+
+  /**
+   * When the URL targets a known public host (mainnet), returns the full list
+   * of URLs to try in round-robin order — first attempt uses the next host in
+   * the RR cycle, then the rest. When not applicable (custom host, testnet,
+   * or single public host), returns null so the caller uses [url] only.
+   */
+  private _getUrlsToTryRoundRobin(url: string): string[] | null {
+    if (this._publicHosts.length <= 1) return null;
+    if (url.includes('/testnet/')) return null;
 
     const host = extractHost(url);
-    if (!host) return [];
-    if (!this._publicHosts.includes(host)) return [];
+    if (!host || !this._publicHosts.includes(host)) return null;
 
     const path = url.slice(host.length);
-    const alts: string[] = [];
-    for (let i = 1; i <= this._publicHosts.length; i++) {
+    const urls: string[] = [];
+    for (let i = 0; i < this._publicHosts.length; i++) {
       const idx = (this._rrIndex + i) % this._publicHosts.length;
-      if (this._publicHosts[idx] !== host) {
-        alts.push(this._publicHosts[idx] + path);
-      }
+      urls.push(this._publicHosts[idx] + path);
     }
     this._rrIndex = (this._rrIndex + 1) % this._publicHosts.length;
-    return alts;
+    return urls;
   }
 
   // -------------------------------------------------------------------------
@@ -309,7 +326,7 @@ class MempoolClient {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const {ttl: _ttl, signal: callerSignal, ...restInit} = (init ?? {}) as RequestInit & {ttl?: number};
 
-    const urls = [url, ...this._getFailoverUrls(url)];
+    const urls = this._getUrlsToTryRoundRobin(url) ?? [url];
 
     const promise = (async (): Promise<MempoolResponse<unknown>> => {
       let lastResult: MempoolResponse<unknown> | null = null;
@@ -323,9 +340,13 @@ class MempoolClient {
             () => timeoutController.abort(),
             getFetchTimeoutMs(),
           );
-          const signal = combineSignals(
+          const timeAndCaller = combineSignals(
             callerSignal as AbortSignal | undefined,
             timeoutController.signal,
+          );
+          const signal = combineSignals(
+            timeAndCaller,
+            this._sessionController.signal,
           );
 
           try {
@@ -371,8 +392,11 @@ class MempoolClient {
             lastError = err;
             dbg('MempoolClient: fetch error', tryUrl.slice(-80), err);
 
-            // Explicit caller abort — stop immediately, don't failover.
-            if ((callerSignal as AbortSignal | undefined)?.aborted) {
+            // Explicit caller or session (abortAll) abort — stop immediately.
+            if (
+              (callerSignal as AbortSignal | undefined)?.aborted ||
+              this._sessionController.signal.aborted
+            ) {
               throw err;
             }
 

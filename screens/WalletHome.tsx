@@ -2214,6 +2214,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         onRefresh={() => {
           fetchData();
         }}
+        onAbortRequested={() => mempoolClient.abortAll()}
         onLongPress={async () => {
           const effectiveType =
             addressType || userAddressType || 'segwit-native';
@@ -2256,7 +2257,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           }
           setSyncStatus(null);
           await fetchData(false); // full sync after long-press rebuild
-          transactionListRef.current?.refresh?.();
+          transactionListRef.current?.refresh?.(true); // full address list for tx sync
         }}
         theme={theme}
         isRefreshing={isRefreshing || !!syncStatus}

@@ -990,6 +990,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
         <CacheIndicator
           timestamps={{price: 0, balance: utxoFetchTimestamp}}
           onRefresh={onRefresh}
+          onAbortRequested={() => mempoolClient.abortAll()}
           onLongPress={async () => {
             const effectiveType = addressType || 'segwit-native';
             const api =
