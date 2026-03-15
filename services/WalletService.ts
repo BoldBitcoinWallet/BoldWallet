@@ -5,13 +5,18 @@ import {
   getChangePath,
   getMainnetAPIList,
   getReceivePath,
-  GAP_LIMIT,
   isLegacyWallet,
 } from '../utils';
+import {
+  getGapLimit,
+  getApiTimeoutMs,
+  getUtxoEmptyCacheTtlMs,
+} from './HdOptionsConfig';
 import mempoolClient from './MempoolClient';
 import appConfigRepository, {CONFIG_KEYS} from './repositories/AppConfigRepository';
 import balanceRepository from './repositories/BalanceRepository';
 import transactionRepository from './repositories/TransactionRepository';
+import utxoRepository from './repositories/UtxoRepository';
 import priceRepository from './repositories/PriceRepository';
 import walletRepository from './repositories/WalletRepository';
 import syncRepository from './repositories/SyncRepository';
@@ -188,7 +193,6 @@ const validateNumber = (value: any): boolean => {
 };
 export class WalletService {
   private static instance: WalletService;
-  private readonly API_TIMEOUT = 5000; // 5 seconds timeout
   private abortControllers: Map<string, AbortController> = new Map();
   private currentAddress: string | null = null;
   private currentNetwork: string = 'mainnet'; // Default to mainnet
@@ -203,7 +207,6 @@ export class WalletService {
   // Per-address UTXO result cache. Keyed by address string.
   // Only empty results are used to short-circuit future fetches (TTL-gated).
   // Addresses with UTXOs are always re-fetched so spent coins are detected.
-  private readonly UTXO_EMPTY_CACHE_TTL_MS = 30_000; // 30 s
   private utxoEmptyCache: Map<string, number> = new Map(); // address → fetchedAt timestamp
   private constructor() {
     // Don't auto-initialize, wait for explicit initialize call
@@ -532,7 +535,7 @@ export class WalletService {
       // the API again while the user is typing/estimating fees.
       // Addresses with UTXOs are always re-fetched so spent coins are detected.
       const emptyAt = this.utxoEmptyCache.get(address);
-      if (emptyAt && Date.now() - emptyAt < this.UTXO_EMPTY_CACHE_TTL_MS) {
+      if (emptyAt && Date.now() - emptyAt < getUtxoEmptyCacheTtlMs()) {
         continue;
       }
 
@@ -643,11 +646,10 @@ export class WalletService {
     const externalIdx = await getExternalIndex(network, addressType);
     const maxUsedExternal = await getMaxUsedExternal(network, addressType);
     const changeIdx = await getChangeIndex(network, addressType);
-    // Runtime range: only addresses that are known to have been issued or used.
-    // GAP_LIMIT and MIN_SCAN_INDEX are discovery-time concerns (discoverHdIndexesForNetwork),
-    // not runtime concerns — we already know the wallet state from completed discovery.
-    const externalEnd = Math.max(externalIdx, maxUsedExternal);
-    const internalEnd = changeIdx;
+    // Include addresses up to highest + GAP_LIMIT so sync (and tap-to-refresh) catches the next
+    // receive/change addresses and we don't miss incoming txs to gap indices.
+    const externalEnd = Math.max(externalIdx, maxUsedExternal) + getGapLimit();
+    const internalEnd = changeIdx + getGapLimit();
 
     const cacheKey = `${network}_${addressType}_${externalEnd}_${internalEnd}`;
     const cached = this.hdAddressCache.get(cacheKey);
@@ -700,6 +702,71 @@ export class WalletService {
 
     this.hdAddressCache.set(cacheKey, results);
     return results;
+  }
+
+  /**
+   * Returns the subset of HD addresses that are "active" and worth querying on
+   * tap-to-refresh.  An address is active if any of:
+   *   - Its receive index is within [highestUsed - gap .. highestUsed + gap]
+   *   - Its change index is within [changeIdx - gap .. changeIdx + gap]
+   *   - It currently holds UTXOs in the DB
+   *   - It has a pending (unconfirmed) transaction in the DB
+   *   - It is the current receive address (externalIdx)
+   *
+   * Builds from the already-derived full list (cached), so no extra native calls.
+   * Background SyncCoordinator still scans the full range on its timer.
+   */
+  public async getActiveAddressesWithPaths(
+    network: string,
+    addressType: string,
+  ): Promise<HdAddressWithPath[]> {
+    const all = await this.getHdAddressesWithPaths(network, addressType);
+    if (all.length === 0) return [];
+
+    const gap = getGapLimit();
+    const externalIdx = await getExternalIndex(network, addressType);
+    const maxUsedExternal = await getMaxUsedExternal(network, addressType);
+    const changeIdx = await getChangeIndex(network, addressType);
+
+    const highestUsed = Math.max(externalIdx, maxUsedExternal);
+    const receiveMin = Math.max(0, highestUsed - gap);
+    const receiveMax = highestUsed + gap;
+    const changeMin = Math.max(0, changeIdx - gap);
+    const changeMax = changeIdx + gap;
+
+    const allAddresses = all.map(a => a.address);
+
+    // Addresses holding UTXOs
+    const utxosInDb = utxoRepository.getUtxosForAddresses(allAddresses, network);
+    const utxoAddrSet = new Set(utxosInDb.map(u => u.address));
+
+    // Addresses with pending (unconfirmed) transactions
+    const pendingAddrSet = new Set<string>(
+      transactionRepository.getAddressesWithPendingTxs(network),
+    );
+
+    const active = all.filter(a => {
+      if (utxoAddrSet.has(a.address)) return true;
+      if (pendingAddrSet.has(a.address)) return true;
+      if (a.chain === 'receive') {
+        return (
+          a.index === externalIdx ||
+          (a.index >= receiveMin && a.index <= receiveMax)
+        );
+      }
+      // change chain
+      return a.index >= changeMin && a.index <= changeMax;
+    });
+
+    dbg(
+      'WalletService: getActiveAddressesWithPaths',
+      active.length,
+      '/',
+      all.length,
+      'active addresses',
+      {receiveMin, receiveMax, changeMin, changeMax},
+    );
+    return active;
   }
 
   /**
@@ -912,7 +979,7 @@ export class WalletService {
     // Each address check gets one retry on timeout before aborting the chain.
     try {
       let consecutiveUnused = 0;
-      for (let i = 0; consecutiveUnused < GAP_LIMIT; i++) {
+      for (let i = 0; consecutiveUnused < getGapLimit(); i++) {
         // Resume: use cached result from a previous (partial) run.
         const cached = knownExternal.get(i);
         if (cached !== undefined) {
@@ -997,7 +1064,7 @@ export class WalletService {
       );
       try {
         let consecutiveUnused = 0;
-        for (let i = 0; consecutiveUnused < GAP_LIMIT; i++) {
+        for (let i = 0; consecutiveUnused < getGapLimit(); i++) {
           // Resume: use cached result from a previous (partial) run.
           const cached = knownChange.get(i);
           if (cached !== undefined) {
@@ -1159,7 +1226,7 @@ export class WalletService {
   private async withTimeout<T>(
     key: string,
     factory: Promise<T> | ((signal: AbortSignal) => Promise<T>),
-    timeout: number = this.API_TIMEOUT,
+    timeout: number = getApiTimeoutMs(),
   ): Promise<T> {
     this.cancelOngoingFetches(key);
     this.fetchInProgress[key] = true;
@@ -1541,6 +1608,7 @@ export class WalletService {
     pendingSent: number = 0,
     _force: boolean = false,
     onProgress?: (current: number, total: number) => void,
+    activeOnly: boolean = false,
   ): Promise<WalletBalance> {
     try {
       dbg('WalletService: getWalletBalanceAggregate', {
@@ -1579,10 +1647,12 @@ export class WalletService {
       const cleanApi = api.replace(/\/+$/, '');
 
       // Reuse the cached address list — no re-derivation if indexes haven't changed.
-      const addressesWithPaths = await this.getHdAddressesWithPaths(
-        network,
-        addressType,
-      );
+      // When activeOnly is true (tap-to-refresh) only query the active address set:
+      // recent-index window + UTXO holders + pending-tx addresses + current receive.
+      // Background SyncCoordinator continues to scan the full range.
+      const addressesWithPaths = activeOnly
+        ? await this.getActiveAddressesWithPaths(network, addressType)
+        : await this.getHdAddressesWithPaths(network, addressType);
       const addresses = addressesWithPaths.map(a => a.address);
 
       // Guard: if the address list is empty the keyshare was not accessible

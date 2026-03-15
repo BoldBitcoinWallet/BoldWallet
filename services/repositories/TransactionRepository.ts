@@ -221,6 +221,73 @@ class TransactionRepository {
     }
   }
 
+  /**
+   * Insert a transaction immediately after successful broadcast so it appears
+   * in the UI without waiting for API sync. Call from pairing screens (send_btc multi-path)
+   * with full apiTxShape (vin/vout) built from the payload.
+   */
+  insertBroadcastTransaction(
+    txid: string,
+    network: string,
+    apiTxShape: {
+      txid: string;
+      status?: {confirmed?: boolean; block_height?: number | null; block_time?: number | null; block_hash?: string | null};
+      fee?: number;
+      vin?: Array<{prevout?: {scriptpubkey_address?: string; value?: number}}>;
+      vout?: Array<{scriptpubkey_address?: string; value?: number}>;
+    },
+    senderAddress?: string,
+  ): void {
+    const status = apiTxShape.status ?? {confirmed: false, block_height: null, block_time: null, block_hash: null};
+    const tx: TxRecord = {
+      txid,
+      network,
+      blockHeight: status.block_height ?? null,
+      blockHash: status.block_hash ?? null,
+      blockTime: status.block_time ?? null,
+      isConfirmed: status.confirmed ?? false,
+      feeSats: apiTxShape.fee ?? null,
+      size: null,
+      weight: null,
+      version: null,
+      locktime: null,
+      rawJson: JSON.stringify(apiTxShape),
+      fetchedAt: Date.now(),
+    };
+    const addresses = this._addressMappingsFromApiTx(txid, network, apiTxShape);
+    this.upsertTransaction(tx, addresses);
+    dbg('TransactionRepository: inserted broadcast tx', txid, 'for', (senderAddress ?? '').slice(0, 12));
+  }
+
+  /** Build TxAddressMapping[] from apiTxShape (vin/vout). */
+  private _addressMappingsFromApiTx(
+    txid: string,
+    network: string,
+    apiTx: {vin?: Array<{prevout?: {scriptpubkey_address?: string; value?: number}}>; vout?: Array<{scriptpubkey_address?: string; value?: number}>},
+  ): TxAddressMapping[] {
+    const netByAddress = new Map<string, number>();
+    for (const vin of apiTx.vin ?? []) {
+      const addr = vin.prevout?.scriptpubkey_address;
+      if (addr) {
+        const v = vin.prevout?.value ?? 0;
+        netByAddress.set(addr, (netByAddress.get(addr) ?? 0) - v);
+      }
+    }
+    for (const vout of apiTx.vout ?? []) {
+      const addr = vout.scriptpubkey_address;
+      if (addr) {
+        const v = vout.value ?? 0;
+        netByAddress.set(addr, (netByAddress.get(addr) ?? 0) + v);
+      }
+    }
+    return Array.from(netByAddress.entries()).map(([address, netSats]) => ({
+      txid,
+      network,
+      address,
+      netSats,
+    }));
+  }
+
   /** Mark a previously-unconfirmed transaction as confirmed. */
   markConfirmed(
     txid: string,
@@ -297,6 +364,34 @@ class TransactionRepository {
       );
     } catch (err) {
       dbg('TransactionRepository.removePending error', err);
+    }
+  }
+
+  /** Returns distinct addresses that have pending (unconfirmed) txs across either the
+   *  pending_transactions table or the main transactions table (is_confirmed = 0).
+   *  Used by getActiveAddressesWithPaths to include addresses with in-flight txs. */
+  getAddressesWithPendingTxs(network: string): string[] {
+    try {
+      // pending_transactions table (local broadcast tracking)
+      const {rows: pendingRows} = database.execute(
+        'SELECT DISTINCT address FROM pending_transactions WHERE network = ?',
+        [network],
+      );
+      // main transactions table — unconfirmed mempool entries
+      const {rows: mempoolRows} = database.execute(
+        `SELECT DISTINCT ta.address
+         FROM transaction_addresses ta
+         JOIN transactions t ON ta.txid = t.txid AND ta.network = t.network
+         WHERE t.network = ? AND t.is_confirmed = 0`,
+        [network],
+      );
+      const addrs = new Set<string>();
+      for (const r of pendingRows) addrs.add(r.address as string);
+      for (const r of mempoolRows) addrs.add(r.address as string);
+      return Array.from(addrs);
+    } catch (err) {
+      dbg('TransactionRepository.getAddressesWithPendingTxs error', err);
+      return [];
     }
   }
 

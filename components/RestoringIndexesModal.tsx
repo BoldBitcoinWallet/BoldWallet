@@ -2,7 +2,7 @@ import React from 'react';
 import {Modal, View, StyleSheet, ActivityIndicator} from 'react-native';
 import AppText from './AppText';
 import {useTheme} from '../theme';
-import {GAP_LIMIT} from '../utils';
+import {getGapLimit} from '../services/HdOptionsConfig';
 
 /**
  * Non-dismissible modal shown during restore discovery / chain indexing.
@@ -83,7 +83,7 @@ const RestoringIndexesModal: React.FC<{
                 ? `${phase} ${progress.current}/${progress.total}`
                 : phase
               : chainLabel
-              ? `Scanning ${chainLabel} chain… index ${index}, gap ${gapIndex}/${GAP_LIMIT}`
+              ? `Scanning ${chainLabel} chain… index ${index}, gap ${gapIndex}/${getGapLimit()}`
               : 'Scanning chain for addresses…'}
           </AppText>
         </View>

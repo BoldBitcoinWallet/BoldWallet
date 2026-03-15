@@ -35,13 +35,11 @@
  */
 
 import {dbg} from '../utils';
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-/** Hard cap applied to every outgoing HTTP request. */
-const FETCH_TIMEOUT_MS = 10_000;
+import {
+  getFetchTimeoutMs,
+  getMempoolDefaultTtlMs,
+  getTransactionDbTtlMs,
+} from './HdOptionsConfig';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -132,13 +130,16 @@ interface CacheEntry {
 // Per-endpoint TTL configuration
 // ---------------------------------------------------------------------------
 
-/** Default TTL — applies to balance, UTXO, and transaction endpoints. */
-const DEFAULT_TTL_MS = 15_000; // 15 s
-
 /**
  * URL pattern → TTL overrides (evaluated in order, first match wins).
  * Keep this list short and specific.
+ * Note: A batch of address/txs requests often takes longer than the TTL (e.g. 40+ s
+ * for many addresses). The next run will then see cache expired and log "fetched and
+ * cached" for every URL. Address/txs TTL is read from HD option TRANSACTION_DB_TTL_MS
+ * so repeat runs within the same window can get "cache hit" and avoid duplicate network calls.
  */
+const ADDRESS_TXS_TTL_PATTERN = /\/address\/[^/]+\/txs/;
+
 const TTL_RULES: ReadonlyArray<[RegExp, number]> = [
   // Confirmed tx content is immutable — long TTL, rare re-fetch.
   [/\/tx\/[a-fA-F0-9]{64}$/, 300_000],
@@ -151,12 +152,15 @@ const TTL_RULES: ReadonlyArray<[RegExp, number]> = [
 ];
 
 function ttlForUrl(url: string): number {
+  if (ADDRESS_TXS_TTL_PATTERN.test(url)) {
+    return getTransactionDbTtlMs();
+  }
   for (const [pattern, ttl] of TTL_RULES) {
     if (pattern.test(url)) {
       return ttl;
     }
   }
-  return DEFAULT_TTL_MS;
+  return getMempoolDefaultTtlMs();
 }
 
 // ---------------------------------------------------------------------------
@@ -284,6 +288,7 @@ class MempoolClient {
     const now = Date.now();
 
     // 1. Serve from cache if still fresh -----------------------------------
+    // (Log "cache hit" = no fetch. "fetched and cached" below = we did a fetch then stored.)
     const cached = this._cache.get(key);
     if (cached && cached.expiresAt > now) {
       dbg('MempoolClient: cache hit', url.slice(-80));
@@ -316,7 +321,7 @@ class MempoolClient {
           const timeoutController = new AbortController();
           const timeoutId = setTimeout(
             () => timeoutController.abort(),
-            FETCH_TIMEOUT_MS,
+            getFetchTimeoutMs(),
           );
           const signal = combineSignals(
             callerSignal as AbortSignal | undefined,
@@ -331,7 +336,7 @@ class MempoolClient {
               const data = (await res.json()) as unknown;
               this._cache.set(key, {data, expiresAt: Date.now() + ttl});
               dbg(
-                'MempoolClient: cached',
+                'MempoolClient: fetched and cached',
                 tryUrl.slice(-80),
                 `(ttl ${ttl / 1000}s)`,
               );

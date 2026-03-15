@@ -49,6 +49,18 @@ import mempoolClient from '../services/MempoolClient';
 import appConfigRepository, {
   CONFIG_KEYS,
 } from '../services/repositories/AppConfigRepository';
+import {
+  getGapLimit,
+  getMinScanIndex,
+  getApiTimeoutMs,
+  getUtxoEmptyCacheTtlMs,
+  getFetchTimeoutMs,
+  getMempoolDefaultTtlMs,
+  getTransactionDbTtlMs,
+  HD_OPTIONS_DEFAULTS,
+  HD_OPTIONS_KEYS,
+  restoreHdOptionsDefaults,
+} from '../services/HdOptionsConfig';
 import database from '../services/Database';
 import walletRepository from '../services/repositories/WalletRepository';
 import balanceRepository from '../services/repositories/BalanceRepository';
@@ -671,8 +683,8 @@ const getSectionIcon = (title: string): any => {
       return require('../assets/nostr-icon.png');
     case 'app icon':
       return require('../assets/spy-icon.png');
-    case 'wallet mode':
-      return require('../assets/mode-icon.png');
+    case 'hd options':
+      return require('../assets/prefs-icon.png');
     case 'font testing':
       return require('../assets/font-icon.png');
     case 'balance display':
@@ -683,7 +695,7 @@ const getSectionIcon = (title: string): any => {
       return require('../assets/utxo-icon.png');
     case 'psbt':
       return require('../assets/cosign-icon.png');
-    case 'wallet tab':
+    case 'wallet':
       return require('../assets/wallet-icon.png');
     case 'dev debug':
       return require('../assets/advanced-icon.png');
@@ -754,6 +766,27 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [nostrRelays, setNostrRelays] = useState<string>('');
   const [pendingNostrRelays, setPendingNostrRelays] = useState<string>('');
   const [hasNostr, setHasNostr] = useState(false);
+  const [hdGapLimit, setHdGapLimit] = useState(() =>
+    String(getGapLimit()),
+  );
+  const [hdMinScanIndex, setHdMinScanIndex] = useState(() =>
+    String(getMinScanIndex()),
+  );
+  const [hdApiTimeoutMs, setHdApiTimeoutMs] = useState(() =>
+    String(getApiTimeoutMs()),
+  );
+  const [hdUtxoCacheTtlMs, setHdUtxoCacheTtlMs] = useState(() =>
+    String(getUtxoEmptyCacheTtlMs()),
+  );
+  const [hdFetchTimeoutMs, setHdFetchTimeoutMs] = useState(() =>
+    String(getFetchTimeoutMs()),
+  );
+  const [hdMempoolTtlMs, setHdMempoolTtlMs] = useState(() =>
+    String(getMempoolDefaultTtlMs()),
+  );
+  const [hdTxDbTtlMs, setHdTxDbTtlMs] = useState(() =>
+    String(getTransactionDbTtlMs()),
+  );
   const [isRestoringIndexes, setIsRestoringIndexes] = useState(false);
   const [restoreProgress, setRestoreProgress] = useState<{
     chain?: 'external' | 'internal';
@@ -785,6 +818,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     displayFormat: false,
     backup: false,
     advanced: false,
+    hdOptions: false,
     nostr: false,
     about: false,
     legal: false,
@@ -3309,6 +3343,244 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               )}
             </View>
           </CollapsibleSection>
+          <CollapsibleSection
+            title="HD Options"
+            isExpanded={expandedSections.hdOptions}
+            onToggle={() => toggleSection('hdOptions')}
+            styles={styles}
+            theme={theme}>
+              <Text style={[styles.hintText, styles.hintSpacing]}>
+                Tune discovery gap, scan range, and API timeouts. Change only if
+                you know what you're doing.
+              </Text>
+              <View style={styles.apiItem}>
+                <Text style={styles.apiName}>Gap limit</Text>
+                <TextInput
+                  style={styles.input}
+                  value={hdGapLimit}
+                  onChangeText={setHdGapLimit}
+                  keyboardType="number-pad"
+                  onBlur={() => {
+                    const n = parseInt(hdGapLimit, 10);
+                    const clamped = Number.isNaN(n)
+                      ? HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.GAP_LIMIT]
+                      : Math.max(1, Math.min(20, n));
+                    setHdGapLimit(String(clamped));
+                    appConfigRepository.set(
+                      HD_OPTIONS_KEYS.GAP_LIMIT,
+                      String(clamped),
+                    );
+                  }}
+                  placeholderTextColor={theme.colors.textSecondary + '80'}
+                />
+              </View>
+              <View style={styles.apiItem}>
+                <Text style={styles.apiName}>Min scan index</Text>
+                <TextInput
+                  style={styles.input}
+                  value={hdMinScanIndex}
+                  onChangeText={setHdMinScanIndex}
+                  keyboardType="number-pad"
+                  onBlur={() => {
+                    const n = parseInt(hdMinScanIndex, 10);
+                    const def =
+                      HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.MIN_SCAN_INDEX];
+                    const clamped = Number.isNaN(n) ? def : Math.max(1, Math.min(1000, n));
+                    setHdMinScanIndex(String(clamped));
+                    appConfigRepository.set(
+                      HD_OPTIONS_KEYS.MIN_SCAN_INDEX,
+                      String(clamped),
+                    );
+                  }}
+                  placeholderTextColor={theme.colors.textSecondary + '80'}
+                />
+              </View>
+              <View style={styles.apiItem}>
+                <Text style={styles.apiName}>API timeout (ms)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={hdApiTimeoutMs}
+                  onChangeText={setHdApiTimeoutMs}
+                  keyboardType="number-pad"
+                  onBlur={() => {
+                    const n = parseInt(hdApiTimeoutMs, 10);
+                    const def =
+                      HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.API_TIMEOUT_MS];
+                    const clamped = Number.isNaN(n)
+                      ? def
+                      : Math.max(1000, Math.min(120_000, n));
+                    setHdApiTimeoutMs(String(clamped));
+                    appConfigRepository.set(
+                      HD_OPTIONS_KEYS.API_TIMEOUT_MS,
+                      String(clamped),
+                    );
+                  }}
+                  placeholderTextColor={theme.colors.textSecondary + '80'}
+                />
+              </View>
+              <View style={styles.apiItem}>
+                <Text style={styles.apiName}>UTXO empty cache TTL (ms)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={hdUtxoCacheTtlMs}
+                  onChangeText={setHdUtxoCacheTtlMs}
+                  keyboardType="number-pad"
+                  onBlur={() => {
+                    const n = parseInt(hdUtxoCacheTtlMs, 10);
+                    const def =
+                      HD_OPTIONS_DEFAULTS[
+                        HD_OPTIONS_KEYS.UTXO_EMPTY_CACHE_TTL_MS
+                      ];
+                    const clamped = Number.isNaN(n)
+                      ? def
+                      : Math.max(1000, Math.min(300_000, n));
+                    setHdUtxoCacheTtlMs(String(clamped));
+                    appConfigRepository.set(
+                      HD_OPTIONS_KEYS.UTXO_EMPTY_CACHE_TTL_MS,
+                      String(clamped),
+                    );
+                  }}
+                  placeholderTextColor={theme.colors.textSecondary + '80'}
+                />
+              </View>
+              <View style={styles.apiItem}>
+                <Text style={styles.apiName}>Fetch timeout (ms)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={hdFetchTimeoutMs}
+                  onChangeText={setHdFetchTimeoutMs}
+                  keyboardType="number-pad"
+                  onBlur={() => {
+                    const n = parseInt(hdFetchTimeoutMs, 10);
+                    const def =
+                      HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.FETCH_TIMEOUT_MS];
+                    const clamped = Number.isNaN(n)
+                      ? def
+                      : Math.max(1000, Math.min(120_000, n));
+                    setHdFetchTimeoutMs(String(clamped));
+                    appConfigRepository.set(
+                      HD_OPTIONS_KEYS.FETCH_TIMEOUT_MS,
+                      String(clamped),
+                    );
+                  }}
+                  placeholderTextColor={theme.colors.textSecondary + '80'}
+                />
+              </View>
+              <View style={styles.apiItem}>
+                <Text style={styles.apiName}>Mempool default TTL (ms)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={hdMempoolTtlMs}
+                  onChangeText={setHdMempoolTtlMs}
+                  keyboardType="number-pad"
+                  onBlur={() => {
+                    const n = parseInt(hdMempoolTtlMs, 10);
+                    const def =
+                      HD_OPTIONS_DEFAULTS[
+                        HD_OPTIONS_KEYS.MEMPOOL_DEFAULT_TTL_MS
+                      ];
+                    const clamped = Number.isNaN(n)
+                      ? def
+                      : Math.max(1000, Math.min(300_000, n));
+                    setHdMempoolTtlMs(String(clamped));
+                    appConfigRepository.set(
+                      HD_OPTIONS_KEYS.MEMPOOL_DEFAULT_TTL_MS,
+                      String(clamped),
+                    );
+                  }}
+                  placeholderTextColor={theme.colors.textSecondary + '80'}
+                />
+              </View>
+              <View style={styles.apiItem}>
+                <Text style={styles.apiName}>Transaction sync TTL (ms)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={hdTxDbTtlMs}
+                  onChangeText={setHdTxDbTtlMs}
+                  keyboardType="number-pad"
+                  onBlur={() => {
+                    const n = parseInt(hdTxDbTtlMs, 10);
+                    const def =
+                      HD_OPTIONS_DEFAULTS[
+                        HD_OPTIONS_KEYS.TRANSACTION_DB_TTL_MS
+                      ];
+                    const clamped = Number.isNaN(n)
+                      ? def
+                      : Math.max(5000, Math.min(300_000, n));
+                    setHdTxDbTtlMs(String(clamped));
+                    appConfigRepository.set(
+                      HD_OPTIONS_KEYS.TRANSACTION_DB_TTL_MS,
+                      String(clamped),
+                    );
+                  }}
+                  placeholderTextColor={theme.colors.textSecondary + '80'}
+                />
+              </View>
+              <View style={styles.apiActionButtonsRow}>
+                <AppPressable
+                  style={[
+                    styles.button,
+                    styles.resetButton,
+                    styles.apiActionButton,
+                  ]}
+                  onPress={() => {
+                    restoreHdOptionsDefaults();
+                    setHdGapLimit(
+                      String(HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.GAP_LIMIT]),
+                    );
+                    setHdMinScanIndex(
+                      String(
+                        HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.MIN_SCAN_INDEX],
+                      ),
+                    );
+                    setHdApiTimeoutMs(
+                      String(
+                        HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.API_TIMEOUT_MS],
+                      ),
+                    );
+                    setHdUtxoCacheTtlMs(
+                      String(
+                        HD_OPTIONS_DEFAULTS[
+                          HD_OPTIONS_KEYS.UTXO_EMPTY_CACHE_TTL_MS
+                        ],
+                      ),
+                    );
+                    setHdFetchTimeoutMs(
+                      String(
+                        HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.FETCH_TIMEOUT_MS],
+                      ),
+                    );
+                    setHdMempoolTtlMs(
+                      String(
+                        HD_OPTIONS_DEFAULTS[
+                          HD_OPTIONS_KEYS.MEMPOOL_DEFAULT_TTL_MS
+                        ],
+                      ),
+                    );
+                    setHdTxDbTtlMs(
+                      String(
+                        HD_OPTIONS_DEFAULTS[
+                          HD_OPTIONS_KEYS.TRANSACTION_DB_TTL_MS
+                        ],
+                      ),
+                    );
+                    Toast.show({
+                      type: 'success',
+                      text1: 'Defaults restored',
+                    });
+                  }}
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                  <View style={styles.buttonContent}>
+                    <Image
+                      source={require('../assets/refresh-icon.png')}
+                      style={[styles.buttonIcon, styles.whiteTint]}
+                      resizeMode="contain"
+                    />
+                    <Text style={styles.buttonText}>Restore defaults</Text>
+                  </View>
+                </AppPressable>
+              </View>
+            </CollapsibleSection>
           {hasNostr && (
             <CollapsibleSection
               title="Nostr Relays"

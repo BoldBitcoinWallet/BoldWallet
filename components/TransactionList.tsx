@@ -553,11 +553,25 @@ const TransactionList = React.forwardRef<
           let multiHasMore = false;
           if (isMultiAddress && addresses && addresses.length > 0 && network) {
             try {
+              // Lightweight sync: only active address set (same as tap-to-refresh / SyncCoordinator)
+              const effectiveAddressType =
+                addressType || 'segwit-native';
+              let syncAddressList: string[];
+              const activeWithPaths =
+                await WalletService.getInstance().getActiveAddressesWithPaths(
+                  network,
+                  effectiveAddressType,
+                );
+              if (activeWithPaths.length > 0) {
+                syncAddressList = activeWithPaths.map(a => a.address);
+              } else {
+                syncAddressList = addresses;
+              }
               await apiQueue.enqueue(
                 'Syncing transactions…',
                 setProgress =>
                   transactionSyncer.syncAddressesAtomic(
-                    addresses.map(a => ({address: a, network})),
+                    syncAddressList.map(a => ({address: a, network})),
                     `${cleanBaseApi}/api`,
                     setProgress,
                   ),
@@ -590,10 +604,22 @@ const TransactionList = React.forwardRef<
             }
           }
           if (isMultiAddress && addresses && addresses.length > 0) {
+            // Lightweight: sync active set when we have network + addressType
+            let fetchList = addresses;
+            if (network && (addressType || 'segwit-native')) {
+              const activeWithPaths =
+                await WalletService.getInstance().getActiveAddressesWithPaths(
+                  network,
+                  addressType || 'segwit-native',
+                );
+              if (activeWithPaths.length > 0) {
+                fetchList = activeWithPaths.map(a => a.address);
+              }
+            }
             const result =
               await WalletService.getInstance().fetchTransactionsForAddresses(
                 cleanBaseApi,
-                addresses,
+                fetchList,
               );
             responseData = result.txs;
             setAddressCursors(result.cursors);

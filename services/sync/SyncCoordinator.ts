@@ -35,6 +35,26 @@ const UTXO_INTERVAL_MS = 180_000;
 const TX_INTERVAL_MS = 180_000;
 const HD_DISCOVERY_STALE_MS = 2 * 60 * 60 * 1000; // 2 hours
 
+/** Sort key from BIP32 path (m/84'/0'/0'/0/25 → [0, -25]) so higher index sorts first. */
+function sortKeyForPath(path: string | undefined): [number, number] {
+  if (!path) return [2, 0];
+  const parts = path.split('/');
+  const chain = parseInt(parts[parts.length - 2], 10) ?? 0;
+  const index = parseInt(parts[parts.length - 1], 10) ?? 0;
+  return [chain, -index];
+}
+
+/** Sort addresses by highest HD index first (receive chain then change chain, descending index). */
+function sortAddressesByIndexDesc<T extends {derivationPath?: string}>(
+  addresses: T[],
+): T[] {
+  return [...addresses].sort((a, b) => {
+    const [cA, iA] = sortKeyForPath(a.derivationPath);
+    const [cB, iB] = sortKeyForPath(b.derivationPath);
+    return cA !== cB ? cA - cB : iA - iB;
+  });
+}
+
 export interface SyncStatus {
   label: string;
   progress?: {current: number; total: number};
@@ -225,7 +245,23 @@ class SyncCoordinator {
   private async _syncBalances(): Promise<void> {
     if (!this._config) return;
     try {
-      const entries: BalanceEntry[] = this._config.addresses.map(a => ({
+      const network = this._config.network;
+      const addressType =
+        this._config.addressType || 'segwit-native';
+      let addrs: Array<{address: string; derivationPath?: string}> =
+        await WalletService.getInstance().getActiveAddressesWithPaths(
+          network,
+          addressType,
+        );
+      if (addrs.length === 0) addrs = this._config.addresses;
+      const sorted = sortAddressesByIndexDesc(
+        addrs.map(a => ({
+          address: a.address,
+          network,
+          derivationPath: a.derivationPath,
+        })),
+      );
+      const entries: BalanceEntry[] = sorted.map(a => ({
         address: a.address,
         network: a.network,
       }));
@@ -238,10 +274,26 @@ class SyncCoordinator {
   private async _syncTxs(): Promise<void> {
     if (!this._config) return;
     try {
-      for (const {address, network} of this._config.addresses) {
+      const network = this._config.network;
+      const addressType =
+        this._config.addressType || 'segwit-native';
+      let addrs: Array<{address: string; derivationPath?: string}> =
+        await WalletService.getInstance().getActiveAddressesWithPaths(
+          network,
+          addressType,
+        );
+      if (addrs.length === 0) addrs = this._config.addresses;
+      const sorted = sortAddressesByIndexDesc(
+        addrs.map(a => ({
+          address: a.address,
+          network,
+          derivationPath: a.derivationPath,
+        })),
+      );
+      for (const {address, network: net} of sorted) {
         await transactionSyncer.syncAddress(
           address,
-          network,
+          net,
           this._config.apiBase,
         );
       }
@@ -253,25 +305,41 @@ class SyncCoordinator {
   private async _syncUtxos(): Promise<void> {
     if (!this._config) return;
     try {
-      // Resolve derivation paths from the cached HD address list so the
-      // utxos table stores them (needed by getUtxosForNetwork filtering).
+      const network = this._config.network;
+      const addressType =
+        this._config.addressType || 'segwit-native';
+      let addrs: Array<{address: string; derivationPath?: string}> =
+        await WalletService.getInstance().getActiveAddressesWithPaths(
+          network,
+          addressType,
+        );
       let pathMap: Map<string, string> | undefined;
-      try {
-        const hdAddrs =
-          await WalletService.getInstance().getHdAddressesWithPaths(
-            this._config.network,
-            this._config.addressType || 'segwit-native',
-          );
-        pathMap = new Map(hdAddrs.map(a => [a.address, a.derivationPath]));
-      } catch {
-        // Derivation unavailable — fall through with whatever config has
+      if (addrs.length === 0) {
+        addrs = this._config.addresses;
+        try {
+          const hdAddrs =
+            await WalletService.getInstance().getHdAddressesWithPaths(
+              network,
+              addressType,
+            );
+          pathMap = new Map(hdAddrs.map(a => [a.address, a.derivationPath]));
+        } catch {
+          // derivation paths optional for utxo sync
+        }
       }
-
-      const entries: UtxoEntry[] = this._config.addresses.map(a => ({
+      const sorted = sortAddressesByIndexDesc(
+        addrs.map(a => ({
+          address: a.address,
+          network,
+          derivationPath:
+            (a as {derivationPath?: string}).derivationPath ??
+            pathMap?.get(a.address),
+        })),
+      );
+      const entries: UtxoEntry[] = sorted.map(a => ({
         address: a.address,
         network: a.network,
-        derivationPath:
-          a.derivationPath || pathMap?.get(a.address) || undefined,
+        derivationPath: a.derivationPath ?? undefined,
       }));
       await utxoSyncer.syncAddresses(entries, this._config.apiBase);
     } catch (err) {

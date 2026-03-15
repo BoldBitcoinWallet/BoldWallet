@@ -450,7 +450,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
   // API → DB → UI: trigger API calls that write to DB, then refresh UI from DB.
   // Even if APIs fail, refreshFromDB still runs and shows whatever is in the DB.
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (activeOnly: boolean = true) => {
     if (!isInitializedRef.current) {
       dbg('[BALANCE] fetchData: SKIPPED — not initialized');
       return;
@@ -487,6 +487,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       const effectiveAddressType =
         addressType || userAddressType || 'segwit-native';
       // API → DB: getWalletBalanceAggregate writes per-address + aggregate to SQLite
+      // activeOnly: true = lightweight (active set); false = full sync (long-press only).
       await apiQueue.enqueue('Syncing balance…', setProgress =>
         WalletService.getInstance().getWalletBalanceAggregate(
           network,
@@ -495,8 +496,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           _pendingSent,
           true,
           setProgress,
+          activeOnly,
         ),
       );
+      // UI: reflect balance and tx updates immediately while progress continues
+      refreshFromDBRef.current();
+      transactionListRef.current?.refresh?.();
       // API → DB: getBitcoinPrice writes rates to price_rates table
       await apiQueue.enqueue('Syncing fiat rate…', () =>
         WalletService.getInstance().getBitcoinPrice(),
@@ -2207,7 +2212,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         statusMessage={syncStatus?.label ?? apiQueueState?.label ?? undefined}
         progress={syncStatus?.progress ?? apiQueueState?.progress}
         onRefresh={() => {
-          fetchData().then(() => transactionListRef.current?.refresh?.());
+          fetchData();
         }}
         onLongPress={async () => {
           const effectiveType =
@@ -2250,7 +2255,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             dbg('[WalletHome] Long-press reconstruction error', e);
           }
           setSyncStatus(null);
-          await fetchData();
+          await fetchData(false); // full sync after long-press rebuild
           transactionListRef.current?.refresh?.();
         }}
         theme={theme}

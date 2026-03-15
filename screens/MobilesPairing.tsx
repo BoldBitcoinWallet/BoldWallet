@@ -219,6 +219,8 @@ const MobilesPairing = ({navigation}: any) => {
     originalNetwork?: string;
     originalApiUrl?: string;
     isMaster?: boolean;
+    inputs?: Array<{txid: string; vout: number; value: number; scriptpubkey_address: string}>;
+    outputs?: Array<{scriptpubkey_address: string; value: number}>;
   } | null>(null);
 
   const allChecked = Object.values(checks).every(Boolean);
@@ -1117,6 +1119,21 @@ const MobilesPairing = ({navigation}: any) => {
             }
             usedMultiPath = true;
             const pendingKey = pendingKeyMultiPath;
+            const utxoList = JSON.parse(utxosWithPathsJSON) as Array<{txid: string; vout: number; value: number; address?: string}>;
+            const inputs = utxoList.map((u: any) => ({
+              txid: u.txid,
+              vout: u.vout,
+              value: u.value,
+              scriptpubkey_address: u.address ?? '',
+            }));
+            const totalInput = utxoList.reduce((s: number, u: any) => s + (u.value || 0), 0);
+            const changeAmount = totalInput - Number(satoshiAmount) - Number(satoshiFees);
+            const outputs: Array<{scriptpubkey_address: string; value: number}> = [
+              {scriptpubkey_address: toAddress, value: Number(satoshiAmount)},
+            ];
+            if (changeAmount > 0) {
+              outputs.push({scriptpubkey_address: changeAddress, value: changeAmount});
+            }
             broadcastSuccessPayloadRef.current = {
               multiPath: true,
               pendingKey,
@@ -1133,6 +1150,8 @@ const MobilesPairing = ({navigation}: any) => {
               originalNetwork,
               originalApiUrl,
               isMaster,
+              inputs,
+              outputs,
             };
             if (mpcAbortRef.current) {
               setDoingMPC(false);
@@ -1142,62 +1161,13 @@ const MobilesPairing = ({navigation}: any) => {
             setDoingMPC(false);
           }
         } catch (multiPathErr) {
-          dbg(
-            'MobilesPairing: multi-path send failed, falling back to single-path:',
-            multiPathErr,
-          );
+          dbg('MobilesPairing: multi-path send failed:', multiPathErr);
         }
 
         if (!usedMultiPath) {
-          // Fallback: single-path (original flow)
-          const rawTxHexSingle = await BBMTLibNativeModule.mpcSendBTC(
-            server,
-            partyID,
-            partiesCSV,
-            sessionID,
-            sessionKey,
-            encKey,
-            decKey,
-            jks,
-            path,
-            btcPub,
-            senderAddress,
-            toAddress,
-            satoshiAmount,
-            satoshiFees,
+          throw new Error(
+            'Send BTC requires UTXOs and change address (multi-path flow). Please try again or use a wallet with available balance.',
           );
-          dbg(partyID, 'signed tx (single-path), len=', rawTxHexSingle?.length);
-          if (
-            !rawTxHexSingle ||
-            typeof rawTxHexSingle !== 'string' ||
-            rawTxHexSingle.length % 2 !== 0 ||
-            !/^[a-fA-F0-9]+$/.test(rawTxHexSingle)
-          ) {
-            throw rawTxHexSingle || 'Invalid signed transaction';
-          }
-          broadcastSuccessPayloadRef.current = {
-            multiPath: false,
-            pendingKey: senderAddress,
-            toAddress,
-            satoshiAmount,
-            satoshiFees,
-            net,
-            addressTypeToUse,
-            showPlay,
-            showUtxosTab,
-            showPsbtTab,
-            showWalletTab,
-            senderAddress,
-            originalNetwork,
-            originalApiUrl,
-            isMaster,
-          };
-          if (mpcAbortRef.current) {
-            setDoingMPC(false);
-            return;
-          }
-          setSignedTxRawHex(rawTxHexSingle);
-          setDoingMPC(false);
         }
       }
     } catch (error: any) {
@@ -5015,28 +4985,26 @@ const MobilesPairing = ({navigation}: any) => {
                 dbg('MobilesPairing: incrementChangeIndexAfterSend failed:', e);
               }
             }
-            const pendingTxs = JSON.parse(
-              JSON.stringify(
-                transactionRepository.getPendingTxMap(
-                  p.pendingKey,
-                  p.net || 'mainnet',
-                ),
-              ),
-            );
-            pendingTxs[txId] = {
+            const apiTxShape = {
               txid: txId,
-              from: p.pendingKey,
-              to: p.toAddress,
-              amount: p.satoshiAmount,
-              satoshiAmount: p.satoshiAmount,
-              satoshiFees: p.satoshiFees,
-              sentAt: Date.now(),
-              status: {confirmed: false, block_height: null},
+              status: {confirmed: false, block_height: null, block_time: null, block_hash: null},
+              fee: Number(p.satoshiFees),
+              vin: (p.inputs ?? []).map(inp => ({
+                prevout: {
+                  scriptpubkey_address: inp.scriptpubkey_address,
+                  value: inp.value,
+                },
+              })),
+              vout: (p.outputs ?? []).map(o => ({
+                scriptpubkey_address: o.scriptpubkey_address,
+                value: o.value,
+              })),
             };
-            transactionRepository.setPendingTxMap(
-              p.pendingKey,
+            transactionRepository.insertBroadcastTransaction(
+              txId,
               p.net || 'mainnet',
-              pendingTxs,
+              apiTxShape,
+              p.senderAddress,
             );
             navigation.dispatch(
               CommonActions.reset(

@@ -16,6 +16,7 @@
 import mempoolClient from '../MempoolClient';
 import transactionRepository from '../repositories/TransactionRepository';
 import syncRepository from '../repositories/SyncRepository';
+import {getTransactionDbTtlMs} from '../HdOptionsConfig';
 import {INTER_ADDRESS_DELAY_MS, sleep, with429Retry} from './rateLimitRetry';
 import {dbg} from '../../utils';
 import type {TxRecord, TxAddressMapping} from '../repositories/TransactionRepository';
@@ -23,9 +24,6 @@ type AddressLink = TxAddressMapping;
 
 const PAGE_SIZE = 25;
 const MAX_PAGES_PER_ADDRESS = 20;
-
-/** Skip API call if the DB was synced within this window. */
-const TX_DB_TTL_MS = 60_000; // 60 s
 
 interface ApiTx {
   txid: string;
@@ -63,6 +61,26 @@ class TransactionSyncer {
     onProgress?: (current: number, total: number) => void,
   ): Promise<void> {
     if (!addresses.length) return;
+    // Skip full fetch when every address was synced recently (same TTL as syncAddress).
+    // Prevents duplicate work when UI re-enqueues "Syncing transactions…" (e.g. effect re-run).
+    const txDbTtlMs = getTransactionDbTtlMs();
+    const allFresh = addresses.every(({address, network}) =>
+      syncRepository.isFresh(
+        'transactions',
+        `${address}_${network}`,
+        txDbTtlMs,
+      ),
+    );
+    if (allFresh) {
+      dbg(
+        'TransactionSyncer: syncAddressesAtomic skipped — all',
+        addresses.length,
+        'addresses fresh (TTL',
+        txDbTtlMs / 1000,
+        's)',
+      );
+      return;
+    }
     const cleanApi = apiBase.replace(/\/+$/, '');
     const total = addresses.length;
     const knownTxids = transactionRepository.getKnownTxids(
@@ -115,24 +133,32 @@ class TransactionSyncer {
           for (const apiTx of page) {
             if (!apiTx.txid) continue;
             if (knownTxids.has(apiTx.txid)) {
-              if (
-                apiTx.status?.confirmed &&
-                apiTx.status.block_height &&
-                apiTx.status.block_time
-              ) {
-                transactionRepository.markConfirmed(
-                  apiTx.txid,
-                  network,
-                  apiTx.status.block_height,
-                  apiTx.status.block_time,
-                  apiTx.status.block_hash,
-                );
-              }
+              // Full upsert so broadcast-inserted pending tx gets updated with API payload when confirmed
+              const netSats = this._computeNetSats(apiTx, address);
+              const txRecord: TxRecord = {
+                txid: apiTx.txid,
+                network,
+                blockHeight: apiTx.status?.block_height ?? null,
+                blockHash: apiTx.status?.block_hash ?? null,
+                blockTime: apiTx.status?.block_time ?? null,
+                isConfirmed: apiTx.status?.confirmed ?? false,
+                feeSats: apiTx.fee ?? null,
+                size: apiTx.size ?? null,
+                weight: apiTx.weight ?? null,
+                version: apiTx.version ?? null,
+                locktime: apiTx.locktime ?? null,
+                rawJson: JSON.stringify(apiTx),
+                fetchedAt: Date.now(),
+              };
+              allBatches.push({
+                tx: txRecord,
+                addresses: [{txid: apiTx.txid, network, address, netSats}],
+              });
               missingLinks.push({
                 txid: apiTx.txid,
                 network,
                 address,
-                netSats: this._computeNetSats(apiTx, address),
+                netSats,
               });
               continue;
             }
@@ -209,7 +235,7 @@ class TransactionSyncer {
     apiBase: string,
   ): Promise<void> {
     const entityKey = `${address}_${network}`;
-    if (syncRepository.isFresh('transactions', entityKey, TX_DB_TTL_MS)) {
+    if (syncRepository.isFresh('transactions', entityKey, getTransactionDbTtlMs())) {
       dbg('TransactionSyncer: fresh — skipping', address.slice(0, 10));
       return;
     }
@@ -251,24 +277,32 @@ class TransactionSyncer {
         for (const apiTx of page) {
           if (!apiTx.txid) continue;
           if (knownTxids.has(apiTx.txid)) {
-            if (
-              apiTx.status?.confirmed &&
-              apiTx.status.block_height &&
-              apiTx.status.block_time
-            ) {
-              transactionRepository.markConfirmed(
-                apiTx.txid,
-                network,
-                apiTx.status.block_height,
-                apiTx.status.block_time,
-                apiTx.status.block_hash,
-              );
-            }
+            // Full upsert so broadcast-inserted pending tx gets updated with API payload when confirmed
+            const netSats = this._computeNetSats(apiTx, address);
+            const txRecord: TxRecord = {
+              txid: apiTx.txid,
+              network,
+              blockHeight: apiTx.status?.block_height ?? null,
+              blockHash: apiTx.status?.block_hash ?? null,
+              blockTime: apiTx.status?.block_time ?? null,
+              isConfirmed: apiTx.status?.confirmed ?? false,
+              feeSats: apiTx.fee ?? null,
+              size: apiTx.size ?? null,
+              weight: apiTx.weight ?? null,
+              version: apiTx.version ?? null,
+              locktime: apiTx.locktime ?? null,
+              rawJson: JSON.stringify(apiTx),
+              fetchedAt: Date.now(),
+            };
+            batch.push({
+              tx: txRecord,
+              addresses: [{txid: apiTx.txid, network, address, netSats}],
+            });
             links.push({
               txid: apiTx.txid,
               network,
               address,
-              netSats: this._computeNetSats(apiTx, address),
+              netSats,
             });
             continue;
           }

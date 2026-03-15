@@ -213,6 +213,8 @@ const MobileNostrPairing = ({navigation}: any) => {
     originalApiUrl?: string;
     originalWalletServiceNetwork?: string;
     originalWalletServiceApiUrl?: string;
+    inputs?: Array<{txid: string; vout: number; value: number; scriptpubkey_address: string}>;
+    outputs?: Array<{scriptpubkey_address: string; value: number}>;
   } | null>(null);
   const skipRestoreInFinallyRef = useRef(false);
   const nostrAbortRef = useRef(false);
@@ -1813,6 +1815,8 @@ const MobileNostrPairing = ({navigation}: any) => {
       }
 
       let rawTxHex: string;
+      let broadcastInputs: Array<{txid: string; vout: number; value: number; scriptpubkey_address: string}> | undefined;
+      let broadcastOutputs: Array<{scriptpubkey_address: string; value: number}> | undefined;
       try {
         let utxosWithPathsJSON: string | null = null;
         const utxosJsonFromQR = route.params?.utxosJson;
@@ -1895,6 +1899,21 @@ const MobileNostrPairing = ({navigation}: any) => {
           }
         }
         if (utxosWithPathsJSON && changeAddress) {
+          const utxoList = JSON.parse(utxosWithPathsJSON) as Array<{txid: string; vout: number; value: number; address?: string}>;
+          broadcastInputs = utxoList.map((u: any) => ({
+            txid: u.txid,
+            vout: u.vout,
+            value: u.value,
+            scriptpubkey_address: u.address ?? '',
+          }));
+          const totalInput = utxoList.reduce((s: number, u: any) => s + (u.value || 0), 0);
+          const changeAmount = totalInput - Number(satoshiAmount) - Number(satoshiFees);
+          broadcastOutputs = [
+            {scriptpubkey_address: toAddress, value: Number(satoshiAmount)},
+          ];
+          if (changeAmount > 0) {
+            broadcastOutputs.push({scriptpubkey_address: changeAddress, value: changeAmount});
+          }
           rawTxHex = await BBMTLibNativeModule.nostrMpcSendBTCWithUTXOs(
             relaysCSV,
             nsecToUse,
@@ -1970,6 +1989,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         originalApiUrl,
         originalWalletServiceNetwork,
         originalWalletServiceApiUrl,
+        ...(broadcastInputs && broadcastOutputs ? {inputs: broadcastInputs, outputs: broadcastOutputs} : {}),
       };
       skipRestoreInFinallyRef.current = true;
       if (nostrAbortRef.current) {
@@ -6463,24 +6483,36 @@ const MobileNostrPairing = ({navigation}: any) => {
                 e,
               );
             }
-            const pendingTxs = transactionRepository.getPendingTxMap(
-              p.senderAddress,
+            const apiTxShape =
+              p.inputs && p.outputs && p.inputs.length > 0 && p.outputs.length > 0
+                ? {
+                    txid: txId,
+                    status: {confirmed: false, block_height: null, block_time: null, block_hash: null},
+                    fee: p.satoshiFees,
+                    vin: p.inputs.map(inp => ({
+                      prevout: {scriptpubkey_address: inp.scriptpubkey_address, value: inp.value},
+                    })),
+                    vout: p.outputs!.map(o => ({scriptpubkey_address: o.scriptpubkey_address, value: o.value})),
+                  }
+                : {
+                    txid: txId,
+                    status: {confirmed: false, block_height: null, block_time: null, block_hash: null},
+                    fee: p.satoshiFees,
+                    vin: [
+                      {
+                        prevout: {
+                          scriptpubkey_address: p.senderAddress,
+                          value: p.satoshiAmount + p.satoshiFees,
+                        },
+                      },
+                    ],
+                    vout: [{scriptpubkey_address: p.toAddress, value: p.satoshiAmount}],
+                  };
+            transactionRepository.insertBroadcastTransaction(
+              txId,
               p.net || 'mainnet',
-            );
-            pendingTxs[txId] = {
-              txid: txId,
-              from: p.senderAddress,
-              to: p.toAddress,
-              amount: p.satoshiAmount,
-              satoshiAmount: p.satoshiAmount,
-              satoshiFees: p.satoshiFees,
-              sentAt: Date.now(),
-              status: {confirmed: false, block_height: null},
-            };
-            transactionRepository.setPendingTxMap(
+              apiTxShape,
               p.senderAddress,
-              p.net || 'mainnet',
-              pendingTxs,
             );
             navigation.dispatch(
               CommonActions.reset(
