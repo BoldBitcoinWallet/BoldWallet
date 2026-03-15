@@ -5,11 +5,24 @@
  * - Cache key: currency + timestamp rounded to UTC day (one rate per day per currency).
  * - In-memory map for fast lookups; PriceRepository (SQLite) for persistence.
  * - Fetches via MempoolClient (GET /api/v1/historical-price?currency=...&timestamp=...).
+ * - Historical prices are always fetched from mainnet API (even in testnet mode).
  */
 
 import mempoolClient from './MempoolClient';
 import priceRepository, {toDayTimestamp} from './repositories/PriceRepository';
+import appConfigRepository, {CONFIG_KEYS} from './repositories/AppConfigRepository';
 import {dbg} from '../utils';
+
+const DEFAULT_MAINNET_API = 'https://mempool.space/api';
+
+function getMainnetBaseForPrice(): string {
+  const network = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
+  return (
+    appConfigRepository.get('api_mainnet') ||
+    (network === 'mainnet' ? appConfigRepository.get('api') : null) ||
+    DEFAULT_MAINNET_API
+  );
+}
 
 /** In-memory cache: "<currency>_<dayTimestamp>" -> rate */
 const memoryCache = new Map<string, number>();
@@ -56,8 +69,9 @@ class HistoricalPriceService {
       return persisted;
     }
 
-    // 3. Fetch from API
-    const base = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
+    // 3. Fetch from API — always use mainnet (even in testnet mode)
+    const mainnetBase = getMainnetBaseForPrice();
+    const base = mainnetBase.replace(/\/+$/, '').replace(/\/api\/?$/, '');
     const url = `${base}/api/v1/historical-price?currency=${encodeURIComponent(
       currency,
     )}&timestamp=${Math.floor(timestampUnixSec)}`;

@@ -1204,16 +1204,37 @@ export class WalletService {
         };
       }
 
-      // Get the list of mainnet API endpoints
+      // Price is always fetched from mainnet (even in testnet mode).
+      const network = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
+      const userMainnetApi =
+        appConfigRepository.get('api_mainnet') ||
+        (network === 'mainnet' ? appConfigRepository.get('api') : null) ||
+        '';
       const apiEndpoints = await getMainnetAPIList();
       mempoolClient.setPublicBases(apiEndpoints);
-      dbg(
-        'WalletService: Attempting to fetch BTC price using round-robin from APIs:',
-        apiEndpoints,
-      );
+
+      const normalizeBase = (url: string) =>
+        (url || '').replace(/\/+$/, '').replace(/\/api\/?$/, '');
+      const publicBases = new Set(apiEndpoints.map(normalizeBase));
+      const userBase = normalizeBase(userMainnetApi);
+
+      // Use failover (public list) only when the user's mainnet API is one of the offered public ones.
+      // When the user has a custom mainnet host for privacy, hit only that host — no public round-robin.
+      const basesToTry: string[] =
+        userMainnetApi && !publicBases.has(userBase)
+          ? [userMainnetApi]
+          : apiEndpoints;
+
+      if (userMainnetApi && !publicBases.has(userBase)) {
+        dbg('WalletService: Using custom mainnet API only for price (no public failover):', userMainnetApi);
+      } else {
+        dbg(
+          'WalletService: Attempting to fetch BTC price using round-robin from APIs:',
+          basesToTry,
+        );
+      }
       let lastError: any = null;
-      // Try each API endpoint in sequence until one succeeds
-      for (const baseApiUrl of apiEndpoints) {
+      for (const baseApiUrl of basesToTry) {
         try {
           // Always use mainnet price endpoint (remove any testnet suffix)
           const priceUrl =

@@ -14,9 +14,11 @@
  *      still in-flight, both await the same Promise.  Only one HTTP request
  *      is made.
  *
- *   3. FAILOVER — When the current API host is a known public mempool instance,
- *      a failed request is automatically retried on alternative public hosts
- *      (round-robin).  Custom (user-set) API bases are never failed-over.
+ *   3. FAILOVER — When the request URL's host is one of the known public mempool
+ *      bases (set via setPublicBases, e.g. from getMainnetAPIList), a failed
+ *      request is retried on other public hosts. When the user has set a custom
+ *      API (not in that list) for privacy, failover is never used — only their
+ *      single host is tried.
  *
  * TTL defaults:
  *   - /address/…           15 s  (balance, UTXOs, transactions — default)
