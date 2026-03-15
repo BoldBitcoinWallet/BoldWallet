@@ -1,13 +1,14 @@
-import React, {useEffect, useState, useRef, forwardRef, useImperativeHandle} from 'react';
-import {
-  View,
-  Text,
-  Image,
-  Animated,
-  StyleSheet,
-} from 'react-native';
+import React, {
+  useEffect,
+  useState,
+  useRef,
+  forwardRef,
+  useImperativeHandle,
+} from 'react';
+import {View, Text, Image, Animated, StyleSheet} from 'react-native';
 import AppPressable from './AppPressable';
 import {createStyles} from './Styles';
+import {HapticFeedback} from '../utils';
 export interface CacheTimestamp {
   price: number;
   balance: number;
@@ -27,12 +28,15 @@ interface CacheIndicatorProps {
   /** When isRefreshing, show this instead of generic "Refreshing..." (e.g. "Fetching balance…"). */
   statusMessage?: string;
   /** When isRefreshing and set, append " current/total" (e.g. "Fetching balance… 3/5"). */
-  progress?: { current: number; total: number };
+  progress?: {current: number; total: number};
 }
 export interface CacheIndicatorHandle {
   press: () => void;
 }
-export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorProps>(
+export const CacheIndicator = forwardRef<
+  CacheIndicatorHandle,
+  CacheIndicatorProps
+>(
   (
     {
       timestamps,
@@ -49,19 +53,25 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
   ) => {
     const latestTimestamp = Math.max(timestamps.price, timestamps.balance);
     const shimmerValue = useRef(new Animated.Value(-100)).current;
-    const shimmerAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
+    const shimmerAnimationRef = useRef<Animated.CompositeAnimation | null>(
+      null,
+    );
     const [currentTime, setCurrentTime] = useState(Date.now());
     const [isUsingCache, setIsUsingCache] = useState(false);
     // Expose a press() method to parent
-    useImperativeHandle(ref, () => ({
-      press: () => {
-        if (isRefreshing) {
-          onAbortRequested?.();
-        } else {
-          onRefresh();
-        }
-      },
-    }), [onRefresh, onAbortRequested, isRefreshing]);
+    useImperativeHandle(
+      ref,
+      () => ({
+        press: () => {
+          if (isRefreshing) {
+            onAbortRequested?.();
+          } else {
+            onRefresh();
+          }
+        },
+      }),
+      [onRefresh, onAbortRequested, isRefreshing],
+    );
     useEffect(() => {
       // Stop any prior loop (prevents stacked animations on rapid toggles)
       shimmerAnimationRef.current?.stop?.();
@@ -206,7 +216,10 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
             onRefresh();
           }
         }}
-        onLongPress={onLongPress}
+        onLongPress={() => {
+          HapticFeedback.medium();
+          onLongPress?.();
+        }}
         disabled={false}>
         {isRefreshing && (
           <View style={createStyles(theme).shimmerContainer}>
@@ -220,7 +233,11 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
             />
           </View>
         )}
-        <View style={[createStyles(theme).refreshText, isRefreshing && styles.flexFill]}>
+        <View
+          style={[
+            createStyles(theme).refreshText,
+            isRefreshing && styles.flexFill,
+          ]}>
           <Image
             source={require('../assets/refresh-icon.png')}
             style={[
@@ -236,13 +253,11 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
             style={{
               color: isRefreshing
                 ? theme.colors.textSecondary
-                : (theme.colors.background === '#ffffff'
-                    ? theme.colors.accent
-                    : theme.colors.bitcoinOrange),
+                : theme.colors.background === '#ffffff'
+                ? theme.colors.accent
+                : theme.colors.bitcoinOrange,
             }}>
-            {isRefreshing
-              ? (statusMessage ?? 'Refreshing...')
-              : 'Tap to refresh'}
+            {isRefreshing ? statusMessage ?? 'Refreshing...' : 'Tap to refresh'}
           </Text>
           {isRefreshing && progress ? (
             <Text
@@ -278,13 +293,16 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
             </View>
             <Image
               source={clockIcon}
-              style={[styles.clockIcon, {tintColor: theme.colors.textSecondary}]}
+              style={[
+                styles.clockIcon,
+                {tintColor: theme.colors.textSecondary},
+              ]}
             />
           </View>
         )}
       </AppPressable>
     );
-  }
+  },
 );
 const styles = StyleSheet.create({
   timeContainer: {
