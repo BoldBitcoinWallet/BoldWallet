@@ -1,6 +1,7 @@
 package tss
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"encoding/base64"
 	"encoding/hex"
@@ -501,6 +502,12 @@ func (s *ServiceImpl) processKeySign(localParty tss.Party,
 
 	for {
 		select {
+		case <-s.cancelCh:
+			// Best-effort stop. Not all Party implementations expose Stop().
+			if stopper, ok := localParty.(interface{ Stop() }); ok {
+				stopper.Stop()
+			}
+			return nil, context.Canceled
 		case <-errCh:
 			return nil, errors.New("failed to start keysign process")
 		case msg := <-outCh:

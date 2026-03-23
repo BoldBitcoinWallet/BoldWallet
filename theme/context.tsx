@@ -12,7 +12,7 @@ import React, {
   ReactNode,
 } from 'react';
 import {Appearance, ColorSchemeName} from 'react-native';
-import LocalCache from '../services/LocalCache';
+import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {dbg} from '../utils';
 import type {Theme, ThemeMode, ThemeContextValue} from './types';
 import {lightTheme, darkTheme} from './themes';
@@ -74,9 +74,9 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({children}) => {
   );
   // Load theme mode from storage IMMEDIATELY and update theme right away
   useEffect(() => {
-    const loadThemeMode = async () => {
+    const loadThemeMode = () => {
       try {
-        const storedMode = await LocalCache.getItem('themeMode');
+        const storedMode = appConfigRepository.get(CONFIG_KEYS.THEME_MODE);
         if (
           storedMode === 'os' ||
           storedMode === 'light' ||
@@ -84,24 +84,15 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({children}) => {
         ) {
           const mode = storedMode as ThemeMode;
           setThemeModeState(mode);
-          // Immediately update theme when mode is loaded
           const effectiveTheme = getEffectiveTheme(mode, initialSystemScheme);
           setTheme(effectiveTheme);
           dbg('Theme mode loaded:', mode);
         } else {
-          // Check for legacy theme preference
-          const storedTheme = await LocalCache.getItem('theme');
-          if (storedTheme === 'cryptoVibrant') {
-            setThemeModeState('light');
-            setTheme(lightTheme);
-            dbg('Migrated from legacy cryptoVibrant theme');
-          } else {
-            setThemeModeState('os');
-            const osTheme =
-              initialSystemScheme === 'dark' ? darkTheme : lightTheme;
-            setTheme(osTheme);
-            dbg('Using default OS theme mode');
-          }
+          setThemeModeState('os');
+          const osTheme =
+            initialSystemScheme === 'dark' ? darkTheme : lightTheme;
+          setTheme(osTheme);
+          dbg('Using default OS theme mode');
         }
       } catch (error) {
         dbg('Error loading theme mode:', error);
@@ -111,7 +102,6 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({children}) => {
         setTheme(osTheme);
       }
     };
-    // Load immediately, don't wait
     loadThemeMode();
   }, [getEffectiveTheme, initialSystemScheme]);
   // Update theme when mode or system color scheme changes
@@ -125,7 +115,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({children}) => {
     async (mode: ThemeMode) => {
       setThemeModeState(mode);
       try {
-        await LocalCache.setItem('themeMode', mode);
+        appConfigRepository.set(CONFIG_KEYS.THEME_MODE, mode);
         dbg('Theme mode saved:', mode);
       } catch (error) {
         dbg('Error saving theme mode:', error);

@@ -1,5 +1,11 @@
+#!/bin/bash
+set -euo pipefail
+
+# Always run from the BBMTLib directory regardless of where the script is called from.
+cd "$(dirname "$0")"
+
 # Dockerfile.fips
-docker buildx build --platform linux/amd64 -f Dockerfile.fips -t boldwallet-builder:fips .
+docker buildx build --load --platform linux/amd64 -f Dockerfile.fips -t boldwallet-builder:fips .
 
 # Generate lib
 docker run --rm \

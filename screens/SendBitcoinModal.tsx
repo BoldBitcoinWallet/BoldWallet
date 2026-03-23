@@ -25,12 +25,17 @@ import Big from 'big.js';
 import {dbg, decodeSendBitcoinQR, formatBitcoinDisplay} from '../utils';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
-import LocalCache from '../services/LocalCache';
+import appConfigRepository, {
+  CONFIG_KEYS,
+} from '../services/repositories/AppConfigRepository';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {
   validateBitcoinAddressEnhanced,
   waitMS,
+  WalletService,
 } from '../services/WalletService';
+import utxoRepository from '../services/repositories/UtxoRepository';
+import {estimateFee, type FeeStrategy} from '../services/feeUtils';
 const {BBMTLibNativeModule} = NativeModules;
 interface SendBitcoinModalProps {
   visible: boolean;
@@ -40,6 +45,8 @@ interface SendBitcoinModalProps {
     amount: Big,
     estimatedFee: Big,
     spendingHash: string,
+    utxosJson?: string | null,
+    changeAddress?: string | null,
   ) => void;
   btcToFiatRate: Big;
   walletBalance: Big;
@@ -61,6 +68,12 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
 }) => {
   const isMountedRef = useRef(true);
   const visibleRef = useRef(visible);
+  /** Compact UTXOs (no scriptpubkey) captured at fee-estimation time, embedded in the QR. */
+  const lastUtxosJsonRef = useRef<string | null>(null);
+  /** Change address computed alongside UTXOs; passed through to co-signers via route params. */
+  const lastChangeAddressRef = useRef<string | null>(null);
+  /** Fee estimation cache — skip redundant runs when inputs haven't changed. */
+  const lastFeeInputsRef = useRef<string>('');
   const [address, setAddress] = useState<string>('');
   const [btcAmount, setBtcAmount] = useState<Big>(Big(0));
   const [inBtcAmount, setInBtcAmount] = useState('');
@@ -73,7 +86,13 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   const [feeStrategy, setFeeStrategy] = useState('1hr');
   const [addressError, setAddressError] = useState<string | null>(null);
   const {theme} = useTheme();
-  const {showSats, balanceFormattingEnabled, activeNetwork} = useUser();
+  const {
+    showSats,
+    balanceFormattingEnabled,
+    activeNetwork,
+    activeAddressType,
+    activeApiProvider,
+  } = useUser();
   const isSatsMode = showSats;
   useEffect(() => {
     visibleRef.current = visible;
@@ -178,6 +197,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       paddingVertical: 10,
       paddingHorizontal: 12,
       fontSize: theme.fontSizes?.md || 15,
+      fontFamily: theme.fontFamilies?.monospace,
       maxHeight: 48,
       backgroundColor: theme.colors.cardBackground || '#FFF',
       marginBottom: 8,
@@ -261,13 +281,13 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     },
     balanceCardBtc: {
       fontSize: theme.fontSizes?.lg || 16,
-      fontFamily: theme.fontFamilies?.bold,
+      fontFamily: theme.fontFamilies?.monospaceBold,
       color: theme.colors.text,
       marginBottom: 2,
     },
     balanceCardFiat: {
       fontSize: theme.fontSizes?.sm || 12,
-      fontFamily: theme.fontFamilies?.medium,
+      fontFamily: theme.fontFamilies?.monospace,
       color: theme.colors.textSecondary, // Remove fallback for better dark mode readability
     },
     balanceCardMaxButton: {
@@ -325,7 +345,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     },
     feeAmount: {
       fontSize: theme.fontSizes?.md || 15,
-      fontFamily: theme.fontFamilies?.bold,
+      fontFamily: theme.fontFamilies?.monospaceBold,
       color: theme.colors.text,
     },
     feeCalculating: {
@@ -346,6 +366,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     },
     feeAmountUsd: {
       fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.monospace,
       color: theme.colors.textSecondary, // Remove fallback for better dark mode readability
     },
     sendCancelButtons: {
@@ -418,8 +439,8 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     [currentNetworkForValidation],
   );
   const feeStrategies = [
-    {label: 'Economy', value: 'eco'},
-    {label: 'Top Priority', value: 'top'},
+    {label: 'Eco', value: 'eco'},
+    {label: 'Priority', value: 'top'},
     {label: '30 Min', value: '30m'},
     {label: '1 Hour', value: '1hr'},
   ];
@@ -431,15 +452,12 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     }).format(price);
   const getFee = useCallback(
     async (addr: string, amt: string) => {
-      // If modal is not mounted or not visible, abort any fee work
-      if (!isMountedRef.current || !visibleRef.current) {
-        return;
-      }
+      if (!isMountedRef.current || !visibleRef.current) return;
       if (!addr || !amt || btcAmount.eq(0)) {
         setEstimatedFee(null);
+        lastFeeInputsRef.current = '';
         return;
       }
-      // Validate address for the current network before estimating fees
       if (!validateAddressForCurrentNetwork(addr)) {
         dbg(
           'Fee estimation skipped: invalid address for network',
@@ -447,200 +465,212 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
           currentNetworkForValidation,
         );
         setEstimatedFee(null);
+        lastFeeInputsRef.current = '';
         return;
       }
       const amount = Big(amt);
       if (amount.gt(walletBalance) || !walletBalance) {
         setEstimatedFee(null);
+        lastFeeInputsRef.current = '';
         return;
       }
+
+      // Skip if inputs identical to last successful estimation (prevents UI flicker)
+      const inputKey = `${addr}|${amt}|${feeStrategy}`;
+      if (inputKey === lastFeeInputsRef.current) {
+        return;
+      }
+
       setIsCalculatingFee(true);
-      const satoshiAmount = amount.times(1e8).toFixed(0);
-      BBMTLibNativeModule.spendingHash(walletAddress, addr, satoshiAmount)
-        .then((hash: string) => {
-          if (!isMountedRef.current || !visibleRef.current) {
-            return;
+      const amountSats = Number(amount.times(1e8).toFixed(0));
+      const satoshiAmount = amountSats.toString();
+
+      try {
+        const ws = WalletService.getInstance();
+        const effectiveType = activeAddressType || 'segwit-native';
+
+        // --- DB-first: HD addresses (cached, instant) + UTXOs from SQLite ---
+        let hdAddrs: Array<{
+          address: string;
+          derivationPath: string;
+          chain: string;
+          index: number;
+        }> = [];
+        try {
+          hdAddrs = await ws.getHdAddressesWithPaths(
+            activeNetwork,
+            effectiveType,
+          );
+        } catch {
+          dbg('SendBitcoinModal: HD address derivation failed');
+        }
+
+        let dbUtxos =
+          hdAddrs.length > 0
+            ? utxoRepository.getUtxosForAddresses(
+                hdAddrs.map(a => a.address),
+                activeNetwork,
+              )
+            : utxoRepository.getUtxosForNetwork(activeNetwork, effectiveType);
+
+        let changeAddress = '';
+        try {
+          changeAddress = await ws.getNextChangeAddress(
+            activeNetwork,
+            effectiveType,
+          );
+        } catch {
+          // Non-critical for fee estimation
+        }
+
+        // Build spending-hash JSON from DB UTXOs + HD derivation paths
+        let utxosJson: string | null = null;
+        if (dbUtxos.length > 0 && hdAddrs.length > 0) {
+          const pathMap = new Map(
+            hdAddrs.map(a => [a.address, a.derivationPath]),
+          );
+          const utxoEntries = dbUtxos.map(u => ({
+            txid: u.txid,
+            vout: u.vout,
+            value: u.valueSats,
+            address: u.address,
+            derivation_path: u.derivationPath || pathMap.get(u.address) || '',
+            scriptpubkey: u.scriptPubkey || '',
+          }));
+          utxosJson = JSON.stringify(utxoEntries);
+          lastUtxosJsonRef.current = JSON.stringify(
+            utxoEntries.map(u => ({
+              txid: u.txid,
+              vout: u.vout,
+              value: u.value,
+              derivation_path: u.derivation_path,
+              address: u.address,
+            })),
+          );
+          lastChangeAddressRef.current = changeAddress;
+          dbg(
+            'SendBitcoinModal: using',
+            dbUtxos.length,
+            'UTXOs from DB (no live fetch)',
+          );
+        }
+
+        // Fallback: if DB had no UTXOs, do a live fetch
+        if (!dbUtxos.length && activeApiProvider) {
+          dbg('SendBitcoinModal: DB empty, falling back to live UTXO fetch');
+          try {
+            const utxosWithPaths = await ws.fetchUtxosWithPaths(
+              activeNetwork,
+              effectiveType,
+              activeApiProvider,
+            );
+            dbg(
+              'SendBitcoinModal: live utxosWithPaths count',
+              utxosWithPaths.length,
+            );
+            utxosJson = JSON.stringify(utxosWithPaths);
+            lastUtxosJsonRef.current = JSON.stringify(
+              utxosWithPaths.map(u => ({
+                txid: u.txid,
+                vout: u.vout,
+                value: u.value,
+                derivation_path: u.derivationPath,
+                address: u.address,
+              })),
+            );
+            lastChangeAddressRef.current = changeAddress;
+            if (utxosWithPaths.length > 0) {
+              dbUtxos = utxosWithPaths.map(u => ({
+                txid: u.txid,
+                vout: u.vout,
+                address: u.address,
+                network: activeNetwork,
+                valueSats: u.value,
+                scriptPubkey: null,
+                derivationPath: u.derivationPath ?? null,
+                isConfirmed: u.status?.confirmed ?? true,
+                blockHeight: u.status?.block_height ?? null,
+                blockTime: u.status?.block_time ?? null,
+                fetchedAt: Date.now(),
+              }));
+            }
+          } catch (e) {
+            dbg('SendBitcoinModal: live UTXO fetch failed', e);
           }
-          setSpendingHash(hash);
-          dbg('got spending hash:', hash);
-          BBMTLibNativeModule.estimateFees(walletAddress, addr, satoshiAmount)
-            .then((fee: string) => {
-              if (!isMountedRef.current || !visibleRef.current) {
-                return;
-              }
-              if (fee && typeof fee === 'string') {
-                // Check if the response contains an error message
-                if (
-                  fee.includes('failed') ||
-                  fee.includes('error') ||
-                  fee.includes('[')
-                ) {
-                  dbg('Fee estimation API returned error:', fee);
-                  setEstimatedFee(null);
-                  Alert.alert(
-                    'Fee Estimation Error',
-                    'Unable to estimate transaction fee. Please try again later.',
-                    [
-                      {
-                        text: 'Cancel',
-                        style: 'cancel',
-                      },
-                      {
-                        text: 'Retry',
-                        onPress: () => {
-                          getFee(addr, amt);
-                        },
-                      },
-                    ],
-                    {cancelable: true},
-                  );
-                  return;
-                }
-                // Try to parse the fee as a valid number
-                try {
-                  const feeNumber = parseFloat(fee);
-                  if (isNaN(feeNumber) || feeNumber <= 0) {
-                    dbg('Invalid fee amount received:', fee);
-                    setEstimatedFee(null);
-                    Alert.alert(
-                      'Fee Estimation Error',
-                      'Unable to estimate transaction fee. Please try again later.',
-                      [
-                        {
-                          text: 'Cancel',
-                          style: 'cancel',
-                        },
-                        {
-                          text: 'Retry',
-                          onPress: () => {
-                            getFee(addr, amt);
-                          },
-                        },
-                      ],
-                      {cancelable: true},
-                    );
-                    return;
-                  }
-                  dbg('got fees:', fee);
-                  const feeAmt = Big(feeNumber.toString());
-                  setEstimatedFee(feeAmt);
-                  // Dismiss keyboard when fee is updated
-                  Keyboard.dismiss();
-                  if (btcAmount.eq(walletBalance)) {
-                    // When MAX is clicked, adjust amount to account for fee
-                    const adjustedAmount = walletBalance.minus(feeAmt.div(1e8));
-                    setInBtcAmount(
-                      isSatsMode
-                        ? adjustedAmount.times(1e8).toFixed(0)
-                        : adjustedAmount.toFixed(8),
-                    );
-                    setBtcAmount(adjustedAmount);
-                    setInUsdAmount(
-                      adjustedAmount.times(btcToFiatRate).toFixed(2),
-                    );
-                  }
-                } catch (parseError) {
-                  dbg('Failed to parse fee amount:', fee, parseError);
-                  setEstimatedFee(null);
-                  Alert.alert(
-                    'Fee Estimation Error',
-                    'Unable to estimate transaction fee. Please try again later.',
-                    [
-                      {
-                        text: 'Cancel',
-                        style: 'cancel',
-                      },
-                      {
-                        text: 'Retry',
-                        onPress: () => {
-                          getFee(addr, amt);
-                        },
-                      },
-                    ],
-                    {cancelable: true},
-                  );
-                }
-              } else {
-                dbg('No fee data received from API');
-                setEstimatedFee(null);
-                Alert.alert(
-                  'Fee Estimation Error',
-                  'Unable to estimate transaction fee. Please try again later.',
-                  [
-                    {
-                      text: 'Cancel',
-                      style: 'cancel',
-                    },
-                    {
-                      text: 'Retry',
-                      onPress: () => {
-                        getFee(addr, amt);
-                      },
-                    },
-                  ],
-                  {cancelable: true},
-                );
-              }
-            })
-            .catch((e: any) => {
-              if (!isMountedRef.current || !visibleRef.current) {
-                return;
-              }
-              dbg('Fee estimation failed:', e);
-              setEstimatedFee(null);
-              // Only show alert for network/API errors, not parsing errors
-              if (e.message && !e.message.includes('Invalid number')) {
-                Alert.alert(
-                  'Fee Estimation Error',
-                  'Unable to estimate transaction fee. Please try again later.',
-                  [
-                    {
-                      text: 'Cancel',
-                      style: 'cancel',
-                    },
-                    {
-                      text: 'Retry',
-                      onPress: () => {
-                        getFee(addr, amt);
-                      },
-                    },
-                  ],
-                  {cancelable: true},
-                );
-              }
-            })
-            .finally(() => {
-              if (!isMountedRef.current || !visibleRef.current) {
-                return;
-              }
-              setIsCalculatingFee(false);
-            });
-        })
-        .catch((e: any) => {
-          if (!isMountedRef.current || !visibleRef.current) {
-            return;
-          }
-          dbg('Spending hash failed:', e);
-          setIsCalculatingFee(false);
-          setEstimatedFee(null);
+        }
+
+        // --- Spending hash (still native — MPC-specific) ---
+        let hash: string;
+        if (utxosJson) {
+          hash = await BBMTLibNativeModule.spendingHashWithUTXOs(
+            utxosJson,
+            addr,
+            satoshiAmount,
+          );
+        } else {
+          hash = await BBMTLibNativeModule.spendingHash(
+            walletAddress,
+            addr,
+            satoshiAmount,
+          );
+        }
+        if (!isMountedRef.current || !visibleRef.current) return;
+        setSpendingHash(hash);
+        dbg('got spending hash:', hash);
+
+        // --- Fee estimation (pure TS — DB UTXOs + cached fee rates) ---
+        if (!dbUtxos.length) {
+          throw new Error('No UTXOs available for fee estimation');
+        }
+
+        const apiBase = activeApiProvider || 'https://mempool.space/api';
+        const result = await estimateFee({
+          utxos: dbUtxos,
+          receiverAddress: addr,
+          amountSats,
+          changeAddress: changeAddress || walletAddress,
+          strategy: feeStrategy as FeeStrategy,
+          apiBase,
+        });
+
+        if (!isMountedRef.current || !visibleRef.current) return;
+
+        dbg('got fees (TS):', result.feeSats, 'sats', result.feeRate, 'sat/vB');
+        const feeAmt = Big(result.feeSats);
+        setEstimatedFee(feeAmt);
+        lastFeeInputsRef.current = inputKey;
+        Keyboard.dismiss();
+
+        if (btcAmount.eq(walletBalance)) {
+          const adjustedAmount = walletBalance.minus(feeAmt.div(1e8));
+          setInBtcAmount(
+            isSatsMode
+              ? adjustedAmount.times(1e8).toFixed(0)
+              : adjustedAmount.toFixed(8),
+          );
+          setBtcAmount(adjustedAmount);
+          setInUsdAmount(adjustedAmount.times(btcToFiatRate).toFixed(2));
+        }
+      } catch (e: any) {
+        if (!isMountedRef.current || !visibleRef.current) return;
+        dbg('Fee estimation failed:', e);
+        setEstimatedFee(null);
+        if (e.message && !e.message.includes('Invalid number')) {
           Alert.alert(
             'Fee Estimation Error',
-            'Unable to prepare transaction for fee estimation. Please try again.',
+            'Unable to estimate transaction fee. Please try again later.',
             [
-              {
-                text: 'Cancel',
-                style: 'cancel',
-              },
-              {
-                text: 'Retry',
-                onPress: () => {
-                  getFee(addr, amt);
-                },
-              },
+              {text: 'Cancel', style: 'cancel'},
+              {text: 'Retry', onPress: () => getFee(addr, amt)},
             ],
             {cancelable: true},
           );
-        });
+        }
+      } finally {
+        if (isMountedRef.current && visibleRef.current) {
+          setIsCalculatingFee(false);
+        }
+      }
     },
     [
       btcAmount,
@@ -650,23 +680,29 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       validateAddressForCurrentNetwork,
       currentNetworkForValidation,
       isSatsMode,
+      feeStrategy,
+      activeApiProvider,
+      activeNetwork,
+      activeAddressType,
     ],
   );
-  const debouncedGetFee = useMemo(() => debounce(getFee, 1000), [getFee]);
+  const getFeeRef = useRef(getFee);
+  getFeeRef.current = getFee;
+  const debouncedGetFee = useMemo(
+    () =>
+      debounce((...args: [string, string]) => getFeeRef.current(...args), 1000),
+    [],
+  );
   useEffect(() => {
-    const initFee = async () => {
-      const feeOption = await LocalCache.getItem('feeStrategy');
-      // Always default to 'eco' if no fee strategy is set or if it was 'min'
-      const defaultFee = feeOption && feeOption !== 'min' ? feeOption : 'eco';
-      setFeeStrategy(defaultFee);
-      BBMTLibNativeModule.setFeePolicy(defaultFee);
-      dbg('using fee strategy', defaultFee);
-    };
-    initFee();
+    const feeOption = appConfigRepository.get(CONFIG_KEYS.FEE_STRATEGY);
+    const defaultFee = feeOption && feeOption !== 'min' ? feeOption : 'eco';
+    setFeeStrategy(defaultFee);
+    dbg('using fee strategy', defaultFee);
   }, []);
   useEffect(() => {
     if (!visible) {
       setAddress('');
+      lastFeeInputsRef.current = '';
       return;
     }
     if (initialAddress) {
@@ -685,7 +721,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     }
   }, [address, validateAddressForCurrentNetwork]);
   useEffect(() => {
-    // Only trigger fee estimation if we have a valid address (for current network) and non-zero amount
     if (
       address &&
       btcAmount &&
@@ -694,16 +729,12 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     ) {
       debouncedGetFee(address, btcAmount.toString());
     } else {
-      // Clear fee if conditions aren't met
+      debouncedGetFee.cancel();
       setEstimatedFee(null);
     }
-  }, [
-    address,
-    btcAmount,
-    debouncedGetFee,
-    feeStrategy,
-    validateAddressForCurrentNetwork,
-  ]);
+    return () => debouncedGetFee.cancel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address, btcAmount, feeStrategy, validateAddressForCurrentNetwork]);
   const pasteAddress = useCallback(async () => {
     const text = await Clipboard.getString();
     // Validate that the clipboard contains what looks like a Bitcoin address
@@ -865,10 +896,9 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   );
   const handleFeeStrategyChange = (value: string) => {
     setFeeStrategy(value);
+    lastFeeInputsRef.current = '';
     dbg('setting fee strategy to', value);
-    BBMTLibNativeModule.setFeePolicy(value);
-    LocalCache.setItem('feeStrategy', value);
-    // Dismiss keyboard when fee strategy changes (triggers new fee estimation)
+    appConfigRepository.set(CONFIG_KEYS.FEE_STRATEGY, value);
     Keyboard.dismiss();
   };
   const handleSendClick = () => {
@@ -907,7 +937,14 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     }
     // Normalize to sats for sending
     const amountSats = btcAmount.times(E8);
-    onSend(address, amountSats, estimatedFee, spendingHash);
+    onSend(
+      address,
+      amountSats,
+      estimatedFee,
+      spendingHash,
+      lastUtxosJsonRef.current,
+      lastChangeAddressRef.current,
+    );
   };
   // Check if amount exceeds balance
   const amountExceedsBalance = btcAmount.gt(0) && btcAmount.gt(walletBalance);

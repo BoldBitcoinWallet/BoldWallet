@@ -27,7 +27,7 @@ func (c *Config) ApplyDefaults() {
 		c.MaxTimeout = 90 * time.Second
 	}
 	if c.ConnectTimeout == 0 {
-		c.ConnectTimeout = 20 * time.Second
+		c.ConnectTimeout = 45 * time.Second
 	}
 }
 

@@ -23,7 +23,10 @@ import {useTheme} from '../theme';
 import {dbg, isLegacyWallet} from '../utils';
 import LegalModal from '../components/LegalModal';
 import TransportModeSelector from '../components/TransportModeSelector';
-import LocalCache from '../services/LocalCache';
+import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
+import database from '../services/Database';
+import {WalletService} from '../services/WalletService';
+import mempoolClient from '../services/MempoolClient';
 import {useUser} from '../context/UserContext';
 const {BBMTLibNativeModule} = NativeModules;
 const ShowcaseScreen = ({navigation}: any) => {
@@ -47,28 +50,43 @@ const ShowcaseScreen = ({navigation}: any) => {
   const fadeAnim = useRef(new Animated.Value(0.6)).current;
   const connectorAnim = useRef(new Animated.Value(0)).current;
   const connectorLoopRef = useRef(null as Animated.CompositeAnimation | null);
-  // Clear all app cache on component mount (wallet import screen)
+  // Full reset on mount: wipe all wallet DB tables, all in-memory caches, and
+  // all user-preference EncryptedStorage entries so the import starts from a
+  // guaranteed clean slate. The keyshare itself is preserved so a user who
+  // already onboarded can land here without losing their key material.
   useEffect(() => {
     const clearAllCache = async () => {
       try {
-        dbg('=== ShowcaseScreen: Clearing all cache for wallet import');
-        // Clear LocalCache
-        await LocalCache.clear();
-        dbg('LocalCache cleared successfully');
-        // Clear stale EncryptedStorage items (but keep keyshare if it exists)
-        // We clear btcPub as it will be regenerated with the imported keyshare
-        await EncryptedStorage.removeItem('btcPub');
-        dbg('Cleared stale btcPub from EncryptedStorage');
-        // Clear WalletService cache
-        try {
-          await LocalCache.removeItem('walletCache');
-          dbg('WalletService cache cleared');
-        } catch (error) {
-          dbg('Error clearing WalletService cache:', error);
-        }
-        dbg('=== ShowcaseScreen: Cache clearing completed');
+        dbg('=== ShowcaseScreen: Full reset for wallet import');
+
+        // 1. Wipe all SQLite wallet tables (UTXOs, balances, transactions,
+        //    HD indexes, sync metadata, pending txs, …).
+        database.clearWalletData();
+        dbg('SQLite wallet data cleared');
+
+        // 2. Wipe in-memory caches so stale data never leaks into the new
+        //    wallet session.
+        const ws = WalletService.getInstance();
+        ws.invalidateAddressCache();
+        mempoolClient.invalidateAll();
+        dbg('In-memory caches cleared');
+
+        // 3. Clear all EncryptedStorage preference items.  btcPub will be
+        //    re-derived from the newly imported keyshare; the rest are user
+        //    preferences that should reset to defaults for a fresh wallet.
+        await Promise.allSettled([
+          EncryptedStorage.removeItem('btcPub'),
+          EncryptedStorage.removeItem('bitcoin_display_sats'),
+          EncryptedStorage.removeItem('balance_formatting_enabled'),
+          EncryptedStorage.removeItem('app_icon_preference'),
+          EncryptedStorage.removeItem('devDebugEnabled'),
+          EncryptedStorage.removeItem('psbt_mode_first_visit'),
+        ]);
+        dbg('EncryptedStorage preferences cleared');
+
+        dbg('=== ShowcaseScreen: Full reset completed');
       } catch (err) {
-        dbg('Error clearing app cache:', err);
+        dbg('ShowcaseScreen: Error during full reset:', err);
       }
     };
     clearAllCache();
@@ -187,10 +205,7 @@ const ShowcaseScreen = ({navigation}: any) => {
         // Reset legacy wallet modal flag for new wallet
         // If legacy wallet, set to "no" (show modal); if not legacy, set to "yes" (won't show anyway)
         const isLegacy = isLegacyWallet(ks.created_at);
-        await LocalCache.setItem(
-          'legacyWalletModalDoNotRemind',
-          isLegacy ? 'no' : 'yes',
-        );
+        appConfigRepository.set(CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND, isLegacy ? 'no' : 'yes');
         // CRITICAL: Always reset network to mainnet on keyshare import
         // This ensures a clean state and proper address derivation for the new wallet
         dbg('=== Keyshare imported: Resetting network to mainnet');
@@ -198,15 +213,15 @@ const ShowcaseScreen = ({navigation}: any) => {
         dbg('=== Network reset to mainnet, UserContext will refresh addresses');
         setModalVisible(false);
         setPassword('');
-        dbg('Navigating to User Preferences');
+        dbg('Navigating to User Preferences (restore will run after endpoint selection)');
         setTimeout(() => {
           navigation.dispatch(
             CommonActions.reset({
               index: 0,
-              routes: [{name: 'User Preferences'}],
+              routes: [{name: 'User Preferences', params: {pendingRestore: true}}],
             }),
           );
-        }, 1000);
+        }, 500);
       }
     } catch {
       dbg('Failed to decode as UTF-8. File might be binary.');

@@ -17,13 +17,16 @@ import * as RNFS from 'react-native-fs';
 import {dbg} from '../utils';
 import {useTheme} from '../theme';
 import {capitalize} from 'lodash';
+export type ReceivePathInfo = {path: string; index: number; address: string} | null;
+
 const ReceiveModal: React.FC<{
   address: string;
   addressType: string;
   baseApi: string;
   network: string;
   onClose: () => void;
-}> = ({address, addressType, baseApi, network, onClose}) => {
+  receivePathInfo?: ReceivePathInfo;
+}> = ({address, addressType, baseApi, network, onClose, receivePathInfo}) => {
   const qrRef = useRef<any>(null);
   const {theme} = useTheme();
   const [isCopied, setIsCopied] = useState(false);
@@ -167,6 +170,30 @@ const ReceiveModal: React.FC<{
       fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text, // Fix dark mode readability
     },
+    pathChip: {
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay05
+          : theme.colors.whiteOverlay10,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 10,
+      marginBottom: 16,
+      alignSelf: 'center',
+    },
+    pathChipText: {
+      fontSize: theme.fontSizes?.xs || 10,
+      fontFamily: theme.fontFamilies?.monospaceMedium,
+      color: theme.colors.textSecondary,
+    },
+    pathChipPathText: {
+      fontSize: theme.fontSizes?.xs || 10,
+      marginTop: 2,
+      fontFamily: theme.fontFamilies?.monospaceMedium,
+      color: theme.colors.textSecondary,
+    },
     qrContainer: {
       backgroundColor: 'white',
       padding: 8,
@@ -297,7 +324,7 @@ const ReceiveModal: React.FC<{
                 onClose();
               }}
               style={styles.closeButton}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
               <Text style={styles.closeButtonText}>✖️</Text>
             </AppPressable>
           </View>
@@ -306,6 +333,16 @@ const ReceiveModal: React.FC<{
               {capitalize(network)} • {formatAddressType(addressType)}
             </AppText>
           </View>
+          {receivePathInfo && (
+            <View style={styles.pathChip}>
+              <AppText style={styles.pathChipText} tone="muted">
+                Receive #{receivePathInfo.index}:{' '}
+                <AppText style={styles.pathChipPathText} tone="muted">
+                  {receivePathInfo.path}
+                </AppText>
+              </AppText>
+            </View>
+          )}
           <StaticQRCode
             value={address}
             size={200}
@@ -323,7 +360,7 @@ const ReceiveModal: React.FC<{
                 dbg('address URL', url);
                 Linking.openURL(url);
               }}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
               <View style={styles.addressTextContainer}>
                 <AppText
                   style={styles.addressTextInteractive}
@@ -353,7 +390,7 @@ const ReceiveModal: React.FC<{
                 onPress={() => {
                   copyToClipboard();
                 }}
-                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <Image
                   source={require('../assets/paste-icon.png')}
                   style={styles.buttonIcon}
@@ -371,7 +408,7 @@ const ReceiveModal: React.FC<{
                 onPress={() => {
                   shareQRCode();
                 }}
-                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <Image
                   source={require('../assets/share-icon.png')}
                   style={styles.buttonIcon}

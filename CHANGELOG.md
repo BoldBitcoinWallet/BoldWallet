@@ -1,5 +1,224 @@
 # Changelog
 
+## [3.0.5] - 2026-03-15
+
+### Added
+- **Lightweight tap-to-refresh** — tap on the cache indicator (and background SyncCoordinator cycles) now sync only the **active address set** (recent receive/change index window, UTXO holders, pending-tx addresses, current receive). Full sync runs only on **long-press** on the cache indicator (clear cache + HD discovery + full balance/tx rebuild).
+- **`WalletService.getActiveAddressesWithPaths(network, addressType)`** — returns the subset of HD addresses used for lightweight sync: recent index window, addresses with UTXOs, addresses with pending txs, and current receive address.
+- **`getWalletBalanceAggregate(..., activeOnly)`** — when `activeOnly` is true, balance sync uses the active set instead of the full HD list.
+- **`versionbuild.sh`** — script to bump version and build across Android (`versionName`/`versionCode`), iOS (`MARKETING_VERSION`/`CURRENT_PROJECT_VERSION`), and `package.json`. Usage: `./versionbuild.sh <version> <build>` (e.g. `./versionbuild.sh 3.0.5 55`).
+
+### Changed
+- **`WalletHome.fetchData(activeOnly = true)`** — default tap-to-refresh and app-resume use lightweight sync; long-press reconstruction calls `fetchData(false)` for a full balance sync over all addresses.
+- **SyncCoordinator** — `_syncBalances`, `_syncTxs`, and `_syncUtxos` now use `getActiveAddressesWithPaths()` for the address list (with fallback to full config list when active is empty). HD discovery and price sync unchanged.
+- **TransactionList** — "Syncing transactions…" on unlock and refresh now uses the active address set for API sync (`syncAddressesAtomic` / `fetchTransactionsForAddresses`); display still uses the full wallet address list and DB cache.
+
+### Technical Details
+- **Version**: `package.json` 3.0.5; Android `versionCode` 55 / `versionName` 3.0.5; iOS build 55 / `MARKETING_VERSION` 3.0.5.
+- **New file**: `versionbuild.sh`.
+- **Modified files**: `screens/WalletHome.tsx`, `components/TransactionList.tsx`, `services/sync/SyncCoordinator.ts`, `services/WalletService.ts`, `android/app/build.gradle`, `ios/BoldWallet.xcodeproj/project.pbxproj`, `package.json`.
+
+---
+
+## [3.0.4] - 2026-03-15
+
+### Added
+- **Pure-TypeScript fee estimation (`feeUtils.ts`)** — fee calculation fully ported from Go to TypeScript, eliminating the native bridge round-trip during send flow. Covers UTXO selection (smallest-first), two-pass vbyte estimation for P2PKH/P2SH/P2WPKH/P2TR, dust-threshold enforcement, and change-output handling. Fee rates are fetched from the mempool API with a 30-second DB-backed cache (`fee_rates` table).
+- **DB-level TTL freshness checks** — every syncer (`BalanceSyncer`, `UtxoSyncer`, `TransactionSyncer`, `PriceSyncer`) now checks `sync_metadata.last_synced_at` before making API calls; when data is fresh the network round-trip is skipped entirely and the cached DB result is returned, dramatically reducing redundant API traffic on app resume and screen transitions.
+- **`SyncRepository.isFresh(entityType, entityKey, ttlMs)`** — generic freshness helper queried by all syncers and `WalletService` aggregate methods.
+- **Host-independent API caching in `MempoolClient`** — cache keys are derived from the URL path only (`stripHost`), so switching between public mempool hosts (round-robin) still benefits from cached responses.
+- **Round-robin failover for public API endpoints** — when the configured API base is a known public mempool host, `MempoolClient` automatically cycles through all available public hosts on failure, improving reliability without user configuration.
+- **`MempoolClient.invalidateAll()`** — bulk cache eviction used during network/address-type switches.
+- **`MempoolClient.evictInflight(urlPrefix)`** — targeted eviction of in-flight deduplication entries to force fresh requests on retry.
+- **`ApiQueue.clear()`** — drops all pending (not yet started) jobs from the queue; called on network/address-type switch to prevent stale background work from the previous network bleeding into the new session.
+- **Progressive HD index persistence** — `discoverHdIndexesForNetwork` now reads previously scanned addresses from `wallet_addresses` at the start and skips native key derivation + API calls for known indexes, resuming from the last gap position. New discoveries are progressively persisted via `walletRepository.upsertAddress()`.
+- **Fast-switch for network/address-type changes** — `canFastSwitch` in `WalletSettings` checks `walletRepository.getHdState().restoreDone`; when `true`, `fastSwitch` updates config, stops old sync workers, clears the API queue, and navigates directly to `WalletHome` — bypassing the full `runRestoreIndexing` flow.
+- **`Database.invalidateSyncMetadataForAddressType(network, addressType)`** — surgical invalidation that only deletes `sync_metadata` rows for the relevant addresses while preserving all cached balance, UTXO, and transaction data for instant display.
+- **Synchronous DB-first initialization in `WalletHome`** — `address`, `addressType`, `selectedCurrency`, `isBlurred`, `walletAddresses`, and `walletAddressesReady` are all initialized from `appConfigRepository` and `walletRepository` in their `useState` calls, so the wallet UI renders immediately on unlock or address-type switch without showing a loading skeleton.
+
+### Changed
+- **`WalletHome` DB-first architecture enforced** — UI state is always read from SQLite via `refreshFromDB`; API calls write to DB only; `SyncCoordinator.onSyncComplete` triggers `refreshFromDB` to reflect background updates. Five redundant `useEffect` hooks removed.
+- **`WalletHome` init no longer blocks on native calls** — `loading` state starts as `false` when cached data exists; the keyshare/native init runs in the background while the DB-seeded UI is already visible.
+- **`walletAddressesReady` flip-flop eliminated** — `setWalletAddressesReady(false)` is now only called when `restoreDone` is `false` (actual HD discovery needed); when `restoreDone` is `true`, the DB-seeded address list stays visible while the fast cache-hit derive runs silently.
+- **`TransactionList` preserves data across state transitions** — removed `setTransactions([])` when addresses are temporarily `undefined` during network/address-type switches; DB pre-populate no longer guarded by `!isFetching.current`, so cached transactions always show instantly regardless of live fetch status.
+- **`UtxosScreen` price loading is DB-first** — synchronously reads cached price from `priceRepository.getCachedPrice()` on mount, then refreshes from API in background.
+- **`SendBitcoinModal` fee estimation uses DB-cached UTXOs** — `getFee` fetches HD addresses and UTXOs from DB first; only falls back to a live API fetch if the DB is empty. Input-based cache guard (`lastFeeInputsRef`) prevents redundant re-estimation; debounced function stabilized with ref pattern.
+- **`SyncCoordinator._syncUtxos`** now retrieves and passes `derivationPath` from `WalletService.getHdAddressesWithPaths()`, ensuring the `utxos` table has correct derivation paths for spend operations.
+- **Network/address-type switch cleanup** — both `fastSwitch` and `runRestoreIndexing` now call `syncCoordinator.stop()` + `apiQueue.clear()` before proceeding, preventing stale background jobs from the previous network.
+- **`WalletSettings` network toggle consistency** — optimistic UI update with revert on failure: `setIsTestnet` and `setActiveNetwork` are called immediately, then rolled back if `runRestoreIndexing` fails.
+- **Per-key `AbortController` in `WalletService`** — `withTimeout` uses isolated abort controllers per operation instead of sharing one, preventing a single timeout from cascading across unrelated calls.
+- **Dead code removed from `WalletHome`** — unused `updateAddressTypeModal`, `updateAddressForNetwork` functions and `getDerivePathForNetwork` import removed.
+
+### Fixed
+- **Balance showing 0 on UI after restore** — `fetchData` callback used `isInitializedRef.current` (ref) instead of `isInitialized` (stale closure), ensuring it runs as soon as initialization completes.
+- **Stale in-flight deduplication in `MempoolClient`** — `evictInflight` clears cached promises before retry, forcing a fresh HTTP request instead of returning a stale dedup result.
+- **Transaction list empty for ~90 seconds on app unlock** — three compounding issues fixed: (1) `walletAddressesReady` no longer flips to `false` when `restoreDone` is already `true`; (2) `TransactionList` DB pre-populate not blocked by `isFetching.current`; (3) existing transactions preserved during transient address `undefined` states.
+- **Stale testnet sync jobs running after switching to mainnet** — `ApiQueue.clear()` now drops pending jobs and `SyncCoordinator.stop()` halts timers before navigation, preventing old-network work from bleeding through.
+- **Fee estimation "No UTXOs available" error** — `SyncCoordinator` now passes `derivationPath` to `UtxoSyncer`, ensuring UTXO table entries have correct paths for spend operations.
+- **Fee estimation UI flickering** — input-based cache guard prevents re-estimation when inputs haven't changed; stable debounce ref prevents timer resets on every render.
+- **`UtxosScreen` price not loading from DB on mount** — added synchronous read from `priceRepository.getCachedPrice()` before async API refresh.
+- **Lint warnings** — removed unused `error` bindings in catch blocks, unused function declarations, and stale eslint-disable comments.
+
+### Technical Details
+- **Version**: `package.json` 3.0.4; Android `versionCode` 54 / `versionName` 3.0.4; iOS build 54 / `MARKETING_VERSION` 3.0.4.
+- **New file**: `services/feeUtils.ts` — `fetchFeeRates`, `detectAddressType`, `estimateVbytes`, `selectUtxos`, `pickRate`, `estimateFee`.
+- **New DB table**: `fee_rates` (`id`, `rates_json`, `fetched_at`).
+- **Modified files** (20): `components/TransactionList.tsx`, `components/TransportModeSelector.tsx`, `screens/MobileNostrPairing.tsx`, `screens/MobilesPairing.tsx`, `screens/SendBitcoinModal.tsx`, `screens/UtxosScreen.tsx`, `screens/WalletHome.tsx`, `screens/WalletSettings.tsx`, `services/ApiQueue.ts`, `services/Database.ts`, `services/MempoolClient.ts`, `services/WalletService.ts`, `services/repositories/SyncRepository.ts`, `services/sync/BalanceSyncer.ts`, `services/sync/PriceSyncer.ts`, `services/sync/SyncCoordinator.ts`, `services/sync/TransactionSyncer.ts`, `services/sync/UtxoSyncer.ts`.
+
+---
+
+## [3.0.3] - 2026-03-14
+
+### Added
+- **Periodic HD index re-discovery in `SyncCoordinator`** — background sync now includes automatic HD address discovery every 2 hours, ensuring change addresses and newly-used receive addresses are picked up across devices without manual intervention.
+- **Force HD discovery on app launch** — the first `SyncCoordinator` cycle always runs `discoverHdIndexesForNetwork` regardless of staleness, guaranteeing correct indexes after code updates that fix derivation bugs.
+- **HD discovery progress in `CacheIndicator`** — both automatic (SyncCoordinator) and manual (long-press) HD discovery now report status ("Discovering addresses…", "Scanning receive/change addresses…") via `onSyncStatus` callback, displayed in the CacheIndicator shimmer bar.
+- **Long-press full wallet reconstruction** — long-pressing `CacheIndicator` on WalletHome or UtxosScreen now performs a complete nuke-and-rebuild: clears all cached wallet DB data (transactions, balances, UTXOs, sync cursors, pending txs), flushes in-memory API and address caches, re-discovers HD indexes from the blockchain, and re-fetches all data fresh.
+- **`CacheIndicator` `onLongPress` prop** — the component now accepts an optional `onLongPress` handler, forwarded to the underlying `AppPressable`.
+- **`TransactionRepository.ensureAddressLinks`** — new bulk `INSERT OR IGNORE` method that backfills `transaction_addresses` rows for known transactions, ensuring every tx returned by the API is linked to its real Bitcoin address.
+- **`Database.clearWalletCacheData()`** used by long-press — selective wipe of all fetched data while preserving `hd_state` so discovery has correct indexes as a baseline.
+
+### Fixed
+- **Missing transaction on cross-device sync** — transactions could be invisible when their txid existed in the `transactions` table (from a prior synthetic-key write or migration) but lacked a `transaction_addresses` link to the real Bitcoin address. The `TransactionSyncer` now backfills address links for every known txid it encounters from the API, in both `syncAddressesAtomic` and `syncAddress`.
+- **Stale synthetic transaction cache hiding new data** — `transactionsFromCacheForWallet` previously read from a synthetic cache key (`wallet_txs_<network>_<addressType>`) first; if that had stale data from a prior session, newly-synced transactions were invisible. The method now queries by real HD addresses first (the authoritative source written by `TransactionSyncer`), falling back to the synthetic key only when the keyshare is unavailable.
+- **`TransactionSyncer` two-phase forward-pass** — always fetches the newest page (`/txs`, no cursor) before falling back to the stored cursor for backfill, ensuring transactions confirmed after the last sync are discovered.
+- **Confirmation status overlay from DB** — `getTxs` and `transactionsFromCacheForWallet` overlay authoritative `is_confirmed`, `block_height`, `block_time` from the DB onto parsed `rawJson`, preventing stale "Consolidating" labels on already-confirmed transactions.
+
+### Changed
+- **`transactionsFromCacheForWallet` priority inverted** — real HD address query (via `getTransactionsForAddresses`) is now the primary path; the synthetic wallet-level cache key is the fallback for early-boot scenarios when the keyshare is not yet available.
+- **`SyncCoordinator` now manages HD discovery lifecycle** — moved periodic re-discovery from a `WalletHome` `useEffect` into `SyncCoordinator._syncAll`, with configurable `HD_DISCOVERY_STALE_MS` (2 hours) and `onAddressesChanged` callback to update the UI address list.
+
+### Technical Details
+- **Version**: `package.json` 3.0.3; Android `versionCode` 53 / `versionName` 3.0.3; iOS build 53 / `MARKETING_VERSION` 3.0.3.
+- **Modified files**: `services/sync/TransactionSyncer.ts`, `services/sync/SyncCoordinator.ts`, `services/WalletService.ts`, `services/repositories/TransactionRepository.ts`, `components/CacheIndicator.tsx`, `screens/WalletHome.tsx`, `screens/UtxosScreen.tsx`.
+
+---
+
+## [3.0.2] - 2026-02-28
+
+### Added
+- **SQLite persistence layer** — full migration from file-based `LocalCache` to a WAL-mode SQLite database (`@op-engineering/op-sqlite`) as the single source of truth for all wallet data.
+  - **Repository pattern**: `AppConfigRepository`, `WalletRepository`, `BalanceRepository`, `TransactionRepository`, `UtxoRepository`, `PriceRepository`, `SyncRepository` — each owns its table schema and CRUD operations.
+  - **Background sync infrastructure**: `SyncCoordinator` orchestrates `BalanceSyncer`, `TransactionSyncer`, `UtxoSyncer`, and `PriceSyncer`; runs on foreground + configurable intervals; failures are silent and retried on next foreground event.
+  - **Database-first rule enforced everywhere**: `API → write DB → UI reads DB`. UI never reads directly from API responses; any API error falls back to cached DB state.
+- **Central API Queue (`ApiQueue`)** — global singleton that serializes all logical API operations (balance, price, UTXOs, transactions) so they execute one at a time; subscribers are notified with the running operation label and progress for UI status display.
+- **Atomic sync operations** — `BalanceSyncer`, `UtxoSyncer`, and `TransactionSyncer` now collect all address data in memory and only commit to DB when **every** address succeeds; on any failure nothing is written (`BalanceSyncError`, `UtxoSyncError`, `TxSyncError`), preserving data consistency.
+- **429 rate-limit retry with backoff** — new `rateLimitRetry` module: automatic retry on HTTP 429 (up to 2 retries / 3 attempts), respects `Retry-After` header (1–120 s), inter-address throttling delay (300 ms) to reduce rate-limit triggers; applied across all syncers.
+- **`MempoolClient` `Retry-After` support** — parses `Retry-After` header (integer seconds or HTTP-date) from 429 responses, exposes `retryAfterSeconds` on `MempoolResponse`.
+- **Progress indicators** — `CacheIndicator` and `RestoringIndexesModal` now show `current/total` progress (e.g. "3/5") during multi-address sync operations; progress floats right in `CacheIndicator`.
+- **CacheIndicator status messages** — shows the currently running `ApiQueue` operation label (e.g. "Fetching balance…", "Fetching fiat rate…") instead of generic "Refreshing...".
+- **Descriptive sync failure toasts** — specific Toast messages for each sync type ("Could not fetch balance", "Could not fetch UTXOs", "Could not fetch transactions") with "Using cached data." fallback, replacing generic "Sync failed".
+- **Atomic wallet reset + reindex + pre-sync** (`runRestoreIndexing` in WalletSettings): the entire pipeline — HD index discovery, balance sync, transaction sync, UTXO sync, and aggregate balance computation — must succeed fully before navigating to WalletHome. On any failure the function throws, the caller shows a `Toast` error, and navigation is aborted (rollback semantics).
+  - `RestoringIndexesModal` now shows a `phase` label and progress during post-discovery sync steps ("Syncing balances… 3/5", "Syncing transactions…", "Syncing UTXOs…").
+  - All callers (network switch, address-type switch, Clear Cache) wrapped in `try/catch` with descriptive error toasts; navigation only fires after full success.
+- **Aggregate balance pre-computed and persisted** after the balance sync phase of `runRestoreIndexing`; WalletHome reads the pre-computed row on first render via `getCachedAggregateBalance` with no extra API call.
+- **Balance DB-first floor guard** — when the fresh API returns 0 BTC, `fetchData` cross-checks against the stored DB aggregate to prevent transient 0-balance display (e.g. right after device unlock when iOS Keychain is still initialising).
+- **Pre-skeleton DB balance seed** — on cold start, balance is read synchronously from DB and set in state before the loading skeleton appears, eliminating flash of `0` or `'-'`.
+- **`Database.clearWalletCacheData()`**: selective clear that wipes fetched data (`address_balances`, `utxos`, `transactions`, and related tables) while preserving `hd_state` and `wallet_addresses`; used for network/address-type switches so discovery always has the previous correct indexes as a baseline.
+- **UTXO `block_time` persistence**: `utxos` table now stores `block_time`; `StoredUtxo`, `UtxoRepository.replaceUtxosForAddress`, and `storedToUtxoWithPath` propagate the value end-to-end so the "Confirmed / Unconfirmed" label in `UtxosScreen` matches the summary card.
+- **Historical vs. current fiat prices for transactions**: confirmed transactions use the block-time historical rate from `PriceRepository`; pending/unconfirmed transactions fall back to the current live `btcRate`; `TransactionList` fetches missing historical rates in batch.
+- **Full wallet reset on `ShowcaseScreen` load**: clears all SQLite wallet tables, in-memory and HTTP caches, and relevant `EncryptedStorage` preference keys (preserving `keyshare`) so each new import starts from a guaranteed clean state.
+- **LoadingScreen version:build** — app version and build number displayed at the bottom center of the loading screen.
+- **Mempool Playground: GET Historical Price** — new endpoint for querying BTC price at a given Unix timestamp with currency parameter.
+
+### Changed
+- **UtxosScreen dedicated header style** — top summary card uses a new `utxoHeaderStyle` with glassmorphism effects, dedicated padding, theme-aware text colours for dark/light mode, and proper border/shadow; replaces reuse of `walletHeaderStyle`.
+- **UtxosScreen refresh via `UtxoSyncer`** — replaced the manual per-address fetch loop with `utxoSyncer.syncAddresses`, ensuring 429 retry, inter-address throttling, and atomic write benefits.
+- **UTXO derivation path right-aligned** — chain badge row uses `flexDirection: 'row'` with `justifyContent: 'space-between'`; derivation path floats right.
+- **TransactionList atomic sync via `ApiQueue`** — multi-address transaction refresh uses `transactionSyncer.syncAddressesAtomic` through the `ApiQueue`, showing "Fetching transactions…" status in `CacheIndicator`.
+- **`WalletService` atomic balance writes** — `getWalletBalanceAggregate` collects all per-address balances in memory and writes them atomically; when the address list is empty (keyshare unavailable), falls back to cached aggregate instead of returning 0.
+- **`MempoolClient` TTL adjustments** — default TTL set to **15 s** for balance/UTXO/transaction endpoints; historical price cache extended from 7 days to **30 days**; fee-rate endpoint at **30 s**.
+- **WalletHome balance always visible**: balance text is shown from the first frame using a pulsing `Animated.View` opacity during loading; the balance is never replaced with a shimmer or blank slot.
+- **Instant balance on lock/unlock**: `reinitializeWallet` now reads `balanceRepository.getBalance('aggregate_…')` synchronously at startup — before any `await` — so the cached BTC (and fiat if `btcRate` is already in state) is painted in the same render batch as the loading start; no flash of `0` or `'-'`.
+- **Transaction list merge-not-replace**: API results are merged into existing state using `sortTxs`; the list count can only grow, never shrink, even on partial API responses.
+- **`runRestoreIndexing` cache invalidation order**: `mempoolClient.invalidateAll()` and `ws.invalidateAddressCache()` are flushed **before** `discoverHdIndexesForNetwork` so every address-used check hits the network with fresh data.
+- **`WalletSettings` network toggle**: now wrapped in `try/catch`; sets `newNetwork` (not `activeNetwork`) in navigation reset to prevent stale-closure bug.
+- **Mempool Playground dropdown**: dark mode background explicitly uses `cardBackground` for better visibility.
+- **WalletHome `CacheIndicator` refresh** — "Tap to refresh" now triggers `fetchData` (balance + price via ApiQueue) followed by transaction list refresh, instead of only refreshing transactions.
+- **Focus guard against duplicate fetches** — `useFocusEffect` checks both `isReinitInProgressRef` and `isFetchInProgressRef` to prevent racing parallel fetches.
+
+### Fixed
+- **Fiat currency reset on cold start**: user's selected currency (e.g. EUR) was overwritten to USD on every app restart; the initialisation code now only defaults to USD when no preference is saved.
+- **Balance zeroing on refresh**: `getWalletBalanceAggregate` now persists per-address balances atomically and falls back to the stored aggregate on any single-address failure; a complete API failure returns the cached aggregate instead of `0.00000000`.
+- **Transaction count decreasing after refresh**: `setTransactions` uses a functional update that merges API results with existing state; transactions are inserted with `INSERT OR IGNORE` / UPSERT so rows can only accumulate.
+- **TransactionSyncer not truly atomic**: on `!res.ok` (e.g. 429 after retries), the old code would `break` and still write partial data; now throws `TxSyncError` so nothing is written.
+- **UTXO screen random / empty entries**: eliminated by always writing API responses to DB per-address and then reading the full address set from DB as the final source; partial API failures no longer produce half-populated lists.
+- **Fiat price always showing "-"**: fixed a `keysToFetch` regex mismatch that prevented historical rate fetches; block-time is now stored directly in a `Map` and looked up without regex parsing.
+- **Wallet reindex instant-close + 0 balance**: `clearWalletCacheData()` (not `clearWalletData()`) preserves `hd_state` during switches, so discovery uses prior correct indexes as a baseline; discovery failures abort navigation rather than landing on WalletHome with empty state.
+- **UTXO confirmed/unconfirmed mismatch**: `block_time` is now written to the `utxos` table and read back through `storedToUtxoWithPath`; the summary count and the list label now agree.
+- **`UtxoRepository.getUtxosForNetwork` address-type filtering**: fallback query accepts an optional `addressType` and filters by `derivation_path` prefix so only UTXOs relevant to the active HD wallet type are returned.
+- **MobilesPairing modal close navigation**: closing the signed TX broadcast modal (Copy/Share/Broadcast) now navigates back to the previous screen instead of leaving the user stranded.
+
+### Technical Details
+- **Version**: `package.json` 3.0.2; Android `versionCode` 52 / `versionName` 3.0.2; iOS build 52 / `MARKETING_VERSION` 3.0.2.
+- **New files**: `services/Database.ts`, `services/LocalCacheMigration.ts`, `services/repositories/` (6 repositories), `services/sync/` (`BalanceSyncer`, `TransactionSyncer`, `UtxoSyncer`, `PriceSyncer`, `SyncCoordinator`), `services/ApiQueue.ts`, `services/sync/rateLimitRetry.ts`.
+- **`StoredUtxo` interface**: added `blockTime: number | null`; `utxos` DDL adds `block_time INTEGER` with an `ALTER TABLE … ADD COLUMN` migration guard.
+- **`RestoringIndexesModal`**: new optional `phase?: string` and `progress?: { current: number; total: number }` props; title switches between "Restoring indexes" and "Syncing wallet" depending on phase.
+- **`CacheIndicator`**: new optional `statusMessage?: string` and `progress?: { current: number; total: number }` props; progress displayed right-aligned.
+- **`PendingTxData` interface**: typed interface for pending transaction objects shared between `TransactionRepository` and `TransactionList`.
+- **Error classes**: `BalanceSyncError`, `UtxoSyncError`, `TxSyncError` — each carries `failedAddress` for targeted diagnostics.
+- **`ApiQueue`**: `ApiQueueState` includes `label` and optional `progress`; `enqueue<T>(label, job)` returns `Promise<T>`; subscribers notified on start/complete/error.
+- **`rateLimitRetry`**: `with429Retry<T>(label, request)`, `sleep(ms)`, constants `RATE_LIMIT_DELAY_MS` (5 s), `MAX_429_RETRIES` (2), `INTER_ADDRESS_DELAY_MS` (300 ms).
+- **`MempoolResponse<T>`**: added `retryAfterSeconds?: number`; `parseRetryAfter(value)` handles both integer-seconds and HTTP-date formats.
+
+## [3.0.0] - 2026-03-04
+
+### Added
+- **HTTP caching layer** (`MempoolClient`): In-memory cache wrapping all `fetch` calls to mempool.space; per-endpoint TTL (30 s default, 5 min for immutable tx details, 60 s for fee rates and BTC price); in-flight request deduplication prevents duplicate concurrent fetches; only HTTP-200 responses are cached; `invalidate(prefix)` and `invalidateAll()` for manual eviction.
+- **Universal 10-second API timeout**: Every outbound `fetch` through `MempoolClient` is capped at 10 s via `AbortController`; caller signals are combined using a React Native–compatible `combineSignals` helper.
+- **Balance via address-stats endpoint**: `getWalletBalanceAggregate` now uses `GET /api/address/:address` (`chain_stats` + `mempool_stats`) instead of fetching full UTXO arrays — responses are ~50× smaller and are fully cached through `MempoolClient`. Formula: `(chain_stats.funded − chain_stats.spent) + (mempool_stats.funded − mempool_stats.spent)` per address.
+- **Confirmed / unconfirmed balance breakdown in `WalletBalance`**: `pendingSats` field exposes the net mempool delta (positive = incoming unconfirmed, negative = outgoing unconfirmed) alongside the total balance.
+- **WalletHome pending chip**: When `pendingSats ≠ 0`, a small amber pill is shown below the fiat balance (`⏳ +X.XXXXXXXX BTC incoming` / `⏳ X.XXXXXXXX BTC outgoing`); hidden while loading or in privacy-blur mode.
+- **UtxosScreen balance summary card**: Static card pinned above the scrollable UTXO list showing Total, ✓ Confirmed, and ⏳ Pending balances with BTC, fiat, and UTXO counts; computed locally from the already-loaded UTXO set (zero extra API calls).
+- **Multi-path HD wallet (no-address-reuse)**: Full support for per-address indexing and spending across receive and change paths.
+  - **WalletService**: Aggregate balance and UTXO fetch across all HD addresses; `getHdAddressesWithPaths` with in-memory cache; `fetchUtxosWithPaths` with sequential API calls and empty-address skip cache; `fetchMoreTransactionsForAddresses` for cursor-based multi-address transaction pagination.
+  - **HdIndexService**: Centralized HD index management; discovery uses `GAP_LIMIT` and `MIN_SCAN_INDEX`; runtime address range based on `max(externalIndex, maxUsedExternal)` and `changeIndex`.
+  - **Receive**: Restoring-indexes flow; receive index advances only when current address is used; receive button shows busy state while computing next address.
+- **Multi-path UTXO spend and fee estimation**:
+  - **BBMTLib (Go)**: `SpendingHashWithUTXOs` for deterministic spending hash from a pre-fetched UTXO set; `estimateFeeWithUTXOs`; sequential API behavior and improved logging in fee/UTXO paths.
+  - **Native bridges**: iOS/Android expose `spendingHashWithUTXOs`; Send flow uses multi-path UTXOs for fee and spending hash.
+- **Transaction list and details**:
+  - **TransactionList**: Multi-address transaction list with per-address cursor pagination; consolidation (1 internal output) vs rebalancing (2+ internal outputs) labels; animations for Sending/Receiving/Consolidating/Rebalancing; derivation path in details only (no Ix row in list).
+  - **TransactionDetailsModal**: Inputs/outputs flow diagram (PSBT-style); internal (ours) outputs highlighted with theme accent; summary bar with fee; address path map for paths.
+- **Pairing screens**: Inputs/outputs flow in MobilesPairing and MobileNostrPairing; “Signing Path” instead of “From Address”; network badge and flow diagram aligned.
+- **RestoringIndexesModal**: Dedicated modal for index discovery progress.
+- **Deterministic co-signing via QR (changeAddress field)**: The send-bitcoin QR now encodes a 9th field (`changeAddress`); both the sender and the scanning device use the identical pre-computed change output in UI preview and in the native MPC call. `decodeSendBitcoinQR` / `encodeSendBitcoinQR` are fully backward-compatible with v1–v4 QRs (3–8 fields).
+- **Change address derivation path in outputs preview**: If a transaction output is the wallet's change address, its HD derivation path (e.g., `m/84'/0'/0'/1/3`) is displayed below the address in both MobilesPairing and MobileNostrPairing; `WalletService.getNextChangeAddressWithPath` returns `{address, path}` as a single atomic call.
+- **Address shortening in transaction previews**: All Bitcoin addresses in the inputs/outputs flow on MobilesPairing and MobileNostrPairing are displayed in a compact “first 4…last 4” format (e.g., `bc1q…xyz1`) via a new `shortenAddress` utility in `utils.js`.
+- **Abort functionality in MobileNostrPairing**: Full abort support added to the Nostr co-signing modal — abort button in the in-progress modal, `nostrAbortRef` reset at the start of each signing session, mid-flow abort checks after raw TX is produced, and suppressed error alerts when the user aborts intentionally; behaviour is now consistent with MobilesPairing.
+
+### Changed
+- **`TransactionList`**: Migrated from `axios` to `MempoolClient`; manual `timeoutPromise` race removed (timeout now enforced inside `MempoolClient`).
+- **WalletHome balance rendering**: `ActivityIndicator` spinners replaced with a `react-native-reanimated` shimmer animation while balances load; fiat balance derived via `useMemo` from `balanceBTC × btcRate` to prevent the 0-BTC / non-zero-fiat display mismatch.
+- **Mempool API**: All WalletService calls to mempool.space (UTXOs, transactions) are sequential/synchronous to avoid rate limits and non-determinism.
+- **SendBitcoinModal**: Passes `activeNetwork` (e.g. testnet3) to WalletService; fee estimation uses multi-path UTXOs and native `estimateFeeWithUTXOs` with fallback.
+- **UtxosScreen / WalletHome**: Use aggregate balance and multi-address–aware flows.
+- **BBMTLib build**: `build.sh` banner and note for Go 1.25 taggedPointerPack; FIPS check and toolchain steps unchanged.
+- **FIPS Android (Dockerfile.fips and fips-android.sh)**:
+  - `WORKDIR /workspace` so `docker run -v $(pwd):/workspace ./build.sh` runs against mounted source; `-w /workspace` in script.
+  - BuildKit cache mounts: dnf, Go tarball, Android SDK download and per-platform install cache, Go modules/gomobile.
+  - Platform default: `linux/arm64` on Apple Silicon (avoids Go 1.25 taggedPointerPack under QEMU), `linux/amd64` elsewhere; optional `FIPS_ANDROID_PLATFORM` override.
+  - Run-from-BBMTLib check so `build.sh` exists in mounted dir.
+
+### Fixed
+- **Receive flow address mismatch**: `getCurrentReceivePathInfo` now atomically derives and returns `{path, index, address}` in one call; `WalletHome` passes the address from this combined result to `ReceiveModal`, eliminating QR flicker and stale-address display when advancing to a new receive index.
+- **Receive index**: No longer advances on network errors; discovery records partial/failed state without bumping indexes; `bumpExternalIndexIfCurrentUsed` only when address is actually used.
+- **Fee estimation**: Multi-path UTXO set used for native fee estimation; “insufficient funds” handling and logging aligned with multi-path.
+- **Transaction list**: Removed legacy single-address consolidation detection and Ix row; correct merge/sort for multi-address pagination.
+- **Scanning device UTXO mismatch / session stall**: The scanning device now populates both the UI preview and the native MPC signing call directly from the UTXOs embedded in the QR code (enriched with `scriptpubkey` via a targeted API call); previously the scanner re-fetched UTXOs independently, causing mismatches that stalled co-signing sessions.
+- **Transaction inputs not shown on scanning device**: The `txPreview` effect now uses `route.params.utxosJson` when available, bypassing a cold-cache `fetchUtxosWithPaths` call that returned empty results on the scanner.
+- **Inconsistent change address between devices**: The sender’s pre-computed change address is now threaded end-to-end — from `SendBitcoinModal` → `WalletHome` → QR field 9 → `processScannedQRData` → `navigationParams` → pairing screens → native MPC call — guaranteeing both devices sign with the same change output.
+
+### Technical Details
+- **Version**: `package.json` 3.0.0.
+- **New file**: `services/MempoolClient.ts` — `MempoolClient` class; `MempoolResponse<T>` interface; `buildKey`, `ttlForUrl`, `combineSignals` helpers; singleton `mempoolClient` export.
+- **`WalletBalance` interface**: Added optional `pendingSats?: number` (backward-compatible with cached entries).
+- **BBMTLib**: `go.mod`/`go.sum`; `tss/btc.go` (SpendingHashWithUTXOs, fee/UTXO); `tss/mpc_nostr.go`; iOS/Android native module updates; `Dockerfile.fips` (Go 1.25.x, TARGETARCH, cache mounts, WORKDIR /workspace).
+- **Context**: UserContext/WalletContext and utils.js updates for tabs and routing where applicable.
+- **QR format v5**: `encodeSendBitcoinQR` / `decodeSendBitcoinQR` in `utils.js` extended to 9 fields; `TransportModeSelector` passes `changeAddress`; `WalletHome.processScannedQRData` extracts and stores it in `pendingSendParams`.
+- **`shortenAddress` utility** (`utils.js`): Returns first 4…last 4 characters for addresses longer than 8 chars; used across pairing screen previews.
+- **`WalletService.getNextChangeAddressWithPath`**: New method returning `{address, path}`; `getNextChangeAddress` delegates to it for backward compatibility.
+
 ## [2.2.0] - 2026-02-15
 
 ### Added

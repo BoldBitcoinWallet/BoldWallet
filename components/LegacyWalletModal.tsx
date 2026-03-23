@@ -3,7 +3,7 @@ import {Modal, View, Text, Image, Pressable} from 'react-native';
 import AppPressable from './AppPressable';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
-import LocalCache from '../services/LocalCache';
+import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 interface LegacyWalletModalProps {
   visible: boolean;
   onCancel: () => void;
@@ -101,18 +101,11 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
   };
   const handleCancel = async () => {
     // Save checkbox state: "yes" = do not remind, "no" = show again
-    await LocalCache.setItem(
-      'legacyWalletModalDoNotRemind',
-      doNotRemind ? 'yes' : 'no',
-    );
+    appConfigRepository.set(CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND, doNotRemind ? 'yes' : 'no');
     onCancel();
   };
   const handleUnderstand = async () => {
-    // Save checkbox state: "yes" = do not remind, "no" = show again
-    await LocalCache.setItem(
-      'legacyWalletModalDoNotRemind',
-      doNotRemind ? 'yes' : 'no',
-    );
+    appConfigRepository.set(CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND, doNotRemind ? 'yes' : 'no');
     onUnderstand();
   };
   const handleCheckboxToggle = () => {

@@ -42,12 +42,23 @@ import {
 } from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Big from 'big.js';
-import {dbg, getPinnedRemoteIPs, hexToString, getResetToMainTabsWallet} from '../utils';
+import {
+  dbg,
+  getPinnedRemoteIPs,
+  hexToString,
+  getResetToMainTabsWallet,
+  shortenAddress,
+} from '../utils';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {waitMS, WalletService} from '../services/WalletService';
-import LocalCache from '../services/LocalCache';
+import appConfigRepository, {
+  CONFIG_KEYS,
+} from '../services/repositories/AppConfigRepository';
+import database from '../services/Database';
+import transactionRepository from '../services/repositories/TransactionRepository';
 import BackupKeyshareModal from '../components/BackupKeyshareModal';
+import SignedTxBroadcastModal from '../components/SignedTxBroadcastModal';
 const {BBMTLibNativeModule} = NativeModules;
 // Helper component for connection line animation
 const ConnectionLineAnimatedView: React.FC<{
@@ -111,10 +122,6 @@ const MobilesPairing = ({navigation}: any) => {
   const [prepCounter, setPrepCounter] = useState(0);
   const [keypair, setKeypair] = useState('');
   const [peerPubkey, setPeerPubkey] = useState('');
-  const [fromAddress, setFromAddress] = useState<string>(''); // Derived address for send transaction
-  const [currentDerivationPath, setCurrentDerivationPath] =
-    useState<string>(''); // Derivation path for display
-  const [currentNetwork, setCurrentNetwork] = useState<string>('mainnet'); // Network for display
   const [peerPubkey2, setPeerPubkey2] = useState('');
   const [shareName, setShareName] = useState('');
   const [_keyshare, setKeyshare] = useState('');
@@ -129,7 +136,13 @@ const MobilesPairing = ({navigation}: any) => {
     derivePaths?: string[];
   } | null>(null);
   const {theme} = useTheme();
-  const {activeNetwork, showMempoolPlayground, showUtxosTab, showPsbtTab, showWalletTab} = useUser();
+  const {
+    activeNetwork,
+    showMempoolPlayground,
+    showUtxosTab,
+    showPsbtTab,
+    showWalletTab,
+  } = useUser();
   const showPlay = activeNetwork === 'mainnet' && showMempoolPlayground;
   // Animation ref for horizontal progress bar
   const progressAnimation = useSharedValue(0);
@@ -146,6 +159,8 @@ const MobilesPairing = ({navigation}: any) => {
     psbtBase64?: string; // For PSBT signing mode
     derivationPath?: string; // Derivation path from QR code (ensures same source address)
     network?: string; // Network from QR code (ensures same network)
+    utxosJson?: string; // Pre-selected UTXOs from QR (avoids re-fetch on scanner)
+    changeAddress?: string; // Pre-computed change address from sender (ensures consistency)
   };
   const route = useRoute<RouteProp<{params: RouteParams}>>();
   const isFocused = useIsFocused();
@@ -174,7 +189,74 @@ const MobilesPairing = ({navigation}: any) => {
     deviceThree: false,
   });
   const [isBackupModalVisible, setIsBackupModalVisible] = useState(false);
+
+  // Pre-loaded UTXO preview for the send-BTC confirmation card.
+  type UTXOPreview = {address: string; value: number; derivationPath: string};
+  const [txPreview, setTxPreview] = useState<{
+    utxos: UTXOPreview[];
+    changeAddress: string;
+    changeAddressPath: string;
+    totalInputSats: number;
+  } | null>(null);
+  const [_txPreviewLoading, setTxPreviewLoading] = useState(false);
+  const [txDetailsExpanded, setTxDetailsExpanded] = useState(false);
+  const [signedTxRawHex, setSignedTxRawHex] = useState<string | null>(null);
+  const mpcAbortRef = useRef(false);
+  const activeMpcSessionIdRef = useRef<string | null>(null);
+  const broadcastSuccessPayloadRef = useRef<{
+    multiPath: boolean;
+    pendingKey: string;
+    toAddress: string;
+    satoshiAmount: string;
+    satoshiFees: string;
+    net: string;
+    addressTypeToUse: string;
+    showPlay: boolean;
+    showUtxosTab: boolean;
+    showPsbtTab: boolean;
+    showWalletTab: boolean;
+    senderAddress: string;
+    originalNetwork?: string;
+    originalApiUrl?: string;
+    isMaster?: boolean;
+    inputs?: Array<{txid: string; vout: number; value: number; scriptpubkey_address: string}>;
+    outputs?: Array<{scriptpubkey_address: string; value: number}>;
+  } | null>(null);
+
   const allChecked = Object.values(checks).every(Boolean);
+
+  const abortActiveMpc = () => {
+    Alert.alert(
+      'Abort signing?',
+      'This will stop the current MPC signing flow. You can retry anytime.',
+      [
+        {text: 'Keep signing', style: 'cancel'},
+        {
+          text: 'Abort',
+          style: 'destructive',
+          onPress: async () => {
+            mpcAbortRef.current = true;
+            setDoingMPC(false);
+            setIsPairing(false);
+            setStatus('Aborted');
+            const sid = activeMpcSessionIdRef.current;
+            if (sid) {
+              try {
+                await BBMTLibNativeModule.cancelMpcSession(sid);
+              } catch (e) {
+                dbg('MobilesPairing: cancelMpcSession failed', e);
+              }
+            }
+            try {
+              stopRelay();
+            } catch {
+              // ignore
+            }
+          },
+        },
+      ],
+    );
+  };
   const allBackupChecked = isTrio
     ? backupChecks.deviceOne &&
       backupChecks.deviceTwo &&
@@ -203,16 +285,16 @@ const MobilesPairing = ({navigation}: any) => {
       if (setupMode === 'duo' || setupMode === 'trio') {
         try {
           dbg('=== MobilesPairing: Clearing all cache for wallet setup');
-          // Clear LocalCache
-          await LocalCache.clear();
-          dbg('LocalCache cleared successfully');
+          // Clear SQLite wallet data
+          database.clearWalletData();
+          dbg('SQLite wallet data cleared');
           // Clear stale EncryptedStorage items (but keep keyshare if it exists for signing)
           // We clear btcPub as it will be regenerated with the new keyshare
           await EncryptedStorage.removeItem('btcPub');
           dbg('Cleared stale btcPub from EncryptedStorage');
           // Clear WalletService cache
           try {
-            await LocalCache.removeItem('walletCache');
+            // stale key removed;
             dbg('WalletService cache cleared');
           } catch (error) {
             dbg('Error clearing WalletService cache:', error);
@@ -225,135 +307,127 @@ const MobilesPairing = ({navigation}: any) => {
     };
     clearCacheForSetup();
   }, [setupMode]);
-  // Initialize network and derivation path immediately when component loads (for send Bitcoin mode)
+
+  // Pre-fetch UTXOs + change address so the confirmation card can show real inputs.
   useEffect(() => {
-    const initializeNetwork = async () => {
-      if (!isSendBitcoin || !route.params) {
-        // For non-send modes, use cached network
-        const cachedNetwork =
-          (await LocalCache.getItem('network')) || 'mainnet';
-        setCurrentNetwork(cachedNetwork);
-        return;
-      }
-      dbg('=== MobilesPairing: Received route params ===', {
-        network: route.params?.network,
-        derivationPath: route.params?.derivationPath,
-        addressType: route.params?.addressType,
-        toAddress: route.params?.toAddress,
-        satoshiAmount: route.params?.satoshiAmount,
-        allParams: route.params,
-      });
-      // CRITICAL: In send mode, ALL parameters MUST come from route params (no fallbacks)
-      if (!route.params.network || route.params.network.trim() === '') {
-        dbg('ERROR: Network missing from route params in send mode');
-        return;
-      }
-      // ALWAYS use route params - no fallbacks
-      const netForNative = route.params.network.trim();
-      const netForDisplay =
-        netForNative === 'testnet3' ? 'testnet' : netForNative;
-      setCurrentNetwork(netForDisplay);
-      // Also set derivation path immediately if available from route params
-      if (
-        route.params.derivationPath &&
-        route.params.derivationPath.trim() !== ''
-      ) {
-        setCurrentDerivationPath(route.params.derivationPath.trim());
-        dbg(
-          'MobilesPairing: Initialized derivation path from route params:',
-          route.params.derivationPath,
-        );
-      }
-      dbg(
-        'MobilesPairing: Initialized network for display:',
-        netForDisplay,
-        '(native format:',
-        netForNative,
-        ')',
-      );
-    };
-    initializeNetwork();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSendBitcoin, route.params?.network, route.params?.derivationPath]);
-  // Compute from address for send transactions
-  useEffect(() => {
-    const computeFromAddress = async () => {
-      if (!isSendBitcoin || !route.params) return;
+    if (!isSendBitcoin) {
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      setTxPreviewLoading(true);
+      const net = (route.params?.network || 'mainnet').trim();
+      const addrType = (route.params?.addressType || 'segwit-native').trim();
       try {
-        // CRITICAL: In send mode, ALL parameters MUST come from route params (no fallbacks)
-        // This ensures consistency between devices and prevents mismatches
-        if (!route.params.network || route.params.network.trim() === '') {
-          dbg('ERROR: Network missing from route params in send mode');
-          setFromAddress('');
-          return;
-        }
+        // When QR carries UTXOs, use them directly — no re-fetch needed.
+        const utxosFromQR = route.params?.utxosJson;
         if (
-          !route.params.addressType ||
-          route.params.addressType.trim() === ''
+          utxosFromQR &&
+          typeof utxosFromQR === 'string' &&
+          utxosFromQR.trim() !== ''
         ) {
-          dbg('ERROR: Address type missing from route params in send mode');
-          setFromAddress('');
-          return;
+          const parsed = JSON.parse(utxosFromQR) as Array<{
+            txid: string;
+            vout: number;
+            value: number;
+            derivation_path?: string;
+            derivationPath?: string;
+            address: string;
+          }>;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const totalInputSats = parsed.reduce(
+              (s, u) => s + (u.value || 0),
+              0,
+            );
+            const chgFromParams = route.params?.changeAddress;
+            let chgAddress = '';
+            let chgPath = '';
+            if (chgFromParams && chgFromParams.trim() !== '') {
+              chgAddress = chgFromParams;
+              // derive the path for display from WalletService (index doesn't change, just the path string)
+              try {
+                const r =
+                  await WalletService.getInstance().getNextChangeAddressWithPath(
+                    net,
+                    addrType,
+                  );
+                chgPath = r.path;
+              } catch {}
+            } else {
+              const r =
+                await WalletService.getInstance().getNextChangeAddressWithPath(
+                  net,
+                  addrType,
+                );
+              chgAddress = r.address;
+              chgPath = r.path;
+            }
+            if (!cancelled) {
+              setTxPreview({
+                utxos: parsed.map(u => ({
+                  address: u.address,
+                  value: u.value,
+                  derivationPath: u.derivation_path ?? u.derivationPath ?? '',
+                })),
+                changeAddress: chgAddress,
+                changeAddressPath: chgPath,
+                totalInputSats,
+              });
+            }
+            return;
+          }
         }
-        if (
-          !route.params.derivationPath ||
-          route.params.derivationPath.trim() === ''
-        ) {
-          dbg('ERROR: Derivation path missing from route params in send mode');
-          setFromAddress('');
-          return;
+        // Fallback: fresh fetch (sender device, or QR has no utxosJson).
+        const apiUrl =
+          appConfigRepository.get(`api_${net}`) ||
+          (net === 'testnet3' || net === 'testnet'
+            ? 'https://mempool.space/testnet/api'
+            : 'https://mempool.space/api');
+        const [utxos, chgResult] = await Promise.all([
+          WalletService.getInstance().fetchUtxosWithPaths(
+            net,
+            addrType,
+            apiUrl,
+          ),
+          WalletService.getInstance().getNextChangeAddressWithPath(
+            net,
+            addrType,
+          ),
+        ]);
+        if (!cancelled) {
+          const totalInputSats = utxos.reduce((s, u) => s + u.value, 0);
+          setTxPreview({
+            utxos: utxos.map(u => ({
+              address: u.address,
+              value: u.value,
+              derivationPath: u.derivationPath,
+            })),
+            changeAddress: chgResult?.address || '',
+            changeAddressPath: chgResult?.path || '',
+            totalInputSats,
+          });
         }
-        const jks = await EncryptedStorage.getItem('keyshare');
-        if (!jks) return;
-        const ks = JSON.parse(jks);
-        // ALWAYS use route params - no fallbacks
-        const netForNative = route.params.network.trim();
-        const addressTypeToUse = route.params.addressType.trim();
-        const path = route.params.derivationPath.trim();
-        // Normalize for display only: 'testnet3' -> 'testnet'
-        const netForDisplay =
-          netForNative === 'testnet3' ? 'testnet' : netForNative;
-        dbg('=== MobilesPairing: Using route params ONLY (no fallbacks) ===', {
-          network: netForNative,
-          addressType: addressTypeToUse,
-          derivationPath: path,
-        });
-        // Derive the public key and address
-        const btcPub = await BBMTLibNativeModule.derivePubkey(
-          ks.pub_key,
-          ks.chain_code_hex,
-          path,
-        );
-        // Use original network format for native module (requires 'testnet3' not 'testnet')
-        const derivedAddress = await BBMTLibNativeModule.btcAddress(
-          btcPub,
-          netForNative,
-          addressTypeToUse,
-        );
-        setFromAddress(derivedAddress);
-        setCurrentDerivationPath(path);
-        setCurrentNetwork(netForDisplay);
-        dbg('=== MobilesPairing: Computed from address ===', {
-          derivationPath: path,
-          addressType: addressTypeToUse,
-          fromAddress: derivedAddress,
-          network: netForNative,
-          networkForDisplay: netForDisplay,
-        });
-      } catch (error) {
-        dbg('Error computing from address:', error);
-        setFromAddress('');
+      } catch {
+        // Non-critical: falls back to generic "HD Wallet" row.
+      } finally {
+        if (!cancelled) {
+          setTxPreviewLoading(false);
+        }
       }
     };
-    computeFromAddress();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, [
     isSendBitcoin,
-    route.params?.derivationPath,
-    route.params?.mode,
     route.params?.network,
     route.params?.addressType,
+    route.params?.utxosJson,
+    route.params?.changeAddress,
   ]);
+
+  // Initialize network and derivation path immediately when component loads (for send Bitcoin mode)
   const stringToHex = (str: string) => {
     return Array.from(str)
       .map(char => char.charCodeAt(0).toString(16).padStart(2, '0'))
@@ -687,13 +761,13 @@ const MobilesPairing = ({navigation}: any) => {
       // For PSBT signing, network comes from app state, not route params
       if (isSignPSBT) {
         // Get network from LocalCache (app's current network state)
-        net = (await LocalCache.getItem('network')) || 'mainnet';
+        net = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
         dbg(
           'MobilesPairing: PSBT signing - using network from app state:',
           net,
         );
         // Set network and API in BBMTLib for this transaction
-        let apiUrl = await LocalCache.getItem(`api_${net}`);
+        let apiUrl = appConfigRepository.get(`api_${net}`);
         if (!apiUrl) {
           apiUrl =
             net === 'testnet3' || net === 'testnet'
@@ -754,8 +828,9 @@ const MobilesPairing = ({navigation}: any) => {
           satoshiFees,
         });
         // Store original network/API
-        originalNetwork = (await LocalCache.getItem('network')) || 'mainnet';
-        const cachedApi = await LocalCache.getItem(`api_${originalNetwork}`);
+        originalNetwork =
+          appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
+        const cachedApi = appConfigRepository.get(`api_${originalNetwork}`);
         originalApiUrl = cachedApi || '';
         if (!originalApiUrl) {
           originalApiUrl =
@@ -764,7 +839,7 @@ const MobilesPairing = ({navigation}: any) => {
               : 'https://mempool.space/api';
         }
         // Set network and API in BBMTLib for this transaction
-        let apiUrl = await LocalCache.getItem(`api_${net}`);
+        let apiUrl = appConfigRepository.get(`api_${net}`);
         if (!apiUrl) {
           apiUrl =
             net === 'testnet3' || net === 'testnet'
@@ -775,13 +850,14 @@ const MobilesPairing = ({navigation}: any) => {
         await BBMTLibNativeModule.setAPI(net, apiUrl);
         // CRITICAL: Update LocalCache 'api' key so any balance/UTXO fetches use correct API
         // This ensures operations use the network from route params, not device's current network
-        await LocalCache.setItem('api', apiUrl);
+        appConfigRepository.set('api', apiUrl);
         dbg('MobilesPairing: Set network and API in BBMTLib:', net, apiUrl);
       }
       // Store original network/API (for both PSBT and send BTC modes)
       if (isSignPSBT) {
-        originalNetwork = (await LocalCache.getItem('network')) || 'mainnet';
-        const cachedApi = await LocalCache.getItem(`api_${originalNetwork}`);
+        originalNetwork =
+          appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
+        const cachedApi = appConfigRepository.get(`api_${originalNetwork}`);
         originalApiUrl = cachedApi || '';
         if (!originalApiUrl) {
           originalApiUrl =
@@ -801,6 +877,8 @@ const MobilesPairing = ({navigation}: any) => {
       }
       const partiesCSV = allParties.sort().join(',');
       const sessionID = await BBMTLibNativeModule.sha256(`${data}/${server}`);
+      activeMpcSessionIdRef.current = sessionID;
+      mpcAbortRef.current = false;
       const kp = JSON.parse(keypair);
       const encKey = peerPubkey;
       const decKey = kp.privateKey;
@@ -853,9 +931,21 @@ const MobilesPairing = ({navigation}: any) => {
             } else {
               dbg(partyID, 'PSBT signed successfully');
             }
-            dbg('PSBT signing complete: Navigating to Wallet tab with signedPsbt');
+            dbg(
+              'PSBT signing complete: Navigating to Wallet tab with signedPsbt',
+            );
             navigation.dispatch(
-              CommonActions.reset(getResetToMainTabsWallet({signedPsbt}, { showPlay, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab })),
+              CommonActions.reset(
+                getResetToMainTabsWallet(
+                  {signedPsbt},
+                  {
+                    showPlay,
+                    showUtxos: showUtxosTab,
+                    showPsbt: showPsbtTab,
+                    showWallet: showWalletTab,
+                  },
+                ),
+              ),
             );
             setMpcDone(true);
           })
@@ -875,7 +965,7 @@ const MobilesPairing = ({navigation}: any) => {
           });
         return; // Exit early for PSBT
       } else {
-        // Send BTC mode - derive from address using route params
+        // Send BTC mode - try multi-path first (spend from receive + change addresses)
         const btcPub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,
           ks.chain_code_hex,
@@ -892,100 +982,198 @@ const MobilesPairing = ({navigation}: any) => {
         if (satoshiAmount !== route.params.satoshiAmount) {
           throw 'Make sure you\'re sending the "Same Bitcoin" amount from Both Devices';
         }
-        // Call MPC send BTC
-        await BBMTLibNativeModule.mpcSendBTC(
-          server,
-          partyID,
-          partiesCSV,
-          sessionID,
-          sessionKey,
-          encKey,
-          decKey,
-          jks,
-          path,
-          btcPub,
-          senderAddress,
-          toAddress,
-          satoshiAmount,
-          satoshiFees,
-        )
-          .then(async (txId: any) => {
-            dbg(partyID, 'txID', txId);
-            const validTxID = /^[a-fA-F0-9]{64}$/.test(txId);
-            if (!validTxID) {
-              throw txId;
-            }
-            // Save pending transaction
-            const pendingTxs = JSON.parse(
-              (await LocalCache.getItem(`${senderAddress}-pendingTxs`)) || '{}',
-            );
-            pendingTxs[txId] = {
-              txid: txId,
-              from: senderAddress,
-              to: toAddress,
-              amount: satoshiAmount,
-              satoshiAmount: satoshiAmount,
-              satoshiFees: satoshiFees,
-              sentAt: Date.now(),
-              status: {
-                confirmed: false,
-                block_height: null,
-              },
-            };
-            await LocalCache.setItem(
-              `${senderAddress}-pendingTxs`,
-              JSON.stringify(pendingTxs),
-            );
-            navigation.dispatch(
-              CommonActions.reset(getResetToMainTabsWallet({txId}, { showPlay, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab })),
-            );
-            setMpcDone(true);
-          })
-          .catch((e: any) => {
-            Alert.alert(
-              'Operation Error',
-              `Could not sign and send transaction.\n${e?.message}`,
-            );
-            dbg(partyID, 'keysign error', e);
-          })
-          .finally(async () => {
-            // CRITICAL: Restore original network after transaction completes (success or failure)
-            // This ensures the device's active network remains unchanged
-            if (originalNetwork && originalApiUrl) {
-              try {
-                await BBMTLibNativeModule.setBtcNetwork(originalNetwork);
-                await BBMTLibNativeModule.setAPI(
-                  originalNetwork,
-                  originalApiUrl,
-                );
-                // Restore LocalCache 'api' key to original network's API
-                await LocalCache.setItem('api', originalApiUrl);
-                // Restore WalletService internal state
-                const walletServiceRestore = WalletService.getInstance();
-                (walletServiceRestore as any).currentNetwork = originalNetwork;
-                (walletServiceRestore as any).currentApiUrl = originalApiUrl;
-                dbg(
-                  'MobilesPairing: Restored original network:',
-                  originalNetwork,
-                  'API:',
-                  originalApiUrl,
-                );
-              } catch (restoreError) {
-                dbg(
-                  'MobilesPairing: Error restoring original network:',
-                  restoreError,
-                );
+
+        const apiUrl =
+          appConfigRepository.get(`api_${net}`) ||
+          (net === 'testnet3' || net === 'testnet'
+            ? 'https://mempool.space/testnet/api'
+            : 'https://mempool.space/api');
+
+        let usedMultiPath = false;
+        try {
+          let utxosWithPathsJSON: string | null = null;
+          let pendingKeyMultiPath = senderAddress;
+          const utxosJsonFromQR = route.params?.utxosJson;
+          if (
+            utxosJsonFromQR &&
+            typeof utxosJsonFromQR === 'string' &&
+            utxosJsonFromQR.trim() !== ''
+          ) {
+            try {
+              const parsed = JSON.parse(utxosJsonFromQR);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                const first = parsed[0];
+                if (
+                  first &&
+                  typeof first.txid === 'string' &&
+                  typeof first.vout === 'number' &&
+                  typeof first.value === 'number'
+                ) {
+                  // Map to WalletService shape so enrichUtxosWithScriptpubkey can process them.
+                  const asUtxos = parsed.map((u: any) => ({
+                    txid: u.txid,
+                    vout: u.vout,
+                    value: u.value,
+                    derivationPath: u.derivation_path ?? u.derivationPath ?? '',
+                    address: u.address,
+                    scriptpubkey: u.scriptpubkey ?? '',
+                    chain: 'receive' as const,
+                    chainIndex: 0,
+                  }));
+                  // Enrich scriptpubkeys if missing (QR omits them to keep QR compact).
+                  const needsEnrichment = asUtxos.some(u => !u.scriptpubkey);
+                  const enriched = needsEnrichment
+                    ? await WalletService.getInstance().enrichUtxosWithScriptpubkey(
+                        asUtxos,
+                        apiUrl,
+                      )
+                    : asUtxos;
+                  const forNative = enriched.map((u: any) => ({
+                    txid: u.txid,
+                    vout: u.vout,
+                    value: u.value,
+                    derivation_path: u.derivationPath ?? u.derivation_path,
+                    address: u.address,
+                    scriptpubkey: u.scriptpubkey ?? '',
+                  }));
+                  utxosWithPathsJSON = JSON.stringify(forNative);
+                  pendingKeyMultiPath = forNative[0]?.address || senderAddress;
+                  dbg(
+                    'MobilesPairing: using UTXOs from QR (enriched)',
+                    forNative.length,
+                  );
+                }
               }
+            } catch {
+              dbg(
+                'MobilesPairing: failed to use utxosJson from QR, will fetch',
+              );
             }
-            if (isMaster) {
-              await waitMS(2000);
-              stopRelay();
+          }
+          if (!utxosWithPathsJSON) {
+            const utxosWithPaths =
+              await WalletService.getInstance().fetchUtxosWithPaths(
+                net,
+                addressTypeToUse,
+                apiUrl,
+              );
+            const changeAddress =
+              await WalletService.getInstance().getNextChangeAddress(
+                net,
+                addressTypeToUse,
+              );
+            if (utxosWithPaths.length > 0 && changeAddress) {
+              const enriched =
+                await WalletService.getInstance().enrichUtxosWithScriptpubkey(
+                  utxosWithPaths,
+                  apiUrl,
+                );
+              const utxosForNative = enriched.map(u => ({
+                txid: u.txid,
+                vout: u.vout,
+                value: u.value,
+                derivation_path: u.derivationPath,
+                address: u.address,
+                scriptpubkey: u.scriptpubkey,
+              }));
+              utxosWithPathsJSON = JSON.stringify(utxosForNative);
+              pendingKeyMultiPath = utxosWithPaths[0]?.address || senderAddress;
             }
+          }
+          // Use change address from route params when available (sender pre-computed it;
+          // this ensures both devices show and use the identical change output).
+          const changeAddressFromParams = route.params?.changeAddress;
+          const changeAddress = utxosWithPathsJSON
+            ? changeAddressFromParams && changeAddressFromParams.trim() !== ''
+              ? changeAddressFromParams
+              : await WalletService.getInstance().getNextChangeAddress(
+                  net,
+                  addressTypeToUse,
+                )
+            : '';
+          if (utxosWithPathsJSON && changeAddress) {
+            const rawTxHex = await BBMTLibNativeModule.mpcSendBTCWithUTXOs(
+              server,
+              partyID,
+              partiesCSV,
+              sessionID,
+              sessionKey,
+              encKey,
+              decKey,
+              jks,
+              btcPub,
+              toAddress,
+              satoshiAmount,
+              satoshiFees,
+              utxosWithPathsJSON,
+              changeAddress,
+            );
+            dbg(partyID, 'signed tx (multi-path), len=', rawTxHex?.length);
+            if (
+              !rawTxHex ||
+              typeof rawTxHex !== 'string' ||
+              rawTxHex.length % 2 !== 0 ||
+              !/^[a-fA-F0-9]+$/.test(rawTxHex)
+            ) {
+              throw rawTxHex || 'Invalid signed transaction';
+            }
+            usedMultiPath = true;
+            const pendingKey = pendingKeyMultiPath;
+            const utxoList = JSON.parse(utxosWithPathsJSON) as Array<{txid: string; vout: number; value: number; address?: string}>;
+            const inputs = utxoList.map((u: any) => ({
+              txid: u.txid,
+              vout: u.vout,
+              value: u.value,
+              scriptpubkey_address: u.address ?? '',
+            }));
+            const totalInput = utxoList.reduce((s: number, u: any) => s + (u.value || 0), 0);
+            const changeAmount = totalInput - Number(satoshiAmount) - Number(satoshiFees);
+            const outputs: Array<{scriptpubkey_address: string; value: number}> = [
+              {scriptpubkey_address: toAddress, value: Number(satoshiAmount)},
+            ];
+            if (changeAmount > 0) {
+              outputs.push({scriptpubkey_address: changeAddress, value: changeAmount});
+            }
+            broadcastSuccessPayloadRef.current = {
+              multiPath: true,
+              pendingKey,
+              toAddress,
+              satoshiAmount,
+              satoshiFees,
+              net,
+              addressTypeToUse,
+              showPlay,
+              showUtxosTab,
+              showPsbtTab,
+              showWalletTab,
+              senderAddress,
+              originalNetwork,
+              originalApiUrl,
+              isMaster,
+              inputs,
+              outputs,
+            };
+            if (mpcAbortRef.current) {
+              setDoingMPC(false);
+              return;
+            }
+            setSignedTxRawHex(rawTxHex);
             setDoingMPC(false);
-          });
+          }
+        } catch (multiPathErr) {
+          dbg('MobilesPairing: multi-path send failed:', multiPathErr);
+        }
+
+        if (!usedMultiPath) {
+          throw new Error(
+            'Send BTC requires UTXOs and change address (multi-path flow). Please try again or use a wallet with available balance.',
+          );
+        }
       }
     } catch (error: any) {
-      Alert.alert('Operation Error', error?.message || error);
+      if (!mpcAbortRef.current) {
+        Alert.alert('Operation Error', error?.message || error);
+      }
       dbg(localDevice, 'keysign error', error);
       // CRITICAL: Restore original network even on error
       if (originalNetwork && originalApiUrl) {
@@ -993,7 +1181,7 @@ const MobilesPairing = ({navigation}: any) => {
           await BBMTLibNativeModule.setBtcNetwork(originalNetwork);
           await BBMTLibNativeModule.setAPI(originalNetwork, originalApiUrl);
           // Restore LocalCache 'api' key to original network's API
-          await LocalCache.setItem('api', originalApiUrl);
+          appConfigRepository.set('api', originalApiUrl);
           // Restore WalletService internal state
           const walletServiceError = WalletService.getInstance();
           (walletServiceError as any).currentNetwork = originalNetwork;
@@ -1018,14 +1206,14 @@ const MobilesPairing = ({navigation}: any) => {
       setDoingMPC(false);
     }
   };
-  function stopRelay() {
+  const stopRelay = useCallback(() => {
     try {
       BBMTLibNativeModule.stopRelay(localDevice);
       dbg(localDevice, 'relay stop:');
     } catch {
       dbg(localDevice, 'error stoping relay');
     }
-  }
+  }, [localDevice]);
   useEffect(() => {
     let subscription: EmitterSubscription | undefined;
     const logEmitter = new NativeEventEmitter(BBMTLibNativeModule);
@@ -1103,7 +1291,11 @@ const MobilesPairing = ({navigation}: any) => {
       }
       const statusDot =
         msg.step % 3 === 0 ? '.' : msg.step % 3 === 1 ? '..' : '...';
-      setStatus('Processing cryptographic operations' + statusDot);
+      if (utxoCount > 0 && utxoIndex > 0 && isSendBitcoin) {
+        setStatus(`Signing input ${utxoIndex}/${utxoCount}${statusDot}`);
+      } else {
+        setStatus('Processing cryptographic operations' + statusDot);
+      }
     };
     if (Platform.OS === 'android') {
       subscription = logEmitter.addListener('BBMT_DROID', async log => {
@@ -1122,7 +1314,7 @@ const MobilesPairing = ({navigation}: any) => {
     return () => {
       subscription?.remove();
     };
-  }, [isTrio]);
+  }, [isTrio, isSendBitcoin]);
   useEffect(() => {
     if (isPreparing) {
       const interval = setInterval(() => {
@@ -1191,7 +1383,7 @@ const MobilesPairing = ({navigation}: any) => {
       return;
     }
     setIsPairing(true);
-    setStatus('Fetching local IP...');
+    setStatus('Syncing local IP...');
     setCountdown(timeout);
     const jkp = await BBMTLibNativeModule.eciesKeypair();
     setKeypair(jkp);
@@ -1207,7 +1399,7 @@ const MobilesPairing = ({navigation}: any) => {
       const deviceName = await DeviceInfo.getDeviceName();
       setLocalDevice(deviceName);
       setStatus('Starting peer discovery...');
-      await LocalCache.setItem('peerFound', '');
+      appConfigRepository.set('peerFound', '');
       const promises = [
         listenForPeerPromise(
           kp,
@@ -1233,7 +1425,7 @@ const MobilesPairing = ({navigation}: any) => {
       let result = await Promise.race(promises);
       while (!result && Date.now() < until) {
         dbg('checking peer...');
-        result = await LocalCache.getItem('peerFound');
+        result = appConfigRepository.get('peerFound');
         if (result) {
           dbg('checking peer ok...');
           break;
@@ -1250,7 +1442,7 @@ const MobilesPairing = ({navigation}: any) => {
           const extraWaitUntil = Date.now() + 3000; // wait up to 3s more
           while (Date.now() < extraWaitUntil && raws.length < 2) {
             await waitMS(300);
-            const updated = await LocalCache.getItem('peerFound');
+            const updated = appConfigRepository.get('peerFound');
             raws = (updated || result || '').split('|').filter(Boolean);
           }
         }
@@ -1407,7 +1599,7 @@ const MobilesPairing = ({navigation}: any) => {
           masterHost: resolvedMasterHost,
         });
         await Promise.allSettled(promises).then(() =>
-          LocalCache.removeItem('peerFound'),
+          appConfigRepository.remove('peerFound'),
         );
       } else {
         setStatus('Pairing timed out. Please try again.');
@@ -1469,7 +1661,7 @@ const MobilesPairing = ({navigation}: any) => {
         String(timeout),
         isTrio ? 'trio' : 'duo',
       );
-      await LocalCache.setItem('peerFound', result);
+      appConfigRepository.set('peerFound', result);
       return result;
     } catch (error) {
       dbg('ListenForPeer Error:', error);
@@ -1503,7 +1695,7 @@ const MobilesPairing = ({navigation}: any) => {
     });
     while (Date.now() < until) {
       try {
-        let peerFound = await LocalCache.getItem('peerFound');
+        let peerFound = appConfigRepository.get('peerFound');
         if (peerFound) {
           dbg('discoverPeer already found');
           return peerFound;
@@ -1523,7 +1715,7 @@ const MobilesPairing = ({navigation}: any) => {
         );
         if (result) {
           dbg('discoverPeer result', result);
-          await LocalCache.setItem('peerFound', result);
+          appConfigRepository.set('peerFound', result);
           return result;
         }
       } catch (error) {
@@ -1632,7 +1824,10 @@ const MobilesPairing = ({navigation}: any) => {
   useEffect(() => {
     if (!isPairing || Platform.OS !== 'android') return undefined;
     const onBack = () => true; // prevent default (stay on screen)
-    const subscription = BackHandler.addEventListener('hardwareBackPress', onBack);
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      onBack,
+    );
     return () => subscription.remove();
   }, [isPairing]);
   const styles = StyleSheet.create({
@@ -2136,6 +2331,7 @@ const MobilesPairing = ({navigation}: any) => {
       color: theme.colors.text,
       flex: 1,
       textAlign: 'left',
+      marginTop: 6,
       lineHeight: 18,
     },
     deviceContainer: {
@@ -3522,7 +3718,8 @@ const MobilesPairing = ({navigation}: any) => {
                           style={[
                             styles.checkboxContainer,
                             styles.keepOpenDuringSetupContainer,
-                            isPrepared && styles.enhancedCheckboxContainerChecked,
+                            isPrepared &&
+                              styles.enhancedCheckboxContainerChecked,
                           ]}
                           disabled={isPreparing}
                           onPress={() => {
@@ -3571,7 +3768,9 @@ const MobilesPairing = ({navigation}: any) => {
                           <Modal
                             transparent={true}
                             visible={isPreparing}
-                            onRequestClose={() => {} /* non-dismissible: block Android back */}>
+                            onRequestClose={
+                              () => {} /* non-dismissible: block Android back */
+                            }>
                             <View style={styles.modalOverlay}>
                               <View style={styles.modalContent}>
                                 {/* Icon Container */}
@@ -3709,7 +3908,9 @@ const MobilesPairing = ({navigation}: any) => {
                           transparent={true}
                           visible={doingMPC}
                           animationType="fade"
-                          onRequestClose={() => {} /* non-dismissible: block Android back */}>
+                          onRequestClose={
+                            () => {} /* non-dismissible: block Android back */
+                          }>
                           <View style={styles.modalOverlay}>
                             <View style={styles.modalContent}>
                               {/* Icon Container */}
@@ -4036,187 +4237,404 @@ const MobilesPairing = ({navigation}: any) => {
                           borderColor: theme.colors.border,
                         },
                       ]}>
-                      {/* Network Badge */}
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
+                      {/* Transaction Flow */}
+                      {(() => {
+                        const accentColor =
+                          theme.colors.background === '#ffffff'
+                            ? theme.colors.primary
+                            : theme.colors.bitcoinOrange;
+                        const totalSats =
+                          Number(route.params.satoshiAmount) +
+                          Number(route.params.satoshiFees);
+                        const toAddr = route.params.toAddress || '';
+                        const net = route.params?.network || '';
+                        const isTestnet =
+                          net === 'testnet3' || net === 'testnet';
+                        const explorerBase = isTestnet
+                          ? 'https://mempool.space/testnet'
+                          : 'https://mempool.space';
+                        const sectionTitle = {
+                          fontSize: theme.fontSizes?.xs || 10,
+                          fontFamily: theme.fontFamilies?.bold,
+                          color: theme.colors.textSecondary,
+                          textTransform: 'uppercase' as const,
+                          letterSpacing: 0.5,
                           marginBottom: 6,
-                          paddingVertical: 2,
-                          marginTop: 8,
-                        }}>
-                        <View
-                          style={{
-                            backgroundColor:
-                              theme.colors.background === '#ffffff'
-                                ? theme.colors.primary + '20'
-                                : theme.colors.bitcoinOrange + '20',
-                            paddingHorizontal: 6,
-                            paddingVertical: 2,
-                            borderRadius: 4,
-                          }}>
-                          <Text
-                            style={{
-                              fontSize: theme.fontSizes?.xs || 10,
-                              fontFamily: theme.fontFamilies.bold,
-                              color:
-                                theme.colors.background === '#ffffff'
-                                  ? theme.colors.primary
-                                  : theme.colors.bitcoinOrange,
-                              textTransform: 'uppercase',
-                              letterSpacing: 0.5,
-                            }}>
-                            {(() => {
-                              const net =
-                                route.params?.network || currentNetwork;
-                              const normalizedNet =
-                                net === 'testnet3' ? 'testnet' : net;
-                              return normalizedNet === 'testnet'
-                                ? 'Testnet'
-                                : 'Mainnet';
-                            })()}
-                          </Text>
-                        </View>
-                      </View>
-                      {fromAddress && (
-                        <View
-                          style={[
-                            styles.transactionItem,
-                            {paddingVertical: 2, marginBottom: 3},
-                          ]}>
+                        };
+                        const rowBase = {
+                          flexDirection: 'row' as const,
+                          alignItems: 'center' as const,
+                          backgroundColor:
+                            theme.colors.background === '#ffffff'
+                              ? theme.colors.primary + '06'
+                              : '#ffffff08',
+                          borderRadius: 8,
+                          padding: 8,
+                          marginBottom: 4,
+                          borderWidth: 1,
+                          borderColor: theme.colors.border,
+                        };
+                        const rowOurs = {
+                          ...rowBase,
+                          backgroundColor:
+                            theme.colors.background === '#ffffff'
+                              ? accentColor + '12'
+                              : accentColor + '1A',
+                          borderColor: accentColor + '60',
+                          paddingLeft: 11,
+                          overflow: 'hidden' as const,
+                        };
+                        const iconBase = {
+                          width: 18,
+                          height: 18,
+                          marginRight: 8,
+                        };
+                        const labelStyle = {
+                          fontSize: theme.fontSizes?.sm || 12,
+                          fontFamily: theme.fontFamilies?.monospaceBold,
+                          color: theme.colors.text,
+                        };
+                        const labelOurs = {
+                          ...labelStyle,
+                          color: accentColor,
+                        };
+                        const pathText = {
+                          fontSize: theme.fontSizes?.xs || 10,
+                          fontFamily: theme.fontFamilies?.monospace,
+                          color: theme.colors.textSecondary,
+                          marginTop: 1,
+                        };
+                        const subLabel = {
+                          fontSize: theme.fontSizes?.xs || 10,
+                          fontFamily: theme.fontFamilies?.monospace,
+                          color: theme.colors.textSecondary,
+                          fontStyle: 'italic' as const,
+                          marginTop: 1,
+                        };
+                        const amtBTC = {
+                          fontSize: theme.fontSizes?.sm || 12,
+                          fontFamily: theme.fontFamilies?.monospaceBold,
+                          color: theme.colors.text,
+                          textAlign: 'right' as const,
+                        };
+                        const amtBTCOurs = {
+                          ...amtBTC,
+                          color: accentColor,
+                        };
+                        const amtFiat = {
+                          fontSize: theme.fontSizes?.xs || 10,
+                          fontFamily: theme.fontFamilies?.monospace,
+                          color: theme.colors.textSecondary,
+                          textAlign: 'right' as const,
+                        };
+                        const changeSats =
+                          txPreview && txPreview.totalInputSats > 0
+                            ? txPreview.totalInputSats -
+                              Number(route.params.satoshiAmount) -
+                              Number(route.params.satoshiFees)
+                            : 0;
+                        const accentBar = (
                           <View
                             style={{
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              marginBottom: 2,
-                            }}>
-                            <Text
-                              style={[
-                                styles.transactionLabel,
-                                {
-                                  fontSize: theme.fontSizes?.sm || 12,
-                                  lineHeight: 14,
-                                },
-                              ]}>
-                              From Address
-                            </Text>
-                            {currentDerivationPath && (
+                              position: 'absolute',
+                              left: 0,
+                              top: 0,
+                              bottom: 0,
+                              width: 3,
+                              backgroundColor: accentColor,
+                              borderTopLeftRadius: 8,
+                              borderBottomLeftRadius: 8,
+                            }}
+                          />
+                        );
+                        return (
+                          <View style={{paddingTop: 8}}>
+                            <AppPressable
+                              onPress={() =>
+                                setTxDetailsExpanded(prev => !prev)
+                              }
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                paddingVertical: 6,
+                                marginBottom: 4,
+                              }}>
                               <Text
                                 style={{
-                                  fontSize: theme.fontSizes?.xs || 10,
-                                  fontFamily: theme.fontFamilies?.monospace,
-                                  fontStyle: 'italic',
+                                  fontSize: theme.fontSizes?.sm || 12,
+                                  fontFamily: theme.fontFamilies?.bold,
                                   color: theme.colors.textSecondary,
-                                  marginLeft: 6,
-                                  textAlign: 'right',
-                                  flex: 1,
-                                  flexShrink: 1,
+                                  textTransform: 'uppercase',
+                                  letterSpacing: 0.5,
                                 }}>
-                                {currentDerivationPath}
+                                Spending {sat2btcStr(String(totalSats))} BTC (
+                                {route.params?.selectedCurrency}{' '}
+                                {formatFiat(route.params?.fiatAmount)}){' '}
+                                {net === 'testnet' ? '(Testnet)' : ''}
                               </Text>
+                              <Text
+                                style={{
+                                  fontSize: 10,
+                                  color: theme.colors.textSecondary,
+                                }}>
+                                {txDetailsExpanded ? '▼' : '▶'}
+                              </Text>
+                            </AppPressable>
+                            {txDetailsExpanded && (
+                              <>
+                                {/* Inputs */}
+                                <Text style={sectionTitle}>
+                                  Inputs
+                                  {txPreview && txPreview.utxos.length > 0
+                                    ? ` (${txPreview.utxos.length})`
+                                    : ''}
+                                </Text>
+                                {txPreview && txPreview.utxos.length > 0 ? (
+                                  txPreview.utxos.map((u, idx) => (
+                                    <AppPressable
+                                      key={`${u.address}-${idx}`}
+                                      style={[
+                                        rowOurs,
+                                        {
+                                          marginBottom:
+                                            idx < txPreview.utxos.length - 1
+                                              ? 3
+                                              : 4,
+                                        },
+                                      ]}
+                                      onPress={() =>
+                                        Linking.openURL(
+                                          `${explorerBase}/address/${u.address}`,
+                                        )
+                                      }>
+                                      {accentBar}
+                                      <Image
+                                        source={require('../assets/in-icon.png')}
+                                        style={[
+                                          iconBase,
+                                          {tintColor: accentColor},
+                                        ]}
+                                        resizeMode="contain"
+                                      />
+                                      <View style={{flex: 1}}>
+                                        <Text
+                                          style={[
+                                            labelOurs,
+                                            {textDecorationLine: 'underline'},
+                                          ]}
+                                          numberOfLines={1}
+                                          ellipsizeMode="middle">
+                                          {shortenAddress(u.address)}
+                                        </Text>
+                                        <Text style={pathText}>
+                                          {u.derivationPath}
+                                        </Text>
+                                      </View>
+                                      <View style={{alignItems: 'flex-end'}}>
+                                        <Text style={amtBTCOurs}>
+                                          {sat2btcStr(String(u.value))} BTC
+                                        </Text>
+                                      </View>
+                                    </AppPressable>
+                                  ))
+                                ) : (
+                                  <View style={rowOurs}>
+                                    {accentBar}
+                                    <Image
+                                      source={require('../assets/in-icon.png')}
+                                      style={[
+                                        iconBase,
+                                        {tintColor: accentColor},
+                                      ]}
+                                      resizeMode="contain"
+                                    />
+                                    <View style={{flex: 1}}>
+                                      <Text style={labelOurs} numberOfLines={1}>
+                                        HD Wallet
+                                      </Text>
+                                    </View>
+                                    <View style={{alignItems: 'flex-end'}}>
+                                      <Text style={amtBTCOurs}>
+                                        {sat2btcStr(String(totalSats))} BTC
+                                      </Text>
+                                    </View>
+                                  </View>
+                                )}
+
+                                {/* Hub */}
+                                <View
+                                  style={{
+                                    alignItems: 'center',
+                                    paddingVertical: 8,
+                                  }}>
+                                  <View
+                                    style={{
+                                      width: 28,
+                                      height: 28,
+                                      borderRadius: 14,
+                                      backgroundColor: accentColor + '20',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                    }}>
+                                    <Text
+                                      style={{
+                                        fontSize: 14,
+                                        color: accentColor,
+                                        fontFamily: theme.fontFamilies?.bold,
+                                      }}>
+                                      ↓
+                                    </Text>
+                                  </View>
+                                  <Text
+                                    style={{
+                                      fontSize: theme.fontSizes?.xs || 10,
+                                      fontFamily: theme.fontFamilies?.bold,
+                                      color: theme.colors.textSecondary,
+                                      textTransform: 'uppercase',
+                                      letterSpacing: 0.5,
+                                      marginTop: 4,
+                                    }}>
+                                    Transaction
+                                  </Text>
+                                </View>
+
+                                {/* Outputs */}
+                                <Text style={sectionTitle}>Outputs</Text>
+                                {/* Recipient */}
+                                <AppPressable
+                                  style={rowBase}
+                                  onPress={() =>
+                                    Linking.openURL(
+                                      `${explorerBase}/address/${toAddr}`,
+                                    )
+                                  }>
+                                  <Image
+                                    source={require('../assets/bitcoin-icon.png')}
+                                    style={[
+                                      iconBase,
+                                      {tintColor: theme.colors.textSecondary},
+                                    ]}
+                                    resizeMode="contain"
+                                  />
+                                  <View style={{flex: 1}}>
+                                    <Text
+                                      style={[
+                                        labelStyle,
+                                        {textDecorationLine: 'underline'},
+                                      ]}
+                                      numberOfLines={1}
+                                      ellipsizeMode="middle">
+                                      {shortenAddress(toAddr)}
+                                    </Text>
+                                    <Text style={subLabel}>recipient</Text>
+                                  </View>
+                                  <View style={{alignItems: 'flex-end'}}>
+                                    <Text style={amtBTC}>
+                                      {sat2btcStr(route.params.satoshiAmount)}{' '}
+                                      BTC
+                                    </Text>
+                                    <Text style={amtFiat}>
+                                      {route.params.selectedCurrency}{' '}
+                                      {formatFiat(route.params.fiatAmount)}
+                                    </Text>
+                                  </View>
+                                </AppPressable>
+                                {/* Connector */}
+                                <View
+                                  style={{
+                                    width: 1,
+                                    height: 8,
+                                    backgroundColor: theme.colors.border,
+                                    marginLeft: 17,
+                                    marginBottom: 2,
+                                  }}
+                                />
+                                {/* Fee */}
+                                <View style={rowBase}>
+                                  <Image
+                                    source={require('../assets/send-icon.png')}
+                                    style={[
+                                      iconBase,
+                                      {tintColor: theme.colors.textSecondary},
+                                    ]}
+                                    resizeMode="contain"
+                                  />
+                                  <View style={{flex: 1}}>
+                                    <Text style={labelStyle}>Fee</Text>
+                                  </View>
+                                  <View style={{alignItems: 'flex-end'}}>
+                                    <Text style={amtBTC}>
+                                      {sat2btcStr(route.params.satoshiFees)} BTC
+                                    </Text>
+                                    <Text style={amtFiat}>
+                                      {route.params.selectedCurrency}{' '}
+                                      {formatFiat(route.params.fiatFees)}
+                                    </Text>
+                                  </View>
+                                </View>
+                                {/* Change output — only when we know the change address */}
+                                {txPreview && txPreview.changeAddress ? (
+                                  <>
+                                    <View
+                                      style={{
+                                        width: 1,
+                                        height: 8,
+                                        backgroundColor: theme.colors.border,
+                                        marginLeft: 17,
+                                        marginBottom: 2,
+                                      }}
+                                    />
+                                    <AppPressable
+                                      style={[rowOurs, {marginBottom: 0}]}
+                                      onPress={() =>
+                                        Linking.openURL(
+                                          `${explorerBase}/address/${txPreview.changeAddress}`,
+                                        )
+                                      }>
+                                      {accentBar}
+                                      <Image
+                                        source={require('../assets/in-icon.png')}
+                                        style={[
+                                          iconBase,
+                                          {tintColor: accentColor},
+                                        ]}
+                                        resizeMode="contain"
+                                      />
+                                      <View style={{flex: 1}}>
+                                        <Text
+                                          style={[
+                                            labelOurs,
+                                            {textDecorationLine: 'underline'},
+                                          ]}
+                                          numberOfLines={1}
+                                          ellipsizeMode="middle">
+                                          {shortenAddress(
+                                            txPreview.changeAddress,
+                                          )}
+                                        </Text>
+                                        <Text style={subLabel}>change</Text>
+                                        {txPreview.changeAddressPath ? (
+                                          <Text style={pathText}>
+                                            {txPreview.changeAddressPath}
+                                          </Text>
+                                        ) : null}
+                                      </View>
+                                      <View style={{alignItems: 'flex-end'}}>
+                                        {changeSats > 0 && (
+                                          <Text style={amtBTCOurs}>
+                                            {sat2btcStr(String(changeSats))} BTC
+                                          </Text>
+                                        )}
+                                      </View>
+                                    </AppPressable>
+                                  </>
+                                ) : null}
+                              </>
                             )}
                           </View>
-                          <View style={styles.addressContainer}>
-                            <Text
-                              style={styles.addressValue}
-                              numberOfLines={1}
-                              ellipsizeMode="middle">
-                              {fromAddress}
-                            </Text>
-                          </View>
-                        </View>
-                      )}
-                      <View
-                        style={[
-                          styles.transactionItem,
-                          {paddingVertical: 2, marginBottom: 3},
-                        ]}>
-                        <Text
-                          style={[
-                            styles.transactionLabel,
-                            {
-                              fontSize: theme.fontSizes?.sm || 12,
-                              lineHeight: 14,
-                            },
-                          ]}>
-                          To Address
-                        </Text>
-                        <View style={styles.addressContainer}>
-                          <Text
-                            style={styles.addressValue}
-                            numberOfLines={1}
-                            ellipsizeMode="middle">
-                            {route.params.toAddress}
-                          </Text>
-                        </View>
-                      </View>
-                      <View
-                        style={[
-                          styles.transactionItem,
-                          {paddingVertical: 2, marginBottom: 3},
-                        ]}>
-                        <Text
-                          style={[
-                            styles.transactionLabel,
-                            {
-                              fontSize: theme.fontSizes?.sm || 12,
-                              lineHeight: 14,
-                            },
-                          ]}>
-                          Transaction Amount
-                        </Text>
-                        <View style={styles.amountContainer}>
-                          <Text
-                            style={[
-                              styles.amountValue,
-                              {fontSize: theme.fontSizes?.base || 13},
-                            ]}>
-                            {sat2btcStr(route.params.satoshiAmount)} BTC
-                          </Text>
-                          <Text
-                            style={[
-                              styles.fiatValue,
-                              {fontSize: theme.fontSizes?.sm || 12},
-                            ]}>
-                            {route.params.selectedCurrency}{' '}
-                            {formatFiat(route.params.fiatAmount)}
-                          </Text>
-                        </View>
-                      </View>
-                      <View
-                        style={[
-                          styles.transactionItem,
-                          {paddingVertical: 2, marginBottom: 0},
-                        ]}>
-                        <Text
-                          style={[
-                            styles.transactionLabel,
-                            {
-                              fontSize: theme.fontSizes?.sm || 12,
-                              lineHeight: 14,
-                            },
-                          ]}>
-                          Transaction Fee
-                        </Text>
-                        <View style={styles.amountContainer}>
-                          <Text
-                            style={[
-                              styles.amountValue,
-                              {fontSize: theme.fontSizes?.base || 13},
-                            ]}>
-                            {sat2btcStr(route.params.satoshiFees)} BTC
-                          </Text>
-                          <Text
-                            style={[
-                              styles.fiatValue,
-                              {fontSize: theme.fontSizes?.sm || 12},
-                            ]}>
-                            {route.params.selectedCurrency}{' '}
-                            {formatFiat(route.params.fiatFees)}
-                          </Text>
-                        </View>
-                      </View>
+                        );
+                      })()}
                     </View>
                   )}
                   {isSignPSBT && (
@@ -4430,7 +4848,9 @@ const MobilesPairing = ({navigation}: any) => {
                       transparent={true}
                       visible={doingMPC}
                       animationType="fade"
-                      onRequestClose={() => {} /* non-dismissible: block Android back */}>
+                      onRequestClose={
+                        () => {} /* non-dismissible: block Android back */
+                      }>
                       <View style={styles.modalOverlay}>
                         <View style={styles.modalContent}>
                           {/* Icon Container */}
@@ -4489,6 +4909,18 @@ const MobilesPairing = ({navigation}: any) => {
                               Time elapsed: {prepCounter} seconds
                             </Text>
                           </View>
+                          {isSendBitcoin && (
+                            <View style={styles.modalActions}>
+                              <AppPressable
+                                style={[
+                                  styles.modalButton,
+                                  {backgroundColor: theme.colors.secondary},
+                                ]}
+                                onPress={abortActiveMpc}>
+                                <Text style={styles.buttonText}>Abort</Text>
+                              </AppPressable>
+                            </View>
+                          )}
                         </View>
                       </View>
                     </Modal>
@@ -4531,6 +4963,95 @@ const MobilesPairing = ({navigation}: any) => {
       <BackupKeyshareModal
         visible={isBackupModalVisible}
         onClose={() => setIsBackupModalVisible(false)}
+      />
+      {/* Signed tx: copy / share / broadcast — on Broadcast success we run post-broadcast logic */}
+      <SignedTxBroadcastModal
+        visible={!!signedTxRawHex}
+        rawTxHex={signedTxRawHex ?? ''}
+        onBroadcastSuccess={async (txId: string) => {
+          const p = broadcastSuccessPayloadRef.current;
+          if (!p) {
+            setSignedTxRawHex(null);
+            return;
+          }
+          try {
+            if (p.multiPath) {
+              try {
+                await WalletService.getInstance().incrementChangeIndexAfterSend(
+                  p.net,
+                  p.addressTypeToUse,
+                );
+              } catch (e) {
+                dbg('MobilesPairing: incrementChangeIndexAfterSend failed:', e);
+              }
+            }
+            const apiTxShape = {
+              txid: txId,
+              status: {confirmed: false, block_height: null, block_time: null, block_hash: null},
+              fee: Number(p.satoshiFees),
+              vin: (p.inputs ?? []).map(inp => ({
+                prevout: {
+                  scriptpubkey_address: inp.scriptpubkey_address,
+                  value: inp.value,
+                },
+              })),
+              vout: (p.outputs ?? []).map(o => ({
+                scriptpubkey_address: o.scriptpubkey_address,
+                value: o.value,
+              })),
+            };
+            transactionRepository.insertBroadcastTransaction(
+              txId,
+              p.net || 'mainnet',
+              apiTxShape,
+              p.senderAddress,
+            );
+            navigation.dispatch(
+              CommonActions.reset(
+                getResetToMainTabsWallet(
+                  {txId},
+                  {
+                    showPlay: p.showPlay,
+                    showUtxos: p.showUtxosTab,
+                    showPsbt: p.showPsbtTab,
+                    showWallet: p.showWalletTab,
+                  },
+                ),
+              ),
+            );
+            setMpcDone(true);
+            if (p.originalNetwork && p.originalApiUrl) {
+              try {
+                await BBMTLibNativeModule.setBtcNetwork(p.originalNetwork);
+                await BBMTLibNativeModule.setAPI(
+                  p.originalNetwork,
+                  p.originalApiUrl,
+                );
+                appConfigRepository.set('api', p.originalApiUrl);
+                const ws = WalletService.getInstance();
+                (ws as any).currentNetwork = p.originalNetwork;
+                (ws as any).currentApiUrl = p.originalApiUrl;
+              } catch (e) {
+                dbg(
+                  'MobilesPairing: Error restoring network after broadcast:',
+                  e,
+                );
+              }
+            }
+            if (p.isMaster) {
+              await waitMS(2000);
+              stopRelay();
+            }
+          } finally {
+            broadcastSuccessPayloadRef.current = null;
+            setSignedTxRawHex(null);
+          }
+        }}
+        onClose={() => {
+          broadcastSuccessPayloadRef.current = null;
+          setSignedTxRawHex(null);
+          navigation.goBack();
+        }}
       />
     </SafeAreaView>
   );

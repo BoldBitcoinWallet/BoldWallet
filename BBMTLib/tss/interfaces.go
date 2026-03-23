@@ -27,6 +27,9 @@ type ServiceImpl struct {
 	messenger        Messenger
 	stateAccessor    LocalStateAccessor
 	inboundMessageCh chan string
+	// cancelCh is closed when the mobile app requests cancellation for the
+	// active MPC session. nil means "not cancellable".
+	cancelCh <-chan struct{}
 }
 
 type MessageFromTss struct {

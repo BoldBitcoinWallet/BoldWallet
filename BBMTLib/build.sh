@@ -12,9 +12,12 @@ YELLOW="\033[33m"
 info() { echo -e "${BOLD}${GREEN}==>${RESET} ${BOLD}$1${RESET}"; }
 warn() { echo -e "${BOLD}${YELLOW}Warning:${RESET} $1"; }
 
-info "Starting BoldWallet TSS gomobile build (FIPS-aware, Go 1.25+)"
+info "Starting BoldWallet TSS gomobile build (FIPS-aware, Go 1.24+)"
 
 # --- 1. Environment Checks ---
+# Note: Go 1.25's tagged-pointer runtime can trigger "fatal error: taggedPointerPack"
+# in some container/virtualized environments. For FIPS Android build, use
+# fips-android.sh (Docker) which uses Go 1.24.x, or install Go 1.24.x on the host.
 
 echo "Go environment:"
 go version
@@ -107,10 +110,13 @@ export GOFLAGS="-mod=mod"
 
 # Run Bind
 # Note: -androidapi 21 is the standard min version
-gomobile bind -v -target=android -androidapi 21 -o tss.aar github.com/BoldBitcoinWallet/BBMTLib/tss
+# Android 15 requires 16 KB page size support. Go 1.23+ supports it, but we explicitly
+# set the max-page-size for the linker to ensure libgojni.so is compliant.
+gomobile bind -v -target=android -androidapi 21 -ldflags="-extldflags=-Wl,-z,max-page-size=16384" -o tss.aar github.com/BoldBitcoinWallet/BBMTLib/tss
 
 # Copy Artifacts
 if [[ -d "../android/app/libs" ]]; then
+    # Run go mod tidy again at the end to ensure go.mod/go.sum are clean
     info "Copying Android artifacts..."
     cp -v tss.aar ../android/app/libs/tss.aar || warn "Copy tss.aar failed"
     echo "✓ tss.aar copied to ../android/app/libs/tss.aar"
@@ -148,10 +154,7 @@ else
     info "Not running on macOS → Skipping iOS/macOS targets"
 fi
 
-# --- 5. Cleanup ---
-
-info "Finalizing..."
-# Run go mod tidy again at the end to ensure go.mod/go.sum are clean
-go mod tidy
-
+info "Tidying dependencies..."
+go mod tidy || warn "go mod tidy failed"
+    
 info "Build complete!"

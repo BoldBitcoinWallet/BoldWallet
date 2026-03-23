@@ -164,6 +164,20 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun spendingHashWithUTXOs(utxosWithPathsJSON: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
+        Thread {
+            try {
+                val result = Tss.spendingHashWithUTXOs(utxosWithPathsJSON, receiverAddress, amountSatoshi)
+                ld("spendingHashWithUTXOs", result)
+                promise.resolve(result)
+            } catch (e: Exception) {
+                ld("spendingHashWithUTXOs", "error: ${e.stackTraceToString()}")
+                promise.reject(e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
     fun estimateFees(senderAddress: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
         Thread {
             try {
@@ -174,6 +188,31 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 promise.resolve(result)
             } catch (e: Exception) {
                 ld("estimateFee", "error: ${e.stackTraceToString()}")
+                promise.reject(e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun estimateFeeWithUTXOs(
+        utxosWithPathsJSON: String,
+        receiverAddress: String,
+        amountSatoshi: String,
+        changeAddress: String,
+        promise: Promise
+    ) {
+        Thread {
+            try {
+                val result = Tss.estimateFeeWithUTXOs(
+                    utxosWithPathsJSON,
+                    receiverAddress,
+                    amountSatoshi,
+                    changeAddress
+                )
+                ld("estimateFeeWithUTXOs", result)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                ld("estimateFeeWithUTXOs", "error: ${e.stackTraceToString()}")
                 promise.reject(e)
             }
         }.start()
@@ -222,6 +261,52 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             }
         }.start()
     }
+
+    @ReactMethod
+    fun mpcSendBTCWithUTXOs(
+        server: String,
+        partyID: String,
+        partiesCSV: String,
+        sessionID: String,
+        sessionKey: String,
+        encKey: String,
+        decKey: String,
+        keyshare: String,
+        publicKey: String,
+        receiverAddress: String,
+        amountSatoshi: String,
+        feeSatoshi: String,
+        utxosWithPathsJSON: String,
+        changeAddress: String,
+        promise: Promise
+    ) {
+        Thread {
+            try {
+                val result = Tss.mpcSendBTCWithUTXOs(
+                    server,
+                    partyID,
+                    partiesCSV,
+                    sessionID,
+                    sessionKey,
+                    encKey,
+                    decKey,
+                    keyshare,
+                    publicKey,
+                    receiverAddress,
+                    amountSatoshi,
+                    feeSatoshi,
+                    utxosWithPathsJSON,
+                    changeAddress
+                )
+                ld("mpcSendBTCWithUTXOs", result)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                ld("mpcSendBTCWithUTXOs", "error: ${e.stackTraceToString()}")
+                promise.reject("MPC_SEND_BTC_ERROR", "Failed to send BTC: ${e.message}", e)
+            }
+        }.start()
+    }
+
     @ReactMethod
     fun nostrMpcSendBTC(
         relaysCSV: String,
@@ -236,6 +321,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         receiverAddress: String,
         amountSatoshi: String,
         estimatedFee: String,
+        changeAddress: String,
         promise: Promise
     ) {
         Thread {
@@ -252,7 +338,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     senderAddress,
                     receiverAddress,
                     amountSatoshi.toLong(),
-                    estimatedFee.toLong()
+                    estimatedFee.toLong(),
+                    changeAddress ?: ""
                 )
                 ld("nostrMpcSendBTC", result)
                 promise.resolve(result)
@@ -261,6 +348,89 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 promise.reject("NOSTR_MPC_SEND_BTC_ERROR", "Failed to send BTC via Nostr: ${e.message}", e)
             }
         }.start()
+    }
+
+    @ReactMethod
+    fun nostrMpcSendBTCWithUTXOs(
+        relaysCSV: String,
+        partyNsec: String,
+        partiesNpubsCSV: String,
+        npubsSorted: String,
+        balanceSats: String,
+        keyshareJSON: String,
+        receiverAddress: String,
+        amountSatoshi: String,
+        estimatedFee: String,
+        utxosWithPathsJSON: String,
+        changeAddress: String,
+        promise: Promise
+    ) {
+        Thread {
+            try {
+                val result = Tss.nostrMpcSendBTCWithUTXOs(
+                    relaysCSV,
+                    partyNsec,
+                    partiesNpubsCSV,
+                    npubsSorted,
+                    balanceSats,
+                    keyshareJSON,
+                    receiverAddress,
+                    amountSatoshi,
+                    estimatedFee,
+                    utxosWithPathsJSON,
+                    changeAddress ?: ""
+                )
+                ld("nostrMpcSendBTCWithUTXOs", result)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                ld("nostrMpcSendBTCWithUTXOs", "error: ${e.stackTraceToString()}")
+                promise.reject("NOSTR_MPC_SEND_BTC_ERROR", "Failed to send BTC via Nostr: ${e.message}", e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun postTx(rawTxHex: String, promise: Promise) {
+        Thread {
+            try {
+                val txid = Tss.postTx(rawTxHex)
+                ld("postTx", txid)
+                promise.resolve(txid)
+            } catch (e: Throwable) {
+                ld("postTx", "error: ${e.stackTraceToString()}")
+                promise.reject("POST_TX_ERROR", "Failed to broadcast: ${e.message}", e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun computeTxId(rawTxHex: String, promise: Promise) {
+        try {
+            val txid = Tss.computeTxId(rawTxHex)
+            promise.resolve(txid)
+        } catch (e: Throwable) {
+            promise.reject("COMPUTE_TXID_ERROR", "Failed to compute txid: ${e.message}", e)
+        }
+    }
+
+    @ReactMethod
+    fun cancelMpcSession(sessionID: String, promise: Promise) {
+        try {
+            val out = Tss.cancelMpcSession(sessionID)
+            promise.resolve(out)
+        } catch (e: Throwable) {
+            promise.reject("CANCEL_MPC_ERROR", "Failed to cancel MPC session: ${e.message}", e)
+        }
+    }
+
+    @ReactMethod
+    fun cancelNostrMpc(promise: Promise) {
+        try {
+            val out = Tss.cancelNostrMpc()
+            promise.resolve(out)
+        } catch (e: Throwable) {
+            promise.reject("CANCEL_NOSTR_MPC_ERROR", "Failed to cancel Nostr MPC: ${e.message}", e)
+        }
     }
 
     @ReactMethod

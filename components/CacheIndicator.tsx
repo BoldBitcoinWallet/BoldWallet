@@ -1,13 +1,14 @@
-import React, {useEffect, useState, useRef, forwardRef, useImperativeHandle} from 'react';
-import {
-  View,
-  Text,
-  Image,
-  Animated,
-  StyleSheet,
-} from 'react-native';
+import React, {
+  useEffect,
+  useState,
+  useRef,
+  forwardRef,
+  useImperativeHandle,
+} from 'react';
+import {View, Text, Image, Animated, StyleSheet} from 'react-native';
 import AppPressable from './AppPressable';
 import {createStyles} from './Styles';
+import {HapticFeedback} from '../utils';
 export interface CacheTimestamp {
   price: number;
   balance: number;
@@ -17,28 +18,66 @@ const clockIcon = require('../assets/clock-icon.png');
 interface CacheIndicatorProps {
   timestamps: CacheTimestamp;
   onRefresh: () => void;
+  /** Long-press triggers a deep refresh (e.g. HD re-discovery + normal refresh). */
+  onLongPress?: () => void;
+  /** When pressed while isRefreshing, called to abort all in-flight API/sync work (e.g. mempoolClient.abortAll()). */
+  onAbortRequested?: () => void;
   theme: any;
   isRefreshing?: boolean;
   usingCache?: boolean; // explicitly indicate cached mode (e.g., offline)
+  /** When isRefreshing, show this instead of generic "Refreshing..." (e.g. "Fetching balance…"). */
+  statusMessage?: string;
+  /** When isRefreshing and set, append " current/total" (e.g. "Fetching balance… 3/5"). */
+  progress?: {current: number; total: number};
+  /** Temporary message after sync failure (e.g. "Sync failed — cached data"); parent clears after ~4s. */
+  syncErrorMessage?: string | null;
+  /** When true and not refreshing, show "Tap to retry" instead of "Tap to refresh". */
+  lastSyncFailed?: boolean;
 }
 export interface CacheIndicatorHandle {
   press: () => void;
 }
-export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorProps>(
-  ({timestamps, onRefresh, theme, isRefreshing = false, usingCache = false}, ref) => {
+export const CacheIndicator = forwardRef<
+  CacheIndicatorHandle,
+  CacheIndicatorProps
+>(
+  (
+    {
+      timestamps,
+      onRefresh,
+      onLongPress,
+      onAbortRequested,
+      theme,
+      isRefreshing = false,
+      usingCache = false,
+      statusMessage,
+      progress,
+      syncErrorMessage,
+      lastSyncFailed = false,
+    },
+    ref,
+  ) => {
     const latestTimestamp = Math.max(timestamps.price, timestamps.balance);
     const shimmerValue = useRef(new Animated.Value(-100)).current;
-    const shimmerAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
+    const shimmerAnimationRef = useRef<Animated.CompositeAnimation | null>(
+      null,
+    );
     const [currentTime, setCurrentTime] = useState(Date.now());
     const [isUsingCache, setIsUsingCache] = useState(false);
     // Expose a press() method to parent
-    useImperativeHandle(ref, () => ({
-      press: () => {
-        if (!isRefreshing) {
-          onRefresh();
-        }
-      },
-    }), [onRefresh, isRefreshing]);
+    useImperativeHandle(
+      ref,
+      () => ({
+        press: () => {
+          if (isRefreshing) {
+            onAbortRequested?.();
+          } else {
+            onRefresh();
+          }
+        },
+      }),
+      [onRefresh, onAbortRequested, isRefreshing],
+    );
     useEffect(() => {
       // Stop any prior loop (prevents stacked animations on rapid toggles)
       shimmerAnimationRef.current?.stop?.();
@@ -177,9 +216,17 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
           isRefreshing && createStyles(theme).disabled,
         ]}
         onPress={() => {
-          onRefresh();
+          if (isRefreshing) {
+            onAbortRequested?.();
+          } else {
+            onRefresh();
+          }
         }}
-        disabled={isRefreshing}>
+        onLongPress={() => {
+          HapticFeedback.medium();
+          onLongPress?.();
+        }}
+        disabled={false}>
         {isRefreshing && (
           <View style={createStyles(theme).shimmerContainer}>
             <Animated.View
@@ -192,7 +239,11 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
             />
           </View>
         )}
-        <View style={createStyles(theme).refreshText}>
+        <View
+          style={[
+            createStyles(theme).refreshText,
+            isRefreshing && styles.flexFill,
+          ]}>
           <Image
             source={require('../assets/refresh-icon.png')}
             style={[
@@ -208,15 +259,33 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
             style={{
               color: isRefreshing
                 ? theme.colors.textSecondary
-                : (theme.colors.background === '#ffffff'
-                    ? theme.colors.accent
-                    : theme.colors.bitcoinOrange),
+                : syncErrorMessage
+                ? (theme.colors.warning ?? theme.colors.bitcoinOrange)
+                : theme.colors.background === '#ffffff'
+                ? theme.colors.accent
+                : theme.colors.bitcoinOrange,
             }}>
             {isRefreshing
-              ? 'Refreshing...'
-              : 'Tap to refresh'
-            }
+              ? statusMessage ?? 'Refreshing...'
+              : syncErrorMessage
+              ? syncErrorMessage
+              : lastSyncFailed
+              ? 'Tap to retry'
+              : 'Tap to refresh'}
           </Text>
+          {isRefreshing && progress ? (
+            <Text
+              style={[
+                styles.progressText,
+                {
+                  color: theme.colors.textSecondary,
+                  fontSize: theme.fontSizes?.xs || 11,
+                  fontFamily: theme.fontFamilies?.medium,
+                },
+              ]}>
+              {progress.current}/{progress.total}
+            </Text>
+          ) : null}
         </View>
         {!isRefreshing && (
           <View style={styles.timeContainer}>
@@ -238,13 +307,16 @@ export const CacheIndicator = forwardRef<CacheIndicatorHandle, CacheIndicatorPro
             </View>
             <Image
               source={clockIcon}
-              style={[styles.clockIcon, {tintColor: theme.colors.textSecondary}]}
+              style={[
+                styles.clockIcon,
+                {tintColor: theme.colors.textSecondary},
+              ]}
             />
           </View>
         )}
       </AppPressable>
     );
-  }
+  },
 );
 const styles = StyleSheet.create({
   timeContainer: {
@@ -262,5 +334,12 @@ const styles = StyleSheet.create({
     width: 16,
     height: 16,
     marginLeft: 4,
+  },
+  flexFill: {
+    flex: 1,
+  },
+  progressText: {
+    marginLeft: 'auto',
+    paddingLeft: 6,
   },
 });

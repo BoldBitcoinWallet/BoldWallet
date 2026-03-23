@@ -44,10 +44,36 @@ import {
   getResetToMainTabsWallet,
 } from '../utils';
 import {useTheme} from '../theme';
-import {WalletService} from '../services/WalletService';
-import LocalCache from '../services/LocalCache';
+import {waitMS, WalletService} from '../services/WalletService';
+import mempoolClient from '../services/MempoolClient';
+import appConfigRepository, {
+  CONFIG_KEYS,
+} from '../services/repositories/AppConfigRepository';
+import {
+  getGapLimit,
+  getMinScanIndex,
+  getApiTimeoutMs,
+  getUtxoEmptyCacheTtlMs,
+  getFetchTimeoutMs,
+  getMempoolDefaultTtlMs,
+  getTransactionDbTtlMs,
+  HD_OPTIONS_DEFAULTS,
+  HD_OPTIONS_KEYS,
+  restoreHdOptionsDefaults,
+} from '../services/HdOptionsConfig';
+import database from '../services/Database';
+import walletRepository from '../services/repositories/WalletRepository';
+import balanceRepository from '../services/repositories/BalanceRepository';
+import balanceSyncer, {BalanceSyncError} from '../services/sync/BalanceSyncer';
+import transactionSyncer, {
+  TxSyncError,
+} from '../services/sync/TransactionSyncer';
+import utxoSyncer, {UtxoSyncError} from '../services/sync/UtxoSyncer';
+import syncCoordinator from '../services/sync/SyncCoordinator';
+import apiQueue from '../services/ApiQueue';
 import LegalModal from '../components/LegalModal';
 import BackupKeyshareModal from '../components/BackupKeyshareModal';
+import RestoringIndexesModal from '../components/RestoringIndexesModal';
 import {fetchDynamicAPIEndpoints, getNostrRelays} from '../utils';
 import FontComparisonScreen from '../components/FontComparisonScreen';
 import {setDebugLoggingEnabled, isDebugLoggingEnabled} from '../App';
@@ -55,6 +81,22 @@ import Toast from 'react-native-toast-message';
 import {useRoute, useFocusEffect, RouteProp} from '@react-navigation/native';
 
 type SettingsParams = {expandSection?: string};
+
+function syncFailureToast(
+  e: unknown,
+  fallbackText2: string,
+): {text1: string; text2: string} {
+  if (e instanceof BalanceSyncError)
+    return {text1: 'Could not fetch balance', text2: 'Using cached data.'};
+  if (e instanceof UtxoSyncError)
+    return {text1: 'Could not fetch UTXOs', text2: 'Using cached data.'};
+  if (e instanceof TxSyncError)
+    return {text1: 'Could not fetch transactions', text2: 'Using cached data.'};
+  return {
+    text1: 'Sync failed',
+    text2: e instanceof Error ? e.message : fallbackText2,
+  };
+}
 
 interface CollapsibleSectionProps {
   title: string;
@@ -641,8 +683,8 @@ const getSectionIcon = (title: string): any => {
       return require('../assets/nostr-icon.png');
     case 'app icon':
       return require('../assets/spy-icon.png');
-    case 'wallet mode':
-      return require('../assets/mode-icon.png');
+    case 'hd options':
+      return require('../assets/prefs-icon.png');
     case 'font testing':
       return require('../assets/font-icon.png');
     case 'balance display':
@@ -653,7 +695,7 @@ const getSectionIcon = (title: string): any => {
       return require('../assets/utxo-icon.png');
     case 'psbt':
       return require('../assets/cosign-icon.png');
-    case 'wallet tab':
+    case 'wallet':
       return require('../assets/wallet-icon.png');
     case 'dev debug':
       return require('../assets/advanced-icon.png');
@@ -675,7 +717,8 @@ const SettingsSectionGroup: React.FC<SettingsSectionGroupProps> = ({
   theme,
 }) => (
   <View style={styles.sectionGroup}>
-    <Text style={[styles.sectionGroupTitle, {color: theme.colors.textSecondary}]}>
+    <Text
+      style={[styles.sectionGroupTitle, {color: theme.colors.textSecondary}]}>
       {title.toUpperCase()}
     </Text>
     {children}
@@ -706,6 +749,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     showWalletTab,
     setShowWalletTab,
     activeNetwork,
+    activeApiProvider,
   } = useUser();
   const [selectedIcon, setSelectedIcon] = useState<
     'default' | 'alternative' | 'loading'
@@ -722,6 +766,37 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [nostrRelays, setNostrRelays] = useState<string>('');
   const [pendingNostrRelays, setPendingNostrRelays] = useState<string>('');
   const [hasNostr, setHasNostr] = useState(false);
+  const [hdGapLimit, setHdGapLimit] = useState(() =>
+    String(getGapLimit()),
+  );
+  const [hdMinScanIndex, setHdMinScanIndex] = useState(() =>
+    String(getMinScanIndex()),
+  );
+  const [hdApiTimeoutMs, setHdApiTimeoutMs] = useState(() =>
+    String(getApiTimeoutMs()),
+  );
+  const [hdUtxoCacheTtlMs, setHdUtxoCacheTtlMs] = useState(() =>
+    String(getUtxoEmptyCacheTtlMs()),
+  );
+  const [hdFetchTimeoutMs, setHdFetchTimeoutMs] = useState(() =>
+    String(getFetchTimeoutMs()),
+  );
+  const [hdMempoolTtlMs, setHdMempoolTtlMs] = useState(() =>
+    String(getMempoolDefaultTtlMs()),
+  );
+  const [hdTxDbTtlMs, setHdTxDbTtlMs] = useState(() =>
+    String(getTransactionDbTtlMs()),
+  );
+  const [isRestoringIndexes, setIsRestoringIndexes] = useState(false);
+  const [restoreProgress, setRestoreProgress] = useState<{
+    chain?: 'external' | 'internal';
+    index?: number;
+    gapIndex?: number;
+    /** Free-text label shown during post-discovery sync phases. */
+    phase?: string;
+    /** Address progress e.g. { current: 3, total: 5 } for "3/5". */
+    progress?: {current: number; total: number};
+  } | null>(null);
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
   const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
     'terms',
@@ -743,6 +818,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     displayFormat: false,
     backup: false,
     advanced: false,
+    hdOptions: false,
     nostr: false,
     about: false,
     legal: false,
@@ -766,6 +842,19 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     fileCount: 0,
     mb: '0.00 MB',
   });
+  const refreshUsageSize = useCallback(() => {
+    try {
+      const {totalBytes} = database.getSizeBytes();
+      const tables = database.getTableRowCounts();
+      const totalRows = tables.reduce((sum, t) => sum + t.rows, 0);
+      setUsageSize({
+        fileCount: totalRows,
+        mb: `${(totalBytes / (1024 * 1024)).toFixed(2)} MB`,
+      });
+    } catch (e) {
+      dbg('refreshUsageSize: failed', e);
+    }
+  }, []);
   const toggleSection = (section: string) => {
     setExpandedSections(prev => {
       const newState = Object.keys(prev).reduce((acc, key) => {
@@ -776,13 +865,231 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       return newState;
     });
   };
+  /**
+   * Atomic wallet reset + HD re-index + full pre-sync for a given
+   * (network, addressType).
+   *
+   * The whole operation is treated as a transaction:
+   *   • If HD index discovery fails the function THROWS so the caller can
+   *     show an error toast and abort navigation.  The old hd_state
+   *     (preserved by clearWalletCacheData) remains valid.
+   *   • Only when discovery succeeds does the function continue to the
+   *     balance / transaction / UTXO pre-sync so WalletHome arrives with
+   *     fully populated DB data on first render — no extra refresh needed.
+   *
+   * Phase sequence (reflected in the progress modal):
+   *   1. clearWalletCacheData  — wipe stale fetched data, keep hd_state
+   *   2. Invalidate HTTP + address caches
+   *   3. discoverHdIndexesForNetwork — gap-limit scan (throws on failure)
+   *   4. Sync balances          — shown as "Syncing balances…"
+   *   5. Sync transactions      — shown as "Syncing transactions…"
+   *   6. Sync UTXOs             — shown as "Syncing UTXOs…"
+   *   7. Re-persist config
+   */
+  const runRestoreIndexing = useCallback(
+    async (network: string, addressType: string, resolvedApiUrl?: string) => {
+      syncCoordinator.stop();
+      apiQueue.clear();
+      setIsRestoringIndexes(true);
+      setRestoreProgress(null);
+      // Yield so the RestoringIndexesModal has time to mount and paint.
+      await waitMS(250);
+
+      try {
+        // ── Step 1: invalidate sync freshness so syncers re-fetch ─────────
+        // The actual balance/UTXO/tx rows stay in the DB for instant display;
+        // they get overwritten by the UPSERT sync steps below.
+        database.invalidateSyncMetadataForAddressType(network, addressType);
+
+        const ws = WalletService.getInstance();
+        const apiUrl =
+          resolvedApiUrl ||
+          appConfigRepository.get(`api_${network}`) ||
+          appConfigRepository.get('api') ||
+          (network === 'mainnet'
+            ? 'https://mempool.space/api'
+            : 'https://mempool.space/testnet/api');
+
+        // ── Step 2: flush in-memory caches before discovery ───────────────
+        // Every isAddressUsed call inside discoverHdIndexesForNetwork must
+        // hit the network directly — no stale 5-second mempoolClient entries
+        // can cause incorrect gap-limit decisions.
+        mempoolClient.invalidateAll();
+        ws.invalidateAddressCache();
+        await waitMS(250);
+
+        // ── Step 3: HD index discovery ────────────────────────────────────
+        await ws.discoverHdIndexesForNetwork(
+          network,
+          addressType,
+          apiUrl,
+          (chain, index, gapIndex) =>
+            setRestoreProgress({chain, index, gapIndex}),
+        );
+
+        // Guard: if discovery did not complete successfully restoreDone is
+        // not set.  Throw so the caller can show a toast and NOT navigate.
+        const hdState = walletRepository.getHdState(network, addressType);
+        if (!hdState?.restoreDone) {
+          throw new Error(
+            'Index discovery incomplete — network may be unreachable. Please try again.',
+          );
+        }
+
+        // ── Step 4: derive + cache HD address list ────────────────────────
+        const addressesWithPaths = await ws.getHdAddressesWithPaths(
+          network,
+          addressType,
+        );
+
+        // ── Step 5: pre-sync balances ─────────────────────────────────────
+        setRestoreProgress({phase: 'Syncing balances…'});
+        await balanceSyncer.syncAddresses(
+          addressesWithPaths.map(a => ({
+            address: a.address,
+            network,
+          })),
+          apiUrl,
+          (current, total) =>
+            setRestoreProgress(prev =>
+              prev ? {...prev, progress: {current, total}} : null,
+            ),
+        );
+
+        // Compute and persist the aggregate balance immediately so WalletHome
+        // can read a correct total from getCachedAggregateBalance on first
+        // render without making another API round-trip.
+        // getAggregateBalance sums all per-address rows written by balanceSyncer
+        // above (excluding the virtual aggregate key which doesn't exist yet
+        // because clearWalletCacheData wiped the table before sync started).
+        const agg = balanceRepository.getAggregateBalance(network);
+        balanceRepository.setBalance({
+          address: `aggregate_${network}_${addressType}`,
+          network,
+          balanceSats: agg.balanceSats,
+          pendingSats: agg.pendingSats,
+          hasNonzero: agg.hasNonzero,
+          fetchedAt: agg.fetchedAt || Date.now(),
+        });
+
+        // ── Step 6: pre-sync transactions (atomic) ────────────────────────
+        setRestoreProgress({phase: 'Syncing transactions…'});
+        await transactionSyncer.syncAddressesAtomic(
+          addressesWithPaths.map(a => ({address: a.address, network})),
+          apiUrl,
+          (current, total) =>
+            setRestoreProgress(prev =>
+              prev ? {...prev, progress: {current, total}} : null,
+            ),
+        );
+
+        // ── Step 7: pre-sync UTXOs ────────────────────────────────────────
+        setRestoreProgress({phase: 'Syncing UTXOs…'});
+        await utxoSyncer.syncAddresses(
+          addressesWithPaths.map(a => ({
+            address: a.address,
+            network,
+            derivationPath: a.derivationPath,
+          })),
+          apiUrl,
+          (current, total) =>
+            setRestoreProgress(prev =>
+              prev ? {...prev, progress: {current, total}} : null,
+            ),
+        );
+
+        // ── Step 8: re-persist config ─────────────────────────────────────
+        appConfigRepository.set(CONFIG_KEYS.NETWORK, network);
+        appConfigRepository.set('api', apiUrl);
+        appConfigRepository.set(`api_${network}`, apiUrl);
+        appConfigRepository.set(CONFIG_KEYS.ADDRESS_TYPE, addressType);
+      } finally {
+        setIsRestoringIndexes(false);
+        setRestoreProgress(null);
+      }
+    },
+    [],
+  );
+
+  /** Check whether the target network+addressType was already fully discovered.
+   *  If so we can skip the expensive runRestoreIndexing and go straight to
+   *  WalletHome, which reads cached DB data and starts SyncCoordinator. */
+  const canFastSwitch = useCallback(
+    (network: string, addrType: string): boolean => {
+      const hdState = walletRepository.getHdState(network, addrType);
+      return !!hdState?.restoreDone;
+    },
+    [],
+  );
+
+  /** Persist config for the new network/addressType and navigate to WalletHome.
+   *  SyncCoordinator on WalletHome will refresh stale data in the background. */
+  const fastSwitch = useCallback(
+    (network: string, addrType: string) => {
+      const apiUrl =
+        appConfigRepository.get(`api_${network}`) ||
+        appConfigRepository.get('api') ||
+        (network === 'mainnet'
+          ? 'https://mempool.space/api'
+          : 'https://mempool.space/testnet/api');
+
+      appConfigRepository.set(CONFIG_KEYS.NETWORK, network);
+      appConfigRepository.set('api', apiUrl);
+      appConfigRepository.set(`api_${network}`, apiUrl);
+      appConfigRepository.set(CONFIG_KEYS.ADDRESS_TYPE, addrType);
+
+      syncCoordinator.stop();
+      apiQueue.clear();
+      mempoolClient.invalidateAll();
+
+      dbg('fastSwitch: already restored, navigating directly', {
+        network,
+        addrType,
+      });
+
+      navigation.reset(
+        getResetToMainTabsWallet(
+          {},
+          {
+            showPlay: network === 'mainnet' && showMempoolPlayground,
+            showUtxos: showUtxosTab,
+            showPsbt: showPsbtTab,
+            showWallet: showWalletTab,
+          },
+        ),
+      );
+    },
+    [
+      navigation,
+      showMempoolPlayground,
+      showUtxosTab,
+      showPsbtTab,
+      showWalletTab,
+    ],
+  );
+
   // Expand section when opened from header network button (e.g. expandSection: 'advanced' for Network Providers)
   useEffect(() => {
     const section = route.params?.expandSection;
     const validSections = new Set([
-      'theme', 'haptics', 'displayFormat', 'backup', 'advanced', 'nostr',
-      'about', 'legal', 'storage', 'appIcon', 'devicePairing', 'addressType',
-      'fontTesting', 'devDebug', 'mempoolPlayground', 'utxos', 'psbt', 'wallet',
+      'theme',
+      'haptics',
+      'displayFormat',
+      'backup',
+      'advanced',
+      'nostr',
+      'about',
+      'legal',
+      'storage',
+      'appIcon',
+      'devicePairing',
+      'addressType',
+      'fontTesting',
+      'devDebug',
+      'mempoolPlayground',
+      'utxos',
+      'psbt',
+      'wallet',
     ]);
     if (section && validSections.has(section)) {
       setExpandedSections(prev => ({...prev, [section]: true}));
@@ -792,9 +1099,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     setAppVersion(DeviceInfo.getVersion());
     setBuildNumber(DeviceInfo.getBuildNumber());
     setHapticsEnabledState(areHapticsEnabled());
-    LocalCache.usageSize().then(size => {
-      setUsageSize(size);
-    });
+    refreshUsageSize();
     // Initialize debug logging state from module-level ref
     setDebugLoggingEnabledState(isDebugLoggingEnabled());
     // Load dev debug enabled preference
@@ -818,7 +1123,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       buildNumberClickCountRef.current = 0;
       setBuildNumberClickCount(0);
     };
-  }, []);
+  }, [refreshUsageSize]);
   // Load saved icon preference on component mount
   useEffect(() => {
     const loadIconPreference = async () => {
@@ -855,56 +1160,26 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('Failed to parse keyshare for settings screen:', error);
       }
     });
-    // Load network and corresponding cached API
-    LocalCache.getItem('network').then(async net => {
+    // Load network and corresponding cached API (synchronous SQLite reads)
+    (() => {
+      const net = appConfigRepository.get(CONFIG_KEYS.NETWORK);
       dbg('=== Loading settings for network:', net);
       setIsTestnet(net !== 'mainnet');
-      // Clear any pending API changes when switching networks
       setPendingAPI('');
-      // Try to get the cached API for this network
-      const cachedApi = await LocalCache.getItem(`api_${net}`);
-      dbg(`Cached API for ${net}:`, cachedApi);
-      if (cachedApi) {
-        setBaseAPI(cachedApi);
-        setPendingAPI(cachedApi); // Initialize pending API to current API
-        // Update the current API cache
-        await LocalCache.setItem('api', cachedApi);
-        // Update native module with the cached API
-        if (net) {
-          await BBMTLibNativeModule.setAPI(net, cachedApi);
-        }
-        dbg(`=== Loaded cached API for ${net}:`, cachedApi);
-      } else {
-        // Fallback to current API or default
-        const currentApi = await LocalCache.getItem('api');
-        dbg('Current API (fallback):', currentApi);
-        if (currentApi) {
-          setBaseAPI(currentApi);
-          setPendingAPI(currentApi); // Initialize pending API to current API
-          // Cache it for this network
-          await LocalCache.setItem(`api_${net}`, currentApi);
-          // Update native module
-          if (net) {
-            await BBMTLibNativeModule.setAPI(net, currentApi);
-          }
-          dbg(`=== Cached current API for ${net}:`, currentApi);
-        } else {
-          // Use default API for the network
-          const defaultApi =
-            net === 'mainnet'
-              ? 'https://mempool.space/api'
-              : 'https://mempool.space/testnet/api';
-          setBaseAPI(defaultApi);
-          setPendingAPI(defaultApi); // Initialize pending API to default API
-          await LocalCache.setItem('api', defaultApi);
-          await LocalCache.setItem(`api_${net}`, defaultApi);
-          if (net) {
-            await BBMTLibNativeModule.setAPI(net, defaultApi);
-          }
-          dbg(`=== Using default API for ${net}:`, defaultApi);
-        }
+      let resolvedApi =
+        appConfigRepository.get(`api_${net}`) || appConfigRepository.get('api');
+      if (!resolvedApi) {
+        resolvedApi =
+          net === 'mainnet'
+            ? 'https://mempool.space/api'
+            : 'https://mempool.space/testnet/api';
+        appConfigRepository.set('api', resolvedApi);
+        if (net) appConfigRepository.set(`api_${net}`, resolvedApi);
       }
-    });
+      setBaseAPI(resolvedApi);
+      setPendingAPI(resolvedApi);
+      if (net) BBMTLibNativeModule.setAPI(net, resolvedApi);
+    })();
     // Load Nostr relays (from cache if available, otherwise fetch dynamically)
     getNostrRelays(false).then(relays => {
       const relaysCSV = relays.join(',');
@@ -916,15 +1191,44 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   }, []);
   const toggleNetwork = async (value: boolean) => {
     dbg('=== Network toggle started:', value ? 'testnet' : 'mainnet');
+    const previousNetwork = value ? 'mainnet' : 'testnet3';
     const newNetwork = value ? 'testnet3' : 'mainnet';
     const networkName = value ? 'Testnet' : 'Mainnet';
+    setIsTestnet(value);
     await setActiveNetwork(newNetwork);
-    dbg('Network toggle: Navigating to Wallet tab');
-    navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
-    // Show brief feedback alert after a brief delay to ensure navigation completes
+
+    // Fast path: wallet already discovered for this combo — skip full restore
+    if (canFastSwitch(newNetwork, activeAddressType)) {
+      fastSwitch(newNetwork, activeAddressType);
+    } else {
+      try {
+        await runRestoreIndexing(newNetwork, activeAddressType);
+      } catch (e) {
+        dbg('Network toggle: sync failed — reverting to', previousNetwork);
+        await setActiveNetwork(previousNetwork);
+        setIsTestnet(!value);
+        const {text1, text2} = syncFailureToast(
+          e,
+          'Network switch could not complete. Please try again.',
+        );
+        Toast.show({type: 'error', text1, text2, visibilityTime: 5000});
+        return;
+      }
+      dbg('Network toggle: Navigating to Wallet tab');
+      navigation.reset(
+        getResetToMainTabsWallet(
+          {},
+          {
+            showPlay: newNetwork === 'mainnet' && showMempoolPlayground,
+            showUtxos: showUtxosTab,
+            showPsbt: showPsbtTab,
+            showWallet: showWalletTab,
+          },
+        ),
+      );
+    }
+
     setTimeout(() => {
-      // warn user if test net bitcoin is not real
-      // add i understand button to the alert
       if (newNetwork === 'mainnet') {
         Alert.alert(
           `Switched to ${networkName}`,
@@ -942,22 +1246,16 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   };
   const resetAPI = async () => {
     dbg('resetAPI called');
-    const net = await LocalCache.getItem('network');
+    const net = appConfigRepository.get(CONFIG_KEYS.NETWORK);
     const api =
       net === 'mainnet'
-        ? 'https://mempool.space/api' // MAINNET_APIS[0]
-        : 'https://mempool.space/testnet/api'; // TESTNET_APIS[0]
-    dbg('Resetting to default API for network:', net, 'API:', api);
-    // Clear pending API selection and set to new API
+        ? 'https://mempool.space/api'
+        : 'https://mempool.space/testnet/api';
     setPendingAPI(api);
-    // Update local state
     setBaseAPI(api);
-    dbg('Local state updated with API:', api);
-    // Cache the API setting for the current network
     if (net) {
-      await LocalCache.setItem(`api_${net}`, api);
-      await LocalCache.setItem('api', api);
-      dbg(`API cached for network ${net}:`, api);
+      appConfigRepository.set(`api_${net}`, api);
+      appConfigRepository.set('api', api);
     }
     // Update native module
     if (net) {
@@ -973,7 +1271,17 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     await setActiveApiProvider(api);
     dbg('API reset and propagated successfully:', api);
     // Navigate to home after reset
-    navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
+    navigation.reset(
+      getResetToMainTabsWallet(
+        {},
+        {
+          showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
+          showUtxos: showUtxosTab,
+          showPsbt: showPsbtTab,
+          showWallet: showWalletTab,
+        },
+      ),
+    );
     // Show success alert after navigation
     setTimeout(() => {
       Alert.alert('Success', 'API endpoint reset to default!');
@@ -1058,7 +1366,17 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       Alert.alert('Success', 'API endpoint updated successfully!');
       dbg('=== API saved and propagated successfully:', normalizedApi);
       // Navigate to home after successful save
-      navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
+      navigation.reset(
+        getResetToMainTabsWallet(
+          {},
+          {
+            showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
+            showUtxos: showUtxosTab,
+            showPsbt: showPsbtTab,
+            showWallet: showWalletTab,
+          },
+        ),
+      );
     } catch (error) {
       dbg('Error in saveAPI:', error);
       Alert.alert('Error', 'Failed to save API endpoint. Please try again.');
@@ -1075,8 +1393,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       try {
         setIsDeleting(true);
         setIsModalResetVisible(false);
-        dbg('clearing cache storage...');
-        await LocalCache.clear();
+        dbg('clearing SQLite wallet data...');
+        database.clearWalletData();
+        mempoolClient.invalidateAll();
         dbg('clearing encrypted storage...');
         // Prefer a full clear so we return to true first-launch state.
         // (If clear() is unavailable on some builds, fall back to removing known keys.)
@@ -2331,1033 +2650,1421 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         scrollEventThrottle={16}>
         {/* App: Theme, Balance Display, Haptics, Storage */}
         <SettingsSectionGroup title="App" styles={styles} theme={theme}>
-        <CollapsibleSection
-          title="Theme"
-          isExpanded={expandedSections.theme}
-          onToggle={() => toggleSection('theme')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.toggleDescription}>
-            Choose your preferred color theme. OS Default follows your system
-            settings.
-          </Text>
-          <View style={styles.themeOptionContainer}>
-            <AppPressable
-              style={[
-                styles.themeOption,
-                themeMode === 'os' && styles.themeOptionSelected,
-              ]}
-              onPress={() => {
-                setThemeMode('os');
-              }}
-              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-              <View style={styles.themeOptionContent}>
-                <Text
-                  style={[
-                    styles.themeOptionLabel,
-                    themeMode === 'os' && styles.themeOptionLabelSelected,
-                  ]}>
-                  OS Default
-                </Text>
-                {themeMode === 'os' && (
-                  <Image
-                    source={require('../assets/check-icon.png')}
-                    style={styles.themeOptionCheck}
-                    resizeMode="contain"
-                  />
-                )}
-              </View>
-            </AppPressable>
-            <AppPressable
-              style={[
-                styles.themeOption,
-                themeMode === 'light' && styles.themeOptionSelected,
-              ]}
-              onPress={() => {
-                setThemeMode('light');
-              }}
-              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-              <View style={styles.themeOptionContent}>
-                <Text
-                  style={[
-                    styles.themeOptionLabel,
-                    themeMode === 'light' && styles.themeOptionLabelSelected,
-                  ]}>
-                  Light
-                </Text>
-                {themeMode === 'light' && (
-                  <Image
-                    source={require('../assets/check-icon.png')}
-                    style={styles.themeOptionCheck}
-                    resizeMode="contain"
-                  />
-                )}
-              </View>
-            </AppPressable>
-            <AppPressable
-              style={[
-                styles.themeOption,
-                themeMode === 'dark' && styles.themeOptionSelected,
-              ]}
-              onPress={() => {
-                setThemeMode('dark');
-              }}
-              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-              <View style={styles.themeOptionContent}>
-                <Text
-                  style={[
-                    styles.themeOptionLabel,
-                    themeMode === 'dark' && styles.themeOptionLabelSelected,
-                  ]}>
-                  Dark
-                </Text>
-                {themeMode === 'dark' && (
-                  <Image
-                    source={require('../assets/check-icon.png')}
-                    style={styles.themeOptionCheck}
-                    resizeMode="contain"
-                  />
-                )}
-              </View>
-            </AppPressable>
-          </View>
-        </CollapsibleSection>
-        <CollapsibleSection
-          title="Balance Display"
-          isExpanded={expandedSections.displayFormat}
-          onToggle={() => toggleSection('displayFormat')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.hintText}>
-            Bitcoin uses <Text style={styles.hintBold}>8 decimal places</Text>{' '}
-            for full accuracy.
-          </Text>
-
-          <Text style={[styles.hintText, styles.hintSpacing]}>
-            <Text style={styles.hintAmount}>1 BTC</Text> ={' '}
-            <Text style={styles.hintAmount}>100,000,000 satoshis (sats)</Text>
-          </Text>
-
-          <Text style={[styles.hintText, styles.hintSpacing]}>
-            You can choose how your balance is shown:
-          </Text>
-
-          <Text style={[styles.hintText, styles.hintSpacing]}>
-            <Text style={styles.hintBold}>Formatted:</Text> Thousand separators
-            make large numbers easier to read and verify decimal precision.
-            Example: <Text style={styles.hintAmount}>1,234.56,789,010 ₿</Text>{' '}
-            or <Text style={styles.hintAmount}>123,456,789,010 sats</Text>
-          </Text>
-
-          <Text style={[styles.hintText, styles.hintSpacing]}>
-            <Text style={styles.hintBold}>Raw Numbers:</Text> Exact values
-            without separators. Example:{' '}
-            <Text style={styles.hintAmount}>1234.56789 ₿</Text> or{' '}
-            <Text style={styles.hintAmount}>123456789000 sats</Text>
-          </Text>
-          <View style={styles.toggleContainer}>
-            <Text style={styles.toggleLabel}>Raw Numbers</Text>
-            <AppSwitch
-              onValueChange={handleToggleBalanceFormatting}
-              value={balanceFormattingEnabled}
-            />
-            <Text style={styles.toggleLabel}>Formatted</Text>
-          </View>
-        </CollapsibleSection>
-        <CollapsibleSection
-          title="Haptics"
-          isExpanded={expandedSections.haptics}
-          onToggle={() => toggleSection('haptics')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.toggleDescription}>
-            Enable vibration feedback. OS settings may override this.
-          </Text>
-          <View style={styles.toggleContainer}>
-            <Text style={styles.toggleLabel}>Haptics Off</Text>
-            <AppSwitch
-              onValueChange={handleToggleHaptics}
-              value={hapticsEnabled}
-            />
-            <Text style={styles.toggleLabel}>Haptics On</Text>
-          </View>
-        </CollapsibleSection>
-        {/* Storage - inside App */}
-        <CollapsibleSection
-          title="Storage"
-          isExpanded={expandedSections.storage}
-          onToggle={() => toggleSection('storage')}
-          styles={styles}
-          theme={theme}>
-          <View style={styles.apiItem}>
-            <Text style={styles.apiName}>Cache Maintenance</Text>
-            <Text style={styles.apiDescription}>
-              Clear cached balances and history.
-            </Text>
-          </View>
-          <AppPressable
-            style={[styles.button, styles.deleteButton]}
-            onPress={async () => {
-              try {
-                await LocalCache.clear();
-                setUsageSize(await LocalCache.usageSize());
-                Alert.alert('Cache Cleared', 'Cache cleared successfully.');
-                navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
-              } catch (e) {
-                dbg('Error clearing cache', e);
-                Alert.alert(
-                  'Error',
-                  'Failed to clear cache. Please try again.',
-                );
-              }
-            }}
-            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-            <View style={styles.buttonContent}>
-              <Image
-                source={require('../assets/delete-icon.png')}
-                style={[styles.buttonIcon, styles.whiteTint]}
-                resizeMode="contain"
-              />
-              <Text style={styles.buttonText}>
-                Clear Cache ({usageSize.mb})
-              </Text>
-            </View>
-          </AppPressable>
-        </CollapsibleSection>
-        {/* App Icon - Android Only */}
-        {Platform.OS === 'android' && (
           <CollapsibleSection
-            title="App Icon"
-            isExpanded={expandedSections.appIcon}
-            onToggle={() => toggleSection('appIcon')}
+            title="Theme"
+            isExpanded={expandedSections.theme}
+            onToggle={() => toggleSection('theme')}
             styles={styles}
             theme={theme}>
-            <View style={styles.appIconHintRow}>
-              <View style={styles.appIconHintTextContainer}>
-                <Text style={styles.appIconHintTitle}>
-                  Blend in when you need to.
-                </Text>
-                <Text style={styles.appIconHintSubtitle}>
-                  Switch to the calculator icon when you want your wallet to
-                  look like just another app on your home screen.
-                </Text>
-              </View>
-            </View>
             <Text style={styles.toggleDescription}>
-              Change the app's launcher icon on your device.
+              Choose your preferred color theme. OS Default follows your system
+              settings.
             </Text>
-            <View style={styles.toggleContainer}>
-              <Text style={styles.toggleLabel}>Bold Wallet</Text>
-              <AppSwitch
-                value={selectedIcon === 'alternative'}
-                onValueChange={async value => {
-                  try {
-                    const newIcon = value ? 'alternative' : 'default';
-                    if (!IconChanger || !IconChanger.changeIcon) {
-                      Alert.alert(
-                        'Error',
-                        'Icon switching is not available on this device.',
-                        [{text: 'OK'}],
-                      );
-                      return;
-                    }
-                    setSelectedIcon(newIcon);
-                    await EncryptedStorage.setItem(
-                      'app_icon_preference',
-                      newIcon,
-                    );
-                    await IconChanger.changeIcon(newIcon);
-                    const iconName =
-                      newIcon === 'alternative' ? 'QuickCalc' : 'Bold Wallet';
-                    Alert.alert(
-                      'Icon Changed',
-                      `App icon switched to ${iconName}.\n\nYou may need to refresh your launcher to see the change.`,
-                      [{text: 'OK'}],
-                    );
-                  } catch (error: any) {
-                    dbg('Error changing icon:', error);
-                    setSelectedIcon(value ? 'default' : 'alternative');
-                    Alert.alert(
-                      'Error',
-                      error?.message ||
-                        'Failed to change app icon. Please try again.',
-                      [{text: 'OK'}],
-                    );
-                  }
+            <View style={styles.themeOptionContainer}>
+              <AppPressable
+                style={[
+                  styles.themeOption,
+                  themeMode === 'os' && styles.themeOptionSelected,
+                ]}
+                onPress={() => {
+                  setThemeMode('os');
                 }}
-                disabled={selectedIcon === 'loading'}
-              />
-              <Text style={styles.toggleLabel}>QuickCalc</Text>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                <View style={styles.themeOptionContent}>
+                  <Text
+                    style={[
+                      styles.themeOptionLabel,
+                      themeMode === 'os' && styles.themeOptionLabelSelected,
+                    ]}>
+                    OS Default
+                  </Text>
+                  {themeMode === 'os' && (
+                    <Image
+                      source={require('../assets/check-icon.png')}
+                      style={styles.themeOptionCheck}
+                      resizeMode="contain"
+                    />
+                  )}
+                </View>
+              </AppPressable>
+              <AppPressable
+                style={[
+                  styles.themeOption,
+                  themeMode === 'light' && styles.themeOptionSelected,
+                ]}
+                onPress={() => {
+                  setThemeMode('light');
+                }}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                <View style={styles.themeOptionContent}>
+                  <Text
+                    style={[
+                      styles.themeOptionLabel,
+                      themeMode === 'light' && styles.themeOptionLabelSelected,
+                    ]}>
+                    Light
+                  </Text>
+                  {themeMode === 'light' && (
+                    <Image
+                      source={require('../assets/check-icon.png')}
+                      style={styles.themeOptionCheck}
+                      resizeMode="contain"
+                    />
+                  )}
+                </View>
+              </AppPressable>
+              <AppPressable
+                style={[
+                  styles.themeOption,
+                  themeMode === 'dark' && styles.themeOptionSelected,
+                ]}
+                onPress={() => {
+                  setThemeMode('dark');
+                }}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                <View style={styles.themeOptionContent}>
+                  <Text
+                    style={[
+                      styles.themeOptionLabel,
+                      themeMode === 'dark' && styles.themeOptionLabelSelected,
+                    ]}>
+                    Dark
+                  </Text>
+                  {themeMode === 'dark' && (
+                    <Image
+                      source={require('../assets/check-icon.png')}
+                      style={styles.themeOptionCheck}
+                      resizeMode="contain"
+                    />
+                  )}
+                </View>
+              </AppPressable>
             </View>
           </CollapsibleSection>
-        )}
+          <CollapsibleSection
+            title="Balance Display"
+            isExpanded={expandedSections.displayFormat}
+            onToggle={() => toggleSection('displayFormat')}
+            styles={styles}
+            theme={theme}>
+            <Text style={styles.hintText}>
+              Bitcoin uses <Text style={styles.hintBold}>8 decimal places</Text>{' '}
+              for full accuracy.
+            </Text>
+
+            <Text style={[styles.hintText, styles.hintSpacing]}>
+              <Text style={styles.hintAmount}>1 BTC</Text> ={' '}
+              <Text style={styles.hintAmount}>100,000,000 satoshis (sats)</Text>
+            </Text>
+
+            <Text style={[styles.hintText, styles.hintSpacing]}>
+              You can choose how your balance is shown:
+            </Text>
+
+            <Text style={[styles.hintText, styles.hintSpacing]}>
+              <Text style={styles.hintBold}>Formatted:</Text> Thousand
+              separators make large numbers easier to read and verify decimal
+              precision. Example:{' '}
+              <Text style={styles.hintAmount}>1,234.56,789,010 ₿</Text> or{' '}
+              <Text style={styles.hintAmount}>123,456,789,010 sats</Text>
+            </Text>
+
+            <Text style={[styles.hintText, styles.hintSpacing]}>
+              <Text style={styles.hintBold}>Raw Numbers:</Text> Exact values
+              without separators. Example:{' '}
+              <Text style={styles.hintAmount}>1234.56789 ₿</Text> or{' '}
+              <Text style={styles.hintAmount}>123456789000 sats</Text>
+            </Text>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Raw Numbers</Text>
+              <AppSwitch
+                onValueChange={handleToggleBalanceFormatting}
+                value={balanceFormattingEnabled}
+              />
+              <Text style={styles.toggleLabel}>Formatted</Text>
+            </View>
+          </CollapsibleSection>
+          <CollapsibleSection
+            title="Haptics"
+            isExpanded={expandedSections.haptics}
+            onToggle={() => toggleSection('haptics')}
+            styles={styles}
+            theme={theme}>
+            <Text style={styles.toggleDescription}>
+              Enable vibration feedback. OS settings may override this.
+            </Text>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Haptics Off</Text>
+              <AppSwitch
+                onValueChange={handleToggleHaptics}
+                value={hapticsEnabled}
+              />
+              <Text style={styles.toggleLabel}>Haptics On</Text>
+            </View>
+          </CollapsibleSection>
+          {/* Storage - inside App */}
+          <CollapsibleSection
+            title="Storage"
+            isExpanded={expandedSections.storage}
+            onToggle={() => toggleSection('storage')}
+            styles={styles}
+            theme={theme}>
+            <View style={styles.apiItem}>
+              <Text style={styles.apiDescription}>
+                Clear cached balances and history.
+              </Text>
+            </View>
+            <AppPressable
+              style={[styles.button, styles.deleteButton]}
+              onPress={async () => {
+                dbg('WalletSettings: Clear Cache pressed', {
+                  network: activeNetwork,
+                  addressType: activeAddressType,
+                });
+                const apiUrl =
+                  activeApiProvider ||
+                  (activeNetwork === 'mainnet'
+                    ? 'https://mempool.space/api'
+                    : 'https://mempool.space/testnet/api');
+                try {
+                  await runRestoreIndexing(
+                    activeNetwork,
+                    activeAddressType,
+                    apiUrl,
+                  );
+                } catch (e) {
+                  dbg('Clear cache: sync failed', e);
+                  const {text1, text2} = syncFailureToast(
+                    e,
+                    'Cache clear could not complete. Please try again.',
+                  );
+                  Toast.show({
+                    type: 'error',
+                    text1,
+                    text2,
+                    visibilityTime: 5000,
+                  });
+                  return;
+                }
+                refreshUsageSize();
+                dbg('WalletSettings: Storage clear complete');
+                Toast.show({
+                  type: 'success',
+                  text1: 'Cache cleared',
+                  text2: 'Wallet synced successfully.',
+                  visibilityTime: 3000,
+                });
+                navigation.reset(
+                  getResetToMainTabsWallet(
+                    {},
+                    {
+                      showPlay:
+                        activeNetwork === 'mainnet' && showMempoolPlayground,
+                      showUtxos: showUtxosTab,
+                      showPsbt: showPsbtTab,
+                      showWallet: showWalletTab,
+                    },
+                  ),
+                );
+              }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+              <View style={styles.buttonContent}>
+                <Image
+                  source={require('../assets/delete-icon.png')}
+                  style={[styles.buttonIcon, styles.whiteTint]}
+                  resizeMode="contain"
+                />
+                <Text style={styles.buttonText}>
+                  Clear Cache ({usageSize.mb})
+                </Text>
+              </View>
+            </AppPressable>
+          </CollapsibleSection>
+          {/* App Icon - Android Only */}
+          {Platform.OS === 'android' && (
+            <CollapsibleSection
+              title="App Icon"
+              isExpanded={expandedSections.appIcon}
+              onToggle={() => toggleSection('appIcon')}
+              styles={styles}
+              theme={theme}>
+              <View style={styles.appIconHintRow}>
+                <View style={styles.appIconHintTextContainer}>
+                  <Text style={styles.appIconHintTitle}>
+                    Blend in when you need to.
+                  </Text>
+                  <Text style={styles.appIconHintSubtitle}>
+                    Switch to the calculator icon when you want your wallet to
+                    look like just another app on your home screen.
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.toggleDescription}>
+                Change the app's launcher icon on your device.
+              </Text>
+              <View style={styles.toggleContainer}>
+                <Text style={styles.toggleLabel}>Bold Wallet</Text>
+                <AppSwitch
+                  value={selectedIcon === 'alternative'}
+                  onValueChange={async value => {
+                    try {
+                      const newIcon = value ? 'alternative' : 'default';
+                      if (!IconChanger || !IconChanger.changeIcon) {
+                        Alert.alert(
+                          'Error',
+                          'Icon switching is not available on this device.',
+                          [{text: 'OK'}],
+                        );
+                        return;
+                      }
+                      setSelectedIcon(newIcon);
+                      await EncryptedStorage.setItem(
+                        'app_icon_preference',
+                        newIcon,
+                      );
+                      await IconChanger.changeIcon(newIcon);
+                      const iconName =
+                        newIcon === 'alternative' ? 'QuickCalc' : 'Bold Wallet';
+                      Alert.alert(
+                        'Icon Changed',
+                        `App icon switched to ${iconName}.\n\nYou may need to refresh your launcher to see the change.`,
+                        [{text: 'OK'}],
+                      );
+                    } catch (error: any) {
+                      dbg('Error changing icon:', error);
+                      setSelectedIcon(value ? 'default' : 'alternative');
+                      Alert.alert(
+                        'Error',
+                        error?.message ||
+                          'Failed to change app icon. Please try again.',
+                        [{text: 'OK'}],
+                      );
+                    }
+                  }}
+                  disabled={selectedIcon === 'loading'}
+                />
+                <Text style={styles.toggleLabel}>QuickCalc</Text>
+              </View>
+            </CollapsibleSection>
+          )}
         </SettingsSectionGroup>
 
         {/* Wallet: Security, Address Type, Network providers, Nostr Relays */}
         <SettingsSectionGroup title="Wallet" styles={styles} theme={theme}>
-        <CollapsibleSection
-          title="Security"
-          isExpanded={expandedSections.backup}
-          onToggle={() => toggleSection('backup')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.apiName}>Backup Wallet Keyshare</Text>
-          <AppPressable
-            style={[styles.button, styles.backupButton]}
-            onPress={() => {
-              setIsBackupModalVisible(true);
-            }}
-            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-            <View style={styles.buttonContent}>
-              <Image
-                source={require('../assets/upload-icon.png')}
-                style={[styles.buttonIcon, styles.whiteTint]}
-                resizeMode="contain"
-              />
-              <Text style={styles.buttonText}>Backup {party}</Text>
-            </View>
-          </AppPressable>
-          <View style={styles.apiItem}>
-            <Text style={styles.apiName}>Delete Wallet Keyshare</Text>
-          </View>
-          <AppPressable
-            style={[styles.button, styles.deleteButton]}
-            onPress={() => {
-              setIsModalResetVisible(true);
-            }}
-            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-            <View style={styles.buttonContent}>
-              <Image
-                source={require('../assets/delete-icon.png')}
-                style={[styles.buttonIcon, styles.whiteTint]}
-                resizeMode="contain"
-              />
-              <Text style={styles.buttonText}>Delete {party}</Text>
-            </View>
-          </AppPressable>
-        </CollapsibleSection>
-        {/* Address Type - use address-type-icon */}
-        <CollapsibleSection
-          title="Address Type"
-          isExpanded={expandedSections.addressType}
-          onToggle={() => toggleSection('addressType')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.walletModeDescription}>
-            Choose the receive address format. Native SegWit (bech32) is
-            recommended. Changing this updates your receive address on the
-            Wallet tab.
-          </Text>
-          <View style={styles.addressTypeOptionsContainer}>
-            <AppPressable
-              style={[
-                styles.addressTypeOption,
-                activeAddressType === 'legacy' && styles.addressTypeOptionSelected,
-              ]}
-              onPress={async () => {
-                try {
-                  await setActiveAddressType('legacy');
-                  navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
-                } catch (e) {
-                  dbg('Error setting address type:', e);
-                }
-              }}
-              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-              <Image
-                source={require('../assets/bricks-icon.png')}
-                style={styles.networkIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.toggleLabel}>Legacy (P2PKH)</Text>
-              {activeAddressType === 'legacy' && (
-                <Image
-                  source={require('../assets/check-icon.png')}
-                  style={styles.addressTypeCheckIcon}
-                  resizeMode="contain"
-                />
-              )}
-            </AppPressable>
-            <AppPressable
-              style={[
-                styles.addressTypeOption,
-                activeAddressType === 'segwit-native' && styles.addressTypeOptionSelected,
-              ]}
-              onPress={async () => {
-                try {
-                  await setActiveAddressType('segwit-native');
-                  navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
-                } catch (e) {
-                  dbg('Error setting address type:', e);
-                }
-              }}
-              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-              <Image
-                source={require('../assets/dna-icon.png')}
-                style={styles.networkIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.toggleLabel}>Native SegWit (bech32)</Text>
-              {activeAddressType === 'segwit-native' && (
-                <Image
-                  source={require('../assets/check-icon.png')}
-                  style={styles.addressTypeCheckIcon}
-                  resizeMode="contain"
-                />
-              )}
-            </AppPressable>
-            <AppPressable
-              style={[
-                styles.addressTypeOption,
-                activeAddressType === 'segwit-compatible' && styles.addressTypeOptionSelected,
-              ]}
-              onPress={async () => {
-                try {
-                  await setActiveAddressType('segwit-compatible');
-                  navigation.reset(getResetToMainTabsWallet({}, { showPlay: activeNetwork === 'mainnet' && showMempoolPlayground, showUtxos: showUtxosTab, showPsbt: showPsbtTab, showWallet: showWalletTab }));
-                } catch (e) {
-                  dbg('Error setting address type:', e);
-                }
-              }}
-              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-              <Image
-                source={require('../assets/recycle-icon.png')}
-                style={styles.networkIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.toggleLabel}>Nested SegWit (P2SH-WPKH)</Text>
-              {activeAddressType === 'segwit-compatible' && (
-                <Image
-                  source={require('../assets/check-icon.png')}
-                  style={styles.addressTypeCheckIcon}
-                  resizeMode="contain"
-                />
-              )}
-            </AppPressable>
-          </View>
-        </CollapsibleSection>
-        {/* Network Providers */}
-        <CollapsibleSection
-          title="Network Providers"
-          isExpanded={expandedSections.advanced}
-          onToggle={() => toggleSection('advanced')}
-          styles={styles}
-          theme={theme}>
-          <View style={styles.toggleContainer}>
-            <View style={styles.networkOption}>
-              <Image
-                source={require('../assets/mainnet-icon.png')}
-                style={styles.networkIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.toggleLabel}>Mainnet</Text>
-            </View>
-            <AppSwitch
-              onValueChange={toggleNetwork}
-              value={isTestnet}
-            />
-            <View style={styles.networkOption}>
-              <Image
-                source={require('../assets/testnet-icon.png')}
-                style={styles.networkIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.toggleLabel}>Testnet3</Text>
-            </View>
-          </View>
-          <View style={styles.apiNetworkInfoContainer}>
-            <View style={styles.apiNetworkModeRow}>
-              <View
-                style={[
-                  styles.apiNetworkModeBadge,
-                  isTestnet
-                    ? styles.apiNetworkModeBadgeTestnet
-                    : styles.apiNetworkModeBadgeMainnet,
-                ]}>
-                <Image
-                  source={
-                    isTestnet
-                      ? require('../assets/locker-icon.png')
-                      : require('../assets/privacy-icon.png')
-                  }
-                  style={[
-                    styles.apiNetworkModeIcon,
-                    {
-                      tintColor: isTestnet
-                        ? theme.colors.background === '#ffffff'
-                          ? theme.colors.accent
-                          : theme.colors.bitcoinOrange
-                        : theme.colors.received,
-                    },
-                  ]}
-                  resizeMode="contain"
-                />
-                <Text
-                  style={[
-                    styles.apiNetworkModeText,
-                    isTestnet
-                      ? styles.apiNetworkModeTextTestnet
-                      : styles.apiNetworkModeTextMainnet,
-                  ]}>
-                  {isTestnet ? 'Testnet Mode' : 'Mainnet Mode'}
-                </Text>
-              </View>
-              {!isTestnet && (
-                <AppPressable
-                  style={styles.apiInfoButton}
-                  onPress={() => {
-                    setIsApiInfoVisible(true);
-                  }}
-                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                  <Image
-                    source={require('../assets/about-icon.png')}
-                    style={styles.apiInfoButtonIcon}
-                    resizeMode="contain"
-                  />
-                  <Text style={styles.apiInfoButtonText}>Change Provider?</Text>
-                </AppPressable>
-              )}
-            </View>
-            <Text
-              style={[
-                styles.apiNetworkDescription,
-                isTestnet
-                  ? styles.apiNetworkDescriptionTestnet
-                  : styles.apiNetworkDescriptionMainnet,
-              ]}>
-              {isTestnet
-                ? 'Testnet Provider is restricted to mempool.space/testnet'
-                : 'Mainnet Providers are customizable.'}
-            </Text>
-          </View>
-          <APIAutocomplete
-            value={pendingAPI || baseAPI}
-            onChangeText={handleAPISelection}
-            isTestnet={isTestnet}
-            styles={styles}
-            theme={theme}
-          />
-          <View style={styles.apiActionButtonsRow}>
-            {!isTestnet && (
-              <AppPressable
-                style={[
-                  styles.button,
-                  styles.backupButton,
-                  styles.apiActionButton,
-                  (isAPISaving || !pendingAPI || pendingAPI === baseAPI) &&
-                    styles.disabledButton,
-                  isAPISaving && styles.halfOpacity,
-                ]}
-                onPress={() => {
-                  saveAPI(pendingAPI);
-                }}
-                disabled={isAPISaving || !pendingAPI || pendingAPI === baseAPI}
-                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                <View style={styles.buttonContent}>
-                  <Image
-                    source={require('../assets/check-icon.png')}
-                    style={[styles.buttonIcon, styles.whiteTint]}
-                    resizeMode="contain"
-                  />
-                  <Text
-                    style={[
-                      styles.buttonText,
-                      (isAPISaving || !pendingAPI || pendingAPI === baseAPI) &&
-                        styles.disabledButtonText,
-                    ]}>
-                    {isAPISaving ? 'Verifying...' : 'Verify & Save'}
-                  </Text>
-                </View>
-              </AppPressable>
-            )}
-            {!isTestnet && (
-              <AppPressable
-                style={[
-                  styles.button,
-                  styles.resetButton,
-                  styles.apiActionButton,
-                ]}
-                onPress={() => {
-                  resetAPI();
-                }}
-                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                <View style={styles.buttonContent}>
-                  <Image
-                    source={require('../assets/refresh-icon.png')}
-                    style={[styles.buttonIcon, styles.whiteTint]}
-                    resizeMode="contain"
-                  />
-                  <Text style={styles.buttonText}>Defaults</Text>
-                </View>
-              </AppPressable>
-            )}
-          </View>
-        </CollapsibleSection>
-        {hasNostr && (
           <CollapsibleSection
-            title="Nostr Relays"
-            isExpanded={expandedSections.nostr}
-            onToggle={() => toggleSection('nostr')}
+            title="Security"
+            isExpanded={expandedSections.backup}
+            onToggle={() => toggleSection('backup')}
             styles={styles}
             theme={theme}>
+            <Text style={styles.apiName}>Backup Wallet Keyshare</Text>
+            <AppPressable
+              style={[styles.button, styles.backupButton]}
+              onPress={() => {
+                setIsBackupModalVisible(true);
+              }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+              <View style={styles.buttonContent}>
+                <Image
+                  source={require('../assets/upload-icon.png')}
+                  style={[styles.buttonIcon, styles.whiteTint]}
+                  resizeMode="contain"
+                />
+                <Text style={styles.buttonText}>Backup {party}</Text>
+              </View>
+            </AppPressable>
             <View style={styles.apiItem}>
-              <Text style={styles.apiName}>Nostr Relay Configuration</Text>
-              <Text style={styles.apiDescription}>
-                Configure Nostr relays for device pairing and transaction
-                signing. Enter relay URLs, one per line or comma-separated
-                (wss://...).
-              </Text>
+              <Text style={styles.apiName}>Delete Wallet Keyshare</Text>
             </View>
-            <TextInput
-              style={[styles.input, styles.nostrRelaysInput]}
-              value={pendingNostrRelays}
-              onChangeText={setPendingNostrRelays}
-              placeholder={
-                'wss://relay1.com\nwss://relay2.com\nwss://relay3.com'
-              }
-              placeholderTextColor={theme.colors.textSecondary + '80'}
-              autoCapitalize="none"
-              autoCorrect={false}
-              multiline
-              numberOfLines={6}
-            />
-            <View style={styles.apiActionButtonsRow}>
+            <AppPressable
+              style={[styles.button, styles.deleteButton]}
+              onPress={() => {
+                setIsModalResetVisible(true);
+              }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+              <View style={styles.buttonContent}>
+                <Image
+                  source={require('../assets/delete-icon.png')}
+                  style={[styles.buttonIcon, styles.whiteTint]}
+                  resizeMode="contain"
+                />
+                <Text style={styles.buttonText}>Delete {party}</Text>
+              </View>
+            </AppPressable>
+          </CollapsibleSection>
+          {/* Address Type - use address-type-icon */}
+          <CollapsibleSection
+            title="Address Type"
+            isExpanded={expandedSections.addressType}
+            onToggle={() => toggleSection('addressType')}
+            styles={styles}
+            theme={theme}>
+            <Text style={styles.walletModeDescription}>
+              Choose the receive address format. Native SegWit (bech32) is
+              recommended. Changing this updates your receive address on the
+              Wallet tab.
+            </Text>
+            <View style={styles.addressTypeOptionsContainer}>
               <AppPressable
                 style={[
-                  styles.button,
-                  styles.backupButton,
-                  styles.apiActionButton,
-                  (!pendingNostrRelays || pendingNostrRelays === nostrRelays) &&
-                    styles.disabledButton,
+                  styles.addressTypeOption,
+                  activeAddressType === 'legacy' &&
+                    styles.addressTypeOptionSelected,
                 ]}
                 onPress={async () => {
-                  try {
-                    const relays = pendingNostrRelays
-                      .split(/[,\n]/)
-                      .map(r => r.trim())
-                      .filter(Boolean);
-                    if (relays.length === 0) {
-                      Alert.alert(
-                        'Error',
-                        'Please enter at least one relay URL',
-                      );
-                      return;
-                    }
-                    const invalid = relays.find(
-                      r => !r.startsWith('wss://') && !r.startsWith('ws://'),
-                    );
-                    if (invalid) {
-                      Alert.alert(
-                        'Error',
-                        `Invalid relay URL: ${invalid}\nRelay URLs must start with wss:// or ws://`,
-                      );
-                      return;
-                    }
-                    const relaysCSV = relays.join(',');
-                    await LocalCache.setItem('nostr_relays', relaysCSV);
-                    setNostrRelays(relaysCSV);
-                    Alert.alert('Success', 'Nostr relays saved successfully!');
-                  } catch (error) {
-                    dbg('Error saving Nostr relays:', error);
-                    Alert.alert('Error', 'Failed to save Nostr relays');
+                  await setActiveAddressType('legacy');
+                  if (canFastSwitch(activeNetwork, 'legacy')) {
+                    fastSwitch(activeNetwork, 'legacy');
+                    return;
                   }
+                  try {
+                    await runRestoreIndexing(activeNetwork, 'legacy');
+                  } catch (e) {
+                    dbg('Address type switch (legacy): sync failed', e);
+                    const {text1, text2} = syncFailureToast(
+                      e,
+                      'Address type switch could not complete. Please try again.',
+                    );
+                    Toast.show({
+                      type: 'error',
+                      text1,
+                      text2,
+                      visibilityTime: 5000,
+                    });
+                    return;
+                  }
+                  navigation.reset(
+                    getResetToMainTabsWallet(
+                      {},
+                      {
+                        showPlay:
+                          activeNetwork === 'mainnet' && showMempoolPlayground,
+                        showUtxos: showUtxosTab,
+                        showPsbt: showPsbtTab,
+                        showWallet: showWalletTab,
+                      },
+                    ),
+                  );
                 }}
-                disabled={
-                  !pendingNostrRelays || pendingNostrRelays === nostrRelays
-                }
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                <View style={styles.buttonContent}>
+                <Image
+                  source={require('../assets/bricks-icon.png')}
+                  style={styles.networkIcon}
+                  resizeMode="contain"
+                />
+                <Text style={styles.toggleLabel}>Legacy (P2PKH)</Text>
+                {activeAddressType === 'legacy' && (
                   <Image
                     source={require('../assets/check-icon.png')}
-                    style={[styles.buttonIcon, styles.whiteTint]}
+                    style={styles.addressTypeCheckIcon}
                     resizeMode="contain"
                   />
-                  <Text
-                    style={[
-                      styles.buttonText,
-                      (!pendingNostrRelays ||
-                        pendingNostrRelays === nostrRelays) &&
-                        styles.disabledButtonText,
-                    ]}>
-                    Save Relays
-                  </Text>
-                </View>
+                )}
               </AppPressable>
               <AppPressable
                 style={[
-                  styles.button,
-                  styles.resetButton,
-                  styles.apiActionButton,
+                  styles.addressTypeOption,
+                  activeAddressType === 'segwit-native' &&
+                    styles.addressTypeOptionSelected,
                 ]}
                 onPress={async () => {
-                  const fetchedRelays = await getNostrRelays(true);
-                  const relaysCSV = fetchedRelays.join(',');
-                  const relaysForDisplay = relaysCSV.split(',').join('\n');
-                  setPendingNostrRelays(relaysForDisplay);
+                  await setActiveAddressType('segwit-native');
+                  if (canFastSwitch(activeNetwork, 'segwit-native')) {
+                    fastSwitch(activeNetwork, 'segwit-native');
+                    return;
+                  }
+                  try {
+                    await runRestoreIndexing(activeNetwork, 'segwit-native');
+                  } catch (e) {
+                    dbg('Address type switch (segwit-native): sync failed', e);
+                    const {text1, text2} = syncFailureToast(
+                      e,
+                      'Address type switch could not complete. Please try again.',
+                    );
+                    Toast.show({
+                      type: 'error',
+                      text1,
+                      text2,
+                      visibilityTime: 5000,
+                    });
+                    return;
+                  }
+                  navigation.reset(
+                    getResetToMainTabsWallet(
+                      {},
+                      {
+                        showPlay:
+                          activeNetwork === 'mainnet' && showMempoolPlayground,
+                        showUtxos: showUtxosTab,
+                        showPsbt: showPsbtTab,
+                        showWallet: showWalletTab,
+                      },
+                    ),
+                  );
                 }}
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                <View style={styles.buttonContent}>
+                <Image
+                  source={require('../assets/dna-icon.png')}
+                  style={styles.networkIcon}
+                  resizeMode="contain"
+                />
+                <Text style={styles.toggleLabel}>Native SegWit (bech32)</Text>
+                {activeAddressType === 'segwit-native' && (
                   <Image
-                    source={require('../assets/refresh-icon.png')}
-                    style={[styles.buttonIcon, styles.whiteTint]}
+                    source={require('../assets/check-icon.png')}
+                    style={styles.addressTypeCheckIcon}
                     resizeMode="contain"
                   />
-                  <Text style={styles.buttonText}>Defaults</Text>
-                </View>
+                )}
+              </AppPressable>
+              <AppPressable
+                style={[
+                  styles.addressTypeOption,
+                  activeAddressType === 'segwit-compatible' &&
+                    styles.addressTypeOptionSelected,
+                ]}
+                onPress={async () => {
+                  await setActiveAddressType('segwit-compatible');
+                  if (canFastSwitch(activeNetwork, 'segwit-compatible')) {
+                    fastSwitch(activeNetwork, 'segwit-compatible');
+                    return;
+                  }
+                  try {
+                    await runRestoreIndexing(
+                      activeNetwork,
+                      'segwit-compatible',
+                    );
+                  } catch (e) {
+                    dbg(
+                      'Address type switch (segwit-compatible): sync failed',
+                      e,
+                    );
+                    const {text1, text2} = syncFailureToast(
+                      e,
+                      'Address type switch could not complete. Please try again.',
+                    );
+                    Toast.show({
+                      type: 'error',
+                      text1,
+                      text2,
+                      visibilityTime: 5000,
+                    });
+                    return;
+                  }
+                  navigation.reset(
+                    getResetToMainTabsWallet(
+                      {},
+                      {
+                        showPlay:
+                          activeNetwork === 'mainnet' && showMempoolPlayground,
+                        showUtxos: showUtxosTab,
+                        showPsbt: showPsbtTab,
+                        showWallet: showWalletTab,
+                      },
+                    ),
+                  );
+                }}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                <Image
+                  source={require('../assets/recycle-icon.png')}
+                  style={styles.networkIcon}
+                  resizeMode="contain"
+                />
+                <Text style={styles.toggleLabel}>
+                  Nested SegWit (P2SH-WPKH)
+                </Text>
+                {activeAddressType === 'segwit-compatible' && (
+                  <Image
+                    source={require('../assets/check-icon.png')}
+                    style={styles.addressTypeCheckIcon}
+                    resizeMode="contain"
+                  />
+                )}
               </AppPressable>
             </View>
           </CollapsibleSection>
-        )}
+          {/* Network Providers */}
+          <CollapsibleSection
+            title="Network Providers"
+            isExpanded={expandedSections.advanced}
+            onToggle={() => toggleSection('advanced')}
+            styles={styles}
+            theme={theme}>
+            <View style={styles.toggleContainer}>
+              <View style={styles.networkOption}>
+                <Image
+                  source={require('../assets/mainnet-icon.png')}
+                  style={styles.networkIcon}
+                  resizeMode="contain"
+                />
+                <Text style={styles.toggleLabel}>Mainnet</Text>
+              </View>
+              <AppSwitch onValueChange={toggleNetwork} value={isTestnet} />
+              <View style={styles.networkOption}>
+                <Image
+                  source={require('../assets/testnet-icon.png')}
+                  style={styles.networkIcon}
+                  resizeMode="contain"
+                />
+                <Text style={styles.toggleLabel}>Testnet3</Text>
+              </View>
+            </View>
+            <View style={styles.apiNetworkInfoContainer}>
+              <View style={styles.apiNetworkModeRow}>
+                <View
+                  style={[
+                    styles.apiNetworkModeBadge,
+                    isTestnet
+                      ? styles.apiNetworkModeBadgeTestnet
+                      : styles.apiNetworkModeBadgeMainnet,
+                  ]}>
+                  <Image
+                    source={
+                      isTestnet
+                        ? require('../assets/locker-icon.png')
+                        : require('../assets/privacy-icon.png')
+                    }
+                    style={[
+                      styles.apiNetworkModeIcon,
+                      {
+                        tintColor: isTestnet
+                          ? theme.colors.background === '#ffffff'
+                            ? theme.colors.accent
+                            : theme.colors.bitcoinOrange
+                          : theme.colors.received,
+                      },
+                    ]}
+                    resizeMode="contain"
+                  />
+                  <Text
+                    style={[
+                      styles.apiNetworkModeText,
+                      isTestnet
+                        ? styles.apiNetworkModeTextTestnet
+                        : styles.apiNetworkModeTextMainnet,
+                    ]}>
+                    {isTestnet ? 'Testnet Mode' : 'Mainnet Mode'}
+                  </Text>
+                </View>
+                {!isTestnet && (
+                  <AppPressable
+                    style={styles.apiInfoButton}
+                    onPress={() => {
+                      setIsApiInfoVisible(true);
+                    }}
+                    android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                    <Image
+                      source={require('../assets/about-icon.png')}
+                      style={styles.apiInfoButtonIcon}
+                      resizeMode="contain"
+                    />
+                    <Text style={styles.apiInfoButtonText}>
+                      Change Provider?
+                    </Text>
+                  </AppPressable>
+                )}
+              </View>
+              <Text
+                style={[
+                  styles.apiNetworkDescription,
+                  isTestnet
+                    ? styles.apiNetworkDescriptionTestnet
+                    : styles.apiNetworkDescriptionMainnet,
+                ]}>
+                {isTestnet
+                  ? 'Testnet Provider is restricted to mempool.space/testnet'
+                  : 'Mainnet Providers are customizable.'}
+              </Text>
+            </View>
+            <APIAutocomplete
+              value={pendingAPI || baseAPI}
+              onChangeText={handleAPISelection}
+              isTestnet={isTestnet}
+              styles={styles}
+              theme={theme}
+            />
+            <View style={styles.apiActionButtonsRow}>
+              {!isTestnet && (
+                <AppPressable
+                  style={[
+                    styles.button,
+                    styles.backupButton,
+                    styles.apiActionButton,
+                    (isAPISaving || !pendingAPI || pendingAPI === baseAPI) &&
+                      styles.disabledButton,
+                    isAPISaving && styles.halfOpacity,
+                  ]}
+                  onPress={() => {
+                    saveAPI(pendingAPI);
+                  }}
+                  disabled={
+                    isAPISaving || !pendingAPI || pendingAPI === baseAPI
+                  }
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                  <View style={styles.buttonContent}>
+                    <Image
+                      source={require('../assets/check-icon.png')}
+                      style={[styles.buttonIcon, styles.whiteTint]}
+                      resizeMode="contain"
+                    />
+                    <Text
+                      style={[
+                        styles.buttonText,
+                        (isAPISaving ||
+                          !pendingAPI ||
+                          pendingAPI === baseAPI) &&
+                          styles.disabledButtonText,
+                      ]}>
+                      {isAPISaving ? 'Verifying...' : 'Verify & Save'}
+                    </Text>
+                  </View>
+                </AppPressable>
+              )}
+              {!isTestnet && (
+                <AppPressable
+                  style={[
+                    styles.button,
+                    styles.resetButton,
+                    styles.apiActionButton,
+                  ]}
+                  onPress={() => {
+                    resetAPI();
+                  }}
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                  <View style={styles.buttonContent}>
+                    <Image
+                      source={require('../assets/refresh-icon.png')}
+                      style={[styles.buttonIcon, styles.whiteTint]}
+                      resizeMode="contain"
+                    />
+                    <Text style={styles.buttonText}>Defaults</Text>
+                  </View>
+                </AppPressable>
+              )}
+            </View>
+          </CollapsibleSection>
+          <CollapsibleSection
+            title="HD Options"
+            isExpanded={expandedSections.hdOptions}
+            onToggle={() => toggleSection('hdOptions')}
+            styles={styles}
+            theme={theme}>
+              <Text style={[styles.hintText, styles.hintSpacing]}>
+                Tune discovery gap, scan range, and API timeouts. Change only if
+                you know what you're doing.
+              </Text>
+              <View style={styles.apiItem}>
+                <Text style={styles.apiName}>Gap limit</Text>
+                <TextInput
+                  style={styles.input}
+                  value={hdGapLimit}
+                  onChangeText={setHdGapLimit}
+                  keyboardType="number-pad"
+                  onBlur={() => {
+                    const n = parseInt(hdGapLimit, 10);
+                    const clamped = Number.isNaN(n)
+                      ? HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.GAP_LIMIT]
+                      : Math.max(1, Math.min(20, n));
+                    setHdGapLimit(String(clamped));
+                    appConfigRepository.set(
+                      HD_OPTIONS_KEYS.GAP_LIMIT,
+                      String(clamped),
+                    );
+                  }}
+                  placeholderTextColor={theme.colors.textSecondary + '80'}
+                />
+              </View>
+              <View style={styles.apiItem}>
+                <Text style={styles.apiName}>Min scan index</Text>
+                <TextInput
+                  style={styles.input}
+                  value={hdMinScanIndex}
+                  onChangeText={setHdMinScanIndex}
+                  keyboardType="number-pad"
+                  onBlur={() => {
+                    const n = parseInt(hdMinScanIndex, 10);
+                    const def =
+                      HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.MIN_SCAN_INDEX];
+                    const clamped = Number.isNaN(n) ? def : Math.max(1, Math.min(1000, n));
+                    setHdMinScanIndex(String(clamped));
+                    appConfigRepository.set(
+                      HD_OPTIONS_KEYS.MIN_SCAN_INDEX,
+                      String(clamped),
+                    );
+                  }}
+                  placeholderTextColor={theme.colors.textSecondary + '80'}
+                />
+              </View>
+              <View style={styles.apiItem}>
+                <Text style={styles.apiName}>API timeout (ms)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={hdApiTimeoutMs}
+                  onChangeText={setHdApiTimeoutMs}
+                  keyboardType="number-pad"
+                  onBlur={() => {
+                    const n = parseInt(hdApiTimeoutMs, 10);
+                    const def =
+                      HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.API_TIMEOUT_MS];
+                    const clamped = Number.isNaN(n)
+                      ? def
+                      : Math.max(1000, Math.min(120_000, n));
+                    setHdApiTimeoutMs(String(clamped));
+                    appConfigRepository.set(
+                      HD_OPTIONS_KEYS.API_TIMEOUT_MS,
+                      String(clamped),
+                    );
+                  }}
+                  placeholderTextColor={theme.colors.textSecondary + '80'}
+                />
+              </View>
+              <View style={styles.apiItem}>
+                <Text style={styles.apiName}>UTXO empty cache TTL (ms)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={hdUtxoCacheTtlMs}
+                  onChangeText={setHdUtxoCacheTtlMs}
+                  keyboardType="number-pad"
+                  onBlur={() => {
+                    const n = parseInt(hdUtxoCacheTtlMs, 10);
+                    const def =
+                      HD_OPTIONS_DEFAULTS[
+                        HD_OPTIONS_KEYS.UTXO_EMPTY_CACHE_TTL_MS
+                      ];
+                    const clamped = Number.isNaN(n)
+                      ? def
+                      : Math.max(1000, Math.min(300_000, n));
+                    setHdUtxoCacheTtlMs(String(clamped));
+                    appConfigRepository.set(
+                      HD_OPTIONS_KEYS.UTXO_EMPTY_CACHE_TTL_MS,
+                      String(clamped),
+                    );
+                  }}
+                  placeholderTextColor={theme.colors.textSecondary + '80'}
+                />
+              </View>
+              <View style={styles.apiItem}>
+                <Text style={styles.apiName}>Fetch timeout (ms)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={hdFetchTimeoutMs}
+                  onChangeText={setHdFetchTimeoutMs}
+                  keyboardType="number-pad"
+                  onBlur={() => {
+                    const n = parseInt(hdFetchTimeoutMs, 10);
+                    const def =
+                      HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.FETCH_TIMEOUT_MS];
+                    const clamped = Number.isNaN(n)
+                      ? def
+                      : Math.max(1000, Math.min(120_000, n));
+                    setHdFetchTimeoutMs(String(clamped));
+                    appConfigRepository.set(
+                      HD_OPTIONS_KEYS.FETCH_TIMEOUT_MS,
+                      String(clamped),
+                    );
+                  }}
+                  placeholderTextColor={theme.colors.textSecondary + '80'}
+                />
+              </View>
+              <View style={styles.apiItem}>
+                <Text style={styles.apiName}>Mempool default TTL (ms)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={hdMempoolTtlMs}
+                  onChangeText={setHdMempoolTtlMs}
+                  keyboardType="number-pad"
+                  onBlur={() => {
+                    const n = parseInt(hdMempoolTtlMs, 10);
+                    const def =
+                      HD_OPTIONS_DEFAULTS[
+                        HD_OPTIONS_KEYS.MEMPOOL_DEFAULT_TTL_MS
+                      ];
+                    const clamped = Number.isNaN(n)
+                      ? def
+                      : Math.max(1000, Math.min(300_000, n));
+                    setHdMempoolTtlMs(String(clamped));
+                    appConfigRepository.set(
+                      HD_OPTIONS_KEYS.MEMPOOL_DEFAULT_TTL_MS,
+                      String(clamped),
+                    );
+                  }}
+                  placeholderTextColor={theme.colors.textSecondary + '80'}
+                />
+              </View>
+              <View style={styles.apiItem}>
+                <Text style={styles.apiName}>Transaction sync TTL (ms)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={hdTxDbTtlMs}
+                  onChangeText={setHdTxDbTtlMs}
+                  keyboardType="number-pad"
+                  onBlur={() => {
+                    const n = parseInt(hdTxDbTtlMs, 10);
+                    const def =
+                      HD_OPTIONS_DEFAULTS[
+                        HD_OPTIONS_KEYS.TRANSACTION_DB_TTL_MS
+                      ];
+                    const clamped = Number.isNaN(n)
+                      ? def
+                      : Math.max(5000, Math.min(300_000, n));
+                    setHdTxDbTtlMs(String(clamped));
+                    appConfigRepository.set(
+                      HD_OPTIONS_KEYS.TRANSACTION_DB_TTL_MS,
+                      String(clamped),
+                    );
+                  }}
+                  placeholderTextColor={theme.colors.textSecondary + '80'}
+                />
+              </View>
+              <View style={styles.apiActionButtonsRow}>
+                <AppPressable
+                  style={[
+                    styles.button,
+                    styles.resetButton,
+                    styles.apiActionButton,
+                  ]}
+                  onPress={() => {
+                    restoreHdOptionsDefaults();
+                    setHdGapLimit(
+                      String(HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.GAP_LIMIT]),
+                    );
+                    setHdMinScanIndex(
+                      String(
+                        HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.MIN_SCAN_INDEX],
+                      ),
+                    );
+                    setHdApiTimeoutMs(
+                      String(
+                        HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.API_TIMEOUT_MS],
+                      ),
+                    );
+                    setHdUtxoCacheTtlMs(
+                      String(
+                        HD_OPTIONS_DEFAULTS[
+                          HD_OPTIONS_KEYS.UTXO_EMPTY_CACHE_TTL_MS
+                        ],
+                      ),
+                    );
+                    setHdFetchTimeoutMs(
+                      String(
+                        HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.FETCH_TIMEOUT_MS],
+                      ),
+                    );
+                    setHdMempoolTtlMs(
+                      String(
+                        HD_OPTIONS_DEFAULTS[
+                          HD_OPTIONS_KEYS.MEMPOOL_DEFAULT_TTL_MS
+                        ],
+                      ),
+                    );
+                    setHdTxDbTtlMs(
+                      String(
+                        HD_OPTIONS_DEFAULTS[
+                          HD_OPTIONS_KEYS.TRANSACTION_DB_TTL_MS
+                        ],
+                      ),
+                    );
+                    Toast.show({
+                      type: 'success',
+                      text1: 'Defaults restored',
+                    });
+                  }}
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                  <View style={styles.buttonContent}>
+                    <Image
+                      source={require('../assets/refresh-icon.png')}
+                      style={[styles.buttonIcon, styles.whiteTint]}
+                      resizeMode="contain"
+                    />
+                    <Text style={styles.buttonText}>Restore defaults</Text>
+                  </View>
+                </AppPressable>
+              </View>
+            </CollapsibleSection>
+          {hasNostr && (
+            <CollapsibleSection
+              title="Nostr Relays"
+              isExpanded={expandedSections.nostr}
+              onToggle={() => toggleSection('nostr')}
+              styles={styles}
+              theme={theme}>
+              <View style={styles.apiItem}>
+                <Text style={styles.apiName}>Nostr Relay Configuration</Text>
+                <Text style={styles.apiDescription}>
+                  Configure Nostr relays for device pairing and transaction
+                  signing. Enter relay URLs, one per line or comma-separated
+                  (wss://...).
+                </Text>
+              </View>
+              <TextInput
+                style={[styles.input, styles.nostrRelaysInput]}
+                value={pendingNostrRelays}
+                onChangeText={setPendingNostrRelays}
+                placeholder={
+                  'wss://relay1.com\nwss://relay2.com\nwss://relay3.com'
+                }
+                placeholderTextColor={theme.colors.textSecondary + '80'}
+                autoCapitalize="none"
+                autoCorrect={false}
+                multiline
+                numberOfLines={6}
+              />
+              <View style={styles.apiActionButtonsRow}>
+                <AppPressable
+                  style={[
+                    styles.button,
+                    styles.backupButton,
+                    styles.apiActionButton,
+                    (!pendingNostrRelays ||
+                      pendingNostrRelays === nostrRelays) &&
+                      styles.disabledButton,
+                  ]}
+                  onPress={async () => {
+                    try {
+                      const relays = pendingNostrRelays
+                        .split(/[,\n]/)
+                        .map(r => r.trim())
+                        .filter(Boolean);
+                      if (relays.length === 0) {
+                        Alert.alert(
+                          'Error',
+                          'Please enter at least one relay URL',
+                        );
+                        return;
+                      }
+                      const invalid = relays.find(
+                        r => !r.startsWith('wss://') && !r.startsWith('ws://'),
+                      );
+                      if (invalid) {
+                        Alert.alert(
+                          'Error',
+                          `Invalid relay URL: ${invalid}\nRelay URLs must start with wss:// or ws://`,
+                        );
+                        return;
+                      }
+                      const relaysCSV = relays.join(',');
+                      appConfigRepository.set('nostr_relays', relaysCSV);
+                      setNostrRelays(relaysCSV);
+                      Alert.alert(
+                        'Success',
+                        'Nostr relays saved successfully!',
+                      );
+                    } catch (error) {
+                      dbg('Error saving Nostr relays:', error);
+                      Alert.alert('Error', 'Failed to save Nostr relays');
+                    }
+                  }}
+                  disabled={
+                    !pendingNostrRelays || pendingNostrRelays === nostrRelays
+                  }
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                  <View style={styles.buttonContent}>
+                    <Image
+                      source={require('../assets/check-icon.png')}
+                      style={[styles.buttonIcon, styles.whiteTint]}
+                      resizeMode="contain"
+                    />
+                    <Text
+                      style={[
+                        styles.buttonText,
+                        (!pendingNostrRelays ||
+                          pendingNostrRelays === nostrRelays) &&
+                          styles.disabledButtonText,
+                      ]}>
+                      Save Relays
+                    </Text>
+                  </View>
+                </AppPressable>
+                <AppPressable
+                  style={[
+                    styles.button,
+                    styles.resetButton,
+                    styles.apiActionButton,
+                  ]}
+                  onPress={async () => {
+                    const fetchedRelays = await getNostrRelays(true);
+                    const relaysCSV = fetchedRelays.join(',');
+                    const relaysForDisplay = relaysCSV.split(',').join('\n');
+                    setPendingNostrRelays(relaysForDisplay);
+                  }}
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                  <View style={styles.buttonContent}>
+                    <Image
+                      source={require('../assets/refresh-icon.png')}
+                      style={[styles.buttonIcon, styles.whiteTint]}
+                      resizeMode="contain"
+                    />
+                    <Text style={styles.buttonText}>Defaults</Text>
+                  </View>
+                </AppPressable>
+              </View>
+            </CollapsibleSection>
+          )}
         </SettingsSectionGroup>
 
         {/* Tabs: Wallet, UTXO, PSBT, Playground */}
         <SettingsSectionGroup title="Tabs" styles={styles} theme={theme}>
-        <CollapsibleSection
-          title="Wallet"
-          isExpanded={expandedSections.wallet}
-          onToggle={() => toggleSection('wallet')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.hintText}>
-            Show the <Text style={styles.hintBold}>Wallet</Text> tab in the tab
-            bar. This tab shows your balance and send/receive. On by default.
-          </Text>
-          <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
-            <Text style={styles.toggleLabel}>Hide Wallet tab</Text>
-            <AppSwitch
-              onValueChange={value => setShowWalletTab(value)}
-              value={showWalletTab}
-            />
-            <Text style={styles.toggleLabel}>Show Wallet tab</Text>
-          </View>
-        </CollapsibleSection>
-        <CollapsibleSection
-          title="UTXOs"
-          isExpanded={expandedSections.utxos}
-          onToggle={() => toggleSection('utxos')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.hintText}>
-            Show the <Text style={styles.hintBold}>UTXOs</Text> tab in the tab
-            bar. This tab lists your unspent outputs (date, output, address,
-            value in BTC and fiat). Off by default.
-          </Text>
-          <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
-            <Text style={styles.toggleLabel}>Hide UTXOs tab</Text>
-            <AppSwitch
-              onValueChange={value => setShowUtxosTab(value)}
-              value={showUtxosTab}
-            />
-            <Text style={styles.toggleLabel}>Show UTXOs tab</Text>
-          </View>
-        </CollapsibleSection>
-        <CollapsibleSection
-          title="PSBT"
-          isExpanded={expandedSections.psbt ?? false}
-          onToggle={() => toggleSection('psbt')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.hintText}>
-            Show the <Text style={styles.hintBold}>PSBT</Text> tab in the tab
-            bar. This tab is for signing Partially Signed Bitcoin Transactions.
-            Off by default.
-          </Text>
-          <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
-            <Text style={styles.toggleLabel}>Hide PSBT tab</Text>
-            <AppSwitch
-              onValueChange={value => setShowPsbtTab(value)}
-              value={showPsbtTab}
-            />
-            <Text style={styles.toggleLabel}>Show PSBT tab</Text>
-          </View>
-        </CollapsibleSection>
-        {activeNetwork === 'mainnet' && (
           <CollapsibleSection
-            title="Mempool"
-            isExpanded={expandedSections.mempoolPlayground}
-            onToggle={() => toggleSection('mempoolPlayground')}
+            title="Wallet"
+            isExpanded={expandedSections.wallet}
+            onToggle={() => toggleSection('wallet')}
             styles={styles}
             theme={theme}>
             <Text style={styles.hintText}>
-              Show the <Text style={styles.hintBold}>Play</Text> tab in the tab
-              bar. This tab is a mempool playground for utility APIs (mainnet
-              only).
+              Show the <Text style={styles.hintBold}>Wallet</Text> tab in the
+              tab bar. This tab shows your balance and send/receive. On by
+              default.
             </Text>
             <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
-              <Text style={styles.toggleLabel}>Hide Play tab</Text>
+              <Text style={styles.toggleLabel}>Hide Wallet tab</Text>
               <AppSwitch
-                onValueChange={value => setShowMempoolPlayground(value)}
-                value={showMempoolPlayground}
+                onValueChange={value => setShowWalletTab(value)}
+                value={showWalletTab}
               />
-              <Text style={styles.toggleLabel}>Show Play tab</Text>
+              <Text style={styles.toggleLabel}>Show Wallet tab</Text>
             </View>
           </CollapsibleSection>
-        )}
-        {/* Dev Debug - Only visible on Android if enabled via build number clicks */}
-        {Platform.OS === 'android' && devDebugEnabled && (
           <CollapsibleSection
-            title="Dev Debug"
-            isExpanded={expandedSections.devDebug}
-            onToggle={() => toggleSection('devDebug')}
+            title="UTXOs"
+            isExpanded={expandedSections.utxos}
+            onToggle={() => toggleSection('utxos')}
             styles={styles}
             theme={theme}>
-            <View
-              style={[
-                styles.warningContainer,
-                {
-                  backgroundColor: theme.colors.warningBg,
-                  borderColor: theme.colors.warningBorder,
-                },
-              ]}>
-              <Text
-                style={[styles.warningText, {color: theme.colors.warningText}]}>
-                ⚠️ Developers Only
-              </Text>
-              <Text
-                style={[
-                  styles.warningDescription,
-                  {color: theme.colors.warningText},
-                ]}>
-                Debug logs may contain sensitive information. Use only on
-                trusted devices, and only if you know what you are doing. View
-                detailed logs in logcat (Android only, requires USB debugging).
-                Session-only setting - resets on app restart.
-              </Text>
+            <Text style={styles.hintText}>
+              Show the <Text style={styles.hintBold}>UTXOs</Text> tab in the tab
+              bar. This tab lists your unspent outputs (date, output, address,
+              value in BTC and fiat). Off by default.
+            </Text>
+            <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
+              <Text style={styles.toggleLabel}>Hide UTXOs tab</Text>
+              <AppSwitch
+                onValueChange={value => setShowUtxosTab(value)}
+                value={showUtxosTab}
+              />
+              <Text style={styles.toggleLabel}>Show UTXOs tab</Text>
             </View>
-            {/* Enhanced Debug Logging Card */}
-            <View style={styles.debugLoggingCard}>
-              <View style={styles.debugLoggingHeader}>
-                <Text style={styles.debugLoggingTitle}>Debug Logging</Text>
-                <View style={styles.debugLoggingStatus}>
-                  <View
-                    style={[
-                      styles.debugLoggingStatusDot,
-                      {
-                        backgroundColor: debugLoggingEnabled
-                          ? theme.colors.success
-                          : theme.colors.textSecondary,
-                      },
-                    ]}
+          </CollapsibleSection>
+          <CollapsibleSection
+            title="PSBT"
+            isExpanded={expandedSections.psbt ?? false}
+            onToggle={() => toggleSection('psbt')}
+            styles={styles}
+            theme={theme}>
+            <Text style={styles.hintText}>
+              Show the <Text style={styles.hintBold}>PSBT</Text> tab in the tab
+              bar. This tab is for signing Partially Signed Bitcoin
+              Transactions. Off by default.
+            </Text>
+            <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
+              <Text style={styles.toggleLabel}>Hide PSBT tab</Text>
+              <AppSwitch
+                onValueChange={value => setShowPsbtTab(value)}
+                value={showPsbtTab}
+              />
+              <Text style={styles.toggleLabel}>Show PSBT tab</Text>
+            </View>
+          </CollapsibleSection>
+          {activeNetwork === 'mainnet' && (
+            <CollapsibleSection
+              title="Mempool"
+              isExpanded={expandedSections.mempoolPlayground}
+              onToggle={() => toggleSection('mempoolPlayground')}
+              styles={styles}
+              theme={theme}>
+              <Text style={styles.hintText}>
+                Show the <Text style={styles.hintBold}>Play</Text> tab in the
+                tab bar. This tab is a mempool playground for utility APIs
+                (mainnet only).
+              </Text>
+              <View
+                style={[styles.toggleContainer, styles.toggleContainerTabs]}>
+                <Text style={styles.toggleLabel}>Hide Play tab</Text>
+                <AppSwitch
+                  onValueChange={value => setShowMempoolPlayground(value)}
+                  value={showMempoolPlayground}
+                />
+                <Text style={styles.toggleLabel}>Show Play tab</Text>
+              </View>
+            </CollapsibleSection>
+          )}
+          {/* Dev Debug - Only visible on Android if enabled via build number clicks */}
+          {Platform.OS === 'android' && devDebugEnabled && (
+            <CollapsibleSection
+              title="Dev Debug"
+              isExpanded={expandedSections.devDebug}
+              onToggle={() => toggleSection('devDebug')}
+              styles={styles}
+              theme={theme}>
+              <View
+                style={[
+                  styles.warningContainer,
+                  {
+                    backgroundColor: theme.colors.warningBg,
+                    borderColor: theme.colors.warningBorder,
+                  },
+                ]}>
+                <Text
+                  style={[
+                    styles.warningText,
+                    {color: theme.colors.warningText},
+                  ]}>
+                  ⚠️ Developers Only
+                </Text>
+                <Text
+                  style={[
+                    styles.warningDescription,
+                    {color: theme.colors.warningText},
+                  ]}>
+                  Debug logs may contain sensitive information. Use only on
+                  trusted devices, and only if you know what you are doing. View
+                  detailed logs in logcat (Android only, requires USB
+                  debugging). Session-only setting - resets on app restart.
+                </Text>
+              </View>
+              {/* Enhanced Debug Logging Card */}
+              <View style={styles.debugLoggingCard}>
+                <View style={styles.debugLoggingHeader}>
+                  <Text style={styles.debugLoggingTitle}>Debug Logging</Text>
+                  <View style={styles.debugLoggingStatus}>
+                    <View
+                      style={[
+                        styles.debugLoggingStatusDot,
+                        {
+                          backgroundColor: debugLoggingEnabled
+                            ? theme.colors.success
+                            : theme.colors.textSecondary,
+                        },
+                      ]}
+                    />
+                    <Text
+                      style={[
+                        styles.debugLoggingStatusText,
+                        {
+                          color: debugLoggingEnabled
+                            ? theme.colors.success
+                            : theme.colors.textSecondary,
+                        },
+                      ]}>
+                      {debugLoggingEnabled ? 'Active' : 'Inactive'}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.toggleContainer}>
+                  <Text style={styles.toggleLabel}>Enable Logging</Text>
+                  <AppSwitch
+                    onValueChange={handleToggleDebugLogging}
+                    value={debugLoggingEnabled}
                   />
-                  <Text
-                    style={[
-                      styles.debugLoggingStatusText,
-                      {
-                        color: debugLoggingEnabled
-                          ? theme.colors.success
-                          : theme.colors.textSecondary,
-                      },
-                    ]}>
-                    {debugLoggingEnabled ? 'Active' : 'Inactive'}
-                  </Text>
                 </View>
               </View>
-              <View style={styles.toggleContainer}>
-                <Text style={styles.toggleLabel}>Enable Logging</Text>
-                <AppSwitch
-                  onValueChange={handleToggleDebugLogging}
-                  value={debugLoggingEnabled}
-                />
-              </View>
-            </View>
 
-            {/* Enhanced Disable Dev Mode Button */}
-            <AppPressable
-              style={styles.disableDevModeButton}
-              onPress={() => {
-                Alert.alert(
-                  'Disable Dev Mode',
-                  'Are you sure you want to hide the Dev Debug section? You can enable it again by clicking the build number 7 times.',
-                  [
-                    {
-                      text: 'Cancel',
-                      style: 'cancel',
-                    },
-                    {
-                      text: 'Disable',
-                      style: 'destructive',
-                      onPress: () => {
-                        setDevDebugEnabled(false);
-                        EncryptedStorage.setItem(
-                          'devDebugEnabled',
-                          'false',
-                        ).catch(error => {
-                          dbg('Error saving devDebugEnabled:', error);
-                        });
-                        Toast.show({
-                          type: 'info',
-                          text1: 'Dev Mode Disabled',
-                          text2: 'Dev Debug section is now hidden',
-                          position: 'top',
-                        });
+              {/* Enhanced Disable Dev Mode Button */}
+              <AppPressable
+                style={styles.disableDevModeButton}
+                onPress={() => {
+                  Alert.alert(
+                    'Disable Dev Mode',
+                    'Are you sure you want to hide the Dev Debug section? You can enable it again by clicking the build number 7 times.',
+                    [
+                      {
+                        text: 'Cancel',
+                        style: 'cancel',
                       },
-                    },
-                  ],
-                );
-              }}
-              android_ripple={{color: 'rgba(255,255,255,0.2)'}}>
-              <Text style={styles.disableDevModeButtonText}>
-                Disable Dev Mode
+                      {
+                        text: 'Disable',
+                        style: 'destructive',
+                        onPress: () => {
+                          setDevDebugEnabled(false);
+                          EncryptedStorage.setItem(
+                            'devDebugEnabled',
+                            'false',
+                          ).catch(error => {
+                            dbg('Error saving devDebugEnabled:', error);
+                          });
+                          Toast.show({
+                            type: 'info',
+                            text1: 'Dev Mode Disabled',
+                            text2: 'Dev Debug section is now hidden',
+                            position: 'top',
+                          });
+                        },
+                      },
+                    ],
+                  );
+                }}
+                android_ripple={{color: 'rgba(255,255,255,0.2)'}}>
+                <Text style={styles.disableDevModeButtonText}>
+                  Disable Dev Mode
+                </Text>
+              </AppPressable>
+            </CollapsibleSection>
+          )}
+          {/* Font Testing - Development Only */}
+          {__DEV__ && (
+            <CollapsibleSection
+              title="Font Testing"
+              isExpanded={expandedSections.fontTesting}
+              onToggle={() => toggleSection('fontTesting')}
+              styles={styles}
+              theme={theme}>
+              <Text style={styles.toggleDescription}>
+                Visual font comparison tool to verify unified fonts across
+                platforms. This section only appears in development builds. Note
+                that rendered fonts may differ from the actual fonts on your
+                device. Also, the font testing section is only visible in
+                development builds.
               </Text>
-            </AppPressable>
-          </CollapsibleSection>
-        )}
-        {/* Font Testing - Development Only */}
-        {__DEV__ && (
-          <CollapsibleSection
-            title="Font Testing"
-            isExpanded={expandedSections.fontTesting}
-            onToggle={() => toggleSection('fontTesting')}
-            styles={styles}
-            theme={theme}>
-            <Text style={styles.toggleDescription}>
-              Visual font comparison tool to verify unified fonts across
-              platforms. This section only appears in development builds. Note
-              that rendered fonts may differ from the actual fonts on your
-              device. Also, the font testing section is only visible in
-              development builds.
-            </Text>
-            <FontComparisonScreen />
-          </CollapsibleSection>
-        )}
+              <FontComparisonScreen />
+            </CollapsibleSection>
+          )}
         </SettingsSectionGroup>
 
         {/* Info: Legal, About */}
         <SettingsSectionGroup title="Info" styles={styles} theme={theme}>
-        <CollapsibleSection
-          title="Legal"
-          isExpanded={expandedSections.legal}
-          onToggle={() => toggleSection('legal')}
-          styles={styles}
-          theme={theme}>
-          <Text style={styles.toggleDescription}>
-            Terms of Service and Privacy Policy
-          </Text>
-          <Text
-            style={styles.termsLink}
-            onPress={() => {
-              setLegalModalType('terms');
-              setIsLegalModalVisible(true);
-            }}>
-            Read Terms of Use
-          </Text>
-          <Text
-            style={styles.termsLink}
-            onPress={() => {
-              setLegalModalType('privacy');
-              setIsLegalModalVisible(true);
-            }}>
-            Read Privacy Policy
-          </Text>
-        </CollapsibleSection>
-        <CollapsibleSection
-          title="About"
-          isExpanded={expandedSections.about}
-          onToggle={() => toggleSection('about')}
-          styles={styles}
-          theme={theme}>
-          <View style={styles.aboutInfoRow}>
-            <Text style={styles.aboutLabel}>App Version</Text>
-            <Text style={styles.aboutValue}>{appVersion}</Text>
-          </View>
-          <View style={styles.aboutInfoRow}>
-            <Text style={styles.aboutLabel}>Build Number</Text>
-            <AppPressable
+          <CollapsibleSection
+            title="Legal"
+            isExpanded={expandedSections.legal}
+            onToggle={() => toggleSection('legal')}
+            styles={styles}
+            theme={theme}>
+            <Text style={styles.toggleDescription}>
+              Terms of Service and Privacy Policy
+            </Text>
+            <Text
+              style={styles.termsLink}
               onPress={() => {
-                // Only enable on Android (iOS prod builds don't support logs)
-                if (Platform.OS !== 'android') {
-                  return;
-                }
+                setLegalModalType('terms');
+                setIsLegalModalVisible(true);
+              }}>
+              Read Terms of Use
+            </Text>
+            <Text
+              style={styles.termsLink}
+              onPress={() => {
+                setLegalModalType('privacy');
+                setIsLegalModalVisible(true);
+              }}>
+              Read Privacy Policy
+            </Text>
+          </CollapsibleSection>
+          <CollapsibleSection
+            title="About"
+            isExpanded={expandedSections.about}
+            onToggle={() => toggleSection('about')}
+            styles={styles}
+            theme={theme}>
+            <View style={styles.aboutInfoRow}>
+              <Text style={styles.aboutLabel}>App Version</Text>
+              <Text style={styles.aboutValue}>{appVersion}</Text>
+            </View>
+            <View style={styles.aboutInfoRow}>
+              <Text style={styles.aboutLabel}>Build Number</Text>
+              <AppPressable
+                onPress={() => {
+                  // Only enable on Android (iOS prod builds don't support logs)
+                  if (Platform.OS !== 'android') {
+                    return;
+                  }
 
-                // Check if dev mode is already enabled
-                if (devDebugEnabled) {
-                  Toast.show({
-                    type: 'info',
-                    text1: 'Dev Mode Already Enabled',
-                    text2: 'Developer debug section is already visible',
-                    position: 'top',
-                    visibilityTime: 2000,
-                  });
-                  return;
-                }
+                  // Check if dev mode is already enabled
+                  if (devDebugEnabled) {
+                    Toast.show({
+                      type: 'info',
+                      text1: 'Dev Mode Already Enabled',
+                      text2: 'Developer debug section is already visible',
+                      position: 'top',
+                      visibilityTime: 2000,
+                    });
+                    return;
+                  }
 
-                // Increment click count
-                buildNumberClickCountRef.current += 1;
-                const currentCount = buildNumberClickCountRef.current;
-                setBuildNumberClickCount(currentCount);
+                  // Increment click count
+                  buildNumberClickCountRef.current += 1;
+                  const currentCount = buildNumberClickCountRef.current;
+                  setBuildNumberClickCount(currentCount);
 
-                // Clear existing timeout
-                if (buildNumberClickTimeoutRef.current) {
-                  clearTimeout(buildNumberClickTimeoutRef.current);
-                }
-                // Reset count after 3 seconds of inactivity
-                buildNumberClickTimeoutRef.current = setTimeout(() => {
-                  buildNumberClickCountRef.current = 0;
-                  setBuildNumberClickCount(0);
-                }, 3000);
-
-                // Show progress toast starting from 2 clicks
-                if (currentCount >= 2 && currentCount < 7) {
-                  const stepsRemaining = 7 - currentCount;
-                  Toast.show({
-                    type: 'info',
-                    text1: `You're now ${stepsRemaining} step${
-                      stepsRemaining > 1 ? 's' : ''
-                    } to enable dev mode`,
-                    position: 'top',
-                    visibilityTime: 2000,
-                  });
-                }
-
-                // Check if we've reached 7 clicks
-                if (currentCount >= 7) {
-                  // Enable dev debug mode
-                  setDevDebugEnabled(true);
-                  EncryptedStorage.setItem('devDebugEnabled', 'true').catch(
-                    error => {
-                      dbg('Error saving devDebugEnabled:', error);
-                    },
-                  );
-                  // Open devDebug section and close about section
-                  setExpandedSections(prev => ({
-                    ...prev,
-                    about: false,
-                    devDebug: true,
-                  }));
-                  // Show toast
-                  Toast.show({
-                    type: 'success',
-                    text1: 'Dev Mode Enabled',
-                    text2: 'Developer debug section is now visible',
-                    position: 'top',
-                  });
-                  // Reset counter
-                  buildNumberClickCountRef.current = 0;
-                  setBuildNumberClickCount(0);
+                  // Clear existing timeout
                   if (buildNumberClickTimeoutRef.current) {
                     clearTimeout(buildNumberClickTimeoutRef.current);
-                    buildNumberClickTimeoutRef.current = null;
                   }
-                }
-              }}
-              style={styles.buildNumberContainer}>
-              {buildNumberClickCount >= 2 ? (
-                <View style={styles.buildNumberBadge}>
-                  <Text style={styles.buildNumberBadgeText}>{buildNumber}</Text>
-                </View>
-              ) : (
-                <Text style={styles.aboutValue}>{buildNumber}</Text>
-              )}
-            </AppPressable>
-          </View>
-          <Text style={styles.toggleDescription}>
-            Make sure that your wallet keyshares devices are running the latest
-            version             for optimal compatibility and security.
-          </Text>
-        </CollapsibleSection>
-        </SettingsSectionGroup>
+                  // Reset count after 3 seconds of inactivity
+                  buildNumberClickTimeoutRef.current = setTimeout(() => {
+                    buildNumberClickCountRef.current = 0;
+                    setBuildNumberClickCount(0);
+                  }, 3000);
 
+                  // Show progress toast starting from 2 clicks
+                  if (currentCount >= 2 && currentCount < 7) {
+                    const stepsRemaining = 7 - currentCount;
+                    Toast.show({
+                      type: 'info',
+                      text1: `You're now ${stepsRemaining} step${
+                        stepsRemaining > 1 ? 's' : ''
+                      } to enable dev mode`,
+                      position: 'top',
+                      visibilityTime: 2000,
+                    });
+                  }
+
+                  // Check if we've reached 7 clicks
+                  if (currentCount >= 7) {
+                    // Enable dev debug mode
+                    setDevDebugEnabled(true);
+                    EncryptedStorage.setItem('devDebugEnabled', 'true').catch(
+                      error => {
+                        dbg('Error saving devDebugEnabled:', error);
+                      },
+                    );
+                    // Open devDebug section and close about section
+                    setExpandedSections(prev => ({
+                      ...prev,
+                      about: false,
+                      devDebug: true,
+                    }));
+                    // Show toast
+                    Toast.show({
+                      type: 'success',
+                      text1: 'Dev Mode Enabled',
+                      text2: 'Developer debug section is now visible',
+                      position: 'top',
+                    });
+                    // Reset counter
+                    buildNumberClickCountRef.current = 0;
+                    setBuildNumberClickCount(0);
+                    if (buildNumberClickTimeoutRef.current) {
+                      clearTimeout(buildNumberClickTimeoutRef.current);
+                      buildNumberClickTimeoutRef.current = null;
+                    }
+                  }
+                }}
+                style={styles.buildNumberContainer}>
+                {buildNumberClickCount >= 2 ? (
+                  <View style={styles.buildNumberBadge}>
+                    <Text style={styles.buildNumberBadgeText}>
+                      {buildNumber}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={styles.aboutValue}>{buildNumber}</Text>
+                )}
+              </AppPressable>
+            </View>
+            <Text style={styles.toggleDescription}>
+              Make sure that your wallet keyshares devices are running the
+              latest version for optimal compatibility and security.
+            </Text>
+          </CollapsibleSection>
+        </SettingsSectionGroup>
       </ScrollView>
       {/* Modals */}
+      <RestoringIndexesModal
+        visible={isRestoringIndexes}
+        chain={restoreProgress?.chain}
+        index={restoreProgress?.index}
+        gapIndex={restoreProgress?.gapIndex}
+        phase={restoreProgress?.phase}
+        progress={restoreProgress?.progress}
+      />
       <BackupKeyshareModal
         visible={isBackupModalVisible}
         onClose={() => setIsBackupModalVisible(false)}

@@ -9,18 +9,52 @@ import {
   Platform,
   Image,
 } from 'react-native';
+import {useRoute} from '@react-navigation/native';
 import AppPressable from '../components/AppPressable';
 import AppText from '../components/AppText';
+import RestoringIndexesModal from '../components/RestoringIndexesModal';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useTheme} from '../theme';
-import {dbg, getResetToMainTabsWallet} from '../utils';
+import {dbg, getMainnetAPIList, getResetToMainTabsWallet} from '../utils';
 import {useUser} from '../context/UserContext';
+import {WalletService, waitMS} from '../services/WalletService';
+import mempoolClient from '../services/MempoolClient';
+import database from '../services/Database';
+import walletRepository from '../services/repositories/WalletRepository';
+import balanceRepository from '../services/repositories/BalanceRepository';
+import balanceSyncer from '../services/sync/BalanceSyncer';
+import transactionSyncer from '../services/sync/TransactionSyncer';
+import utxoSyncer from '../services/sync/UtxoSyncer';
+import syncCoordinator from '../services/sync/SyncCoordinator';
+import apiQueue from '../services/ApiQueue';
+import appConfigRepository, {
+  CONFIG_KEYS,
+} from '../services/repositories/AppConfigRepository';
 
 const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
+  const route = useRoute();
+  const pendingRestore = (route.params as any)?.pendingRestore === true;
+
   const {theme} = useTheme();
-  const {setActiveApiProvider, activeNetwork, showMempoolPlayground, showUtxosTab, showPsbtTab, showWalletTab} = useUser();
+  const {
+    setActiveApiProvider,
+    activeApiProvider,
+    activeNetwork,
+    showMempoolPlayground,
+    showUtxosTab,
+    showPsbtTab,
+    showWalletTab,
+  } = useUser();
   const [pendingAPI, setPendingAPI] = useState('');
   const [isAPISaving, setIsAPISaving] = useState(false);
+  const [isRestoringIndexes, setIsRestoringIndexes] = useState(false);
+  const [restoreProgress, setRestoreProgress] = useState<{
+    chain?: 'external' | 'internal';
+    index?: number;
+    gapIndex?: number;
+    phase?: string;
+    progress?: {current: number; total: number};
+  } | null>(null);
 
   const [isFocused, setIsFocused] = useState(false);
   const inputRef = useRef<TextInput>(null);
@@ -96,8 +130,9 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
       await setActiveApiProvider(normalizedApi);
       setPendingAPI(normalizedApi);
       dbg('=== API saved and propagated successfully:', normalizedApi);
-      // Proceed to home after successful save
-      handleProceed();
+      // Proceed to home after successful save — pass the resolved API so the
+      // restore uses the endpoint the user just configured, not the stale state.
+      handleProceed(normalizedApi);
     } catch (error) {
       dbg('Error in saveAPIAndProceed:', error);
       Alert.alert('Error', 'Failed to save API endpoint. Please try again.');
@@ -125,26 +160,163 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
     return styles.apiInputContainer;
   };
 
-  const handleSkip = () => {
+  const navigateToHome = () => {
     navigation.reset(
-      getResetToMainTabsWallet({}, {
-        showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
-        showUtxos: showUtxosTab,
-        showPsbt: showPsbtTab,
-        showWallet: showWalletTab,
-      }),
+      getResetToMainTabsWallet(
+        {},
+        {
+          showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
+          showUtxos: showUtxosTab,
+          showPsbt: showPsbtTab,
+          showWallet: showWalletTab,
+        },
+      ),
     );
   };
 
-  const handleProceed = () => {
-    navigation.reset(
-      getResetToMainTabsWallet({}, {
-        showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
-        showUtxos: showUtxosTab,
-        showPsbt: showPsbtTab,
-        showWallet: showWalletTab,
-      }),
+  const runRestoreIfNeeded = async (
+    apiUrl: string,
+    useRoundRobin: boolean,
+  ) => {
+    if (!pendingRestore) {
+      return;
+    }
+    dbg(
+      'UserPreferenceScreen: Running full re-indexing (discovery + sync) with API:',
+      apiUrl.slice(0, 40),
     );
+    syncCoordinator.stop();
+    apiQueue.clear();
+    setIsRestoringIndexes(true);
+    setRestoreProgress(null);
+    await waitMS(250);
+    const network = 'mainnet';
+    const addressType = 'segwit-native';
+    appConfigRepository.set(CONFIG_KEYS.NETWORK, network);
+    appConfigRepository.set(CONFIG_KEYS.ADDRESS_TYPE, addressType);
+    appConfigRepository.set('api', apiUrl);
+    appConfigRepository.set(`api_${network}`, apiUrl);
+    try {
+      const ws = WalletService.getInstance();
+
+      // Round-robin only when Skip (no custom base): seed public hosts so first request uses next host.
+      if (useRoundRobin) {
+        const publicBases = await getMainnetAPIList();
+        mempoolClient.setPublicBases(publicBases);
+      }
+
+      // ── Discovery: gap-limit scan for native segwit only ──────────────────
+      await ws.discoverHdIndexesForNetwork(
+        network,
+        addressType,
+        apiUrl,
+        (chain, index, gapIndex) =>
+          setRestoreProgress({chain, index, gapIndex}),
+      );
+      dbg('UserPreferenceScreen: HD index discovery complete');
+
+      const hdState = walletRepository.getHdState(network, addressType);
+      if (!hdState?.restoreDone) {
+        throw new Error(
+          'Index discovery incomplete — network may be unreachable. Please try again.',
+        );
+      }
+
+      // Invalidate sync metadata so balance/tx/UTXO sync re-fetches; keep existing DB rows.
+      database.invalidateSyncMetadataForAddressType(network, addressType);
+      mempoolClient.invalidateAll();
+      ws.invalidateAddressCache();
+
+      const addressesWithPaths = await ws.getHdAddressesWithPaths(
+        network,
+        addressType,
+      );
+
+      // ── Full sync: balances, transactions, UTXOs ───────────────────────
+      setRestoreProgress({phase: 'Syncing balances…'});
+      await balanceSyncer.syncAddresses(
+        addressesWithPaths.map(a => ({address: a.address, network})),
+        apiUrl,
+        (current, total) =>
+          setRestoreProgress(prev =>
+            prev ? {...prev, progress: {current, total}} : null,
+          ),
+      );
+      const agg = balanceRepository.getAggregateBalance(network);
+      balanceRepository.setBalance({
+        address: `aggregate_${network}_${addressType}`,
+        network,
+        balanceSats: agg.balanceSats,
+        pendingSats: agg.pendingSats,
+        hasNonzero: agg.hasNonzero,
+        fetchedAt: agg.fetchedAt || Date.now(),
+      });
+
+      setRestoreProgress({phase: 'Syncing transactions…'});
+      await transactionSyncer.syncAddressesAtomic(
+        addressesWithPaths.map(a => ({address: a.address, network})),
+        apiUrl,
+        (current, total) =>
+          setRestoreProgress(prev =>
+            prev ? {...prev, progress: {current, total}} : null,
+          ),
+      );
+
+      setRestoreProgress({phase: 'Syncing UTXOs…'});
+      await utxoSyncer.syncAddresses(
+        addressesWithPaths.map(a => ({
+          address: a.address,
+          network,
+          derivationPath: a.derivationPath,
+        })),
+        apiUrl,
+        (current, total) =>
+          setRestoreProgress(prev =>
+            prev ? {...prev, progress: {current, total}} : null,
+          ),
+      );
+
+      dbg('UserPreferenceScreen: Full re-indexing complete');
+      mempoolClient.invalidateAll();
+    } catch (e) {
+      dbg('UserPreferenceScreen: Restore failed', e);
+      throw e;
+    } finally {
+      setIsRestoringIndexes(false);
+      setRestoreProgress(null);
+    }
+  };
+
+  const handleSkip = async () => {
+    const fallbackApi = activeApiProvider || 'https://mempool.space/api';
+    try {
+      await runRestoreIfNeeded(fallbackApi, true); // no custom base → round-robin applicable
+      navigateToHome();
+    } catch (e) {
+      Alert.alert(
+        'Restore failed',
+        e instanceof Error
+          ? e.message
+          : 'Index discovery or sync failed. Please try again.',
+      );
+    }
+  };
+
+  const handleProceed = async (resolvedApi?: string) => {
+    try {
+      await runRestoreIfNeeded(
+        resolvedApi || activeApiProvider || 'https://mempool.space/api',
+        false, // custom or validated base → no round-robin
+      );
+      navigateToHome();
+    } catch (e) {
+      Alert.alert(
+        'Restore failed',
+        e instanceof Error
+          ? e.message
+          : 'Index discovery or sync failed. Please try again.',
+      );
+    }
   };
 
   const styles = StyleSheet.create({
@@ -338,8 +510,8 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
               Bold collects zero user data. Users are anonymous and no personal
               data is collected or shared. However, public mempool servers can
               see your Bitcoin addresses, potentially link them to your IP
-              address, Geolocation or Device Agent. For that, you can point to your own
-              self-hosted mempool.space to protect privacy.
+              address, Geolocation or Device Agent. For that, you can point to
+              your own self-hosted mempool.space to protect privacy.
             </AppText>
             <AppText style={styles.infoCardTechNote} tone="muted">
               Enter a mempool.space API endpoint (mainnet) or just skip that.
@@ -375,14 +547,16 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
           <AppPressable
             style={[
               styles.proceedButton,
-              (isAPISaving || pendingAPI.trim() === '') &&
+              (isAPISaving || isRestoringIndexes || pendingAPI.trim() === '') &&
                 styles.proceedButtonDisabled,
             ]}
             onPress={() => {
               saveAPIAndProceed(pendingAPI);
             }}
-            disabled={isAPISaving || pendingAPI.trim() === ''}
-            android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+            disabled={
+              isAPISaving || isRestoringIndexes || pendingAPI.trim() === ''
+            }
+            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
             <Image
               source={require('../assets/check-icon.png')}
               resizeMode="contain"
@@ -404,11 +578,20 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
           <AppPressable
             style={styles.skipButton}
             onPress={handleSkip}
-            android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+            disabled={isAPISaving || isRestoringIndexes}
+            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
             <AppText style={styles.skipButtonText}>Skip for now</AppText>
           </AppPressable>
         </ScrollView>
       </KeyboardAvoidingView>
+      <RestoringIndexesModal
+        visible={isRestoringIndexes}
+        chain={restoreProgress?.chain}
+        index={restoreProgress?.index ?? 0}
+        gapIndex={restoreProgress?.gapIndex ?? 0}
+        phase={restoreProgress?.phase}
+        progress={restoreProgress?.progress}
+      />
     </SafeAreaView>
   );
 };

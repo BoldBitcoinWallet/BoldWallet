@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import LocalCache from '../services/LocalCache';
+import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import { BBMTLibNativeModule } from '../native_modules';
 import {dbg, getMainnetAPIList, getTestnetAPIList} from '../utils';
 interface NetworkContextType {
@@ -17,31 +17,16 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const refreshFromCache = useCallback(async () => {
     try {
       dbg('=== NetworkContext: Refreshing from cache');
-      // Get current network
-      const net = await LocalCache.getItem('network');
+      const net = appConfigRepository.get(CONFIG_KEYS.NETWORK);
       dbg('NetworkContext: Network from cache:', net);
       if (net) {
         setNetwork(net);
-        dbg('NetworkContext: Network state updated to:', net);
-        // Try to get network-specific API first, then fallback to general API
-        let api = await LocalCache.getItem(`api_${net}`);
-        if (!api) {
-          api = await LocalCache.getItem('api');
-          dbg('NetworkContext: No network-specific API, using general API:', api);
-        } else {
-          dbg('NetworkContext: Using network-specific API:', api);
-        }
+        let api = appConfigRepository.get(`api_${net}`) || appConfigRepository.get('api');
+        dbg('NetworkContext: API from cache:', api);
         if (api) {
           setApiBase(api);
-          dbg('NetworkContext: API state updated to:', api);
-          // Sync with native module
           await BBMTLibNativeModule.setAPI(net, api);
-          dbg('NetworkContext: Native module synced with network:', net, 'API:', api);
-        } else {
-          dbg('NetworkContext: No API found in cache');
         }
-      } else {
-        dbg('NetworkContext: No network found in cache');
       }
     } catch (error) {
       dbg('NetworkContext: Error refreshing from cache:', error);
@@ -51,45 +36,26 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const updateNetwork = useCallback(async (newNetwork: string) => {
     try {
       dbg('=== NetworkContext: Updating network to:', newNetwork);
-      // Save current API for the current network before switching
-      const currentApi = apiBase;
-      if (currentApi) {
-        await LocalCache.setItem(`api_${network}`, currentApi);
-        dbg(`NetworkContext: Saved current API for ${network}:`, currentApi);
+      if (apiBase) {
+        appConfigRepository.set(`api_${network}`, apiBase);
       }
-      // Cache the new network
-      await LocalCache.setItem('network', newNetwork);
-      dbg('NetworkContext: Network cached:', newNetwork);
-      // Try to get the previously selected API for this network, fallback to default
-      let api = await LocalCache.getItem(`api_${newNetwork}`);
+      appConfigRepository.set(CONFIG_KEYS.NETWORK, newNetwork);
+      let api = appConfigRepository.get(`api_${newNetwork}`);
       if (!api) {
-        // Use default API for the network if no cached selection
         api = newNetwork === 'testnet3'
-          ? 'https://mempool.space/testnet/api'  // TESTNET_APIS[0]
-          : 'https://mempool.space/api';         // MAINNET_APIS[0]
-        dbg('NetworkContext: No cached API found, using default for', newNetwork, ':', api);
-      } else {
-        dbg('NetworkContext: Using cached API for', newNetwork, ':', api);
+          ? 'https://mempool.space/testnet/api'
+          : 'https://mempool.space/api';
       }
-      // Cache the selected API for this network
-      await LocalCache.setItem(`api_${newNetwork}`, api);
-      await LocalCache.setItem('api', api); // Also update the current API
-      dbg('NetworkContext: API cached for network:', newNetwork, 'API:', api);
-      // Update local state - this should trigger all dependent effects
+      appConfigRepository.set(`api_${newNetwork}`, api);
+      appConfigRepository.set('api', api);
       setNetwork(newNetwork);
       setApiBase(api);
-      dbg('NetworkContext: Local state updated with network:', newNetwork, 'API:', api);
-      // Update native module
       await BBMTLibNativeModule.setAPI(newNetwork, api);
-      dbg('NetworkContext: Native module updated with network:', newNetwork, 'API:', api);
-      // Set fee APIs for the selected network
       const networkAPIs = newNetwork === 'mainnet'
         ? await getMainnetAPIList()
         : await getTestnetAPIList();
-      const feeAPIsString = networkAPIs.join(',');
-      await BBMTLibNativeModule.setFeeAPIs(feeAPIsString);
-      dbg('NetworkContext: Fee APIs set for', newNetwork + ':', feeAPIsString);
-      dbg('=== NetworkContext: Network update completed');
+      await BBMTLibNativeModule.setFeeAPIs(networkAPIs.join(','));
+      dbg('NetworkContext: Network update completed', newNetwork, api);
     } catch (error) {
       dbg('NetworkContext: Error updating network:', error);
     }
@@ -97,91 +63,36 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Update API for current network
   const updateAPI = useCallback(async (newAPI: string) => {
     try {
-      dbg('=== NetworkContext: Updating API to:', newAPI);
-      // Cache the API for the current network
-      await LocalCache.setItem(`api_${network}`, newAPI);
-      await LocalCache.setItem('api', newAPI); // Also update the current API
-      dbg('NetworkContext: API cached for network:', network, 'API:', newAPI);
-      // Update local state
+      appConfigRepository.set(`api_${network}`, newAPI);
+      appConfigRepository.set('api', newAPI);
       setApiBase(newAPI);
-      dbg('NetworkContext: API state updated to:', newAPI);
-      // Update native module
       await BBMTLibNativeModule.setAPI(network, newAPI);
-      dbg('NetworkContext: Native module updated with network:', network, 'API:', newAPI);
-      dbg('=== NetworkContext: API update completed');
+      dbg('NetworkContext: API updated to:', newAPI);
     } catch (error) {
       dbg('NetworkContext: Error updating API:', error);
     }
   }, [network]);
-  // Initialize from cache on mount
+  // Initialize from SQLite on mount
   useEffect(() => {
     const initializeContext = async () => {
       try {
-        dbg('=== NetworkContext: Initializing context');
-        // Get current network
-        const net = await LocalCache.getItem('network');
-        dbg('NetworkContext: Network from cache:', net);
-        if (net) {
-          setNetwork(net);
-          dbg('NetworkContext: Network state updated to:', net);
-          // Try to get network-specific API first, then fallback to general API
-          let api = await LocalCache.getItem(`api_${net}`);
-          if (!api) {
-            api = await LocalCache.getItem('api');
-            dbg('NetworkContext: No network-specific API, using general API:', api);
-          } else {
-            dbg('NetworkContext: Using network-specific API:', api);
-          }
-          if (api) {
-            setApiBase(api);
-            dbg('NetworkContext: API state updated to:', api);
-            // Sync with native module
-            await BBMTLibNativeModule.setAPI(net, api);
-            dbg('NetworkContext: Native module synced with network:', net, 'API:', api);
-            // Set fee APIs for the selected network
-            const networkAPIs = net === 'mainnet'
-              ? await getMainnetAPIList()
-              : await getTestnetAPIList();
-            const feeAPIsString = networkAPIs.join(',');
-            await BBMTLibNativeModule.setFeeAPIs(feeAPIsString);
-            dbg('NetworkContext: Fee APIs set for', net + ':', feeAPIsString);
-          } else {
-            // Set default API if none found
-            const defaultApi = net === 'testnet3'
-              ? 'https://mempool.space/testnet/api'
-              : 'https://mempool.space/api';
-            dbg('NetworkContext: No API found, using default:', defaultApi);
-            setApiBase(defaultApi);
-            await LocalCache.setItem('api', defaultApi);
-            await LocalCache.setItem(`api_${net}`, defaultApi);
-            await BBMTLibNativeModule.setAPI(net, defaultApi);
-            dbg('NetworkContext: Default API set and cached');
-            // Set fee APIs for the selected network
-            const networkAPIs = net === 'mainnet'
-              ? await getMainnetAPIList()
-              : await getTestnetAPIList();
-            const feeAPIsString = networkAPIs.join(',');
-            await BBMTLibNativeModule.setFeeAPIs(feeAPIsString);
-            dbg('NetworkContext: Fee APIs set for', net + ':', feeAPIsString);
-          }
-        } else {
-          // No network found, set defaults
-          dbg('NetworkContext: No network found, setting defaults');
-          const defaultNetwork = 'mainnet';
-          const defaultApi = 'https://mempool.space/api';
-          setNetwork(defaultNetwork);
-          setApiBase(defaultApi);
-          await LocalCache.setItem('network', defaultNetwork);
-          await LocalCache.setItem('api', defaultApi);
-          await LocalCache.setItem(`api_${defaultNetwork}`, defaultApi);
-          await BBMTLibNativeModule.setAPI(defaultNetwork, defaultApi);
-          dbg('NetworkContext: Defaults set - network:', defaultNetwork, 'API:', defaultApi);
-          // Set fee APIs for mainnet (default network)
-          const networkAPIs = await getMainnetAPIList();
-          const feeAPIsString = networkAPIs.join(',');
-          await BBMTLibNativeModule.setFeeAPIs(feeAPIsString);
-          dbg('NetworkContext: Fee APIs set for mainnet:', feeAPIsString);
+        const net = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
+        setNetwork(net);
+        let api = appConfigRepository.get(`api_${net}`) || appConfigRepository.get('api');
+        if (!api) {
+          api = net === 'testnet3'
+            ? 'https://mempool.space/testnet/api'
+            : 'https://mempool.space/api';
+          appConfigRepository.set('api', api);
+          appConfigRepository.set(`api_${net}`, api);
         }
+        setApiBase(api);
+        await BBMTLibNativeModule.setAPI(net, api);
+        const networkAPIs = net === 'mainnet'
+          ? await getMainnetAPIList()
+          : await getTestnetAPIList();
+        await BBMTLibNativeModule.setFeeAPIs(networkAPIs.join(','));
+        dbg('NetworkContext: initialized', net, api);
       } catch (error) {
         dbg('NetworkContext: Error during initialization:', error);
       }

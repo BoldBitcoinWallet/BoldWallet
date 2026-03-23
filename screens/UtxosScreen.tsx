@@ -10,6 +10,7 @@ import {
   Linking,
   Alert,
 } from 'react-native';
+import Toast from 'react-native-toast-message';
 import moment from 'moment';
 import {useTheme, themes} from '../theme';
 import {COMMON_FONT_CONFIGS} from '../theme/fonts';
@@ -19,11 +20,19 @@ import {
   HeaderProvider,
   HeaderNetwork,
 } from '../components/Header';
-import LocalCache from '../services/LocalCache';
+import appConfigRepository, {
+  CONFIG_KEYS,
+} from '../services/repositories/AppConfigRepository';
+import utxoRepository from '../services/repositories/UtxoRepository';
+import priceRepository from '../services/repositories/PriceRepository';
 import {WalletService} from '../services/WalletService';
-import {presentFiat, getCurrencySymbol} from '../utils';
+import utxoSyncer from '../services/sync/UtxoSyncer';
+import mempoolClient from '../services/MempoolClient';
+import apiQueue from '../services/ApiQueue';
+import {presentFiat, getCurrencySymbol, dbg} from '../utils';
 import AppPressable from '../components/AppPressable';
 import {CacheIndicator} from '../components/CacheIndicator';
+import CurrencySelector from '../components/CurrencySelector';
 
 /** Mempool.space UTXO item: txid, vout, value (sats), status { confirmed, block_height?, block_hash?, block_time? }. */
 type ApiUtxo = {
@@ -37,6 +46,59 @@ type ApiUtxo = {
     block_time?: number;
   };
 };
+
+/** UTXO with HD context: address, derivation path, and chain (receive vs change). */
+export type UtxoWithPath = ApiUtxo & {
+  address: string;
+  derivationPath: string;
+  chain: 'receive' | 'change';
+  chainIndex: number;
+};
+
+/**
+ * Convert StoredUtxo rows from the DB into the UtxoWithPath shape used by the UI.
+ * Chain and index are resolved from the addressesWithPaths lookup first; if the
+ * address is not found there (e.g. pre-load without fresh derivation), they are
+ * parsed directly from the stored derivation path (e.g. "m/84'/0'/0'/1/3" →
+ * chain=change, index=3).
+ * The result is sorted: receive before change, by chain index, newest confirmed first.
+ */
+function storedToUtxoWithPath(
+  stored: ReturnType<typeof utxoRepository.getUtxosForAddresses>,
+  addressesWithPaths: Array<{
+    address: string;
+    derivationPath: string;
+    chain: 'receive' | 'change';
+    index: number;
+  }>,
+): UtxoWithPath[] {
+  const mapped: UtxoWithPath[] = stored.map(u => {
+    const info = addressesWithPaths.find(a => a.address === u.address);
+    const parts = (u.derivationPath ?? '').split('/');
+    const chainNum = parseInt(parts.at(-2) ?? '', 10);
+    const chainIdx = parseInt(parts.at(-1) ?? '', 10);
+    return {
+      txid: u.txid,
+      vout: u.vout,
+      value: u.valueSats,
+      status: {
+        confirmed: u.isConfirmed,
+        block_height: u.blockHeight ?? undefined,
+        block_time: u.blockTime ?? undefined,
+      },
+      address: u.address,
+      derivationPath: u.derivationPath ?? info?.derivationPath ?? '',
+      chain: info?.chain ?? (chainNum === 1 ? 'change' : 'receive'),
+      chainIndex: info?.index ?? (Number.isNaN(chainIdx) ? 0 : chainIdx),
+    };
+  });
+  mapped.sort((a, b) => {
+    if (a.chain !== b.chain) return a.chain === 'receive' ? -1 : 1;
+    if (a.chainIndex !== b.chainIndex) return a.chainIndex - b.chainIndex;
+    return (b.status?.block_time ?? 0) - (a.status?.block_time ?? 0);
+  });
+  return mapped;
+}
 
 function addressMatchesNetwork(addr: string, isTestnetApi: boolean): boolean {
   if (!addr) return false;
@@ -56,47 +118,65 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const {
     activeApiProvider: apiBase,
     activeNetwork: network,
-    activeAddress,
+    activeAddressType: addressType,
   } = useUser();
   const [btcPrice, setBtcPrice] = useState<string>('');
   const [btcRate, setBtcRate] = useState<number>(0);
   const [selectedCurrency, setSelectedCurrency] = useState<string>('USD');
+  const [priceData, setPriceData] = useState<{[key: string]: number}>({});
+  const [isCurrencySelectorVisible, setIsCurrencySelectorVisible] =
+    useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [rawUtxos, setRawUtxos] = useState<ApiUtxo[]>([]);
+  const [utxosWithPath, setUtxosWithPath] = useState<UtxoWithPath[]>([]);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [utxoFetchTimestamp, setUtxoFetchTimestamp] = useState<number>(0);
+  const [refreshStatusMessage, setRefreshStatusMessage] = useState<
+    string | null
+  >(null);
+  const [refreshProgress, setRefreshProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
+  const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
+  const [lastSyncFailed, setLastSyncFailed] = useState(false);
+  const [abortRequested, setAbortRequested] = useState(false);
 
   useEffect(() => {
     const loadCurrency = async () => {
-      const stored = await LocalCache.getItem('currency');
+      const stored = appConfigRepository.get(CONFIG_KEYS.CURRENCY);
       if (stored) setSelectedCurrency(stored);
     };
     loadCurrency();
   }, []);
 
-  // Use same price source as WalletHome (WalletService.getBitcoinPrice)
+  // DB-first: seed price from SQLite immediately, then refresh via API.
   useEffect(() => {
     let cancelled = false;
+    const currency = selectedCurrency || 'USD';
+
+    // Phase 1 — instant DB read
+    const cached = priceRepository.getCachedPrice(currency);
+    if (cached) {
+      setPriceData(cached.rates);
+      setBtcPrice(String(cached.rate));
+      setBtcRate(cached.rate);
+    }
+
+    // Phase 2 — background API refresh → DB → UI
     WalletService.getInstance()
       .getBitcoinPrice()
       .then(({rates}) => {
         if (cancelled) return;
-        const currency = selectedCurrency || 'USD';
+        if (rates) setPriceData(rates);
         const rate = rates?.[currency] ?? rates?.USD ?? 0;
         if (typeof rate === 'number' && rate > 0) {
           setBtcPrice(String(rate));
           setBtcRate(rate);
-        } else {
-          setBtcPrice('');
-          setBtcRate(0);
         }
       })
       .catch(() => {
-        if (!cancelled) {
-          setBtcPrice('');
-          setBtcRate(0);
-        }
+        // API failed — DB data (if any) is already showing
       });
     return () => {
       cancelled = true;
@@ -104,71 +184,171 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
   }, [selectedCurrency]);
 
   const fetchUtxos = useCallback(async () => {
-    const addr = activeAddress?.trim();
     const base = apiBase?.trim();
-    if (!addr || !base) {
-      setRawUtxos([]);
-      setFetchError(addr ? 'No API configured' : 'No wallet address');
+    if (!base) {
+      setFetchError('No API configured');
       setLoading(false);
       return;
     }
     const cleanBase = base.replace(/\/+$/, '').replace(/\/api\/?$/, '');
     const apiUrl = `${cleanBase}/api`;
     const isTestnetApi = /\/testnet(\/|$)/.test(apiUrl);
-    if (!addressMatchesNetwork(addr, isTestnetApi)) {
-      setRawUtxos([]);
-      setFetchError('Address and network mismatch');
+    setFetchError(null);
+
+    // Resolve HD addresses once, outside the try block so the catch can use them.
+    let addressesWithPaths: Awaited<
+      ReturnType<typeof WalletService.prototype.getHdAddressesWithPaths>
+    > = [];
+    try {
+      addressesWithPaths =
+        await WalletService.getInstance().getHdAddressesWithPaths(
+          network,
+          addressType || 'segwit-native',
+        );
+    } catch {
+      // Derivation failed — fall through to DB-only path below.
+    }
+
+    if (addressesWithPaths.length === 0) {
+      // No addresses derived yet — show whatever the DB has for this network + address type.
+      const allNetworkUtxos = utxoRepository.getUtxosForNetwork(
+        network,
+        addressType || 'segwit-native',
+      );
+      setUtxosWithPath(storedToUtxoWithPath(allNetworkUtxos, []));
+      setUtxoFetchTimestamp(Date.now());
       setLoading(false);
+      setRefreshing(false);
       return;
     }
-    setFetchError(null);
-    const utxoUrl = `${apiUrl}/address/${encodeURIComponent(addr)}/utxo`;
+
+    setRefreshStatusMessage('Syncing UTXOs…');
+
+    const addressesForSyncer = addressesWithPaths
+      .filter(({address}) => addressMatchesNetwork(address, isTestnetApi))
+      .map(({address, derivationPath}) => ({
+        address,
+        network,
+        derivationPath: derivationPath ?? undefined,
+      }));
+
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      const res = await fetch(utxoUrl, {signal: controller.signal});
-      clearTimeout(timeoutId);
-      if (!res.ok) {
-        setRawUtxos([]);
-        setFetchError(`API error ${res.status}`);
-        return;
+      if (addressesForSyncer.length > 0) {
+        await utxoSyncer.syncAddresses(
+          addressesForSyncer,
+          apiUrl,
+          (current, total) => setRefreshProgress({current, total}),
+        );
       }
-      const rawList: ApiUtxo[] = await res.json();
-      if (!Array.isArray(rawList)) {
-        setRawUtxos([]);
-        return;
-      }
-      setRawUtxos(rawList);
+      const allFromDB = utxoRepository.getUtxosForAddresses(
+        addressesWithPaths.map(a => a.address),
+        network,
+      );
+      setUtxosWithPath(storedToUtxoWithPath(allFromDB, addressesWithPaths));
       setUtxoFetchTimestamp(Date.now());
+      setFetchError(null);
+      setLastSyncFailed(false);
     } catch (e: any) {
-      if (e?.name === 'AbortError') {
-        setFetchError('Request timed out');
-      } else {
-        setFetchError(e?.message || 'Failed to load UTXOs');
-      }
-      setRawUtxos([]);
+      const isTimeout =
+        e?.name === 'AbortError' || /timeout|aborted/i.test(e?.message ?? '');
+      const message = isTimeout
+        ? 'Request timed out — cached data'
+        : 'Sync failed — showing cached data';
+      setSyncErrorMessage(message);
+      setLastSyncFailed(true);
+      setFetchError(
+        e?.name === 'AbortError'
+          ? 'Request timed out'
+          : e?.message || 'Failed to load UTXOs',
+      );
+      Toast.show({
+        type: 'info',
+        text1: 'Sync failed — showing cached data',
+        text2: 'Tap the bar to retry.',
+        position: 'top',
+      });
+      const stored = utxoRepository.getUtxosForAddresses(
+        addressesWithPaths.map(a => a.address),
+        network,
+      );
+      setUtxosWithPath(storedToUtxoWithPath(stored, addressesWithPaths));
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setRefreshStatusMessage(null);
+      setRefreshProgress(null);
     }
-  }, [activeAddress, apiBase]);
+  }, [apiBase, network, addressType]);
 
   useEffect(() => {
-    setLoading(true);
-    fetchUtxos();
-  }, [fetchUtxos]);
+    if (!syncErrorMessage) return;
+    const t = setTimeout(() => setSyncErrorMessage(null), 4000);
+    return () => clearTimeout(t);
+  }, [syncErrorMessage]);
+
+  useEffect(() => {
+    if (!refreshing) setAbortRequested(false);
+  }, [refreshing]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      // Phase 1 — read from DB immediately so the list is never blank on launch.
+      let hadCachedData = false;
+      try {
+        const addrs = await WalletService.getInstance().getHdAddressesWithPaths(
+          network,
+          addressType || 'segwit-native',
+        );
+        if (!cancelled && addrs.length > 0) {
+          const stored = utxoRepository.getUtxosForAddresses(
+            addrs.map(a => a.address),
+            network,
+          );
+          if (!cancelled && stored.length > 0) {
+            hadCachedData = true;
+            setUtxosWithPath(storedToUtxoWithPath(stored, addrs));
+            setLoading(false); // cached list visible; API will update in background
+          }
+        }
+      } catch {
+        // Pre-load failed — API fetch below will still populate the list
+      }
+
+      // Phase 2 — live API fetch (updates the already-visible cached list).
+      if (!cancelled) {
+        if (!hadCachedData) {
+          setLoading(true); // no cached data yet — show spinner
+        }
+        fetchUtxos();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchUtxos, network, addressType]);
+
+  const handleCurrencySelect = useCallback(
+    (currency: {code: string}) => {
+      setSelectedCurrency(currency.code);
+      appConfigRepository.set(CONFIG_KEYS.CURRENCY, currency.code);
+      if (priceData[currency.code]) {
+        setBtcPrice(String(priceData[currency.code]));
+        setBtcRate(priceData[currency.code]);
+      }
+    },
+    [priceData],
+  );
 
   const headerLeft = useCallback(
     () => (
       <HeaderPriceButton
         btcPrice={btcPrice}
         selectedCurrency={selectedCurrency}
-        onCurrencyPress={() =>
-          navigation.navigate('Settings', {expandSection: 'advanced'})
-        }
+        onCurrencyPress={() => setIsCurrencySelectorVisible(true)}
       />
     ),
-    [btcPrice, selectedCurrency, navigation],
+    [btcPrice, selectedCurrency],
   );
   const headerTitle = useCallback(
     () => <HeaderProvider apiBase={apiBase} />,
@@ -215,12 +395,48 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
     : theme.colors.blackOverlay05 ?? 'rgba(0,0,0,0.06)';
   const receivedColor = themes.cryptoVibrant.colors.secondary;
 
+  /** Confirmed / unconfirmed breakdown derived from the already-loaded UTXO list.
+   *  Zero extra API calls — same data source as the list below, always in sync. */
+  const balanceSummary = useMemo(() => {
+    let confirmedSats = 0;
+    let unconfirmedSats = 0;
+    let confirmedCount = 0;
+    let unconfirmedCount = 0;
+    for (const u of utxosWithPath) {
+      if (u.status?.confirmed) {
+        confirmedSats += u.value;
+        confirmedCount++;
+      } else {
+        unconfirmedSats += u.value;
+        unconfirmedCount++;
+      }
+    }
+    const totalSats = confirmedSats + unconfirmedSats;
+    const fmt = (sats: number) => (sats / 1e8).toFixed(8);
+    const fiat = (sats: number) =>
+      btcRate > 0
+        ? getCurrencySymbol(selectedCurrency || 'USD') +
+          presentFiat((sats / 1e8) * btcRate)
+        : null;
+    return {
+      confirmedSats,
+      unconfirmedSats,
+      totalSats,
+      confirmedCount,
+      unconfirmedCount,
+      fmt,
+      fiat,
+    };
+  }, [utxosWithPath, btcRate, selectedCurrency]);
+
   const shortTxId = (txid: string) =>
     txid ? `${txid.slice(0, 6)}…${txid.slice(-6)}` : '—';
-  const shortAddr =
-    activeAddress && activeAddress.length > 12
-      ? `${activeAddress.slice(0, 6)}…${activeAddress.slice(-6)}`
-      : activeAddress || '—';
+  const shortAddr = (addr: string) =>
+    addr && addr.length > 12
+      ? `${addr.slice(0, 6)}…${addr.slice(-6)}`
+      : addr || '—';
+  const chainLabel = (chain: 'receive' | 'change', index: number) =>
+    chain === 'receive' ? `Receive #${index}` : `Change #${index}`;
 
   const baseUrl = apiBase?.trim()
     ? apiBase.replace(/\/+$/, '').replace(/\/api\/?$/, '')
@@ -231,11 +447,41 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
       StyleSheet.create({
         container: {flex: 1},
         flexOne: {flex: 1},
+        utxoHeaderStyle: {
+          padding: 0,
+          backgroundColor: isDarkMode
+            ? 'rgba(255,255,255,0.07)'
+            : 'rgba(26,43,60,0.88)',
+          borderRadius: 16,
+          alignItems: 'stretch' as const,
+          marginHorizontal: 16,
+          marginVertical: 12,
+          borderWidth: isDarkMode ? 1 : 0.5,
+          borderColor: isDarkMode
+            ? 'rgba(255,255,255,0.18)'
+            : 'rgba(255,255,255,0.12)',
+          borderTopWidth: isDarkMode ? 1.5 : 0.5,
+          borderTopColor: isDarkMode
+            ? 'rgba(255,255,255,0.30)'
+            : 'rgba(255,255,255,0.18)',
+          borderLeftWidth: isDarkMode ? 1.5 : 0.5,
+          borderLeftColor: isDarkMode
+            ? 'rgba(255,255,255,0.22)'
+            : 'rgba(255,255,255,0.15)',
+          position: 'relative' as const,
+          zIndex: 3,
+          elevation: isDarkMode ? 8 : 4,
+          shadowColor: isDarkMode ? '#000' : 'rgba(26,43,60,0.35)',
+          shadowOffset: {width: 0, height: isDarkMode ? 6 : 4},
+          shadowOpacity: isDarkMode ? 0.35 : 0.15,
+          shadowRadius: isDarkMode ? 12 : 8,
+          overflow: 'hidden' as const,
+        },
         listHeader: {
-          marginTop: 10,
+          marginTop: 0,
         },
         cacheIndicatorWrap: {
-          marginHorizontal: -16,
+          margin: 0,
         },
         listContent: {
           paddingHorizontal: 16,
@@ -294,6 +540,150 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           fontSize: theme.fontSizes?.xs || 11,
           opacity: 0.5,
         },
+        chainBadge: {
+          flexDirection: 'row' as const,
+          alignItems: 'center' as const,
+          justifyContent: 'space-between' as const,
+          paddingHorizontal: 8,
+          paddingVertical: 4,
+          borderRadius: 6,
+          marginBottom: 6,
+        },
+        chainBadgeReceive: {
+          backgroundColor: theme.colors.receivedOverlay15,
+        },
+        chainBadgeChange: {
+          backgroundColor: theme.colors.primary + '20',
+        },
+        chainBadgeText: {
+          fontSize: theme.fontSizes?.xs || 11,
+          fontFamily: theme.fontFamilies?.bold,
+        },
+        pathRow: {
+          marginTop: 4,
+          paddingTop: 4,
+          borderTopWidth: 1,
+          borderTopColor: theme.colors.border + '60',
+        },
+        pathLabel: {
+          fontSize: theme.fontSizes?.xs || 11,
+          fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
+          opacity: 0.7,
+        },
+        pathFull: {
+          marginLeft: 'auto' as const,
+          fontSize: (theme.fontSizes?.xs ?? 11) - 1,
+          fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
+          opacity: 0.7,
+          textAlign: 'right' as const,
+        },
+        summaryCard: {
+          paddingHorizontal: 16,
+          paddingVertical: 14,
+          gap: 6,
+        },
+        summaryCardWrap: {
+          paddingHorizontal: 16,
+          paddingVertical: 12,
+        },
+        summaryTitleRow: {
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 4,
+        },
+        summaryTitle: {
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: theme.fontFamilies?.bold,
+          letterSpacing: 0.8,
+          textTransform: 'uppercase' as const,
+          opacity: 0.7,
+        },
+        countBadge: {
+          paddingHorizontal: 8,
+          paddingVertical: 3,
+          borderRadius: 10,
+          borderWidth: isDarkMode ? 0.5 : 0,
+          borderColor: 'rgba(255,255,255,0.12)',
+          backgroundColor: isDarkMode
+            ? 'rgba(255,255,255,0.08)'
+            : 'rgba(255,255,255,0.10)',
+        },
+        countBadgeText: {
+          fontSize: theme.fontSizes?.xs || 10,
+          fontFamily: theme.fontFamilies?.medium,
+          opacity: 0.85,
+        },
+        heroTotalWrap: {
+          alignItems: 'center',
+          paddingVertical: 6,
+          marginBottom: 2,
+        },
+        heroTotalBtc: {
+          fontSize: theme.fontSizes?.xl || 18,
+          fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
+          letterSpacing: -0.3,
+        },
+        heroTotalFiat: {
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
+          marginTop: 2,
+          opacity: 0.7,
+        },
+        summaryRow: {
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        },
+        summaryDivider: {
+          height: StyleSheet.hairlineWidth,
+          marginVertical: 8,
+          backgroundColor: isDarkMode
+            ? 'rgba(255,255,255,0.15)'
+            : 'rgba(255,255,255,0.12)',
+        },
+        summaryLabel: {
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
+        },
+        summaryCount: {
+          fontSize: theme.fontSizes?.xs || 10,
+          fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
+          marginLeft: 4,
+          opacity: 0.6,
+        },
+        summaryBtc: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
+          letterSpacing: COMMON_FONT_CONFIGS.bitcoinAmountMono.letterSpacing,
+        },
+        summaryFiat: {
+          fontSize: theme.fontSizes?.xs || 11,
+          fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
+          marginTop: 1,
+          textAlign: 'right',
+          opacity: 0.6,
+        },
+        summaryRight: {
+          alignItems: 'flex-end',
+        },
+        summaryLabelRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+        },
+        statusDot: {
+          width: 7,
+          height: 7,
+          borderRadius: 4,
+          marginRight: 6,
+        },
+        statusDotHollow: {
+          width: 7,
+          height: 7,
+          borderRadius: 4,
+          borderWidth: 1.5,
+          marginRight: 6,
+        },
         emptyWrap: {
           paddingVertical: 32,
           paddingHorizontal: 24,
@@ -329,11 +719,11 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
         },
       }),
-    [theme],
+    [theme, isDarkMode],
   );
 
   const renderUtxoItem = useCallback(
-    ({item: u}: {item: ApiUtxo}) => {
+    ({item: u}: {item: UtxoWithPath}) => {
       const blockTime =
         u.status?.block_time != null ? u.status.block_time * 1000 : null;
       const timestamp = blockTime
@@ -346,15 +736,14 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
         getCurrencySymbol(selectedCurrency || 'USD') +
         presentFiat((u.value / 1e8) * btcRate);
       const openInExplorer = () => {
-        if (!baseUrl || !u.txid) {
-          return;
-        }
+        if (!baseUrl || !u.txid) return;
         const vout = u.vout ?? 0;
         const url = `${baseUrl}/tx/${u.txid}#vout=${vout}`;
         Linking.openURL(url).catch(() => {
           Alert.alert('Error', 'Could not open explorer');
         });
       };
+      const isReceive = u.chain === 'receive';
       return (
         <AppPressable
           style={[
@@ -368,7 +757,35 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           }}
           accessible={true}
           accessibilityRole="button"
-          accessibilityLabel={`UTXO ${shortTxId(u.txid || '')} vout ${u.vout ?? 0}. Tap to open in explorer.`}>
+          accessibilityLabel={`${chainLabel(
+            u.chain,
+            u.chainIndex,
+          )} UTXO ${shortTxId(u.txid || '')} vout ${
+            u.vout ?? 0
+          }. Tap to open in explorer.`}>
+          <View
+            style={[
+              styles.chainBadge,
+              isReceive ? styles.chainBadgeReceive : styles.chainBadgeChange,
+            ]}>
+            <Text
+              style={[
+                styles.chainBadgeText,
+                {
+                  color: isReceive
+                    ? theme.colors.received
+                    : theme.colors.primary,
+                },
+              ]}>
+              {chainLabel(u.chain, u.chainIndex)}
+            </Text>
+            <Text
+              style={[styles.pathFull, {color: theme.colors.textSecondary}]}
+              numberOfLines={1}
+              selectable>
+              {u.derivationPath}
+            </Text>
+          </View>
           <View style={styles.utxoRow}>
             <Text
               style={[styles.utxoLeft, {color: theme.colors.text}]}
@@ -403,7 +820,8 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
               style={[styles.utxoLeft, {color: theme.colors.text}]}
               numberOfLines={1}
               selectable>
-              Addr:<Text style={styles.utxoLeftValue}> {shortAddr}</Text>
+              Addr:
+              <Text style={styles.utxoLeftValue}> {shortAddr(u.address)}</Text>
             </Text>
             <Text
               style={[styles.utxoTime, {color: theme.colors.textSecondary}]}>
@@ -418,7 +836,6 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
       styles,
       cardBg,
       cardBorder,
-      shortAddr,
       selectedCurrency,
       btcRate,
       isDarkMode,
@@ -468,31 +885,215 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
   return (
     <View
       style={[styles.container, {backgroundColor: theme.colors.background}]}>
+      {/* Top card — dedicated UTXO header */}
+
+      <View style={styles.utxoHeaderStyle}>
+        <View style={styles.summaryCard}>
+          {/* Title row */}
+          <View style={styles.summaryTitleRow}>
+            <Text
+              style={[
+                styles.summaryTitle,
+                {color: theme.colors.textOnPrimary},
+              ]}>
+              UTXO Balance
+            </Text>
+            <View style={styles.countBadge}>
+              <Text
+                style={[
+                  styles.countBadgeText,
+                  {color: theme.colors.textOnPrimary},
+                ]}>
+                {utxosWithPath.length}{' '}
+                {utxosWithPath.length === 1 ? 'UTXO' : 'UTXOs'}
+              </Text>
+            </View>
+          </View>
+
+          {/* Hero total */}
+          <View style={styles.heroTotalWrap}>
+            <Text
+              style={[styles.heroTotalBtc, {color: theme.colors.textOnPrimary}]}
+              numberOfLines={1}
+              adjustsFontSizeToFit>
+              {balanceSummary.fmt(balanceSummary.totalSats)} BTC
+            </Text>
+            {balanceSummary.fiat(balanceSummary.totalSats) && (
+              <Text
+                style={[
+                  styles.heroTotalFiat,
+                  {color: theme.colors.textOnPrimary},
+                ]}>
+                {balanceSummary.fiat(balanceSummary.totalSats)}
+              </Text>
+            )}
+          </View>
+
+          {/* Divider */}
+          <View style={styles.summaryDivider} />
+
+          {/* Confirmed row */}
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryLabelRow}>
+              <View
+                style={[styles.statusDot, {backgroundColor: receivedColor}]}
+              />
+              <Text style={[styles.summaryLabel, {color: receivedColor}]}>
+                Confirmed
+              </Text>
+              <Text
+                style={[
+                  styles.summaryCount,
+                  {color: theme.colors.textOnPrimary},
+                ]}>
+                {balanceSummary.confirmedCount}
+              </Text>
+            </View>
+            <View style={styles.summaryRight}>
+              <Text style={[styles.summaryBtc, {color: receivedColor}]}>
+                {balanceSummary.fmt(balanceSummary.confirmedSats)} BTC
+              </Text>
+              {balanceSummary.fiat(balanceSummary.confirmedSats) && (
+                <Text
+                  style={[
+                    styles.summaryFiat,
+                    {color: theme.colors.textOnPrimary},
+                  ]}>
+                  {balanceSummary.fiat(balanceSummary.confirmedSats)}
+                </Text>
+              )}
+            </View>
+          </View>
+
+          {/* Pending row — only when there are unconfirmed UTXOs */}
+          {balanceSummary.unconfirmedCount > 0 && (
+            <View style={styles.summaryRow}>
+              <View style={styles.summaryLabelRow}>
+                <View
+                  style={[
+                    styles.statusDotHollow,
+                    {borderColor: theme.colors.warning},
+                  ]}
+                />
+                <Text
+                  style={[styles.summaryLabel, {color: theme.colors.warning}]}>
+                  Pending
+                </Text>
+                <Text
+                  style={[
+                    styles.summaryCount,
+                    {color: theme.colors.textSecondary},
+                  ]}>
+                  {balanceSummary.unconfirmedCount}
+                </Text>
+              </View>
+              <View style={styles.summaryRight}>
+                <Text
+                  style={[styles.summaryBtc, {color: theme.colors.warning}]}>
+                  +{balanceSummary.fmt(balanceSummary.unconfirmedSats)} BTC
+                </Text>
+                {balanceSummary.fiat(balanceSummary.unconfirmedSats) && (
+                  <Text
+                    style={[
+                      styles.summaryFiat,
+                      {color: theme.colors.textSecondary},
+                    ]}>
+                    {balanceSummary.fiat(balanceSummary.unconfirmedSats)}
+                  </Text>
+                )}
+              </View>
+            </View>
+          )}
+        </View>
+      </View>
+
+      <View style={styles.cacheIndicatorWrap}>
+        <CacheIndicator
+          timestamps={{price: 0, balance: utxoFetchTimestamp}}
+          onRefresh={onRefresh}
+          syncErrorMessage={syncErrorMessage}
+          lastSyncFailed={lastSyncFailed}
+          onAbortRequested={() => {
+            Alert.alert(
+              'Cancel sync?',
+              'Stop the current sync and show cached data?',
+              [
+                {text: 'No', style: 'cancel'},
+                {
+                  text: 'Yes',
+                  onPress: () => {
+                    setAbortRequested(true);
+                    mempoolClient.abortAll();
+                    apiQueue.clear();
+                  },
+                },
+              ],
+            );
+          }}
+          onLongPress={() => {
+            Alert.alert(
+              'Full sync',
+              'Re-scan all addresses and sync. Existing data is kept. Continue?',
+              [
+                {text: 'Cancel', style: 'cancel'},
+                {
+                  text: 'Continue',
+                  onPress: async () => {
+                    const effectiveType = addressType || 'segwit-native';
+                    const api =
+                      apiBase
+                        ?.trim()
+                        ?.replace(/\/+$/, '')
+                        ?.replace(/\/api\/?$/, '') || 'https://mempool.space';
+                    setRefreshing(true);
+                    try {
+                      dbg(
+                        '[UtxosScreen] Long-press: full sync (discovery + refresh)',
+                      );
+                      setRefreshStatusMessage('Discovering addresses…');
+                      await WalletService.getInstance().discoverHdIndexesForNetwork(
+                        network,
+                        effectiveType,
+                        `${api}/api`,
+                        chain =>
+                          setRefreshStatusMessage(
+                            `Scanning ${
+                              chain === 'external' ? 'receive' : 'change'
+                            } addresses…`,
+                          ),
+                      );
+                      setRefreshStatusMessage('Rebuilding wallet data…');
+                    } catch (e) {
+                      dbg('[UtxosScreen] Long-press reconstruction error', e);
+                    }
+                    setRefreshStatusMessage(null);
+                    onRefresh();
+                  },
+                },
+              ],
+            );
+          }}
+          theme={theme}
+          isRefreshing={refreshing && !abortRequested}
+          statusMessage={refreshStatusMessage ?? undefined}
+          progress={refreshProgress ?? undefined}
+          usingCache={
+            !refreshing &&
+            utxoFetchTimestamp > 0 &&
+            Date.now() - utxoFetchTimestamp > 60000
+          }
+        />
+      </View>
+
       <FlatList
         style={styles.flexOne}
         contentContainerStyle={styles.listContent}
-        data={rawUtxos}
+        data={utxosWithPath}
         renderItem={renderUtxoItem}
-        keyExtractor={item => `${item.txid}:${item.vout}`}
+        keyExtractor={item => `${item.txid}:${item.vout}:${item.address}`}
         ListEmptyComponent={ListEmpty}
-        ListHeaderComponentStyle={styles.listHeader}
-        ListHeaderComponent={
-          <View style={styles.cacheIndicatorWrap}>
-            <CacheIndicator
-              timestamps={{price: 0, balance: utxoFetchTimestamp}}
-              onRefresh={onRefresh}
-              theme={theme}
-              isRefreshing={refreshing}
-              usingCache={
-                !refreshing &&
-                utxoFetchTimestamp > 0 &&
-                Date.now() - utxoFetchTimestamp > 60000
-              }
-            />
-          </View>
-        }
         ListFooterComponent={
-          rawUtxos.length > 0 ? (
+          utxosWithPath.length > 0 ? (
             <View style={styles.endOfListWrap}>
               <Text style={[styles.endOfListText, {color: theme.colors.text}]}>
                 No more UTXOs
@@ -502,7 +1103,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   styles.endOfListCount,
                   {color: theme.colors.textSecondary},
                 ]}>
-                {rawUtxos.length} in total
+                {utxosWithPath.length} in total (all addresses)
               </Text>
             </View>
           ) : null
@@ -514,6 +1115,13 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
             tintColor={theme.colors.textSecondary}
           />
         }
+      />
+      <CurrencySelector
+        visible={isCurrencySelectorVisible}
+        onClose={() => setIsCurrencySelectorVisible(false)}
+        onSelect={handleCurrencySelect}
+        currentCurrency={selectedCurrency}
+        availableCurrencies={priceData}
       />
     </View>
   );

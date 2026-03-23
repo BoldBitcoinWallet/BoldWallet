@@ -24,6 +24,8 @@ import {
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import {initializeHaptics} from './utils';
+import database from './services/Database';
+import {runMigrationIfNeeded} from './services/LocalCacheMigration';
 import ErrorBoundary from './components/ErrorBoundary';
 import {
   Alert,
@@ -517,6 +519,15 @@ const App = () => {
   useEffect(() => {
     initializeHaptics();
     const checkWallet = async () => {
+      // Open SQLite database and run one-time LocalCache → SQLite migration.
+      // Wrapped in try/catch so a DB failure never blocks app startup.
+      try {
+        await database.open();
+        dbg('App: SQLite database ready');
+        await runMigrationIfNeeded();
+      } catch (dbErr) {
+        dbg('App: Database init error (non-fatal):', dbErr);
+      }
       try {
         const keyshare = await EncryptedStorage.getItem('keyshare');
         dbg('initializeApp keyshare found', !!keyshare);

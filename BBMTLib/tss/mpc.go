@@ -2,6 +2,7 @@ package tss
 
 import (
 	"bytes"
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/md5"
@@ -314,6 +315,10 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	}()
 	parties := strings.Split(partiesCSV, ",")
 
+	// Ensure the session has a cancel channel (prefix-cancellable) and clean it up at end.
+	cancelCh := getOrCreateCancelCh(session)
+	defer cleanupCancelState(session)
+
 	if len(sessionKey) > 0 && (len(encKey) > 0 || len(decKey) > 0) {
 		return "", fmt.Errorf("either a session key, either enc/dec keys")
 	}
@@ -336,6 +341,10 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	status.Info = "start joinSession"
 	setStatus(session, status)
 
+	if sessionIsCancelled(session) {
+		return "", context.Canceled
+	}
+
 	if err := joinSession(server, session, key); err != nil {
 		return "", fmt.Errorf("fail to register session: %w", err)
 	}
@@ -344,6 +353,10 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	status.Step++
 	status.Info = "waiting parties"
 	setStatus(session, status)
+
+	if sessionIsCancelled(session) {
+		return "", context.Canceled
+	}
 
 	if err := awaitJoiners(parties, server, session); err != nil {
 		Logln("BBMTLog", "fail to wait all parties", "error", err)
@@ -374,12 +387,19 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	if err != nil {
 		return "", fmt.Errorf("fail to create tss server: %w", err)
 	}
+	// Wire cancellation signal into the signing loop.
+	tssServerImp.cancelCh = cancelCh
 	endCh := make(chan struct{})
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	Logln("BBMTLog", "downloadMessage active...")
 	go downloadMessage(server, session, sessionKey, key, *tssServerImp, endCh, wg)
 	Logln("BBMTLog", "start ECDSA keysign...")
+	if sessionIsCancelled(session) {
+		close(endCh)
+		wg.Wait()
+		return "", context.Canceled
+	}
 	resp, err := tssServerImp.KeysignECDSA(&KeysignRequest{
 		PubKey:               keyshare,
 		MessageToSign:        message,

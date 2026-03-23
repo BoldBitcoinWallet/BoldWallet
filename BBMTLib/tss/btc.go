@@ -36,6 +36,15 @@ type UTXO struct {
 	} `json:"status,omitempty"` // Status is optional, includes both confirmed and unconfirmed UTXOs
 }
 
+// UTXOWithPath extends UTXO with derivation path and scriptpubkey for HD wallets (per-input signing).
+// Scriptpubkey (hex) is optional: when present, FetchUTXODetails is skipped during signing,
+// removing the last network call from the MPC signing loop.
+type UTXOWithPath struct {
+	UTXO
+	DerivationPath string `json:"derivation_path,omitempty"`
+	Scriptpubkey   string `json:"scriptpubkey,omitempty"`
+}
+
 var _btc_net = "testnet3" // default to testnet
 var _api_url = "https://mempool.space/testnet/api"
 var _api_urls = []string{"https://mempool.space/api", "https://benpool.space/api"}
@@ -275,6 +284,17 @@ func RecommendedFees(feeType string) (int, error) {
 	return 0, errors.New("failed to get fees")
 }
 
+// ComputeTxId returns the txid (reversed double-SHA256 of serialized tx) for a raw tx hex.
+// Used by the app to name the shared file before broadcasting.
+func ComputeTxId(rawTxHex string) (string, error) {
+	rawTx, err := hex.DecodeString(rawTxHex)
+	if err != nil {
+		return "", fmt.Errorf("invalid raw tx hex: %w", err)
+	}
+	hash := chainhash.DoubleHashH(rawTx)
+	return hash.String(), nil
+}
+
 func PostTx(rawTxHex string) (string, error) {
 	const maxRetries = 4
 	var lastErr error
@@ -376,6 +396,95 @@ func SelectUTXOs(utxos []UTXO, totalAmount int64, strategy string) (result []UTX
 	return selected, totalSelected, nil
 }
 
+// utxoWithPathJSON is used for JSON unmarshaling from RN (supports both derivation_path and derivationPath).
+type utxoWithPathJSON struct {
+	TxID         string `json:"txid"`
+	Vout         uint32 `json:"vout"`
+	Value        int64  `json:"value"`
+	Path         string `json:"derivation_path"`
+	PathAlt      string `json:"derivationPath"`
+	Address      string `json:"address"`      // optional, for fee estimation fallback
+	Scriptpubkey string `json:"scriptpubkey"` // hex locking script; when set avoids FetchUTXODetails during signing
+}
+
+func (u *utxoWithPathJSON) toUTXOWithPath() UTXOWithPath {
+	path := u.Path
+	if path == "" {
+		path = u.PathAlt
+	}
+	return UTXOWithPath{
+		UTXO:           UTXO{TxID: u.TxID, Vout: u.Vout, Value: u.Value},
+		DerivationPath: path,
+		Scriptpubkey:   u.Scriptpubkey,
+	}
+}
+
+// SelectUTXOsWithPaths selects UTXOs from a pool with per-UTXO derivation paths.
+func SelectUTXOsWithPaths(utxos []UTXOWithPath, totalAmount int64, strategy string) (result []UTXOWithPath, totalSelectedResult int64, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in SelectUTXOsWithPaths: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic) selecting UTXOs: %v", r)
+			result = nil
+			totalSelectedResult = 0
+		}
+	}()
+
+	// Sort by (TxID, Vout) first for determinism, then by strategy
+	sort.Slice(utxos, func(i, j int) bool {
+		if utxos[i].TxID != utxos[j].TxID {
+			return utxos[i].TxID < utxos[j].TxID
+		}
+		if utxos[i].Vout != utxos[j].Vout {
+			return utxos[i].Vout < utxos[j].Vout
+		}
+		return false
+	})
+	switch strategy {
+	case "smallest":
+		sort.Slice(utxos, func(i, j int) bool { return utxos[i].Value < utxos[j].Value })
+	case "largest":
+		sort.Slice(utxos, func(i, j int) bool { return utxos[i].Value > utxos[j].Value })
+	default:
+		sort.Slice(utxos, func(i, j int) bool { return utxos[i].Value > utxos[j].Value })
+	}
+
+	var selected []UTXOWithPath
+	var totalSelected int64
+	for _, utxo := range utxos {
+		Logf("Selecting UTXO: %s vout=%d value=%d path=%s", utxo.TxID, utxo.Vout, utxo.Value, utxo.DerivationPath)
+		selected = append(selected, utxo)
+		totalSelected += utxo.Value
+		if totalSelected >= totalAmount {
+			break
+		}
+	}
+
+	if totalSelected < totalAmount {
+		return nil, 0, fmt.Errorf("insufficient funds: needed %d, got %d", totalAmount, totalSelected)
+	}
+	Logf("SelectUTXOsWithPaths: selected %d UTXOs, total %d", len(selected), totalSelected)
+	return selected, totalSelected, nil
+}
+
+// parseUTXOsWithPathsJSON parses JSON array of UTXOs with paths from RN.
+func parseUTXOsWithPathsJSON(jsonStr string) ([]UTXOWithPath, error) {
+	if jsonStr == "" {
+		return nil, fmt.Errorf("empty utxos JSON")
+	}
+	var raw []utxoWithPathJSON
+	if err := json.Unmarshal([]byte(jsonStr), &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse utxos JSON: %w", err)
+	}
+	out := make([]UTXOWithPath, 0, len(raw))
+	for _, u := range raw {
+		out = append(out, u.toUTXOWithPath())
+	}
+	return out, nil
+}
+
 func wifECDSASign(senderWIF string, data []byte) []byte {
 	wifKey, err := btcutil.DecodeWIF(senderWIF)
 	if err != nil {
@@ -418,16 +527,26 @@ func SpendingHash(senderAddress, receiverAddress string, amountSatoshi int64) (r
 
 	Logln("BBMTLog", "invoking SpendingHash...")
 
-	// Fetch UTXOs (same as EstimateFees)
+	// Fetch UTXOs (same as EstimateFees), but be conservative:
+	// if there are no UTXOs or selection fails, return an empty hash instead
+	// of treating it as a hard error. The caller already validates wallet
+	// balance (potentially using HD/multi-path), so single-address insufficiency
+	// here should not block UX.
 	utxos, err := FetchUTXOs(senderAddress)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch UTXOs: %w", err)
+		Logf("SpendingHash: failed to fetch UTXOs for %s: %v", senderAddress, err)
+		return "", nil
+	}
+	if len(utxos) == 0 {
+		Logf("SpendingHash: no UTXOs for %s, returning empty hash", senderAddress)
+		return "", nil
 	}
 
 	// Select UTXOs using the same strategy as EstimateFees
 	selectedUTXOs, _, err := SelectUTXOs(utxos, amountSatoshi, "smallest")
 	if err != nil {
-		return "", err
+		Logf("SpendingHash: SelectUTXOs error for %s amount=%d: %v", senderAddress, amountSatoshi, err)
+		return "", nil
 	}
 
 	// Sort selected UTXOs deterministically by TxID, then Vout
@@ -454,6 +573,68 @@ func SpendingHash(senderAddress, receiverAddress string, amountSatoshi int64) (r
 	hashHex := hex.EncodeToString(hash[:])
 
 	Logf("SpendingHash: selected %d UTXOs, hash: %s", len(sortedUTXOs), hashHex)
+	return hashHex, nil
+}
+
+// SpendingHashWithUTXOs is the multi-path counterpart of SpendingHash.
+// Instead of fetching UTXOs from a single address, it accepts a pre-fetched
+// pool (JSON-encoded []utxoWithPathJSON) that covers all HD addresses.
+// It selects UTXOs using the same "smallest-first" strategy and returns a
+// deterministic SHA-256 hex over "txid:vout" pairs - identical across
+// co-signing devices as long as they supply the same UTXO set.
+func SpendingHashWithUTXOs(utxosWithPathsJSON, receiverAddress, amountSatoshiStr string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in SpendingHashWithUTXOs: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
+	Logln("BBMTLog", "invoking SpendingHashWithUTXOs...")
+
+	amountSatoshi, parseErr := strconv.ParseInt(amountSatoshiStr, 10, 64)
+	if parseErr != nil {
+		Logf("SpendingHashWithUTXOs: invalid amount %q: %v", amountSatoshiStr, parseErr)
+		return "", fmt.Errorf("invalid amount: %w", parseErr)
+	}
+
+	utxos, err := parseUTXOsWithPathsJSON(utxosWithPathsJSON)
+	if err != nil {
+		Logf("SpendingHashWithUTXOs: failed to parse utxosWithPathsJSON: %v", err)
+		return "", nil
+	}
+	if len(utxos) == 0 {
+		Logf("SpendingHashWithUTXOs: no UTXOs provided, returning empty hash")
+		return "", nil
+	}
+
+	selected, _, err := SelectUTXOsWithPaths(utxos, amountSatoshi, "smallest")
+	if err != nil {
+		Logf("SpendingHashWithUTXOs: SelectUTXOsWithPaths failed amount=%d: %v", amountSatoshi, err)
+		return "", nil
+	}
+
+	// Sort selected UTXOs deterministically by TxID, then Vout
+	sort.Slice(selected, func(i, j int) bool {
+		if selected[i].TxID != selected[j].TxID {
+			return selected[i].TxID < selected[j].TxID
+		}
+		return selected[i].Vout < selected[j].Vout
+	})
+
+	var utxoStrings []string
+	for _, u := range selected {
+		utxoStrings = append(utxoStrings, fmt.Sprintf("%s:%d", u.TxID, u.Vout))
+	}
+	utxoData := strings.Join(utxoStrings, ",")
+
+	hash := sha256.Sum256([]byte(utxoData))
+	hashHex := hex.EncodeToString(hash[:])
+
+	Logf("SpendingHashWithUTXOs: selected %d UTXOs, hash: %s", len(selected), hashHex)
 	return hashHex, nil
 }
 
@@ -517,6 +698,94 @@ func EstimateFees(senderAddress, receiverAddress string, amountSatoshi int64) (r
 	}
 	Logf("Final fee estimate with UTXOs selected for amount+fee: %d", _fee)
 
+	return strconv.FormatInt(_fee, 10), nil
+}
+
+// EstimateFeeWithUTXOs estimates fees using a pre-fetched UTXO pool with paths (multi-path send).
+// utxosWithPathsJSON: JSON array of {txid, vout, value, derivation_path or derivationPath}
+// changeAddress: used for change output size estimation (e.g. next HD change address)
+func EstimateFeeWithUTXOs(utxosWithPathsJSON, receiverAddress, amountSatoshiStr, changeAddress string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in EstimateFeeWithUTXOs: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
+	Logln("BBMTLog", "invoking EstimateFeeWithUTXOs...")
+	Logf("GoLog: EstimateFeeWithUTXOs input receiverAddress=%s amountSatoshi=%s changeAddress=%s", receiverAddress, amountSatoshiStr, changeAddress)
+	Logf("GoLog: Current network: %s, API: %s", _btc_net, _api_url)
+
+	amountSatoshi, parseErr := strconv.ParseInt(amountSatoshiStr, 10, 64)
+	if parseErr != nil {
+		Logf("GoLog: EstimateFeeWithUTXOs - invalid amount %q: %v", amountSatoshiStr, parseErr)
+		return "", fmt.Errorf("invalid amount: %w", parseErr)
+	}
+
+	utxos, err := parseUTXOsWithPathsJSON(utxosWithPathsJSON)
+	if err != nil {
+		Logf("GoLog: EstimateFeeWithUTXOs - failed to parse utxosWithPathsJSON: %v", err)
+		return "", err
+	}
+	if len(utxos) == 0 {
+		Logf("GoLog: EstimateFeeWithUTXOs - utxosWithPathsJSON parsed but no UTXOs available")
+		return "", fmt.Errorf("no UTXOs available. Please ensure you have confirmed transactions before sending")
+	}
+
+	// Use changeAddress for fee estimation (change output type)
+	addrForFee := changeAddress
+	if addrForFee == "" && len(utxos) > 0 {
+		// Fallback: re-parse to get address from first item (parseUTXOsWithPathsJSON doesn't store it)
+		var raw []utxoWithPathJSON
+		if json.Unmarshal([]byte(utxosWithPathsJSON), &raw) == nil && len(raw) > 0 && raw[0].Address != "" {
+			addrForFee = raw[0].Address
+		}
+	}
+	if addrForFee == "" {
+		Logf("GoLog: EstimateFeeWithUTXOs - missing changeAddress and unable to infer from utxosWithPathsJSON")
+		return "", fmt.Errorf("changeAddress required for multi-path fee estimation")
+	}
+
+	Logf("GoLog: EstimateFeeWithUTXOs - using addrForFee=%s and %d candidate UTXOs", addrForFee, len(utxos))
+
+	// First iteration: select for amount only
+	selected, _, err := SelectUTXOsWithPaths(utxos, amountSatoshi, "smallest")
+	if err != nil {
+		Logf("GoLog: EstimateFeeWithUTXOs - failed SelectUTXOsWithPaths for amount=%d: %v", amountSatoshi, err)
+		return "", err
+	}
+	selectedUTXOs := make([]UTXO, len(selected))
+	for i := range selected {
+		selectedUTXOs[i] = selected[i].UTXO
+	}
+
+	_fee, _err := calculateFees(addrForFee, selectedUTXOs, amountSatoshi, receiverAddress)
+	if _err != nil {
+		Logf("GoLog: EstimateFeeWithUTXOs - calculateFees (first pass) error: %v", _err)
+		return "", _err
+	}
+	Logf("GoLog: EstimateFeeWithUTXOs - first pass fee=%d (amount=%d, selectedUTXOs=%d)", _fee, amountSatoshi, len(selectedUTXOs))
+
+	// Second iteration: re-select for amount+fee
+	selected, _, err = SelectUTXOsWithPaths(utxos, amountSatoshi+_fee, "smallest")
+	if err != nil {
+		Logf("GoLog: Could not select UTXOs for amount+fee=%d, using original estimate: %v", amountSatoshi+_fee, err)
+		return strconv.FormatInt(_fee, 10), nil
+	}
+	selectedUTXOs = make([]UTXO, len(selected))
+	for i := range selected {
+		selectedUTXOs[i] = selected[i].UTXO
+	}
+
+	_fee, _err = calculateFees(addrForFee, selectedUTXOs, amountSatoshi, receiverAddress)
+	if _err != nil {
+		Logf("GoLog: EstimateFeeWithUTXOs - calculateFees (second pass) error: %v", _err)
+		return "", _err
+	}
+	Logf("GoLog: EstimateFeeWithUTXOs: final fee %d (amount=%d, selectedUTXOs=%d)", _fee, amountSatoshi, len(selectedUTXOs))
 	return strconv.FormatInt(_fee, 10), nil
 }
 
@@ -1214,16 +1483,230 @@ func MpcSendBTC(
 	}
 
 	rawTx := hex.EncodeToString(signedTx.Bytes())
-	Logln("Raw Transaction:", rawTx)
+	Logln("Raw Transaction (signed, not broadcast)")
+	mpcHook("signed", session, utxoSession, utxoIndex, utxoCount, true)
+	return rawTx, nil
+}
 
-	txid, err := PostTx(rawTx)
-	if err != nil {
-		Logf("Error broadcasting transaction: %v", err)
-		return "", fmt.Errorf("failed to broadcast transaction: %w", err)
+// MpcSendBTCWithUTXOs is the multi-path variant: uses pre-fetched UTXOs with per-input derivation paths.
+// utxosWithPathsJSON: JSON array of {txid, vout, value, derivation_path or derivationPath}
+// changeAddress: HD change address for change output (required)
+func MpcSendBTCWithUTXOs(
+	server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare string,
+	publicKey, receiverAddress, amountSatoshiStr, estimatedFeeStr, utxosWithPathsJSON, changeAddress string,
+) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in MpcSendBTCWithUTXOs: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
+	amountSatoshi, parseErr := strconv.ParseInt(amountSatoshiStr, 10, 64)
+	if parseErr != nil {
+		return "", fmt.Errorf("invalid amountSatoshi %q: %w", amountSatoshiStr, parseErr)
 	}
-	mpcHook("txid:"+txid, session, utxoSession, utxoIndex, utxoCount, true)
-	Logf("Transaction broadcasted successfully, txid: %s", txid)
-	return txid, nil
+	estimatedFee, parseErr := strconv.ParseInt(estimatedFeeStr, 10, 64)
+	if parseErr != nil {
+		return "", fmt.Errorf("invalid estimatedFee %q: %w", estimatedFeeStr, parseErr)
+	}
+
+	utxos, err := parseUTXOsWithPathsJSON(utxosWithPathsJSON)
+	if err != nil {
+		return "", err
+	}
+	if len(utxos) == 0 {
+		return "", fmt.Errorf("no UTXOs available. Please ensure you have confirmed transactions before sending")
+	}
+
+	var ks struct {
+		PubKey       string `json:"pub_key"`
+		ChainCodeHex string `json:"chain_code_hex"`
+	}
+	if err := json.Unmarshal([]byte(keyshare), &ks); err != nil || ks.PubKey == "" || ks.ChainCodeHex == "" {
+		return "", fmt.Errorf("invalid keyshare: need pub_key and chain_code_hex")
+	}
+
+	selectedUTXOs, totalAmount, err := SelectUTXOsWithPaths(utxos, amountSatoshi+estimatedFee, "smallest")
+	if err != nil {
+		return "", err
+	}
+
+	params := &chaincfg.TestNet3Params
+	if _btc_net == "mainnet" {
+		params = &chaincfg.MainNetParams
+	}
+	toAddr, err := btcutil.DecodeAddress(receiverAddress, params)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode receiver address: %w", err)
+	}
+	changeAddr, err := btcutil.DecodeAddress(changeAddress, params)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode change address: %w", err)
+	}
+
+	tx := wire.NewMsgTx(wire.TxVersion)
+	for _, utxo := range selectedUTXOs {
+		hash, err := chainhash.NewHashFromStr(utxo.TxID)
+		if err != nil {
+			return "", fmt.Errorf("invalid UTXO TxID %s: %w", utxo.TxID, err)
+		}
+		txIn := wire.NewTxIn(wire.NewOutPoint(hash, utxo.Vout), nil, nil)
+		txIn.Sequence = 0xfffffffd
+		tx.AddTxIn(txIn)
+	}
+
+	if totalAmount < amountSatoshi+estimatedFee {
+		return "", fmt.Errorf("insufficient funds: available %d, needed %d", totalAmount, amountSatoshi+estimatedFee)
+	}
+
+	pkScript, _ := txscript.PayToAddrScript(toAddr)
+	tx.AddTxOut(wire.NewTxOut(amountSatoshi, pkScript))
+
+	changeAmount := totalAmount - amountSatoshi - estimatedFee
+	if changeAmount > 546 {
+		changePkScript, _ := txscript.PayToAddrScript(changeAddr)
+		tx.AddTxOut(wire.NewTxOut(changeAmount, changePkScript))
+	}
+
+	// Build prevOuts map from inline scriptpubkey (no network call).
+	// Falls back to FetchUTXODetails only when scriptpubkey was not supplied by the caller.
+	prevOuts := make(map[wire.OutPoint]*wire.TxOut)
+	for _, utxo := range selectedUTXOs {
+		var txOut *wire.TxOut
+		if utxo.Scriptpubkey != "" {
+			sb, spkErr := hex.DecodeString(utxo.Scriptpubkey)
+			if spkErr != nil || len(sb) == 0 {
+				return "", fmt.Errorf("invalid scriptpubkey for %s:%d", utxo.TxID, utxo.Vout)
+			}
+			txOut = &wire.TxOut{PkScript: sb, Value: utxo.Value}
+		} else {
+			var fetchErr error
+			txOut, _, fetchErr = FetchUTXODetails(utxo.TxID, utxo.Vout)
+			if fetchErr != nil {
+				return "", fmt.Errorf("failed to fetch UTXO details for %s:%d: %w", utxo.TxID, utxo.Vout, fetchErr)
+			}
+		}
+		hash, _ := chainhash.NewHashFromStr(utxo.TxID)
+		prevOuts[wire.OutPoint{Hash: *hash, Index: utxo.Vout}] = txOut
+	}
+	prevOutFetcher := txscript.NewMultiPrevOutFetcher(prevOuts)
+
+	utxoCount := len(selectedUTXOs)
+	for i, utxo := range selectedUTXOs {
+		derivePath := utxo.DerivationPath
+		if derivePath == "" {
+			return "", fmt.Errorf("UTXO %d missing derivation path", i)
+		}
+		derivedPubHex, err := GetDerivedPubKey(ks.PubKey, ks.ChainCodeHex, derivePath, false)
+		if err != nil {
+			return "", fmt.Errorf("failed to derive pubkey for input %d: %w", i, err)
+		}
+		pubKeyBytes, err := hex.DecodeString(derivedPubHex)
+		if err != nil {
+			return "", fmt.Errorf("invalid derived pubkey for input %d: %w", i, err)
+		}
+
+		utxoSession := fmt.Sprintf("%s%d", session, i)
+		// Re-use the already-resolved prevout (no second network call per input).
+		outpointHash, _ := chainhash.NewHashFromStr(utxo.TxID)
+		txOut := prevOuts[wire.OutPoint{Hash: *outpointHash, Index: utxo.Vout}]
+		isWitness := txscript.IsWitnessProgram(txOut.PkScript)
+		hashCache := txscript.NewTxSigHashes(tx, prevOutFetcher)
+
+		var sigHash []byte
+		var isP2SHP2WPKH bool
+		if isWitness {
+			if txscript.IsPayToWitnessPubKeyHash(txOut.PkScript) {
+				sigHash, err = txscript.CalcWitnessSigHash(txOut.PkScript, hashCache, txscript.SigHashAll, tx, i, txOut.Value)
+			} else if txscript.IsPayToTaproot(txOut.PkScript) {
+				return "", fmt.Errorf("taproot (P2TR) inputs are not supported")
+			} else {
+				sigHash, err = txscript.CalcWitnessSigHash(txOut.PkScript, hashCache, txscript.SigHashAll, tx, i, txOut.Value)
+			}
+		} else {
+			if txscript.IsPayToPubKeyHash(txOut.PkScript) {
+				sigHash, err = txscript.CalcSignatureHash(txOut.PkScript, txscript.SigHashAll, tx, i)
+			} else if txscript.IsPayToScriptHash(txOut.PkScript) {
+				pubKeyHash := btcutil.Hash160(pubKeyBytes)
+				redeemScript := make([]byte, 22)
+				redeemScript[0], redeemScript[1] = 0x00, 0x14
+				copy(redeemScript[2:], pubKeyHash)
+				scriptHash := btcutil.Hash160(redeemScript)
+				expectedP2SH := make([]byte, 23)
+				expectedP2SH[0], expectedP2SH[1], expectedP2SH[22] = 0xa9, 0x14, 0x87
+				copy(expectedP2SH[2:22], scriptHash)
+				if bytes.Equal(txOut.PkScript, expectedP2SH) {
+					isP2SHP2WPKH = true
+					sigHash, err = txscript.CalcWitnessSigHash(redeemScript, hashCache, txscript.SigHashAll, tx, i, txOut.Value)
+				} else {
+					sigHash, err = txscript.CalcSignatureHash(txOut.PkScript, txscript.SigHashAll, tx, i)
+				}
+			} else {
+				sigHash, err = txscript.CalcSignatureHash(txOut.PkScript, txscript.SigHashAll, tx, i)
+			}
+		}
+		if err != nil {
+			return "", fmt.Errorf("failed to calc sighash for input %d: %w", i, err)
+		}
+
+		sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
+		mpcHook("joining keysign", session, utxoSession, i+1, utxoCount, false)
+		sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
+		if err != nil {
+			return "", fmt.Errorf("failed to sign input %d: %w", i, err)
+		}
+		var sig KeysignResponse
+		if err := json.Unmarshal([]byte(sigJSON), &sig); err != nil {
+			return "", fmt.Errorf("failed to parse signature for input %d: %w", i, err)
+		}
+		signature, err := hex.DecodeString(sig.DerSignature)
+		if err != nil {
+			return "", fmt.Errorf("failed to decode signature for input %d: %w", i, err)
+		}
+		sigWithHashType := append(signature, byte(txscript.SigHashAll))
+
+		if isWitness {
+			tx.TxIn[i].Witness = wire.TxWitness{sigWithHashType, pubKeyBytes}
+			tx.TxIn[i].SignatureScript = nil
+		} else if isP2SHP2WPKH {
+			redeemScript := make([]byte, 22)
+			redeemScript[0], redeemScript[1] = 0x00, 0x14
+			copy(redeemScript[2:], btcutil.Hash160(pubKeyBytes))
+			builder := txscript.NewScriptBuilder()
+			builder.AddData(redeemScript)
+			canonical, _ := builder.Script()
+			tx.TxIn[i].SignatureScript = canonical
+			tx.TxIn[i].Witness = wire.TxWitness{sigWithHashType, pubKeyBytes}
+		} else {
+			builder := txscript.NewScriptBuilder()
+			builder.AddData(sigWithHashType)
+			builder.AddData(pubKeyBytes)
+			scriptSig, _ := builder.Script()
+			tx.TxIn[i].SignatureScript = scriptSig
+			tx.TxIn[i].Witness = nil
+		}
+
+		vm, err := txscript.NewEngine(txOut.PkScript, tx, i, txscript.StandardVerifyFlags, nil, hashCache, txOut.Value, prevOutFetcher)
+		if err != nil {
+			return "", fmt.Errorf("script engine for input %d: %w", i, err)
+		}
+		if err := vm.Execute(); err != nil {
+			return "", fmt.Errorf("script validation failed for input %d: %w", i, err)
+		}
+	}
+
+	var signedTx bytes.Buffer
+	if err := tx.Serialize(&signedTx); err != nil {
+		return "", fmt.Errorf("failed to serialize transaction: %w", err)
+	}
+	rawTx := hex.EncodeToString(signedTx.Bytes())
+	Logln("Raw Transaction (signed, not broadcast)")
+	mpcHook("signed", session, "", utxoCount, utxoCount, true)
+	return rawTx, nil
 }
 
 func DecodeAddress(address string) (result string, err error) {
@@ -1847,17 +2330,13 @@ func ReplaceTransaction(
 		}
 	}
 
-	// Serialize and broadcast
+	// Serialize and return raw tx (app broadcasts via PostTx when user taps Broadcast)
 	var signedTx bytes.Buffer
 	if err := tx.Serialize(&signedTx); err != nil {
 		return "", fmt.Errorf("failed to serialize transaction: %w", err)
 	}
 
 	rawTx := hex.EncodeToString(signedTx.Bytes())
-	txid, err := PostTx(rawTx)
-	if err != nil {
-		return "", fmt.Errorf("failed to broadcast transaction: %w", err)
-	}
-
-	return txid, nil
+	Logln("Raw Transaction (signed, not broadcast)")
+	return rawTx, nil
 }

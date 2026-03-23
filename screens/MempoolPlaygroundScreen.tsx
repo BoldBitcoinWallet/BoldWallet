@@ -21,7 +21,7 @@ import Animated, {
 import AppPressable from '../components/AppPressable';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
-import LocalCache from '../services/LocalCache';
+import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {
   HeaderPriceButton,
   HeaderProvider,
@@ -218,7 +218,7 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
 
   // Header: same as WalletHome – price (left), provider (center), network (right)
   useEffect(() => {
-    LocalCache.getItem('currency').then(c => setSelectedCurrency(c || 'USD'));
+    setSelectedCurrency(appConfigRepository.get(CONFIG_KEYS.CURRENCY) || 'USD');
   }, []);
   useEffect(() => {
     if (!apiBase) return;
@@ -493,6 +493,10 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
         modalItemTextSelected: {
           fontFamily: theme.fontFamilies?.medium,
         },
+        modalItemSelected: {
+          borderWidth: 1,
+          borderRadius: 8,
+        },
         modalCancelBtn: {
           paddingVertical: 12,
           borderRadius: 8,
@@ -579,9 +583,20 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   onPress={() => {
                     setEndpointPickerSectionId(section.id);
                   }}
-                  style={[styles.dropdown, {borderColor, backgroundColor: theme.colors.background}]}>
+                  style={[
+                    styles.dropdown,
+                    {
+                      borderColor,
+                      backgroundColor: isDarkMode
+                        ? (theme.colors.cardBackground ?? theme.colors.background)
+                        : theme.colors.background,
+                    },
+                  ]}>
                   <Text
-                    style={[styles.dropdownLabel, {color: theme.colors.text}]}
+                    style={[
+                      styles.dropdownLabel,
+                      {color: theme.colors.text},
+                    ]}
                     numberOfLines={1}>
                     {endpoint?.label ?? 'Select endpoint'}
                   </Text>
@@ -623,16 +638,20 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
                             }}
                             style={[
                               styles.modalItem,
-                              ep.id === selectedId && {
-                                backgroundColor: theme.colors.primary + '18',
-                              },
+                              ep.id === selectedId && [
+                                styles.modalItemSelected,
+                                {
+                                  backgroundColor: theme.colors.primary + '18',
+                                  borderColor: theme.colors.primary,
+                                },
+                              ],
                             ]}>
                             <Text
                               style={[
                                 styles.modalItemText,
                                 {color: theme.colors.text},
                                 ep.id === selectedId && [
-                                  {color: theme.colors.primary},
+                                  {color: theme.colors.textSecondary},
                                   styles.modalItemTextSelected,
                                 ],
                               ]}
