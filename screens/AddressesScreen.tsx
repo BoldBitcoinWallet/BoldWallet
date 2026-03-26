@@ -238,7 +238,27 @@ const AddressesScreen: React.FC<{navigation: any}> = ({navigation}) => {
 
   const computeRowsFromDb = useCallback(
     (pairCountInput: number, smartVisibleCountInput: number): AddressRowVm[] => {
-      const base = buildRowVms(network, addressType, useLegacyPath, pairCountInput);
+      const smartMaxReceive = walletRepository.getMaxIdxForChain(
+        network,
+        addressType,
+        0,
+      );
+      const smartMaxChange = walletRepository.getMaxIdxForChain(
+        network,
+        addressType,
+        1,
+      );
+      const smartDbPairCount = Math.max(smartMaxReceive, smartMaxChange) + 1;
+      const effectivePairCount =
+        viewMode === 'smart'
+          ? Math.max(pairCountInput, smartDbPairCount)
+          : pairCountInput;
+      const base = buildRowVms(
+        network,
+        addressType,
+        useLegacyPath,
+        effectivePairCount,
+      );
       const all = applyAddressViewMode(base, network, viewMode);
       if (viewMode === 'smart') {
         return all.slice(0, smartVisibleCountInput);
@@ -250,7 +270,24 @@ const AddressesScreen: React.FC<{navigation: any}> = ({navigation}) => {
 
   const computeSmartRowsFromDb = useCallback(
     (pairCountInput: number): AddressRowVm[] => {
-      const base = buildRowVms(network, addressType, useLegacyPath, pairCountInput);
+      const smartMaxReceive = walletRepository.getMaxIdxForChain(
+        network,
+        addressType,
+        0,
+      );
+      const smartMaxChange = walletRepository.getMaxIdxForChain(
+        network,
+        addressType,
+        1,
+      );
+      const smartDbPairCount = Math.max(smartMaxReceive, smartMaxChange) + 1;
+      const effectivePairCount = Math.max(pairCountInput, smartDbPairCount);
+      const base = buildRowVms(
+        network,
+        addressType,
+        useLegacyPath,
+        effectivePairCount,
+      );
       return applyAddressViewMode(base, network, 'smart');
     },
     [network, addressType, useLegacyPath],
