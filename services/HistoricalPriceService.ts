@@ -52,7 +52,7 @@ class HistoricalPriceService {
   async getHistoricalRate(
     currency: string,
     timestampUnixSec: number,
-    baseApi: string,
+    _baseApi: string,
   ): Promise<number | null> {
     const key = memKey(currency, timestampUnixSec);
 

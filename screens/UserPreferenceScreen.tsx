@@ -42,6 +42,7 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
     activeNetwork,
     showMempoolPlayground,
     showUtxosTab,
+    showAddressesTab,
     showPsbtTab,
     showWalletTab,
   } = useUser();
@@ -167,6 +168,7 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
         {
           showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
           showUtxos: showUtxosTab,
+          showAddresses: showAddressesTab,
           showPsbt: showPsbtTab,
           showWallet: showWalletTab,
         },

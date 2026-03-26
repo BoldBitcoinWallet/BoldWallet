@@ -20,7 +20,7 @@ import balanceRepository from './repositories/BalanceRepository';
 import transactionRepository from './repositories/TransactionRepository';
 import utxoRepository from './repositories/UtxoRepository';
 import priceRepository from './repositories/PriceRepository';
-import walletRepository from './repositories/WalletRepository';
+import walletRepository, {type WalletAddress} from './repositories/WalletRepository';
 import syncRepository from './repositories/SyncRepository';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {
@@ -635,6 +635,69 @@ export class WalletService {
     }
     // Also clear the UTXO empty-skip cache so newly-active addresses are not skipped
     this.utxoEmptyCache.clear();
+  }
+
+  /**
+   * Derives and persists receive + change rows for each index in
+   * [startIdx, endIdxInclusive]. Skips slots already in wallet_addresses.
+   * Used by the Addresses tab when expanding the list beyond discovery range.
+   */
+  public async ensureWalletAddressPairIndices(
+    network: string,
+    addressType: string,
+    useLegacyPath: boolean,
+    startIdx: number,
+    endIdxInclusive: number,
+  ): Promise<void> {
+    if (endIdxInclusive < startIdx || startIdx < 0) {
+      return;
+    }
+    const jks = await EncryptedStorage.getItem('keyshare');
+    if (!jks) {
+      dbg('WalletService.ensureWalletAddressPairIndices: no keyshare');
+      return;
+    }
+    const ks = JSON.parse(jks);
+    const batch: WalletAddress[] = [];
+    for (let idx = startIdx; idx <= endIdxInclusive; idx++) {
+      for (const chain of [0, 1] as const) {
+        if (walletRepository.getAddressAt(network, addressType, chain, idx)) {
+          continue;
+        }
+        const path =
+          chain === 0
+            ? getReceivePath(network, addressType, useLegacyPath, idx)
+            : getChangePath(network, addressType, useLegacyPath, idx);
+        const pub = await BBMTLibNativeModule.derivePubkey(
+          ks.pub_key,
+          ks.chain_code_hex,
+          path,
+        );
+        const address = await BBMTLibNativeModule.btcAddress(
+          pub,
+          network,
+          addressType,
+        );
+        batch.push({
+          network,
+          addressType,
+          chain,
+          idx,
+          address,
+          isUsed: false,
+        });
+      }
+    }
+    if (batch.length) {
+      walletRepository.upsertAddressBatch(batch);
+      dbg(
+        'WalletService.ensureWalletAddressPairIndices upserted',
+        batch.length,
+        'rows',
+        {network, addressType, startIdx, endIdxInclusive},
+      );
+      this.invalidateAddressCache(network, addressType);
+    }
   }
 
   /**

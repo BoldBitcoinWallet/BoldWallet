@@ -9,6 +9,7 @@ import ShowcaseScreen from './screens/ShowcaseScreen';
 import WalletHome from './screens/WalletHome';
 import MempoolPlaygroundScreen from './screens/MempoolPlaygroundScreen';
 import UtxosScreen from './screens/UtxosScreen';
+import AddressesScreen from './screens/AddressesScreen';
 import PSBTScreen from './screens/PSBTScreen';
 import DeviceScreen from './screens/DeviceScreen';
 import EncryptedStorage from 'react-native-encrypted-storage';
@@ -100,6 +101,7 @@ const tabBarIcons = {
   Wallet: require('./assets/wallet-icon.png'),
   Playground: require('./assets/mempool-icon.png'),
   Utxos: require('./assets/utxo-icon.png'),
+  Addresses: require('./assets/addresses-icon.png'),
   PSBT: require('./assets/cosign-icon.png'),
   Settings: require('./assets/settings-icon.png'),
 };
@@ -150,6 +152,13 @@ const TabBarIconPlayground = (props: {color: string; size?: number}) => (
 const TabBarIconUtxos = (props: {color: string; size?: number}) => (
   <TabBarIcon
     name="Utxos"
+    color={props.color}
+    size={props.size ?? TAB_BAR_ICON_SIZE}
+  />
+);
+const TabBarIconAddresses = (props: {color: string; size?: number}) => (
+  <TabBarIcon
+    name="Addresses"
     color={props.color}
     size={props.size ?? TAB_BAR_ICON_SIZE}
   />
@@ -354,7 +363,14 @@ const MainTabs = () => {
     ),
     [isDarkMode],
   );
-  const {activeNetwork, showMempoolPlayground, showUtxosTab, showPsbtTab, showWalletTab} = useUser();
+  const {
+    activeNetwork,
+    showMempoolPlayground,
+    showUtxosTab,
+    showAddressesTab,
+    showPsbtTab,
+    showWalletTab,
+  } = useUser();
   const showPlayTab = activeNetwork === 'mainnet' && showMempoolPlayground;
   const initialTab = showWalletTab ? 'Wallet' : showPsbtTab ? 'PSBT' : 'Device';
   return (
@@ -434,6 +450,17 @@ const MainTabs = () => {
               header: HomeHeader,
               tabBarLabel: 'UTXOs',
               tabBarIcon: TabBarIconUtxos,
+            }}
+          />
+        )}
+        {showAddressesTab && (
+          <Tab.Screen
+            name="Addresses"
+            component={AddressesScreen}
+            options={{
+              header: HomeHeader,
+              tabBarLabel: 'Addresses',
+              tabBarIcon: TabBarIconAddresses,
             }}
           />
         )}

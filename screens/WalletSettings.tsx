@@ -697,6 +697,8 @@ const getSectionIcon = (title: string): any => {
       return require('../assets/cosign-icon.png');
     case 'wallet':
       return require('../assets/wallet-icon.png');
+    case 'addresses':
+      return require('../assets/addresses-icon.png');
     case 'dev debug':
       return require('../assets/advanced-icon.png');
     default:
@@ -744,6 +746,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     setShowMempoolPlayground,
     showUtxosTab,
     setShowUtxosTab,
+    showAddressesTab,
+    setShowAddressesTab,
     showPsbtTab,
     setShowPsbtTab,
     showWalletTab,
@@ -830,6 +834,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     devDebug: false,
     mempoolPlayground: false,
     utxos: false,
+    addresses: false,
     psbt: false,
     wallet: false,
   });
@@ -1053,6 +1058,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           {
             showPlay: network === 'mainnet' && showMempoolPlayground,
             showUtxos: showUtxosTab,
+            showAddresses: showAddressesTab,
             showPsbt: showPsbtTab,
             showWallet: showWalletTab,
           },
@@ -1063,6 +1069,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       navigation,
       showMempoolPlayground,
       showUtxosTab,
+      showAddressesTab,
       showPsbtTab,
       showWalletTab,
     ],
@@ -1088,6 +1095,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       'devDebug',
       'mempoolPlayground',
       'utxos',
+      'addresses',
       'psbt',
       'wallet',
     ]);
@@ -1221,6 +1229,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           {
             showPlay: newNetwork === 'mainnet' && showMempoolPlayground,
             showUtxos: showUtxosTab,
+            showAddresses: showAddressesTab,
             showPsbt: showPsbtTab,
             showWallet: showWalletTab,
           },
@@ -1277,6 +1286,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         {
           showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
           showUtxos: showUtxosTab,
+          showAddresses: showAddressesTab,
           showPsbt: showPsbtTab,
           showWallet: showWalletTab,
         },
@@ -1372,6 +1382,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           {
             showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
             showUtxos: showUtxosTab,
+            showAddresses: showAddressesTab,
             showPsbt: showPsbtTab,
             showWallet: showWalletTab,
           },
@@ -2861,6 +2872,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                       showPlay:
                         activeNetwork === 'mainnet' && showMempoolPlayground,
                       showUtxos: showUtxosTab,
+                      showAddresses: showAddressesTab,
                       showPsbt: showPsbtTab,
                       showWallet: showWalletTab,
                     },
@@ -3742,6 +3754,26 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 value={showUtxosTab}
               />
               <Text style={styles.toggleLabel}>Show UTXOs tab</Text>
+            </View>
+          </CollapsibleSection>
+          <CollapsibleSection
+            title="Addresses"
+            isExpanded={expandedSections.addresses}
+            onToggle={() => toggleSection('addresses')}
+            styles={styles}
+            theme={theme}>
+            <Text style={styles.hintText}>
+              Show the <Text style={styles.hintBold}>Addresses</Text> tab in the
+              tab bar. Lists receive and change addresses with balances (from your
+              wallet cache). Off by default.
+            </Text>
+            <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
+              <Text style={styles.toggleLabel}>Hide Addresses tab</Text>
+              <AppSwitch
+                onValueChange={value => setShowAddressesTab(value)}
+                value={showAddressesTab}
+              />
+              <Text style={styles.toggleLabel}>Show Addresses tab</Text>
             </View>
           </CollapsibleSection>
           <CollapsibleSection

@@ -40,6 +40,9 @@ interface UserContextType {
   /** When true, show the UTXOs tab. From Settings. Default off. */
   showUtxosTab: boolean;
   setShowUtxosTab: (value: boolean) => Promise<void>;
+  /** When true, show the Addresses tab. From Settings. Default off. */
+  showAddressesTab: boolean;
+  setShowAddressesTab: (value: boolean) => Promise<void>;
   /** When true, show the PSBT tab. From Settings. Default off. */
   showPsbtTab: boolean;
   setShowPsbtTab: (value: boolean) => Promise<void>;
@@ -74,6 +77,7 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
   const [showMempoolPlayground, setShowMempoolPlaygroundState] =
     useState<boolean>(false);
   const [showUtxosTab, setShowUtxosTabState] = useState<boolean>(false);
+  const [showAddressesTab, setShowAddressesTabState] = useState<boolean>(false);
   const [showPsbtTab, setShowPsbtTabState] = useState<boolean>(false);
   const [showWalletTab, setShowWalletTabState] = useState<boolean>(true);
   // Compute the currently active address based on active network + address type
@@ -167,6 +171,9 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     try {
       setShowMempoolPlaygroundState(appConfigRepository.getBool(CONFIG_KEYS.TAB_MEMPOOL_ENABLED, false));
       setShowUtxosTabState(appConfigRepository.getBool(CONFIG_KEYS.TAB_UTXOS_ENABLED, false));
+      setShowAddressesTabState(
+        appConfigRepository.getBool(CONFIG_KEYS.TAB_ADDRESSES_ENABLED, false),
+      );
       setShowPsbtTabState(appConfigRepository.getBool(CONFIG_KEYS.TAB_PSBT_ENABLED, false));
       const walletEnabled = appConfigRepository.get(CONFIG_KEYS.TAB_WALLET_ENABLED);
       setShowWalletTabState(walletEnabled !== 'false');
@@ -444,6 +451,10 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     setShowUtxosTabState(value);
     appConfigRepository.setBool(CONFIG_KEYS.TAB_UTXOS_ENABLED, value);
   }, []);
+  const setShowAddressesTab = useCallback(async (value: boolean) => {
+    setShowAddressesTabState(value);
+    appConfigRepository.setBool(CONFIG_KEYS.TAB_ADDRESSES_ENABLED, value);
+  }, []);
   const setShowPsbtTab = useCallback(async (value: boolean) => {
     setShowPsbtTabState(value);
     appConfigRepository.setBool(CONFIG_KEYS.TAB_PSBT_ENABLED, value);
@@ -476,6 +487,8 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     setShowMempoolPlayground,
     showUtxosTab,
     setShowUtxosTab,
+    showAddressesTab,
+    setShowAddressesTab,
     showPsbtTab,
     setShowPsbtTab,
     showWalletTab,
