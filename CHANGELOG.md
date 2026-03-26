@@ -1,5 +1,26 @@
 # Changelog
 
+## [3.0.6] - 2026-03-26
+
+### Added
+- **Addresses tab**: new dedicated `AddressesScreen` with receive/change HD rows (path, index, and address), per-row BTC/fiat balance, and direct open into `ReceiveModal`.
+- **Address ordering modes**: added persisted list mode toggle (`AUTO` smart view vs `HD` derivation order) stored under `CONFIG_KEYS.ADDRESSES_VIEW_MODE`.
+- **Address health tiers**: rows are classified as `Active`, `Used`, or `Unused` using UTXO presence, balance state, and last transaction activity metadata.
+- **Load-more paging**: added "Show more" control that extends the HD index window by address pairs while keeping DB-first rendering.
+
+### Changed
+- **Smart sort behavior**: in `AUTO`, addresses are ordered by tier first, then recency (`lastActivity`), then derivation index, then receive-before-change.
+- **Refresh semantics**: manual header refresh now explicitly invalidates visible balance/UTXO sync metadata and re-syncs one address at a time (DB-first update flow).
+- **Receive UX from addresses list**: tapping a row performs targeted balance/UTXO sync for that address before opening the receive modal with fresh row data.
+- **Addresses row visual polish**: improved index readability in dark mode and added a separator under the row header line for clearer grouping.
+
+### Technical Details
+- **Version**: `package.json` 3.0.6; Android `versionCode` 56 / `versionName` 3.0.6; iOS build 56 / `MARKETING_VERSION` 3.0.6.
+- **New files**: `screens/AddressesScreen.tsx`, `assets/addresses-icon.png`.
+- **Modified files** (selection): `App.tsx`, `context/UserContext.tsx`, `screens/WalletHome.tsx`, `screens/WalletSettings.tsx`, `services/WalletService.ts`, `services/repositories/WalletRepository.ts`, `services/repositories/TransactionRepository.ts`, `services/repositories/AppConfigRepository.ts`, `utils.js`.
+
+---
+
 ## [3.0.5] - 2026-03-15
 
 ### Added
