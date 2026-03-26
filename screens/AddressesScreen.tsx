@@ -43,6 +43,8 @@ import ReceiveModal from './ReceiveModal';
 /** Match BalanceSyncer BALANCE_DB_TTL_MS — freshness for lazy sync skip. */
 const BALANCE_DB_TTL_MS = 20_000;
 const PAIRS_PER_PAGE = 5;
+const SMART_ROWS_PER_PAGE = PAIRS_PER_PAGE * 2;
+const SMART_LOAD_MORE_SCAN_BATCHES = 3;
 
 export type AddressViewMode = 'smart' | 'hd_order';
 
@@ -130,10 +132,9 @@ function applyAddressViewMode(
   }
 
   const chainOrd = (c: 'receive' | 'change') => (c === 'receive' ? 0 : 1);
-  const tierOrd = (t: AddressTier) =>
-    t === 'active' ? 0 : t === 'used' ? 1 : 2;
+  const tierOrd = (t: AddressTier) => (t === 'active' ? 0 : t === 'used' ? 1 : 2);
 
-  return [...withTier].sort((a, b) => {
+  const sorted = [...withTier].sort((a, b) => {
     const td = tierOrd(a.tier) - tierOrd(b.tier);
     if (td !== 0) return td;
     const la = lastActivity.get(a.address) ?? -1;
@@ -142,6 +143,9 @@ function applyAddressViewMode(
     if (a.idx !== b.idx) return a.idx - b.idx;
     return chainOrd(a.chain) - chainOrd(b.chain);
   });
+
+  /** Smart mode intentionally hides "unused" rows; list is active -> used only. */
+  return sorted.filter(r => r.tier !== 'unused');
 }
 
 function tierPillTheme(tier: AddressTier, colors: ThemeColors) {
@@ -189,6 +193,7 @@ const AddressesScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const [btcRate, setBtcRate] = useState<number | null>(null);
 
   const [pairCount, setPairCount] = useState(PAIRS_PER_PAGE);
+  const [smartVisibleCount, setSmartVisibleCount] = useState(SMART_ROWS_PER_PAGE);
   const [viewMode, setViewMode] = useState<AddressViewMode>(() => {
     const v = appConfigRepository.get(CONFIG_KEYS.ADDRESSES_VIEW_MODE);
     return v === 'hd_order' ? 'hd_order' : 'smart';
@@ -231,14 +236,29 @@ const AddressesScreen: React.FC<{navigation: any}> = ({navigation}) => {
     [legacyCreatedAt],
   );
 
-  const computeRowsFromDb = useCallback((): AddressRowVm[] => {
-    const base = buildRowVms(network, addressType, useLegacyPath, pairCount);
-    return applyAddressViewMode(base, network, viewMode);
-  }, [network, addressType, useLegacyPath, pairCount, viewMode]);
+  const computeRowsFromDb = useCallback(
+    (pairCountInput: number, smartVisibleCountInput: number): AddressRowVm[] => {
+      const base = buildRowVms(network, addressType, useLegacyPath, pairCountInput);
+      const all = applyAddressViewMode(base, network, viewMode);
+      if (viewMode === 'smart') {
+        return all.slice(0, smartVisibleCountInput);
+      }
+      return all;
+    },
+    [network, addressType, useLegacyPath, viewMode],
+  );
+
+  const computeSmartRowsFromDb = useCallback(
+    (pairCountInput: number): AddressRowVm[] => {
+      const base = buildRowVms(network, addressType, useLegacyPath, pairCountInput);
+      return applyAddressViewMode(base, network, 'smart');
+    },
+    [network, addressType, useLegacyPath],
+  );
 
   const reloadFromDb = useCallback(() => {
-    setRows(computeRowsFromDb());
-  }, [computeRowsFromDb]);
+    setRows(computeRowsFromDb(pairCount, smartVisibleCount));
+  }, [computeRowsFromDb, pairCount, smartVisibleCount]);
 
   useEffect(() => {
     pairCountRef.current = pairCount;
@@ -251,6 +271,12 @@ const AddressesScreen: React.FC<{navigation: any}> = ({navigation}) => {
       return next;
     });
   }, []);
+
+  useEffect(() => {
+    if (viewMode === 'smart') {
+      setSmartVisibleCount(SMART_ROWS_PER_PAGE);
+    }
+  }, [viewMode, network, addressType]);
 
   /**
    * DB-first: read current row → invalidate cache → API sync writes SQLite →
@@ -290,7 +316,7 @@ const AddressesScreen: React.FC<{navigation: any}> = ({navigation}) => {
         } catch (e) {
           dbg('AddressesScreen: row utxo sync', item.address.slice(0, 8), e);
         }
-        const next = computeRowsFromDb();
+        const next = computeRowsFromDb(pairCountRef.current, smartVisibleCount);
         setRows(next);
         setReceiveModalRow(next.find(r => r.key === item.key) ?? item);
       } catch (e) {
@@ -301,7 +327,7 @@ const AddressesScreen: React.FC<{navigation: any}> = ({navigation}) => {
         setRowModalSyncKey(null);
       }
     },
-    [apiBase, network, computeRowsFromDb],
+    [apiBase, network, computeRowsFromDb, smartVisibleCount],
   );
 
   useFocusEffect(
@@ -334,6 +360,36 @@ const AddressesScreen: React.FC<{navigation: any}> = ({navigation}) => {
     loadMoreInFlight.current = true;
     setLoadingMore(true);
     try {
+      if (viewMode === 'smart') {
+        const targetVisible = smartVisibleCount + SMART_ROWS_PER_PAGE;
+        let workingPairCount = pairCountRef.current;
+        let smartRows = computeSmartRowsFromDb(workingPairCount);
+
+        let scanBatches = 0;
+        while (
+          smartRows.length < targetVisible &&
+          scanBatches < SMART_LOAD_MORE_SCAN_BATCHES
+        ) {
+          const startIdx = workingPairCount;
+          const endIdx = startIdx + PAIRS_PER_PAGE - 1;
+          await WalletService.getInstance().ensureWalletAddressPairIndices(
+            network,
+            addressType,
+            useLegacyPath,
+            startIdx,
+            endIdx,
+          );
+          workingPairCount += PAIRS_PER_PAGE;
+          pairCountRef.current = workingPairCount;
+          smartRows = computeSmartRowsFromDb(workingPairCount);
+          scanBatches += 1;
+        }
+
+        setPairCount(workingPairCount);
+        setSmartVisibleCount(Math.min(targetVisible, smartRows.length));
+        return;
+      }
+
       const startIdx = pairCountRef.current;
       const endIdx = startIdx + PAIRS_PER_PAGE - 1;
       await WalletService.getInstance().ensureWalletAddressPairIndices(
@@ -352,11 +408,18 @@ const AddressesScreen: React.FC<{navigation: any}> = ({navigation}) => {
       loadMoreInFlight.current = false;
       setLoadingMore(false);
     }
-  }, [network, addressType, useLegacyPath]);
+  }, [
+    network,
+    addressType,
+    useLegacyPath,
+    viewMode,
+    smartVisibleCount,
+    computeSmartRowsFromDb,
+  ]);
 
   useEffect(() => {
     reloadFromDb();
-  }, [pairCount, reloadFromDb]);
+  }, [reloadFromDb]);
 
   const visibleAddressesForSync = useMemo(
     () => rows.map(r => ({address: r.address, network})),
