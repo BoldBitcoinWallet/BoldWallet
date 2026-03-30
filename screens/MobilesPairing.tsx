@@ -140,6 +140,7 @@ const MobilesPairing = ({navigation}: any) => {
     activeNetwork,
     showMempoolPlayground,
     showUtxosTab,
+    showAddressesTab,
     showPsbtTab,
     showWalletTab,
   } = useUser();
@@ -213,6 +214,7 @@ const MobilesPairing = ({navigation}: any) => {
     addressTypeToUse: string;
     showPlay: boolean;
     showUtxosTab: boolean;
+    showAddressesTab: boolean;
     showPsbtTab: boolean;
     showWalletTab: boolean;
     senderAddress: string;
@@ -941,6 +943,7 @@ const MobilesPairing = ({navigation}: any) => {
                   {
                     showPlay,
                     showUtxos: showUtxosTab,
+                    showAddresses: showAddressesTab,
                     showPsbt: showPsbtTab,
                     showWallet: showWalletTab,
                   },
@@ -1144,6 +1147,7 @@ const MobilesPairing = ({navigation}: any) => {
               addressTypeToUse,
               showPlay,
               showUtxosTab,
+              showAddressesTab,
               showPsbtTab,
               showWalletTab,
               senderAddress,
@@ -5013,6 +5017,7 @@ const MobilesPairing = ({navigation}: any) => {
                   {
                     showPlay: p.showPlay,
                     showUtxos: p.showUtxosTab,
+                    showAddresses: p.showAddressesTab,
                     showPsbt: p.showPsbtTab,
                     showWallet: p.showWalletTab,
                   },

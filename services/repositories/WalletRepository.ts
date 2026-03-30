@@ -318,6 +318,57 @@ class WalletRepository {
       return false;
     }
   }
+
+  /**
+   * Single row for (network, addressType, chain, idx). chain 0 = receive, 1 = change.
+   */
+  getAddressAt(
+    network: string,
+    addressType: string,
+    chain: number,
+    idx: number,
+  ): WalletAddress | null {
+    try {
+      const {rows} = database.execute(
+        `SELECT * FROM wallet_addresses
+         WHERE network = ? AND address_type = ? AND chain = ? AND idx = ?`,
+        [network, addressType, chain, idx],
+      );
+      if (!rows.length) return null;
+      const r = rows[0];
+      return {
+        network: r.network as string,
+        addressType: r.address_type as string,
+        chain: r.chain as number,
+        idx: r.idx as number,
+        address: r.address as string,
+        isUsed: (r.is_used as number) === 1,
+      };
+    } catch (err) {
+      dbg('WalletRepository.getAddressAt error', err);
+      return null;
+    }
+  }
+
+  /** Largest idx for chain (0 or 1), or -1 if none. */
+  getMaxIdxForChain(
+    network: string,
+    addressType: string,
+    chain: number,
+  ): number {
+    try {
+      const {rows} = database.execute(
+        `SELECT COALESCE(MAX(idx), -1) AS m FROM wallet_addresses
+         WHERE network = ? AND address_type = ? AND chain = ?`,
+        [network, addressType, chain],
+      );
+      if (!rows.length) return -1;
+      return rows[0].m as number;
+    } catch (err) {
+      dbg('WalletRepository.getMaxIdxForChain error', err);
+      return -1;
+    }
+  }
 }
 
 const walletRepository = new WalletRepository();

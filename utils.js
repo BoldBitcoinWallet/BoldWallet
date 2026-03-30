@@ -20,11 +20,12 @@ export const getPinnedRemoteIPs = () => [...ips];
 
 /**
  * Reset navigation config to MainTabs with Wallet tab selected (or Device when Wallet hidden).
- * Options: showPlay, showUtxos, showPsbt, showWallet (default true for Wallet).
+ * Options: showPlay, showUtxos, showAddresses, showPsbt, showWallet (default true for Wallet).
  */
 export const getResetToMainTabsWallet = (params = {}, options = {}) => {
   const showPlay = options.showPlay !== false;
   const showUtxos = options.showUtxos === true;
+  const showAddresses = options.showAddresses === true;
   const showPsbt = options.showPsbt === true;
   const showWallet = options.showWallet !== false;
   const routes = [
@@ -33,6 +34,7 @@ export const getResetToMainTabsWallet = (params = {}, options = {}) => {
     ...(showWallet ? [{name: 'Wallet', params}] : []),
     ...(showPlay ? [{name: 'Playground'}] : []),
     ...(showUtxos ? [{name: 'Utxos'}] : []),
+    ...(showAddresses ? [{name: 'Addresses'}] : []),
     {name: 'Settings'},
   ];
   let selectedIndex = 0;
@@ -62,6 +64,7 @@ export const getResetToMainTabsWallet = (params = {}, options = {}) => {
 export const getResetToMainTabsPSBT = (options = {}) => {
   const showPlay = options.showPlay !== false;
   const showUtxos = options.showUtxos === true;
+  const showAddresses = options.showAddresses === true;
   const showPsbt = options.showPsbt === true;
   const showWallet = options.showWallet !== false;
   const routes = [
@@ -70,6 +73,7 @@ export const getResetToMainTabsPSBT = (options = {}) => {
     ...(showWallet ? [{name: 'Wallet'}] : []),
     ...(showPlay ? [{name: 'Playground'}] : []),
     ...(showUtxos ? [{name: 'Utxos'}] : []),
+    ...(showAddresses ? [{name: 'Addresses'}] : []),
     {name: 'Settings'},
   ];
   let selectedIndex = 0;

@@ -300,6 +300,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     balanceFormattingEnabled,
     showMempoolPlayground,
     showUtxosTab,
+    showAddressesTab,
     showPsbtTab,
     showWalletTab,
     refresh: refreshUserContext,
@@ -1138,6 +1139,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               {
                 showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
                 showUtxos: showUtxosTab,
+                showAddresses: showAddressesTab,
                 showPsbt: showPsbtTab,
                 showWallet: showWalletTab,
               },
@@ -1153,6 +1155,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               {
                 showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
                 showUtxos: showUtxosTab,
+                showAddresses: showAddressesTab,
                 showPsbt: showPsbtTab,
                 showWallet: showWalletTab,
               },
@@ -1301,6 +1304,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     activeNetwork,
     showMempoolPlayground,
     showUtxosTab,
+    showAddressesTab,
     showPsbtTab,
     showWalletTab,
   ]);

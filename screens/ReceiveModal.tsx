@@ -26,7 +26,17 @@ const ReceiveModal: React.FC<{
   network: string;
   onClose: () => void;
   receivePathInfo?: ReceivePathInfo;
-}> = ({address, addressType, baseApi, network, onClose, receivePathInfo}) => {
+  /** When showing a change address, path chip reads "Change #n" instead of "Receive #n". */
+  pathChain?: 'receive' | 'change';
+}> = ({
+  address,
+  addressType,
+  baseApi,
+  network,
+  onClose,
+  receivePathInfo,
+  pathChain = 'receive',
+}) => {
   const qrRef = useRef<any>(null);
   const {theme} = useTheme();
   const [isCopied, setIsCopied] = useState(false);
@@ -336,7 +346,8 @@ const ReceiveModal: React.FC<{
           {receivePathInfo && (
             <View style={styles.pathChip}>
               <AppText style={styles.pathChipText} tone="muted">
-                Receive #{receivePathInfo.index}:{' '}
+                {pathChain === 'change' ? 'Change' : 'Receive'} #
+                {receivePathInfo.index}:{' '}
                 <AppText style={styles.pathChipPathText} tone="muted">
                   {receivePathInfo.path}
                 </AppText>

@@ -3,7 +3,8 @@
  *
  * Covers: network, address_type, current_address, currency, balance_hidden,
  * haptics_enabled, theme_mode, fee_strategy, legacy_wallet_do_not_remind,
- * tab_wallet_enabled, tab_psbt_enabled, tab_utxos_enabled, tab_mempool_enabled,
+ * tab_wallet_enabled, tab_psbt_enabled, tab_utxos_enabled, tab_addresses_enabled,
+ * tab_mempool_enabled, addresses_view_mode (smart | hd_order),
  * sqlite_migration_done, and any future string-typed preferences.
  */
 import database from '../Database';
@@ -23,7 +24,10 @@ export const CONFIG_KEYS = {
   TAB_WALLET_ENABLED: 'tab_wallet_enabled',
   TAB_PSBT_ENABLED: 'tab_psbt_enabled',
   TAB_UTXOS_ENABLED: 'tab_utxos_enabled',
+  TAB_ADDRESSES_ENABLED: 'tab_addresses_enabled',
   TAB_MEMPOOL_ENABLED: 'tab_mempool_enabled',
+  /** Addresses tab: `smart` (default) or `hd_order` */
+  ADDRESSES_VIEW_MODE: 'addresses_view_mode',
   SQLITE_MIGRATION_DONE: 'sqlite_migration_done',
 } as const;
 

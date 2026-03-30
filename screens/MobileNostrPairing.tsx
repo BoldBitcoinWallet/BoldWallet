@@ -101,6 +101,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     activeNetwork,
     showMempoolPlayground,
     showUtxosTab,
+    showAddressesTab,
     showPsbtTab,
     showWalletTab,
   } = useUser();
@@ -207,6 +208,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     addressTypeToUse: string;
     showPlay: boolean;
     showUtxosTab: boolean;
+    showAddressesTab: boolean;
     showPsbtTab: boolean;
     showWalletTab: boolean;
     originalNetwork?: string;
@@ -1983,6 +1985,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         addressTypeToUse,
         showPlay,
         showUtxosTab,
+        showAddressesTab,
         showPsbtTab,
         showWalletTab,
         originalNetwork,
@@ -2222,6 +2225,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                 {
                   showPlay,
                   showUtxos: showUtxosTab,
+                  showAddresses: showAddressesTab,
                   showPsbt: showPsbtTab,
                   showWallet: showWalletTab,
                 },
@@ -2246,6 +2250,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                   {
                     showPlay,
                     showUtxos: showUtxosTab,
+                    showAddresses: showAddressesTab,
                     showPsbt: showPsbtTab,
                     showWallet: showWalletTab,
                   },
@@ -2271,6 +2276,7 @@ const MobileNostrPairing = ({navigation}: any) => {
               {
                 showPlay,
                 showUtxos: showUtxosTab,
+                showAddresses: showAddressesTab,
                 showPsbt: showPsbtTab,
                 showWallet: showWalletTab,
               },
@@ -6521,6 +6527,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                   {
                     showPlay: p.showPlay,
                     showUtxos: p.showUtxosTab,
+                    showAddresses: p.showAddressesTab,
                     showPsbt: p.showPsbtTab,
                     showWallet: p.showWalletTab,
                   },

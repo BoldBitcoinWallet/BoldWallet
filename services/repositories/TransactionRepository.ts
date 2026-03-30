@@ -222,6 +222,65 @@ class TransactionRepository {
   }
 
   /**
+   * Latest activity time per address (ms), from SQLite only:
+   * max of (confirmed tx block_time/fetched_at) and (pending broadcast created_at).
+   */
+  getLastActivityTimestampsForAddresses(
+    addresses: string[],
+    network: string,
+  ): Map<string, number> {
+    const out = new Map<string, number>();
+    if (!addresses.length) return out;
+    const placeholders = addresses.map(() => '?').join(',');
+    const params = [...addresses, network];
+    try {
+      const {rows} = database.execute(
+        `SELECT ta.address,
+                MAX(COALESCE(t.block_time, t.fetched_at)) AS last_activity
+         FROM transaction_addresses ta
+         JOIN transactions t
+           ON ta.txid = t.txid AND ta.network = t.network
+         WHERE ta.address IN (${placeholders}) AND t.network = ?
+         GROUP BY ta.address`,
+        params,
+      );
+      for (const r of rows) {
+        const addr = r.address as string;
+        const v = r.last_activity as number | null;
+        if (addr && v != null && !Number.isNaN(v)) {
+          out.set(addr, v);
+        }
+      }
+    } catch (err) {
+      dbg('TransactionRepository.getLastActivityTimestampsForAddresses error', err);
+    }
+    try {
+      const {rows} = database.execute(
+        `SELECT address, MAX(created_at) AS last_activity
+         FROM pending_transactions
+         WHERE address IN (${placeholders}) AND network = ?
+         GROUP BY address`,
+        params,
+      );
+      for (const r of rows) {
+        const addr = r.address as string;
+        const v = r.last_activity as number | null;
+        if (!addr || v == null || Number.isNaN(v)) continue;
+        const prev = out.get(addr);
+        if (prev == null || v > prev) {
+          out.set(addr, v);
+        }
+      }
+    } catch (err) {
+      dbg(
+        'TransactionRepository.getLastActivityTimestampsForAddresses pending',
+        err,
+      );
+    }
+    return out;
+  }
+
+  /**
    * Insert a transaction immediately after successful broadcast so it appears
    * in the UI without waiting for API sync. Call from pairing screens (send_btc multi-path)
    * with full apiTxShape (vin/vout) built from the payload.
