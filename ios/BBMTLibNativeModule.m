@@ -225,7 +225,7 @@ RCT_EXTERN_METHOD(nostrJoinKeysign:(NSString *)relaysCSV
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
-// Nostr MPC Send BTC (UTXO multi-path); nsec read from stored keyshare in native
+// Nostr MPC Send BTC (UTXO multi-path only); nsec read from stored keyshare in native
 RCT_EXTERN_METHOD(nostrMpcSendBTC:(NSString *)relaysCSV
                   partiesNpubsCSV:(NSString *)partiesNpubsCSV
                   npubsSorted:(NSString *)npubsSorted
@@ -234,21 +234,6 @@ RCT_EXTERN_METHOD(nostrMpcSendBTC:(NSString *)relaysCSV
                   amountSatoshi:(NSString *)amountSatoshi
                   estimatedFee:(NSString *)estimatedFee
                   utxosWithPathsJSON:(NSString *)utxosWithPathsJSON
-                  changeAddress:(NSString *)changeAddress
-                  resolver:(RCTPromiseResolveBlock)resolve
-                  rejecter:(RCTPromiseRejectBlock)reject)
-
-// Nostr MPC Send BTC (single-path); nsec read from stored keyshare in native
-RCT_EXTERN_METHOD(nostrMpcSendBTC:(NSString *)relaysCSV
-                  partiesNpubsCSV:(NSString *)partiesNpubsCSV
-                  npubsSorted:(NSString *)npubsSorted
-                  balanceSats:(NSString *)balanceSats
-                  derivePath:(NSString *)derivePath
-                  publicKey:(NSString *)publicKey
-                  senderAddress:(NSString *)senderAddress
-                  receiverAddress:(NSString *)receiverAddress
-                  amountSatoshi:(NSString *)amountSatoshi
-                  estimatedFee:(NSString *)estimatedFee
                   changeAddress:(NSString *)changeAddress
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)

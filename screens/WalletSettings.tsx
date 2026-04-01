@@ -31,10 +31,11 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 const {BBMTLibNativeModule} = NativeModules;
 import DeviceInfo from 'react-native-device-info';
 import {useUser} from '../context/UserContext';
-// Predefined API endpoints
-const MAINNET_APIS = ['https://mempool.space/api'];
-const TESTNET_APIS = ['https://mempool.space/testnet/api'];
-const {IconChanger} = NativeModules; // This is fine here, as it's not a Hook
+import {
+  CANONICAL_TESTNET_MEMPOOL_API_BASE,
+  normalizeUserMempoolApiInput,
+  validateMempoolApiBaseReachable,
+} from '../services/mempoolApiBase';
 import {
   dbg,
   setHapticsEnabled,
@@ -43,6 +44,7 @@ import {
   getKeyshareLabel,
   getResetToMainTabsWallet,
   getKeyshareMetadata,
+  clearKeyshareMetadata,
 } from '../utils';
 import {useTheme} from '../theme';
 import {waitMS, WalletService} from '../services/WalletService';
@@ -50,10 +52,6 @@ import mempoolClient from '../services/MempoolClient';
 import appConfigRepository, {
   CONFIG_KEYS,
 } from '../services/repositories/AppConfigRepository';
-import {
-  normalizeUserMempoolApiInput,
-  validateMempoolApiBaseReachable,
-} from '../services/mempoolApiBase';
 import {
   getGapLimit,
   getMinScanIndex,
@@ -84,6 +82,11 @@ import FontComparisonScreen from '../components/FontComparisonScreen';
 import {setDebugLoggingEnabled, isDebugLoggingEnabled} from '../App';
 import Toast from 'react-native-toast-message';
 import {useRoute, useFocusEffect, RouteProp} from '@react-navigation/native';
+
+const {IconChanger} = NativeModules; // This is fine here, as it's not a Hook
+// Predefined API endpoints
+const MAINNET_APIS = ['https://mempool.space/api'];
+const TESTNET_APIS = [CANONICAL_TESTNET_MEMPOOL_API_BASE];
 
 type SettingsParams = {expandSection?: string};
 
@@ -1299,8 +1302,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       Alert.alert('Error', 'Please select a valid API endpoint.');
       return;
     }
-    // Normalize the URL to ensure it ends with /api
-    const normalizedApi = normalizeUserMempoolApiInput(api);
+    // Testnet: only the canonical mempool.space testnet base (no custom endpoints).
+    const normalizedApi = isTestnet
+      ? CANONICAL_TESTNET_MEMPOOL_API_BASE
+      : normalizeUserMempoolApiInput(api);
     dbg('Original API URL:', api);
     dbg('Normalized API URL:', normalizedApi);
     setIsAPISaving(true);
@@ -1355,6 +1360,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('clearing SQLite wallet data...');
         database.clearWalletData();
         mempoolClient.invalidateAll();
+        await clearKeyshareMetadata();
         dbg('clearing encrypted storage...');
         // Prefer a full clear so we return to true first-launch state.
         // (If clear() is unavailable on some builds, fall back to removing known keys.)

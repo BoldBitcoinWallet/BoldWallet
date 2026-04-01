@@ -31,7 +31,9 @@ import appConfigRepository, {
   CONFIG_KEYS,
 } from '../services/repositories/AppConfigRepository';
 import {
+  CANONICAL_TESTNET_MEMPOOL_API_BASE,
   isKnownPublicMempoolMainnetBase,
+  isTestnetNetworkKey,
   normalizeUserMempoolApiInput,
   resolveStoredMempoolApiBase,
   validateMempoolApiBaseReachable,
@@ -74,7 +76,9 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
       return;
     }
 
-    const normalizedApi = normalizeUserMempoolApiInput(api);
+    const normalizedApi = isTestnetNetworkKey(activeNetwork)
+      ? CANONICAL_TESTNET_MEMPOOL_API_BASE
+      : normalizeUserMempoolApiInput(api);
     dbg('Original API URL:', api);
     dbg('Normalized API URL:', normalizedApi);
     setIsAPISaving(true);

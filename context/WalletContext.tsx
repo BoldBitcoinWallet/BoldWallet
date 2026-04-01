@@ -2,6 +2,7 @@ import React, {createContext, useContext, useState, useEffect} from 'react';
 import {NativeModules} from 'react-native';
 import {dbg, getReceivePath, isLegacyWallet, getKeyshareMetadata} from '../utils';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
+import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {getExternalIndex} from '../services/HdIndexService';
 const {BBMTLibNativeModule} = NativeModules;
 interface WalletContextType {
@@ -74,23 +75,15 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
       // Update state
       setAddress(btcAddress);
       setNetwork(net!!);
-      let base = netParams.split('@')[1];
-      if (base.endsWith('/')) {
-        base = base.substring(0, base.length - 1);
-      }
-      let api = appConfigRepository.get('api');
-      if (api) {
-        if (api.endsWith('/')) {
-          api = api.substring(0, api.length - 1);
-        }
-        dbg('WalletContext: Using custom API URL:', api);
-        await BBMTLibNativeModule.setAPI(net, api);
-        setBaseApi(api);
-      } else {
-        dbg('WalletContext: Using default API URL:', base);
-        appConfigRepository.set('api', base);
-        setBaseApi(base);
-      }
+      const apiRaw = resolveStoredMempoolApiBase(net);
+      const api = apiRaw.endsWith('/')
+        ? apiRaw.substring(0, apiRaw.length - 1)
+        : apiRaw;
+      dbg('WalletContext: Resolved Mempool API URL:', api);
+      appConfigRepository.set(`api_${net}`, api);
+      appConfigRepository.set('api', api);
+      await BBMTLibNativeModule.setAPI(net, api);
+      setBaseApi(api);
       dbg('WalletContext: Wallet refresh completed');
     } catch (error) {
       dbg('WalletContext: Error refreshing wallet:', error);

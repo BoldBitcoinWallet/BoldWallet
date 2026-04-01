@@ -188,14 +188,12 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
       try {
         const net = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
         setNetwork(net);
-        let api = appConfigRepository.get(`api_${net}`) || appConfigRepository.get('api');
-        if (!api) {
-          api = net === 'testnet3'
-            ? 'https://mempool.space/testnet/api'
-            : 'https://mempool.space/api';
-          appConfigRepository.set('api', api);
-          appConfigRepository.set(`api_${net}`, api);
+        const api = resolveStoredMempoolApiBase(net);
+        const apiKey = `api_${net}`;
+        if (appConfigRepository.get(apiKey) !== api) {
+          appConfigRepository.set(apiKey, api);
         }
+        appConfigRepository.set('api', api);
         setApiBase(api);
         await BBMTLibNativeModule.setAPI(net, api);
       } catch {

@@ -307,10 +307,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     showWalletTab,
     refresh: refreshUserContext,
   } = useUser();
-  const resolvedWalletApi = useMemo(
-    () => apiBase || resolveStoredMempoolApiBase(network),
-    [apiBase, network],
-  );
+  // Always read from app config (not `apiBase || …`) so testnet never sticks to a stale mainnet URL.
+  const resolvedWalletApi = resolveStoredMempoolApiBase(network);
   // Keep local state in sync with UserContext
   useEffect(() => {
     if (userAddressType) {
@@ -480,7 +478,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     setIsRefreshing(true);
     setIsBalanceLoading(true);
 
-    const baseApi = apiBase || resolveStoredMempoolApiBase(network);
+    const baseApi = resolveStoredMempoolApiBase(network);
     if (!baseApi || !network) {
       refreshFromDBRef.current();
       isFetchInProgressRef.current = false;
@@ -565,7 +563,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     setIsRefreshing(false);
     isFetchInProgressRef.current = false;
     dbg('=== Data fetch completed');
-  }, [network, btcRate, _pendingSent, apiBase, addressType, userAddressType]);
+  }, [network, btcRate, _pendingSent, addressType, userAddressType]);
 
   // Clear temporary sync error message after 4s so bar returns to normal
   useEffect(() => {
@@ -640,7 +638,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         userActiveAddress ||
         address ||
         appConfigRepository.get(CONFIG_KEYS.CURRENT_ADDRESS);
-      const baseApi = apiBase || resolveStoredMempoolApiBase(network);
+      const baseApi = resolveStoredMempoolApiBase(network);
       if (!addr || !baseApi) {
         dbg('checkBalanceForSend: Missing wallet address or baseApi');
         return 0;
@@ -690,7 +688,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   }, [
     userActiveAddress,
     address,
-    apiBase,
     network,
     btcRate,
     _pendingSent,
@@ -843,7 +840,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           } catch {}
         }
         // Set up API URL from NetworkContext
-        const api = apiBase || resolveStoredMempoolApiBase(network);
+        const api = resolveStoredMempoolApiBase(network);
         if (api) {
           await BBMTLibNativeModule.setAPI(actualNet, api);
           dbg('API set for network:', actualNet, 'API:', api);
@@ -879,7 +876,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       dbg('[WalletHome] === Navigation focus - reinitializing wallet', {
         timestamp: Date.now(),
         network,
-        apiBase: apiBase || resolveStoredMempoolApiBase(network),
+        apiBase: resolveStoredMempoolApiBase(network),
       });
       await reinitializeWallet(true);
     });
@@ -1044,7 +1041,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     const txId = route.params?.txId;
     if (txId && network) {
       const baseUrl = explorerWebBaseFromApiUrl(
-        apiBase || resolveStoredMempoolApiBase(network),
+        resolveStoredMempoolApiBase(network),
       );
       const explorerLink = `${baseUrl}/tx/${txId}`;
       // Show alert with Cancel/Close and Explore buttons
@@ -1196,7 +1193,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           dbg('WalletHome: Using saved currency', currency);
         }
         const netParams = await BBMTLibNativeModule.setBtcNetwork(net);
-        net = netParams.split('@')[0];
+        const networkKey = netParams.split('@')[0] ?? net ?? 'mainnet';
+        net = networkKey;
         // Generate all address types
         const legacyAddr = await BBMTLibNativeModule.btcAddress(
           btcPub,
@@ -1234,20 +1232,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         );
         appConfigRepository.set(CONFIG_KEYS.CURRENT_ADDRESS, btcAddress);
         setAddress(btcAddress);
-        // Set up API URL
-        let base = netParams.split('@')[1];
-        if (!base.endsWith('/')) {
-          base = `${base}/`;
-        }
-        let api = appConfigRepository.get('api');
-        if (api) {
-          if (api.endsWith('/')) {
-            api = api.substring(0, api.length - 1);
-          }
-          BBMTLibNativeModule.setAPI(net, api);
-        } else {
-          appConfigRepository.set('api', base);
-        }
+        // Set up API URL — use per-network resolved base (testnet must not use global mainnet `api`).
+        const apiResolved = resolveStoredMempoolApiBase(networkKey);
+        let api = apiResolved.endsWith('/')
+          ? apiResolved.substring(0, apiResolved.length - 1)
+          : apiResolved;
+        appConfigRepository.set(`api_${networkKey}`, api);
+        appConfigRepository.set('api', api);
+        await BBMTLibNativeModule.setAPI(networkKey, api);
         // DB → UI: seed price + balance from SQLite
         refreshFromDBRef.current();
         setLoading(false);
@@ -1292,11 +1284,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   ]);
   // Start background sync once the full HD address set is known.
   // SyncCoordinator writes deltas to SQLite; the UI reads from the DB.
+  // Wait for UserContext `apiBase` (same as main) so we do not start/stop the coordinator
+  // repeatedly during init; still pass `resolveStoredMempoolApiBase` into start() for correct per-network URL.
   useEffect(() => {
-    if (!walletAddressesReady || !network) {
+    if (!walletAddressesReady || !apiBase || !network) {
       return;
     }
-    const resolvedApi = apiBase || resolveStoredMempoolApiBase(network);
+    const resolvedApi = resolveStoredMempoolApiBase(network);
     const addrs =
       walletAddresses.length > 0 ? walletAddresses : address ? [address] : [];
     if (addrs.length === 0) {
@@ -2147,7 +2141,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   const ws = WalletService.getInstance();
                   const effectiveAddressType = addressType || 'segwit-native';
                   const apiUrl =
-                    apiBase || resolveStoredMempoolApiBase(network);
+                    resolveStoredMempoolApiBase(network);
                   const restoreDone =
                     walletRepository.getHdState(network, effectiveAddressType)
                       ?.restoreDone === true;
@@ -2260,7 +2254,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   const effectiveType =
                     addressType || userAddressType || 'segwit-native';
                   const api =
-                    apiBase || resolveStoredMempoolApiBase(network);
+                    resolveStoredMempoolApiBase(network);
                   setIsRefreshing(true);
                   try {
                     dbg(

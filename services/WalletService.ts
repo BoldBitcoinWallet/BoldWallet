@@ -17,6 +17,7 @@ import mempoolClient from './MempoolClient';
 import appConfigRepository, {
   CONFIG_KEYS,
 } from './repositories/AppConfigRepository';
+import {resolveStoredMempoolApiBase} from './mempoolApiBase';
 import balanceRepository from './repositories/BalanceRepository';
 import transactionRepository from './repositories/TransactionRepository';
 import utxoRepository from './repositories/UtxoRepository';
@@ -344,16 +345,7 @@ export class WalletService {
       const network = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
       const addressType =
         appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'legacy';
-      let api = appConfigRepository.get(`api_${network}`);
-      if (!api) {
-        api = appConfigRepository.get('api');
-      }
-      if (!api) {
-        api =
-          network === 'mainnet'
-            ? 'https://mempool.space/api'
-            : 'https://mempool.space/testnet/api';
-      }
+      const api = resolveStoredMempoolApiBase(network);
       const address = appConfigRepository.get(CONFIG_KEYS.CURRENT_ADDRESS);
       return {
         network,
@@ -1032,8 +1024,10 @@ export class WalletService {
     let discoveryStatus: 'ok' | 'partial' | 'failed' = 'ok';
     const startedAt = Date.now();
 
-    // Load previously scanned addresses so retries skip already-checked indexes.
-    // wallet_addresses survives clearWalletCacheData(), making resume free.
+    // Load previously scanned addresses. We only skip network checks when the
+    // row says isUsed=true — a cached false may be wrong (wrong mempool host,
+    // timeout, or aborted run). Counting false toward the gap limit caused iOS
+    // to stop after ~2 indices while Android had a clean DB and scanned to 36+.
     const knownExternal = new Map<number, boolean>();
     for (const a of walletRepository.getAddresses(network, addressType, 0)) {
       knownExternal.set(a.idx, a.isUsed);
@@ -1056,20 +1050,15 @@ export class WalletService {
     try {
       let consecutiveUnused = 0;
       for (let i = 0; consecutiveUnused < getGapLimit(); i++) {
-        // Resume: use cached result from a previous (partial) run.
-        const cached = knownExternal.get(i);
-        if (cached !== undefined) {
-          if (cached) {
-            discoveredMaxUsedExternal = i;
-            consecutiveUnused = 0;
-          } else {
-            consecutiveUnused++;
-          }
+        const cachedUsed = knownExternal.get(i);
+        if (cachedUsed === true) {
+          discoveredMaxUsedExternal = i;
+          consecutiveUnused = 0;
           onProgress?.('external', i, consecutiveUnused);
           continue;
         }
 
-        // Not in DB — derive address and check via API.
+        // Missing row or cached isUsed=false — derive and verify via API.
         const path = getReceivePath(network, addressType, useLegacyPath, i);
         const pub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,
@@ -1159,15 +1148,10 @@ export class WalletService {
       try {
         let consecutiveUnused = 0;
         for (let i = 0; consecutiveUnused < getGapLimit(); i++) {
-          // Resume: use cached result from a previous (partial) run.
-          const cached = knownChange.get(i);
-          if (cached !== undefined) {
-            if (cached) {
-              discoveredMaxUsedChange = i;
-              consecutiveUnused = 0;
-            } else {
-              consecutiveUnused++;
-            }
+          const cachedUsed = knownChange.get(i);
+          if (cachedUsed === true) {
+            discoveredMaxUsedChange = i;
+            consecutiveUnused = 0;
             onProgress?.('internal', i, consecutiveUnused);
             continue;
           }

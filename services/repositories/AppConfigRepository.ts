@@ -29,6 +29,11 @@ export const CONFIG_KEYS = {
   /** Addresses tab: `smart` (default) or `hd_order` */
   ADDRESSES_VIEW_MODE: 'addresses_view_mode',
   SQLITE_MIGRATION_DONE: 'sqlite_migration_done',
+  /**
+   * JSON blob of non-secret keyshare fields (same shape as EncryptedStorage `keyshare_meta`).
+   * Written whenever the full keyshare is saved; `getKeyshareMetadata` uses Encrypted first, then this fallback.
+   */
+  KEYSHARE_META_JSON: 'keyshare_meta_json',
 } as const;
 
 export type ConfigKey = (typeof CONFIG_KEYS)[keyof typeof CONFIG_KEYS];

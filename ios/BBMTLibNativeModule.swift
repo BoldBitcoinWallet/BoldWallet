@@ -80,26 +80,117 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     static let keyshareAccount = "keyshare"
   }
 
-  /// Local Nostr nsec for Tss — only from stored keyshare (never from JS).
-  private func nsecForNostrFromStoredKeyshare() throws -> String {
+  /// When the full document fails `JSONSerialization` (huge `ecdsa_local_data`, etc.), still pull `nsec` for Nostr.
+  private func extractNsecStringViaRegex(from raw: String) -> String? {
+    let pattern = #""nsec"\s*:\s*"([^"]*)""#
+    guard let re = try? NSRegularExpression(pattern: pattern, options: []) else {
+      return nil
+    }
+    let range = NSRange(raw.startIndex..., in: raw)
+    guard let m = re.firstMatch(in: raw, options: [], range: range),
+      m.numberOfRanges >= 2,
+      let sr = Range(m.range(at: 1), in: raw)
+    else {
+      return nil
+    }
+    let s = String(raw[sr])
+    return s.isEmpty ? nil : s
+  }
+
+  /// Debug: summary line (lengths / types). Full JSON is logged separately as `raw_json=`.
+  private func logNsecKeyshareDiag(rawLen: Int, obj: [String: Any]?, nsecVal: Any?) {
+    let keysCsv = obj.map { $0.keys.sorted().joined(separator: ",") } ?? "(nil)"
+    let nsecDesc: String
+    if nsecVal == nil {
+      nsecDesc = "absent"
+    } else if let s = nsecVal as? String {
+      let mode: String
+      if s.hasPrefix("nsec1") {
+        mode = "bech32"
+      } else if !s.isEmpty && s.count % 2 == 0 {
+        mode = "hex_candidate"
+      } else {
+        mode = "other"
+      }
+      nsecDesc = "string len=\(s.count) mode=\(mode)"
+    } else {
+      nsecDesc = "NOT_STRING type=\(String(describing: Swift.type(of: nsecVal as Any)))"
+    }
+    sendLogEvent(
+      "nsecFromKeyshare",
+      "diag rawLen=\(rawLen) keys=[\(keysCsv)] nsec=\(nsecDesc)")
+  }
+
+  /// One Keychain read: parsed Nostr `nsec` for Tss + same raw keyshare JSON string for `withZeroedUTF8Keyshare`.
+  private func nsecAndKeyshareJSONFromRNES() throws -> (partyNsec: String, keyshareJSON: String) {
     guard let raw = loadKeyshareJSONFromRNES() else {
+      sendLogEvent("nsecFromKeyshare", "FAIL: no_keychain_blob account=keyshare")
       throw NSError(
         domain: "BBMTLibNativeModule", code: 1,
         userInfo: [NSLocalizedDescriptionKey: "No keyshare found in secure storage"])
     }
-    guard let data = raw.data(using: .utf8),
-      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-      let nsecField = obj["nsec"] as? String,
-      !nsecField.isEmpty
-    else {
+    sendLogEvent("nsecFromKeyshare", "raw_json=\(raw)")
+    let rawLen = raw.utf8.count
+    let data = raw.data(using: .utf8)
+    var obj: [String: Any]?
+    var parseError: Error?
+    if let data = data {
+      do {
+        if let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+          obj = root
+        }
+      } catch {
+        parseError = error
+      }
+    }
+    var nsecVal: Any?
+    if let obj = obj {
+      nsecVal = obj["nsec"]
+    } else {
+      let errDesc = parseError?.localizedDescription ?? "not_dictionary_or_nil_data"
+      sendLogEvent(
+        "nsecFromKeyshare",
+        "WARN: full_json_parse_failed rawLen=\(rawLen) err=\(errDesc)")
+      if let extracted = extractNsecStringViaRegex(from: raw) {
+        nsecVal = extracted
+        sendLogEvent(
+          "nsecFromKeyshare",
+          "recover: nsec from regex len=\(extracted.count)")
+      } else {
+        sendLogEvent(
+          "nsecFromKeyshare",
+          "FAIL: json_parse and no regex nsec rawLen=\(rawLen) err=\(errDesc) raw_json=\(raw)")
+        throw NSError(
+          domain: "BBMTLibNativeModule", code: 6,
+          userInfo: [
+            NSLocalizedDescriptionKey:
+              "Could not parse keyshare JSON (nsec not extractable)"
+          ])
+      }
+    }
+    logNsecKeyshareDiag(rawLen: rawLen, obj: obj, nsecVal: nsecVal)
+    guard let nsecField = nsecVal as? String, !nsecField.isEmpty else {
+      sendLogEvent(
+        "nsecFromKeyshare",
+        "FAIL: nsec missing empty_or_non_string (see diag above)")
       throw NSError(
         domain: "BBMTLibNativeModule", code: 2,
         userInfo: [NSLocalizedDescriptionKey: "nsec not found in keyshare"])
     }
+    let partyNsec: String
     if nsecField.hasPrefix("nsec1") {
-      return nsecField
+      partyNsec = nsecField
+    } else {
+      do {
+        partyNsec = try Self.hexUtf8BytesToNsecString(nsecField)
+      } catch {
+        sendLogEvent(
+          "nsecFromKeyshare",
+          "FAIL: hex_decode \(error.localizedDescription)")
+        throw error
+      }
     }
-    return try Self.hexUtf8BytesToNsecString(nsecField)
+    return (partyNsec, raw)
   }
 
   private static func hexUtf8BytesToNsecString(_ hex: String) throws -> String {
@@ -839,42 +930,6 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
   }
 
   @objc func nostrMpcSendBTC(
-    _ relaysCSV: String, partiesNpubsCSV: String, npubsSorted: String,
-    balanceSats: String, derivePath: String, publicKey: String,
-    senderAddress: String, receiverAddress: String, amountSatoshi: String, estimatedFee: String,
-    changeAddress: String,
-    resolver: @escaping RCTPromiseResolveBlock,
-    rejecter: @escaping RCTPromiseRejectBlock
-  ) {
-    DispatchQueue.global(qos: .background).async { [weak self] in
-      guard let self = self else {
-        rejecter("MODULE_GONE", "Native module released", nil)
-        return
-      }
-      let partyNsec: String
-      do {
-        partyNsec = try self.nsecForNostrFromStoredKeyshare()
-      } catch {
-        rejecter("NO_NSEC", error.localizedDescription, error)
-        return
-      }
-      guard let keyshareJSON = self.loadKeyshareJSONFromRNES() else {
-        rejecter("NO_KEYSHARE", "No keyshare found in secure storage", nil)
-        return
-      }
-      var error: NSError?
-      let output = self.withZeroedUTF8Keyshare(keyshareJSON) { ks in
-        TssNostrMpcSendBTC(
-          relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, ks, derivePath,
-          publicKey, senderAddress, receiverAddress, Int64(amountSatoshi) ?? 0,
-          Int64(estimatedFee) ?? 0, changeAddress, &error)
-      }
-      self.sendLogEvent("nostrMpcSendBTC", output)
-      resolver(error == nil ? output : error!.localizedDescription)
-    }
-  }
-
-  @objc func nostrMpcSendBTC(
     _ relaysCSV: String,
     partiesNpubsCSV: String,
     npubsSorted: String,
@@ -893,14 +948,18 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
         return
       }
       let partyNsec: String
+      let keyshareJSON: String
       do {
-        partyNsec = try self.nsecForNostrFromStoredKeyshare()
+        (partyNsec, keyshareJSON) = try self.nsecAndKeyshareJSONFromRNES()
       } catch {
-        rejecter("NO_NSEC", error.localizedDescription, error)
-        return
-      }
-      guard let keyshareJSON = self.loadKeyshareJSONFromRNES() else {
-        rejecter("NO_KEYSHARE", "No keyshare found in secure storage", nil)
+        let ns = error as NSError
+        if ns.domain == "BBMTLibNativeModule"
+          && (ns.code == 1 || ns.code == 6)
+        {
+          rejecter("NO_KEYSHARE", ns.localizedDescription, ns)
+        } else {
+          rejecter("NO_NSEC", ns.localizedDescription, ns)
+        }
         return
       }
       var error: NSError?
@@ -935,14 +994,18 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
         return
       }
       let partyNsec: String
+      let keyshareJSON: String
       do {
-        partyNsec = try self.nsecForNostrFromStoredKeyshare()
+        (partyNsec, keyshareJSON) = try self.nsecAndKeyshareJSONFromRNES()
       } catch {
-        rejecter("NO_NSEC", error.localizedDescription, error)
-        return
-      }
-      guard let keyshareJSON = self.loadKeyshareJSONFromRNES() else {
-        rejecter("NO_KEYSHARE", "No keyshare found in secure storage", nil)
+        let ns = error as NSError
+        if ns.domain == "BBMTLibNativeModule"
+          && (ns.code == 1 || ns.code == 6)
+        {
+          rejecter("NO_KEYSHARE", ns.localizedDescription, ns)
+        } else {
+          rejecter("NO_NSEC", ns.localizedDescription, ns)
+        }
         return
       }
       var error: NSError?

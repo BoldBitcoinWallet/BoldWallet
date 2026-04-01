@@ -992,7 +992,10 @@ export const decodeSendBitcoinQR = qrData => {
 // ---------------------------------------------------------------------------
 // Keyshare metadata helpers
 // Only the safe (non-secret) fields are stored in 'keyshare_meta'.
+// The same JSON is mirrored in SQLite app_config (KEYSHARE_META_JSON) for
+// offline/cache use when Encrypted `keyshare_meta` is missing (migration, etc.).
 // The full MPC blob in 'keyshare' is only read when signing is required.
+// Use runtime require() for AppConfigRepository to avoid a utils ↔ repository cycle.
 // ---------------------------------------------------------------------------
 
 /**
@@ -1005,6 +1008,55 @@ export const decodeSendBitcoinQR = qrData => {
  * @property {string|null} nostr_npub
  */
 
+function normalizeKeyshareMetaObject(parsed) {
+  return {
+    pub_key: parsed.pub_key ?? '',
+    chain_code_hex: parsed.chain_code_hex ?? '',
+    created_at: parsed.created_at ?? null,
+    local_party_key: parsed.local_party_key ?? '',
+    keygen_committee_keys: parsed.keygen_committee_keys ?? [],
+    nostr_npub: parsed.nostr_npub ?? null,
+  };
+}
+
+function safeParseKeyshareMetaJson(raw) {
+  if (raw == null || String(raw).trim() === '') {
+    return null;
+  }
+  try {
+    const o = JSON.parse(raw);
+    return o && typeof o === 'object' ? o : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Enough structure for routing/UI (co-signer list, local party id). */
+function keyshareMetaLooksComplete(meta) {
+  if (!meta || typeof meta !== 'object') {
+    return false;
+  }
+  const lp = meta.local_party_key;
+  const comm = meta.keygen_committee_keys;
+  if (typeof lp !== 'string' || lp.trim() === '') {
+    return false;
+  }
+  if (!Array.isArray(comm) || comm.length < 2) {
+    return false;
+  }
+  return true;
+}
+
+function loadAppConfigRepository() {
+  try {
+    const mod = require('./services/repositories/AppConfigRepository');
+    return {repo: mod.default, CONFIG_KEYS: mod.CONFIG_KEYS};
+  } catch (e) {
+    dbg('keyshare meta: AppConfigRepository unavailable', e);
+    return {repo: null, CONFIG_KEYS: null};
+  }
+}
+
 /**
  * Extract and persist only the non-secret metadata fields from a keyshare JSON string.
  * Call this whenever EncryptedStorage.setItem('keyshare', …) is called.
@@ -1013,15 +1065,17 @@ export const decodeSendBitcoinQR = qrData => {
 export const saveKeyshareMetadata = async keyshareJson => {
   try {
     const parsed = JSON.parse(keyshareJson);
-    const meta = {
-      pub_key: parsed.pub_key ?? '',
-      chain_code_hex: parsed.chain_code_hex ?? '',
-      created_at: parsed.created_at ?? null,
-      local_party_key: parsed.local_party_key ?? '',
-      keygen_committee_keys: parsed.keygen_committee_keys ?? [],
-      nostr_npub: parsed.nostr_npub ?? null,
-    };
-    await EncryptedStorage.setItem('keyshare_meta', JSON.stringify(meta));
+    const meta = normalizeKeyshareMetaObject(parsed);
+    const json = JSON.stringify(meta);
+    await EncryptedStorage.setItem('keyshare_meta', json);
+    const {repo, CONFIG_KEYS} = loadAppConfigRepository();
+    if (repo && CONFIG_KEYS) {
+      try {
+        repo.set(CONFIG_KEYS.KEYSHARE_META_JSON, json);
+      } catch (e) {
+        dbg('saveKeyshareMetadata: DB mirror failed (non-fatal)', e);
+      }
+    }
     dbg('saveKeyshareMetadata: saved metadata');
   } catch (e) {
     dbg('saveKeyshareMetadata: failed', e);
@@ -1030,16 +1084,58 @@ export const saveKeyshareMetadata = async keyshareJson => {
 
 /**
  * Read the non-secret keyshare metadata without loading the full MPC blob.
- * If only the legacy `keyshare` entry exists (older app versions never wrote
- * `keyshare_meta`), parses once and persists metadata so routing and UI stay aligned.
+ * Prefers EncryptedStorage `keyshare_meta` (always written with `keyshare` saves)
+ * so committee/npub data cannot drift from the keychain keyshare. SQLite is a
+ * fallback when Encrypted is empty, then legacy `keyshare` parse.
  * @returns {Promise<import('./types/keyshare').KeyshareMetadata|null>} Metadata object or null if not available
  */
 export const getKeyshareMetadata = async () => {
-  try {
-    const raw = await EncryptedStorage.getItem('keyshare_meta');
-    if (raw) {
-      return JSON.parse(raw);
+  const {repo, CONFIG_KEYS} = loadAppConfigRepository();
+
+  const legacyInMemoryFallback = legacyJson => {
+    try {
+      const parsed = JSON.parse(legacyJson);
+      return normalizeKeyshareMetaObject(parsed);
+    } catch {
+      return null;
     }
+  };
+
+  try {
+    const rawEnc = await EncryptedStorage.getItem('keyshare_meta');
+    const encParsed = safeParseKeyshareMetaJson(rawEnc);
+    const encNorm = encParsed ? normalizeKeyshareMetaObject(encParsed) : null;
+    const encOk = encNorm && keyshareMetaLooksComplete(encNorm);
+
+    if (encOk) {
+      if (repo && CONFIG_KEYS) {
+        try {
+          repo.set(CONFIG_KEYS.KEYSHARE_META_JSON, JSON.stringify(encNorm));
+        } catch (e) {
+          dbg('getKeyshareMetadata: sync DB from Encrypted failed', e);
+        }
+      }
+      return encNorm;
+    }
+
+    const dbRaw =
+      repo && CONFIG_KEYS ? repo.get(CONFIG_KEYS.KEYSHARE_META_JSON) : null;
+    const dbParsed = safeParseKeyshareMetaJson(dbRaw);
+    const dbNorm = dbParsed ? normalizeKeyshareMetaObject(dbParsed) : null;
+    const dbOk = dbNorm && keyshareMetaLooksComplete(dbNorm);
+
+    if (dbOk) {
+      try {
+        await EncryptedStorage.setItem(
+          'keyshare_meta',
+          JSON.stringify(dbNorm),
+        );
+      } catch (e) {
+        dbg('getKeyshareMetadata: backfill Encrypted from DB failed', e);
+      }
+      return dbNorm;
+    }
+
     const legacy = await EncryptedStorage.getItem('keyshare');
     if (!legacy || String(legacy).trim() === '') {
       return null;
@@ -1047,22 +1143,16 @@ export const getKeyshareMetadata = async () => {
     await saveKeyshareMetadata(legacy);
     const rawAfter = await EncryptedStorage.getItem('keyshare_meta');
     if (rawAfter) {
-      return JSON.parse(rawAfter);
+      const again = safeParseKeyshareMetaJson(rawAfter);
+      if (again && keyshareMetaLooksComplete(normalizeKeyshareMetaObject(again))) {
+        return normalizeKeyshareMetaObject(again);
+      }
     }
-    // saveKeyshareMetadata failed (e.g. storage) but legacy blob exists — still align in-memory
-    try {
-      const parsed = JSON.parse(legacy);
-      return {
-        pub_key: parsed.pub_key ?? '',
-        chain_code_hex: parsed.chain_code_hex ?? '',
-        created_at: parsed.created_at ?? null,
-        local_party_key: parsed.local_party_key ?? '',
-        keygen_committee_keys: parsed.keygen_committee_keys ?? [],
-        nostr_npub: parsed.nostr_npub ?? null,
-      };
-    } catch {
-      return null;
+    const mem = legacyInMemoryFallback(legacy);
+    if (mem && keyshareMetaLooksComplete(mem)) {
+      return mem;
     }
+    return null;
   } catch (e) {
     dbg('getKeyshareMetadata: failed', e);
     return null;
@@ -1070,12 +1160,20 @@ export const getKeyshareMetadata = async () => {
 };
 
 /**
- * Remove the cached keyshare metadata.
+ * Remove the cached keyshare metadata (EncryptedStorage + SQLite mirror).
  * Call this whenever EncryptedStorage.removeItem('keyshare') is called.
  */
 export const clearKeyshareMetadata = async () => {
   try {
     await EncryptedStorage.removeItem('keyshare_meta');
+    const {repo, CONFIG_KEYS} = loadAppConfigRepository();
+    if (repo && CONFIG_KEYS) {
+      try {
+        repo.remove(CONFIG_KEYS.KEYSHARE_META_JSON);
+      } catch (e) {
+        dbg('clearKeyshareMetadata: DB remove failed (non-fatal)', e);
+      }
+    }
     dbg('clearKeyshareMetadata: cleared');
   } catch (e) {
     dbg('clearKeyshareMetadata: failed', e);

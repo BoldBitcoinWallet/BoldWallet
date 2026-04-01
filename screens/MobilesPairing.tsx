@@ -939,7 +939,7 @@ const MobilesPairing = ({navigation}: any) => {
           });
         return; // Exit early for PSBT
       } else {
-        // Send BTC mode - try multi-path first (spend from receive + change addresses)
+        // Send BTC mode — UTXO multi-path only (receive + change)
         const btcPub = await BBMTLibNativeModule.derivePubkey(
           _ksMeta?.pub_key || '',
           _ksMeta?.chain_code_hex || '',

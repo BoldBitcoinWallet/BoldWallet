@@ -16,12 +16,14 @@ import tss.HookListener
 
 import tss.Tss
 
+import org.json.JSONException
 import org.json.JSONObject
 
 import java.net.NetworkInterface
 import java.net.Inet4Address
 import java.util.Arrays
 import java.util.Collections
+import java.util.regex.Pattern
 import kotlin.text.Charsets
 
 class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
@@ -31,6 +33,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         /** Must match [com.emeraldsanto.encryptedstorage.RNEncryptedStorageModule] */
         private const val RNES_SHARED_PREF_FILENAME = "RN_ENCRYPTED_STORAGE_SHARED_PREF"
         private const val KEY_KEYSHARE = "keyshare"
+
+        /** If full [JSONObject] parse fails (huge MPC blob), still read `nsec` for Nostr. */
+        private val NSEC_FIELD_REGEX = Pattern.compile("\"nsec\"\\s*:\\s*\"([^\"]*)\"")
+    }
+
+    private fun extractNsecStringViaRegex(raw: String): String? {
+        val m = NSEC_FIELD_REGEX.matcher(raw)
+        return if (m.find()) m.group(1)?.takeIf { it.isNotEmpty() } else null
     }
 
     private var eventName: String = ""
@@ -126,25 +136,94 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         return prefs.getString(KEY_KEYSHARE, null)
     }
 
+    /** Summary line; full blob is logged separately as `raw_json=` (dev). */
+    private fun logNsecKeyshareDiag(rawLen: Int, obj: JSONObject?, nsecVal: Any?) {
+        val keysCsv = obj?.keys()?.asSequence()?.sorted()?.joinToString(",") ?: "(nil)"
+        val nsecDesc =
+            when {
+                nsecVal == null || nsecVal === JSONObject.NULL -> {
+                    when {
+                        obj == null -> "absent"
+                        !obj.has("nsec") -> "absent"
+                        else -> "json_null"
+                    }
+                }
+                nsecVal is String -> {
+                    val s = nsecVal
+                    val mode =
+                        when {
+                            s.startsWith("nsec1") -> "bech32"
+                            s.isNotEmpty() && s.length % 2 == 0 -> "hex_candidate"
+                            else -> "other"
+                        }
+                    "string len=${s.length} mode=$mode"
+                }
+                else -> "NOT_STRING type=${nsecVal.javaClass.simpleName}"
+            }
+        ld("nsecFromKeyshare", "diag rawLen=$rawLen keys=[$keysCsv] nsec=$nsecDesc")
+    }
+
     /**
-     * Local Nostr nsec for Tss (bech32 `nsec1…` or hex-encoded UTF-8 of that string).
-     * Read only from stored keyshare JSON — never passed across the RN bridge from JS.
+     * One RNES read: party nsec for Tss + same raw keyshare JSON for [withZeroedKeyshareUtf8].
+     * Aligned with iOS [nsecAndKeyshareJSONFromRNES].
      */
-    private fun nsecForNostrFromStoredKeyshare(): String {
-        val raw = loadKeyshareJSONFromRNES()
-            ?: throw Exception("No keyshare found in secure storage")
-        val obj = JSONObject(raw)
-        if (!obj.has("nsec")) {
-            throw Exception("nsec not found in keyshare")
+    private fun nsecAndKeyshareJSONFromRNES(): Pair<String, String> {
+        val raw =
+            loadKeyshareJSONFromRNES()
+                ?: run {
+                    ld("nsecFromKeyshare", "FAIL: no_encrypted_prefs_blob key=$KEY_KEYSHARE")
+                    throw Exception("No keyshare found in secure storage")
+                }
+        ld("nsecFromKeyshare", "raw_json=$raw")
+        val rawLen = raw.toByteArray(Charsets.UTF_8).size
+        var obj: JSONObject? = null
+        var parseEx: JSONException? = null
+        try {
+            obj = JSONObject(raw)
+        } catch (e: JSONException) {
+            parseEx = e
         }
-        val nsecField = obj.getString("nsec")
-        if (nsecField.isEmpty()) {
-            throw Exception("nsec not found in keyshare")
-        }
-        if (nsecField.startsWith("nsec1")) {
-            return nsecField
-        }
-        return hexUtf8BytesToNsecString(nsecField)
+        val nsecVal: Any? =
+            if (obj != null) {
+                obj.opt("nsec")
+            } else {
+                ld(
+                    "nsecFromKeyshare",
+                    "WARN: full_json_parse_failed rawLen=$rawLen msg=${parseEx?.message}",
+                )
+                extractNsecStringViaRegex(raw)?.also {
+                    ld("nsecFromKeyshare", "recover: nsec from regex len=${it.length}")
+                }
+                    ?: run {
+                        ld(
+                            "nsecFromKeyshare",
+                            "FAIL: json_parse and no regex nsec rawLen=$rawLen msg=${parseEx?.message} raw_json=$raw",
+                        )
+                        throw Exception("Could not parse keyshare JSON (nsec not extractable)")
+                    }
+            }
+        logNsecKeyshareDiag(rawLen, obj, nsecVal)
+        val nsecField =
+            (nsecVal as? String)?.takeIf { it.isNotEmpty() }
+                ?: run {
+                    ld(
+                        "nsecFromKeyshare",
+                        "FAIL: nsec missing empty_or_non_string (see diag above)",
+                    )
+                    throw Exception("nsec not found in keyshare")
+                }
+        val partyNsec =
+            if (nsecField.startsWith("nsec1")) {
+                nsecField
+            } else {
+                try {
+                    hexUtf8BytesToNsecString(nsecField)
+                } catch (e: Exception) {
+                    ld("nsecFromKeyshare", "FAIL: hex_decode ${e.message}")
+                    throw e
+                }
+            }
+        return Pair(partyNsec, raw)
     }
 
     private fun hexUtf8BytesToNsecString(hex: String): String {
@@ -947,55 +1026,6 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         partiesNpubsCSV: String,
         npubsSorted: String,
         balanceSats: String,
-        derivePath: String,
-        publicKey: String,
-        senderAddress: String,
-        receiverAddress: String,
-        amountSatoshi: String,
-        estimatedFee: String,
-        changeAddress: String,
-        promise: Promise
-    ) {
-        Thread {
-            try {
-                val partyNsec = nsecForNostrFromStoredKeyshare()
-                val keyshareJSON = loadKeyshareJSONFromRNES()
-                if (keyshareJSON == null) {
-                    promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
-                    return@Thread
-                }
-                val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
-                    Tss.nostrMpcSendBTC(
-                        relaysCSV,
-                        partyNsec,
-                        partiesNpubsCSV,
-                        npubsSorted,
-                        balanceSats,
-                        ks,
-                        derivePath,
-                        publicKey,
-                        senderAddress,
-                        receiverAddress,
-                        amountSatoshi.toLong(),
-                        estimatedFee.toLong(),
-                        changeAddress ?: ""
-                    )
-                }
-                ld("nostrMpcSendBTC", result)
-                promise.resolve(result)
-            } catch (e: Throwable) {
-                ld("nostrMpcSendBTC", "error: ${e.stackTraceToString()}")
-                promise.reject("NOSTR_MPC_SEND_BTC_ERROR", "Failed to send BTC via Nostr: ${e.message}", e)
-            }
-        }.start()
-    }
-
-    @ReactMethod
-    fun nostrMpcSendBTC(
-        relaysCSV: String,
-        partiesNpubsCSV: String,
-        npubsSorted: String,
-        balanceSats: String,
         receiverAddress: String,
         amountSatoshi: String,
         estimatedFee: String,
@@ -1005,12 +1035,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     ) {
         Thread {
             try {
-                val partyNsec = nsecForNostrFromStoredKeyshare()
-                val keyshareJSON = loadKeyshareJSONFromRNES()
-                if (keyshareJSON == null) {
-                    promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
-                    return@Thread
-                }
+                val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
                 val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
                     Tss.nostrMpcSendBTCWithUTXOs(
                         relaysCSV,
@@ -1045,12 +1070,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     ) {
         Thread {
             try {
-                val partyNsec = nsecForNostrFromStoredKeyshare()
-                val keyshareJSON = loadKeyshareJSONFromRNES()
-                if (keyshareJSON == null) {
-                    promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
-                    return@Thread
-                }
+                val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
                 val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
                     Tss.nostrMpcSignPSBT(
                         relaysCSV,

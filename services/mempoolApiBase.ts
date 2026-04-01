@@ -3,6 +3,14 @@ import {dbg, getMainnetAPIList} from '../utils';
 
 const MEMPOOL_API_VALIDATE_TIMEOUT_MS = 10_000;
 
+/** Single allowed Mempool REST base for Bitcoin testnet (no custom / mainnet hosts). */
+export const CANONICAL_TESTNET_MEMPOOL_API_BASE =
+  'https://mempool.space/testnet/api';
+
+export function isTestnetNetworkKey(network: string): boolean {
+  return network === 'testnet3' || network === 'testnet';
+}
+
 /**
  * User/settings input: trim, strip trailing slashes, ensure path ends with `/api`
  * (same rules as WalletSettings / UserPreferenceScreen URL fields).
@@ -66,6 +74,29 @@ export function normalizeMempoolApiRoot(url: string): string {
   return (url || '').replace(/\/+$/, '').replace(/\/api\/?$/, '');
 }
 
+const MAINNET_MEMPOOL_DEFAULT_ROOT = normalizeMempoolApiRoot(
+  'https://mempool.space/api',
+);
+
+/**
+ * True when the stored URL is a plausible Mempool testnet REST base (not mainnet default).
+ * Legacy installs may have `api_testnet3` = mainnet URL — those must be rejected.
+ */
+export function isValidTestnetMempoolApiUrl(url: string): boolean {
+  const u = (url || '').trim().toLowerCase();
+  if (!u) {
+    return false;
+  }
+  if (u === 'https://mempool.space/api') {
+    return false;
+  }
+  const root = normalizeMempoolApiRoot(url);
+  if (root === MAINNET_MEMPOOL_DEFAULT_ROOT) {
+    return false;
+  }
+  return u.includes('/testnet');
+}
+
 /**
  * True when the URL is one of the dynamic public mainnet mirror bases (failover pool).
  * Private / self-hosted endpoints return false — MempoolClient must not round-robin them.
@@ -94,6 +125,14 @@ export function normalizeNetworkKey(network: string): string {
 export function resolveStoredMempoolApiBase(network: string): string {
   const net = normalizeNetworkKey(network);
   const perNet = appConfigRepository.get(`api_${net}`);
+
+  if (net === 'testnet3') {
+    if (perNet && isValidTestnetMempoolApiUrl(perNet)) {
+      return perNet;
+    }
+    return CANONICAL_TESTNET_MEMPOOL_API_BASE;
+  }
+
   if (perNet) {
     return perNet;
   }
@@ -101,7 +140,5 @@ export function resolveStoredMempoolApiBase(network: string): string {
   if (global) {
     return global;
   }
-  return net === 'testnet3'
-    ? 'https://mempool.space/testnet/api'
-    : 'https://mempool.space/api';
+  return 'https://mempool.space/api';
 }
