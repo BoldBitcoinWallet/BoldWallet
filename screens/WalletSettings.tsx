@@ -43,7 +43,6 @@ import {
   getKeyshareLabel,
   getResetToMainTabsWallet,
   getKeyshareMetadata,
-  clearKeyshareMetadata,
 } from '../utils';
 import {useTheme} from '../theme';
 import {waitMS, WalletService} from '../services/WalletService';

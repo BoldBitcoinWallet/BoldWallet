@@ -50,7 +50,6 @@ import {
   shortenAddress,
   saveKeyshareMetadata,
   getKeyshareMetadata,
-  withFullKeyshare,
 } from '../utils';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
@@ -908,8 +907,8 @@ const MobilesPairing = ({navigation}: any) => {
         if (psbtHash !== localPsbtHash) {
           throw 'Make sure you\'re signing the "Same PSBT" from Both Devices';
         }
-        // Call PSBT signing - derivation paths and public keys are extracted from PSBT
-        await withFullKeyshare(async jks => BBMTLibNativeModule.mpcSignPSBT(
+        // Call PSBT signing - keyshare read inside native (RNES-compatible storage)
+        await BBMTLibNativeModule.mpcSignPSBT(
           server,
           partyID,
           partiesCSV,
@@ -917,7 +916,6 @@ const MobilesPairing = ({navigation}: any) => {
           sessionKey,
           encKey,
           decKey,
-          jks,
           route.params.psbtBase64 || '',
         )
           .then(async (signedPsbt: any) => {
@@ -966,7 +964,7 @@ const MobilesPairing = ({navigation}: any) => {
               stopRelay();
             }
             setDoingMPC(false);
-          })); // end withFullKeyshare
+          });
         return; // Exit early for PSBT
       } else {
         // Send BTC mode - try multi-path first (spend from receive + change addresses)
@@ -1096,8 +1094,8 @@ const MobilesPairing = ({navigation}: any) => {
                 )
             : '';
           if (utxosWithPathsJSON && changeAddress) {
-            const rawTxHex = await withFullKeyshare(async jks =>
-              BBMTLibNativeModule.mpcSendBTCWithUTXOs(
+            const rawTxHex =
+              await BBMTLibNativeModule.mpcSendBTCWithUTXOs(
                 server,
                 partyID,
                 partiesCSV,
@@ -1105,15 +1103,13 @@ const MobilesPairing = ({navigation}: any) => {
                 sessionKey,
                 encKey,
                 decKey,
-                jks,
                 btcPub,
                 toAddress,
                 satoshiAmount,
                 satoshiFees,
                 utxosWithPathsJSON,
                 changeAddress,
-              ),
-            );
+              );
             dbg(partyID, 'signed tx (multi-path), len=', rawTxHex?.length);
             if (
               !rawTxHex ||

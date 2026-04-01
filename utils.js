@@ -1034,20 +1034,3 @@ export const clearKeyshareMetadata = async () => {
     dbg('clearKeyshareMetadata: failed', e);
   }
 };
-
-/**
- * Load the full keyshare string, pass it to fn, then release the local reference
- * as a best-effort GC hint. Use this wrapper for all signing / backup operations.
- * @param {(jks: string) => Promise<T>} fn - Async callback that receives the raw keyshare JSON
- * @returns {Promise<T>}
- */
-export const withFullKeyshare = async fn => {
-  let jks = null;
-  try {
-    jks = await EncryptedStorage.getItem('keyshare');
-    if (!jks) throw new Error('No keyshare found');
-    return await fn(jks);
-  } finally {
-    jks = null; // release reference; allows GC to collect the string
-  }
-};

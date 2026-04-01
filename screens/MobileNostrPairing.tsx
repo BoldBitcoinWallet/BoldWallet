@@ -46,8 +46,6 @@ import {
   getResetToMainTabsWallet,
   shortenAddress,
   saveKeyshareMetadata,
-  getKeyshareMetadata,
-  withFullKeyshare,
 } from '../utils';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
@@ -218,7 +216,12 @@ const MobileNostrPairing = ({navigation}: any) => {
     originalApiUrl?: string;
     originalWalletServiceNetwork?: string;
     originalWalletServiceApiUrl?: string;
-    inputs?: Array<{txid: string; vout: number; value: number; scriptpubkey_address: string}>;
+    inputs?: Array<{
+      txid: string;
+      vout: number;
+      value: number;
+      scriptpubkey_address: string;
+    }>;
     outputs?: Array<{scriptpubkey_address: string; value: number}>;
   } | null>(null);
   const skipRestoreInFinallyRef = useRef(false);
@@ -695,13 +698,13 @@ const MobileNostrPairing = ({navigation}: any) => {
       subscription.remove();
     };
   }, [isTrio, isSendBitcoin]);
-  // Load keyshare and derive device info in send mode
+  // Load minimal keyshare prep fields from native (full MPC blob never in JS); signing uses WithStoredKeyshare
   useEffect(() => {
     if (!isSendBitcoin && !isSignPSBT) return;
     const loadKeyshareData = async () => {
       try {
-        await withFullKeyshare(async keyshareJSON => {
-        const keyshare = JSON.parse(keyshareJSON);
+        const prepJson = await BBMTLibNativeModule.getKeyshareNostrPrepJSON();
+        const keyshare = JSON.parse(prepJson);
         if (!keyshare.keygen_committee_keys || !keyshare.local_party_key) {
           dbg('Keyshare missing required fields');
           setSendModeDevices([]);
@@ -757,6 +760,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         } else {
           dbg('Warning: No nsec found in keyshare');
         }
+        delete keyshare.nsec;
         // Set local npub if available
         if (localNpubFromKeyshare) {
           setLocalNpub(localNpubFromKeyshare);
@@ -849,7 +853,6 @@ const MobileNostrPairing = ({navigation}: any) => {
             }
           }
         }
-        }); // end withFullKeyshare
       } catch (error: any) {
         dbg('Error loading keyshare data:', error);
         setSendModeDevices([]);
@@ -1585,10 +1588,25 @@ const MobileNostrPairing = ({navigation}: any) => {
           apiUrl,
         },
       );
-      // Load the full keyshare; released after signing is complete
-      let keyshareJSON: string = await withFullKeyshare(async jks => jks);
-      const keyshare = JSON.parse(keyshareJSON);
+      let keyshare: any;
       let nsecToUse = localNsec;
+      let publicKey = '';
+      let senderAddress = '';
+      let balanceSats = '';
+      let rawTxHex: string | undefined;
+      let broadcastInputs:
+        | Array<{
+            txid: string;
+            vout: number;
+            value: number;
+            scriptpubkey_address: string;
+          }>
+        | undefined;
+      let broadcastOutputs:
+        | Array<{scriptpubkey_address: string; value: number}>
+        | undefined;
+      const prepJson = await BBMTLibNativeModule.getKeyshareNostrPrepJSON();
+      keyshare = JSON.parse(prepJson);
       if (!nsecToUse || !nsecToUse.startsWith('nsec1')) {
         const nsecFromKeyshare = keyshare.nsec || '';
         if (nsecFromKeyshare) {
@@ -1606,13 +1624,14 @@ const MobileNostrPairing = ({navigation}: any) => {
           throw new Error('nsec not found in keyshare');
         }
       }
+      delete keyshare.nsec;
       // Derive from address using route params
-      const publicKey = await BBMTLibNativeModule.derivePubkey(
+      publicKey = await BBMTLibNativeModule.derivePubkey(
         keyshare.pub_key,
         keyshare.chain_code_hex,
         path,
       );
-      const senderAddress = await BBMTLibNativeModule.btcAddress(
+      senderAddress = await BBMTLibNativeModule.btcAddress(
         publicKey,
         net,
         addressTypeToUse,
@@ -1632,7 +1651,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         network: originalWalletServiceNetwork,
         apiUrl: originalWalletServiceApiUrl,
       });
-      const balanceSats = Big(balance.btc).times(1e8).toFixed(0);
+      balanceSats = Big(balance.btc).times(1e8).toFixed(0);
       // Get all npubs from keyshare for sessionFlag calculation
       const allNpubsFromKeyshare: string[] = [];
       const sortedKeys = [...keyshare.keygen_committee_keys].sort();
@@ -1813,9 +1832,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         }
       }
 
-      let rawTxHex: string;
-      let broadcastInputs: Array<{txid: string; vout: number; value: number; scriptpubkey_address: string}> | undefined;
-      let broadcastOutputs: Array<{scriptpubkey_address: string; value: number}> | undefined;
       try {
         let utxosWithPathsJSON: string | null = null;
         const utxosJsonFromQR = route.params?.utxosJson;
@@ -1898,28 +1914,39 @@ const MobileNostrPairing = ({navigation}: any) => {
           }
         }
         if (utxosWithPathsJSON && changeAddress) {
-          const utxoList = JSON.parse(utxosWithPathsJSON) as Array<{txid: string; vout: number; value: number; address?: string}>;
+          const utxoList = JSON.parse(utxosWithPathsJSON) as Array<{
+            txid: string;
+            vout: number;
+            value: number;
+            address?: string;
+          }>;
           broadcastInputs = utxoList.map((u: any) => ({
             txid: u.txid,
             vout: u.vout,
             value: u.value,
             scriptpubkey_address: u.address ?? '',
           }));
-          const totalInput = utxoList.reduce((s: number, u: any) => s + (u.value || 0), 0);
-          const changeAmount = totalInput - Number(satoshiAmount) - Number(satoshiFees);
+          const totalInput = utxoList.reduce(
+            (s: number, u: any) => s + (u.value || 0),
+            0,
+          );
+          const changeAmount =
+            totalInput - Number(satoshiAmount) - Number(satoshiFees);
           broadcastOutputs = [
             {scriptpubkey_address: toAddress, value: Number(satoshiAmount)},
           ];
           if (changeAmount > 0) {
-            broadcastOutputs.push({scriptpubkey_address: changeAddress, value: changeAmount});
+            broadcastOutputs.push({
+              scriptpubkey_address: changeAddress,
+              value: changeAmount,
+            });
           }
-          rawTxHex = await BBMTLibNativeModule.nostrMpcSendBTCWithUTXOs(
+          rawTxHex = await BBMTLibNativeModule.nostrMpcSendBTC(
             relaysCSV,
             nsecToUse,
             partiesNpubsCSV,
             npubsSorted,
             balanceSats,
-            keyshareJSON,
             toAddress,
             satoshiAmount,
             satoshiFees,
@@ -1934,7 +1961,6 @@ const MobileNostrPairing = ({navigation}: any) => {
             partiesNpubsCSV,
             npubsSorted,
             balanceSats,
-            keyshareJSON,
             path,
             publicKey,
             senderAddress,
@@ -1955,7 +1981,6 @@ const MobileNostrPairing = ({navigation}: any) => {
           partiesNpubsCSV,
           npubsSorted,
           balanceSats,
-          keyshareJSON,
           path,
           publicKey,
           senderAddress,
@@ -1965,7 +1990,6 @@ const MobileNostrPairing = ({navigation}: any) => {
           changeAddress,
         );
       }
-      keyshareJSON = ''; // release full keyshare reference (GC hint)
       if (
         !rawTxHex ||
         typeof rawTxHex !== 'string' ||
@@ -1990,7 +2014,9 @@ const MobileNostrPairing = ({navigation}: any) => {
         originalApiUrl,
         originalWalletServiceNetwork,
         originalWalletServiceApiUrl,
-        ...(broadcastInputs && broadcastOutputs ? {inputs: broadcastInputs, outputs: broadcastOutputs} : {}),
+        ...(broadcastInputs && broadcastOutputs
+          ? {inputs: broadcastInputs, outputs: broadcastOutputs}
+          : {}),
       };
       skipRestoreInFinallyRef.current = true;
       if (nostrAbortRef.current) {
@@ -2058,12 +2084,12 @@ const MobileNostrPairing = ({navigation}: any) => {
     setIsPairing(true);
     setProgress(0);
     setStatus('Starting PSBT signing...');
+    let keyshare: any;
+    let nsecToUse = localNsec;
     try {
-      // Load the full keyshare; released after signing is complete
-      let keyshareJSON: string = await withFullKeyshare(async jks => jks);
-      const keyshare = JSON.parse(keyshareJSON);
+      const prepJson = await BBMTLibNativeModule.getKeyshareNostrPrepJSON();
+      keyshare = JSON.parse(prepJson);
       // Get nsec from keyshare
-      let nsecToUse = localNsec;
       if (!nsecToUse || !nsecToUse.startsWith('nsec1')) {
         const nsecFromKeyshare = keyshare.nsec || '';
         if (nsecFromKeyshare) {
@@ -2090,6 +2116,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       if (!nsecToUse || !nsecToUse.startsWith('nsec1')) {
         throw new Error('Invalid nsec: must be in bech32 format (nsec1...)');
       }
+      delete keyshare.nsec;
       // Get all npubs from keyshare for session ID
       const allNpubsFromKeyshare: string[] = [];
       const sortedKeys = [...keyshare.keygen_committee_keys].sort();
@@ -2190,7 +2217,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         nsecToUse,
         partiesNpubsCSV,
         npubsSorted,
-        keyshareJSON,
         route.params.psbtBase64,
       )
         .then(async (signedPsbt: any) => {
@@ -2260,7 +2286,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         .finally(async () => {
           setMpcDone(true);
         });
-      keyshareJSON = ''; // release full keyshare reference (GC hint)
     } catch (error: any) {
       dbg('Sign PSBT error:', error);
       Alert.alert('Error', error?.message || 'PSBT signing failed');
@@ -6487,19 +6512,38 @@ const MobileNostrPairing = ({navigation}: any) => {
               );
             }
             const apiTxShape =
-              p.inputs && p.outputs && p.inputs.length > 0 && p.outputs.length > 0
+              p.inputs &&
+              p.outputs &&
+              p.inputs.length > 0 &&
+              p.outputs.length > 0
                 ? {
                     txid: txId,
-                    status: {confirmed: false, block_height: null, block_time: null, block_hash: null},
+                    status: {
+                      confirmed: false,
+                      block_height: null,
+                      block_time: null,
+                      block_hash: null,
+                    },
                     fee: p.satoshiFees,
                     vin: p.inputs.map(inp => ({
-                      prevout: {scriptpubkey_address: inp.scriptpubkey_address, value: inp.value},
+                      prevout: {
+                        scriptpubkey_address: inp.scriptpubkey_address,
+                        value: inp.value,
+                      },
                     })),
-                    vout: p.outputs!.map(o => ({scriptpubkey_address: o.scriptpubkey_address, value: o.value})),
+                    vout: p.outputs!.map(o => ({
+                      scriptpubkey_address: o.scriptpubkey_address,
+                      value: o.value,
+                    })),
                   }
                 : {
                     txid: txId,
-                    status: {confirmed: false, block_height: null, block_time: null, block_hash: null},
+                    status: {
+                      confirmed: false,
+                      block_height: null,
+                      block_time: null,
+                      block_hash: null,
+                    },
                     fee: p.satoshiFees,
                     vin: [
                       {
@@ -6509,7 +6553,12 @@ const MobileNostrPairing = ({navigation}: any) => {
                         },
                       },
                     ],
-                    vout: [{scriptpubkey_address: p.toAddress, value: p.satoshiAmount}],
+                    vout: [
+                      {
+                        scriptpubkey_address: p.toAddress,
+                        value: p.satoshiAmount,
+                      },
+                    ],
                   };
             transactionRepository.insertBroadcastTransaction(
               txId,

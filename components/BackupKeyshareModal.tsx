@@ -15,7 +15,7 @@ import AppPressable from './AppPressable';
 import {NativeModules} from 'react-native';
 import Share from 'react-native-share';
 import RNFS from 'react-native-fs';
-import {dbg, getKeyshareLabel, withFullKeyshare, getKeyshareMetadata} from '../utils';
+import {dbg, getKeyshareLabel, getKeyshareMetadata} from '../utils';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
 
@@ -144,11 +144,9 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
     try {
       const meta = await getKeyshareMetadata();
       if (meta) {
-        const encryptedKeyshare = await withFullKeyshare(async storedKeyshare =>
-          BBMTLibNativeModule.aesEncrypt(
-            storedKeyshare,
-            await BBMTLibNativeModule.sha256(password),
-          ),
+        // Keyshare loaded and encrypted in native (RNES storage); file/share receives ciphertext only.
+        const encryptedKeyshare = await BBMTLibNativeModule.aesEncryptStoredKeyshare(
+          await BBMTLibNativeModule.sha256(password),
         );
 
         // Create filename based on pub_key hash and keyshare number

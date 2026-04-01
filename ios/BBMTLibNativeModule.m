@@ -20,6 +20,9 @@ RCT_EXTERN_METHOD(aesEncrypt:(NSString *)data key:(NSString *)key resolver:(RCTP
 // AES Decryption
 RCT_EXTERN_METHOD(aesDecrypt:(NSString *)data key:(NSString *)key resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
+// AES encrypt keyshare loaded from RNES-compatible secure storage (no plaintext through JS)
+RCT_EXTERN_METHOD(aesEncryptStoredKeyshare:(NSString *)key resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+
 // Pre-Params Method
 RCT_EXTERN_METHOD(preparams:(NSString *)outFile timeout:(NSString *)timeout resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -176,7 +179,7 @@ RCT_EXTERN_METHOD(spendingHashWithUTXOs:(NSString *)utxosWithPathsJSON
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
-// Call mpcSendBTCWithUTXOs (multi-path)
+// mpcSendBTCWithUTXOs with keyshare read from secure storage (RNES-compatible)
 RCT_EXTERN_METHOD(mpcSendBTCWithUTXOs:(NSString *)server
                   partyID:(NSString *)partyID
                   partiesCSV:(NSString *)partiesCSV
@@ -184,31 +187,12 @@ RCT_EXTERN_METHOD(mpcSendBTCWithUTXOs:(NSString *)server
                   sessionKey:(NSString *)sessionKey
                   encKey:(NSString *)encKey
                   decKey:(NSString *)decKey
-                  keyshare:(NSString *)keyshare
                   publicKey:(NSString *)publicKey
                   receiverAddress:(NSString *)receiverAddress
                   amountSatoshi:(NSString *)amountSatoshi
                   feeSatoshi:(NSString *)feeSatoshi
                   utxosWithPathsJSON:(NSString *)utxosWithPathsJSON
                   changeAddress:(NSString *)changeAddress
-                  resolver:(RCTPromiseResolveBlock)resolve
-                  rejecter:(RCTPromiseRejectBlock)reject)
-
-// Call mpcSendBTC
-RCT_EXTERN_METHOD(mpcSendBTC:(NSString *)server
-                  partyID:(NSString *)partyID
-                  partiesCSV:(NSString *)partiesCSV
-                  sessionID:(NSString *)sessionID
-                  sessionKey:(NSString *)sessionKey
-                  encKey:(NSString *)encKey
-                  decKey:(NSString *)decKey
-                  keyshare:(NSString *)keyshare
-                  derivation:(NSString *)derivation
-                  publicKey:(NSString *)publicKey
-                  senderAddress:(NSString *)senderAddress
-                  receiverAddress:(NSString *)receiverAddress
-                  amountSatoshi:(NSString *)amountSatoshi
-                  feeSatoshi:(NSString *)feeSatoshi
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -256,6 +240,19 @@ RCT_EXTERN_METHOD(nostrMpcSendBTCWithUTXOs:(NSString *)relaysCSV
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(nostrMpcSendBTC:(NSString *)relaysCSV
+                  partyNsec:(NSString *)partyNsec
+                  partiesNpubsCSV:(NSString *)partiesNpubsCSV
+                  npubsSorted:(NSString *)npubsSorted
+                  balanceSats:(NSString *)balanceSats
+                  receiverAddress:(NSString *)receiverAddress
+                  amountSatoshi:(NSString *)amountSatoshi
+                  estimatedFee:(NSString *)estimatedFee
+                  utxosWithPathsJSON:(NSString *)utxosWithPathsJSON
+                  changeAddress:(NSString *)changeAddress
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 // Nostr MPC Send BTC (changeAddress: optional HD change address; pass empty string for legacy behavior)
 RCT_EXTERN_METHOD(nostrMpcSendBTC:(NSString *)relaysCSV
                   partyNsec:(NSString *)partyNsec
@@ -263,6 +260,21 @@ RCT_EXTERN_METHOD(nostrMpcSendBTC:(NSString *)relaysCSV
                   npubsSorted:(NSString *)npubsSorted
                   balanceSats:(NSString *)balanceSats
                   keyshareJSON:(NSString *)keyshareJSON
+                  derivePath:(NSString *)derivePath
+                  publicKey:(NSString *)publicKey
+                  senderAddress:(NSString *)senderAddress
+                  receiverAddress:(NSString *)receiverAddress
+                  amountSatoshi:(NSString *)amountSatoshi
+                  estimatedFee:(NSString *)estimatedFee
+                  changeAddress:(NSString *)changeAddress
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(nostrMpcSendBTC:(NSString *)relaysCSV
+                  partyNsec:(NSString *)partyNsec
+                  partiesNpubsCSV:(NSString *)partiesNpubsCSV
+                  npubsSorted:(NSString *)npubsSorted
+                  balanceSats:(NSString *)balanceSats
                   derivePath:(NSString *)derivePath
                   publicKey:(NSString *)publicKey
                   senderAddress:(NSString *)senderAddress
@@ -287,12 +299,31 @@ RCT_EXTERN_METHOD(mpcSignPSBT:(NSString *)server
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(mpcSignPSBT:(NSString *)server
+                  partyID:(NSString *)partyID
+                  partiesCSV:(NSString *)partiesCSV
+                  sessionID:(NSString *)sessionID
+                  sessionKey:(NSString *)sessionKey
+                  encKey:(NSString *)encKey
+                  decKey:(NSString *)decKey
+                  psbtBase64:(NSString *)psbtBase64
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 // Nostr MPC Sign PSBT
 RCT_EXTERN_METHOD(nostrMpcSignPSBT:(NSString *)relaysCSV
                   partyNsec:(NSString *)partyNsec
                   partiesNpubsCSV:(NSString *)partiesNpubsCSV
                   npubsSorted:(NSString *)npubsSorted
                   keyshareJSON:(NSString *)keyshareJSON
+                  psbtBase64:(NSString *)psbtBase64
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(nostrMpcSignPSBT:(NSString *)relaysCSV
+                  partyNsec:(NSString *)partyNsec
+                  partiesNpubsCSV:(NSString *)partiesNpubsCSV
+                  npubsSorted:(NSString *)npubsSorted
                   psbtBase64:(NSString *)psbtBase64
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
@@ -319,6 +350,10 @@ RCT_EXTERN_METHOD(cancelMpcSession:(NSString *)sessionID
 
 // Cancel active Nostr MPC operation (best-effort)
 RCT_EXTERN_METHOD(cancelNostrMpc:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+// Minimal keyshare fields for Nostr UI/session prep (full blob never sent to JS)
+RCT_EXTERN_METHOD(getKeyshareNostrPrepJSON:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 @end
