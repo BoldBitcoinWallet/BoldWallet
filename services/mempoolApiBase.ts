@@ -1,5 +1,65 @@
 import appConfigRepository from './repositories/AppConfigRepository';
-import {getMainnetAPIList} from '../utils';
+import {dbg, getMainnetAPIList} from '../utils';
+
+const MEMPOOL_API_VALIDATE_TIMEOUT_MS = 10_000;
+
+/**
+ * User/settings input: trim, strip trailing slashes, ensure path ends with `/api`
+ * (same rules as WalletSettings / UserPreferenceScreen URL fields).
+ */
+export function normalizeUserMempoolApiInput(url: string): string {
+  if (!url || url.trim() === '') {
+    return url;
+  }
+  let normalized = url.trim();
+  normalized = normalized.replace(/\/+$/, '');
+  const apiPattern = /\/api$/i;
+  if (!apiPattern.test(normalized)) {
+    normalized = normalized + '/api';
+  }
+  return normalized;
+}
+
+/**
+ * GET `${apiBase}/blocks/tip/hash` with timeout; true when response body is a 64-char hex tip hash.
+ * Used when saving a custom Mempool REST base from settings.
+ */
+export async function validateMempoolApiBaseReachable(
+  apiBase: string,
+): Promise<boolean> {
+  try {
+    const testUrl = `${apiBase.replace(/\/$/, '')}/blocks/tip/hash`;
+    dbg('Testing API endpoint:', testUrl);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      MEMPOOL_API_VALIDATE_TIMEOUT_MS,
+    );
+    const response = await fetch(testUrl, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      dbg('API validation failed: HTTP', response.status);
+      return false;
+    }
+    const blockHash = await response.text();
+    const isValidBlockHash = /^[a-f0-9]{64}$/i.test(blockHash.trim());
+    if (!isValidBlockHash) {
+      dbg('API validation failed: Invalid block hash format:', blockHash);
+      return false;
+    }
+    dbg('API validation successful:', blockHash);
+    return true;
+  } catch (error) {
+    dbg('API validation error:', error);
+    return false;
+  }
+}
 
 /** Same normalization as WalletService / MempoolClient for comparing API roots. */
 export function normalizeMempoolApiRoot(url: string): string {

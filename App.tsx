@@ -1,6 +1,8 @@
 // App.tsx
 import React, {useCallback, useEffect, useState} from 'react';
 import {NavigationContainer} from '@react-navigation/native';
+import type {BottomTabHeaderProps} from '@react-navigation/bottom-tabs';
+import type {NativeStackHeaderProps} from '@react-navigation/native-stack';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {enableScreens} from 'react-native-screens';
@@ -80,18 +82,24 @@ export const isDebugLoggingEnabled = () => {
 const rnBiometrics = new ReactNativeBiometrics({allowDeviceCredentials: true});
 const zeroconf = new Zeroconf();
 const zeroOut = new Zeroconf();
+/** Tab + stack headers both pass props here; CustomHeader is typed for native stack only. */
+type AppNavigationHeaderProps =
+  | NativeStackHeaderProps
+  | BottomTabHeaderProps;
+
+const renderAppHeader =
+  (height: number) => (props: AppNavigationHeaderProps) => (
+    <CustomHeader {...(props as NativeStackHeaderProps)} height={height} />
+  );
+
 // Custom header components with configurable height
-const HomeHeader = (props: any) => <CustomHeader {...props} height={60} />;
-const PSBTHeader = (props: any) => <CustomHeader {...props} height={60} />;
-const SettingsHeader = (props: any) => <CustomHeader {...props} height={60} />;
-const WelcomeHeader = (props: any) => <CustomHeader {...props} height={60} />;
-const DevicesPairingHeader = (props: any) => (
-  <CustomHeader {...props} height={60} />
-);
-const NostrConnectHeader = (props: any) => (
-  <CustomHeader {...props} height={60} />
-);
-const DeviceHeader = (props: any) => <CustomHeader {...props} height={60} />;
+const HomeHeader = renderAppHeader(60);
+const PSBTHeader = renderAppHeader(60);
+const SettingsHeader = renderAppHeader(60);
+const WelcomeHeader = renderAppHeader(60);
+const DevicesPairingHeader = renderAppHeader(60);
+const NostrConnectHeader = renderAppHeader(60);
+const DeviceHeader = renderAppHeader(60);
 
 const TAB_BAR_ICON_SIZE = 22;
 

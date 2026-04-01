@@ -495,6 +495,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         }
       }
     }
+    // generateKeygenSessionParams is stable for this flow; full deps would re-trigger keygen setup on unrelated callback identity churn.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     localNpub,
@@ -2401,6 +2402,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       cancelAnimation(progressAnimation);
       progressAnimation.value = 0;
     }
+    // progressAnimation is a Reanimated shared value (stable); listing it would not help and other deps would restart animation unnecessarily.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPreparing]);
   // Styles

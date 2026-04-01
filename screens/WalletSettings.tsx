@@ -51,6 +51,10 @@ import appConfigRepository, {
   CONFIG_KEYS,
 } from '../services/repositories/AppConfigRepository';
 import {
+  normalizeUserMempoolApiInput,
+  validateMempoolApiBaseReachable,
+} from '../services/mempoolApiBase';
+import {
   getGapLimit,
   getMinScanIndex,
   getApiTimeoutMs,
@@ -248,6 +252,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
       }
     };
     loadAPIList();
+    // Only re-fetch when mainnet/testnet toggles; ref + isLoadingPredefinedAPIs gate duplicates — do not add those deps or the effect would re-run every loading state change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTestnet]);
   // Fetch dynamic APIs - load when in mainnet mode and not already loaded
@@ -1289,68 +1294,19 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       Alert.alert('Success', 'API endpoint reset to default!');
     }, 300);
   };
-  const normalizeAPIUrl = (url: string): string => {
-    if (!url || url.trim() === '') {
-      return url;
-    }
-    // Trim whitespace
-    let normalized = url.trim();
-    // Remove trailing slashes
-    normalized = normalized.replace(/\/+$/, '');
-    // Check if it ends with /api (case-insensitive)
-    const apiPattern = /\/api$/i;
-    if (!apiPattern.test(normalized)) {
-      // If it doesn't end with /api, append it
-      normalized = normalized + '/api';
-    }
-    return normalized;
-  };
-  const validateAPIEndpoint = async (api: string): Promise<boolean> => {
-    try {
-      const testUrl = `${api.replace(/\/$/, '')}/blocks/tip/hash`;
-      dbg('Testing API endpoint:', testUrl);
-      // Create AbortController for timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-      const response = await fetch(testUrl, {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-        },
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (!response.ok) {
-        dbg('API validation failed: HTTP', response.status);
-        return false;
-      }
-      const blockHash = await response.text();
-      // Check if response looks like a valid block hash (64 character hex string)
-      const isValidBlockHash = /^[a-f0-9]{64}$/i.test(blockHash.trim());
-      if (!isValidBlockHash) {
-        dbg('API validation failed: Invalid block hash format:', blockHash);
-        return false;
-      }
-      dbg('API validation successful:', blockHash);
-      return true;
-    } catch (error) {
-      dbg('API validation error:', error);
-      return false;
-    }
-  };
   const saveAPI = async (api: string) => {
     if (!api || api.trim() === '') {
       Alert.alert('Error', 'Please select a valid API endpoint.');
       return;
     }
     // Normalize the URL to ensure it ends with /api
-    const normalizedApi = normalizeAPIUrl(api);
+    const normalizedApi = normalizeUserMempoolApiInput(api);
     dbg('Original API URL:', api);
     dbg('Normalized API URL:', normalizedApi);
     setIsAPISaving(true);
     try {
       // Validate the API endpoint first (using normalized URL)
-      const isValid = await validateAPIEndpoint(normalizedApi);
+      const isValid = await validateMempoolApiBaseReachable(normalizedApi);
       if (!isValid) {
         Alert.alert(
           'Invalid API Endpoint',

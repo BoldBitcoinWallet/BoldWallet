@@ -2,9 +2,11 @@
  * SyncCoordinator — orchestrates all background sync workers.
  *
  * Architecture:
- *  - UI reads exclusively from SQLite repositories (zero direct API calls from UI layer).
- *  - SyncCoordinator runs on app foreground and on a timer, fetching from mempool.space
- *    and writing deltas to SQLite.
+ *  - Most wallet UI reads from SQLite repositories; SyncCoordinator keeps them updated.
+ *  - Transaction list (`components/TransactionList.tsx`) also performs user-driven API
+ *    fetches (refresh, pagination) and merges with cache/DB — see `services/sync/README.md`.
+ *  - SyncCoordinator runs on app foreground and on a timer, fetching from the Mempool API
+ *    base and writing deltas to SQLite.
  *  - Sync failures are silent (sync_metadata.sync_status = 'failed') and retried
  *    on the next foreground event.
  *

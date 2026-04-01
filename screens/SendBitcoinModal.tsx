@@ -735,6 +735,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       setEstimatedFee(null);
     }
     return () => debouncedGetFee.cancel();
+    // debouncedGetFee is memoized once; do not list it or getFee — would cancel/reset the debouncer on unrelated identity changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address, btcAmount, feeStrategy, validateAddressForCurrentNetwork]);
   const pasteAddress = useCallback(async () => {

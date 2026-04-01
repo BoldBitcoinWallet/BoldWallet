@@ -32,7 +32,9 @@ import appConfigRepository, {
 } from '../services/repositories/AppConfigRepository';
 import {
   isKnownPublicMempoolMainnetBase,
+  normalizeUserMempoolApiInput,
   resolveStoredMempoolApiBase,
+  validateMempoolApiBaseReachable,
 } from '../services/mempoolApiBase';
 
 const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
@@ -64,53 +66,6 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const [isFocused, setIsFocused] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
-  // Normalize API URL
-  const normalizeAPIUrl = (url: string): string => {
-    if (!url || url.trim() === '') {
-      return url;
-    }
-    let normalized = url.trim();
-    normalized = normalized.replace(/\/+$/, '');
-    const apiPattern = /\/api$/i;
-    if (!apiPattern.test(normalized)) {
-      normalized = normalized + '/api';
-    }
-    return normalized;
-  };
-
-  // Validate API endpoint
-  const validateAPIEndpoint = async (api: string): Promise<boolean> => {
-    try {
-      const testUrl = `${api.replace(/\/$/, '')}/blocks/tip/hash`;
-      dbg('Testing API endpoint:', testUrl);
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      const response = await fetch(testUrl, {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-        },
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (!response.ok) {
-        dbg('API validation failed: HTTP', response.status);
-        return false;
-      }
-      const blockHash = await response.text();
-      const isValidBlockHash = /^[a-f0-9]{64}$/i.test(blockHash.trim());
-      if (!isValidBlockHash) {
-        dbg('API validation failed: Invalid block hash format:', blockHash);
-        return false;
-      }
-      dbg('API validation successful:', blockHash);
-      return true;
-    } catch (error) {
-      dbg('API validation error:', error);
-      return false;
-    }
-  };
-
   // Save API and proceed
   const saveAPIAndProceed = async (api: string) => {
     // If no API entered, just proceed
@@ -119,12 +74,12 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
       return;
     }
 
-    const normalizedApi = normalizeAPIUrl(api);
+    const normalizedApi = normalizeUserMempoolApiInput(api);
     dbg('Original API URL:', api);
     dbg('Normalized API URL:', normalizedApi);
     setIsAPISaving(true);
     try {
-      const isValid = await validateAPIEndpoint(normalizedApi);
+      const isValid = await validateMempoolApiBaseReachable(normalizedApi);
       if (!isValid) {
         Alert.alert(
           'Invalid API Endpoint',
