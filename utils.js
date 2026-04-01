@@ -1009,13 +1009,39 @@ export const saveKeyshareMetadata = async keyshareJson => {
 
 /**
  * Read the non-secret keyshare metadata without loading the full MPC blob.
+ * If only the legacy `keyshare` entry exists (older app versions never wrote
+ * `keyshare_meta`), parses once and persists metadata so routing and UI stay aligned.
  * @returns {Promise<import('./types/keyshare').KeyshareMetadata|null>} Metadata object or null if not available
  */
 export const getKeyshareMetadata = async () => {
   try {
     const raw = await EncryptedStorage.getItem('keyshare_meta');
-    if (!raw) return null;
-    return JSON.parse(raw);
+    if (raw) {
+      return JSON.parse(raw);
+    }
+    const legacy = await EncryptedStorage.getItem('keyshare');
+    if (!legacy || String(legacy).trim() === '') {
+      return null;
+    }
+    await saveKeyshareMetadata(legacy);
+    const rawAfter = await EncryptedStorage.getItem('keyshare_meta');
+    if (rawAfter) {
+      return JSON.parse(rawAfter);
+    }
+    // saveKeyshareMetadata failed (e.g. storage) but legacy blob exists — still align in-memory
+    try {
+      const parsed = JSON.parse(legacy);
+      return {
+        pub_key: parsed.pub_key ?? '',
+        chain_code_hex: parsed.chain_code_hex ?? '',
+        created_at: parsed.created_at ?? null,
+        local_party_key: parsed.local_party_key ?? '',
+        keygen_committee_keys: parsed.keygen_committee_keys ?? [],
+        nostr_npub: parsed.nostr_npub ?? null,
+      };
+    } catch {
+      return null;
+    }
   } catch (e) {
     dbg('getKeyshareMetadata: failed', e);
     return null;

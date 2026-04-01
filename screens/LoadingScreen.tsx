@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect, useRef, useState, useCallback} from 'react';
 import {
   View,
   Text,
@@ -51,6 +51,9 @@ const LoadingScreen = ({onRetry}: any) => {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
+  /** Background GitHub check — no chip spinner, no delay, no toast (manual uses checkingUpdate + optional delay). */
+  const backgroundVersionCheckRef = useRef(false);
+  const manualVersionCheckRef = useRef(false);
   useEffect(() => {
     Promise.all([DeviceInfo.getVersion(), DeviceInfo.getBuildNumber()]).then(
       ([v, b]) => {
@@ -362,15 +365,28 @@ const LoadingScreen = ({onRetry}: any) => {
     return a3 - b3;
   };
 
-  const checkForUpdate = async (silent: boolean) => {
-    if (checkingUpdate || !version) {
+  const checkForUpdate = useCallback(async (silent: boolean) => {
+    if (!version) {
       return;
+    }
+    if (silent) {
+      if (backgroundVersionCheckRef.current) {
+        return;
+      }
+      backgroundVersionCheckRef.current = true;
+    } else {
+      if (manualVersionCheckRef.current) {
+        return;
+      }
+      manualVersionCheckRef.current = true;
+      setCheckingUpdate(true);
     }
     try {
       const effectiveVersion = __DEV__ ? '0.0.0' : version;
-      dbg('LoadingScreen: checking for update...', {version, effectiveVersion});
-      setCheckingUpdate(true);
-      await waitMS(1000);
+      dbg('LoadingScreen: checking for update...', {version, effectiveVersion, silent});
+      if (!silent) {
+        await waitMS(1000);
+      }
       const res = await fetch(
         'https://api.github.com/repos/BoldBitcoinWallet/BoldWallet/releases/latest',
         {
@@ -410,9 +426,14 @@ const LoadingScreen = ({onRetry}: any) => {
         });
       }
     } finally {
-      setCheckingUpdate(false);
+      if (silent) {
+        backgroundVersionCheckRef.current = false;
+      } else {
+        manualVersionCheckRef.current = false;
+        setCheckingUpdate(false);
+      }
     }
-  };
+  }, [version]);
 
   const handleVersionPress = () => {
     if (updateAvailable && latestVersion) {
@@ -424,14 +445,13 @@ const LoadingScreen = ({onRetry}: any) => {
 
   const showVersionChip = !!version && !!buildNumber;
 
-  // Background check once the local version is known
+  // Background check once the local version is known (no UI: no chip spinner, no delay, no toast)
   useEffect(() => {
     if (!version) {
       return;
     }
     checkForUpdate(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [version]);
+  }, [version, checkForUpdate]);
 
   const styles = StyleSheet.create({
     container: {

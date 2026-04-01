@@ -42,7 +42,6 @@ import {
   dbg,
   HapticFeedback,
   getNostrRelays,
-  hexToString,
   getResetToMainTabsWallet,
   shortenAddress,
   saveKeyshareMetadata,
@@ -721,46 +720,8 @@ const MobileNostrPairing = ({navigation}: any) => {
           numDevices,
           'devices)',
         );
-        // Get local npub from keyshare
+        // Get local npub from keyshare (nsec stays in native storage only)
         const localNpubFromKeyshare = keyshare.nostr_npub || '';
-        // Get local nsec from keyshare
-        // The nsec might be stored as hex-encoded bytes OR already in bech32 format
-        const nsecFromKeyshare = keyshare.nsec || '';
-        if (nsecFromKeyshare) {
-          // Check if it's already in bech32 format
-          if (nsecFromKeyshare.startsWith('nsec1')) {
-            // Already in correct format
-            setLocalNsec(nsecFromKeyshare);
-            dbg(
-              'Nsec from keyshare (already bech32):',
-              nsecFromKeyshare.substring(0, 20) + '...',
-            );
-          } else {
-            // Try to decode from hex
-            try {
-              const decodedNsec = hexToString(nsecFromKeyshare);
-              dbg(
-                'Decoded nsec from hex:',
-                decodedNsec.substring(0, 20) + '...',
-              );
-              // Verify it's a valid nsec format
-              if (decodedNsec.startsWith('nsec1')) {
-                setLocalNsec(decodedNsec);
-                dbg('Nsec set successfully');
-              } else {
-                dbg(
-                  'Warning: Decoded nsec does not start with nsec1:',
-                  decodedNsec.substring(0, 50),
-                );
-              }
-            } catch (error) {
-              dbg('Error decoding nsec from hex:', error);
-            }
-          }
-        } else {
-          dbg('Warning: No nsec found in keyshare');
-        }
-        delete keyshare.nsec;
         // Set local npub if available
         if (localNpubFromKeyshare) {
           setLocalNpub(localNpubFromKeyshare);
@@ -1589,7 +1550,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         },
       );
       let keyshare: any;
-      let nsecToUse = localNsec;
       let publicKey = '';
       let senderAddress = '';
       let balanceSats = '';
@@ -1607,24 +1567,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         | undefined;
       const prepJson = await BBMTLibNativeModule.getKeyshareNostrPrepJSON();
       keyshare = JSON.parse(prepJson);
-      if (!nsecToUse || !nsecToUse.startsWith('nsec1')) {
-        const nsecFromKeyshare = keyshare.nsec || '';
-        if (nsecFromKeyshare) {
-          if (nsecFromKeyshare.startsWith('nsec1')) {
-            nsecToUse = nsecFromKeyshare;
-          } else {
-            nsecToUse = hexToString(nsecFromKeyshare);
-          }
-          if (nsecToUse.startsWith('nsec1')) {
-            setLocalNsec(nsecToUse);
-          } else {
-            throw new Error('Invalid nsec format in keyshare');
-          }
-        } else {
-          throw new Error('nsec not found in keyshare');
-        }
-      }
-      delete keyshare.nsec;
       // Derive from address using route params
       publicKey = await BBMTLibNativeModule.derivePubkey(
         keyshare.pub_key,
@@ -1943,7 +1885,6 @@ const MobileNostrPairing = ({navigation}: any) => {
           }
           rawTxHex = await BBMTLibNativeModule.nostrMpcSendBTC(
             relaysCSV,
-            nsecToUse,
             partiesNpubsCSV,
             npubsSorted,
             balanceSats,
@@ -1957,7 +1898,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         } else {
           rawTxHex = await BBMTLibNativeModule.nostrMpcSendBTC(
             relaysCSV,
-            nsecToUse,
             partiesNpubsCSV,
             npubsSorted,
             balanceSats,
@@ -1977,7 +1917,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         );
         rawTxHex = await BBMTLibNativeModule.nostrMpcSendBTC(
           relaysCSV,
-          nsecToUse,
           partiesNpubsCSV,
           npubsSorted,
           balanceSats,
@@ -2085,38 +2024,9 @@ const MobileNostrPairing = ({navigation}: any) => {
     setProgress(0);
     setStatus('Starting PSBT signing...');
     let keyshare: any;
-    let nsecToUse = localNsec;
     try {
       const prepJson = await BBMTLibNativeModule.getKeyshareNostrPrepJSON();
       keyshare = JSON.parse(prepJson);
-      // Get nsec from keyshare
-      if (!nsecToUse || !nsecToUse.startsWith('nsec1')) {
-        const nsecFromKeyshare = keyshare.nsec || '';
-        if (nsecFromKeyshare) {
-          try {
-            let decodedNsec = '';
-            if (nsecFromKeyshare.startsWith('nsec1')) {
-              decodedNsec = nsecFromKeyshare;
-            } else {
-              decodedNsec = hexToString(nsecFromKeyshare);
-            }
-            if (decodedNsec.startsWith('nsec1')) {
-              nsecToUse = decodedNsec;
-              setLocalNsec(decodedNsec);
-            } else {
-              throw new Error('Invalid nsec format in keyshare');
-            }
-          } catch (error) {
-            throw new Error(`Failed to load nsec from keyshare: ${error}`);
-          }
-        } else {
-          throw new Error('nsec not found in keyshare');
-        }
-      }
-      if (!nsecToUse || !nsecToUse.startsWith('nsec1')) {
-        throw new Error('Invalid nsec: must be in bech32 format (nsec1...)');
-      }
-      delete keyshare.nsec;
       // Get all npubs from keyshare for session ID
       const allNpubsFromKeyshare: string[] = [];
       const sortedKeys = [...keyshare.keygen_committee_keys].sort();
@@ -2214,7 +2124,6 @@ const MobileNostrPairing = ({navigation}: any) => {
       // Call native module for PSBT signing
       await BBMTLibNativeModule.nostrMpcSignPSBT(
         relaysCSV,
-        nsecToUse,
         partiesNpubsCSV,
         npubsSorted,
         route.params.psbtBase64,

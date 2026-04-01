@@ -126,6 +126,45 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         return prefs.getString(KEY_KEYSHARE, null)
     }
 
+    /**
+     * Local Nostr nsec for Tss (bech32 `nsec1…` or hex-encoded UTF-8 of that string).
+     * Read only from stored keyshare JSON — never passed across the RN bridge from JS.
+     */
+    private fun nsecForNostrFromStoredKeyshare(): String {
+        val raw = loadKeyshareJSONFromRNES()
+            ?: throw Exception("No keyshare found in secure storage")
+        val obj = JSONObject(raw)
+        if (!obj.has("nsec")) {
+            throw Exception("nsec not found in keyshare")
+        }
+        val nsecField = obj.getString("nsec")
+        if (nsecField.isEmpty()) {
+            throw Exception("nsec not found in keyshare")
+        }
+        if (nsecField.startsWith("nsec1")) {
+            return nsecField
+        }
+        return hexUtf8BytesToNsecString(nsecField)
+    }
+
+    private fun hexUtf8BytesToNsecString(hex: String): String {
+        val s = hex.trim()
+        if (s.length % 2 != 0) {
+            throw Exception("Invalid nsec hex encoding")
+        }
+        val bytes = ByteArray(s.length / 2)
+        var i = 0
+        while (i < s.length) {
+            bytes[i / 2] = s.substring(i, i + 2).toInt(16).toByte()
+            i += 2
+        }
+        val out = String(bytes, Charsets.UTF_8)
+        if (!out.startsWith("nsec1")) {
+            throw Exception("Invalid nsec format in keyshare")
+        }
+        return out
+    }
+
     override fun getConstants(): MutableMap<String, Any> {
         return mutableMapOf(
             "LOG_EVENT_NAME" to "BBMT_DROID"
@@ -268,92 +307,6 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             } catch (e: Throwable) {
                 ld("estimateFeeWithUTXOs", "error: ${e.stackTraceToString()}")
                 promise.reject(e)
-            }
-        }.start()
-    }
-
-    @ReactMethod
-    fun nostrMpcSendBTC(
-        relaysCSV: String,
-        partyNsec: String,
-        partiesNpubsCSV: String,
-        npubsSorted: String,
-        balanceSats: String,
-        keyshareJSON: String,
-        derivePath: String,
-        publicKey: String,
-        senderAddress: String,
-        receiverAddress: String,
-        amountSatoshi: String,
-        estimatedFee: String,
-        changeAddress: String,
-        promise: Promise
-    ) {
-        Thread {
-            try {
-                val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
-                    Tss.nostrMpcSendBTC(
-                        relaysCSV,
-                        partyNsec,
-                        partiesNpubsCSV,
-                        npubsSorted,
-                        balanceSats,
-                        ks,
-                        derivePath,
-                        publicKey,
-                        senderAddress,
-                        receiverAddress,
-                        amountSatoshi.toLong(),
-                        estimatedFee.toLong(),
-                        changeAddress ?: ""
-                    )
-                }
-                ld("nostrMpcSendBTC", result)
-                promise.resolve(result)
-            } catch (e: Throwable) {
-                ld("nostrMpcSendBTC", "error: ${e.stackTraceToString()}")
-                promise.reject("NOSTR_MPC_SEND_BTC_ERROR", "Failed to send BTC via Nostr: ${e.message}", e)
-            }
-        }.start()
-    }
-
-    @ReactMethod
-    fun nostrMpcSendBTCWithUTXOs(
-        relaysCSV: String,
-        partyNsec: String,
-        partiesNpubsCSV: String,
-        npubsSorted: String,
-        balanceSats: String,
-        keyshareJSON: String,
-        receiverAddress: String,
-        amountSatoshi: String,
-        estimatedFee: String,
-        utxosWithPathsJSON: String,
-        changeAddress: String,
-        promise: Promise
-    ) {
-        Thread {
-            try {
-                val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
-                    Tss.nostrMpcSendBTCWithUTXOs(
-                        relaysCSV,
-                        partyNsec,
-                        partiesNpubsCSV,
-                        npubsSorted,
-                        balanceSats,
-                        ks,
-                        receiverAddress,
-                        amountSatoshi,
-                        estimatedFee,
-                        utxosWithPathsJSON,
-                        changeAddress ?: ""
-                    )
-                }
-                ld("nostrMpcSendBTCWithUTXOs", result)
-                promise.resolve(result)
-            } catch (e: Throwable) {
-                ld("nostrMpcSendBTCWithUTXOs", "error: ${e.stackTraceToString()}")
-                promise.reject("NOSTR_MPC_SEND_BTC_ERROR", "Failed to send BTC via Nostr: ${e.message}", e)
             }
         }.start()
     }
@@ -897,37 +850,6 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun nostrMpcSignPSBT(
-        relaysCSV: String,
-        partyNsec: String,
-        partiesNpubsCSV: String,
-        npubsSorted: String,
-        keyshareJSON: String,
-        psbtBase64: String,
-        promise: Promise
-    ) {
-        Thread {
-            try {
-                val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
-                    Tss.nostrMpcSignPSBT(
-                        relaysCSV,
-                        partyNsec,
-                        partiesNpubsCSV,
-                        npubsSorted,
-                        ks,
-                        psbtBase64
-                    )
-                }
-                ld("nostrMpcSignPSBT", result)
-                promise.resolve(result)
-            } catch (e: Throwable) {
-                ld("nostrMpcSignPSBT", "error: ${e.stackTraceToString()}")
-                promise.reject("NOSTR_MPC_SIGN_PSBT_ERROR", "Failed to sign PSBT via Nostr: ${e.message}", e)
-            }
-        }.start()
-    }
-
-    @ReactMethod
     fun mpcSignPSBT(
         server: String,
         partyID: String,
@@ -1022,7 +944,6 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun nostrMpcSendBTC(
         relaysCSV: String,
-        partyNsec: String,
         partiesNpubsCSV: String,
         npubsSorted: String,
         balanceSats: String,
@@ -1037,6 +958,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     ) {
         Thread {
             try {
+                val partyNsec = nsecForNostrFromStoredKeyshare()
                 val keyshareJSON = loadKeyshareJSONFromRNES()
                 if (keyshareJSON == null) {
                     promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
@@ -1071,7 +993,6 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun nostrMpcSendBTC(
         relaysCSV: String,
-        partyNsec: String,
         partiesNpubsCSV: String,
         npubsSorted: String,
         balanceSats: String,
@@ -1084,6 +1005,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     ) {
         Thread {
             try {
+                val partyNsec = nsecForNostrFromStoredKeyshare()
                 val keyshareJSON = loadKeyshareJSONFromRNES()
                 if (keyshareJSON == null) {
                     promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
@@ -1116,7 +1038,6 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun nostrMpcSignPSBT(
         relaysCSV: String,
-        partyNsec: String,
         partiesNpubsCSV: String,
         npubsSorted: String,
         psbtBase64: String,
@@ -1124,6 +1045,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     ) {
         Thread {
             try {
+                val partyNsec = nsecForNostrFromStoredKeyshare()
                 val keyshareJSON = loadKeyshareJSONFromRNES()
                 if (keyshareJSON == null) {
                     promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
@@ -1169,7 +1091,6 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     "keygen_committee_keys",
                     "local_party_key",
                     "nostr_npub",
-                    "nsec",
                 )
                 for (k in keys) {
                     if (obj.has(k)) {

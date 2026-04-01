@@ -80,6 +80,57 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     static let keyshareAccount = "keyshare"
   }
 
+  /// Local Nostr nsec for Tss — only from stored keyshare (never from JS).
+  private func nsecForNostrFromStoredKeyshare() throws -> String {
+    guard let raw = loadKeyshareJSONFromRNES() else {
+      throw NSError(
+        domain: "BBMTLibNativeModule", code: 1,
+        userInfo: [NSLocalizedDescriptionKey: "No keyshare found in secure storage"])
+    }
+    guard let data = raw.data(using: .utf8),
+      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let nsecField = obj["nsec"] as? String,
+      !nsecField.isEmpty
+    else {
+      throw NSError(
+        domain: "BBMTLibNativeModule", code: 2,
+        userInfo: [NSLocalizedDescriptionKey: "nsec not found in keyshare"])
+    }
+    if nsecField.hasPrefix("nsec1") {
+      return nsecField
+    }
+    return try Self.hexUtf8BytesToNsecString(nsecField)
+  }
+
+  private static func hexUtf8BytesToNsecString(_ hex: String) throws -> String {
+    let s = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard s.count % 2 == 0 else {
+      throw NSError(
+        domain: "BBMTLibNativeModule", code: 3,
+        userInfo: [NSLocalizedDescriptionKey: "Invalid nsec hex encoding"])
+    }
+    var bytes = [UInt8]()
+    bytes.reserveCapacity(s.count / 2)
+    var i = s.startIndex
+    while i < s.endIndex {
+      let j = s.index(i, offsetBy: 2)
+      let byteStr = String(s[i..<j])
+      guard let b = UInt8(byteStr, radix: 16) else {
+        throw NSError(
+          domain: "BBMTLibNativeModule", code: 4,
+          userInfo: [NSLocalizedDescriptionKey: "Invalid nsec hex"])
+      }
+      bytes.append(b)
+      i = j
+    }
+    guard let out = String(bytes: bytes, encoding: .utf8), out.hasPrefix("nsec1") else {
+      throw NSError(
+        domain: "BBMTLibNativeModule", code: 5,
+        userInfo: [NSLocalizedDescriptionKey: "Invalid nsec format in keyshare"])
+    }
+    return out
+  }
+
   /// Read keyshare from the same Keychain layout as `RNEncryptedStorage` iOS implementation.
   private func loadKeyshareJSONFromRNES() -> String? {
     let query: [String: Any] = [
@@ -576,70 +627,6 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     }
   }
 
-  @objc func nostrMpcSendBTC(
-    _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, npubsSorted: String,
-    balanceSats: String, keyshareJSON: String, derivePath: String, publicKey: String,
-    senderAddress: String, receiverAddress: String, amountSatoshi: String, estimatedFee: String,
-    changeAddress: String,
-    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
-  ) {
-    DispatchQueue.global(qos: .background).async { [weak self] in
-      guard let self = self else {
-        resolver("")
-        return
-      }
-      var error: NSError?
-      let output = self.withZeroedUTF8Keyshare(keyshareJSON) { ks in
-        TssNostrMpcSendBTC(
-          relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, ks, derivePath,
-          publicKey, senderAddress, receiverAddress, Int64(amountSatoshi) ?? 0,
-          Int64(estimatedFee) ?? 0, changeAddress, &error)
-      }
-      self.sendLogEvent("nostrMpcSendBTC", output)
-      resolver(error == nil ? output : error!.localizedDescription)
-    }
-  }
-
-  @objc func nostrMpcSendBTCWithUTXOs(
-    _ relaysCSV: String,
-    partyNsec: String,
-    partiesNpubsCSV: String,
-    npubsSorted: String,
-    balanceSats: String,
-    keyshareJSON: String,
-    receiverAddress: String,
-    amountSatoshi: String,
-    estimatedFee: String,
-    utxosWithPathsJSON: String,
-    changeAddress: String,
-    resolver: @escaping RCTPromiseResolveBlock,
-    rejecter: @escaping RCTPromiseRejectBlock
-  ) {
-    DispatchQueue.global(qos: .background).async { [weak self] in
-      guard let self = self else {
-        resolver("")
-        return
-      }
-      var error: NSError?
-      let output = self.withZeroedUTF8Keyshare(keyshareJSON) { ks in
-        TssNostrMpcSendBTCWithUTXOs(
-          relaysCSV,
-          partyNsec,
-          partiesNpubsCSV,
-          npubsSorted,
-          balanceSats,
-          ks,
-          receiverAddress,
-          amountSatoshi,
-          estimatedFee,
-          utxosWithPathsJSON,
-          changeAddress, &error)
-      }
-      self.sendLogEvent("nostrMpcSendBTCWithUTXOs", output)
-      resolver(error == nil ? output : error!.localizedDescription)
-    }
-  }
-
   @objc func postTx(
     _ rawTxHex: String,
     resolver: @escaping RCTPromiseResolveBlock,
@@ -749,26 +736,6 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     }
   }
 
-  @objc func nostrMpcSignPSBT(
-    _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, npubsSorted: String,
-    keyshareJSON: String, psbtBase64: String,
-    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
-  ) {
-    DispatchQueue.global(qos: .background).async { [weak self] in
-      guard let self = self else {
-        resolver("")
-        return
-      }
-      var error: NSError?
-      let output = self.withZeroedUTF8Keyshare(keyshareJSON) { ks in
-        TssNostrMpcSignPSBT(
-          relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, ks, psbtBase64, &error)
-      }
-      self.sendLogEvent("nostrMpcSignPSBT", output)
-      resolver(error == nil ? output : error!.localizedDescription)
-    }
-  }
-
   @objc func parsePSBTDetails(
     _ psbtBase64: String, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
@@ -872,7 +839,7 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
   }
 
   @objc func nostrMpcSendBTC(
-    _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, npubsSorted: String,
+    _ relaysCSV: String, partiesNpubsCSV: String, npubsSorted: String,
     balanceSats: String, derivePath: String, publicKey: String,
     senderAddress: String, receiverAddress: String, amountSatoshi: String, estimatedFee: String,
     changeAddress: String,
@@ -882,6 +849,13 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)
+        return
+      }
+      let partyNsec: String
+      do {
+        partyNsec = try self.nsecForNostrFromStoredKeyshare()
+      } catch {
+        rejecter("NO_NSEC", error.localizedDescription, error)
         return
       }
       guard let keyshareJSON = self.loadKeyshareJSONFromRNES() else {
@@ -902,7 +876,6 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
 
   @objc func nostrMpcSendBTC(
     _ relaysCSV: String,
-    partyNsec: String,
     partiesNpubsCSV: String,
     npubsSorted: String,
     balanceSats: String,
@@ -917,6 +890,13 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)
+        return
+      }
+      let partyNsec: String
+      do {
+        partyNsec = try self.nsecForNostrFromStoredKeyshare()
+      } catch {
+        rejecter("NO_NSEC", error.localizedDescription, error)
         return
       }
       guard let keyshareJSON = self.loadKeyshareJSONFromRNES() else {
@@ -944,7 +924,7 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
   }
 
   @objc func nostrMpcSignPSBT(
-    _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, npubsSorted: String,
+    _ relaysCSV: String, partiesNpubsCSV: String, npubsSorted: String,
     psbtBase64: String,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
@@ -952,6 +932,13 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)
+        return
+      }
+      let partyNsec: String
+      do {
+        partyNsec = try self.nsecForNostrFromStoredKeyshare()
+      } catch {
+        rejecter("NO_NSEC", error.localizedDescription, error)
         return
       }
       guard let keyshareJSON = self.loadKeyshareJSONFromRNES() else {
@@ -1018,7 +1005,6 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
       }
       let keys = [
         "pub_key", "chain_code_hex", "keygen_committee_keys", "local_party_key", "nostr_npub",
-        "nsec",
       ]
       var out: [String: Any] = [:]
       for k in keys {
