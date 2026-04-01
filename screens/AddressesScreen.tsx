@@ -11,7 +11,6 @@ import {
   Image,
   Platform,
 } from 'react-native';
-import EncryptedStorage from 'react-native-encrypted-storage';
 import {useFocusEffect} from '@react-navigation/native';
 import {useTheme, type ThemeColors} from '../theme';
 import {useUser} from '../context/UserContext';
@@ -35,6 +34,7 @@ import {
   getReceivePath,
   getChangePath,
   isLegacyWallet,
+  getKeyshareMetadata,
 } from '../utils';
 import AppPressable from '../components/AppPressable';
 import AppText from '../components/AppText';
@@ -215,10 +215,9 @@ const AddressesScreen: React.FC<{navigation: any}> = ({navigation}) => {
   useEffect(() => {
     (async () => {
       try {
-        const raw = await EncryptedStorage.getItem('keyshare');
-        if (!raw) return;
-        const ks = JSON.parse(raw);
-        const ca = ks?.created_at;
+        const meta = await getKeyshareMetadata();
+        if (!meta) return;
+        const ca = meta.created_at;
         setLegacyCreatedAt(
           typeof ca === 'number' ? ca : ca != null ? Number(ca) : null,
         );

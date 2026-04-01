@@ -45,6 +45,9 @@ import {
   hexToString,
   getResetToMainTabsWallet,
   shortenAddress,
+  saveKeyshareMetadata,
+  getKeyshareMetadata,
+  withFullKeyshare,
 } from '../utils';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
@@ -697,12 +700,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     if (!isSendBitcoin && !isSignPSBT) return;
     const loadKeyshareData = async () => {
       try {
-        const keyshareJSON = await EncryptedStorage.getItem('keyshare');
-        if (!keyshareJSON) {
-          dbg('No keyshare found in send mode');
-          setSendModeDevices([]);
-          return;
-        }
+        await withFullKeyshare(async keyshareJSON => {
         const keyshare = JSON.parse(keyshareJSON);
         if (!keyshare.keygen_committee_keys || !keyshare.local_party_key) {
           dbg('Keyshare missing required fields');
@@ -851,6 +849,7 @@ const MobileNostrPairing = ({navigation}: any) => {
             }
           }
         }
+        }); // end withFullKeyshare
       } catch (error: any) {
         dbg('Error loading keyshare data:', error);
         setSendModeDevices([]);
@@ -1458,6 +1457,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       dbg('Keyshare mapping:', mapping);
       // Save keyshare (keyshare_position will be calculated on-the-fly when needed)
       await EncryptedStorage.setItem('keyshare', keyshareJSON);
+      await saveKeyshareMetadata(keyshareJSON);
       // New wallet setups are always non-legacy, so no need to reset flag
       setMpcDone(true);
       setStatus('Key generation complete!');
@@ -1585,11 +1585,8 @@ const MobileNostrPairing = ({navigation}: any) => {
           apiUrl,
         },
       );
-      // Get keyshare and nsec
-      const keyshareJSON = await EncryptedStorage.getItem('keyshare');
-      if (!keyshareJSON) {
-        throw new Error('Keyshare not found');
-      }
+      // Load the full keyshare; released after signing is complete
+      let keyshareJSON: string = await withFullKeyshare(async jks => jks);
       const keyshare = JSON.parse(keyshareJSON);
       let nsecToUse = localNsec;
       if (!nsecToUse || !nsecToUse.startsWith('nsec1')) {
@@ -1968,6 +1965,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           changeAddress,
         );
       }
+      keyshareJSON = ''; // release full keyshare reference (GC hint)
       if (
         !rawTxHex ||
         typeof rawTxHex !== 'string' ||
@@ -2061,10 +2059,8 @@ const MobileNostrPairing = ({navigation}: any) => {
     setProgress(0);
     setStatus('Starting PSBT signing...');
     try {
-      const keyshareJSON = await EncryptedStorage.getItem('keyshare');
-      if (!keyshareJSON) {
-        throw new Error('Keyshare not found');
-      }
+      // Load the full keyshare; released after signing is complete
+      let keyshareJSON: string = await withFullKeyshare(async jks => jks);
       const keyshare = JSON.parse(keyshareJSON);
       // Get nsec from keyshare
       let nsecToUse = localNsec;
@@ -2264,6 +2260,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         .finally(async () => {
           setMpcDone(true);
         });
+      keyshareJSON = ''; // release full keyshare reference (GC hint)
     } catch (error: any) {
       dbg('Sign PSBT error:', error);
       Alert.alert('Error', error?.message || 'PSBT signing failed');

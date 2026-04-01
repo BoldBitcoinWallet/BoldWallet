@@ -1,5 +1,6 @@
 import {Platform} from 'react-native';
 import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
+import EncryptedStorage from 'react-native-encrypted-storage';
 import LocalCache from './services/LocalCache';
 import {isDebugLoggingEnabled} from './App';
 
@@ -965,4 +966,88 @@ export const decodeSendBitcoinQR = qrData => {
     utxosJson: utxosJson || '',
     changeAddress: changeAddress || '',
   };
+};
+
+// ---------------------------------------------------------------------------
+// Keyshare metadata helpers
+// Only the safe (non-secret) fields are stored in 'keyshare_meta'.
+// The full MPC blob in 'keyshare' is only read when signing is required.
+// ---------------------------------------------------------------------------
+
+/**
+ * @typedef {Object} KeyshareMetadata
+ * @property {string} pub_key
+ * @property {string} chain_code_hex
+ * @property {number|null} created_at
+ * @property {string} local_party_key
+ * @property {string[]} keygen_committee_keys
+ * @property {string|null} nostr_npub
+ */
+
+/**
+ * Extract and persist only the non-secret metadata fields from a keyshare JSON string.
+ * Call this whenever EncryptedStorage.setItem('keyshare', …) is called.
+ * @param {string} keyshareJson - Raw keyshare JSON string
+ */
+export const saveKeyshareMetadata = async keyshareJson => {
+  try {
+    const parsed = JSON.parse(keyshareJson);
+    const meta = {
+      pub_key: parsed.pub_key ?? '',
+      chain_code_hex: parsed.chain_code_hex ?? '',
+      created_at: parsed.created_at ?? null,
+      local_party_key: parsed.local_party_key ?? '',
+      keygen_committee_keys: parsed.keygen_committee_keys ?? [],
+      nostr_npub: parsed.nostr_npub ?? null,
+    };
+    await EncryptedStorage.setItem('keyshare_meta', JSON.stringify(meta));
+    dbg('saveKeyshareMetadata: saved metadata');
+  } catch (e) {
+    dbg('saveKeyshareMetadata: failed', e);
+  }
+};
+
+/**
+ * Read the non-secret keyshare metadata without loading the full MPC blob.
+ * @returns {Promise<import('./types/keyshare').KeyshareMetadata|null>} Metadata object or null if not available
+ */
+export const getKeyshareMetadata = async () => {
+  try {
+    const raw = await EncryptedStorage.getItem('keyshare_meta');
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    dbg('getKeyshareMetadata: failed', e);
+    return null;
+  }
+};
+
+/**
+ * Remove the cached keyshare metadata.
+ * Call this whenever EncryptedStorage.removeItem('keyshare') is called.
+ */
+export const clearKeyshareMetadata = async () => {
+  try {
+    await EncryptedStorage.removeItem('keyshare_meta');
+    dbg('clearKeyshareMetadata: cleared');
+  } catch (e) {
+    dbg('clearKeyshareMetadata: failed', e);
+  }
+};
+
+/**
+ * Load the full keyshare string, pass it to fn, then release the local reference
+ * as a best-effort GC hint. Use this wrapper for all signing / backup operations.
+ * @param {(jks: string) => Promise<T>} fn - Async callback that receives the raw keyshare JSON
+ * @returns {Promise<T>}
+ */
+export const withFullKeyshare = async fn => {
+  let jks = null;
+  try {
+    jks = await EncryptedStorage.getItem('keyshare');
+    if (!jks) throw new Error('No keyshare found');
+    return await fn(jks);
+  } finally {
+    jks = null; // release reference; allows GC to collect the string
+  }
 };

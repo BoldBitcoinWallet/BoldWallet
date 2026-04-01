@@ -42,6 +42,8 @@ import {
   getMainnetAPIList,
   getKeyshareLabel,
   getResetToMainTabsWallet,
+  getKeyshareMetadata,
+  clearKeyshareMetadata,
 } from '../utils';
 import {useTheme} from '../theme';
 import {waitMS, WalletService} from '../services/WalletService';
@@ -1153,20 +1155,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     loadIconPreference();
   }, []);
   useEffect(() => {
-    EncryptedStorage.getItem('keyshare').then(ks => {
-      try {
-        if (!ks) {
-          return;
-        }
-        const json = JSON.parse(ks as string);
-        // Get keyshare label (KeyShare1/2/3) or fallback to local_party_key
-        const keyshareLabel = getKeyshareLabel(json);
-        setParty(keyshareLabel || json.local_party_key || '');
-        // Only show Nostr settings when the keyshare contains an npub
-        setHasNostr(!!json.nostr_npub);
-      } catch (error) {
-        dbg('Failed to parse keyshare for settings screen:', error);
-      }
+    getKeyshareMetadata().then(meta => {
+      if (!meta) return;
+      const keyshareLabel = getKeyshareLabel(meta);
+      setParty(keyshareLabel || meta.local_party_key || '');
+      setHasNostr(!!meta.nostr_npub);
     });
     // Load network and corresponding cached API (synchronous SQLite reads)
     (() => {
@@ -1417,6 +1410,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           dbg('Error clearing encrypted storage:', error);
           await Promise.all([
             EncryptedStorage.removeItem('keyshare'),
+            EncryptedStorage.removeItem('keyshare_meta'),
             EncryptedStorage.removeItem('btcPub'),
             EncryptedStorage.removeItem('bitcoin_display_sats'),
             EncryptedStorage.removeItem('balance_formatting_enabled'),

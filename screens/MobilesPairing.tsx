@@ -48,6 +48,9 @@ import {
   hexToString,
   getResetToMainTabsWallet,
   shortenAddress,
+  saveKeyshareMetadata,
+  getKeyshareMetadata,
+  withFullKeyshare,
 } from '../utils';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
@@ -530,22 +533,20 @@ const MobilesPairing = ({navigation}: any) => {
         dbg('initSession: Generated random seed');
         if (isSendBitcoin) {
           dbg('initSession: Preparing for Bitcoin send');
-          const jks = await EncryptedStorage.getItem('keyshare');
-          const ks = JSON.parse(jks || '{}');
+          const meta = await getKeyshareMetadata();
           _data += ':' + route.params.satoshiAmount;
           _data += ':' + route.params.satoshiFees;
-          _data += ':' + ks.local_party_key;
+          _data += ':' + (meta?.local_party_key || '');
           dbg('initSession: Added Bitcoin transaction data to session data');
         } else if (isSignPSBT) {
           dbg('initSession: Preparing for PSBT signing');
-          const jks = await EncryptedStorage.getItem('keyshare');
-          const ks = JSON.parse(jks || '{}');
+          const meta = await getKeyshareMetadata();
           // For PSBT, use PSBT hash instead of amount/fees
           const psbtHash = await BBMTLibNativeModule.sha256(
             route.params.psbtBase64 || '',
           );
           _data += ':' + psbtHash;
-          _data += ':' + ks.local_party_key;
+          _data += ':' + (meta?.local_party_key || '');
           dbg('initSession: Added PSBT data to session data');
         }
         dbg('initSession: Publishing data', {
@@ -701,6 +702,7 @@ const MobilesPairing = ({navigation}: any) => {
             throw 'Error: Invalid keyshare';
           }
           await EncryptedStorage.setItem('keyshare', result);
+          await saveKeyshareMetadata(result);
           // New wallet setups are always non-legacy, so no need to reset flag
           setMpcDone(true);
           deletePreparams();
@@ -752,7 +754,7 @@ const MobilesPairing = ({navigation}: any) => {
         await waitMS(500); // Give master device time to start relay
       }
       const server = `http://${isMaster ? localIP : peerIP}:${discoveryPort}`;
-      const jks = await EncryptedStorage.getItem('keyshare');
+      const _ksMeta = await getKeyshareMetadata();
       // Declare variables for send BTC mode (will be set in else block below)
       let net = '';
       let addressTypeToUse = '';
@@ -868,8 +870,7 @@ const MobilesPairing = ({navigation}: any) => {
               : 'https://mempool.space/api';
         }
       }
-      const ks = JSON.parse(jks || '{}');
-      const partyID = ks.local_party_key;
+      const partyID = _ksMeta?.local_party_key || '';
       const allParties = [partyID];
       if (peerParty) {
         allParties.push(peerParty);
@@ -908,7 +909,7 @@ const MobilesPairing = ({navigation}: any) => {
           throw 'Make sure you\'re signing the "Same PSBT" from Both Devices';
         }
         // Call PSBT signing - derivation paths and public keys are extracted from PSBT
-        await BBMTLibNativeModule.mpcSignPSBT(
+        await withFullKeyshare(async jks => BBMTLibNativeModule.mpcSignPSBT(
           server,
           partyID,
           partiesCSV,
@@ -965,13 +966,13 @@ const MobilesPairing = ({navigation}: any) => {
               stopRelay();
             }
             setDoingMPC(false);
-          });
+          })); // end withFullKeyshare
         return; // Exit early for PSBT
       } else {
         // Send BTC mode - try multi-path first (spend from receive + change addresses)
         const btcPub = await BBMTLibNativeModule.derivePubkey(
-          ks.pub_key,
-          ks.chain_code_hex,
+          _ksMeta?.pub_key || '',
+          _ksMeta?.chain_code_hex || '',
           path,
         );
         const senderAddress = await BBMTLibNativeModule.btcAddress(
@@ -1095,21 +1096,23 @@ const MobilesPairing = ({navigation}: any) => {
                 )
             : '';
           if (utxosWithPathsJSON && changeAddress) {
-            const rawTxHex = await BBMTLibNativeModule.mpcSendBTCWithUTXOs(
-              server,
-              partyID,
-              partiesCSV,
-              sessionID,
-              sessionKey,
-              encKey,
-              decKey,
-              jks,
-              btcPub,
-              toAddress,
-              satoshiAmount,
-              satoshiFees,
-              utxosWithPathsJSON,
-              changeAddress,
+            const rawTxHex = await withFullKeyshare(async jks =>
+              BBMTLibNativeModule.mpcSendBTCWithUTXOs(
+                server,
+                partyID,
+                partiesCSV,
+                sessionID,
+                sessionKey,
+                encKey,
+                decKey,
+                jks,
+                btcPub,
+                toAddress,
+                satoshiAmount,
+                satoshiFees,
+                utxosWithPathsJSON,
+                changeAddress,
+              ),
             );
             dbg(partyID, 'signed tx (multi-path), len=', rawTxHex?.length);
             if (
@@ -1392,9 +1395,8 @@ const MobilesPairing = ({navigation}: any) => {
     const jkp = await BBMTLibNativeModule.eciesKeypair();
     setKeypair(jkp);
     const kp = JSON.parse(jkp);
-    const jks = await EncryptedStorage.getItem('keyshare');
-    const ks = JSON.parse(jks || '{}');
-    const localShare = ks.local_party_key;
+    const meta = await getKeyshareMetadata();
+    const localShare = meta?.local_party_key || '';
     try {
       const pinnedIPs = getPinnedRemoteIPs();
       dbg('checking lanIP given pinnedRemotes', pinnedIPs);
@@ -1407,7 +1409,7 @@ const MobilesPairing = ({navigation}: any) => {
       const promises = [
         listenForPeerPromise(
           kp,
-          stringToHex(`${deviceName}@${ks.local_party_key}`),
+          stringToHex(`${deviceName}@${localShare}`),
         ),
       ];
       if (ip) {
@@ -1419,7 +1421,7 @@ const MobilesPairing = ({navigation}: any) => {
         );
         promises.push(
           discoverPeerPromise(
-            stringToHex(`${deviceName}@${ks.local_party_key}`),
+            stringToHex(`${deviceName}@${localShare}`),
             kp.publicKey,
             ip,
           ),

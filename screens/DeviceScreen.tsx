@@ -1,10 +1,9 @@
 import React, {useCallback, useState, useEffect} from 'react';
 import {NativeModules} from 'react-native';
-import EncryptedStorage from 'react-native-encrypted-storage';
 import {useNavigation} from '@react-navigation/native';
 import KeyshareInfoContent from '../components/KeyshareInfoContent';
 import {useUser} from '../context/UserContext';
-import {dbg} from '../utils';
+import {dbg, getKeyshareMetadata} from '../utils';
 import {generateAllOutputDescriptors} from '../utils';
 
 const {BBMTLibNativeModule} = NativeModules;
@@ -40,12 +39,11 @@ const DeviceScreen: React.FC = () => {
 
   const loadKeyshareInfo = useCallback(async () => {
     try {
-      const keyshareJSON = await EncryptedStorage.getItem('keyshare');
-      if (!keyshareJSON) {
+      const keyshare = await getKeyshareMetadata();
+      if (!keyshare) {
         setKeyshareInfo(null);
         return;
       }
-      const keyshare = JSON.parse(keyshareJSON);
       const pubKey = keyshare.pub_key || '';
       const chainCode = keyshare.chain_code_hex || '';
       const nostrNpub = keyshare.nostr_npub || null;

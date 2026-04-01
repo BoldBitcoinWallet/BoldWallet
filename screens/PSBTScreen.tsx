@@ -16,7 +16,7 @@ import {NativeModules} from 'react-native';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {PSBTLoader} from './PSBTModal';
-import {dbg, generateAllOutputDescriptors} from '../utils';
+import {dbg, generateAllOutputDescriptors, getKeyshareMetadata} from '../utils';
 import {CommonActions, useRoute, RouteProp} from '@react-navigation/native';
 import TransportModeSelector from '../components/TransportModeSelector';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -124,12 +124,11 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   }, [isPSBTSectionExpanded]);
   const loadKeyshareInfo = useCallback(async () => {
     try {
-      const keyshareJSON = await EncryptedStorage.getItem('keyshare');
-      if (!keyshareJSON) {
+      const keyshare = await getKeyshareMetadata();
+      if (!keyshare) {
         setKeyshareInfo(null);
         return;
       }
-      const keyshare = JSON.parse(keyshareJSON);
       const pubKey = keyshare.pub_key || '';
       const chainCode = keyshare.chain_code_hex || '';
       // Generate output descriptors for all address types using utility function
@@ -251,9 +250,8 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       // derivePath parameter is kept for API compatibility but not used
       // Check if keyshare supports Nostr (has nostr_npub)
       try {
-        const keyshareJSON = await EncryptedStorage.getItem('keyshare');
-        if (keyshareJSON) {
-          const keyshare = JSON.parse(keyshareJSON);
+        const keyshare = await getKeyshareMetadata();
+        if (keyshare) {
           const hasNostrSupport =
             keyshare.nostr_npub && keyshare.nostr_npub.trim() !== '';
           if (!hasNostrSupport) {

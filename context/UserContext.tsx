@@ -9,7 +9,7 @@ import React, {
 import EncryptedStorage from 'react-native-encrypted-storage';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {BBMTLibNativeModule} from '../native_modules';
-import {getReceivePath, isLegacyWallet, dbg} from '../utils';
+import {getReceivePath, isLegacyWallet, dbg, getKeyshareMetadata} from '../utils';
 import {getExternalIndex} from '../services/HdIndexService';
 type AddressType = 'legacy' | 'segwit-native' | 'segwit-compatible';
 interface UserContextType {
@@ -284,10 +284,8 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
       // Always derive btcPub fresh to ensure it matches the current address type
       // This prevents issues where stored btcPub was derived with a different address type
       let pub = '';
-      let ks: any = null;
-      const jks = await EncryptedStorage.getItem('keyshare');
-      if (jks) {
-        ks = JSON.parse(jks);
+      const ks = await getKeyshareMetadata();
+      if (ks) {
         // Check if this is a legacy wallet (created before migration timestamp)
         const useLegacyPath = isLegacyWallet(ks.created_at);
         const externalIndex = await getExternalIndex(network, currentAddressType);

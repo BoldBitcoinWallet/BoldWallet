@@ -12,7 +12,6 @@ import UtxosScreen from './screens/UtxosScreen';
 import AddressesScreen from './screens/AddressesScreen';
 import PSBTScreen from './screens/PSBTScreen';
 import DeviceScreen from './screens/DeviceScreen';
-import EncryptedStorage from 'react-native-encrypted-storage';
 import LoadingScreen from './screens/LoadingScreen';
 import Zeroconf, {ImplType} from 'react-native-zeroconf';
 import ReactNativeBiometrics, {BiometryTypes} from 'react-native-biometrics';
@@ -42,7 +41,7 @@ import {
 import AppPressable from './components/AppPressable';
 import WalletSettings from './screens/WalletSettings';
 import {NativeModules} from 'react-native';
-import {dbg, pinRemoteIP, getPinnedRemoteIPs} from './utils';
+import {dbg, pinRemoteIP, getPinnedRemoteIPs, getKeyshareMetadata} from './utils';
 import MobilesPairing from './screens/MobilesPairing';
 import MobileNostrPairing from './screens/MobileNostrPairing';
 import UserPreferenceScreen from './screens/UserPreferenceScreen';
@@ -534,8 +533,8 @@ const App = () => {
       setDebugLoggingEnabledState(debugLoggingEnabledRef.current);
       // Re-check wallet state after reload to ensure correct initial route
       try {
-        const keyshare = await EncryptedStorage.getItem('keyshare');
-        const route = keyshare && keyshare.length > 0 ? 'MainTabs' : 'Welcome';
+        const meta = await getKeyshareMetadata();
+        const route = meta ? 'MainTabs' : 'Welcome';
         setInitialRoute(route);
       } catch {
         setInitialRoute('Welcome');
@@ -556,9 +555,9 @@ const App = () => {
         dbg('App: Database init error (non-fatal):', dbErr);
       }
       try {
-        const keyshare = await EncryptedStorage.getItem('keyshare');
-        dbg('initializeApp keyshare found', !!keyshare);
-        const route = keyshare && keyshare.length > 0 ? 'MainTabs' : 'Welcome';
+        const meta = await getKeyshareMetadata();
+        dbg('initializeApp keyshare found', !!meta);
+        const route = meta ? 'MainTabs' : 'Welcome';
         dbg('Setting initial route to:', route);
         setInitialRoute(route);
       } catch (error) {

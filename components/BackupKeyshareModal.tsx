@@ -15,9 +15,7 @@ import AppPressable from './AppPressable';
 import {NativeModules} from 'react-native';
 import Share from 'react-native-share';
 import RNFS from 'react-native-fs';
-import EncryptedStorage from 'react-native-encrypted-storage';
-import {dbg} from '../utils';
-import {getKeyshareLabel} from '../utils';
+import {dbg, getKeyshareLabel, withFullKeyshare, getKeyshareMetadata} from '../utils';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
 
@@ -144,36 +142,37 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
     }
 
     try {
-      const storedKeyshare = await EncryptedStorage.getItem('keyshare');
-      if (storedKeyshare) {
-        const json = JSON.parse(storedKeyshare);
-        const encryptedKeyshare = await BBMTLibNativeModule.aesEncrypt(
-          storedKeyshare,
-          await BBMTLibNativeModule.sha256(password),
+      const meta = await getKeyshareMetadata();
+      if (meta) {
+        const encryptedKeyshare = await withFullKeyshare(async storedKeyshare =>
+          BBMTLibNativeModule.aesEncrypt(
+            storedKeyshare,
+            await BBMTLibNativeModule.sha256(password),
+          ),
         );
 
         // Create filename based on pub_key hash and keyshare number
-        if (!json.pub_key) {
+        if (!meta.pub_key) {
           Alert.alert('Error', 'Keyshare missing pub_key.');
           return;
         }
 
         // Get SHA256 hash of pub_key and take first 4 characters
-        const pubKeyHash = await BBMTLibNativeModule.sha256(json.pub_key);
+        const pubKeyHash = await BBMTLibNativeModule.sha256(meta.pub_key);
         const hashPrefix = pubKeyHash.substring(0, 4).toLowerCase();
 
         // Extract keyshare number from label (KeyShare1 -> 1, KeyShare2 -> 2, etc.)
-        const keyshareLabel = getKeyshareLabel(json);
+        const keyshareLabel = getKeyshareLabel(meta);
         let keyshareNumber = '1'; // default
         if (keyshareLabel) {
           const match = keyshareLabel.match(/KeyShare(\d+)/);
           if (match) {
             keyshareNumber = match[1];
           }
-        } else if (json.keygen_committee_keys && json.local_party_key) {
+        } else if (meta.keygen_committee_keys && meta.local_party_key) {
           // Fallback: compute from position in sorted keygen_committee_keys
-          const sortedKeys = [...json.keygen_committee_keys].sort();
-          const index = sortedKeys.indexOf(json.local_party_key);
+          const sortedKeys = [...meta.keygen_committee_keys].sort();
+          const index = sortedKeys.indexOf(meta.local_party_key);
           if (index >= 0) {
             keyshareNumber = String(index + 1);
           }

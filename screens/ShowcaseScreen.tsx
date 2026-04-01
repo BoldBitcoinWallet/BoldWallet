@@ -20,7 +20,7 @@ import DocumentPicker from 'react-native-document-picker';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import RNFS from 'react-native-fs';
 import {useTheme} from '../theme';
-import {dbg, isLegacyWallet} from '../utils';
+import {dbg, isLegacyWallet, saveKeyshareMetadata} from '../utils';
 import LegalModal from '../components/LegalModal';
 import TransportModeSelector from '../components/TransportModeSelector';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
@@ -202,6 +202,7 @@ const ShowcaseScreen = ({navigation}: any) => {
           throw 'Error: Invalid keyshare';
         }
         await EncryptedStorage.setItem('keyshare', decryptedKeyshare);
+        await saveKeyshareMetadata(decryptedKeyshare);
         // Reset legacy wallet modal flag for new wallet
         // If legacy wallet, set to "no" (show modal); if not legacy, set to "yes" (won't show anyway)
         const isLegacy = isLegacyWallet(ks.created_at);

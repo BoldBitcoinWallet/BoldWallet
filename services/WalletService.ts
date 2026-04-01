@@ -6,6 +6,7 @@ import {
   getMainnetAPIList,
   getReceivePath,
   isLegacyWallet,
+  getKeyshareMetadata,
 } from '../utils';
 import {
   getGapLimit,
@@ -22,7 +23,6 @@ import utxoRepository from './repositories/UtxoRepository';
 import priceRepository from './repositories/PriceRepository';
 import walletRepository, {type WalletAddress} from './repositories/WalletRepository';
 import syncRepository from './repositories/SyncRepository';
-import EncryptedStorage from 'react-native-encrypted-storage';
 import {
   getChangeIndex,
   getExternalIndex,
@@ -216,7 +216,7 @@ export class WalletService {
   public async initialize() {
     try {
       // Check for keyshare first
-      const keyshare = await EncryptedStorage.getItem('keyshare');
+      const keyshare = await getKeyshareMetadata();
       if (!keyshare) {
         dbg('WalletService: No keyshare found, skipping initialization');
         return;
@@ -432,9 +432,8 @@ export class WalletService {
     network: string,
     addressType: string,
   ): Promise<{address: string; path: string}> {
-    const jks = await EncryptedStorage.getItem('keyshare');
-    if (!jks) throw new Error('No keyshare found');
-    const ks = JSON.parse(jks);
+    const ks = await getKeyshareMetadata();
+    if (!ks) throw new Error('No keyshare found');
     const useLegacyPath = isLegacyWallet(ks.created_at);
     const changeIdx = await getChangeIndex(network, addressType);
     const path = getChangePath(network, addressType, useLegacyPath, changeIdx);
@@ -475,9 +474,8 @@ export class WalletService {
     network: string,
     addressType: string,
   ): Promise<string> {
-    const jks = await EncryptedStorage.getItem('keyshare');
-    if (!jks) throw new Error('No keyshare found');
-    const ks = JSON.parse(jks);
+    const ks = await getKeyshareMetadata();
+    if (!ks) throw new Error('No keyshare found');
     const useLegacyPath = isLegacyWallet(ks.created_at);
     const nextIndex = (await getExternalIndex(network, addressType)) + 1;
     await setExternalIndex(network, addressType, nextIndex);
@@ -652,12 +650,11 @@ export class WalletService {
     if (endIdxInclusive < startIdx || startIdx < 0) {
       return;
     }
-    const jks = await EncryptedStorage.getItem('keyshare');
-    if (!jks) {
+    const ks = await getKeyshareMetadata();
+    if (!ks) {
       dbg('WalletService.ensureWalletAddressPairIndices: no keyshare');
       return;
     }
-    const ks = JSON.parse(jks);
     const batch: WalletAddress[] = [];
     for (let idx = startIdx; idx <= endIdxInclusive; idx++) {
       for (const chain of [0, 1] as const) {
@@ -709,8 +706,8 @@ export class WalletService {
     network: string,
     addressType: string,
   ): Promise<HdAddressWithPath[]> {
-    const jks = await EncryptedStorage.getItem('keyshare');
-    if (!jks) {
+    const ks = await getKeyshareMetadata();
+    if (!ks) {
       dbg(
         '[BALANCE] getHdAddressesWithPaths: keyshare not in EncryptedStorage — returning [].',
         'network:',
@@ -721,7 +718,6 @@ export class WalletService {
       );
       return [];
     }
-    const ks = JSON.parse(jks);
     const useLegacyPath = isLegacyWallet(ks.created_at);
     const externalIdx = await getExternalIndex(network, addressType);
     const maxUsedExternal = await getMaxUsedExternal(network, addressType);
@@ -864,12 +860,11 @@ export class WalletService {
     network: string,
     addressType: string,
   ): Promise<{path: string; index: number; address: string} | null> {
-    const jks = await EncryptedStorage.getItem('keyshare');
-    if (!jks) {
+    const ks = await getKeyshareMetadata();
+    if (!ks) {
       dbg('WalletService: getCurrentReceivePathInfo - no keyshare');
       return null;
     }
-    const ks = JSON.parse(jks);
     const useLegacyPath = isLegacyWallet(ks.created_at);
     const index = await getExternalIndex(network, addressType);
     const path = getReceivePath(network, addressType, useLegacyPath, index);
@@ -904,12 +899,11 @@ export class WalletService {
     apiUrl: string,
   ): Promise<void> {
     try {
-      const jks = await EncryptedStorage.getItem('keyshare');
-      if (!jks) {
+      const ks = await getKeyshareMetadata();
+      if (!ks) {
         dbg('WalletService: bumpExternalIndexIfCurrentUsed - no keyshare');
         return;
       }
-      const ks = JSON.parse(jks);
       const useLegacyPath = isLegacyWallet(ks.created_at);
       const currentIndex = await getExternalIndex(network, addressType);
       const path = getReceivePath(
@@ -1021,12 +1015,11 @@ export class WalletService {
       addressType,
       apiUrl: apiUrl?.slice(0, 40) + '...',
     });
-    const jks = await EncryptedStorage.getItem('keyshare');
-    if (!jks) {
+    const ks = await getKeyshareMetadata();
+    if (!ks) {
       dbg('WalletService: No keyshare, skipping restore discovery');
       return;
     }
-    const ks = JSON.parse(jks);
     const useLegacyPath = isLegacyWallet(ks.created_at);
     BBMTLibNativeModule.setAPI(network, apiUrl);
 
@@ -1542,8 +1535,8 @@ export class WalletService {
       }
       // Generate address for the current network at current external index (HD)
       try {
-        const jks = await EncryptedStorage.getItem('keyshare');
-        const ks = JSON.parse(jks || '{}');
+        const ks = await getKeyshareMetadata();
+        if (!ks) throw new Error('No keyshare metadata');
         const useLegacyPath = isLegacyWallet(ks.created_at);
         const externalIndex = await getExternalIndex(
           network,
@@ -1599,8 +1592,8 @@ export class WalletService {
     dbg('WalletService: Address type changed to:', addressType);
     try {
       const state = await this.getStoredState();
-      const jks = await EncryptedStorage.getItem('keyshare');
-      const ks = JSON.parse(jks || '{}');
+      const ks = await getKeyshareMetadata();
+      if (!ks) throw new Error('No keyshare metadata');
       const useLegacyPath = isLegacyWallet(ks.created_at);
       const externalIndex = await getExternalIndex(state.network, addressType);
       const path = getReceivePath(
@@ -1762,8 +1755,8 @@ export class WalletService {
         _force,
       });
 
-      const jks = await EncryptedStorage.getItem('keyshare');
-      if (!jks) {
+      const _ksCheck = await getKeyshareMetadata();
+      if (!_ksCheck) {
         dbg('WalletService: No keyshare for aggregate balance');
         return {
           btc: '0.00000000',

@@ -1,7 +1,6 @@
 import React, {createContext, useContext, useState, useEffect} from 'react';
-import EncryptedStorage from 'react-native-encrypted-storage';
 import {NativeModules} from 'react-native';
-import {dbg, getReceivePath, isLegacyWallet} from '../utils';
+import {dbg, getReceivePath, isLegacyWallet, getKeyshareMetadata} from '../utils';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {getExternalIndex} from '../services/HdIndexService';
 const {BBMTLibNativeModule} = NativeModules;
@@ -34,12 +33,11 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
   const refreshWallet = async () => {
     try {
       dbg('WalletContext: Starting wallet refresh');
-      const jks = await EncryptedStorage.getItem('keyshare');
-      if (!jks) {
+      const ks = await getKeyshareMetadata();
+      if (!ks) {
         dbg('WalletContext: No keyshare found, skipping wallet refresh');
         return;
       }
-      const ks = JSON.parse(jks);
       let net = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
       if (!appConfigRepository.get(CONFIG_KEYS.NETWORK)) {
         appConfigRepository.set(CONFIG_KEYS.NETWORK, net);
@@ -100,8 +98,8 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
   };
   useEffect(() => {
     const initWallet = async () => {
-      const jks = await EncryptedStorage.getItem('keyshare');
-      if (!jks) {
+      const meta = await getKeyshareMetadata();
+      if (!meta) {
         dbg('WalletContext: No keyshare found, skipping initialization');
         return;
       }

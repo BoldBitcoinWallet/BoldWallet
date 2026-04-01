@@ -46,6 +46,7 @@ import {
   isLegacyWallet,
   decodeSendBitcoinQR,
   getResetToMainTabsWallet,
+  getKeyshareMetadata,
 } from '../utils';
 import {validate as validateBitcoinAddress} from 'bitcoin-address-validation';
 import {useTheme} from '../theme';
@@ -200,13 +201,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
   const proceedWithExtensionBind = useCallback(async (pairingCode: string) => {
     try {
-      const keyshareJSON = await EncryptedStorage.getItem('keyshare');
-      if (!keyshareJSON) {
+      const keyshare = await getKeyshareMetadata();
+      if (!keyshare) {
         extensionBindAlertShownRef.current = false;
         Alert.alert('Error', 'Keyshare not found.');
         return;
       }
-      const keyshare = JSON.parse(keyshareJSON);
       const pubKey = keyshare.pub_key || '';
       const chainCode = keyshare.chain_code_hex || '';
       if (!pubKey || !chainCode) {
@@ -721,8 +721,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setLoading(true);
       }
       try {
-        const jks = await EncryptedStorage.getItem('keyshare');
-        if (!jks) {
+        const ks = await getKeyshareMetadata();
+        if (!ks) {
           dbg('WalletHome: No keyshare found during re-initialization');
           setLoading(false);
           isInitializedRef.current = true;
@@ -746,7 +746,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         // Initialize WalletService
         const walletService = WalletService.getInstance();
         await walletService.initialize();
-        const ks = JSON.parse(jks);
         const currentAddressType =
           appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'segwit-native';
         const useLegacyPath = isLegacyWallet(ks.created_at);
@@ -1116,8 +1115,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         refreshFromDBRef.current();
 
         setLoading(true);
-        const jks = await EncryptedStorage.getItem('keyshare');
-        if (!jks) {
+        const ks = await getKeyshareMetadata();
+        if (!ks) {
           dbg('WalletHome: No keyshare found during initialization');
           setLoading(false);
           isInitializedRef.current = true;
@@ -1128,27 +1127,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         // Initialize WalletService only after confirming we have a keyshare
         const walletService = WalletService.getInstance();
         await walletService.initialize();
-        let ks: any = {};
-        try {
-          ks = JSON.parse(jks);
-        } catch (error) {
-          dbg('Error parsing keyshare:', error);
-          navigation.reset(
-            getResetToMainTabsWallet(
-              {},
-              {
-                showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
-                showUtxos: showUtxosTab,
-                showAddresses: showAddressesTab,
-                showPsbt: showPsbtTab,
-                showWallet: showWalletTab,
-              },
-            ),
-          );
-          return;
-        }
-        if (!ks.pub_key || !ks.chain_code_hex || !ks.local_party_key) {
-          dbg('Invalid pub_key or chain_code_hex or local_party_key');
+        if (!ks.pub_key || !ks.chain_code_hex) {
+          dbg('Error: keyshare metadata missing required fields');
           navigation.reset(
             getResetToMainTabsWallet(
               {},
@@ -1375,9 +1355,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       setIsSendModalVisible(false);
       // Check if keyshare supports Nostr (has nostr_npub)
       try {
-        const keyshareJSON = await EncryptedStorage.getItem('keyshare');
-        if (keyshareJSON) {
-          const keyshare = JSON.parse(keyshareJSON);
+        const keyshare = await getKeyshareMetadata();
+        if (keyshare) {
           const hasNostrSupport =
             keyshare.nostr_npub && keyshare.nostr_npub.trim() !== '';
           if (!hasNostrSupport) {
@@ -1517,9 +1496,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       let derivationPath = '';
       let fromAddress = '';
       try {
-        const keyshareJSON = await EncryptedStorage.getItem('keyshare');
-        if (keyshareJSON) {
-          const keyshare = JSON.parse(keyshareJSON);
+        const keyshare = await getKeyshareMetadata();
+        if (keyshare) {
           const useLegacyPath = isLegacyWallet(keyshare.created_at);
           const currentAddressType = addressType || 'segwit-native';
           const normalizedNetwork =
