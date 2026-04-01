@@ -8,10 +8,15 @@ import {
   Animated,
   Easing,
   Pressable,
+  Modal,
 } from 'react-native';
+import Toast from 'react-native-toast-message';
+import {dbg} from '../utils';
+import AppPressable from '../components/AppPressable';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import DeviceInfo from 'react-native-device-info';
 import {useTheme} from '../theme';
+import {waitMS} from '../services/WalletService';
 
 // Error boundary for particle animation - on old/slow devices rendering many Animated.Image can crash
 class ParticlesErrorBoundary extends React.Component<
@@ -40,10 +45,18 @@ const LoadingScreen = ({onRetry}: any) => {
   const {theme} = useTheme();
   const [loading, setLoading] = useState(false);
   const [particlesEnabled, setParticlesEnabled] = useState(true);
-  const [versionBuild, setVersionBuild] = useState<string>('');
+  const [version, setVersion] = useState<string>('');
+  const [buildNumber, setBuildNumber] = useState<string>('');
+  const [latestVersion, setLatestVersion] = useState<string | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
   useEffect(() => {
     Promise.all([DeviceInfo.getVersion(), DeviceInfo.getBuildNumber()]).then(
-      ([v, b]) => setVersionBuild(`v${v} • ${b}`),
+      ([v, b]) => {
+        setVersion(v);
+        setBuildNumber(String(b));
+      },
     );
   }, []);
   const fadeAnim = useRef(new Animated.Value(0.6)).current;
@@ -331,6 +344,95 @@ const LoadingScreen = ({onRetry}: any) => {
     loop.start();
     return () => loop.stop();
   }, [iconPulse, loading]);
+
+  const compareVersions = (a: string, b: string) => {
+    const norm = (v: string) =>
+      v
+        .replace(/^v/i, '')
+        .split('.')
+        .map(part => parseInt(part, 10) || 0);
+    const [a1, a2, a3] = norm(a);
+    const [b1, b2, b3] = norm(b);
+    if (a1 !== b1) {
+      return a1 - b1;
+    }
+    if (a2 !== b2) {
+      return a2 - b2;
+    }
+    return a3 - b3;
+  };
+
+  const checkForUpdate = async (silent: boolean) => {
+    if (checkingUpdate || !version) {
+      return;
+    }
+    try {
+      const effectiveVersion = __DEV__ ? '0.0.0' : version;
+      dbg('LoadingScreen: checking for update...', {version, effectiveVersion});
+      setCheckingUpdate(true);
+      await waitMS(1000);
+      const res = await fetch(
+        'https://api.github.com/repos/BoldBitcoinWallet/BoldWallet/releases/latest',
+        {
+          headers: {
+            Accept: 'application/vnd.github+json',
+          },
+        },
+      );
+      if (!res.ok) {
+        throw new Error(`status ${res.status}`);
+      }
+      const json = await res.json();
+      const tag =
+        typeof json?.tag_name === 'string' && json.tag_name.length > 0
+          ? json.tag_name
+          : null;
+      if (!tag) {
+        throw new Error('no tag_name');
+      }
+      setLatestVersion(tag);
+      const cmp = compareVersions(effectiveVersion, tag);
+      setUpdateAvailable(cmp < 0);
+      dbg('LoadingScreen: update check result', {
+        current: effectiveVersion,
+        latest: tag,
+        updateAvailable: cmp < 0,
+      });
+    } catch {
+      dbg('LoadingScreen: update check failed');
+      if (!silent) {
+        Toast.show({
+          type: 'error',
+          text1: 'Could not check for updates',
+          text2:
+            'Please check your internet connection and update from your original app store.',
+          position: 'top',
+        });
+      }
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
+  const handleVersionPress = () => {
+    if (updateAvailable && latestVersion) {
+      setShowUpdateModal(true);
+      return;
+    }
+    checkForUpdate(false);
+  };
+
+  const showVersionChip = !!version && !!buildNumber;
+
+  // Background check once the local version is known
+  useEffect(() => {
+    if (!version) {
+      return;
+    }
+    checkForUpdate(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [version]);
+
   const styles = StyleSheet.create({
     container: {
       flex: 1,
@@ -480,6 +582,110 @@ const LoadingScreen = ({onRetry}: any) => {
       flex: 1,
       backgroundColor: theme.colors.background,
     },
+    versionChip: {
+      marginTop: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 0,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: updateAvailable
+        ? theme.colors.accent
+        : theme.colors.border,
+      backgroundColor: theme.colors.cardBackground,
+      alignSelf: 'center',
+      width: 100,
+      height: 32,
+      justifyContent: 'center',
+    },
+    versionChipContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      justifyContent: 'center',
+      width: '100%',
+    },
+    versionChipLabel: {
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.textSecondary,
+    },
+    versionChipDot: {
+      width: 4,
+      height: 4,
+      borderRadius: 3,
+      backgroundColor: theme.colors.secondary,
+    },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 24,
+    },
+    modalContent: {
+      width: '100%',
+      maxWidth: 360,
+      borderRadius: 16,
+      paddingHorizontal: 20,
+      paddingTop: 18,
+      paddingBottom: 16,
+      backgroundColor: theme.colors.cardBackground,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    modalHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginBottom: 8,
+    },
+    modalHeaderTitle: {
+      fontSize: theme.fontSizes?.lg || 16,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text,
+    },
+    modalBodyText: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textSecondary,
+      lineHeight: 20,
+      marginTop: 4,
+      marginBottom: 16,
+    },
+    modalButtonsRow: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      gap: 12,
+      borderTopWidth: 1,
+      borderColor: theme.colors.border,
+      paddingTop: 16,
+    },
+    modalButton: {
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      borderRadius: 999,
+      minWidth: 96,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    modalSecondaryButton: {
+      backgroundColor: theme.colors.cardBackground,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    modalPrimaryButton: {
+      backgroundColor: theme.colors.primary,
+    },
+    modalSecondaryText: {
+      fontSize: theme.fontSizes?.sm || 13,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.text,
+    },
+    modalPrimaryText: {
+      fontSize: theme.fontSizes?.sm || 13,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.background,
+    },
   });
   // Use simple background color instead of gradient, especially in dark mode
   const isDarkMode = theme.colors.background !== '#ffffff';
@@ -598,10 +804,58 @@ const LoadingScreen = ({onRetry}: any) => {
               )}
             </Pressable>
           </Animated.View>
-          {versionBuild ? (
-            <Text style={styles.versionBuildText}>{versionBuild}</Text>
+          {showVersionChip ? (
+            <Pressable
+              onPress={handleVersionPress}
+              style={styles.versionChip}
+              accessibilityRole="button"
+              accessibilityLabel="Check for Bold Wallet updates"
+              hitSlop={8}>
+              {checkingUpdate ? (
+                <ActivityIndicator
+                  size="small"
+                  color={theme.colors.secondary}
+                />
+              ) : (
+                <View style={styles.versionChipContent}>
+                  <Text style={styles.versionChipLabel}>
+                    v{version} • {buildNumber}
+                  </Text>
+                </View>
+              )}
+            </Pressable>
           ) : null}
         </View>
+        <Modal
+          visible={showUpdateModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowUpdateModal(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeaderRow}>
+                <Image source={require('../assets/bold-icon.png')} style={styles.icon} resizeMode="contain" tintColor={theme.colors.secondary} />
+                <Text style={styles.modalHeaderTitle}>Update available</Text>
+              </View>
+              <Text style={styles.modalBodyText}>
+                New version ({latestVersion ?? 'latest'}) available.
+                {'\n\n'}
+                For best interoperability and stability, please update all your
+                devices from the same source you originally installed Bold from
+                (App Store, Play Store, F-Droid, or other stores).
+              </Text>
+              <View style={styles.modalButtonsRow}>
+                <AppPressable
+                  style={[styles.modalButton, styles.modalPrimaryButton]}
+                  onPress={() => {
+                    setShowUpdateModal(false);
+                  }}>
+                  <Text style={styles.modalPrimaryText}>Okay</Text>
+                </AppPressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     </SafeAreaView>
   );
