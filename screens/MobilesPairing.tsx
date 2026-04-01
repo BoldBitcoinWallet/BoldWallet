@@ -44,6 +44,7 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import Big from 'big.js';
 import {
   dbg,
+  explorerWebBaseFromApiUrl,
   getPinnedRemoteIPs,
   hexToString,
   getResetToMainTabsWallet,
@@ -51,6 +52,7 @@ import {
   saveKeyshareMetadata,
   getKeyshareMetadata,
 } from '../utils';
+import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {waitMS, WalletService} from '../services/WalletService';
@@ -382,11 +384,7 @@ const MobilesPairing = ({navigation}: any) => {
           }
         }
         // Fallback: fresh fetch (sender device, or QR has no utxosJson).
-        const apiUrl =
-          appConfigRepository.get(`api_${net}`) ||
-          (net === 'testnet3' || net === 'testnet'
-            ? 'https://mempool.space/testnet/api'
-            : 'https://mempool.space/api');
+        const apiUrl = resolveStoredMempoolApiBase(net);
         const [utxos, chgResult] = await Promise.all([
           WalletService.getInstance().fetchUtxosWithPaths(
             net,
@@ -770,13 +768,7 @@ const MobilesPairing = ({navigation}: any) => {
           net,
         );
         // Set network and API in BBMTLib for this transaction
-        let apiUrl = appConfigRepository.get(`api_${net}`);
-        if (!apiUrl) {
-          apiUrl =
-            net === 'testnet3' || net === 'testnet'
-              ? 'https://mempool.space/testnet/api'
-              : 'https://mempool.space/api';
-        }
+        const apiUrl = resolveStoredMempoolApiBase(net);
         await BBMTLibNativeModule.setBtcNetwork(net);
         await BBMTLibNativeModule.setAPI(net, apiUrl);
         dbg('MobilesPairing: Set network and API in BBMTLib:', net, apiUrl);
@@ -833,22 +825,9 @@ const MobilesPairing = ({navigation}: any) => {
         // Store original network/API
         originalNetwork =
           appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
-        const cachedApi = appConfigRepository.get(`api_${originalNetwork}`);
-        originalApiUrl = cachedApi || '';
-        if (!originalApiUrl) {
-          originalApiUrl =
-            originalNetwork === 'testnet3' || originalNetwork === 'testnet'
-              ? 'https://mempool.space/testnet/api'
-              : 'https://mempool.space/api';
-        }
+        originalApiUrl = resolveStoredMempoolApiBase(originalNetwork);
         // Set network and API in BBMTLib for this transaction
-        let apiUrl = appConfigRepository.get(`api_${net}`);
-        if (!apiUrl) {
-          apiUrl =
-            net === 'testnet3' || net === 'testnet'
-              ? 'https://mempool.space/testnet/api'
-              : 'https://mempool.space/api';
-        }
+        const apiUrl = resolveStoredMempoolApiBase(net);
         await BBMTLibNativeModule.setBtcNetwork(net);
         await BBMTLibNativeModule.setAPI(net, apiUrl);
         // CRITICAL: Update LocalCache 'api' key so any balance/UTXO fetches use correct API
@@ -860,14 +839,7 @@ const MobilesPairing = ({navigation}: any) => {
       if (isSignPSBT) {
         originalNetwork =
           appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
-        const cachedApi = appConfigRepository.get(`api_${originalNetwork}`);
-        originalApiUrl = cachedApi || '';
-        if (!originalApiUrl) {
-          originalApiUrl =
-            originalNetwork === 'testnet3' || originalNetwork === 'testnet'
-              ? 'https://mempool.space/testnet/api'
-              : 'https://mempool.space/api';
-        }
+        originalApiUrl = resolveStoredMempoolApiBase(originalNetwork);
       }
       const partyID = _ksMeta?.local_party_key || '';
       const allParties = [partyID];
@@ -985,11 +957,7 @@ const MobilesPairing = ({navigation}: any) => {
           throw 'Make sure you\'re sending the "Same Bitcoin" amount from Both Devices';
         }
 
-        const apiUrl =
-          appConfigRepository.get(`api_${net}`) ||
-          (net === 'testnet3' || net === 'testnet'
-            ? 'https://mempool.space/testnet/api'
-            : 'https://mempool.space/api');
+        const apiUrl = resolveStoredMempoolApiBase(net);
 
         let usedMultiPath = false;
         try {
@@ -4252,9 +4220,18 @@ const MobilesPairing = ({navigation}: any) => {
                         const net = route.params?.network || '';
                         const isTestnet =
                           net === 'testnet3' || net === 'testnet';
-                        const explorerBase = isTestnet
-                          ? 'https://mempool.space/testnet'
-                          : 'https://mempool.space';
+                        const netForApi = isTestnet
+                          ? 'testnet3'
+                          : net === 'mainnet'
+                            ? 'mainnet'
+                            : net || 'mainnet';
+                        const explorerBase =
+                          explorerWebBaseFromApiUrl(
+                            resolveStoredMempoolApiBase(netForApi),
+                          ) ||
+                          (isTestnet
+                            ? 'https://mempool.space/testnet'
+                            : 'https://mempool.space');
                         const sectionTitle = {
                           fontSize: theme.fontSizes?.xs || 10,
                           fontFamily: theme.fontFamilies?.bold,

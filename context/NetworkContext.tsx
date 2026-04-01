@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
+import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import { BBMTLibNativeModule } from '../native_modules';
 import {dbg, getMainnetAPIList, getTestnetAPIList} from '../utils';
 interface NetworkContextType {
@@ -40,12 +41,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         appConfigRepository.set(`api_${network}`, apiBase);
       }
       appConfigRepository.set(CONFIG_KEYS.NETWORK, newNetwork);
-      let api = appConfigRepository.get(`api_${newNetwork}`);
-      if (!api) {
-        api = newNetwork === 'testnet3'
-          ? 'https://mempool.space/testnet/api'
-          : 'https://mempool.space/api';
-      }
+      const api = resolveStoredMempoolApiBase(newNetwork);
       appConfigRepository.set(`api_${newNetwork}`, api);
       appConfigRepository.set('api', api);
       setNetwork(newNetwork);
@@ -80,9 +76,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setNetwork(net);
         let api = appConfigRepository.get(`api_${net}`) || appConfigRepository.get('api');
         if (!api) {
-          api = net === 'testnet3'
-            ? 'https://mempool.space/testnet/api'
-            : 'https://mempool.space/api';
+          api = resolveStoredMempoolApiBase(net);
           appConfigRepository.set('api', api);
           appConfigRepository.set(`api_${net}`, api);
         }

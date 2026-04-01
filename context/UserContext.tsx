@@ -8,6 +8,7 @@ import React, {
 } from 'react';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
+import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {BBMTLibNativeModule} from '../native_modules';
 import {getReceivePath, isLegacyWallet, dbg, getKeyshareMetadata} from '../utils';
 import {getExternalIndex} from '../services/HdIndexService';
@@ -382,13 +383,7 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
           appConfigRepository.set(`api_${network}`, apiBase);
         }
         appConfigRepository.set(CONFIG_KEYS.NETWORK, newNetwork);
-        let nextApi = appConfigRepository.get(`api_${newNetwork}`);
-        if (!nextApi) {
-          nextApi =
-            newNetwork === 'testnet3'
-              ? 'https://mempool.space/testnet/api'
-              : 'https://mempool.space/api';
-        }
+        const nextApi = resolveStoredMempoolApiBase(newNetwork);
         appConfigRepository.set(`api_${newNetwork}`, nextApi);
         appConfigRepository.set('api', nextApi);
         setNetwork(newNetwork);

@@ -30,6 +30,10 @@ import apiQueue from '../services/ApiQueue';
 import appConfigRepository, {
   CONFIG_KEYS,
 } from '../services/repositories/AppConfigRepository';
+import {
+  isKnownPublicMempoolMainnetBase,
+  resolveStoredMempoolApiBase,
+} from '../services/mempoolApiBase';
 
 const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const route = useRoute();
@@ -111,7 +115,7 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const saveAPIAndProceed = async (api: string) => {
     // If no API entered, just proceed
     if (!api || api.trim() === '') {
-      handleProceed();
+      await handleProceed();
       return;
     }
 
@@ -133,7 +137,8 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
       dbg('=== API saved and propagated successfully:', normalizedApi);
       // Proceed to home after successful save — pass the resolved API so the
       // restore uses the endpoint the user just configured, not the stale state.
-      handleProceed(normalizedApi);
+      const useRR = await isKnownPublicMempoolMainnetBase(normalizedApi);
+      await handleProceed(normalizedApi, useRR);
     } catch (error) {
       dbg('Error in saveAPIAndProceed:', error);
       Alert.alert('Error', 'Failed to save API endpoint. Please try again.');
@@ -201,10 +206,13 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
     try {
       const ws = WalletService.getInstance();
 
-      // Round-robin only when Skip (no custom base): seed public hosts so first request uses next host.
+      // Round-robin: only seed the public mirror pool when restoring via that pool.
+      // Private / self-hosted bases must clear the pool so MempoolClient never fails over off-host.
       if (useRoundRobin) {
         const publicBases = await getMainnetAPIList();
         mempoolClient.setPublicBases(publicBases);
+      } else {
+        mempoolClient.setPublicBases([]);
       }
 
       // ── Discovery: gap-limit scan for native segwit only ──────────────────
@@ -290,9 +298,12 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
   };
 
   const handleSkip = async () => {
-    const fallbackApi = activeApiProvider || 'https://mempool.space/api';
+    const fallbackApi =
+      activeApiProvider || resolveStoredMempoolApiBase(activeNetwork);
     try {
-      await runRestoreIfNeeded(fallbackApi, true); // no custom base → round-robin applicable
+      const useRoundRobin =
+        await isKnownPublicMempoolMainnetBase(fallbackApi);
+      await runRestoreIfNeeded(fallbackApi, useRoundRobin);
       navigateToHome();
     } catch (e) {
       Alert.alert(
@@ -304,12 +315,22 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
     }
   };
 
-  const handleProceed = async (resolvedApi?: string) => {
+  /**
+   * @param useRoundRobin - When true, seed public mirror list for MempoolClient failover (public pool only).
+   */
+  const handleProceed = async (
+    resolvedApi?: string,
+    useRoundRobin?: boolean,
+  ) => {
     try {
-      await runRestoreIfNeeded(
-        resolvedApi || activeApiProvider || 'https://mempool.space/api',
-        false, // custom or validated base → no round-robin
-      );
+      const apiUrl =
+        resolvedApi ||
+        activeApiProvider ||
+        resolveStoredMempoolApiBase(activeNetwork);
+      const rr =
+        useRoundRobin ??
+        (await isKnownPublicMempoolMainnetBase(apiUrl));
+      await runRestoreIfNeeded(apiUrl, rr);
       navigateToHome();
     } catch (e) {
       Alert.alert(

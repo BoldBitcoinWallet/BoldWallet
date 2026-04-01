@@ -37,6 +37,7 @@ import ExtensionPairingModal from '../components/ExtensionPairingModal';
 import AppText from '../components/AppText';
 import {
   dbg,
+  explorerWebBaseFromApiUrl,
   presentFiat,
   formatBitcoinDisplay,
   getCurrencySymbol,
@@ -48,6 +49,7 @@ import {
   getResetToMainTabsWallet,
   getKeyshareMetadata,
 } from '../utils';
+import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {validate as validateBitcoinAddress} from 'bitcoin-address-validation';
 import {useTheme} from '../theme';
 import {
@@ -305,6 +307,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     showWalletTab,
     refresh: refreshUserContext,
   } = useUser();
+  const resolvedWalletApi = useMemo(
+    () => apiBase || resolveStoredMempoolApiBase(network),
+    [apiBase, network],
+  );
   // Keep local state in sync with UserContext
   useEffect(() => {
     if (userAddressType) {
@@ -474,7 +480,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     setIsRefreshing(true);
     setIsBalanceLoading(true);
 
-    const baseApi = apiBase || appConfigRepository.get('api');
+    const baseApi = apiBase || resolveStoredMempoolApiBase(network);
     if (!baseApi || !network) {
       refreshFromDBRef.current();
       isFetchInProgressRef.current = false;
@@ -601,11 +607,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             effectiveType,
             '- running discovery',
           );
-          const apiUrl =
-            appConfigRepository.get('api') ||
-            (network === 'mainnet'
-              ? 'https://mempool.space/api'
-              : 'https://mempool.space/testnet/api');
+          const apiUrl = resolveStoredMempoolApiBase(network);
           await ws.discoverHdIndexesForNetwork(network, effectiveType, apiUrl);
         }
         if (cancelled) return;
@@ -638,7 +640,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         userActiveAddress ||
         address ||
         appConfigRepository.get(CONFIG_KEYS.CURRENT_ADDRESS);
-      const baseApi = apiBase || appConfigRepository.get('api');
+      const baseApi = apiBase || resolveStoredMempoolApiBase(network);
       if (!addr || !baseApi) {
         dbg('checkBalanceForSend: Missing wallet address or baseApi');
         return 0;
@@ -841,7 +843,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           } catch {}
         }
         // Set up API URL from NetworkContext
-        const api = apiBase || appConfigRepository.get('api');
+        const api = apiBase || resolveStoredMempoolApiBase(network);
         if (api) {
           await BBMTLibNativeModule.setAPI(actualNet, api);
           dbg('API set for network:', actualNet, 'API:', api);
@@ -871,13 +873,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('[WalletHome] Focus - skipping, init effect in progress');
         return;
       }
-      if (!network || !apiBase) {
+      if (!network) {
         return;
       }
       dbg('[WalletHome] === Navigation focus - reinitializing wallet', {
         timestamp: Date.now(),
         network,
-        apiBase,
+        apiBase: apiBase || resolveStoredMempoolApiBase(network),
       });
       await reinitializeWallet(true);
     });
@@ -891,8 +893,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       if (
         nextAppState === 'active' &&
         isInitializedRef.current &&
-        network &&
-        apiBase
+        network
       ) {
         dbg('[WalletHome] === App resumed, scheduling fetchData');
         fetchDataRef.current?.();
@@ -966,8 +967,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     [btcPrice, selectedCurrency],
   );
   const headerTitle = React.useCallback(
-    () => <HeaderProvider apiBase={apiBase} />,
-    [apiBase],
+    () => <HeaderProvider apiBase={resolvedWalletApi} />,
+    [resolvedWalletApi],
   );
   const headerRight = React.useCallback(
     () => (
@@ -1041,9 +1042,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   // Check for txId in route params and show success alert with explorer link
   useEffect(() => {
     const txId = route.params?.txId;
-    if (txId && apiBase) {
-      // Construct explorer URL (same pattern as TransactionDetailsModal)
-      const baseUrl = apiBase.replace(/\/+$/, '').replace(/\/api\/?$/, '');
+    if (txId && network) {
+      const baseUrl = explorerWebBaseFromApiUrl(
+        apiBase || resolveStoredMempoolApiBase(network),
+      );
       const explorerLink = `${baseUrl}/tx/${txId}`;
       // Show alert with Cancel/Close and Explore buttons
       Alert.alert(
@@ -1076,7 +1078,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         {cancelable: false},
       );
     }
-  }, [route.params?.txId, apiBase, navigation]);
+  }, [route.params?.txId, apiBase, network, navigation]);
   // Check for signedPsbt in route params and show modal
   useEffect(() => {
     const signedPsbtParam = route.params?.signedPsbt;
@@ -1291,15 +1293,16 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   // Start background sync once the full HD address set is known.
   // SyncCoordinator writes deltas to SQLite; the UI reads from the DB.
   useEffect(() => {
-    if (!walletAddressesReady || !apiBase || !network) {
+    if (!walletAddressesReady || !network) {
       return;
     }
+    const resolvedApi = apiBase || resolveStoredMempoolApiBase(network);
     const addrs =
       walletAddresses.length > 0 ? walletAddresses : address ? [address] : [];
     if (addrs.length === 0) {
       return;
     }
-    const cleanApi = apiBase.replace(/\/+$/, '').replace(/\/api\/?$/, '');
+    const cleanApi = resolvedApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
     const effectiveAddrType = addressType || userAddressType || 'segwit-native';
     syncCoordinator.start({
       addresses: addrs.map(a => ({address: a, network})),
@@ -2144,10 +2147,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   const ws = WalletService.getInstance();
                   const effectiveAddressType = addressType || 'segwit-native';
                   const apiUrl =
-                    apiBase ||
-                    (network === 'mainnet'
-                      ? 'https://mempool.space/api'
-                      : 'https://mempool.space/testnet/api');
+                    apiBase || resolveStoredMempoolApiBase(network);
                   const restoreDone =
                     walletRepository.getHdState(network, effectiveAddressType)
                       ?.restoreDone === true;
@@ -2260,11 +2260,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   const effectiveType =
                     addressType || userAddressType || 'segwit-native';
                   const api =
-                    apiBase ||
-                    appConfigRepository.get('api') ||
-                    (network === 'mainnet'
-                      ? 'https://mempool.space/api'
-                      : 'https://mempool.space/testnet/api');
+                    apiBase || resolveStoredMempoolApiBase(network);
                   setIsRefreshing(true);
                   try {
                     dbg(
@@ -2318,7 +2314,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       <View style={styles.transactionListContainer}>
         <TransactionList
           ref={transactionListRef}
-          baseApi={apiBase}
+          baseApi={resolvedWalletApi}
           address={
             walletAddressesReady && walletAddresses.length === 0
               ? address
@@ -2469,7 +2465,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         <ReceiveModal
           address={receivePathInfo?.address ?? address}
           addressType={addressType}
-          baseApi={apiBase}
+          baseApi={resolvedWalletApi}
           network={network as 'mainnet' | 'testnet'}
           onClose={() => {
             setIsReceiveModalVisible(false);

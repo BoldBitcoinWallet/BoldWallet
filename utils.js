@@ -714,6 +714,27 @@ export const HapticFeedback = {
   },
 };
 
+/**
+ * Block explorer web UI base from a mempool REST API base (no wallet queries — links only).
+ * e.g. https://mempool.space/testnet/api -> https://mempool.space/testnet
+ */
+export const explorerWebBaseFromApiUrl = apiUrl => {
+  if (!apiUrl || typeof apiUrl !== 'string') {
+    return '';
+  }
+  let s = apiUrl.trim().replace(/\/+$/, '');
+  if (/\/signet\/api\/?$/i.test(s)) {
+    return s.replace(/\/signet\/api\/?$/i, '/signet');
+  }
+  if (/\/testnet\/api\/?$/i.test(s)) {
+    return s.replace(/\/testnet\/api\/?$/i, '/testnet');
+  }
+  if (/\/api\/?$/i.test(s)) {
+    return s.replace(/\/api\/?$/i, '') || s;
+  }
+  return s;
+};
+
 // API Endpoints Configuration
 const MAINNET_APIS = ['https://mempool.space/api'];
 const TESTNET_APIS = ['https://mempool.space/testnet/api'];

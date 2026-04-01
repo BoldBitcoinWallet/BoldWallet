@@ -12,7 +12,7 @@ import AppPressable from './AppPressable';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import moment from 'moment';
-import {dbg, formatBitcoinDisplay} from '../utils';
+import {dbg, explorerWebBaseFromApiUrl, formatBitcoinDisplay} from '../utils';
 interface TransactionDetailsModalProps {
   visible: boolean;
   onClose: () => void;
@@ -56,7 +56,9 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   const [currentBlockHeight, setCurrentBlockHeight] = React.useState<
     number | null
   >(null);
-  const baseUrl = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
+  const baseUrl =
+    explorerWebBaseFromApiUrl(baseApi) ||
+    baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
   const explorerLink = transaction ? `${baseUrl}/tx/${transaction.txid}` : '';
   // Fetch current block height to calculate confirmations
   React.useEffect(() => {

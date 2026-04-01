@@ -40,12 +40,14 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import Big from 'big.js';
 import {
   dbg,
+  explorerWebBaseFromApiUrl,
   HapticFeedback,
   getNostrRelays,
   getResetToMainTabsWallet,
   shortenAddress,
   saveKeyshareMetadata,
 } from '../utils';
+import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import appConfigRepository, {
@@ -362,11 +364,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           }
         }
         // Fallback: fresh fetch (sender device, or QR has no utxosJson).
-        const apiUrl =
-          appConfigRepository.get(`api_${net}`) ||
-          (net === 'testnet3' || net === 'testnet'
-            ? 'https://mempool.space/testnet/api'
-            : 'https://mempool.space/api');
+        const apiUrl = resolveStoredMempoolApiBase(net);
         const [utxos, chgResult] = await Promise.all([
           WalletService.getInstance().fetchUtxosWithPaths(
             net,
@@ -1510,23 +1508,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       // Store original network/API
       originalNetwork =
         appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
-      const cachedApi = appConfigRepository.get(`api_${originalNetwork}`);
-      originalApiUrl = cachedApi || '';
-      if (!originalApiUrl) {
-        originalApiUrl =
-          originalNetwork === 'testnet3' || originalNetwork === 'testnet'
-            ? 'https://mempool.space/testnet/api'
-            : 'https://mempool.space/api';
-      }
+      originalApiUrl = resolveStoredMempoolApiBase(originalNetwork);
       // Set network and API in BBMTLib for this transaction
       // Use normalized network (native format) for API lookup and BBMTLib
-      let apiUrl = appConfigRepository.get(`api_${net}`);
-      if (!apiUrl) {
-        apiUrl =
-          net === 'testnet3' || net === 'testnet'
-            ? 'https://mempool.space/testnet/api'
-            : 'https://mempool.space/api';
-      }
+      const apiUrl = resolveStoredMempoolApiBase(net);
       await BBMTLibNativeModule.setBtcNetwork(net);
       await BBMTLibNativeModule.setAPI(net, apiUrl);
       // CRITICAL: Update LocalCache 'api' key so WalletService.getWalletBalance uses correct API
@@ -5489,9 +5474,18 @@ const MobileNostrPairing = ({navigation}: any) => {
                           const net = route.params?.network || '';
                           const isTestnet =
                             net === 'testnet3' || net === 'testnet';
-                          const explorerBase = isTestnet
-                            ? 'https://mempool.space/testnet'
-                            : 'https://mempool.space';
+                          const netForApi = isTestnet
+                            ? 'testnet3'
+                            : net === 'mainnet'
+                              ? 'mainnet'
+                              : net || 'mainnet';
+                          const explorerBase =
+                            explorerWebBaseFromApiUrl(
+                              resolveStoredMempoolApiBase(netForApi),
+                            ) ||
+                            (isTestnet
+                              ? 'https://mempool.space/testnet'
+                              : 'https://mempool.space');
                           const sectionTitle = {
                             fontSize: theme.fontSizes?.xs || 10,
                             fontFamily: theme.fontFamilies?.bold,
