@@ -1,5 +1,35 @@
 # Changelog
 
+## [3.0.7] - 2026-04-01
+
+### Added
+- **Update awareness on the loading screen** — checks GitHub `BoldWallet` releases for a newer tag than the installed app, with a version/build chip, optional update modal, and a quiet background check once the local version is known (manual check can still drive UI feedback).
+- **Mempool REST base validation** — saving a custom Mempool API URL now probes `/blocks/tip/hash` (with timeout) so broken or mis-typed endpoints are caught before they are stored.
+- **`mempoolApiBase` helpers** — shared normalization (`/api` suffix), canonical testnet base, `resolveStoredMempoolApiBase()` for wallet traffic, validation that testnet is not accidentally pointed at mainnet’s default host, and helpers to classify public mainnet mirror hosts vs private endpoints for failover behavior.
+- **Non-secret keyshare metadata** — `saveKeyshareMetadata` / `getKeyshareMetadata` persist and read only public fields (committee keys, npub, paths metadata, etc.) via EncryptedStorage + SQLite mirror, so routine wallet logic avoids parsing the full MPC blob.
+- **Native `getKeyshareNostrPrepJSON`** — minimal JSON for Nostr session/UI prep with the full keyshare read only inside native code.
+- **`mpcSignPSBT` (server/MPC path)** — PSBT signing with keyshare loaded from secure storage on the native side, consistent with other MPC entry points.
+- **`aesEncryptStoredKeyshare`** — encrypt using the keyshare loaded from RNES-compatible storage without passing plaintext through JS.
+- **`transactionListUtils`** — pure helpers for mempool transaction sorting and amount breakdowns, with unit tests (`__tests__/transactionListUtils.test.ts`).
+- **`types/keyshare.d.ts`** — `KeyshareMetadata` interface aligned with the metadata layer.
+
+### Changed
+- **MPC signing and sends: keyshare stays in native secure storage** — `mpcSendBTCWithUTXOs`, `nostrMpcSendBTC`, and `nostrMpcSignPSBT` no longer accept keyshare or `partyNsec` from JavaScript; iOS/Android read the blob from the same Keychain/Keystore layout as `react-native-encrypted-storage`. Legacy bridge APIs that passed full keyshare strings from JS were removed (`mpcSendBTC`, `nostrMpcSendBTCWithUTXOs` with JS keyshare).
+- **`nostrMpcSendBTC`** — UTXO multi-path only; native loads `nsec` and signing material from stored keyshare.
+- **Wallet and contexts use metadata first** — `WalletService`, `WalletHome`, `UserContext`, `WalletContext`, and pairing flows use `getKeyshareMetadata()` where a full secret parse is unnecessary; pairing screens call `saveKeyshareMetadata` when the full document is saved.
+- **Mempool client configuration** — `WalletService` and related screens use `resolveStoredMempoolApiBase` and the new validation helpers for consistent API root selection and user feedback when editing endpoints.
+
+### Fixed / hardening
+- **iOS native keyshare handling** — staging buffers for bridge-supplied key material are zeroed where possible; improved recovery when JSON is huge or partially unparsable but `nsec` can still be extracted (e.g. regex fallback), with diagnostics for Nostr prep.
+- **Loading screen particle animation** — `ParticlesErrorBoundary` disables heavy animation if rendering fails on low-end devices.
+
+### Technical Details
+- **Version**: `package.json` 3.0.7; Android `versionCode` 57 / `versionName` 3.0.7; iOS build 57 / `MARKETING_VERSION` 3.0.7.
+- **New files**: `services/mempoolApiBase.ts`, `utils/transactionListUtils.ts`, `types/keyshare.d.ts`, `__tests__/transactionListUtils.test.ts`.
+- **Modified files** (selection): `App.tsx`, `android/.../BBMTLibNativeModule.kt`, `ios/BBMTLibNativeModule.swift`, `ios/BBMTLibNativeModule.m`, `components/TransactionList.tsx`, `screens/LoadingScreen.tsx`, `screens/MobileNostrPairing.tsx`, `screens/MobilesPairing.tsx`, `screens/UserPreferenceScreen.tsx`, `screens/WalletSettings.tsx`, `screens/WalletHome.tsx`, `services/WalletService.ts`, `services/MempoolClient.ts`, `utils.js`, `context/UserContext.tsx`, `context/WalletContext.tsx`, `context/NetworkContext.tsx`.
+
+---
+
 ## [3.0.6] - 2026-03-26
 
 ### Added
