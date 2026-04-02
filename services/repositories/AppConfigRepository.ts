@@ -34,6 +34,10 @@ export const CONFIG_KEYS = {
    * Written whenever the full keyshare is saved; `getKeyshareMetadata` uses Encrypted first, then this fallback.
    */
   KEYSHARE_META_JSON: 'keyshare_meta_json',
+  /**
+   * JSON: `{ "quotes": string[], "fetchedAt": number }` — cached lines from remote QUOTES.md for LoadingScreen ticker.
+   */
+  LOADING_QUOTES_JSON: 'loading_quotes_json',
 } as const;
 
 export type ConfigKey = (typeof CONFIG_KEYS)[keyof typeof CONFIG_KEYS];

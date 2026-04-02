@@ -238,20 +238,7 @@ RCT_EXTERN_METHOD(nostrMpcSendBTC:(NSString *)relaysCSV
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
-// MPC Sign PSBT (server-based transport)
-// Derivation paths and public keys are extracted from the PSBT itself
-RCT_EXTERN_METHOD(mpcSignPSBT:(NSString *)server
-                  partyID:(NSString *)partyID
-                  partiesCSV:(NSString *)partiesCSV
-                  sessionID:(NSString *)sessionID
-                  sessionKey:(NSString *)sessionKey
-                  encKey:(NSString *)encKey
-                  decKey:(NSString *)decKey
-                  keyshare:(NSString *)keyshare
-                  psbtBase64:(NSString *)psbtBase64
-                  resolver:(RCTPromiseResolveBlock)resolve
-                  rejecter:(RCTPromiseRejectBlock)reject)
-
+// MPC Sign PSBT (server-based transport); keyshare from native secure storage (RNES)
 RCT_EXTERN_METHOD(mpcSignPSBT:(NSString *)server
                   partyID:(NSString *)partyID
                   partiesCSV:(NSString *)partiesCSV

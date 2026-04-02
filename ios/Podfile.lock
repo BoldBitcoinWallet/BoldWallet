@@ -1991,6 +1991,34 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
+  - react-native-webview (13.16.1):
+    - boost
+    - DoubleConversion
+    - fast_float
+    - fmt
+    - glog
+    - hermes-engine
+    - RCT-Folly
+    - RCT-Folly/Fabric
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - SocketRocket
+    - Yoga
   - react-native-zeroconf (0.13.8):
     - React-Core
   - React-NativeModulesApple (0.82.1):
@@ -3005,6 +3033,7 @@ DEPENDENCIES:
   - react-native-get-random-values (from `../node_modules/react-native-get-random-values`)
   - "react-native-netinfo (from `../node_modules/@react-native-community/netinfo`)"
   - react-native-safe-area-context (from `../node_modules/react-native-safe-area-context`)
+  - react-native-webview (from `../node_modules/react-native-webview`)
   - react-native-zeroconf (from `../node_modules/react-native-zeroconf`)
   - React-NativeModulesApple (from `../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)
   - React-oscompat (from `../node_modules/react-native/ReactCommon/oscompat`)
@@ -3157,6 +3186,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/@react-native-community/netinfo"
   react-native-safe-area-context:
     :path: "../node_modules/react-native-safe-area-context"
+  react-native-webview:
+    :path: "../node_modules/react-native-webview"
   react-native-zeroconf:
     :path: "../node_modules/react-native-zeroconf"
   React-NativeModulesApple:
@@ -3299,6 +3330,7 @@ SPEC CHECKSUMS:
   react-native-get-random-values: 9856c21cab42a6d8db71dcb35c3059fdaeac2b16
   react-native-netinfo: f0a9899081c185db1de5bb2fdc1c88c202a059ac
   react-native-safe-area-context: 6d8a7b750e496e37bda47c938320bf2c734d441f
+  react-native-webview: 278eeb4df23d6202b559ceb21bd4088dbde30090
   react-native-zeroconf: 5b38b434ccc6ca245c8a5ffd64a4501e67f9edcb
   React-NativeModulesApple: c4bee6aa736092cd347456488a4f97a8e7517604
   React-oscompat: 95875e81f5d4b3c7b2c888d5bd2c9d83450d8bdb
