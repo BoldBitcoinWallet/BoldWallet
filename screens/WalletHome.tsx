@@ -37,6 +37,7 @@ import ExtensionPairingModal from '../components/ExtensionPairingModal';
 import AppText from '../components/AppText';
 import {
   dbg,
+  explorerWebBaseFromApiUrl,
   presentFiat,
   formatBitcoinDisplay,
   getCurrencySymbol,
@@ -46,7 +47,9 @@ import {
   isLegacyWallet,
   decodeSendBitcoinQR,
   getResetToMainTabsWallet,
+  getKeyshareMetadata,
 } from '../utils';
+import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {validate as validateBitcoinAddress} from 'bitcoin-address-validation';
 import {useTheme} from '../theme';
 import {
@@ -200,13 +203,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
   const proceedWithExtensionBind = useCallback(async (pairingCode: string) => {
     try {
-      const keyshareJSON = await EncryptedStorage.getItem('keyshare');
-      if (!keyshareJSON) {
+      const keyshare = await getKeyshareMetadata();
+      if (!keyshare) {
         extensionBindAlertShownRef.current = false;
         Alert.alert('Error', 'Keyshare not found.');
         return;
       }
-      const keyshare = JSON.parse(keyshareJSON);
       const pubKey = keyshare.pub_key || '';
       const chainCode = keyshare.chain_code_hex || '';
       if (!pubKey || !chainCode) {
@@ -305,6 +307,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     showWalletTab,
     refresh: refreshUserContext,
   } = useUser();
+  // Always read from app config (not `apiBase || …`) so testnet never sticks to a stale mainnet URL.
+  const resolvedWalletApi = resolveStoredMempoolApiBase(network);
   // Keep local state in sync with UserContext
   useEffect(() => {
     if (userAddressType) {
@@ -474,7 +478,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     setIsRefreshing(true);
     setIsBalanceLoading(true);
 
-    const baseApi = apiBase || appConfigRepository.get('api');
+    const baseApi = resolveStoredMempoolApiBase(network);
     if (!baseApi || !network) {
       refreshFromDBRef.current();
       isFetchInProgressRef.current = false;
@@ -559,7 +563,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     setIsRefreshing(false);
     isFetchInProgressRef.current = false;
     dbg('=== Data fetch completed');
-  }, [network, btcRate, _pendingSent, apiBase, addressType, userAddressType]);
+  }, [network, btcRate, _pendingSent, addressType, userAddressType]);
 
   // Clear temporary sync error message after 4s so bar returns to normal
   useEffect(() => {
@@ -601,11 +605,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             effectiveType,
             '- running discovery',
           );
-          const apiUrl =
-            appConfigRepository.get('api') ||
-            (network === 'mainnet'
-              ? 'https://mempool.space/api'
-              : 'https://mempool.space/testnet/api');
+          const apiUrl = resolveStoredMempoolApiBase(network);
           await ws.discoverHdIndexesForNetwork(network, effectiveType, apiUrl);
         }
         if (cancelled) return;
@@ -638,7 +638,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         userActiveAddress ||
         address ||
         appConfigRepository.get(CONFIG_KEYS.CURRENT_ADDRESS);
-      const baseApi = apiBase || appConfigRepository.get('api');
+      const baseApi = resolveStoredMempoolApiBase(network);
       if (!addr || !baseApi) {
         dbg('checkBalanceForSend: Missing wallet address or baseApi');
         return 0;
@@ -688,7 +688,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   }, [
     userActiveAddress,
     address,
-    apiBase,
     network,
     btcRate,
     _pendingSent,
@@ -721,8 +720,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setLoading(true);
       }
       try {
-        const jks = await EncryptedStorage.getItem('keyshare');
-        if (!jks) {
+        const ks = await getKeyshareMetadata();
+        if (!ks) {
           dbg('WalletHome: No keyshare found during re-initialization');
           setLoading(false);
           isInitializedRef.current = true;
@@ -746,7 +745,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         // Initialize WalletService
         const walletService = WalletService.getInstance();
         await walletService.initialize();
-        const ks = JSON.parse(jks);
         const currentAddressType =
           appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'segwit-native';
         const useLegacyPath = isLegacyWallet(ks.created_at);
@@ -842,7 +840,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           } catch {}
         }
         // Set up API URL from NetworkContext
-        const api = apiBase || appConfigRepository.get('api');
+        const api = resolveStoredMempoolApiBase(network);
         if (api) {
           await BBMTLibNativeModule.setAPI(actualNet, api);
           dbg('API set for network:', actualNet, 'API:', api);
@@ -872,13 +870,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('[WalletHome] Focus - skipping, init effect in progress');
         return;
       }
-      if (!network || !apiBase) {
+      if (!network) {
         return;
       }
       dbg('[WalletHome] === Navigation focus - reinitializing wallet', {
         timestamp: Date.now(),
         network,
-        apiBase,
+        apiBase: resolveStoredMempoolApiBase(network),
       });
       await reinitializeWallet(true);
     });
@@ -892,8 +890,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       if (
         nextAppState === 'active' &&
         isInitializedRef.current &&
-        network &&
-        apiBase
+        network
       ) {
         dbg('[WalletHome] === App resumed, scheduling fetchData');
         fetchDataRef.current?.();
@@ -967,8 +964,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     [btcPrice, selectedCurrency],
   );
   const headerTitle = React.useCallback(
-    () => <HeaderProvider apiBase={apiBase} />,
-    [apiBase],
+    () => <HeaderProvider apiBase={resolvedWalletApi} />,
+    [resolvedWalletApi],
   );
   const headerRight = React.useCallback(
     () => (
@@ -1042,9 +1039,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   // Check for txId in route params and show success alert with explorer link
   useEffect(() => {
     const txId = route.params?.txId;
-    if (txId && apiBase) {
-      // Construct explorer URL (same pattern as TransactionDetailsModal)
-      const baseUrl = apiBase.replace(/\/+$/, '').replace(/\/api\/?$/, '');
+    if (txId && network) {
+      const baseUrl = explorerWebBaseFromApiUrl(
+        resolveStoredMempoolApiBase(network),
+      );
       const explorerLink = `${baseUrl}/tx/${txId}`;
       // Show alert with Cancel/Close and Explore buttons
       Alert.alert(
@@ -1077,7 +1075,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         {cancelable: false},
       );
     }
-  }, [route.params?.txId, apiBase, navigation]);
+  }, [route.params?.txId, apiBase, network, navigation]);
   // Check for signedPsbt in route params and show modal
   useEffect(() => {
     const signedPsbtParam = route.params?.signedPsbt;
@@ -1116,8 +1114,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         refreshFromDBRef.current();
 
         setLoading(true);
-        const jks = await EncryptedStorage.getItem('keyshare');
-        if (!jks) {
+        const ks = await getKeyshareMetadata();
+        if (!ks) {
           dbg('WalletHome: No keyshare found during initialization');
           setLoading(false);
           isInitializedRef.current = true;
@@ -1128,27 +1126,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         // Initialize WalletService only after confirming we have a keyshare
         const walletService = WalletService.getInstance();
         await walletService.initialize();
-        let ks: any = {};
-        try {
-          ks = JSON.parse(jks);
-        } catch (error) {
-          dbg('Error parsing keyshare:', error);
-          navigation.reset(
-            getResetToMainTabsWallet(
-              {},
-              {
-                showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
-                showUtxos: showUtxosTab,
-                showAddresses: showAddressesTab,
-                showPsbt: showPsbtTab,
-                showWallet: showWalletTab,
-              },
-            ),
-          );
-          return;
-        }
-        if (!ks.pub_key || !ks.chain_code_hex || !ks.local_party_key) {
-          dbg('Invalid pub_key or chain_code_hex or local_party_key');
+        if (!ks.pub_key || !ks.chain_code_hex) {
+          dbg('Error: keyshare metadata missing required fields');
           navigation.reset(
             getResetToMainTabsWallet(
               {},
@@ -1214,7 +1193,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           dbg('WalletHome: Using saved currency', currency);
         }
         const netParams = await BBMTLibNativeModule.setBtcNetwork(net);
-        net = netParams.split('@')[0];
+        const networkKey = netParams.split('@')[0] ?? net ?? 'mainnet';
+        net = networkKey;
         // Generate all address types
         const legacyAddr = await BBMTLibNativeModule.btcAddress(
           btcPub,
@@ -1252,20 +1232,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         );
         appConfigRepository.set(CONFIG_KEYS.CURRENT_ADDRESS, btcAddress);
         setAddress(btcAddress);
-        // Set up API URL
-        let base = netParams.split('@')[1];
-        if (!base.endsWith('/')) {
-          base = `${base}/`;
-        }
-        let api = appConfigRepository.get('api');
-        if (api) {
-          if (api.endsWith('/')) {
-            api = api.substring(0, api.length - 1);
-          }
-          BBMTLibNativeModule.setAPI(net, api);
-        } else {
-          appConfigRepository.set('api', base);
-        }
+        // Set up API URL — use per-network resolved base (testnet must not use global mainnet `api`).
+        const apiResolved = resolveStoredMempoolApiBase(networkKey);
+        let api = apiResolved.endsWith('/')
+          ? apiResolved.substring(0, apiResolved.length - 1)
+          : apiResolved;
+        appConfigRepository.set(`api_${networkKey}`, api);
+        appConfigRepository.set('api', api);
+        await BBMTLibNativeModule.setAPI(networkKey, api);
         // DB → UI: seed price + balance from SQLite
         refreshFromDBRef.current();
         setLoading(false);
@@ -1310,16 +1284,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   ]);
   // Start background sync once the full HD address set is known.
   // SyncCoordinator writes deltas to SQLite; the UI reads from the DB.
+  // Wait for UserContext `apiBase` (same as main) so we do not start/stop the coordinator
+  // repeatedly during init; still pass `resolveStoredMempoolApiBase` into start() for correct per-network URL.
   useEffect(() => {
     if (!walletAddressesReady || !apiBase || !network) {
       return;
     }
+    const resolvedApi = resolveStoredMempoolApiBase(network);
     const addrs =
       walletAddresses.length > 0 ? walletAddresses : address ? [address] : [];
     if (addrs.length === 0) {
       return;
     }
-    const cleanApi = apiBase.replace(/\/+$/, '').replace(/\/api\/?$/, '');
+    const cleanApi = resolvedApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
     const effectiveAddrType = addressType || userAddressType || 'segwit-native';
     syncCoordinator.start({
       addresses: addrs.map(a => ({address: a, network})),
@@ -1375,9 +1352,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       setIsSendModalVisible(false);
       // Check if keyshare supports Nostr (has nostr_npub)
       try {
-        const keyshareJSON = await EncryptedStorage.getItem('keyshare');
-        if (keyshareJSON) {
-          const keyshare = JSON.parse(keyshareJSON);
+        const keyshare = await getKeyshareMetadata();
+        if (keyshare) {
           const hasNostrSupport =
             keyshare.nostr_npub && keyshare.nostr_npub.trim() !== '';
           if (!hasNostrSupport) {
@@ -1517,9 +1493,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       let derivationPath = '';
       let fromAddress = '';
       try {
-        const keyshareJSON = await EncryptedStorage.getItem('keyshare');
-        if (keyshareJSON) {
-          const keyshare = JSON.parse(keyshareJSON);
+        const keyshare = await getKeyshareMetadata();
+        if (keyshare) {
           const useLegacyPath = isLegacyWallet(keyshare.created_at);
           const currentAddressType = addressType || 'segwit-native';
           const normalizedNetwork =
@@ -2166,10 +2141,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   const ws = WalletService.getInstance();
                   const effectiveAddressType = addressType || 'segwit-native';
                   const apiUrl =
-                    apiBase ||
-                    (network === 'mainnet'
-                      ? 'https://mempool.space/api'
-                      : 'https://mempool.space/testnet/api');
+                    resolveStoredMempoolApiBase(network);
                   const restoreDone =
                     walletRepository.getHdState(network, effectiveAddressType)
                       ?.restoreDone === true;
@@ -2282,11 +2254,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   const effectiveType =
                     addressType || userAddressType || 'segwit-native';
                   const api =
-                    apiBase ||
-                    appConfigRepository.get('api') ||
-                    (network === 'mainnet'
-                      ? 'https://mempool.space/api'
-                      : 'https://mempool.space/testnet/api');
+                    resolveStoredMempoolApiBase(network);
                   setIsRefreshing(true);
                   try {
                     dbg(
@@ -2340,7 +2308,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       <View style={styles.transactionListContainer}>
         <TransactionList
           ref={transactionListRef}
-          baseApi={apiBase}
+          baseApi={resolvedWalletApi}
           address={
             walletAddressesReady && walletAddresses.length === 0
               ? address
@@ -2491,7 +2459,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         <ReceiveModal
           address={receivePathInfo?.address ?? address}
           addressType={addressType}
-          baseApi={apiBase}
+          baseApi={resolvedWalletApi}
           network={network as 'mainnet' | 'testnet'}
           onClose={() => {
             setIsReceiveModalVisible(false);

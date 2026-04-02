@@ -31,10 +31,11 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 const {BBMTLibNativeModule} = NativeModules;
 import DeviceInfo from 'react-native-device-info';
 import {useUser} from '../context/UserContext';
-// Predefined API endpoints
-const MAINNET_APIS = ['https://mempool.space/api'];
-const TESTNET_APIS = ['https://mempool.space/testnet/api'];
-const {IconChanger} = NativeModules; // This is fine here, as it's not a Hook
+import {
+  CANONICAL_TESTNET_MEMPOOL_API_BASE,
+  normalizeUserMempoolApiInput,
+  validateMempoolApiBaseReachable,
+} from '../services/mempoolApiBase';
 import {
   dbg,
   setHapticsEnabled,
@@ -42,6 +43,8 @@ import {
   getMainnetAPIList,
   getKeyshareLabel,
   getResetToMainTabsWallet,
+  getKeyshareMetadata,
+  clearKeyshareMetadata,
 } from '../utils';
 import {useTheme} from '../theme';
 import {waitMS, WalletService} from '../services/WalletService';
@@ -79,6 +82,11 @@ import FontComparisonScreen from '../components/FontComparisonScreen';
 import {setDebugLoggingEnabled, isDebugLoggingEnabled} from '../App';
 import Toast from 'react-native-toast-message';
 import {useRoute, useFocusEffect, RouteProp} from '@react-navigation/native';
+
+const {IconChanger} = NativeModules; // This is fine here, as it's not a Hook
+// Predefined API endpoints
+const MAINNET_APIS = ['https://mempool.space/api'];
+const TESTNET_APIS = [CANONICAL_TESTNET_MEMPOOL_API_BASE];
 
 type SettingsParams = {expandSection?: string};
 
@@ -247,6 +255,7 @@ const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
       }
     };
     loadAPIList();
+    // Only re-fetch when mainnet/testnet toggles; ref + isLoadingPredefinedAPIs gate duplicates — do not add those deps or the effect would re-run every loading state change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTestnet]);
   // Fetch dynamic APIs - load when in mainnet mode and not already loaded
@@ -1153,20 +1162,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     loadIconPreference();
   }, []);
   useEffect(() => {
-    EncryptedStorage.getItem('keyshare').then(ks => {
-      try {
-        if (!ks) {
-          return;
-        }
-        const json = JSON.parse(ks as string);
-        // Get keyshare label (KeyShare1/2/3) or fallback to local_party_key
-        const keyshareLabel = getKeyshareLabel(json);
-        setParty(keyshareLabel || json.local_party_key || '');
-        // Only show Nostr settings when the keyshare contains an npub
-        setHasNostr(!!json.nostr_npub);
-      } catch (error) {
-        dbg('Failed to parse keyshare for settings screen:', error);
-      }
+    getKeyshareMetadata().then(meta => {
+      if (!meta) return;
+      const keyshareLabel = getKeyshareLabel(meta);
+      setParty(keyshareLabel || meta.local_party_key || '');
+      setHasNostr(!!meta.nostr_npub);
     });
     // Load network and corresponding cached API (synchronous SQLite reads)
     (() => {
@@ -1297,68 +1297,21 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       Alert.alert('Success', 'API endpoint reset to default!');
     }, 300);
   };
-  const normalizeAPIUrl = (url: string): string => {
-    if (!url || url.trim() === '') {
-      return url;
-    }
-    // Trim whitespace
-    let normalized = url.trim();
-    // Remove trailing slashes
-    normalized = normalized.replace(/\/+$/, '');
-    // Check if it ends with /api (case-insensitive)
-    const apiPattern = /\/api$/i;
-    if (!apiPattern.test(normalized)) {
-      // If it doesn't end with /api, append it
-      normalized = normalized + '/api';
-    }
-    return normalized;
-  };
-  const validateAPIEndpoint = async (api: string): Promise<boolean> => {
-    try {
-      const testUrl = `${api.replace(/\/$/, '')}/blocks/tip/hash`;
-      dbg('Testing API endpoint:', testUrl);
-      // Create AbortController for timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-      const response = await fetch(testUrl, {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-        },
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (!response.ok) {
-        dbg('API validation failed: HTTP', response.status);
-        return false;
-      }
-      const blockHash = await response.text();
-      // Check if response looks like a valid block hash (64 character hex string)
-      const isValidBlockHash = /^[a-f0-9]{64}$/i.test(blockHash.trim());
-      if (!isValidBlockHash) {
-        dbg('API validation failed: Invalid block hash format:', blockHash);
-        return false;
-      }
-      dbg('API validation successful:', blockHash);
-      return true;
-    } catch (error) {
-      dbg('API validation error:', error);
-      return false;
-    }
-  };
   const saveAPI = async (api: string) => {
     if (!api || api.trim() === '') {
       Alert.alert('Error', 'Please select a valid API endpoint.');
       return;
     }
-    // Normalize the URL to ensure it ends with /api
-    const normalizedApi = normalizeAPIUrl(api);
+    // Testnet: only the canonical mempool.space testnet base (no custom endpoints).
+    const normalizedApi = isTestnet
+      ? CANONICAL_TESTNET_MEMPOOL_API_BASE
+      : normalizeUserMempoolApiInput(api);
     dbg('Original API URL:', api);
     dbg('Normalized API URL:', normalizedApi);
     setIsAPISaving(true);
     try {
       // Validate the API endpoint first (using normalized URL)
-      const isValid = await validateAPIEndpoint(normalizedApi);
+      const isValid = await validateMempoolApiBaseReachable(normalizedApi);
       if (!isValid) {
         Alert.alert(
           'Invalid API Endpoint',
@@ -1407,6 +1360,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('clearing SQLite wallet data...');
         database.clearWalletData();
         mempoolClient.invalidateAll();
+        await clearKeyshareMetadata();
         dbg('clearing encrypted storage...');
         // Prefer a full clear so we return to true first-launch state.
         // (If clear() is unavailable on some builds, fall back to removing known keys.)
@@ -1417,6 +1371,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           dbg('Error clearing encrypted storage:', error);
           await Promise.all([
             EncryptedStorage.removeItem('keyshare'),
+            EncryptedStorage.removeItem('keyshare_meta'),
             EncryptedStorage.removeItem('btcPub'),
             EncryptedStorage.removeItem('bitcoin_display_sats'),
             EncryptedStorage.removeItem('balance_formatting_enabled'),

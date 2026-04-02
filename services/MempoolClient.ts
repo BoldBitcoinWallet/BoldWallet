@@ -243,10 +243,11 @@ class MempoolClient {
           .filter(Boolean),
       ),
     ];
-    if (hosts.length > 0) {
-      this._publicHosts = hosts;
-      dbg('MempoolClient: public hosts updated —', hosts);
-    }
+    this._publicHosts = hosts;
+    dbg(
+      'MempoolClient: public hosts updated —',
+      hosts.length ? hosts : '(cleared — no round-robin failover)',
+    );
   }
 
   /**

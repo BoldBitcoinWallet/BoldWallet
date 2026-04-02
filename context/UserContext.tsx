@@ -8,8 +8,9 @@ import React, {
 } from 'react';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
+import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {BBMTLibNativeModule} from '../native_modules';
-import {getReceivePath, isLegacyWallet, dbg} from '../utils';
+import {getReceivePath, isLegacyWallet, dbg, getKeyshareMetadata} from '../utils';
 import {getExternalIndex} from '../services/HdIndexService';
 type AddressType = 'legacy' | 'segwit-native' | 'segwit-compatible';
 interface UserContextType {
@@ -187,14 +188,12 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
       try {
         const net = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
         setNetwork(net);
-        let api = appConfigRepository.get(`api_${net}`) || appConfigRepository.get('api');
-        if (!api) {
-          api = net === 'testnet3'
-            ? 'https://mempool.space/testnet/api'
-            : 'https://mempool.space/api';
-          appConfigRepository.set('api', api);
-          appConfigRepository.set(`api_${net}`, api);
+        const api = resolveStoredMempoolApiBase(net);
+        const apiKey = `api_${net}`;
+        if (appConfigRepository.get(apiKey) !== api) {
+          appConfigRepository.set(apiKey, api);
         }
+        appConfigRepository.set('api', api);
         setApiBase(api);
         await BBMTLibNativeModule.setAPI(net, api);
       } catch {
@@ -284,10 +283,8 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
       // Always derive btcPub fresh to ensure it matches the current address type
       // This prevents issues where stored btcPub was derived with a different address type
       let pub = '';
-      let ks: any = null;
-      const jks = await EncryptedStorage.getItem('keyshare');
-      if (jks) {
-        ks = JSON.parse(jks);
+      const ks = await getKeyshareMetadata();
+      if (ks) {
         // Check if this is a legacy wallet (created before migration timestamp)
         const useLegacyPath = isLegacyWallet(ks.created_at);
         const externalIndex = await getExternalIndex(network, currentAddressType);
@@ -384,13 +381,7 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
           appConfigRepository.set(`api_${network}`, apiBase);
         }
         appConfigRepository.set(CONFIG_KEYS.NETWORK, newNetwork);
-        let nextApi = appConfigRepository.get(`api_${newNetwork}`);
-        if (!nextApi) {
-          nextApi =
-            newNetwork === 'testnet3'
-              ? 'https://mempool.space/testnet/api'
-              : 'https://mempool.space/api';
-        }
+        const nextApi = resolveStoredMempoolApiBase(newNetwork);
         appConfigRepository.set(`api_${newNetwork}`, nextApi);
         appConfigRepository.set('api', nextApi);
         setNetwork(newNetwork);

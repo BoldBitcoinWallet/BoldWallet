@@ -251,6 +251,7 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
     if (!fitsInSingleQR && qrMode === 'single') {
       setQrMode('animated');
     }
+    // Omit qrMode from deps: we only auto-switch single→animated when size changes; including qrMode would fight user toggles or cause redundant runs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitsInSingleQR]);
   const isAnimated = qrMode === 'animated' && urObject;

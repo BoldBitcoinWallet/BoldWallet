@@ -22,6 +22,8 @@ import AppPressable from '../components/AppPressable';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
+import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
+import {explorerWebBaseFromApiUrl} from '../utils';
 import {
   HeaderPriceButton,
   HeaderProvider,
@@ -121,13 +123,7 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   );
 };
 
-/** Base URL for API (strip /api suffix from context apiBase). */
 const API_REQUEST_TIMEOUT_MS = 10000;
-
-function getBaseUrl(apiBase: string): string {
-  if (!apiBase) return 'https://mempool.space';
-  return apiBase.replace(/\/api\/?$/, '') || 'https://mempool.space';
-}
 
 /** Resolve placeholder for a param based on network (testnet uses placeholderTestnet when set). */
 function getPlaceholder(p: EndpointParam, network: string): string {
@@ -214,15 +210,20 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
     });
   }, []);
 
-  const baseUrl = getBaseUrl(apiBase || '');
+  const baseUrl = useMemo(
+    () =>
+      explorerWebBaseFromApiUrl(
+        apiBase || resolveStoredMempoolApiBase(network),
+      ) || 'https://mempool.space',
+    [apiBase, network],
+  );
 
   // Header: same as WalletHome – price (left), provider (center), network (right)
   useEffect(() => {
     setSelectedCurrency(appConfigRepository.get(CONFIG_KEYS.CURRENCY) || 'USD');
   }, []);
   useEffect(() => {
-    if (!apiBase) return;
-    const url = `${getBaseUrl(apiBase)}/api/v1/prices`;
+    const url = `${baseUrl}/api/v1/prices`;
     fetch(url)
       .then(r => r.json())
       .then((data: Record<string, number>) => {
@@ -232,7 +233,7 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
         else setBtcPrice('');
       })
       .catch(() => setBtcPrice(''));
-  }, [apiBase, selectedCurrency]);
+  }, [baseUrl, selectedCurrency]);
 
   const headerLeft = useCallback(
     () => (

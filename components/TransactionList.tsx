@@ -42,6 +42,10 @@ import transactionSyncer from '../services/sync/TransactionSyncer';
 import HistoricalPriceService, {
   getHistoricalRateKey,
 } from '../services/HistoricalPriceService';
+import {
+  sortMempoolTransactionsForDisplay as sortTxs,
+  getMempoolTransactionAmounts,
+} from '../utils/transactionListUtils';
 // Add icon imports
 const inIcon = require('../assets/in-icon.png');
 const outIcon = require('../assets/out-icon.png');
@@ -391,68 +395,9 @@ const TransactionList = React.forwardRef<
       selectedTransaction?.sentAt,
     ]);
     const getTransactionAmounts = useCallback(
-      (tx: any, addrOrAddrs?: string | string[]) => {
-        const checkAddr = (a: string) =>
-          addrOrAddrs
-            ? Array.isArray(addrOrAddrs)
-              ? addrOrAddrs.includes(a)
-              : a === addrOrAddrs
-            : isOurAddress(a);
-        if (tx.sentAt) {
-          const self =
-            String(tx.from).toLowerCase() === String(tx.to).toLowerCase();
-          const sent = self ? 0 : tx.amount;
-          const chng = self ? sent : 0;
-          const rcvd = self ? sent : 0;
-          return {
-            sent: tx.amount / 1e8,
-            changeAmount: chng / 1e8,
-            received: rcvd / 1e8,
-          };
-        }
-        const sentAmount = tx.vin.reduce((total: number, input: any) => {
-          return checkAddr(input.prevout?.scriptpubkey_address || '')
-            ? total + (input.prevout?.value || 0)
-            : total;
-        }, 0);
-        const receivedAmount = tx.vout.reduce((total: number, output: any) => {
-          return checkAddr(output.scriptpubkey_address || '')
-            ? total + output.value
-            : total;
-        }, 0);
-        const changeAmount = tx.vout.reduce((total: number, output: any) => {
-          return sentAmount > 0 && checkAddr(output.scriptpubkey_address || '')
-            ? total + output.value
-            : total;
-        }, 0);
-        const fee = tx.fee || 0;
-        const finalSentAmount = Math.max(0, sentAmount - changeAmount - fee);
-        return {
-          sent: finalSentAmount / 1e8,
-          changeAmount: changeAmount / 1e8,
-          received: receivedAmount / 1e8,
-        };
-      },
+      (tx: any, addrOrAddrs?: string | string[]) =>
+        getMempoolTransactionAmounts(tx, isOurAddress, addrOrAddrs),
       [isOurAddress],
-    );
-    // Shared sort: pending (no block_height) first, then block_height descending.
-    const sortTxs = useCallback(
-      (txs: any[]): any[] =>
-        [...txs].sort((a, b) => {
-          const aPending = !a.status?.block_height;
-          const bPending = !b.status?.block_height;
-          if (aPending && !bPending) {
-            return -1;
-          }
-          if (!aPending && bPending) {
-            return 1;
-          }
-          if (aPending && bPending) {
-            return (b.sentAt || 0) - (a.sentAt || 0);
-          }
-          return (b.status.block_height || 0) - (a.status.block_height || 0);
-        }),
-      [],
     );
     // Memoize fetchTransactions to prevent unnecessary re-renders
     const memoizedFetchTransactions = useCallback(
@@ -836,7 +781,6 @@ const TransactionList = React.forwardRef<
         addressType,
         getTransactionAmounts,
         onUpdate,
-        sortTxs,
       ],
     );
     // For user pull-to-refresh
@@ -1226,7 +1170,6 @@ const TransactionList = React.forwardRef<
       addressCursors,
       network,
       addressType,
-      sortTxs,
     ]);
     // Add effect to handle initialTransactions changes
     useEffect(() => {

@@ -30,6 +30,14 @@ import apiQueue from '../services/ApiQueue';
 import appConfigRepository, {
   CONFIG_KEYS,
 } from '../services/repositories/AppConfigRepository';
+import {
+  CANONICAL_TESTNET_MEMPOOL_API_BASE,
+  isKnownPublicMempoolMainnetBase,
+  isTestnetNetworkKey,
+  normalizeUserMempoolApiInput,
+  resolveStoredMempoolApiBase,
+  validateMempoolApiBaseReachable,
+} from '../services/mempoolApiBase';
 
 const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const route = useRoute();
@@ -60,67 +68,22 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const [isFocused, setIsFocused] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
-  // Normalize API URL
-  const normalizeAPIUrl = (url: string): string => {
-    if (!url || url.trim() === '') {
-      return url;
-    }
-    let normalized = url.trim();
-    normalized = normalized.replace(/\/+$/, '');
-    const apiPattern = /\/api$/i;
-    if (!apiPattern.test(normalized)) {
-      normalized = normalized + '/api';
-    }
-    return normalized;
-  };
-
-  // Validate API endpoint
-  const validateAPIEndpoint = async (api: string): Promise<boolean> => {
-    try {
-      const testUrl = `${api.replace(/\/$/, '')}/blocks/tip/hash`;
-      dbg('Testing API endpoint:', testUrl);
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      const response = await fetch(testUrl, {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-        },
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (!response.ok) {
-        dbg('API validation failed: HTTP', response.status);
-        return false;
-      }
-      const blockHash = await response.text();
-      const isValidBlockHash = /^[a-f0-9]{64}$/i.test(blockHash.trim());
-      if (!isValidBlockHash) {
-        dbg('API validation failed: Invalid block hash format:', blockHash);
-        return false;
-      }
-      dbg('API validation successful:', blockHash);
-      return true;
-    } catch (error) {
-      dbg('API validation error:', error);
-      return false;
-    }
-  };
-
   // Save API and proceed
   const saveAPIAndProceed = async (api: string) => {
     // If no API entered, just proceed
     if (!api || api.trim() === '') {
-      handleProceed();
+      await handleProceed();
       return;
     }
 
-    const normalizedApi = normalizeAPIUrl(api);
+    const normalizedApi = isTestnetNetworkKey(activeNetwork)
+      ? CANONICAL_TESTNET_MEMPOOL_API_BASE
+      : normalizeUserMempoolApiInput(api);
     dbg('Original API URL:', api);
     dbg('Normalized API URL:', normalizedApi);
     setIsAPISaving(true);
     try {
-      const isValid = await validateAPIEndpoint(normalizedApi);
+      const isValid = await validateMempoolApiBaseReachable(normalizedApi);
       if (!isValid) {
         Alert.alert(
           'Invalid API Endpoint',
@@ -133,7 +96,8 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
       dbg('=== API saved and propagated successfully:', normalizedApi);
       // Proceed to home after successful save — pass the resolved API so the
       // restore uses the endpoint the user just configured, not the stale state.
-      handleProceed(normalizedApi);
+      const useRR = await isKnownPublicMempoolMainnetBase(normalizedApi);
+      await handleProceed(normalizedApi, useRR);
     } catch (error) {
       dbg('Error in saveAPIAndProceed:', error);
       Alert.alert('Error', 'Failed to save API endpoint. Please try again.');
@@ -201,10 +165,13 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
     try {
       const ws = WalletService.getInstance();
 
-      // Round-robin only when Skip (no custom base): seed public hosts so first request uses next host.
+      // Round-robin: only seed the public mirror pool when restoring via that pool.
+      // Private / self-hosted bases must clear the pool so MempoolClient never fails over off-host.
       if (useRoundRobin) {
         const publicBases = await getMainnetAPIList();
         mempoolClient.setPublicBases(publicBases);
+      } else {
+        mempoolClient.setPublicBases([]);
       }
 
       // ── Discovery: gap-limit scan for native segwit only ──────────────────
@@ -290,9 +257,12 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
   };
 
   const handleSkip = async () => {
-    const fallbackApi = activeApiProvider || 'https://mempool.space/api';
+    const fallbackApi =
+      activeApiProvider || resolveStoredMempoolApiBase(activeNetwork);
     try {
-      await runRestoreIfNeeded(fallbackApi, true); // no custom base → round-robin applicable
+      const useRoundRobin =
+        await isKnownPublicMempoolMainnetBase(fallbackApi);
+      await runRestoreIfNeeded(fallbackApi, useRoundRobin);
       navigateToHome();
     } catch (e) {
       Alert.alert(
@@ -304,12 +274,22 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
     }
   };
 
-  const handleProceed = async (resolvedApi?: string) => {
+  /**
+   * @param useRoundRobin - When true, seed public mirror list for MempoolClient failover (public pool only).
+   */
+  const handleProceed = async (
+    resolvedApi?: string,
+    useRoundRobin?: boolean,
+  ) => {
     try {
-      await runRestoreIfNeeded(
-        resolvedApi || activeApiProvider || 'https://mempool.space/api',
-        false, // custom or validated base → no round-robin
-      );
+      const apiUrl =
+        resolvedApi ||
+        activeApiProvider ||
+        resolveStoredMempoolApiBase(activeNetwork);
+      const rr =
+        useRoundRobin ??
+        (await isKnownPublicMempoolMainnetBase(apiUrl));
+      await runRestoreIfNeeded(apiUrl, rr);
       navigateToHome();
     } catch (e) {
       Alert.alert(

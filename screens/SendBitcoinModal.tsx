@@ -36,6 +36,7 @@ import {
 } from '../services/WalletService';
 import utxoRepository from '../services/repositories/UtxoRepository';
 import {estimateFee, type FeeStrategy} from '../services/feeUtils';
+import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 const {BBMTLibNativeModule} = NativeModules;
 interface SendBitcoinModalProps {
   visible: boolean;
@@ -623,7 +624,8 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
           throw new Error('No UTXOs available for fee estimation');
         }
 
-        const apiBase = activeApiProvider || 'https://mempool.space/api';
+        const apiBase =
+          activeApiProvider || resolveStoredMempoolApiBase(activeNetwork);
         const result = await estimateFee({
           utxos: dbUtxos,
           receiverAddress: addr,
@@ -733,6 +735,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       setEstimatedFee(null);
     }
     return () => debouncedGetFee.cancel();
+    // debouncedGetFee is memoized once; do not list it or getFee — would cancel/reset the debouncer on unrelated identity changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address, btcAmount, feeStrategy, validateAddressForCurrentNetwork]);
   const pasteAddress = useCallback(async () => {

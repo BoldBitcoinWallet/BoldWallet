@@ -1,6 +1,8 @@
 // App.tsx
 import React, {useCallback, useEffect, useState} from 'react';
 import {NavigationContainer} from '@react-navigation/native';
+import type {BottomTabHeaderProps} from '@react-navigation/bottom-tabs';
+import type {NativeStackHeaderProps} from '@react-navigation/native-stack';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {enableScreens} from 'react-native-screens';
@@ -12,7 +14,6 @@ import UtxosScreen from './screens/UtxosScreen';
 import AddressesScreen from './screens/AddressesScreen';
 import PSBTScreen from './screens/PSBTScreen';
 import DeviceScreen from './screens/DeviceScreen';
-import EncryptedStorage from 'react-native-encrypted-storage';
 import LoadingScreen from './screens/LoadingScreen';
 import Zeroconf, {ImplType} from 'react-native-zeroconf';
 import ReactNativeBiometrics, {BiometryTypes} from 'react-native-biometrics';
@@ -42,7 +43,7 @@ import {
 import AppPressable from './components/AppPressable';
 import WalletSettings from './screens/WalletSettings';
 import {NativeModules} from 'react-native';
-import {dbg, pinRemoteIP, getPinnedRemoteIPs} from './utils';
+import {dbg, pinRemoteIP, getPinnedRemoteIPs, getKeyshareMetadata} from './utils';
 import MobilesPairing from './screens/MobilesPairing';
 import MobileNostrPairing from './screens/MobileNostrPairing';
 import UserPreferenceScreen from './screens/UserPreferenceScreen';
@@ -81,18 +82,24 @@ export const isDebugLoggingEnabled = () => {
 const rnBiometrics = new ReactNativeBiometrics({allowDeviceCredentials: true});
 const zeroconf = new Zeroconf();
 const zeroOut = new Zeroconf();
+/** Tab + stack headers both pass props here; CustomHeader is typed for native stack only. */
+type AppNavigationHeaderProps =
+  | NativeStackHeaderProps
+  | BottomTabHeaderProps;
+
+const renderAppHeader =
+  (height: number) => (props: AppNavigationHeaderProps) => (
+    <CustomHeader {...(props as NativeStackHeaderProps)} height={height} />
+  );
+
 // Custom header components with configurable height
-const HomeHeader = (props: any) => <CustomHeader {...props} height={60} />;
-const PSBTHeader = (props: any) => <CustomHeader {...props} height={60} />;
-const SettingsHeader = (props: any) => <CustomHeader {...props} height={60} />;
-const WelcomeHeader = (props: any) => <CustomHeader {...props} height={60} />;
-const DevicesPairingHeader = (props: any) => (
-  <CustomHeader {...props} height={60} />
-);
-const NostrConnectHeader = (props: any) => (
-  <CustomHeader {...props} height={60} />
-);
-const DeviceHeader = (props: any) => <CustomHeader {...props} height={60} />;
+const HomeHeader = renderAppHeader(60);
+const PSBTHeader = renderAppHeader(60);
+const SettingsHeader = renderAppHeader(60);
+const WelcomeHeader = renderAppHeader(60);
+const DevicesPairingHeader = renderAppHeader(60);
+const NostrConnectHeader = renderAppHeader(60);
+const DeviceHeader = renderAppHeader(60);
 
 const TAB_BAR_ICON_SIZE = 22;
 
@@ -534,8 +541,8 @@ const App = () => {
       setDebugLoggingEnabledState(debugLoggingEnabledRef.current);
       // Re-check wallet state after reload to ensure correct initial route
       try {
-        const keyshare = await EncryptedStorage.getItem('keyshare');
-        const route = keyshare && keyshare.length > 0 ? 'MainTabs' : 'Welcome';
+        const meta = await getKeyshareMetadata();
+        const route = meta ? 'MainTabs' : 'Welcome';
         setInitialRoute(route);
       } catch {
         setInitialRoute('Welcome');
@@ -556,9 +563,9 @@ const App = () => {
         dbg('App: Database init error (non-fatal):', dbErr);
       }
       try {
-        const keyshare = await EncryptedStorage.getItem('keyshare');
-        dbg('initializeApp keyshare found', !!keyshare);
-        const route = keyshare && keyshare.length > 0 ? 'MainTabs' : 'Welcome';
+        const meta = await getKeyshareMetadata();
+        dbg('initializeApp keyshare found', !!meta);
+        const route = meta ? 'MainTabs' : 'Welcome';
         dbg('Setting initial route to:', route);
         setInitialRoute(route);
       } catch (error) {

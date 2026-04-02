@@ -20,8 +20,12 @@ class PriceSyncer {
       return;
     }
 
-    // Always use mainnet price endpoint
-    const base = apiBase.replace(/\/+$/, '').replace(/\/testnet\/?/, '');
+    // Always use mainnet /api/v1/prices. Never strip `/testnet/` with a naive
+    // replace on the full URL — e.g. .../testnet/api becomes ...api and the host
+    // becomes "mempool.spaceapi" (invalid DNS).
+    const base = apiBase
+      .replace(/\/+$/, '')
+      .replace(/\/testnet(?=\/api\/?$)/, '');
     const url = `${base}/v1/prices`;
     try {
       const res = await mempoolClient.get<Record<string, number>>(url);

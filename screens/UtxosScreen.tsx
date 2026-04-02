@@ -29,7 +29,13 @@ import {WalletService} from '../services/WalletService';
 import utxoSyncer from '../services/sync/UtxoSyncer';
 import mempoolClient from '../services/MempoolClient';
 import apiQueue from '../services/ApiQueue';
-import {presentFiat, getCurrencySymbol, dbg} from '../utils';
+import {
+  presentFiat,
+  getCurrencySymbol,
+  dbg,
+  explorerWebBaseFromApiUrl,
+} from '../utils';
+import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import AppPressable from '../components/AppPressable';
 import {CacheIndicator} from '../components/CacheIndicator';
 import CurrencySelector from '../components/CurrencySelector';
@@ -438,9 +444,9 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const chainLabel = (chain: 'receive' | 'change', index: number) =>
     chain === 'receive' ? `Receive #${index}` : `Change #${index}`;
 
-  const baseUrl = apiBase?.trim()
-    ? apiBase.replace(/\/+$/, '').replace(/\/api\/?$/, '')
-    : '';
+  const baseUrl = explorerWebBaseFromApiUrl(
+    apiBase || resolveStoredMempoolApiBase(network),
+  );
 
   const styles = useMemo(
     () =>
@@ -1041,10 +1047,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   onPress: async () => {
                     const effectiveType = addressType || 'segwit-native';
                     const api =
-                      apiBase
-                        ?.trim()
-                        ?.replace(/\/+$/, '')
-                        ?.replace(/\/api\/?$/, '') || 'https://mempool.space';
+                      apiBase || resolveStoredMempoolApiBase(network);
                     setRefreshing(true);
                     try {
                       dbg(
@@ -1054,7 +1057,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
                       await WalletService.getInstance().discoverHdIndexesForNetwork(
                         network,
                         effectiveType,
-                        `${api}/api`,
+                        api,
                         chain =>
                           setRefreshStatusMessage(
                             `Scanning ${

@@ -40,12 +40,15 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import Big from 'big.js';
 import {
   dbg,
+  explorerWebBaseFromApiUrl,
+  getKeyshareMetadata,
   HapticFeedback,
   getNostrRelays,
-  hexToString,
   getResetToMainTabsWallet,
   shortenAddress,
+  saveKeyshareMetadata,
 } from '../utils';
+import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import appConfigRepository, {
@@ -56,6 +59,212 @@ import transactionRepository from '../services/repositories/TransactionRepositor
 import {WalletService} from '../services/WalletService';
 import RNFS from 'react-native-fs';
 const {BBMTLibNativeModule} = NativeModules;
+
+/** Normalize keygen_committee_keys from native/bridge (array, JSON string, or numeric-key object). */
+function normalizeKeygenCommitteeKeys(raw: unknown): string[] {
+  if (raw == null) {
+    return [];
+  }
+  if (Array.isArray(raw)) {
+    return raw.filter(
+      (k): k is string => typeof k === 'string' && k.length > 0,
+    );
+  }
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw);
+      return Array.isArray(p)
+        ? p.filter((k): k is string => typeof k === 'string' && k.length > 0)
+        : [];
+    } catch {
+      return [];
+    }
+  }
+  if (typeof raw === 'object') {
+    return Object.values(raw as Record<string, unknown>).filter(
+      (v): v is string => typeof v === 'string' && v.length > 0,
+    );
+  }
+  return [];
+}
+
+async function getKeyshareNostrPrepJSONWithRetry(
+  attempts = 3,
+  delayMs = 150,
+): Promise<string> {
+  let last: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await BBMTLibNativeModule.getKeyshareNostrPrepJSON();
+    } catch (e) {
+      last = e;
+      if (i < attempts - 1) {
+        await new Promise<void>(r => setTimeout(r, delayMs));
+      }
+    }
+  }
+  throw last;
+}
+
+/** Fields for Nostr co-signer UI + send/sign session prep (npub CSV, derive, etc.). */
+type NostrKeysharePrep = {
+  pub_key: string;
+  chain_code_hex: string;
+  keygen_committee_keys: string[];
+  local_party_key: string;
+  nostr_npub?: string;
+};
+
+/** Safe debug: lengths + presence only (no full pub/hex in logs). */
+function dbgNostrKeysharePrep(
+  stage: string,
+  info: Record<string, string | number | boolean | undefined>,
+) {
+  dbg(`[NostrKeysharePrep] ${stage}`, info);
+}
+
+function alertMessageForNostrSendError(err: unknown): string {
+  const code =
+    err &&
+    typeof err === 'object' &&
+    'code' in err &&
+    typeof (err as {code?: unknown}).code === 'string'
+      ? (err as {code: string}).code
+      : '';
+  if (code === 'NO_NSEC') {
+    return 'Nostr signing needs an nsec in your stored keyshare. If this wallet was imported without Nostr material, use LAN pairing or restore a full keyshare from backup.';
+  }
+  if (code === 'NO_KEYSHARE') {
+    return 'No keyshare found in secure storage. Unlock the wallet or restore your keyshare.';
+  }
+  if (code === 'MODULE_GONE') {
+    return 'Native module unavailable. Try again or restart the app.';
+  }
+  const msg =
+    err &&
+    typeof err === 'object' &&
+    err !== null &&
+    'message' in err &&
+    typeof (err as {message?: unknown}).message === 'string'
+      ? (err as {message: string}).message
+      : '';
+  return msg || 'Transaction signing failed';
+}
+
+/**
+ * Prefer native `getKeyshareNostrPrepJSON` (reads full keyshare from RNES).
+ * If that fails (NO_KEYSHARE / timing) or returns incomplete fields, merge from
+ * `keyshare_meta` (EncryptedStorage) so flows keep working after metadata-focused storage.
+ */
+async function loadNostrKeysharePrepForSession(): Promise<NostrKeysharePrep> {
+  let committee: string[] = [];
+  let localParty = '';
+  let nostrNpub = '';
+  let pubKey = '';
+  let chainHex = '';
+  let nativePrepSucceeded = false;
+
+  try {
+    const prepJson = await getKeyshareNostrPrepJSONWithRetry();
+    const k = JSON.parse(prepJson) as Record<string, unknown>;
+    committee = normalizeKeygenCommitteeKeys(k.keygen_committee_keys);
+    localParty =
+      typeof k.local_party_key === 'string' ? k.local_party_key : '';
+    nostrNpub = typeof k.nostr_npub === 'string' ? k.nostr_npub : '';
+    pubKey = typeof k.pub_key === 'string' ? k.pub_key : '';
+    chainHex = typeof k.chain_code_hex === 'string' ? k.chain_code_hex : '';
+    nativePrepSucceeded = true;
+    dbgNostrKeysharePrep('native_prep_ok', {
+      prepJsonLen: prepJson?.length ?? 0,
+      committeeLen: committee.length,
+      hasLocalParty: localParty ? 1 : 0,
+      hasPubKey: pubKey ? 1 : 0,
+      hasChainHex: chainHex ? 1 : 0,
+      hasNostrNpub: nostrNpub ? 1 : 0,
+    });
+  } catch (e: any) {
+    const code = e?.code != null ? String(e.code) : '';
+    const msg =
+      typeof e?.message === 'string' ? e.message.slice(0, 160) : String(e);
+    dbg(
+      'loadNostrKeysharePrepForSession: native prep failed — will merge keyshare_meta',
+      {code, message: msg},
+    );
+  }
+
+  const meta = await getKeyshareMetadata();
+  dbgNostrKeysharePrep('after_getKeyshareMetadata', {
+    metaIsNull: meta ? 0 : 1,
+    metaCommitteeLen: meta?.keygen_committee_keys?.length ?? 0,
+    metaHasLocal: meta?.local_party_key ? 1 : 0,
+    metaHasPub: meta?.pub_key ? 1 : 0,
+    metaHasChain: meta?.chain_code_hex ? 1 : 0,
+    metaHasNostrNpub: meta?.nostr_npub ? 1 : 0,
+  });
+
+  const beforeMerge = {
+    committeeLen: committee.length,
+    hasLocalParty: localParty ? 1 : 0,
+    hasPub: pubKey ? 1 : 0,
+    hasChain: chainHex ? 1 : 0,
+  };
+
+  if (committee.length < 2 && meta?.keygen_committee_keys) {
+    committee = normalizeKeygenCommitteeKeys(meta.keygen_committee_keys);
+  }
+  if (!localParty && meta?.local_party_key) {
+    localParty = meta.local_party_key;
+  }
+  if (!nostrNpub && meta?.nostr_npub) {
+    nostrNpub = String(meta.nostr_npub);
+  }
+  if (!pubKey && meta?.pub_key) {
+    pubKey = meta.pub_key;
+  }
+  if (!chainHex && meta?.chain_code_hex) {
+    chainHex = meta.chain_code_hex;
+  }
+
+  dbgNostrKeysharePrep('after_meta_merge', {
+    nativePrepSucceeded: nativePrepSucceeded ? 1 : 0,
+    beforeCommitteeLen: beforeMerge.committeeLen,
+    mergedCommitteeLen: committee.length,
+    hasLocalParty: localParty ? 1 : 0,
+    hasPub: pubKey ? 1 : 0,
+    hasChain: chainHex ? 1 : 0,
+    hasNostrNpub: nostrNpub ? 1 : 0,
+  });
+
+  if (!localParty || committee.length < 2) {
+    dbgNostrKeysharePrep('throw_MISSING_COMMITTEE_OR_LOCAL', {
+      committeeLen: committee.length,
+      hasLocalParty: localParty ? 1 : 0,
+      nativePrepSucceeded: nativePrepSucceeded ? 1 : 0,
+    });
+    throw new Error('MISSING_COMMITTEE_OR_LOCAL');
+  }
+  if (!pubKey || !chainHex) {
+    dbgNostrKeysharePrep('throw_MISSING_PUB_OR_CHAIN', {
+      hasPub: pubKey ? 1 : 0,
+      hasChain: chainHex ? 1 : 0,
+      nativePrepSucceeded: nativePrepSucceeded ? 1 : 0,
+    });
+    throw new Error('MISSING_PUB_OR_CHAIN');
+  }
+
+  dbgNostrKeysharePrep('success', {
+    committeeLen: committee.length,
+    hasNostrNpub: nostrNpub ? 1 : 0,
+  });
+
+  return {
+    pub_key: pubKey,
+    chain_code_hex: chainHex,
+    keygen_committee_keys: committee,
+    local_party_key: localParty,
+    nostr_npub: nostrNpub || undefined,
+  };
+}
 
 // Helper component for animated progress bar
 const ProgressAnimatedView: React.FC<{
@@ -180,6 +389,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       isLocal: boolean;
     }>
   >([]);
+  const [sendModeDevicesLoadDone, setSendModeDevicesLoadDone] = useState(false);
+  const [sendModeDevicesLoadError, setSendModeDevicesLoadError] = useState<
+    string | null
+  >(null);
   // QR Scanner / QR Share
   const [isQRScannerVisible, setIsQRScannerVisible] = useState(false);
   const [scanningForPeer, setScanningForPeer] = useState<1 | 2>(1);
@@ -215,7 +428,12 @@ const MobileNostrPairing = ({navigation}: any) => {
     originalApiUrl?: string;
     originalWalletServiceNetwork?: string;
     originalWalletServiceApiUrl?: string;
-    inputs?: Array<{txid: string; vout: number; value: number; scriptpubkey_address: string}>;
+    inputs?: Array<{
+      txid: string;
+      vout: number;
+      value: number;
+      scriptpubkey_address: string;
+    }>;
     outputs?: Array<{scriptpubkey_address: string; value: number}>;
   } | null>(null);
   const skipRestoreInFinallyRef = useRef(false);
@@ -357,11 +575,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           }
         }
         // Fallback: fresh fetch (sender device, or QR has no utxosJson).
-        const apiUrl =
-          appConfigRepository.get(`api_${net}`) ||
-          (net === 'testnet3' || net === 'testnet'
-            ? 'https://mempool.space/testnet/api'
-            : 'https://mempool.space/api');
+        const apiUrl = resolveStoredMempoolApiBase(net);
         const [utxos, chgResult] = await Promise.all([
           WalletService.getInstance().fetchUtxosWithPaths(
             net,
@@ -492,6 +706,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         }
       }
     }
+    // generateKeygenSessionParams is stable for this flow; full deps would re-trigger keygen setup on unrelated callback identity churn.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     localNpub,
@@ -692,25 +907,19 @@ const MobileNostrPairing = ({navigation}: any) => {
       subscription.remove();
     };
   }, [isTrio, isSendBitcoin]);
-  // Load keyshare and derive device info in send mode
+  // Load minimal keyshare prep fields from native (full MPC blob never in JS); signing uses WithStoredKeyshare
   useEffect(() => {
     if (!isSendBitcoin && !isSignPSBT) return;
     const loadKeyshareData = async () => {
+      setSendModeDevicesLoadDone(false);
+      setSendModeDevicesLoadError(null);
       try {
-        const keyshareJSON = await EncryptedStorage.getItem('keyshare');
-        if (!keyshareJSON) {
-          dbg('No keyshare found in send mode');
-          setSendModeDevices([]);
-          return;
-        }
-        const keyshare = JSON.parse(keyshareJSON);
-        if (!keyshare.keygen_committee_keys || !keyshare.local_party_key) {
-          dbg('Keyshare missing required fields');
-          setSendModeDevices([]);
-          return;
-        }
+        const prep = await loadNostrKeysharePrepForSession();
+        const committee = prep.keygen_committee_keys;
+        const localParty = prep.local_party_key;
+        const localNpubFromKeyshare = prep.nostr_npub || '';
         // Determine if trio mode based on number of devices in keyshare
-        const numDevices = keyshare.keygen_committee_keys?.length || 0;
+        const numDevices = committee.length;
         const isTrioMode = numDevices === 3;
         setIsTrio(isTrioMode);
         dbg(
@@ -720,51 +929,12 @@ const MobileNostrPairing = ({navigation}: any) => {
           numDevices,
           'devices)',
         );
-        // Get local npub from keyshare
-        const localNpubFromKeyshare = keyshare.nostr_npub || '';
-        // Get local nsec from keyshare
-        // The nsec might be stored as hex-encoded bytes OR already in bech32 format
-        const nsecFromKeyshare = keyshare.nsec || '';
-        if (nsecFromKeyshare) {
-          // Check if it's already in bech32 format
-          if (nsecFromKeyshare.startsWith('nsec1')) {
-            // Already in correct format
-            setLocalNsec(nsecFromKeyshare);
-            dbg(
-              'Nsec from keyshare (already bech32):',
-              nsecFromKeyshare.substring(0, 20) + '...',
-            );
-          } else {
-            // Try to decode from hex
-            try {
-              const decodedNsec = hexToString(nsecFromKeyshare);
-              dbg(
-                'Decoded nsec from hex:',
-                decodedNsec.substring(0, 20) + '...',
-              );
-              // Verify it's a valid nsec format
-              if (decodedNsec.startsWith('nsec1')) {
-                setLocalNsec(decodedNsec);
-                dbg('Nsec set successfully');
-              } else {
-                dbg(
-                  'Warning: Decoded nsec does not start with nsec1:',
-                  decodedNsec.substring(0, 50),
-                );
-              }
-            } catch (error) {
-              dbg('Error decoding nsec from hex:', error);
-            }
-          }
-        } else {
-          dbg('Warning: No nsec found in keyshare');
-        }
-        // Set local npub if available
+        // Set local npub if available (from native prep or keyshare_meta)
         if (localNpubFromKeyshare) {
           setLocalNpub(localNpubFromKeyshare);
         }
         // Sort keygen_committee_keys to match the order used for keyshare labels
-        const sortedKeys = [...keyshare.keygen_committee_keys].sort();
+        const sortedKeys = [...committee].sort();
         // Build device list IMMEDIATELY with available data
         const devices: Array<{
           keyshareLabel: string;
@@ -773,7 +943,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         }> = [];
         for (let i = 0; i < sortedKeys.length; i++) {
           const hexKey = sortedKeys[i];
-          const isLocal = hexKey === keyshare.local_party_key;
+          const isLocal = hexKey === localParty;
           const keyshareLabel = `KeyShare${i + 1}`;
           let npub = '';
           if (isLocal) {
@@ -787,8 +957,8 @@ const MobileNostrPairing = ({navigation}: any) => {
             // For other devices, use shortened hex as placeholder, will update async
             npub =
               hexKey.substring(0, 12) +
-              '...' +
-              hexKey.substring(hexKey.length - 8);
+                '...' +
+                hexKey.substring(hexKey.length - 8);
           }
           devices.push({
             keyshareLabel,
@@ -803,7 +973,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         const updatedDevices = [...devices];
         for (let i = 0; i < sortedKeys.length; i++) {
           const hexKey = sortedKeys[i];
-          const isLocal = hexKey === keyshare.local_party_key;
+          const isLocal = hexKey === localParty;
           if (!isLocal) {
             try {
               // Validate hex key format before calling hexToNpub
@@ -854,6 +1024,22 @@ const MobileNostrPairing = ({navigation}: any) => {
       } catch (error: any) {
         dbg('Error loading keyshare data:', error);
         setSendModeDevices([]);
+        const code = error instanceof Error ? error.message : '';
+        if (code === 'MISSING_COMMITTEE_OR_LOCAL') {
+          setSendModeDevicesLoadError(
+            'Could not load co-signer list. Ensure keyshare is complete, or open the app once so keyshare metadata syncs.',
+          );
+        } else if (code === 'MISSING_PUB_OR_CHAIN') {
+          setSendModeDevicesLoadError(
+            'Could not load wallet public data. Restore from backup or re-import your keyshare.',
+          );
+        } else {
+          setSendModeDevicesLoadError(
+            'Could not load keyshare for co-signer list. Check secure storage and try again.',
+          );
+        }
+      } finally {
+        setSendModeDevicesLoadDone(true);
       }
     };
     loadKeyshareData();
@@ -1458,6 +1644,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       dbg('Keyshare mapping:', mapping);
       // Save keyshare (keyshare_position will be calculated on-the-fly when needed)
       await EncryptedStorage.setItem('keyshare', keyshareJSON);
+      await saveKeyshareMetadata(keyshareJSON);
       // New wallet setups are always non-legacy, so no need to reset flag
       setMpcDone(true);
       setStatus('Key generation complete!');
@@ -1546,23 +1733,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       // Store original network/API
       originalNetwork =
         appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
-      const cachedApi = appConfigRepository.get(`api_${originalNetwork}`);
-      originalApiUrl = cachedApi || '';
-      if (!originalApiUrl) {
-        originalApiUrl =
-          originalNetwork === 'testnet3' || originalNetwork === 'testnet'
-            ? 'https://mempool.space/testnet/api'
-            : 'https://mempool.space/api';
-      }
+      originalApiUrl = resolveStoredMempoolApiBase(originalNetwork);
       // Set network and API in BBMTLib for this transaction
       // Use normalized network (native format) for API lookup and BBMTLib
-      let apiUrl = appConfigRepository.get(`api_${net}`);
-      if (!apiUrl) {
-        apiUrl =
-          net === 'testnet3' || net === 'testnet'
-            ? 'https://mempool.space/testnet/api'
-            : 'https://mempool.space/api';
-      }
+      const apiUrl = resolveStoredMempoolApiBase(net);
       await BBMTLibNativeModule.setBtcNetwork(net);
       await BBMTLibNativeModule.setAPI(net, apiUrl);
       // CRITICAL: Update LocalCache 'api' key so WalletService.getWalletBalance uses correct API
@@ -1585,37 +1759,30 @@ const MobileNostrPairing = ({navigation}: any) => {
           apiUrl,
         },
       );
-      // Get keyshare and nsec
-      const keyshareJSON = await EncryptedStorage.getItem('keyshare');
-      if (!keyshareJSON) {
-        throw new Error('Keyshare not found');
-      }
-      const keyshare = JSON.parse(keyshareJSON);
-      let nsecToUse = localNsec;
-      if (!nsecToUse || !nsecToUse.startsWith('nsec1')) {
-        const nsecFromKeyshare = keyshare.nsec || '';
-        if (nsecFromKeyshare) {
-          if (nsecFromKeyshare.startsWith('nsec1')) {
-            nsecToUse = nsecFromKeyshare;
-          } else {
-            nsecToUse = hexToString(nsecFromKeyshare);
-          }
-          if (nsecToUse.startsWith('nsec1')) {
-            setLocalNsec(nsecToUse);
-          } else {
-            throw new Error('Invalid nsec format in keyshare');
-          }
-        } else {
-          throw new Error('nsec not found in keyshare');
-        }
-      }
+      let keyshare: any;
+      let publicKey = '';
+      let senderAddress = '';
+      let balanceSats = '';
+      let rawTxHex: string | undefined;
+      let broadcastInputs:
+        | Array<{
+            txid: string;
+            vout: number;
+            value: number;
+            scriptpubkey_address: string;
+          }>
+        | undefined;
+      let broadcastOutputs:
+        | Array<{scriptpubkey_address: string; value: number}>
+        | undefined;
+      keyshare = await loadNostrKeysharePrepForSession();
       // Derive from address using route params
-      const publicKey = await BBMTLibNativeModule.derivePubkey(
+      publicKey = await BBMTLibNativeModule.derivePubkey(
         keyshare.pub_key,
         keyshare.chain_code_hex,
         path,
       );
-      const senderAddress = await BBMTLibNativeModule.btcAddress(
+      senderAddress = await BBMTLibNativeModule.btcAddress(
         publicKey,
         net,
         addressTypeToUse,
@@ -1635,7 +1802,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         network: originalWalletServiceNetwork,
         apiUrl: originalWalletServiceApiUrl,
       });
-      const balanceSats = Big(balance.btc).times(1e8).toFixed(0);
+      balanceSats = Big(balance.btc).times(1e8).toFixed(0);
       // Get all npubs from keyshare for sessionFlag calculation
       const allNpubsFromKeyshare: string[] = [];
       const sortedKeys = [...keyshare.keygen_committee_keys].sort();
@@ -1816,158 +1983,132 @@ const MobileNostrPairing = ({navigation}: any) => {
         }
       }
 
-      let rawTxHex: string;
-      let broadcastInputs: Array<{txid: string; vout: number; value: number; scriptpubkey_address: string}> | undefined;
-      let broadcastOutputs: Array<{scriptpubkey_address: string; value: number}> | undefined;
-      try {
-        let utxosWithPathsJSON: string | null = null;
-        const utxosJsonFromQR = route.params?.utxosJson;
-        if (
-          utxosJsonFromQR &&
-          typeof utxosJsonFromQR === 'string' &&
-          utxosJsonFromQR.trim() !== ''
-        ) {
-          try {
-            const parsed = JSON.parse(utxosJsonFromQR);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              const first = parsed[0];
-              if (
-                first &&
-                typeof first.txid === 'string' &&
-                typeof first.vout === 'number' &&
-                typeof first.value === 'number'
-              ) {
-                // Map to WalletService shape so enrichUtxosWithScriptpubkey can process them.
-                const asUtxos = parsed.map((u: any) => ({
-                  txid: u.txid,
-                  vout: u.vout,
-                  value: u.value,
-                  derivationPath: u.derivation_path ?? u.derivationPath ?? '',
-                  address: u.address,
-                  scriptpubkey: u.scriptpubkey ?? '',
-                  chain: 'receive' as const,
-                  chainIndex: 0,
-                }));
-                const needsEnrichment = asUtxos.some(u => !u.scriptpubkey);
-                const enriched = needsEnrichment
-                  ? await WalletService.getInstance().enrichUtxosWithScriptpubkey(
-                      asUtxos,
-                      apiUrl,
-                    )
-                  : asUtxos;
-                const forNative = enriched.map((u: any) => ({
-                  txid: u.txid,
-                  vout: u.vout,
-                  value: u.value,
-                  derivation_path: u.derivationPath ?? u.derivation_path,
-                  address: u.address,
-                  scriptpubkey: u.scriptpubkey ?? '',
-                }));
-                utxosWithPathsJSON = JSON.stringify(forNative);
-                dbg(
-                  'MobileNostrPairing: using UTXOs from QR (enriched)',
-                  forNative.length,
-                );
-              }
+      /** RN iOS bridge expects NSString for every arg; coerce so Hermes never passes undefined/number. */
+      const nostrNativeStr = (v: unknown) =>
+        v === null || v === undefined ? '' : String(v);
+      let utxosWithPathsJSON: string | null = null;
+      const utxosJsonFromQR = route.params?.utxosJson;
+      if (
+        utxosJsonFromQR &&
+        typeof utxosJsonFromQR === 'string' &&
+        utxosJsonFromQR.trim() !== ''
+      ) {
+        try {
+          const parsed = JSON.parse(utxosJsonFromQR);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const first = parsed[0];
+            if (
+              first &&
+              typeof first.txid === 'string' &&
+              typeof first.vout === 'number' &&
+              typeof first.value === 'number'
+            ) {
+              const asUtxos = parsed.map((u: any) => ({
+                txid: u.txid,
+                vout: u.vout,
+                value: u.value,
+                derivationPath: u.derivation_path ?? u.derivationPath ?? '',
+                address: u.address,
+                scriptpubkey: u.scriptpubkey ?? '',
+                chain: 'receive' as const,
+                chainIndex: 0,
+              }));
+              const needsEnrichment = asUtxos.some(u => !u.scriptpubkey);
+              const enriched = needsEnrichment
+                ? await WalletService.getInstance().enrichUtxosWithScriptpubkey(
+                    asUtxos,
+                    apiUrl,
+                  )
+                : asUtxos;
+              const forNative = enriched.map((u: any) => ({
+                txid: u.txid,
+                vout: u.vout,
+                value: u.value,
+                derivation_path: u.derivationPath ?? u.derivation_path,
+                address: u.address,
+                scriptpubkey: u.scriptpubkey ?? '',
+              }));
+              utxosWithPathsJSON = JSON.stringify(forNative);
+              dbg(
+                'MobileNostrPairing: using UTXOs from QR (enriched)',
+                forNative.length,
+              );
             }
-          } catch {
-            dbg(
-              'MobileNostrPairing: failed to use utxosJson from QR, will fetch',
-            );
           }
+        } catch {
+          dbg(
+            'MobileNostrPairing: failed to use utxosJson from QR, will fetch',
+          );
         }
-        if (!utxosWithPathsJSON) {
-          const utxosWithPaths =
-            await WalletService.getInstance().fetchUtxosWithPaths(
-              net,
-              addressTypeToUse,
+      }
+      if (!utxosWithPathsJSON) {
+        const utxosWithPaths =
+          await WalletService.getInstance().fetchUtxosWithPaths(
+            net,
+            addressTypeToUse,
+            apiUrl,
+          );
+        if (utxosWithPaths.length > 0 && changeAddress) {
+          const enriched =
+            await WalletService.getInstance().enrichUtxosWithScriptpubkey(
+              utxosWithPaths,
               apiUrl,
             );
-          if (utxosWithPaths.length > 0 && changeAddress) {
-            const enriched =
-              await WalletService.getInstance().enrichUtxosWithScriptpubkey(
-                utxosWithPaths,
-                apiUrl,
-              );
-            const utxosForNative = enriched.map(u => ({
-              txid: u.txid,
-              vout: u.vout,
-              value: u.value,
-              derivation_path: u.derivationPath,
-              address: u.address,
-              scriptpubkey: u.scriptpubkey,
-            }));
-            utxosWithPathsJSON = JSON.stringify(utxosForNative);
-          }
-        }
-        if (utxosWithPathsJSON && changeAddress) {
-          const utxoList = JSON.parse(utxosWithPathsJSON) as Array<{txid: string; vout: number; value: number; address?: string}>;
-          broadcastInputs = utxoList.map((u: any) => ({
+          const utxosForNative = enriched.map(u => ({
             txid: u.txid,
             vout: u.vout,
             value: u.value,
-            scriptpubkey_address: u.address ?? '',
+            derivation_path: u.derivationPath,
+            address: u.address,
+            scriptpubkey: u.scriptpubkey,
           }));
-          const totalInput = utxoList.reduce((s: number, u: any) => s + (u.value || 0), 0);
-          const changeAmount = totalInput - Number(satoshiAmount) - Number(satoshiFees);
-          broadcastOutputs = [
-            {scriptpubkey_address: toAddress, value: Number(satoshiAmount)},
-          ];
-          if (changeAmount > 0) {
-            broadcastOutputs.push({scriptpubkey_address: changeAddress, value: changeAmount});
-          }
-          rawTxHex = await BBMTLibNativeModule.nostrMpcSendBTCWithUTXOs(
-            relaysCSV,
-            nsecToUse,
-            partiesNpubsCSV,
-            npubsSorted,
-            balanceSats,
-            keyshareJSON,
-            toAddress,
-            satoshiAmount,
-            satoshiFees,
-            utxosWithPathsJSON,
-            changeAddress,
-          );
-          dbg('MobileNostrPairing: multi-path send succeeded');
-        } else {
-          rawTxHex = await BBMTLibNativeModule.nostrMpcSendBTC(
-            relaysCSV,
-            nsecToUse,
-            partiesNpubsCSV,
-            npubsSorted,
-            balanceSats,
-            keyshareJSON,
-            path,
-            publicKey,
-            senderAddress,
-            toAddress,
-            satoshiAmount,
-            satoshiFees,
-            changeAddress,
-          );
+          utxosWithPathsJSON = JSON.stringify(utxosForNative);
         }
-      } catch (multiPathErr) {
-        dbg(
-          'MobileNostrPairing: multi-path failed, trying single-path:',
-          multiPathErr,
-        );
-        rawTxHex = await BBMTLibNativeModule.nostrMpcSendBTC(
-          relaysCSV,
-          nsecToUse,
-          partiesNpubsCSV,
-          npubsSorted,
-          balanceSats,
-          keyshareJSON,
-          path,
-          publicKey,
-          senderAddress,
-          toAddress,
-          satoshiAmount,
-          satoshiFees,
-          changeAddress,
+      }
+      if (!utxosWithPathsJSON || !String(changeAddress).trim()) {
+        throw new Error(
+          'Send BTC requires UTXOs and a change address (multi-path). Ensure you have spendable coins, or pass utxosJson and changeAddress from the sender.',
         );
       }
+      const utxoList = JSON.parse(utxosWithPathsJSON) as Array<{
+        txid: string;
+        vout: number;
+        value: number;
+        address?: string;
+      }>;
+      broadcastInputs = utxoList.map((u: any) => ({
+        txid: u.txid,
+        vout: u.vout,
+        value: u.value,
+        scriptpubkey_address: u.address ?? '',
+      }));
+      const totalInput = utxoList.reduce(
+        (s: number, u: any) => s + (u.value || 0),
+        0,
+      );
+      const changeAmount =
+        totalInput - Number(satoshiAmount) - Number(satoshiFees);
+      broadcastOutputs = [
+        {scriptpubkey_address: toAddress, value: Number(satoshiAmount)},
+      ];
+      if (changeAmount > 0) {
+        broadcastOutputs.push({
+          scriptpubkey_address: changeAddress,
+          value: changeAmount,
+        });
+      }
+      rawTxHex = await BBMTLibNativeModule.nostrMpcSendBTC(
+        nostrNativeStr(relaysCSV),
+        nostrNativeStr(partiesNpubsCSV),
+        nostrNativeStr(npubsSorted),
+        nostrNativeStr(balanceSats),
+        nostrNativeStr(toAddress),
+        nostrNativeStr(satoshiAmount),
+        nostrNativeStr(satoshiFees),
+        nostrNativeStr(utxosWithPathsJSON),
+        nostrNativeStr(changeAddress),
+      );
+      dbg('MobileNostrPairing: Nostr send (UTXO multi-path) succeeded');
       if (
         !rawTxHex ||
         typeof rawTxHex !== 'string' ||
@@ -1992,7 +2133,9 @@ const MobileNostrPairing = ({navigation}: any) => {
         originalApiUrl,
         originalWalletServiceNetwork,
         originalWalletServiceApiUrl,
-        ...(broadcastInputs && broadcastOutputs ? {inputs: broadcastInputs, outputs: broadcastOutputs} : {}),
+        ...(broadcastInputs && broadcastOutputs
+          ? {inputs: broadcastInputs, outputs: broadcastOutputs}
+          : {}),
       };
       skipRestoreInFinallyRef.current = true;
       if (nostrAbortRef.current) {
@@ -2003,7 +2146,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     } catch (error: any) {
       dbg('Send BTC error:', error);
       if (!nostrAbortRef.current) {
-        Alert.alert('Error', error?.message || 'Transaction signing failed');
+        Alert.alert('Error', alertMessageForNostrSendError(error));
       }
       setStatus('Transaction signing failed');
     } finally {
@@ -2060,40 +2203,9 @@ const MobileNostrPairing = ({navigation}: any) => {
     setIsPairing(true);
     setProgress(0);
     setStatus('Starting PSBT signing...');
+    let keyshare: any;
     try {
-      const keyshareJSON = await EncryptedStorage.getItem('keyshare');
-      if (!keyshareJSON) {
-        throw new Error('Keyshare not found');
-      }
-      const keyshare = JSON.parse(keyshareJSON);
-      // Get nsec from keyshare
-      let nsecToUse = localNsec;
-      if (!nsecToUse || !nsecToUse.startsWith('nsec1')) {
-        const nsecFromKeyshare = keyshare.nsec || '';
-        if (nsecFromKeyshare) {
-          try {
-            let decodedNsec = '';
-            if (nsecFromKeyshare.startsWith('nsec1')) {
-              decodedNsec = nsecFromKeyshare;
-            } else {
-              decodedNsec = hexToString(nsecFromKeyshare);
-            }
-            if (decodedNsec.startsWith('nsec1')) {
-              nsecToUse = decodedNsec;
-              setLocalNsec(decodedNsec);
-            } else {
-              throw new Error('Invalid nsec format in keyshare');
-            }
-          } catch (error) {
-            throw new Error(`Failed to load nsec from keyshare: ${error}`);
-          }
-        } else {
-          throw new Error('nsec not found in keyshare');
-        }
-      }
-      if (!nsecToUse || !nsecToUse.startsWith('nsec1')) {
-        throw new Error('Invalid nsec: must be in bech32 format (nsec1...)');
-      }
+      keyshare = await loadNostrKeysharePrepForSession();
       // Get all npubs from keyshare for session ID
       const allNpubsFromKeyshare: string[] = [];
       const sortedKeys = [...keyshare.keygen_committee_keys].sort();
@@ -2191,10 +2303,8 @@ const MobileNostrPairing = ({navigation}: any) => {
       // Call native module for PSBT signing
       await BBMTLibNativeModule.nostrMpcSignPSBT(
         relaysCSV,
-        nsecToUse,
         partiesNpubsCSV,
         npubsSorted,
-        keyshareJSON,
         route.params.psbtBase64,
       )
         .then(async (signedPsbt: any) => {
@@ -2485,6 +2595,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       cancelAnimation(progressAnimation);
       progressAnimation.value = 0;
     }
+    // progressAnimation is a Reanimated shared value (stable); listing it would not help and other deps would restart animation unnecessarily.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPreparing]);
   // Styles
@@ -4411,10 +4522,23 @@ const MobileNostrPairing = ({navigation}: any) => {
                           }}>
                           First Co-Signer
                         </Text>
-                        {sendModeDevices.length === 0 ? (
+                        {!sendModeDevicesLoadDone ? (
                           <Text
                             style={{color: theme.colors.text, opacity: 0.6}}>
-                            Loading...
+                            Loading…
+                          </Text>
+                        ) : sendModeDevicesLoadError ? (
+                          <Text
+                            style={{
+                              color: theme.colors.textSecondary,
+                              fontSize: theme.fontSizes?.sm || 13,
+                            }}>
+                            {sendModeDevicesLoadError}
+                          </Text>
+                        ) : sendModeDevices.length === 0 ? (
+                          <Text
+                            style={{color: theme.colors.text, opacity: 0.6}}>
+                            No co-signers found.
                           </Text>
                         ) : (
                           (() => {
@@ -5558,9 +5682,18 @@ const MobileNostrPairing = ({navigation}: any) => {
                           const net = route.params?.network || '';
                           const isTestnet =
                             net === 'testnet3' || net === 'testnet';
-                          const explorerBase = isTestnet
-                            ? 'https://mempool.space/testnet'
-                            : 'https://mempool.space';
+                          const netForApi = isTestnet
+                            ? 'testnet3'
+                            : net === 'mainnet'
+                              ? 'mainnet'
+                              : net || 'mainnet';
+                          const explorerBase =
+                            explorerWebBaseFromApiUrl(
+                              resolveStoredMempoolApiBase(netForApi),
+                            ) ||
+                            (isTestnet
+                              ? 'https://mempool.space/testnet'
+                              : 'https://mempool.space');
                           const sectionTitle = {
                             fontSize: theme.fontSizes?.xs || 10,
                             fontFamily: theme.fontFamilies?.bold,
@@ -6490,19 +6623,38 @@ const MobileNostrPairing = ({navigation}: any) => {
               );
             }
             const apiTxShape =
-              p.inputs && p.outputs && p.inputs.length > 0 && p.outputs.length > 0
+              p.inputs &&
+              p.outputs &&
+              p.inputs.length > 0 &&
+              p.outputs.length > 0
                 ? {
                     txid: txId,
-                    status: {confirmed: false, block_height: null, block_time: null, block_hash: null},
+                    status: {
+                      confirmed: false,
+                      block_height: null,
+                      block_time: null,
+                      block_hash: null,
+                    },
                     fee: p.satoshiFees,
                     vin: p.inputs.map(inp => ({
-                      prevout: {scriptpubkey_address: inp.scriptpubkey_address, value: inp.value},
+                      prevout: {
+                        scriptpubkey_address: inp.scriptpubkey_address,
+                        value: inp.value,
+                      },
                     })),
-                    vout: p.outputs!.map(o => ({scriptpubkey_address: o.scriptpubkey_address, value: o.value})),
+                    vout: p.outputs!.map(o => ({
+                      scriptpubkey_address: o.scriptpubkey_address,
+                      value: o.value,
+                    })),
                   }
                 : {
                     txid: txId,
-                    status: {confirmed: false, block_height: null, block_time: null, block_hash: null},
+                    status: {
+                      confirmed: false,
+                      block_height: null,
+                      block_time: null,
+                      block_hash: null,
+                    },
                     fee: p.satoshiFees,
                     vin: [
                       {
@@ -6512,7 +6664,12 @@ const MobileNostrPairing = ({navigation}: any) => {
                         },
                       },
                     ],
-                    vout: [{scriptpubkey_address: p.toAddress, value: p.satoshiAmount}],
+                    vout: [
+                      {
+                        scriptpubkey_address: p.toAddress,
+                        value: p.satoshiAmount,
+                      },
+                    ],
                   };
             transactionRepository.insertBroadcastTransaction(
               txId,
