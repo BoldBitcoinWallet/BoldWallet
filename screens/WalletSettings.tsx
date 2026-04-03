@@ -15,6 +15,7 @@ import {
   FlatList,
   useWindowDimensions,
   DeviceEventEmitter,
+  ActivityIndicator,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
 import AppSwitch from '../components/AppSwitch';
@@ -46,6 +47,7 @@ import {
   getKeyshareMetadata,
   clearKeyshareMetadata,
 } from '../utils';
+import {compareSemver} from '../utils/compareSemver';
 import {useTheme} from '../theme';
 import {waitMS, WalletService} from '../services/WalletService';
 import mempoolClient from '../services/MempoolClient';
@@ -853,6 +855,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [themeUpdateKey, setThemeUpdateKey] = useState(0);
   const [appVersion, setAppVersion] = useState('');
   const [buildNumber, setBuildNumber] = useState('');
+  const [latestGithubReleaseTag, setLatestGithubReleaseTag] = useState<
+    string | null
+  >(null);
+  const [githubUpdateAvailable, setGithubUpdateAvailable] = useState(false);
+  const [checkingGithubRelease, setCheckingGithubRelease] = useState(false);
+  const [showAppUpdateModal, setShowAppUpdateModal] = useState(false);
+  const manualGithubReleaseCheckRef = useRef(false);
   const [usageSize, setUsageSize] = useState<{fileCount: number; mb: string}>({
     fileCount: 0,
     mb: '0.00 MB',
@@ -870,6 +879,93 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       dbg('refreshUsageSize: failed', e);
     }
   }, []);
+
+  const checkGithubRelease = useCallback(
+    async (silent: boolean) => {
+      if (!appVersion) {
+        return;
+      }
+      if (!silent) {
+        if (manualGithubReleaseCheckRef.current) {
+          return;
+        }
+        manualGithubReleaseCheckRef.current = true;
+        setCheckingGithubRelease(true);
+      }
+      try {
+        const effectiveVersion = __DEV__ ? '0.0.0' : appVersion;
+        dbg('WalletSettings: checking for update...', {
+          appVersion,
+          effectiveVersion,
+          silent,
+        });
+        if (!silent) {
+          await waitMS(1000);
+        }
+        const res = await fetch(
+          'https://api.github.com/repos/BoldBitcoinWallet/BoldWallet/releases/latest',
+          {
+            headers: {
+              Accept: 'application/vnd.github+json',
+            },
+          },
+        );
+        if (!res.ok) {
+          throw new Error(`status ${res.status}`);
+        }
+        const json = await res.json();
+        const tag =
+          typeof json?.tag_name === 'string' && json.tag_name.length > 0
+            ? json.tag_name
+            : null;
+        if (!tag) {
+          throw new Error('no tag_name');
+        }
+        setLatestGithubReleaseTag(tag);
+        const cmp = compareSemver(effectiveVersion, tag);
+        setGithubUpdateAvailable(cmp < 0);
+        dbg('WalletSettings: update check result', {
+          current: effectiveVersion,
+          latest: tag,
+          updateAvailable: cmp < 0,
+        });
+        if (!silent && cmp >= 0) {
+          Toast.show({
+            type: 'success',
+            text1: "You're up to date",
+            text2: `Bold Wallet v${appVersion} matches the latest release.`,
+            position: 'top',
+          });
+        }
+      } catch {
+        dbg('WalletSettings: update check failed');
+        if (!silent) {
+          Toast.show({
+            type: 'error',
+            text1: 'Could not check for updates',
+            text2:
+              'Please check your internet connection and update from your original app store.',
+            position: 'top',
+          });
+        }
+      } finally {
+        if (!silent) {
+          manualGithubReleaseCheckRef.current = false;
+          setCheckingGithubRelease(false);
+        }
+      }
+    },
+    [appVersion],
+  );
+
+  const handleAppVersionRowPress = useCallback(() => {
+    if (githubUpdateAvailable && latestGithubReleaseTag) {
+      setShowAppUpdateModal(true);
+      return;
+    }
+    checkGithubRelease(false);
+  }, [githubUpdateAvailable, latestGithubReleaseTag, checkGithubRelease]);
+
   const toggleSection = (section: string) => {
     setExpandedSections(prev => {
       const newState = Object.keys(prev).reduce((acc, key) => {
@@ -3982,86 +4078,92 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             onToggle={() => toggleSection('about')}
             styles={styles}
             theme={theme}>
-            <View style={styles.aboutInfoRow}>
+            <AppPressable
+              onPress={handleAppVersionRowPress}
+              disabled={!appVersion || checkingGithubRelease}
+              style={styles.aboutInfoRow}
+              accessibilityRole="button"
+              accessibilityLabel="Check for Bold Wallet updates"
+              android_ripple={{color: 'rgba(0,0,0,0.08)'}}>
               <Text style={styles.aboutLabel}>App Version</Text>
-              <Text style={styles.aboutValue}>{appVersion}</Text>
-            </View>
-            <View style={styles.aboutInfoRow}>
-              <Text style={styles.aboutLabel}>Build Number</Text>
-              <AppPressable
-                onPress={() => {
-                  // Check if dev mode is already enabled
-                  if (devDebugEnabled) {
-                    Toast.show({
-                      type: 'info',
-                      text1: 'Dev Mode Already Enabled',
-                      text2: 'Developer debug section is already visible',
-                      position: 'top',
-                      visibilityTime: 2000,
-                    });
-                    return;
-                  }
+              {checkingGithubRelease ? (
+                <ActivityIndicator
+                  size="small"
+                  color={theme.colors.secondary}
+                />
+              ) : (
+                <Text style={styles.aboutValue}>{appVersion}</Text>
+              )}
+            </AppPressable>
+            <AppPressable
+              onPress={() => {
+                if (devDebugEnabled) {
+                  Toast.show({
+                    type: 'info',
+                    text1: 'Dev Mode Already Enabled',
+                    text2: 'Developer debug section is already visible',
+                    position: 'top',
+                    visibilityTime: 2000,
+                  });
+                  return;
+                }
 
-                  // Increment click count
-                  buildNumberClickCountRef.current += 1;
-                  const currentCount = buildNumberClickCountRef.current;
-                  setBuildNumberClickCount(currentCount);
+                buildNumberClickCountRef.current += 1;
+                const currentCount = buildNumberClickCountRef.current;
+                setBuildNumberClickCount(currentCount);
 
-                  // Clear existing timeout
+                if (buildNumberClickTimeoutRef.current) {
+                  clearTimeout(buildNumberClickTimeoutRef.current);
+                }
+                buildNumberClickTimeoutRef.current = setTimeout(() => {
+                  buildNumberClickCountRef.current = 0;
+                  setBuildNumberClickCount(0);
+                }, 3000);
+
+                if (currentCount >= 2 && currentCount < 7) {
+                  const stepsRemaining = 7 - currentCount;
+                  Toast.show({
+                    type: 'info',
+                    text1: `You're now ${stepsRemaining} step${
+                      stepsRemaining > 1 ? 's' : ''
+                    } to enable dev mode`,
+                    position: 'top',
+                    visibilityTime: 2000,
+                  });
+                }
+
+                if (currentCount >= 7) {
+                  setDevDebugEnabled(true);
+                  EncryptedStorage.setItem('devDebugEnabled', 'true').catch(
+                    error => {
+                      dbg('Error saving devDebugEnabled:', error);
+                    },
+                  );
+                  setExpandedSections(prev => ({
+                    ...prev,
+                    about: false,
+                    devDebug: true,
+                  }));
+                  Toast.show({
+                    type: 'success',
+                    text1: 'Dev Mode Enabled',
+                    text2: 'Developer debug section is now visible',
+                    position: 'top',
+                  });
+                  buildNumberClickCountRef.current = 0;
+                  setBuildNumberClickCount(0);
                   if (buildNumberClickTimeoutRef.current) {
                     clearTimeout(buildNumberClickTimeoutRef.current);
+                    buildNumberClickTimeoutRef.current = null;
                   }
-                  // Reset count after 3 seconds of inactivity
-                  buildNumberClickTimeoutRef.current = setTimeout(() => {
-                    buildNumberClickCountRef.current = 0;
-                    setBuildNumberClickCount(0);
-                  }, 3000);
-
-                  // Show progress toast starting from 2 clicks
-                  if (currentCount >= 2 && currentCount < 7) {
-                    const stepsRemaining = 7 - currentCount;
-                    Toast.show({
-                      type: 'info',
-                      text1: `You're now ${stepsRemaining} step${
-                        stepsRemaining > 1 ? 's' : ''
-                      } to enable dev mode`,
-                      position: 'top',
-                      visibilityTime: 2000,
-                    });
-                  }
-
-                  // Check if we've reached 7 clicks
-                  if (currentCount >= 7) {
-                    // Enable dev debug mode
-                    setDevDebugEnabled(true);
-                    EncryptedStorage.setItem('devDebugEnabled', 'true').catch(
-                      error => {
-                        dbg('Error saving devDebugEnabled:', error);
-                      },
-                    );
-                    // Open devDebug section and close about section
-                    setExpandedSections(prev => ({
-                      ...prev,
-                      about: false,
-                      devDebug: true,
-                    }));
-                    // Show toast
-                    Toast.show({
-                      type: 'success',
-                      text1: 'Dev Mode Enabled',
-                      text2: 'Developer debug section is now visible',
-                      position: 'top',
-                    });
-                    // Reset counter
-                    buildNumberClickCountRef.current = 0;
-                    setBuildNumberClickCount(0);
-                    if (buildNumberClickTimeoutRef.current) {
-                      clearTimeout(buildNumberClickTimeoutRef.current);
-                      buildNumberClickTimeoutRef.current = null;
-                    }
-                  }
-                }}
-                style={styles.buildNumberContainer}>
+                }
+              }}
+              style={styles.aboutInfoRow}
+              accessibilityRole="button"
+              accessibilityLabel="Build number"
+              android_ripple={{color: 'rgba(0,0,0,0.08)'}}>
+              <Text style={styles.aboutLabel}>Build Number</Text>
+              <View style={styles.buildNumberContainer}>
                 {buildNumberClickCount >= 2 ? (
                   <View style={styles.buildNumberBadge}>
                     <Text style={styles.buildNumberBadgeText}>
@@ -4071,8 +4173,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 ) : (
                   <Text style={styles.aboutValue}>{buildNumber}</Text>
                 )}
-              </AppPressable>
-            </View>
+              </View>
+            </AppPressable>
             <Text style={styles.toggleDescription}>
               Make sure that your wallet keyshares devices are running the
               latest version for optimal compatibility and security.
@@ -4089,6 +4191,40 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         phase={restoreProgress?.phase}
         progress={restoreProgress?.progress}
       />
+      <Modal
+        visible={showAppUpdateModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowAppUpdateModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Image
+                source={require('../assets/bold-icon.png')}
+                style={styles.modalIcon}
+                resizeMode="contain"
+                tintColor={theme.colors.secondary}
+              />
+              <Text style={styles.modalTitle}>Update available</Text>
+            </View>
+            <Text style={styles.modalDescription}>
+              New version ({latestGithubReleaseTag ?? 'latest'}) available.
+              {'\n\n'}
+              For best interoperability and stability, please update all your
+              devices from the same source you originally installed Bold from
+              (App Store, Play Store, F-Droid, or other stores).
+            </Text>
+            <View style={styles.modalActions}>
+              <AppPressable
+                style={[styles.modalButton, styles.confirmButton]}
+                onPress={() => setShowAppUpdateModal(false)}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                <Text style={styles.confirmButtonText}>Okay</Text>
+              </AppPressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <BackupKeyshareModal
         visible={isBackupModalVisible}
         onClose={() => setIsBackupModalVisible(false)}

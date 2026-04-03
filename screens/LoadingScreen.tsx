@@ -12,15 +12,13 @@ import {
   AccessibilityInfo,
   AppState,
   Platform,
-  PixelRatio,
-  type TextStyle,
-  type ViewStyle,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
-import {WebView} from 'react-native-webview';
 import {dbg} from '../utils';
 import {createToastConfig} from '../utils/toastConfig';
+import {compareSemver} from '../utils/compareSemver';
 import AppPressable from '../components/AppPressable';
+import {ParticlesErrorBoundary} from '../components/ParticlesErrorBoundary';
 import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import DeviceInfo from 'react-native-device-info';
 import {useTheme} from '../theme';
@@ -29,295 +27,7 @@ import {
   getCachedQuotes,
   syncLoadingQuotes,
 } from '../services/LoadingQuotesCache';
-
-type LoadingQuotesMarqueeStyles = {
-  strip: ViewStyle;
-  lineWrap: ViewStyle;
-  marqueeText: TextStyle;
-  staticText: TextStyle;
-  webMarquee: ViewStyle;
-  webMarqueePlaceholder: ViewStyle;
-};
-
-/**
- * WKWebView maps the same CSS px to a much larger on-screen size than Android WebView
- * (often ~2× in practice). Scale iOS CSS so the ticker matches Android visually.
- */
-const WEB_MARQUEE_IOS_CSS_FONT_MULTIPLIER = 1;
-
-/** HTML/CSS marquee runs inside WebView (native WKWebView), not in the RN Yoga tree. */
-function escapeHtmlForWebMarquee(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-/** Split on `**` — odd segments (1,3,…) are bold; even segments are plain. */
-function splitMarkdownBoldSegments(s: string): string[] {
-  return s.split('**');
-}
-
-/** `**bold**` → `<strong>`; each segment HTML-escaped. */
-function marqueeMarkdownBoldToHtml(line: string): string {
-  const parts = splitMarkdownBoldSegments(line);
-  return parts
-    .map((part, i) => {
-      const escaped = escapeHtmlForWebMarquee(part);
-      return i % 2 === 1 ? `<strong>${escaped}</strong>` : escaped;
-    })
-    .join('');
-}
-
-function buildQuotesMarqueeHtml(
-  singleLinePlain: string,
-  durationSec: number,
-  fontSizePx: number,
-  colorCss: string,
-  isAndroid: boolean,
-): string {
-  const escaped = marqueeMarkdownBoldToHtml(singleLinePlain);
-  const pad = '10px';
-  const scaled = fontSizePx * PixelRatio.getFontScale();
-  const cssFontPx =
-    Math.round(
-      scaled * (isAndroid ? 1.1 : WEB_MARQUEE_IOS_CSS_FONT_MULTIPLIER) * 100,
-    ) / 100;
-  /** Avoid `-apple-system` in WKWebView — it can inflate size vs Android Roboto at the same px. */
-  const fontStack = isAndroid
-    ? 'Roboto, sans-serif'
-    : 'Helvetica Neue, Helvetica, Arial, sans-serif';
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
-<style>
- * { box-sizing: border-box; margin: 0; padding: 0; }
- html, body {
-   width: 100%;
-   height: 100%;
-   overflow: hidden;
-   background: transparent;
-   -webkit-text-size-adjust: 100%;
-   text-size-adjust: 100%;
- }
- .viewport {
-   width: 100%;
-   height: 100%;
-   overflow: hidden;
-   display: flex;
-   align-items: center;
- }
- .track {
-   display: flex;
-   flex-direction: row;
-   flex-wrap: nowrap;
-   width: max-content;
-   animation: marq ${durationSec}s linear infinite;
- }
- .seg {
-   font-size: ${cssFontPx}px;
-   line-height: 1.25;
-   color: ${colorCss};
-   font-family: ${fontStack};
-   font-weight: 500;
-   padding-right: ${pad};
-   white-space: nowrap;
- }
- .seg strong {
-   font-weight: 700;
- }
- @keyframes marq {
-   0% { transform: translateX(0); }
-   100% { transform: translateX(-50%); }
- }
-</style></head><body>
-<div class="viewport"><div class="track"><span class="seg">${escaped}</span><span class="seg">${escaped}</span></div></div>
-</body></html>`;
-}
-
-/**
- * Any whitespace (newlines, tabs, Unicode spaces, regular spaces) lets RN Text wrap to
- * many lines. Replace runs with NBSP so the string is one unbreakable line; only the
- * strip clips (overflow hidden), not per-line clipping inside Text.
- */
-function toMarqueeSingleLine(s: string): string {
-  return s.replace(/[\u200B\uFEFF]/g, '').replace(/\s+/gu, '\u00A0');
-}
-
-/** Between quotes on the manchette (spaces are normalized when we build the single line). */
-const MANCHETTE_QUOTE_SEPARATOR = '  •  ';
-
-/**
- * Build one continuous string from all quotes, then coerce the whole thing to a single
- * unbreakable line for RN Text (NBSP, no wrapping). Order: concatenate first, treat once.
- */
-function buildManchetteMarqueeLine(quotes: string[]): string {
-  const parts = quotes.map(q => q.trim()).filter(q => q.length > 0);
-  if (parts.length === 0) {
-    return '';
-  }
-  const fullLine = `${parts.join(
-    MANCHETTE_QUOTE_SEPARATOR,
-  )}${MANCHETTE_QUOTE_SEPARATOR}`;
-  return toMarqueeSingleLine(fullLine);
-}
-
-/** Reduced-motion path: same `**bold**` segments as the WebView marquee. */
-function MarqueeStaticQuotesText({
-  quotes,
-  style,
-}: {
-  quotes: string[];
-  style: TextStyle;
-}) {
-  const children: React.ReactNode[] = [];
-  quotes.forEach((q, qi) => {
-    if (qi > 0) {
-      children.push('\n\n');
-    }
-    splitMarkdownBoldSegments(q).forEach((part, pi) => {
-      children.push(
-        <Text
-          key={`${qi}-${pi}`}
-          style={pi % 2 === 1 ? [style, {fontWeight: '700'}] : style}>
-          {part}
-        </Text>,
-      );
-    });
-  });
-  const a11yLabel = quotes.map(q => q.replace(/\*\*/g, '')).join(' ');
-  return (
-    <Text selectable style={style} accessibilityLabel={a11yLabel}>
-      {children}
-    </Text>
-  );
-}
-
-/** Bottom manchette: WebView CSS ticker when motion is allowed; static text when reduced motion. */
-function LoadingQuotesMarquee({
-  quotes,
-  reduceMotion,
-  styles: s,
-  bottomInset = 0,
-  appActive,
-  textColor,
-  fontSize,
-}: {
-  quotes: string[];
-  reduceMotion: boolean;
-  styles: LoadingQuotesMarqueeStyles;
-  bottomInset?: number;
-  appActive: boolean;
-  textColor: string;
-  fontSize: number;
-}) {
-  const segmentLine = useMemo(
-    () => buildManchetteMarqueeLine(quotes),
-    [quotes],
-  );
-  const stripStyle = useMemo(
-    () => [s.strip, {paddingBottom: 10 + bottomInset}],
-    [s.strip, bottomInset],
-  );
-
-  const [webReady, setWebReady] = useState(false);
-  useEffect(() => {
-    if (!appActive || reduceMotion || !segmentLine) {
-      setWebReady(false);
-      return;
-    }
-    const t = setTimeout(() => setWebReady(true), 600);
-    return () => clearTimeout(t);
-  }, [appActive, reduceMotion, segmentLine]);
-
-  const htmlSource = useMemo(() => {
-    if (!segmentLine) {
-      return null;
-    }
-    const dur = Math.max(
-      12,
-      Math.min(90, Math.round(segmentLine.length * 0.12)),
-    );
-    return buildQuotesMarqueeHtml(
-      segmentLine,
-      dur,
-      fontSize,
-      textColor,
-      Platform.OS === 'android',
-    );
-  }, [segmentLine, fontSize, textColor]);
-
-  if (!segmentLine) {
-    return null;
-  }
-
-  if (reduceMotion) {
-    return (
-      <View style={stripStyle} accessibilityRole="text">
-        <MarqueeStaticQuotesText quotes={quotes} style={s.staticText} />
-      </View>
-    );
-  }
-
-  if (!appActive || !webReady || !htmlSource) {
-    return (
-      <View
-        style={stripStyle}
-        accessibilityRole="text"
-        accessibilityLabel={quotes.join(' ')}>
-        <View style={[s.lineWrap, s.webMarqueePlaceholder]} />
-      </View>
-    );
-  }
-
-  return (
-    <View
-      style={stripStyle}
-      accessibilityRole="text"
-      accessibilityLabel="Wallet quotes">
-      <View style={s.lineWrap}>
-        <WebView
-          key={`${segmentLine.length}:${segmentLine.slice(0, 80)}`}
-          originWhitelist={['*']}
-          source={{html: htmlSource}}
-          style={s.webMarquee}
-          scrollEnabled={false}
-          showsHorizontalScrollIndicator={false}
-          showsVerticalScrollIndicator={false}
-          bounces={false}
-          overScrollMode="never"
-          androidLayerType="hardware"
-          setSupportMultipleWindows={false}
-          opaque={false}
-          textZoom={Platform.OS === 'android' ? 100 : undefined}
-        />
-      </View>
-    </View>
-  );
-}
-
-// Error boundary for particle animation - on old/slow devices rendering many Animated.Image can crash
-class ParticlesErrorBoundary extends React.Component<
-  {onError: () => void; children: React.ReactNode},
-  {hasError: boolean}
-> {
-  state = {hasError: false};
-
-  static getDerivedStateFromError() {
-    return {hasError: true};
-  }
-
-  componentDidCatch() {
-    this.props.onError();
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return null;
-    }
-    return this.props.children;
-  }
-}
+import {LoadingQuotesMarquee} from './loading/LoadingQuotesMarquee';
 
 /** iOS reports a large bottom safe area; with strip padding it sits too high vs Android — trim only for the manchette. */
 const IOS_QUOTES_STRIP_BOTTOM_INSET_TRIM = 32;
@@ -706,23 +416,6 @@ const LoadingScreen = ({onRetry}: any) => {
     setParticles([]);
   }, [appActive]);
 
-  const compareVersions = (a: string, b: string) => {
-    const norm = (v: string) =>
-      v
-        .replace(/^v/i, '')
-        .split('.')
-        .map(part => parseInt(part, 10) || 0);
-    const [a1, a2, a3] = norm(a);
-    const [b1, b2, b3] = norm(b);
-    if (a1 !== b1) {
-      return a1 - b1;
-    }
-    if (a2 !== b2) {
-      return a2 - b2;
-    }
-    return a3 - b3;
-  };
-
   const checkForUpdate = useCallback(
     async (silent: boolean) => {
       if (!version) {
@@ -770,7 +463,7 @@ const LoadingScreen = ({onRetry}: any) => {
           throw new Error('no tag_name');
         }
         setLatestVersion(tag);
-        const cmp = compareVersions(effectiveVersion, tag);
+        const cmp = compareSemver(effectiveVersion, tag);
         setUpdateAvailable(cmp < 0);
         dbg('LoadingScreen: update check result', {
           current: effectiveVersion,
@@ -1293,7 +986,7 @@ const LoadingScreen = ({onRetry}: any) => {
           </View>
         </View>
         {loadingQuotes.length > 0 ? (
-          <View style={styles.quotesTickerOverlay} pointerEvents="none">
+          <View style={styles.quotesTickerOverlay} pointerEvents="box-none">
             <LoadingQuotesMarquee
               quotes={loadingQuotes}
               reduceMotion={reduceMotion}

@@ -1,5 +1,10 @@
 /**
  * DB-first cache for LoadingScreen rolling quotes (remote QUOTES.md, one line per quote).
+ *
+ * Optional expiry metadata per line: `{DD/MM/YYYY}` (e.g. `{25/05/2026}`). If `Date.now()`
+ * is after **end of that local calendar day**, the line is omitted. Tokens are stripped from
+ * surviving lines for display. Multiple dates on one line: the quote stays until the **latest**
+ * date’s day ends.
  */
 import {dbg} from '../utils';
 import appConfigRepository, {CONFIG_KEYS} from './repositories/AppConfigRepository';
@@ -8,6 +13,73 @@ export const LOADING_QUOTES_URL =
   'https://raw.githubusercontent.com/BoldBitcoinWallet/mempool-space-hosts/refs/heads/main/QUOTES.md';
 
 const LOG = 'LoadingQuotes:';
+
+/** Matches `{25/05/2026}`-style day/month/year (local timezone for expiry). */
+const QUOTE_EXPIRY_TOKEN_RE = /\{(\d{1,2})\/(\d{1,2})\/(\d{4})\}/g;
+
+function parseExpiryEndOfLocalDayMs(
+  day: number,
+  month: number,
+  year: number,
+): number | null {
+  if (month < 1 || month > 12 || day < 1 || day > 31) {
+    return null;
+  }
+  const d = new Date(year, month - 1, day);
+  if (
+    d.getFullYear() !== year ||
+    d.getMonth() !== month - 1 ||
+    d.getDate() !== day
+  ) {
+    return null;
+  }
+  return new Date(year, month - 1, day, 23, 59, 59, 999).getTime();
+}
+
+/** Remove all `{DD/MM/YYYY}` tokens; collapse whitespace. */
+export function stripQuoteExpiryTokens(line: string): string {
+  return line
+    .replace(QUOTE_EXPIRY_TOKEN_RE, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Drops expired lines (by `{DD/MM/YYYY}`) and strips tokens from the rest.
+ * @param nowMs - defaults to `Date.now()` (injectable for tests).
+ */
+export function filterExpiredQuotes(
+  quotes: string[],
+  nowMs: number = Date.now(),
+): string[] {
+  const out: string[] = [];
+  for (const q of quotes) {
+    if (typeof q !== 'string' || q.trim().length === 0) {
+      continue;
+    }
+    let latestEndMs: number | null = null;
+    for (const m of q.matchAll(QUOTE_EXPIRY_TOKEN_RE)) {
+      const day = parseInt(m[1], 10);
+      const month = parseInt(m[2], 10);
+      const year = parseInt(m[3], 10);
+      const endMs = parseExpiryEndOfLocalDayMs(day, month, year);
+      if (endMs != null) {
+        latestEndMs =
+          latestEndMs == null ? endMs : Math.max(latestEndMs, endMs);
+      }
+    }
+    if (latestEndMs != null && nowMs > latestEndMs) {
+      dbg(`${LOG} skip expired quote`, q.slice(0, 120));
+      continue;
+    }
+    const stripped = stripQuoteExpiryTokens(q);
+    if (!stripped.length) {
+      continue;
+    }
+    out.push(stripped);
+  }
+  return out;
+}
 
 export type LoadingQuotesCachePayload = {
   quotes: string[];
@@ -73,19 +145,24 @@ export function getCachedQuotes(options?: {silent?: boolean}): string[] | null {
       dbg(`${LOG} cache invalid (all entries empty after filter)`);
       return null;
     }
+    const active = filterExpiredQuotes(cleaned);
+    if (active.length === 0) {
+      dbg(`${LOG} cache invalid (all quotes expired by {DD/MM/YYYY})`);
+      return null;
+    }
     const ageMs =
       typeof fetchedAt === 'number' ? Date.now() - fetchedAt : null;
     log(
       `${LOG} cache hit`,
-      `count=${cleaned.length}`,
+      `count=${active.length}`,
       typeof fetchedAt === 'number'
         ? `fetchedAt=${new Date(fetchedAt).toISOString()} ageMs=${ageMs}`
         : 'fetchedAt=(unknown)',
     );
     if (!silent) {
-      dbg(`${LOG} cached quotes (full, ${cleaned.length})`, cleaned);
+      dbg(`${LOG} cached quotes (full, ${active.length})`, active);
     }
-    return cleaned;
+    return active;
   } catch (e) {
     dbg(`${LOG} cache read JSON error`, e);
     return null;
@@ -150,12 +227,13 @@ export async function syncLoadingQuotes(): Promise<string[]> {
     const remote = await fetchQuotesFromRemote();
     const now = Date.now();
     saveCachedQuotes(remote, now);
+    const active = filterExpiredQuotes(remote, now);
     dbg(
       `${LOG} sync done (remote)`,
-      `returning=${remote.length}`,
+      `raw=${remote.length} active=${active.length}`,
       `wasCached=${cached != null}`,
     );
-    return remote;
+    return active;
   } catch (e) {
     dbg(
       `${LOG} sync remote failed; using cache if any`,

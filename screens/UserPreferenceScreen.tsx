@@ -32,6 +32,7 @@ import appConfigRepository, {
 } from '../services/repositories/AppConfigRepository';
 import {
   CANONICAL_TESTNET_MEMPOOL_API_BASE,
+  getStoredUserMempoolApiBaseFromDb,
   isKnownPublicMempoolMainnetBase,
   isTestnetNetworkKey,
   normalizeUserMempoolApiInput,
@@ -54,7 +55,9 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
     showPsbtTab,
     showWalletTab,
   } = useUser();
-  const [pendingAPI, setPendingAPI] = useState('');
+  const [pendingAPI, setPendingAPI] = useState(() =>
+    getStoredUserMempoolApiBaseFromDb(activeNetwork),
+  );
   const [isAPISaving, setIsAPISaving] = useState(false);
   const [isRestoringIndexes, setIsRestoringIndexes] = useState(false);
   const [restoreProgress, setRestoreProgress] = useState<{
