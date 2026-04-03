@@ -19,20 +19,48 @@ export function splitMarkdownBoldSegments(s: string): string[] {
   return s.split('**');
 }
 
-/** `__<url>__` (preferred) or `__https://…__` — opens in browser; URL must be http(s). */
+/**
+ * `__<url>__`, `__<url>(title)__`, or `__https://…__` — opens in browser; URL must be http(s).
+ * Title in parentheses is optional display text (bracket URL form only).
+ */
 export type MarqueeLinkSegment =
   | {kind: 'text'; value: string}
   | {kind: 'link'; href: string; display: string};
 
-const MARQUEE_LINK_RE = /__<([^>]+)>__|__(https?:\/\/.+?)__/g;
+/** Bracket URL with optional `(title)` before closing `__`; then unbracketed http(s) URL. */
+const MARQUEE_LINK_RE =
+  /__<([^>]+)>(?:\(([^)]*)\))?__|__(https?:\/\/.+?)__/g;
 
 function isHttpUrl(s: string): boolean {
   return /^https?:\/\//i.test(s.trim());
 }
 
+function hrefAndDisplayFromMatch(m: RegExpExecArray): {
+  href: string;
+  display: string;
+} | null {
+  if (m[1] !== undefined) {
+    const href = m[1].trim();
+    if (!isHttpUrl(href)) {
+      return null;
+    }
+    const title = m[2] !== undefined ? m[2].trim() : '';
+    const display = title.length > 0 ? title : href;
+    return {href, display};
+  }
+  if (m[3] !== undefined) {
+    const href = m[3].trim();
+    if (!isHttpUrl(href)) {
+      return null;
+    }
+    return {href, display: href};
+  }
+  return null;
+}
+
 /**
  * Split one fragment on marquee link syntax. Unmatched / invalid URLs stay as plain text.
- * Use `__<https://…>__` when the URL can contain `__` (e.g. query strings).
+ * Use `__<https://…>__` or `__<https://…>(label)__` when the URL can contain `__` or underscores.
  */
 export function parseMarqueeLinkSegments(line: string): MarqueeLinkSegment[] {
   const segments: MarqueeLinkSegment[] = [];
@@ -43,9 +71,13 @@ export function parseMarqueeLinkSegments(line: string): MarqueeLinkSegment[] {
     if (m.index > last) {
       segments.push({kind: 'text', value: line.slice(last, m.index)});
     }
-    const raw = (m[1] ?? m[2] ?? '').trim();
-    if (isHttpUrl(raw)) {
-      segments.push({kind: 'link', href: raw, display: raw});
+    const pair = hrefAndDisplayFromMatch(m);
+    if (pair) {
+      segments.push({
+        kind: 'link',
+        href: pair.href,
+        display: pair.display,
+      });
     } else {
       segments.push({kind: 'text', value: m[0]});
     }
@@ -57,11 +89,14 @@ export function parseMarqueeLinkSegments(line: string): MarqueeLinkSegment[] {
   return segments;
 }
 
-/** Remove `**` and link wrappers for accessibility labels. */
+/** Remove `**` and link wrappers for accessibility labels (visible title when present). */
 export function stripMarqueeMarkupForA11y(s: string): string {
   return s
     .replace(/\*\*/g, '')
-    .replace(/__<([^>]+)>__/g, '$1')
+    .replace(/__<([^>]+)>(?:\(([^)]*)\))?__/g, (_, href: string, title?: string) => {
+      const t = (title ?? '').trim();
+      return t.length > 0 ? t : href;
+    })
     .replace(/__(https?:\/\/.+?)__/g, '$1');
 }
 
