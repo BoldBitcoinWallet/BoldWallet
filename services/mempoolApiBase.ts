@@ -142,3 +142,25 @@ export function resolveStoredMempoolApiBase(network: string): string {
   }
   return 'https://mempool.space/api';
 }
+
+/**
+ * Raw user-saved mempool REST base from `app_config` only (no public defaults).
+ * Use to prefill settings / onboarding URL fields; empty when nothing was stored.
+ */
+export function getStoredUserMempoolApiBaseFromDb(network: string): string {
+  const net = normalizeNetworkKey(network);
+  const perNet = appConfigRepository.get(`api_${net}`);
+
+  if (net === 'testnet3') {
+    if (perNet && isValidTestnetMempoolApiUrl(perNet)) {
+      return perNet;
+    }
+    return '';
+  }
+
+  if (perNet) {
+    return perNet;
+  }
+  const global = appConfigRepository.get('api');
+  return global ?? '';
+}

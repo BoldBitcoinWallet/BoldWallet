@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState, useCallback} from 'react';
+import React, {useEffect, useMemo, useRef, useState, useCallback} from 'react';
 import {
   View,
   Text,
@@ -9,40 +9,41 @@ import {
   Easing,
   Pressable,
   Modal,
+  AccessibilityInfo,
+  AppState,
+  Platform,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
 import {dbg} from '../utils';
+import {createToastConfig} from '../utils/toastConfig';
+import {compareSemver} from '../utils/compareSemver';
 import AppPressable from '../components/AppPressable';
-import {SafeAreaView} from 'react-native-safe-area-context';
+import {ParticlesErrorBoundary} from '../components/ParticlesErrorBoundary';
+import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import DeviceInfo from 'react-native-device-info';
 import {useTheme} from '../theme';
 import {waitMS} from '../services/WalletService';
+import {
+  getCachedQuotes,
+  syncLoadingQuotes,
+} from '../services/LoadingQuotesCache';
+import {LoadingQuotesMarquee} from './loading/LoadingQuotesMarquee';
 
-// Error boundary for particle animation - on old/slow devices rendering many Animated.Image can crash
-class ParticlesErrorBoundary extends React.Component<
-  {onError: () => void; children: React.ReactNode},
-  {hasError: boolean}
-> {
-  state = {hasError: false};
-
-  static getDerivedStateFromError() {
-    return {hasError: true};
-  }
-
-  componentDidCatch() {
-    this.props.onError();
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return null;
-    }
-    return this.props.children;
-  }
-}
+/** iOS reports a large bottom safe area; with strip padding it sits too high vs Android — trim only for the manchette. */
+const IOS_QUOTES_STRIP_BOTTOM_INSET_TRIM = 32;
 
 const LoadingScreen = ({onRetry}: any) => {
   const {theme} = useTheme();
+  const insets = useSafeAreaInsets();
+  const quotesStripBottomInset = useMemo(() => {
+    if (Platform.OS !== 'ios') {
+      return insets.bottom;
+    }
+    return Math.max(0, insets.bottom - IOS_QUOTES_STRIP_BOTTOM_INSET_TRIM);
+  }, [insets.bottom]);
+  const [appActive, setAppActive] = useState(
+    () => AppState.currentState === 'active',
+  );
   const [loading, setLoading] = useState(false);
   const [particlesEnabled, setParticlesEnabled] = useState(true);
   const [version, setVersion] = useState<string>('');
@@ -54,6 +55,55 @@ const LoadingScreen = ({onRetry}: any) => {
   /** Background GitHub check — no chip spinner, no delay, no toast (manual uses checkingUpdate + optional delay). */
   const backgroundVersionCheckRef = useRef(false);
   const manualVersionCheckRef = useRef(false);
+  const quotesSyncInFlightRef = useRef(false);
+  const [loadingQuotes, setLoadingQuotes] = useState<string[]>([]);
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    const cached = getCachedQuotes();
+    if (cached?.length) {
+      setLoadingQuotes(cached);
+    }
+    syncLoadingQuotes()
+      .then(list => {
+        if (list.length > 0) {
+          setLoadingQuotes(list);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
+    const sub = AccessibilityInfo.addEventListener(
+      'reduceMotionChanged',
+      setReduceMotion,
+    );
+    return () => sub.remove();
+  }, []);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      setAppActive(state === 'active');
+    });
+    return () => sub.remove();
+  }, []);
+  useEffect(() => {
+    if (!appActive || quotesSyncInFlightRef.current) {
+      return;
+    }
+    quotesSyncInFlightRef.current = true;
+    syncLoadingQuotes()
+      .then(list => {
+        if (list.length > 0) {
+          setLoadingQuotes(list);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        quotesSyncInFlightRef.current = false;
+      });
+  }, [appActive]);
+
   useEffect(() => {
     Promise.all([DeviceInfo.getVersion(), DeviceInfo.getBuildNumber()]).then(
       ([v, b]) => {
@@ -62,12 +112,6 @@ const LoadingScreen = ({onRetry}: any) => {
       },
     );
   }, []);
-  const fadeAnim = useRef(new Animated.Value(0.6)).current;
-  const buttonScale = useRef(new Animated.Value(1)).current;
-  const iconPulse = useRef(new Animated.Value(1)).current;
-  const glowOpacity = useRef(new Animated.Value(0)).current;
-  const glowScale = useRef(new Animated.Value(1)).current;
-  const logoScale = useRef(new Animated.Value(1)).current;
   const [particles, setParticles] = useState<
     Array<{
       id: number;
@@ -86,10 +130,25 @@ const LoadingScreen = ({onRetry}: any) => {
   });
   const turbulenceRef = useRef(0); // increases briefly on tap
   const emitterRef = useRef<number | null>(null);
+  const loadingRef = useRef(false);
+  useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
+
+  const fadeAnim = useRef(new Animated.Value(0.6)).current;
+  const buttonScale = useRef(new Animated.Value(1)).current;
+  const iconPulse = useRef(new Animated.Value(1)).current;
+  const glowOpacity = useRef(new Animated.Value(0)).current;
+  const glowScale = useRef(new Animated.Value(1)).current;
+  const logoScale = useRef(new Animated.Value(1)).current;
+
   const handlePress = async () => {
     setLoading(true);
-    await onRetry();
-    setLoading(false);
+    try {
+      await onRetry();
+    } finally {
+      setLoading(false);
+    }
   };
   const handlePressIn = () => {
     Animated.spring(buttonScale, {
@@ -143,7 +202,7 @@ const LoadingScreen = ({onRetry}: any) => {
   };
 
   const createFountain = (count: number = 2, intensity: number = 1) => {
-    if (!particlesEnabled) return;
+    if (!particlesEnabled || !appActive || loadingRef.current) return;
     try {
       // Continuous vapor-like emission from the logo center
       const newParticles: Array<{
@@ -233,7 +292,7 @@ const LoadingScreen = ({onRetry}: any) => {
     }
   };
   const handleLogoPress = () => {
-    if (!particlesEnabled) return;
+    if (!particlesEnabled || !appActive || loadingRef.current) return;
     try {
       // Stronger turbulence boost that decays more slowly
       turbulenceRef.current = Math.min(2, turbulenceRef.current + 1.2);
@@ -254,21 +313,23 @@ const LoadingScreen = ({onRetry}: any) => {
     }
   };
   const startLogoTouch = () => {
+    if (!appActive || loadingRef.current) {
+      return;
+    }
     if (emitterRef.current != null) {
       return;
     }
-    // Scale down logo on touch
     Animated.spring(logoScale, {
       toValue: 0.92,
       useNativeDriver: true,
       friction: 5,
       tension: 180,
     }).start();
-    if (!particlesEnabled) return;
+    if (!particlesEnabled) {
+      return;
+    }
     try {
-      // Slight turbulence for wider spread while pressed
       turbulenceRef.current = Math.min(1.2, turbulenceRef.current + 0.6);
-      // Start continuous emission while touch is active
       emitterRef.current = setInterval(() => {
         try {
           createFountain(2, 1);
@@ -285,14 +346,12 @@ const LoadingScreen = ({onRetry}: any) => {
       clearInterval(emitterRef.current as unknown as number);
       emitterRef.current = null;
     }
-    // Bounce back to normal size
     Animated.spring(logoScale, {
       toValue: 1,
       useNativeDriver: true,
       friction: 4,
       tension: 200,
     }).start();
-    // Reset turbulence gradually
     const decaySteps = 6;
     let step = 0;
     const decayer = setInterval(() => {
@@ -303,7 +362,6 @@ const LoadingScreen = ({onRetry}: any) => {
       }
     }, 120);
   };
-  // Emission now happens on logo touch only
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
@@ -322,7 +380,6 @@ const LoadingScreen = ({onRetry}: any) => {
       ]),
     ).start();
   }, [fadeAnim]);
-  // Subtle fingerprint pulse when idle
   useEffect(() => {
     if (loading) {
       iconPulse.setValue(1);
@@ -347,93 +404,102 @@ const LoadingScreen = ({onRetry}: any) => {
     loop.start();
     return () => loop.stop();
   }, [iconPulse, loading]);
-
-  const compareVersions = (a: string, b: string) => {
-    const norm = (v: string) =>
-      v
-        .replace(/^v/i, '')
-        .split('.')
-        .map(part => parseInt(part, 10) || 0);
-    const [a1, a2, a3] = norm(a);
-    const [b1, b2, b3] = norm(b);
-    if (a1 !== b1) {
-      return a1 - b1;
-    }
-    if (a2 !== b2) {
-      return a2 - b2;
-    }
-    return a3 - b3;
-  };
-
-  const checkForUpdate = useCallback(async (silent: boolean) => {
-    if (!version) {
+  useEffect(() => {
+    if (appActive) {
       return;
     }
-    if (silent) {
-      if (backgroundVersionCheckRef.current) {
-        return;
-      }
-      backgroundVersionCheckRef.current = true;
-    } else {
-      if (manualVersionCheckRef.current) {
-        return;
-      }
-      manualVersionCheckRef.current = true;
-      setCheckingUpdate(true);
+    if (emitterRef.current != null) {
+      clearInterval(emitterRef.current as unknown as number);
+      emitterRef.current = null;
     }
-    try {
-      const effectiveVersion = __DEV__ ? '0.0.0' : version;
-      dbg('LoadingScreen: checking for update...', {version, effectiveVersion, silent});
-      if (!silent) {
-        await waitMS(1000);
+    turbulenceRef.current = 0;
+    setParticles([]);
+  }, [appActive]);
+
+  const checkForUpdate = useCallback(
+    async (silent: boolean) => {
+      if (!version) {
+        return;
       }
-      const res = await fetch(
-        'https://api.github.com/repos/BoldBitcoinWallet/BoldWallet/releases/latest',
-        {
-          headers: {
-            Accept: 'application/vnd.github+json',
-          },
-        },
-      );
-      if (!res.ok) {
-        throw new Error(`status ${res.status}`);
-      }
-      const json = await res.json();
-      const tag =
-        typeof json?.tag_name === 'string' && json.tag_name.length > 0
-          ? json.tag_name
-          : null;
-      if (!tag) {
-        throw new Error('no tag_name');
-      }
-      setLatestVersion(tag);
-      const cmp = compareVersions(effectiveVersion, tag);
-      setUpdateAvailable(cmp < 0);
-      dbg('LoadingScreen: update check result', {
-        current: effectiveVersion,
-        latest: tag,
-        updateAvailable: cmp < 0,
-      });
-    } catch {
-      dbg('LoadingScreen: update check failed');
-      if (!silent) {
-        Toast.show({
-          type: 'error',
-          text1: 'Could not check for updates',
-          text2:
-            'Please check your internet connection and update from your original app store.',
-          position: 'top',
-        });
-      }
-    } finally {
       if (silent) {
-        backgroundVersionCheckRef.current = false;
+        if (backgroundVersionCheckRef.current) {
+          return;
+        }
+        backgroundVersionCheckRef.current = true;
       } else {
-        manualVersionCheckRef.current = false;
-        setCheckingUpdate(false);
+        if (manualVersionCheckRef.current) {
+          return;
+        }
+        manualVersionCheckRef.current = true;
+        setCheckingUpdate(true);
       }
-    }
-  }, [version]);
+      try {
+        const effectiveVersion = __DEV__ ? '0.0.0' : version;
+        dbg('LoadingScreen: checking for update...', {
+          version,
+          effectiveVersion,
+          silent,
+        });
+        if (!silent) {
+          await waitMS(1000);
+        }
+        const res = await fetch(
+          'https://api.github.com/repos/BoldBitcoinWallet/BoldWallet/releases/latest',
+          {
+            headers: {
+              Accept: 'application/vnd.github+json',
+            },
+          },
+        );
+        if (!res.ok) {
+          throw new Error(`status ${res.status}`);
+        }
+        const json = await res.json();
+        const tag =
+          typeof json?.tag_name === 'string' && json.tag_name.length > 0
+            ? json.tag_name
+            : null;
+        if (!tag) {
+          throw new Error('no tag_name');
+        }
+        setLatestVersion(tag);
+        const cmp = compareSemver(effectiveVersion, tag);
+        setUpdateAvailable(cmp < 0);
+        dbg('LoadingScreen: update check result', {
+          current: effectiveVersion,
+          latest: tag,
+          updateAvailable: cmp < 0,
+        });
+        if (!silent && cmp >= 0) {
+          Toast.show({
+            type: 'success',
+            text1: "You're up to date",
+            text2: `Bold Wallet v${version} matches the latest release.`,
+            position: 'top',
+          });
+        }
+      } catch {
+        dbg('LoadingScreen: update check failed');
+        if (!silent) {
+          Toast.show({
+            type: 'error',
+            text1: 'Could not check for updates',
+            text2:
+              'Please check your internet connection and update from your original app store.',
+            position: 'top',
+          });
+        }
+      } finally {
+        if (silent) {
+          backgroundVersionCheckRef.current = false;
+        } else {
+          manualVersionCheckRef.current = false;
+          setCheckingUpdate(false);
+        }
+      }
+    },
+    [version],
+  );
 
   const handleVersionPress = () => {
     if (updateAvailable && latestVersion) {
@@ -608,9 +674,7 @@ const LoadingScreen = ({onRetry}: any) => {
       paddingVertical: 0,
       borderRadius: 999,
       borderWidth: 1,
-      borderColor: updateAvailable
-        ? theme.colors.accent
-        : theme.colors.border,
+      borderColor: updateAvailable ? theme.colors.accent : theme.colors.border,
       backgroundColor: theme.colors.cardBackground,
       alignSelf: 'center',
       width: 100,
@@ -706,12 +770,68 @@ const LoadingScreen = ({onRetry}: any) => {
       fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.background,
     },
+    bottomStack: {
+      width: '100%',
+      alignItems: 'stretch',
+    },
+    quotesTickerOverlay: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
+    },
+    quotesTickerStrip: {
+      width: '100%',
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: theme.colors.border,
+      backgroundColor: theme.colors.cardBackground,
+      paddingTop: 10,
+      minHeight: 20,
+      justifyContent: 'center',
+    },
+    quotesTickerLineWrap: {
+      width: '100%',
+      overflow: 'hidden',
+    },
+    quotesTickerMarqueeText: {
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.textSecondary,
+      maxWidth: 1_000_000,
+      ...(Platform.OS === 'android'
+        ? {includeFontPadding: false, textBreakStrategy: 'simple' as const}
+        : {}),
+    },
+    quotesTickerStaticText: {
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.textSecondary,
+      textAlign: 'center',
+      width: '100%',
+    },
+    quotesTickerWebMarquee: {
+      height: 28,
+      width: '100%',
+      backgroundColor: 'transparent',
+    },
+    quotesTickerWebMarqueePlaceholder: {
+      minHeight: 28,
+    },
+    toastWrapper: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      zIndex: 9999,
+      elevation: 9999,
+    },
   });
   // Use simple background color instead of gradient, especially in dark mode
   const isDarkMode = theme.colors.background !== '#ffffff';
   const backgroundColor = isDarkMode ? '#1A1A1A' : theme.colors.background;
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <View style={[styles.container, {backgroundColor}]}>
         <View style={[styles.contentContainer]}>
           <Animated.View
@@ -720,7 +840,6 @@ const LoadingScreen = ({onRetry}: any) => {
               const {width, height} = e.nativeEvent.layout;
               logoLayoutRef.current = {width, height};
             }}>
-            {/* Particles overlay - wrapped in error boundary for old Android devices */}
             {particlesEnabled && (
               <ParticlesErrorBoundary onError={disableParticles}>
                 <View style={styles.particlesContainer}>
@@ -778,74 +897,114 @@ const LoadingScreen = ({onRetry}: any) => {
             </Pressable>
           </Animated.View>
         </View>
-        <View style={styles.bottomContainer}>
-          <Animated.View
-            style={[
-              styles.buttonAnimatedContainer,
-              styles.buttonLift,
-              {transform: [{scale: buttonScale}]},
-            ]}>
-            {/* Floating drop shadow to emphasize FAB look */}
-            <View style={styles.dropShadow} />
-            <Pressable
-              style={[styles.button, loading && styles.buttonDisabled]}
-              onPress={handlePress}
-              onPressIn={handlePressIn}
-              onPressOut={handlePressOut}
-              disabled={loading}
-              accessibilityRole="button"
-              accessibilityLabel="Unlock with biometrics"
-              accessibilityHint="Double tap to authenticate and unlock"
-              testID="unlock-biometric-button">
-              {loading ? (
-                <View style={styles.loadingContainer}>
-                  <ActivityIndicator size="small" color={theme.colors.white} />
-                  <Text style={styles.loadingText}>Unlocking...</Text>
-                </View>
-              ) : (
-                <>
-                  <View style={styles.circleWrap}>
-                    <View style={styles.circleShadowUnder} />
-                    <View style={styles.iconWrapper}>
-                      <Animated.View
-                        style={{
-                          ...StyleSheet.flatten(styles.glowCircle),
-                          transform: [{scale: glowScale}],
-                          opacity: glowOpacity,
-                        }}
-                      />
-                      <Animated.Image
-                        source={require('../assets/fingerprint.png')}
-                        style={[styles.icon, {transform: [{scale: iconPulse}]}]}
-                      />
-                    </View>
+        <View
+          style={[
+            styles.bottomStack,
+            loadingQuotes.length > 0
+              ? {
+                  paddingBottom:
+                    44 +
+                    (Platform.OS === 'ios'
+                      ? quotesStripBottomInset
+                      : insets.bottom),
+                }
+              : null,
+          ]}>
+          <View style={styles.bottomContainer}>
+            <Animated.View
+              style={[
+                styles.buttonAnimatedContainer,
+                styles.buttonLift,
+                {transform: [{scale: buttonScale}]},
+              ]}>
+              {/* Floating drop shadow to emphasize FAB look */}
+              <View style={styles.dropShadow} />
+              <Pressable
+                style={[styles.button, loading && styles.buttonDisabled]}
+                onPress={handlePress}
+                onPressIn={handlePressIn}
+                onPressOut={handlePressOut}
+                disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel="Unlock with biometrics"
+                accessibilityHint="Double tap to authenticate and unlock"
+                testID="unlock-biometric-button">
+                {loading ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator
+                      size="small"
+                      color={theme.colors.white}
+                    />
+                    <Text style={styles.loadingText}>Unlocking...</Text>
                   </View>
-                </>
-              )}
-            </Pressable>
-          </Animated.View>
-          {showVersionChip ? (
-            <Pressable
-              onPress={handleVersionPress}
-              style={styles.versionChip}
-              accessibilityRole="button"
-              accessibilityLabel="Check for Bold Wallet updates"
-              hitSlop={8}>
-              {checkingUpdate ? (
-                <ActivityIndicator
-                  size="small"
-                  color={theme.colors.secondary}
-                />
-              ) : (
-                <View style={styles.versionChipContent}>
-                  <Text style={styles.versionChipLabel}>
-                    v{version} • {buildNumber}
-                  </Text>
-                </View>
-              )}
-            </Pressable>
-          ) : null}
+                ) : (
+                  <>
+                    <View style={styles.circleWrap}>
+                      <View style={styles.circleShadowUnder} />
+                      <View style={styles.iconWrapper}>
+                        <Animated.View
+                          style={{
+                            ...StyleSheet.flatten(styles.glowCircle),
+                            transform: [{scale: glowScale}],
+                            opacity: glowOpacity,
+                          }}
+                        />
+                        <Animated.Image
+                          source={require('../assets/fingerprint.png')}
+                          style={[
+                            styles.icon,
+                            {transform: [{scale: iconPulse}]},
+                          ]}
+                        />
+                      </View>
+                    </View>
+                  </>
+                )}
+              </Pressable>
+            </Animated.View>
+            {showVersionChip ? (
+              <Pressable
+                onPress={handleVersionPress}
+                style={styles.versionChip}
+                accessibilityRole="button"
+                accessibilityLabel="Check for Bold Wallet updates"
+                hitSlop={8}>
+                {checkingUpdate ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={theme.colors.secondary}
+                  />
+                ) : (
+                  <View style={styles.versionChipContent}>
+                    <Text style={styles.versionChipLabel}>
+                      v{version} • {buildNumber}
+                    </Text>
+                  </View>
+                )}
+              </Pressable>
+            ) : null}
+          </View>
         </View>
+        {loadingQuotes.length > 0 ? (
+          <View style={styles.quotesTickerOverlay} pointerEvents="box-none">
+            <LoadingQuotesMarquee
+              quotes={loadingQuotes}
+              reduceMotion={reduceMotion}
+              bottomInset={quotesStripBottomInset}
+              appActive={appActive}
+              textColor={theme.colors.textSecondary}
+              fontSize={theme.fontSizes?.md || 15}
+              styles={{
+                strip: styles.quotesTickerStrip,
+                lineWrap: styles.quotesTickerLineWrap,
+                marqueeText: styles.quotesTickerMarqueeText,
+                staticText: styles.quotesTickerStaticText,
+                webMarquee: styles.quotesTickerWebMarquee,
+                webMarqueePlaceholder: styles.quotesTickerWebMarqueePlaceholder,
+              }}
+            />
+          </View>
+        ) : null}
         <Modal
           visible={showUpdateModal}
           transparent
@@ -854,7 +1013,12 @@ const LoadingScreen = ({onRetry}: any) => {
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeaderRow}>
-                <Image source={require('../assets/bold-icon.png')} style={styles.icon} resizeMode="contain" tintColor={theme.colors.secondary} />
+                <Image
+                  source={require('../assets/bold-icon.png')}
+                  style={styles.icon}
+                  resizeMode="contain"
+                  tintColor={theme.colors.secondary}
+                />
                 <Text style={styles.modalHeaderTitle}>Update available</Text>
               </View>
               <Text style={styles.modalBodyText}>
@@ -876,6 +1040,9 @@ const LoadingScreen = ({onRetry}: any) => {
             </View>
           </View>
         </Modal>
+      </View>
+      <View pointerEvents="box-none" style={styles.toastWrapper}>
+        <Toast config={createToastConfig(theme)} />
       </View>
     </SafeAreaView>
   );

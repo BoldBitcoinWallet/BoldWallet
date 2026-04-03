@@ -15,6 +15,7 @@ import {
   FlatList,
   useWindowDimensions,
   DeviceEventEmitter,
+  ActivityIndicator,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
 import AppSwitch from '../components/AppSwitch';
@@ -46,6 +47,7 @@ import {
   getKeyshareMetadata,
   clearKeyshareMetadata,
 } from '../utils';
+import {compareSemver} from '../utils/compareSemver';
 import {useTheme} from '../theme';
 import {waitMS, WalletService} from '../services/WalletService';
 import mempoolClient from '../services/MempoolClient';
@@ -708,7 +710,7 @@ const getSectionIcon = (title: string): any => {
       return require('../assets/wallet-icon.png');
     case 'addresses':
       return require('../assets/addresses-icon.png');
-    case 'dev debug':
+    case 'developer mode':
       return require('../assets/advanced-icon.png');
     default:
       return require('../assets/advanced-icon.png');
@@ -779,9 +781,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [nostrRelays, setNostrRelays] = useState<string>('');
   const [pendingNostrRelays, setPendingNostrRelays] = useState<string>('');
   const [hasNostr, setHasNostr] = useState(false);
-  const [hdGapLimit, setHdGapLimit] = useState(() =>
-    String(getGapLimit()),
-  );
+  const [hdGapLimit, setHdGapLimit] = useState(() => String(getGapLimit()));
   const [hdMinScanIndex, setHdMinScanIndex] = useState(() =>
     String(getMinScanIndex()),
   );
@@ -818,10 +818,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [isApiInfoVisible, setIsApiInfoVisible] = useState(false);
   const [debugLoggingEnabled, setDebugLoggingEnabledState] = useState(false);
   const [devDebugEnabled, setDevDebugEnabled] = useState(false);
+  /** False until EncryptedStorage `devDebugEnabled` has been read (avoids startup guard before prefs load). */
+  const [devDebugPrefLoaded, setDevDebugPrefLoaded] = useState(false);
   // Click tracking for build number (7 clicks to enable dev mode)
   const [buildNumberClickCount, setBuildNumberClickCount] = useState(0);
   const buildNumberClickCountRef = useRef(0);
   const buildNumberClickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const nonDevMainnetGuardRanRef = useRef(false);
   // Collapsible states
   const [expandedSections, setExpandedSections] = useState<{
     [key: string]: boolean;
@@ -852,6 +855,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [themeUpdateKey, setThemeUpdateKey] = useState(0);
   const [appVersion, setAppVersion] = useState('');
   const [buildNumber, setBuildNumber] = useState('');
+  const [latestGithubReleaseTag, setLatestGithubReleaseTag] = useState<
+    string | null
+  >(null);
+  const [githubUpdateAvailable, setGithubUpdateAvailable] = useState(false);
+  const [checkingGithubRelease, setCheckingGithubRelease] = useState(false);
+  const [showAppUpdateModal, setShowAppUpdateModal] = useState(false);
+  const manualGithubReleaseCheckRef = useRef(false);
   const [usageSize, setUsageSize] = useState<{fileCount: number; mb: string}>({
     fileCount: 0,
     mb: '0.00 MB',
@@ -869,6 +879,93 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       dbg('refreshUsageSize: failed', e);
     }
   }, []);
+
+  const checkGithubRelease = useCallback(
+    async (silent: boolean) => {
+      if (!appVersion) {
+        return;
+      }
+      if (!silent) {
+        if (manualGithubReleaseCheckRef.current) {
+          return;
+        }
+        manualGithubReleaseCheckRef.current = true;
+        setCheckingGithubRelease(true);
+      }
+      try {
+        const effectiveVersion = __DEV__ ? '0.0.0' : appVersion;
+        dbg('WalletSettings: checking for update...', {
+          appVersion,
+          effectiveVersion,
+          silent,
+        });
+        if (!silent) {
+          await waitMS(1000);
+        }
+        const res = await fetch(
+          'https://api.github.com/repos/BoldBitcoinWallet/BoldWallet/releases/latest',
+          {
+            headers: {
+              Accept: 'application/vnd.github+json',
+            },
+          },
+        );
+        if (!res.ok) {
+          throw new Error(`status ${res.status}`);
+        }
+        const json = await res.json();
+        const tag =
+          typeof json?.tag_name === 'string' && json.tag_name.length > 0
+            ? json.tag_name
+            : null;
+        if (!tag) {
+          throw new Error('no tag_name');
+        }
+        setLatestGithubReleaseTag(tag);
+        const cmp = compareSemver(effectiveVersion, tag);
+        setGithubUpdateAvailable(cmp < 0);
+        dbg('WalletSettings: update check result', {
+          current: effectiveVersion,
+          latest: tag,
+          updateAvailable: cmp < 0,
+        });
+        if (!silent && cmp >= 0) {
+          Toast.show({
+            type: 'success',
+            text1: "You're up to date",
+            text2: `Bold Wallet v${appVersion} matches the latest release.`,
+            position: 'top',
+          });
+        }
+      } catch {
+        dbg('WalletSettings: update check failed');
+        if (!silent) {
+          Toast.show({
+            type: 'error',
+            text1: 'Could not check for updates',
+            text2:
+              'Please check your internet connection and update from your original app store.',
+            position: 'top',
+          });
+        }
+      } finally {
+        if (!silent) {
+          manualGithubReleaseCheckRef.current = false;
+          setCheckingGithubRelease(false);
+        }
+      }
+    },
+    [appVersion],
+  );
+
+  const handleAppVersionRowPress = useCallback(() => {
+    if (githubUpdateAvailable && latestGithubReleaseTag) {
+      setShowAppUpdateModal(true);
+      return;
+    }
+    checkGithubRelease(false);
+  }, [githubUpdateAvailable, latestGithubReleaseTag, checkGithubRelease]);
+
   const toggleSection = (section: string) => {
     setExpandedSections(prev => {
       const newState = Object.keys(prev).reduce((acc, key) => {
@@ -1127,10 +1224,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         } else {
           setDevDebugEnabled(false);
         }
+        setDevDebugPrefLoaded(true);
       })
       .catch(error => {
         dbg('Error loading devDebugEnabled from storage:', error);
         setDevDebugEnabled(false);
+        setDevDebugPrefLoaded(true);
       });
     // Cleanup timeout on unmount
     return () => {
@@ -1197,7 +1296,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       setPendingNostrRelays(relaysForDisplay);
     });
   }, []);
-  const toggleNetwork = async (value: boolean) => {
+  const toggleNetwork = async (
+    value: boolean,
+    options?: {silent?: boolean},
+  ): Promise<boolean> => {
     dbg('=== Network toggle started:', value ? 'testnet' : 'mainnet');
     const previousNetwork = value ? 'mainnet' : 'testnet3';
     const newNetwork = value ? 'testnet3' : 'mainnet';
@@ -1220,7 +1322,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           'Network switch could not complete. Please try again.',
         );
         Toast.show({type: 'error', text1, text2, visibilityTime: 5000});
-        return;
+        return false;
       }
       dbg('Network toggle: Navigating to Wallet tab');
       navigation.reset(
@@ -1237,22 +1339,45 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       );
     }
 
-    setTimeout(() => {
-      if (newNetwork === 'mainnet') {
-        Alert.alert(
-          `Switched to ${networkName}`,
-          'Mainnet Bitcoin is the real Bitcoin. It is the main network for all Bitcoin transactions.',
-          [{text: 'I understand', onPress: () => {}}],
-        );
-      } else {
-        Alert.alert(
-          `Switched to ${networkName}`,
-          'Testnet Bitcoin is not real Bitcoin. It is a test network for developers to test their applications. Do not use it for real transactions.',
-          [{text: 'I understand', onPress: () => {}}],
-        );
-      }
-    }, 300);
+    if (!options?.silent) {
+      setTimeout(() => {
+        if (newNetwork === 'mainnet') {
+          Alert.alert(
+            `Switched to ${networkName}`,
+            'Mainnet Bitcoin is the real Bitcoin. It is the main network for all Bitcoin transactions.',
+            [{text: 'I understand', onPress: () => {}}],
+          );
+        } else {
+          Alert.alert(
+            `Switched to ${networkName}`,
+            'Testnet Bitcoin is not real Bitcoin. It is a test network for developers to test their applications. Do not use it for real transactions.',
+            [{text: 'I understand', onPress: () => {}}],
+          );
+        }
+      }, 300);
+    }
+    return true;
   };
+
+  // If dev mode is off but DB still has testnet (e.g. app killed mid-disable), switch to mainnet once.
+  useEffect(() => {
+    if (!devDebugPrefLoaded || devDebugEnabled) {
+      return;
+    }
+    const net = appConfigRepository.get(CONFIG_KEYS.NETWORK);
+    if (!net || net === 'mainnet') {
+      return;
+    }
+    if (nonDevMainnetGuardRanRef.current) {
+      return;
+    }
+    nonDevMainnetGuardRanRef.current = true;
+    toggleNetwork(false, {silent: true}).then(ok => {
+      if (!ok) {
+        nonDevMainnetGuardRanRef.current = false;
+      }
+    });
+  }, [devDebugPrefLoaded, devDebugEnabled]); // eslint-disable-line react-hooks/exhaustive-deps -- one-shot when dev prefs load
   const resetAPI = async () => {
     dbg('resetAPI called');
     const net = appConfigRepository.get(CONFIG_KEYS.NETWORK);
@@ -3157,25 +3282,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             onToggle={() => toggleSection('advanced')}
             styles={styles}
             theme={theme}>
-            <View style={styles.toggleContainer}>
-              <View style={styles.networkOption}>
-                <Image
-                  source={require('../assets/mainnet-icon.png')}
-                  style={styles.networkIcon}
-                  resizeMode="contain"
-                />
-                <Text style={styles.toggleLabel}>Mainnet</Text>
-              </View>
-              <AppSwitch onValueChange={toggleNetwork} value={isTestnet} />
-              <View style={styles.networkOption}>
-                <Image
-                  source={require('../assets/testnet-icon.png')}
-                  style={styles.networkIcon}
-                  resizeMode="contain"
-                />
-                <Text style={styles.toggleLabel}>Testnet3</Text>
-              </View>
-            </View>
             <View style={styles.apiNetworkInfoContainer}>
               <View style={styles.apiNetworkModeRow}>
                 <View
@@ -3316,238 +3422,232 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             onToggle={() => toggleSection('hdOptions')}
             styles={styles}
             theme={theme}>
-              <Text style={[styles.hintText, styles.hintSpacing]}>
-                Tune discovery gap, scan range, and API timeouts. Change only if
-                you know what you're doing.
-              </Text>
-              <View style={styles.apiItem}>
-                <Text style={styles.apiName}>Gap limit</Text>
-                <TextInput
-                  style={styles.input}
-                  value={hdGapLimit}
-                  onChangeText={setHdGapLimit}
-                  keyboardType="number-pad"
-                  onBlur={() => {
-                    const n = parseInt(hdGapLimit, 10);
-                    const clamped = Number.isNaN(n)
-                      ? HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.GAP_LIMIT]
-                      : Math.max(1, Math.min(20, n));
-                    setHdGapLimit(String(clamped));
-                    appConfigRepository.set(
-                      HD_OPTIONS_KEYS.GAP_LIMIT,
-                      String(clamped),
-                    );
-                  }}
-                  placeholderTextColor={theme.colors.textSecondary + '80'}
-                />
-              </View>
-              <View style={styles.apiItem}>
-                <Text style={styles.apiName}>Min scan index</Text>
-                <TextInput
-                  style={styles.input}
-                  value={hdMinScanIndex}
-                  onChangeText={setHdMinScanIndex}
-                  keyboardType="number-pad"
-                  onBlur={() => {
-                    const n = parseInt(hdMinScanIndex, 10);
-                    const def =
-                      HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.MIN_SCAN_INDEX];
-                    const clamped = Number.isNaN(n) ? def : Math.max(1, Math.min(1000, n));
-                    setHdMinScanIndex(String(clamped));
-                    appConfigRepository.set(
-                      HD_OPTIONS_KEYS.MIN_SCAN_INDEX,
-                      String(clamped),
-                    );
-                  }}
-                  placeholderTextColor={theme.colors.textSecondary + '80'}
-                />
-              </View>
-              <View style={styles.apiItem}>
-                <Text style={styles.apiName}>API timeout (ms)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={hdApiTimeoutMs}
-                  onChangeText={setHdApiTimeoutMs}
-                  keyboardType="number-pad"
-                  onBlur={() => {
-                    const n = parseInt(hdApiTimeoutMs, 10);
-                    const def =
-                      HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.API_TIMEOUT_MS];
-                    const clamped = Number.isNaN(n)
-                      ? def
-                      : Math.max(1000, Math.min(120_000, n));
-                    setHdApiTimeoutMs(String(clamped));
-                    appConfigRepository.set(
-                      HD_OPTIONS_KEYS.API_TIMEOUT_MS,
-                      String(clamped),
-                    );
-                  }}
-                  placeholderTextColor={theme.colors.textSecondary + '80'}
-                />
-              </View>
-              <View style={styles.apiItem}>
-                <Text style={styles.apiName}>UTXO empty cache TTL (ms)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={hdUtxoCacheTtlMs}
-                  onChangeText={setHdUtxoCacheTtlMs}
-                  keyboardType="number-pad"
-                  onBlur={() => {
-                    const n = parseInt(hdUtxoCacheTtlMs, 10);
-                    const def =
+            <Text style={[styles.hintText, styles.hintSpacing]}>
+              Tune discovery gap, scan range, and API timeouts. Change only if
+              you know what you're doing.
+            </Text>
+            <View style={styles.apiItem}>
+              <Text style={styles.apiName}>Gap limit</Text>
+              <TextInput
+                style={styles.input}
+                value={hdGapLimit}
+                onChangeText={setHdGapLimit}
+                keyboardType="number-pad"
+                onBlur={() => {
+                  const n = parseInt(hdGapLimit, 10);
+                  const clamped = Number.isNaN(n)
+                    ? HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.GAP_LIMIT]
+                    : Math.max(1, Math.min(20, n));
+                  setHdGapLimit(String(clamped));
+                  appConfigRepository.set(
+                    HD_OPTIONS_KEYS.GAP_LIMIT,
+                    String(clamped),
+                  );
+                }}
+                placeholderTextColor={theme.colors.textSecondary + '80'}
+              />
+            </View>
+            <View style={styles.apiItem}>
+              <Text style={styles.apiName}>Min scan index</Text>
+              <TextInput
+                style={styles.input}
+                value={hdMinScanIndex}
+                onChangeText={setHdMinScanIndex}
+                keyboardType="number-pad"
+                onBlur={() => {
+                  const n = parseInt(hdMinScanIndex, 10);
+                  const def =
+                    HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.MIN_SCAN_INDEX];
+                  const clamped = Number.isNaN(n)
+                    ? def
+                    : Math.max(1, Math.min(1000, n));
+                  setHdMinScanIndex(String(clamped));
+                  appConfigRepository.set(
+                    HD_OPTIONS_KEYS.MIN_SCAN_INDEX,
+                    String(clamped),
+                  );
+                }}
+                placeholderTextColor={theme.colors.textSecondary + '80'}
+              />
+            </View>
+            <View style={styles.apiItem}>
+              <Text style={styles.apiName}>API timeout (ms)</Text>
+              <TextInput
+                style={styles.input}
+                value={hdApiTimeoutMs}
+                onChangeText={setHdApiTimeoutMs}
+                keyboardType="number-pad"
+                onBlur={() => {
+                  const n = parseInt(hdApiTimeoutMs, 10);
+                  const def =
+                    HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.API_TIMEOUT_MS];
+                  const clamped = Number.isNaN(n)
+                    ? def
+                    : Math.max(1000, Math.min(120_000, n));
+                  setHdApiTimeoutMs(String(clamped));
+                  appConfigRepository.set(
+                    HD_OPTIONS_KEYS.API_TIMEOUT_MS,
+                    String(clamped),
+                  );
+                }}
+                placeholderTextColor={theme.colors.textSecondary + '80'}
+              />
+            </View>
+            <View style={styles.apiItem}>
+              <Text style={styles.apiName}>UTXO empty cache TTL (ms)</Text>
+              <TextInput
+                style={styles.input}
+                value={hdUtxoCacheTtlMs}
+                onChangeText={setHdUtxoCacheTtlMs}
+                keyboardType="number-pad"
+                onBlur={() => {
+                  const n = parseInt(hdUtxoCacheTtlMs, 10);
+                  const def =
+                    HD_OPTIONS_DEFAULTS[
+                      HD_OPTIONS_KEYS.UTXO_EMPTY_CACHE_TTL_MS
+                    ];
+                  const clamped = Number.isNaN(n)
+                    ? def
+                    : Math.max(1000, Math.min(300_000, n));
+                  setHdUtxoCacheTtlMs(String(clamped));
+                  appConfigRepository.set(
+                    HD_OPTIONS_KEYS.UTXO_EMPTY_CACHE_TTL_MS,
+                    String(clamped),
+                  );
+                }}
+                placeholderTextColor={theme.colors.textSecondary + '80'}
+              />
+            </View>
+            <View style={styles.apiItem}>
+              <Text style={styles.apiName}>Fetch timeout (ms)</Text>
+              <TextInput
+                style={styles.input}
+                value={hdFetchTimeoutMs}
+                onChangeText={setHdFetchTimeoutMs}
+                keyboardType="number-pad"
+                onBlur={() => {
+                  const n = parseInt(hdFetchTimeoutMs, 10);
+                  const def =
+                    HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.FETCH_TIMEOUT_MS];
+                  const clamped = Number.isNaN(n)
+                    ? def
+                    : Math.max(1000, Math.min(120_000, n));
+                  setHdFetchTimeoutMs(String(clamped));
+                  appConfigRepository.set(
+                    HD_OPTIONS_KEYS.FETCH_TIMEOUT_MS,
+                    String(clamped),
+                  );
+                }}
+                placeholderTextColor={theme.colors.textSecondary + '80'}
+              />
+            </View>
+            <View style={styles.apiItem}>
+              <Text style={styles.apiName}>Mempool default TTL (ms)</Text>
+              <TextInput
+                style={styles.input}
+                value={hdMempoolTtlMs}
+                onChangeText={setHdMempoolTtlMs}
+                keyboardType="number-pad"
+                onBlur={() => {
+                  const n = parseInt(hdMempoolTtlMs, 10);
+                  const def =
+                    HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.MEMPOOL_DEFAULT_TTL_MS];
+                  const clamped = Number.isNaN(n)
+                    ? def
+                    : Math.max(1000, Math.min(300_000, n));
+                  setHdMempoolTtlMs(String(clamped));
+                  appConfigRepository.set(
+                    HD_OPTIONS_KEYS.MEMPOOL_DEFAULT_TTL_MS,
+                    String(clamped),
+                  );
+                }}
+                placeholderTextColor={theme.colors.textSecondary + '80'}
+              />
+            </View>
+            <View style={styles.apiItem}>
+              <Text style={styles.apiName}>Transaction sync TTL (ms)</Text>
+              <TextInput
+                style={styles.input}
+                value={hdTxDbTtlMs}
+                onChangeText={setHdTxDbTtlMs}
+                keyboardType="number-pad"
+                onBlur={() => {
+                  const n = parseInt(hdTxDbTtlMs, 10);
+                  const def =
+                    HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.TRANSACTION_DB_TTL_MS];
+                  const clamped = Number.isNaN(n)
+                    ? def
+                    : Math.max(5000, Math.min(300_000, n));
+                  setHdTxDbTtlMs(String(clamped));
+                  appConfigRepository.set(
+                    HD_OPTIONS_KEYS.TRANSACTION_DB_TTL_MS,
+                    String(clamped),
+                  );
+                }}
+                placeholderTextColor={theme.colors.textSecondary + '80'}
+              />
+            </View>
+            <View style={styles.apiActionButtonsRow}>
+              <AppPressable
+                style={[
+                  styles.button,
+                  styles.resetButton,
+                  styles.apiActionButton,
+                ]}
+                onPress={() => {
+                  restoreHdOptionsDefaults();
+                  setHdGapLimit(
+                    String(HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.GAP_LIMIT]),
+                  );
+                  setHdMinScanIndex(
+                    String(HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.MIN_SCAN_INDEX]),
+                  );
+                  setHdApiTimeoutMs(
+                    String(HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.API_TIMEOUT_MS]),
+                  );
+                  setHdUtxoCacheTtlMs(
+                    String(
                       HD_OPTIONS_DEFAULTS[
                         HD_OPTIONS_KEYS.UTXO_EMPTY_CACHE_TTL_MS
-                      ];
-                    const clamped = Number.isNaN(n)
-                      ? def
-                      : Math.max(1000, Math.min(300_000, n));
-                    setHdUtxoCacheTtlMs(String(clamped));
-                    appConfigRepository.set(
-                      HD_OPTIONS_KEYS.UTXO_EMPTY_CACHE_TTL_MS,
-                      String(clamped),
-                    );
-                  }}
-                  placeholderTextColor={theme.colors.textSecondary + '80'}
-                />
-              </View>
-              <View style={styles.apiItem}>
-                <Text style={styles.apiName}>Fetch timeout (ms)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={hdFetchTimeoutMs}
-                  onChangeText={setHdFetchTimeoutMs}
-                  keyboardType="number-pad"
-                  onBlur={() => {
-                    const n = parseInt(hdFetchTimeoutMs, 10);
-                    const def =
-                      HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.FETCH_TIMEOUT_MS];
-                    const clamped = Number.isNaN(n)
-                      ? def
-                      : Math.max(1000, Math.min(120_000, n));
-                    setHdFetchTimeoutMs(String(clamped));
-                    appConfigRepository.set(
-                      HD_OPTIONS_KEYS.FETCH_TIMEOUT_MS,
-                      String(clamped),
-                    );
-                  }}
-                  placeholderTextColor={theme.colors.textSecondary + '80'}
-                />
-              </View>
-              <View style={styles.apiItem}>
-                <Text style={styles.apiName}>Mempool default TTL (ms)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={hdMempoolTtlMs}
-                  onChangeText={setHdMempoolTtlMs}
-                  keyboardType="number-pad"
-                  onBlur={() => {
-                    const n = parseInt(hdMempoolTtlMs, 10);
-                    const def =
+                      ],
+                    ),
+                  );
+                  setHdFetchTimeoutMs(
+                    String(
+                      HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.FETCH_TIMEOUT_MS],
+                    ),
+                  );
+                  setHdMempoolTtlMs(
+                    String(
                       HD_OPTIONS_DEFAULTS[
                         HD_OPTIONS_KEYS.MEMPOOL_DEFAULT_TTL_MS
-                      ];
-                    const clamped = Number.isNaN(n)
-                      ? def
-                      : Math.max(1000, Math.min(300_000, n));
-                    setHdMempoolTtlMs(String(clamped));
-                    appConfigRepository.set(
-                      HD_OPTIONS_KEYS.MEMPOOL_DEFAULT_TTL_MS,
-                      String(clamped),
-                    );
-                  }}
-                  placeholderTextColor={theme.colors.textSecondary + '80'}
-                />
-              </View>
-              <View style={styles.apiItem}>
-                <Text style={styles.apiName}>Transaction sync TTL (ms)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={hdTxDbTtlMs}
-                  onChangeText={setHdTxDbTtlMs}
-                  keyboardType="number-pad"
-                  onBlur={() => {
-                    const n = parseInt(hdTxDbTtlMs, 10);
-                    const def =
+                      ],
+                    ),
+                  );
+                  setHdTxDbTtlMs(
+                    String(
                       HD_OPTIONS_DEFAULTS[
                         HD_OPTIONS_KEYS.TRANSACTION_DB_TTL_MS
-                      ];
-                    const clamped = Number.isNaN(n)
-                      ? def
-                      : Math.max(5000, Math.min(300_000, n));
-                    setHdTxDbTtlMs(String(clamped));
-                    appConfigRepository.set(
-                      HD_OPTIONS_KEYS.TRANSACTION_DB_TTL_MS,
-                      String(clamped),
-                    );
-                  }}
-                  placeholderTextColor={theme.colors.textSecondary + '80'}
-                />
-              </View>
-              <View style={styles.apiActionButtonsRow}>
-                <AppPressable
-                  style={[
-                    styles.button,
-                    styles.resetButton,
-                    styles.apiActionButton,
-                  ]}
-                  onPress={() => {
-                    restoreHdOptionsDefaults();
-                    setHdGapLimit(
-                      String(HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.GAP_LIMIT]),
-                    );
-                    setHdMinScanIndex(
-                      String(
-                        HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.MIN_SCAN_INDEX],
-                      ),
-                    );
-                    setHdApiTimeoutMs(
-                      String(
-                        HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.API_TIMEOUT_MS],
-                      ),
-                    );
-                    setHdUtxoCacheTtlMs(
-                      String(
-                        HD_OPTIONS_DEFAULTS[
-                          HD_OPTIONS_KEYS.UTXO_EMPTY_CACHE_TTL_MS
-                        ],
-                      ),
-                    );
-                    setHdFetchTimeoutMs(
-                      String(
-                        HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.FETCH_TIMEOUT_MS],
-                      ),
-                    );
-                    setHdMempoolTtlMs(
-                      String(
-                        HD_OPTIONS_DEFAULTS[
-                          HD_OPTIONS_KEYS.MEMPOOL_DEFAULT_TTL_MS
-                        ],
-                      ),
-                    );
-                    setHdTxDbTtlMs(
-                      String(
-                        HD_OPTIONS_DEFAULTS[
-                          HD_OPTIONS_KEYS.TRANSACTION_DB_TTL_MS
-                        ],
-                      ),
-                    );
-                    Toast.show({
-                      type: 'success',
-                      text1: 'Defaults restored',
-                    });
-                  }}
-                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                  <View style={styles.buttonContent}>
-                    <Image
-                      source={require('../assets/refresh-icon.png')}
-                      style={[styles.buttonIcon, styles.whiteTint]}
-                      resizeMode="contain"
-                    />
-                    <Text style={styles.buttonText}>Restore defaults</Text>
-                  </View>
-                </AppPressable>
-              </View>
-            </CollapsibleSection>
+                      ],
+                    ),
+                  );
+                  Toast.show({
+                    type: 'success',
+                    text1: 'Defaults restored',
+                  });
+                }}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                <View style={styles.buttonContent}>
+                  <Image
+                    source={require('../assets/refresh-icon.png')}
+                    style={[styles.buttonIcon, styles.whiteTint]}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.buttonText}>Restore defaults</Text>
+                </View>
+              </AppPressable>
+            </View>
+          </CollapsibleSection>
           {hasNostr && (
             <CollapsibleSection
               title="Nostr Relays"
@@ -3719,8 +3819,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             theme={theme}>
             <Text style={styles.hintText}>
               Show the <Text style={styles.hintBold}>Addresses</Text> tab in the
-              tab bar. Lists receive and change addresses with balances (from your
-              wallet cache). Off by default.
+              tab bar. Lists receive and change addresses with balances (from
+              your wallet cache). Off by default.
             </Text>
             <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
               <Text style={styles.toggleLabel}>Hide Addresses tab</Text>
@@ -3774,10 +3874,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               </View>
             </CollapsibleSection>
           )}
-          {/* Dev Debug - Only visible on Android if enabled via build number clicks */}
-          {Platform.OS === 'android' && devDebugEnabled && (
+          {/* Developer Mode — enabled via 7 taps on build number (About) */}
+          {devDebugEnabled && (
             <CollapsibleSection
-              title="Dev Debug"
+              title="Developer Mode"
               isExpanded={expandedSections.devDebug}
               onToggle={() => toggleSection('devDebug')}
               styles={styles}
@@ -3802,48 +3902,73 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     styles.warningDescription,
                     {color: theme.colors.warningText},
                   ]}>
-                  Debug logs may contain sensitive information. Use only on
-                  trusted devices, and only if you know what you are doing. View
-                  detailed logs in logcat (Android only, requires USB
-                  debugging). Session-only setting - resets on app restart.
+                  {Platform.OS === 'android'
+                    ? 'Debug logs may contain sensitive information. Use only on trusted devices, and only if you know what you are doing. View detailed logs in logcat (Android only, requires USB debugging). Session-only setting for debug logging — resets on app restart.'
+                    : 'Developer options may affect network behavior. Use only on trusted devices, and only if you know what you are doing.'}
                 </Text>
               </View>
-              {/* Enhanced Debug Logging Card */}
-              <View style={styles.debugLoggingCard}>
-                <View style={styles.debugLoggingHeader}>
-                  <Text style={styles.debugLoggingTitle}>Debug Logging</Text>
-                  <View style={styles.debugLoggingStatus}>
-                    <View
-                      style={[
-                        styles.debugLoggingStatusDot,
-                        {
-                          backgroundColor: debugLoggingEnabled
-                            ? theme.colors.success
-                            : theme.colors.textSecondary,
-                        },
-                      ]}
-                    />
-                    <Text
-                      style={[
-                        styles.debugLoggingStatusText,
-                        {
-                          color: debugLoggingEnabled
-                            ? theme.colors.success
-                            : theme.colors.textSecondary,
-                        },
-                      ]}>
-                      {debugLoggingEnabled ? 'Active' : 'Inactive'}
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.toggleContainer}>
-                  <Text style={styles.toggleLabel}>Enable Logging</Text>
-                  <AppSwitch
-                    onValueChange={handleToggleDebugLogging}
-                    value={debugLoggingEnabled}
+              <View style={styles.toggleContainer}>
+                <View style={styles.networkOption}>
+                  <Image
+                    source={require('../assets/mainnet-icon.png')}
+                    style={styles.networkIcon}
+                    resizeMode="contain"
                   />
+                  <Text style={styles.toggleLabel}>Mainnet</Text>
+                </View>
+                <AppSwitch
+                  onValueChange={v => {
+                    toggleNetwork(v).catch(() => {});
+                  }}
+                  value={isTestnet}
+                />
+                <View style={styles.networkOption}>
+                  <Image
+                    source={require('../assets/testnet-icon.png')}
+                    style={styles.networkIcon}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.toggleLabel}>Testnet3</Text>
                 </View>
               </View>
+              {/* Debug Logging — Android only (logcat) */}
+              {Platform.OS === 'android' && (
+                <View style={styles.debugLoggingCard}>
+                  <View style={styles.debugLoggingHeader}>
+                    <Text style={styles.debugLoggingTitle}>Debug Logging</Text>
+                    <View style={styles.debugLoggingStatus}>
+                      <View
+                        style={[
+                          styles.debugLoggingStatusDot,
+                          {
+                            backgroundColor: debugLoggingEnabled
+                              ? theme.colors.success
+                              : theme.colors.textSecondary,
+                          },
+                        ]}
+                      />
+                      <Text
+                        style={[
+                          styles.debugLoggingStatusText,
+                          {
+                            color: debugLoggingEnabled
+                              ? theme.colors.success
+                              : theme.colors.textSecondary,
+                          },
+                        ]}>
+                        {debugLoggingEnabled ? 'Active' : 'Inactive'}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.toggleContainer}>
+                    <Text style={styles.toggleLabel}>Enable Logging</Text>
+                    <AppSwitch
+                      onValueChange={handleToggleDebugLogging}
+                      value={debugLoggingEnabled}
+                    />
+                  </View>
+                </View>
+              )}
 
               {/* Enhanced Disable Dev Mode Button */}
               <AppPressable
@@ -3851,7 +3976,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 onPress={() => {
                   Alert.alert(
                     'Disable Dev Mode',
-                    'Are you sure you want to hide the Dev Debug section? You can enable it again by clicking the build number 7 times.',
+                    'Are you sure you want to hide the Developer Mode section? You can enable it again by clicking the build number 7 times.',
                     [
                       {
                         text: 'Cancel',
@@ -3861,19 +3986,32 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                         text: 'Disable',
                         style: 'destructive',
                         onPress: () => {
-                          setDevDebugEnabled(false);
-                          EncryptedStorage.setItem(
-                            'devDebugEnabled',
-                            'false',
-                          ).catch(error => {
-                            dbg('Error saving devDebugEnabled:', error);
-                          });
-                          Toast.show({
-                            type: 'info',
-                            text1: 'Dev Mode Disabled',
-                            text2: 'Dev Debug section is now hidden',
-                            position: 'top',
-                          });
+                          const runDisableDev = async () => {
+                            if (isTestnet) {
+                              const ok = await toggleNetwork(false, {
+                                silent: true,
+                              });
+                              if (!ok) {
+                                return;
+                              }
+                            }
+                            setDevDebugEnabled(false);
+                            EncryptedStorage.setItem(
+                              'devDebugEnabled',
+                              'false',
+                            ).catch(error => {
+                              dbg('Error saving devDebugEnabled:', error);
+                            });
+                            Toast.show({
+                              type: 'info',
+                              text1: 'Dev Mode Disabled',
+                              text2: 'Developer Mode section is now hidden',
+                              position: 'top',
+                            });
+                          };
+                          runDisableDev().catch(e =>
+                            dbg('Disable Dev Mode:', e),
+                          );
                         },
                       },
                     ],
@@ -3940,91 +4078,92 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             onToggle={() => toggleSection('about')}
             styles={styles}
             theme={theme}>
-            <View style={styles.aboutInfoRow}>
+            <AppPressable
+              onPress={handleAppVersionRowPress}
+              disabled={!appVersion || checkingGithubRelease}
+              style={styles.aboutInfoRow}
+              accessibilityRole="button"
+              accessibilityLabel="Check for Bold Wallet updates"
+              android_ripple={{color: 'rgba(0,0,0,0.08)'}}>
               <Text style={styles.aboutLabel}>App Version</Text>
-              <Text style={styles.aboutValue}>{appVersion}</Text>
-            </View>
-            <View style={styles.aboutInfoRow}>
-              <Text style={styles.aboutLabel}>Build Number</Text>
-              <AppPressable
-                onPress={() => {
-                  // Only enable on Android (iOS prod builds don't support logs)
-                  if (Platform.OS !== 'android') {
-                    return;
-                  }
+              {checkingGithubRelease ? (
+                <ActivityIndicator
+                  size="small"
+                  color={theme.colors.secondary}
+                />
+              ) : (
+                <Text style={styles.aboutValue}>{appVersion}</Text>
+              )}
+            </AppPressable>
+            <AppPressable
+              onPress={() => {
+                if (devDebugEnabled) {
+                  Toast.show({
+                    type: 'info',
+                    text1: 'Dev Mode Already Enabled',
+                    text2: 'Developer debug section is already visible',
+                    position: 'top',
+                    visibilityTime: 2000,
+                  });
+                  return;
+                }
 
-                  // Check if dev mode is already enabled
-                  if (devDebugEnabled) {
-                    Toast.show({
-                      type: 'info',
-                      text1: 'Dev Mode Already Enabled',
-                      text2: 'Developer debug section is already visible',
-                      position: 'top',
-                      visibilityTime: 2000,
-                    });
-                    return;
-                  }
+                buildNumberClickCountRef.current += 1;
+                const currentCount = buildNumberClickCountRef.current;
+                setBuildNumberClickCount(currentCount);
 
-                  // Increment click count
-                  buildNumberClickCountRef.current += 1;
-                  const currentCount = buildNumberClickCountRef.current;
-                  setBuildNumberClickCount(currentCount);
+                if (buildNumberClickTimeoutRef.current) {
+                  clearTimeout(buildNumberClickTimeoutRef.current);
+                }
+                buildNumberClickTimeoutRef.current = setTimeout(() => {
+                  buildNumberClickCountRef.current = 0;
+                  setBuildNumberClickCount(0);
+                }, 3000);
 
-                  // Clear existing timeout
+                if (currentCount >= 2 && currentCount < 7) {
+                  const stepsRemaining = 7 - currentCount;
+                  Toast.show({
+                    type: 'info',
+                    text1: `You're now ${stepsRemaining} step${
+                      stepsRemaining > 1 ? 's' : ''
+                    } to enable dev mode`,
+                    position: 'top',
+                    visibilityTime: 2000,
+                  });
+                }
+
+                if (currentCount >= 7) {
+                  setDevDebugEnabled(true);
+                  EncryptedStorage.setItem('devDebugEnabled', 'true').catch(
+                    error => {
+                      dbg('Error saving devDebugEnabled:', error);
+                    },
+                  );
+                  setExpandedSections(prev => ({
+                    ...prev,
+                    about: false,
+                    devDebug: true,
+                  }));
+                  Toast.show({
+                    type: 'success',
+                    text1: 'Dev Mode Enabled',
+                    text2: 'Developer debug section is now visible',
+                    position: 'top',
+                  });
+                  buildNumberClickCountRef.current = 0;
+                  setBuildNumberClickCount(0);
                   if (buildNumberClickTimeoutRef.current) {
                     clearTimeout(buildNumberClickTimeoutRef.current);
+                    buildNumberClickTimeoutRef.current = null;
                   }
-                  // Reset count after 3 seconds of inactivity
-                  buildNumberClickTimeoutRef.current = setTimeout(() => {
-                    buildNumberClickCountRef.current = 0;
-                    setBuildNumberClickCount(0);
-                  }, 3000);
-
-                  // Show progress toast starting from 2 clicks
-                  if (currentCount >= 2 && currentCount < 7) {
-                    const stepsRemaining = 7 - currentCount;
-                    Toast.show({
-                      type: 'info',
-                      text1: `You're now ${stepsRemaining} step${
-                        stepsRemaining > 1 ? 's' : ''
-                      } to enable dev mode`,
-                      position: 'top',
-                      visibilityTime: 2000,
-                    });
-                  }
-
-                  // Check if we've reached 7 clicks
-                  if (currentCount >= 7) {
-                    // Enable dev debug mode
-                    setDevDebugEnabled(true);
-                    EncryptedStorage.setItem('devDebugEnabled', 'true').catch(
-                      error => {
-                        dbg('Error saving devDebugEnabled:', error);
-                      },
-                    );
-                    // Open devDebug section and close about section
-                    setExpandedSections(prev => ({
-                      ...prev,
-                      about: false,
-                      devDebug: true,
-                    }));
-                    // Show toast
-                    Toast.show({
-                      type: 'success',
-                      text1: 'Dev Mode Enabled',
-                      text2: 'Developer debug section is now visible',
-                      position: 'top',
-                    });
-                    // Reset counter
-                    buildNumberClickCountRef.current = 0;
-                    setBuildNumberClickCount(0);
-                    if (buildNumberClickTimeoutRef.current) {
-                      clearTimeout(buildNumberClickTimeoutRef.current);
-                      buildNumberClickTimeoutRef.current = null;
-                    }
-                  }
-                }}
-                style={styles.buildNumberContainer}>
+                }
+              }}
+              style={styles.aboutInfoRow}
+              accessibilityRole="button"
+              accessibilityLabel="Build number"
+              android_ripple={{color: 'rgba(0,0,0,0.08)'}}>
+              <Text style={styles.aboutLabel}>Build Number</Text>
+              <View style={styles.buildNumberContainer}>
                 {buildNumberClickCount >= 2 ? (
                   <View style={styles.buildNumberBadge}>
                     <Text style={styles.buildNumberBadgeText}>
@@ -4034,8 +4173,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 ) : (
                   <Text style={styles.aboutValue}>{buildNumber}</Text>
                 )}
-              </AppPressable>
-            </View>
+              </View>
+            </AppPressable>
             <Text style={styles.toggleDescription}>
               Make sure that your wallet keyshares devices are running the
               latest version for optimal compatibility and security.
@@ -4052,6 +4191,40 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         phase={restoreProgress?.phase}
         progress={restoreProgress?.progress}
       />
+      <Modal
+        visible={showAppUpdateModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowAppUpdateModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Image
+                source={require('../assets/bold-icon.png')}
+                style={styles.modalIcon}
+                resizeMode="contain"
+                tintColor={theme.colors.secondary}
+              />
+              <Text style={styles.modalTitle}>Update available</Text>
+            </View>
+            <Text style={styles.modalDescription}>
+              New version ({latestGithubReleaseTag ?? 'latest'}) available.
+              {'\n\n'}
+              For best interoperability and stability, please update all your
+              devices from the same source you originally installed Bold from
+              (App Store, Play Store, F-Droid, or other stores).
+            </Text>
+            <View style={styles.modalActions}>
+              <AppPressable
+                style={[styles.modalButton, styles.confirmButton]}
+                onPress={() => setShowAppUpdateModal(false)}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                <Text style={styles.confirmButtonText}>Okay</Text>
+              </AppPressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <BackupKeyshareModal
         visible={isBackupModalVisible}
         onClose={() => setIsBackupModalVisible(false)}

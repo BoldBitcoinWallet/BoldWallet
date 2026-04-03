@@ -789,44 +789,6 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     resolver(tag)
   }
 
-  @objc func mpcSignPSBT(
-    /* tss */
-    _ server: String,
-    partyID: String,
-    partiesCSV: String,
-    sessionID: String,
-    sessionKey: String,
-    encKey: String,
-    decKey: String,
-    keyshare: String,
-    /* psbt */
-    psbtBase64: String,
-    resolver: @escaping RCTPromiseResolveBlock,
-    rejecter: @escaping RCTPromiseRejectBlock
-  ) {
-    DispatchQueue.global(qos: .background).async { [weak self] in
-      guard let self = self else {
-        resolver("")
-        return
-      }
-      var error: NSError?
-      let output = self.withZeroedUTF8Keyshare(keyshare) { ks in
-        TssMpcSignPSBT(
-          server,
-          partyID,
-          partiesCSV,
-          sessionID,
-          sessionKey,
-          encKey,
-          decKey,
-          ks,
-          psbtBase64, &error)
-      }
-      self.sendLogEvent("mpcSignPSBT", output)
-      resolver(error == nil ? output : error!.localizedDescription)
-    }
-  }
-
   @objc func parsePSBTDetails(
     _ psbtBase64: String, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock

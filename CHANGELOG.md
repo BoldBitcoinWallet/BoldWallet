@@ -1,5 +1,32 @@
 # Changelog
 
+## [3.0.8] - 2026-04-02
+
+### Added
+- **Loading screen manchette (rolling quotes)** — DB-first cache plus background sync of remote `QUOTES.md` (config key `loading_quotes_json`), refresh when the app returns to the foreground, and a bottom ticker on the unlock screen.
+- **WebView CSS marquee** — horizontal scrolling quotes rendered in `react-native-webview` (HTML/CSS animation) to avoid heavy RN layout on the lock screen; **`**bold**`** segments render as bold in the ticker and in the reduced-motion static text path.
+- **Themed toasts on the lock screen** — `LoadingScreen` mounts `Toast` with `createToastConfig(theme)` so success/error feedback matches the rest of the app while unauthenticated (no `AppContent` tree).
+- **Manual “up to date” feedback** — when the user checks for updates from the version chip and the installed build already matches the latest GitHub release, a **success** toast confirms it.
+- **`react-native-webview`** dependency (iOS Pods / Android autolink) for the marquee.
+- **`services/LoadingQuotesCache.ts`** — parse `QUOTES.md`, persist payload in SQLite via `AppConfigRepository`, fetch/sync helpers.
+- **`CONFIG_KEYS.LOADING_QUOTES_JSON`** in `AppConfigRepository` for cached quote JSON.
+
+### Changed
+- **Wallet Settings (advanced)** — developer / HD tuning (e.g. gap limit, scan range), clearer network switch confirmations, and a guard when developer mode is off so the wallet is not left on testnet unintentionally.
+- **Loading screen polish** — safe-area and font handling for the manchette on iOS vs Android; unlock UI retains particles, logo/button motion, and biometric affordances alongside the ticker.
+- **Package manager** — lockfile moved to npm (`package-lock.json`); `yarn.lock` removed; optional `.npmrc` for registry defaults.
+
+### Fixed / hardening
+- **Android TurboModule startup** — removed duplicate `@ReactMethod` `mpcSignPSBT` overload (explicit keyshare vs stored keyshare) that caused `Duplicate method name mpcSignPSBT` / JS runtime failure; **one** bridge method remains: PSBT signing with keyshare loaded from native secure storage (iOS `.m` / Swift aligned with Kotlin).
+- **BBMTLib** — removed legacy single-key Bitcoin send / WIF signing helpers from `Tss` surface where superseded by MPC flows (smaller native API surface).
+
+### Technical Details
+- **Version**: `package.json` 3.0.8; Android `versionCode` 58 / `versionName` 3.0.8; iOS build 58 / `MARKETING_VERSION` 3.0.8 (align store metadata if the branch still shows 3.1.0 during parallel bumps).
+- **New files**: `services/LoadingQuotesCache.ts`, `.npmrc` (optional).
+- **Modified files** (selection): `screens/LoadingScreen.tsx`, `screens/WalletSettings.tsx`, `services/repositories/AppConfigRepository.ts`, `android/.../BBMTLibNativeModule.kt`, `ios/BBMTLibNativeModule.swift`, `ios/BBMTLibNativeModule.m`, `BBMTLib/tss/btc.go`, `package.json`, `package-lock.json`, `ios/Podfile.lock`, `android/app/build.gradle`, `ios/BoldWallet.xcodeproj/project.pbxproj`.
+
+---
+
 ## [3.0.7] - 2026-04-01
 
 ### Added

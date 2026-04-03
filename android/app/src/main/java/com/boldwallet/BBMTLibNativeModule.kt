@@ -891,45 +891,6 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun mpcSignPSBT(
-        // tss
-        server: String,
-        partyID: String,
-        partiesCSV: String,
-        sessionID: String,
-        sessionKey: String,
-        encKey: String,
-        decKey: String,
-        keyshare: String,
-        // psbt
-        psbtBase64: String,
-        promise: Promise
-    ) {
-        Thread {
-            try {
-                val result = withZeroedKeyshareUtf8(keyshare) { ks ->
-                    Tss.mpcSignPSBT(
-                        server,
-                        partyID,
-                        partiesCSV,
-                        sessionID,
-                        sessionKey,
-                        encKey,
-                        decKey,
-                        ks,
-                        psbtBase64
-                    )
-                }
-                ld("mpcSignPSBT signed:", result)
-                promise.resolve(result)
-            } catch (e: Throwable) {
-                ld("mpcSignPSBT", "error: ${e.stackTraceToString()}")
-                promise.reject("MPC_SIGN_PSBT_ERROR", "Failed to sign PSBT: ${e.message}", e)
-            }
-        }.start()
-    }
-
-    @ReactMethod
-    fun mpcSignPSBT(
         server: String,
         partyID: String,
         partiesCSV: String,
