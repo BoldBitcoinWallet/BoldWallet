@@ -1,0 +1,44 @@
+# Device 2: after adb sync, OS clipboard matches device 1. Maestro `pasteText` needs `runFlow` of
+# `_generated_clipboard.yaml` (setClipboard) before `pasteText`. OS clipboard for adb is mirrored in
+# maestro-dual-e2e.sh after the flow (see setClipboard note in device 1 flow).
+#
+# maestro-dual-e2e.sh runs pm clear + adb monkey on this device before Maestro flow 2.
+appId: com.boldwallet
+---
+- tapOn:
+    point: 45%,74%
+- tapOn:
+    point: 13%,68%
+- tapOn:
+    point: 13%,74%
+- tapOn: Setup New Wallet
+- tapOn: Duo
+- tapOn: Continue to Pair Devices →
+- tapOn: Nostr
+- tapOn: Continue →
+- tapOn:
+    point: 76%,42%
+# Internal clipboard = OS clipboard payload (snippet); then paste into the focused field.
+- runFlow: _generated_clipboard.yaml
+- pasteText
+- tapOn: OK
+# Last Maestro clipboard step before later taps (OS clipboard for adb is pushed in maestro-dual-e2e.sh).
+- setClipboard: "e2e-dual-device-2-clipboard"
+- tapOn:
+    point: 73%,52% #Paste npub
+- tapOn: Prepare Device
+- tapOn: ##all devices are ready
+    point: 8%,57%
+- tapOn: Join Key Generation
+- assertVisible: Keyshare Created!
+- tapOn:
+    point: 13%,56%
+- tapOn:
+    point: 13%,67%
+- tapOn: Continue
+- tapOn: Skip for now
+- tapOn: Settings
+- scrollUntilVisible:
+    element: About
+- tapOn: About
+- tapOn: Build Number

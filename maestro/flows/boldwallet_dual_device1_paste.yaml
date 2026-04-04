@@ -1,0 +1,9 @@
+# Device 1 (round 2): after D2→D1 sync, paste device 2's clipboard into the same field target as flow 2.
+# maestro-dual-e2e.sh runs adb monkey on device 1 before this flow.
+appId: com.boldwallet
+---
+- tapOn:
+    point: 76%,42%
+- runFlow: _generated_clipboard.yaml
+- pasteText
+- tapOn: OK

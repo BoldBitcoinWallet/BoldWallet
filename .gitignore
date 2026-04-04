@@ -66,6 +66,7 @@ bundle.js
 
 # testing
 /coverage
+maestro/flows/_generated_clipboard.yaml
 
 # Yarn
 .yarn/*

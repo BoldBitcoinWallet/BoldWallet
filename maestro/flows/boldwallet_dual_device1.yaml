@@ -1,0 +1,41 @@
+# Device 1: pairing flow. Maestro `setClipboard` is in-memory only; maestro-dual-e2e.sh mirrors the
+# same strings onto the OS clipboard via adb so sync_clipboard_adb.py can bridge to device 2.
+# App is opened with adb monkey on BOTH emulators before Maestro (no launchApp here).
+appId: com.boldwallet
+---
+- tapOn:
+    point: 45%,74%
+- tapOn:
+    point: 13%,68%
+- tapOn:
+    point: 13%,74%
+- tapOn: Setup New Wallet
+- tapOn: Duo
+- tapOn: Continue to Pair Devices →
+- tapOn: Nostr
+- tapOn: Continue →
+- tapOn:
+    point: 76%,42%
+- tapOn: OK
+# Do not runFlow `_generated_clipboard.yaml` here — it is created only after this flow finishes. Device 2
+# pastes the bridged payload; see boldwallet_dual_device2.yaml.
+# Last Maestro clipboard step before later taps (OS clipboard for adb is pushed in maestro-dual-e2e.sh).
+- setClipboard: "e2e-dual-device-1-clipboard"
+- tapOn:
+    point: 73%,52% #Paste npub
+- tapOn: Prepare Device
+- tapOn: ##all devices are ready
+    point: 8%,57%
+- tapOn: Join Key Generation
+- assertVisible: Keyshare Created!
+- tapOn:
+    point: 13%,56%
+- tapOn:
+    point: 13%,67%
+- tapOn: Continue
+- tapOn: Skip for now
+- tapOn: Settings
+- scrollUntilVisible:
+    element: About
+- tapOn: About
+- tapOn: Build Number

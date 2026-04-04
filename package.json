@@ -8,6 +8,7 @@
     "lint": "eslint .",
     "start": "react-native start",
     "test": "jest",
+    "test:maestro:dual": "bash scripts/maestro-dual-e2e.sh",
     "test:extensionBind": "jest __tests__/extensionBind.test.ts",
     "postinstall": "patch-package"
   },
