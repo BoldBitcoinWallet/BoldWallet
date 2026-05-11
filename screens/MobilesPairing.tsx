@@ -49,6 +49,7 @@ import {
   hexToString,
   getResetToMainTabsWallet,
   shortenAddress,
+  getKeyshareDisplayLabel,
   saveKeyshareMetadata,
   getKeyshareMetadata,
 } from '../utils';
@@ -700,6 +701,15 @@ const MobilesPairing = ({navigation}: any) => {
           }
           await EncryptedStorage.setItem('keyshare', result);
           await saveKeyshareMetadata(result);
+          try {
+            const ksParsed = JSON.parse(result);
+            const display = getKeyshareDisplayLabel(ksParsed);
+            if (display) {
+              setShareName(display);
+            }
+          } catch (_e) {
+            /* keep protocol party id in shareName */
+          }
           // New wallet setups are always non-legacy, so no need to reset flag
           setMpcDone(true);
           deletePreparams();

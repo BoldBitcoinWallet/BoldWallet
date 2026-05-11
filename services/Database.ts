@@ -333,6 +333,19 @@ class DatabaseService {
   }
 
   /**
+   * Delete rows in `network_providers` and `nostr_relays` (user-custom APIs / relays
+   * from migration or future use). Invoked on full wallet delete alongside
+   * AppConfigRepository.clearForWalletDelete().
+   */
+  clearConfigInfrastructureTables(): void {
+    this.transaction(tx => {
+      tx.execute('DELETE FROM network_providers');
+      tx.execute('DELETE FROM nostr_relays');
+    });
+    dbg('DatabaseService: network_providers + nostr_relays cleared');
+  }
+
+  /**
    * Clear fetched/cached wallet data while preserving HD discovery state.
    *
    * Used for network-switch, address-type switch, and "Clear Cache" so that:

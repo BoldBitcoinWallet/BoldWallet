@@ -42,6 +42,16 @@ export const CONFIG_KEYS = {
 
 export type ConfigKey = (typeof CONFIG_KEYS)[keyof typeof CONFIG_KEYS];
 
+/**
+ * Keys kept in `app_config` after “Delete wallet” / hard reset.
+ * Everything else in `app_config` is removed (theme, tabs, APIs, HD options, etc.).
+ *
+ * - `sqlite_migration_done`: must stay so one-time LocalCache→SQLite migration is not re-run.
+ */
+export const APP_CONFIG_KEYS_PRESERVED_ON_WALLET_DELETE: readonly string[] = [
+  CONFIG_KEYS.SQLITE_MIGRATION_DONE,
+];
+
 class AppConfigRepository {
   /** Read one preference; returns null when absent. */
   get(key: string): string | null {
@@ -79,6 +89,35 @@ class AppConfigRepository {
       database.execute('DELETE FROM app_config WHERE key = ?', [key]);
     } catch (err) {
       dbg('AppConfigRepository.remove error', key, err);
+    }
+  }
+
+  /**
+   * Hard-reset: delete every `app_config` row except
+   * {@link APP_CONFIG_KEYS_PRESERVED_ON_WALLET_DELETE}.
+   * Clears mempool API URLs, network/address defaults, theme, tabs, fee strategy, currency,
+   * Nostr relay CSV in config, HD scan options, loading quotes cache, keyshare_meta mirror, etc.
+   */
+  clearForWalletDelete(): void {
+    const preserved = [...APP_CONFIG_KEYS_PRESERVED_ON_WALLET_DELETE];
+    if (preserved.length === 0) {
+      dbg(
+        'AppConfigRepository.clearForWalletDelete: refuse to wipe app_config with empty preserve list',
+      );
+      return;
+    }
+    try {
+      const placeholders = preserved.map(() => '?').join(', ');
+      database.execute(
+        `DELETE FROM app_config WHERE key NOT IN (${placeholders})`,
+        preserved,
+      );
+      dbg(
+        'AppConfigRepository.clearForWalletDelete: done; preserved:',
+        preserved.join(', '),
+      );
+    } catch (err) {
+      dbg('AppConfigRepository.clearForWalletDelete error', err);
     }
   }
 

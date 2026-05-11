@@ -42,7 +42,7 @@ import {
   formatBitcoinDisplay,
   getCurrencySymbol,
   HapticFeedback,
-  getKeyshareLabel,
+  getKeyshareDisplayLabel,
   getReceivePath,
   isLegacyWallet,
   decodeSendBitcoinQR,
@@ -795,10 +795,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setLegacyAddress(legacyAddr);
         setSegwitAddress(segwitAddr);
         setSegwitCompatibleAddress(segwitCompAddr);
-        // Get keyshare label (KeyShare1/2/3) or fallback to local_party_key
-        const keyshareLabel = getKeyshareLabel(ks);
-        const shareID = keyshareLabel || ks.local_party_key || '';
-        setParty(shareID);
+        // Keyshare role label (same rule for local and Nostr wallets)
+        setParty(getKeyshareDisplayLabel(ks));
         // Generate and store current address
         const btcAddress = await BBMTLibNativeModule.btcAddress(
           btcPub,
@@ -1218,10 +1216,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setLegacyAddress(legacyAddr);
         setSegwitAddress(segwitAddr);
         setSegwitCompatibleAddress(segwitCompAddr);
-        // Get keyshare label (KeyShare1/2/3) or fallback to local_party_key
-        const keyshareLabel = getKeyshareLabel(ks);
-        const shareID = keyshareLabel || ks.local_party_key || '';
-        setParty(shareID);
+        // Keyshare role label (same rule for local and Nostr wallets)
+        setParty(getKeyshareDisplayLabel(ks));
         // Get current address type and generate address
         setAddressType(addrType);
         // Generate and store current address

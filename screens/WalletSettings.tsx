@@ -42,7 +42,7 @@ import {
   setHapticsEnabled,
   areHapticsEnabled,
   getMainnetAPIList,
-  getKeyshareLabel,
+  getKeyshareDisplayLabel,
   getResetToMainTabsWallet,
   getKeyshareMetadata,
   clearKeyshareMetadata,
@@ -67,6 +67,7 @@ import {
   restoreHdOptionsDefaults,
 } from '../services/HdOptionsConfig';
 import database from '../services/Database';
+import LocalCache from '../services/LocalCache';
 import walletRepository from '../services/repositories/WalletRepository';
 import balanceRepository from '../services/repositories/BalanceRepository';
 import balanceSyncer, {BalanceSyncError} from '../services/sync/BalanceSyncer';
@@ -1263,8 +1264,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   useEffect(() => {
     getKeyshareMetadata().then(meta => {
       if (!meta) return;
-      const keyshareLabel = getKeyshareLabel(meta);
-      setParty(keyshareLabel || meta.local_party_key || '');
+      setParty(getKeyshareDisplayLabel(meta));
       setHasNostr(!!meta.nostr_npub);
     });
     // Load network and corresponding cached API (synchronous SQLite reads)
@@ -1484,7 +1484,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         setIsModalResetVisible(false);
         dbg('clearing SQLite wallet data...');
         database.clearWalletData();
+        database.clearConfigInfrastructureTables();
+        WalletService.getInstance().invalidateAddressCache();
         mempoolClient.invalidateAll();
+        await LocalCache.clear();
+        appConfigRepository.clearForWalletDelete();
         await clearKeyshareMetadata();
         dbg('clearing encrypted storage...');
         // Prefer a full clear so we return to true first-launch state.

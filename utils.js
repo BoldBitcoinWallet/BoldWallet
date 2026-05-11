@@ -870,30 +870,68 @@ export const getNostrRelays = async (forceFetch = false) => {
 };
 
 /**
- * Get the keyshare label (KeyShare1, KeyShare2, KeyShare3) from a keyshare JSON object.
- * Computes from local_party_key position in sorted keygen_committee_keys array.
- * Each device checks its local_party_key and finds where it sits in the sorted keygen_committee_keys
- * to determine its placement (1, 2, or 3).
- * @param {Object} keyshare - The keyshare JSON object
- * @returns {string} - The keyshare label (e.g., "KeyShare1", "KeyShare2", "KeyShare3") or empty string
+ * Get the keyshare label (KeyShare1, KeyShare2, KeyShare3) from keyshare metadata
+ * or full keyshare JSON. Uses the same rule everywhere: index of `local_party_key`
+ * in **lexicographically sorted** `keygen_committee_keys` (local LAN and Nostr paths).
+ * @param {Object|null|undefined} keyshare
+ * @returns {string}
  */
 export const getKeyshareLabel = keyshare => {
-  if (!keyshare) {
+  if (!keyshare || typeof keyshare !== 'object') {
     return '';
   }
 
-  // Compute from keygen_committee_keys: find local_party_key's position in sorted array
-  if (keyshare.local_party_key && keyshare.keygen_committee_keys) {
-    // Sort keygen_committee_keys to ensure consistent ordering
-    const sortedKeys = [...keyshare.keygen_committee_keys].sort();
-    const index = sortedKeys.indexOf(keyshare.local_party_key);
-    if (index >= 0) {
-      return `KeyShare${index + 1}`;
-    }
+  const lp =
+    typeof keyshare.local_party_key === 'string'
+      ? keyshare.local_party_key.trim()
+      : '';
+  if (!lp) {
+    return '';
   }
 
-  // Fallback: return empty string
+  const keysRaw = keyshare.keygen_committee_keys;
+  if (!Array.isArray(keysRaw) || keysRaw.length === 0) {
+    return '';
+  }
+
+  const committee = keysRaw
+    .map(k =>
+      typeof k === 'string' ? k.trim() : String(k == null ? '' : k).trim(),
+    )
+    .filter(Boolean);
+
+  if (committee.length < 2) {
+    return '';
+  }
+
+  const sortedKeys = [...committee].sort((a, b) =>
+    a === b ? 0 : a < b ? -1 : 1,
+  );
+  const index = sortedKeys.indexOf(lp);
+  if (index >= 0) {
+    return `KeyShare${index + 1}`;
+  }
   return '';
+};
+
+/**
+ * UI label: KeyShareN when committee mapping exists; otherwise raw MPC party id.
+ * @param {Object|null|undefined} keyshare
+ * @returns {string}
+ */
+export const getKeyshareDisplayLabel = keyshare => {
+  const label = getKeyshareLabel(keyshare);
+  if (label) {
+    return label;
+  }
+  if (!keyshare || typeof keyshare !== 'object') {
+    return '';
+  }
+  const lp =
+    typeof keyshare.local_party_key === 'string'
+      ? keyshare.local_party_key.trim()
+      : '';
+  return lp || '';
 };
 
 /**
