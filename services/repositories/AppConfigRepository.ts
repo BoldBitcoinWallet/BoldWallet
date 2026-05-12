@@ -30,6 +30,14 @@ export const CONFIG_KEYS = {
   ADDRESSES_VIEW_MODE: 'addresses_view_mode',
   SQLITE_MIGRATION_DONE: 'sqlite_migration_done',
   /**
+   * Lock screen bottom quotes strip (manchette). Stored as boolean string; default is on when key is absent.
+   */
+  LOCK_SCREEN_MANCHETTE_ENABLED: 'lock_screen_manchette_enabled',
+  /**
+   * Lock screen version chip + GitHub update check. Default on when absent.
+   */
+  LOCK_SCREEN_UPDATE_CHECKER_ENABLED: 'lock_screen_update_checker_enabled',
+  /**
    * JSON blob of non-secret keyshare fields (same shape as EncryptedStorage `keyshare_meta`).
    * Written whenever the full keyshare is saved; `getKeyshareMetadata` uses Encrypted first, then this fallback.
    */

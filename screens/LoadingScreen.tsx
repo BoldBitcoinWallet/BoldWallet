@@ -27,6 +27,9 @@ import {
   getCachedQuotes,
   syncLoadingQuotes,
 } from '../services/LoadingQuotesCache';
+import appConfigRepository, {
+  CONFIG_KEYS,
+} from '../services/repositories/AppConfigRepository';
 import {LoadingQuotesMarquee} from './loading/LoadingQuotesMarquee';
 
 /** iOS reports a large bottom safe area; with strip padding it sits too high vs Android — trim only for the manchette. */
@@ -57,7 +60,55 @@ const LoadingScreen = ({onRetry}: any) => {
   const manualVersionCheckRef = useRef(false);
   const quotesSyncInFlightRef = useRef(false);
   const [loadingQuotes, setLoadingQuotes] = useState<string[]>([]);
+  /** Default on when preference is unset (see WalletSettings → App → Manchette). */
+  const [manchetteEnabled, setManchetteEnabled] = useState(() =>
+    appConfigRepository.getBool(CONFIG_KEYS.LOCK_SCREEN_MANCHETTE_ENABLED, true),
+  );
+  /** Version chip + update check on lock screen (WalletSettings → About). */
+  const [lockScreenUpdateCheckerEnabled, setLockScreenUpdateCheckerEnabled] =
+    useState(() =>
+      appConfigRepository.getBool(
+        CONFIG_KEYS.LOCK_SCREEN_UPDATE_CHECKER_ENABLED,
+        true,
+      ),
+    );
   const [reduceMotion, setReduceMotion] = useState(false);
+
+  const quotesForMarquee = useMemo(() => {
+    if (loadingQuotes.length > 0) {
+      return loadingQuotes;
+    }
+    if (manchetteEnabled) {
+      return ['…'];
+    }
+    return [];
+  }, [loadingQuotes, manchetteEnabled]);
+
+  useEffect(() => {
+    const readLockScreenPrefs = () => {
+      setManchetteEnabled(
+        appConfigRepository.getBool(
+          CONFIG_KEYS.LOCK_SCREEN_MANCHETTE_ENABLED,
+          true,
+        ),
+      );
+      setLockScreenUpdateCheckerEnabled(
+        appConfigRepository.getBool(
+          CONFIG_KEYS.LOCK_SCREEN_UPDATE_CHECKER_ENABLED,
+          true,
+        ),
+      );
+    };
+    readLockScreenPrefs();
+    const sub = AppState.addEventListener('change', state => {
+      const active = state === 'active';
+      setAppActive(active);
+      if (active) {
+        readLockScreenPrefs();
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     const cached = getCachedQuotes();
@@ -79,12 +130,6 @@ const LoadingScreen = ({onRetry}: any) => {
       'reduceMotionChanged',
       setReduceMotion,
     );
-    return () => sub.remove();
-  }, []);
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', state => {
-      setAppActive(state === 'active');
-    });
     return () => sub.remove();
   }, []);
   useEffect(() => {
@@ -418,6 +463,9 @@ const LoadingScreen = ({onRetry}: any) => {
 
   const checkForUpdate = useCallback(
     async (silent: boolean) => {
+      if (!lockScreenUpdateCheckerEnabled) {
+        return;
+      }
       if (!version) {
         return;
       }
@@ -498,10 +546,13 @@ const LoadingScreen = ({onRetry}: any) => {
         }
       }
     },
-    [version],
+    [version, lockScreenUpdateCheckerEnabled],
   );
 
   const handleVersionPress = () => {
+    if (!lockScreenUpdateCheckerEnabled) {
+      return;
+    }
     if (updateAvailable && latestVersion) {
       setShowUpdateModal(true);
       return;
@@ -511,13 +562,13 @@ const LoadingScreen = ({onRetry}: any) => {
 
   const showVersionChip = !!version && !!buildNumber;
 
-  // Background check once the local version is known (no UI: no chip spinner, no delay, no toast)
+  // Background check once the local version is known (no chip spinner, no delay, no toast)
   useEffect(() => {
-    if (!version) {
+    if (!version || !lockScreenUpdateCheckerEnabled) {
       return;
     }
     checkForUpdate(true);
-  }, [version, checkForUpdate]);
+  }, [version, lockScreenUpdateCheckerEnabled, checkForUpdate]);
 
   const styles = StyleSheet.create({
     container: {
@@ -674,12 +725,16 @@ const LoadingScreen = ({onRetry}: any) => {
       paddingVertical: 0,
       borderRadius: 999,
       borderWidth: 1,
-      borderColor: updateAvailable ? theme.colors.accent : theme.colors.border,
+      borderColor:
+        lockScreenUpdateCheckerEnabled && updateAvailable
+          ? theme.colors.accent
+          : theme.colors.border,
       backgroundColor: theme.colors.cardBackground,
       alignSelf: 'center',
       width: 100,
       height: 32,
       justifyContent: 'center',
+      opacity: lockScreenUpdateCheckerEnabled ? 1 : 0.72,
     },
     versionChipContent: {
       flexDirection: 'row',
@@ -900,7 +955,7 @@ const LoadingScreen = ({onRetry}: any) => {
         <View
           style={[
             styles.bottomStack,
-            loadingQuotes.length > 0
+            manchetteEnabled && quotesForMarquee.length > 0
               ? {
                   paddingBottom:
                     44 +
@@ -965,11 +1020,21 @@ const LoadingScreen = ({onRetry}: any) => {
             {showVersionChip ? (
               <Pressable
                 onPress={handleVersionPress}
+                disabled={!lockScreenUpdateCheckerEnabled}
                 style={styles.versionChip}
-                accessibilityRole="button"
-                accessibilityLabel="Check for Bold Wallet updates"
-                hitSlop={8}>
-                {checkingUpdate ? (
+                accessibilityRole={
+                  lockScreenUpdateCheckerEnabled ? 'button' : 'text'
+                }
+                accessibilityState={{
+                  disabled: !lockScreenUpdateCheckerEnabled,
+                }}
+                accessibilityLabel={
+                  lockScreenUpdateCheckerEnabled
+                    ? 'Check for Bold Wallet updates'
+                    : `Bold Wallet version v${version} build ${buildNumber}, update checks disabled`
+                }
+                hitSlop={lockScreenUpdateCheckerEnabled ? 8 : 0}>
+                {checkingUpdate && lockScreenUpdateCheckerEnabled ? (
                   <ActivityIndicator
                     size="small"
                     color={theme.colors.secondary}
@@ -985,10 +1050,10 @@ const LoadingScreen = ({onRetry}: any) => {
             ) : null}
           </View>
         </View>
-        {loadingQuotes.length > 0 ? (
+        {manchetteEnabled && quotesForMarquee.length > 0 ? (
           <View style={styles.quotesTickerOverlay} pointerEvents="box-none">
             <LoadingQuotesMarquee
-              quotes={loadingQuotes}
+              quotes={quotesForMarquee}
               reduceMotion={reduceMotion}
               bottomInset={quotesStripBottomInset}
               appActive={appActive}
