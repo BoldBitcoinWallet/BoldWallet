@@ -53,5 +53,34 @@ target 'BoldWallet' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    # fmt 11.0.2 (RCT-Folly): Apple Clang 21+ (Xcode 26.x) rejects consteval in format-inl.h.
+    # fmt 12.1+ fixes this; until RN bumps fmt, disable consteval for those toolchains only.
+    # https://github.com/fmtlib/fmt/issues/4740
+    fmt_base = File.join(__dir__, 'Pods', 'fmt', 'include', 'fmt', 'base.h')
+    if File.exist?(fmt_base)
+      contents = File.read(fmt_base)
+      needle = <<~PATCH.chomp
+        #elif defined(__apple_build_version__) && __apple_build_version__ < 14000029L
+        #  define FMT_USE_CONSTEVAL 0  // consteval is broken in Apple clang < 14.
+        #elif FMT_MSC_VERSION && FMT_MSC_VERSION < 1929
+      PATCH
+      insert = <<~PATCH.chomp
+        #elif defined(__apple_build_version__) && __apple_build_version__ < 14000029L
+        #  define FMT_USE_CONSTEVAL 0  // consteval is broken in Apple clang < 14.
+        #elif defined(__apple_build_version__) && __apple_build_version__ >= 21000000
+        #  define FMT_USE_CONSTEVAL 0  // Apple clang 21+ / Xcode 26+ (fmtlib/fmt#4740)
+        #elif FMT_MSC_VERSION && FMT_MSC_VERSION < 1929
+      PATCH
+      if contents.include?('__apple_build_version__ >= 21000000')
+        # already patched
+      elsif contents.include?(needle)
+        File.chmod(0o644, fmt_base)
+        File.write(fmt_base, contents.sub(needle, insert))
+        Pod::UI.puts 'Patched Pods/fmt/include/fmt/base.h for Apple Clang 21+ (FMT_USE_CONSTEVAL=0)'.green
+      else
+        Pod::UI.warn 'fmt base.h patch skipped: expected preprocessor block not found (fmt version changed?)'
+      end
+    end
   end
 end
