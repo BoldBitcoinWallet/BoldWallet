@@ -28,7 +28,9 @@
 
 ---
 
-## [3.0.8] - 2026-04-02
+## [3.1.0] - 2026-04-03
+
+> **Versioning note:** This ship list was drafted **2026-04-02** under a `3.0.8` working label, then released and merged to `main` as **`v3.1.0`** (merge `96cc7dd`, PR #68).
 
 ### Added
 - **Loading screen manchette (rolling quotes)** — DB-first cache plus background sync of remote `QUOTES.md` (config key `loading_quotes_json`), refresh when the app returns to the foreground, and a bottom ticker on the unlock screen.
@@ -49,9 +51,9 @@
 - **BBMTLib** — removed legacy single-key Bitcoin send / WIF signing helpers from `Tss` surface where superseded by MPC flows (smaller native API surface).
 
 ### Technical Details
-- **Version**: `package.json` 3.0.8; Android `versionCode` 58 / `versionName` 3.0.8; iOS build 58 / `MARKETING_VERSION` 3.0.8 (align store metadata if the branch still shows 3.1.0 during parallel bumps).
-- **New files**: `services/LoadingQuotesCache.ts`, `.npmrc` (optional).
-- **Modified files** (selection): `screens/LoadingScreen.tsx`, `screens/WalletSettings.tsx`, `services/repositories/AppConfigRepository.ts`, `android/.../BBMTLibNativeModule.kt`, `ios/BBMTLibNativeModule.swift`, `ios/BBMTLibNativeModule.m`, `BBMTLib/tss/btc.go`, `package.json`, `package-lock.json`, `ios/Podfile.lock`, `android/app/build.gradle`, `ios/BoldWallet.xcodeproj/project.pbxproj`.
+- **Version**: `package.json` **3.1.0**; Android **`versionCode` 58** / **`versionName` 3.1.0**; iOS build **58** / **`MARKETING_VERSION` 3.1.0**.
+- **New files**: `services/LoadingQuotesCache.ts`, `screens/loading/LoadingQuotesMarquee.tsx`, `screens/loading/loadingQuotesMarqueeHtml.ts`, `utils/compareSemver.ts`, `components/ParticlesErrorBoundary.tsx`, `.npmrc` (optional).
+- **Modified files** (selection): `screens/LoadingScreen.tsx`, `screens/WalletSettings.tsx`, `services/repositories/AppConfigRepository.ts`, `services/mempoolApiBase.ts`, `android/.../BBMTLibNativeModule.kt`, `ios/BBMTLibNativeModule.swift`, `ios/BBMTLibNativeModule.m`, `BBMTLib/tss/btc.go`, `package.json`, `package-lock.json`, `ios/Podfile.lock`, `android/app/build.gradle`, `ios/BoldWallet.xcodeproj/project.pbxproj`.
 
 ---
 
