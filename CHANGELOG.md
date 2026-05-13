@@ -1,5 +1,33 @@
 # Changelog
 
+## [3.1.1] - 2026-05-13
+
+### Added
+- **Lock screen preferences** — toggles for the **quotes manchette** (`CONFIG_KEYS.LOCK_SCREEN_MANCHETTE_ENABLED`) and the **GitHub update checker** (`CONFIG_KEYS.LOCK_SCREEN_UPDATE_CHECKER_ENABLED`), with **`assets/megaphone-icon.png`** for Settings; when the update checker is off, the version chip stays visible but the check is read-only.
+- **`getKeyshareDisplayLabel()`** in `utils.js` — returns `KeyShareN` when committee mapping exists, otherwise the raw MPC party id for clearer UI when labels cannot be derived.
+- **`AppConfigRepository.clearForWalletDelete()`** — deletes all `app_config` keys except `SQLITE_MIGRATION_DONE` on full wallet delete so stale mempool URLs, theme, tabs, fee/currency prefs, Nostr relay CSV, HD scan options, loading-quotes cache, and keyshare metadata mirror are cleared.
+- **`Database.clearConfigInfrastructureTables()`** — removes `network_providers` and `nostr_relays` rows during full wallet delete (with the new app_config clear path).
+
+### Changed
+- **MPC keyshare labels (KeyShare1–3)** — single rule everywhere: lexicographically sorted `keygen_committee_keys`, trimmed strings, works from metadata or full keyshare JSON; applied across **Device**, **Wallet home**, **Wallet settings**, and **Mobiles pairing** (including label after keygen).
+- **`SyncCoordinator`** — after HD discovery, runs **price, balances, UTXOs, then transactions sequentially** instead of parallel timers hitting the same `apiBase` at once (reduces rate limiting).
+- **`WalletService.fetchTransactionsForAddresses`** — mempool address `/txs` GETs use **`with429Retry`** with an **8s per-attempt timeout** (via `mempoolClient.get(..., { timeoutMs: 8000 })`).
+- **Wallet settings (About / Legal)** — Legal rows aligned with About; lock-screen manchette and update-checker controls live with related prefs.
+- **`LoadingScreen`** — respects the new lock-screen toggles for manchette vs update UI behavior.
+
+### Fixed / hardening
+- **Full wallet delete / import reset** — calls **`clearForWalletDelete`**, **`clearConfigInfrastructureTables`**, and expanded native/Showcase cleanup so a deleted wallet does not leave behind the old config surface.
+- **Android** — `android:allowBackup="false"` so OS cloud backup does not restore app-private data.
+- **iOS build (Xcode 26.4 / Apple Clang 21)** — `Podfile` **`post_install`** patches CocoaPods **`fmt`** 11.0.2 `base.h` (`FMT_USE_CONSTEVAL` off for `__apple_build_version__ >= 21000000`); **`chmod`** before write because pod headers are read-only. See [fmtlib/fmt#4740](https://github.com/fmtlib/fmt/issues/4740).
+- **iOS project** — **`Tss.xcframework`** is **linked only** (removed **Embed Frameworks** copy phase); the slice is a **static** archive, so embedding was unnecessary.
+
+### Technical Details
+- **Version**: `package.json` **3.1.1**; Android **`versionCode` 59** / **`versionName` 3.1.1**; iOS build **59** / **`MARKETING_VERSION` 3.1.1**.
+- **New / notable files**: `assets/megaphone-icon.png`. **`WalletService`** now uses existing **`with429Retry`** from `services/sync/rateLimitRetry.ts` for address `/txs` fetches (same helper as sync workers).
+- **Modified files** (selection): `ios/Podfile`, `ios/Podfile.lock`, `ios/BoldWallet.xcodeproj/project.pbxproj`, `package.json`, `package-lock.json`, `android/app/build.gradle`, `android/app/src/main/AndroidManifest.xml`, `utils.js`, `services/Database.ts`, `services/repositories/AppConfigRepository.ts`, `services/WalletService.ts`, `services/sync/SyncCoordinator.ts`, `screens/LoadingScreen.tsx`, `screens/WalletSettings.tsx`, `screens/DeviceScreen.tsx`, `screens/WalletHome.tsx`, `screens/MobilesPairing.tsx`, `screens/ShowcaseScreen.tsx`.
+
+---
+
 ## [3.0.8] - 2026-04-02
 
 ### Added
