@@ -3,7 +3,7 @@ import {NativeModules} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import KeyshareInfoContent from '../components/KeyshareInfoContent';
 import {useUser} from '../context/UserContext';
-import {dbg, getKeyshareMetadata} from '../utils';
+import {dbg, getKeyshareDisplayLabel, getKeyshareMetadata} from '../utils';
 import {generateAllOutputDescriptors} from '../utils';
 
 const {BBMTLibNativeModule} = NativeModules;
@@ -60,20 +60,8 @@ const DeviceScreen: React.FC = () => {
       }
       const committeeKeys = keyshare.keygen_committee_keys || [];
       const type = committeeKeys.length === 3 ? 'trio' : 'duo';
-      let label = 'KeyShare1';
-      if (
-        supportsNostr &&
-        keyshare.local_party_key &&
-        committeeKeys.length > 0
-      ) {
-        const sortedKeys = [...committeeKeys].sort();
-        const localIndex = sortedKeys.findIndex(
-          (key: string) => key === keyshare.local_party_key,
-        );
-        if (localIndex >= 0) {
-          label = `KeyShare${localIndex + 1}`;
-        }
-      }
+      // Same label as Settings / backup filename: index from sorted committee keys (not Nostr-only).
+      const label = getKeyshareDisplayLabel(keyshare) || 'KeyShare1';
       const descriptors = await generateAllOutputDescriptors(
         BBMTLibNativeModule,
         pubKey,

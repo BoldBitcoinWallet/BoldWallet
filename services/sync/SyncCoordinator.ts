@@ -173,12 +173,14 @@ class SyncCoordinator {
     // HD discovery first — may expand the address set for subsequent syncs
     await this._syncHdDiscovery(forceHdDiscovery);
 
-    await Promise.all([
-      this._syncBalances(),
-      this._syncTxs(),
-      this._syncUtxos(),
-      this._syncPrice(),
-    ]);
+    // Serialized API phases (price first — few requests), then per-address syncers
+    // one at a time. Avoids pumping balance + txs + UTXOs + price in parallel
+    // against the same apiBase, which eases rate limits on public and custom hosts.
+    await this._syncPrice();
+    await this._syncBalances();
+    await this._syncUtxos();
+    await this._syncTxs();
+
     this._config?.onSyncComplete?.();
   }
 

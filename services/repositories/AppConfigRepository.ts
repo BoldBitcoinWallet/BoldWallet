@@ -30,6 +30,14 @@ export const CONFIG_KEYS = {
   ADDRESSES_VIEW_MODE: 'addresses_view_mode',
   SQLITE_MIGRATION_DONE: 'sqlite_migration_done',
   /**
+   * Lock screen bottom quotes strip (manchette). Stored as boolean string; default is on when key is absent.
+   */
+  LOCK_SCREEN_MANCHETTE_ENABLED: 'lock_screen_manchette_enabled',
+  /**
+   * Lock screen version chip + GitHub update check. Default on when absent.
+   */
+  LOCK_SCREEN_UPDATE_CHECKER_ENABLED: 'lock_screen_update_checker_enabled',
+  /**
    * JSON blob of non-secret keyshare fields (same shape as EncryptedStorage `keyshare_meta`).
    * Written whenever the full keyshare is saved; `getKeyshareMetadata` uses Encrypted first, then this fallback.
    */
@@ -41,6 +49,16 @@ export const CONFIG_KEYS = {
 } as const;
 
 export type ConfigKey = (typeof CONFIG_KEYS)[keyof typeof CONFIG_KEYS];
+
+/**
+ * Keys kept in `app_config` after “Delete wallet” / hard reset.
+ * Everything else in `app_config` is removed (theme, tabs, APIs, HD options, etc.).
+ *
+ * - `sqlite_migration_done`: must stay so one-time LocalCache→SQLite migration is not re-run.
+ */
+export const APP_CONFIG_KEYS_PRESERVED_ON_WALLET_DELETE: readonly string[] = [
+  CONFIG_KEYS.SQLITE_MIGRATION_DONE,
+];
 
 class AppConfigRepository {
   /** Read one preference; returns null when absent. */
@@ -79,6 +97,35 @@ class AppConfigRepository {
       database.execute('DELETE FROM app_config WHERE key = ?', [key]);
     } catch (err) {
       dbg('AppConfigRepository.remove error', key, err);
+    }
+  }
+
+  /**
+   * Hard-reset: delete every `app_config` row except
+   * {@link APP_CONFIG_KEYS_PRESERVED_ON_WALLET_DELETE}.
+   * Clears mempool API URLs, network/address defaults, theme, tabs, fee strategy, currency,
+   * Nostr relay CSV in config, HD scan options, loading quotes cache, keyshare_meta mirror, etc.
+   */
+  clearForWalletDelete(): void {
+    const preserved = [...APP_CONFIG_KEYS_PRESERVED_ON_WALLET_DELETE];
+    if (preserved.length === 0) {
+      dbg(
+        'AppConfigRepository.clearForWalletDelete: refuse to wipe app_config with empty preserve list',
+      );
+      return;
+    }
+    try {
+      const placeholders = preserved.map(() => '?').join(', ');
+      database.execute(
+        `DELETE FROM app_config WHERE key NOT IN (${placeholders})`,
+        preserved,
+      );
+      dbg(
+        'AppConfigRepository.clearForWalletDelete: done; preserved:',
+        preserved.join(', '),
+      );
+    } catch (err) {
+      dbg('AppConfigRepository.clearForWalletDelete error', err);
     }
   }
 

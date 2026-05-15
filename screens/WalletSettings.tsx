@@ -42,7 +42,7 @@ import {
   setHapticsEnabled,
   areHapticsEnabled,
   getMainnetAPIList,
-  getKeyshareLabel,
+  getKeyshareDisplayLabel,
   getResetToMainTabsWallet,
   getKeyshareMetadata,
   clearKeyshareMetadata,
@@ -67,6 +67,7 @@ import {
   restoreHdOptionsDefaults,
 } from '../services/HdOptionsConfig';
 import database from '../services/Database';
+import LocalCache from '../services/LocalCache';
 import walletRepository from '../services/repositories/WalletRepository';
 import balanceRepository from '../services/repositories/BalanceRepository';
 import balanceSyncer, {BalanceSyncError} from '../services/sync/BalanceSyncer';
@@ -688,6 +689,8 @@ const getSectionIcon = (title: string): any => {
       return require('../assets/legal-icon.png');
     case 'haptics':
       return require('../assets/phone-icon.png');
+    case 'manchette':
+      return require('../assets/megaphone-icon.png');
     case 'storage':
       return require('../assets/storage-icon.png');
     case 'nostr relays':
@@ -815,6 +818,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     'terms',
   );
   const [hapticsEnabled, setHapticsEnabledState] = useState(true);
+  const [lockScreenManchetteEnabled, setLockScreenManchetteEnabled] =
+    useState(true);
+  const [lockScreenUpdateCheckerEnabled, setLockScreenUpdateCheckerEnabled] =
+    useState(true);
   const [isApiInfoVisible, setIsApiInfoVisible] = useState(false);
   const [debugLoggingEnabled, setDebugLoggingEnabledState] = useState(false);
   const [devDebugEnabled, setDevDebugEnabled] = useState(false);
@@ -831,6 +838,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   }>({
     theme: false,
     haptics: false,
+    manchette: false,
     displayFormat: false,
     backup: false,
     advanced: false,
@@ -1187,6 +1195,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     const validSections = new Set([
       'theme',
       'haptics',
+      'manchette',
       'displayFormat',
       'backup',
       'advanced',
@@ -1213,6 +1222,18 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     setAppVersion(DeviceInfo.getVersion());
     setBuildNumber(DeviceInfo.getBuildNumber());
     setHapticsEnabledState(areHapticsEnabled());
+    setLockScreenManchetteEnabled(
+      appConfigRepository.getBool(
+        CONFIG_KEYS.LOCK_SCREEN_MANCHETTE_ENABLED,
+        true,
+      ),
+    );
+    setLockScreenUpdateCheckerEnabled(
+      appConfigRepository.getBool(
+        CONFIG_KEYS.LOCK_SCREEN_UPDATE_CHECKER_ENABLED,
+        true,
+      ),
+    );
     refreshUsageSize();
     // Initialize debug logging state from module-level ref
     setDebugLoggingEnabledState(isDebugLoggingEnabled());
@@ -1263,8 +1284,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   useEffect(() => {
     getKeyshareMetadata().then(meta => {
       if (!meta) return;
-      const keyshareLabel = getKeyshareLabel(meta);
-      setParty(keyshareLabel || meta.local_party_key || '');
+      setParty(getKeyshareDisplayLabel(meta));
       setHasNostr(!!meta.nostr_npub);
     });
     // Load network and corresponding cached API (synchronous SQLite reads)
@@ -1484,7 +1504,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         setIsModalResetVisible(false);
         dbg('clearing SQLite wallet data...');
         database.clearWalletData();
+        database.clearConfigInfrastructureTables();
+        WalletService.getInstance().invalidateAddressCache();
         mempoolClient.invalidateAll();
+        await LocalCache.clear();
+        appConfigRepository.clearForWalletDelete();
         await clearKeyshareMetadata();
         dbg('clearing encrypted storage...');
         // Prefer a full clear so we return to true first-launch state.
@@ -1525,6 +1549,20 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const handleToggleHaptics = (value: boolean) => {
     setHapticsEnabledState(value);
     setHapticsEnabled(value);
+  };
+  const handleToggleLockScreenManchette = (value: boolean) => {
+    setLockScreenManchetteEnabled(value);
+    appConfigRepository.setBool(
+      CONFIG_KEYS.LOCK_SCREEN_MANCHETTE_ENABLED,
+      value,
+    );
+  };
+  const handleToggleLockScreenUpdateChecker = (value: boolean) => {
+    setLockScreenUpdateCheckerEnabled(value);
+    appConfigRepository.setBool(
+      CONFIG_KEYS.LOCK_SCREEN_UPDATE_CHECKER_ENABLED,
+      value,
+    );
   };
   const handleToggleBalanceFormatting = (value: boolean) => {
     setBalanceFormattingEnabled(value);
@@ -2277,14 +2315,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           textDecorationLine: 'underline',
           textDecorationColor: theme.colors.text, // Match underline color
         },
-        termsLink: {
-          fontSize: theme.fontSizes?.base || 14,
-          fontFamily: theme.fontFamilies?.bold,
-          color: theme.colors.text, // Use text color for better readability in dark mode
-          textDecorationLine: 'underline',
-          textDecorationColor: theme.colors.text, // Match underline color
-          marginTop: 8,
-        },
         modalOverlay: {
           flex: 1,
           backgroundColor: theme.colors.modalBackdrop,
@@ -2739,7 +2769,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         nestedScrollEnabled={true}
         bounces={true}
         scrollEventThrottle={16}>
-        {/* App: Theme, Balance Display, Haptics, Storage */}
+        {/* App: Theme, Balance Display, Haptics, Manchette, Storage */}
         <SettingsSectionGroup title="App" styles={styles} theme={theme}>
           <CollapsibleSection
             title="Theme"
@@ -2891,6 +2921,25 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 value={hapticsEnabled}
               />
               <Text style={styles.toggleLabel}>Haptics On</Text>
+            </View>
+          </CollapsibleSection>
+          <CollapsibleSection
+            title="Manchette"
+            isExpanded={expandedSections.manchette}
+            onToggle={() => toggleSection('manchette')}
+            styles={styles}
+            theme={theme}>
+            <Text style={styles.toggleDescription}>
+              Rolling tips and news/links along the bottom of the lock screen.
+              Turn off for a minimal unlock view.
+            </Text>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Hidden</Text>
+              <AppSwitch
+                onValueChange={handleToggleLockScreenManchette}
+                value={lockScreenManchetteEnabled}
+              />
+              <Text style={styles.toggleLabel}>Visible</Text>
             </View>
           </CollapsibleSection>
           {/* Storage - inside App */}
@@ -4055,22 +4104,30 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             <Text style={styles.toggleDescription}>
               Terms of Service and Privacy Policy
             </Text>
-            <Text
-              style={styles.termsLink}
+            <AppPressable
               onPress={() => {
                 setLegalModalType('terms');
                 setIsLegalModalVisible(true);
-              }}>
-              Read Terms of Use
-            </Text>
-            <Text
-              style={styles.termsLink}
+              }}
+              style={styles.aboutInfoRow}
+              accessibilityRole="button"
+              accessibilityLabel="Open terms of use"
+              android_ripple={{color: 'rgba(0,0,0,0.08)'}}>
+              <Text style={styles.aboutLabel}>Terms of Use</Text>
+              <Text style={styles.aboutValue}>View</Text>
+            </AppPressable>
+            <AppPressable
               onPress={() => {
                 setLegalModalType('privacy');
                 setIsLegalModalVisible(true);
-              }}>
-              Read Privacy Policy
-            </Text>
+              }}
+              style={styles.aboutInfoRow}
+              accessibilityRole="button"
+              accessibilityLabel="Open privacy policy"
+              android_ripple={{color: 'rgba(0,0,0,0.08)'}}>
+              <Text style={styles.aboutLabel}>Privacy Policy</Text>
+              <Text style={styles.aboutValue}>View</Text>
+            </AppPressable>
           </CollapsibleSection>
           <CollapsibleSection
             title="About"
@@ -4078,6 +4135,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             onToggle={() => toggleSection('about')}
             styles={styles}
             theme={theme}>
+            <Text style={styles.toggleDescription}>
+              Make sure that your wallet keyshares apps are all aligned
+              running the latest version for optimal compatibility and security.
+            </Text>
             <AppPressable
               onPress={handleAppVersionRowPress}
               disabled={!appVersion || checkingGithubRelease}
@@ -4176,9 +4237,17 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               </View>
             </AppPressable>
             <Text style={styles.toggleDescription}>
-              Make sure that your wallet keyshares devices are running the
-              latest version for optimal compatibility and security.
+              Lock screen version chip, when off, no automatic update
+              checks/alerts are performed.
             </Text>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Off</Text>
+              <AppSwitch
+                onValueChange={handleToggleLockScreenUpdateChecker}
+                value={lockScreenUpdateCheckerEnabled}
+              />
+              <Text style={styles.toggleLabel}>On</Text>
+            </View>
           </CollapsibleSection>
         </SettingsSectionGroup>
       </ScrollView>

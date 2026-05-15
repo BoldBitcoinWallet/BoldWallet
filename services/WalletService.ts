@@ -14,6 +14,7 @@ import {
   getUtxoEmptyCacheTtlMs,
 } from './HdOptionsConfig';
 import mempoolClient from './MempoolClient';
+import {with429Retry} from './sync/rateLimitRetry';
 import appConfigRepository, {
   CONFIG_KEYS,
 } from './repositories/AppConfigRepository';
@@ -2140,10 +2141,9 @@ export class WalletService {
     for (const addr of addresses) {
       try {
         const url = `${cleanBase}/api/address/${encodeURIComponent(addr)}/txs`;
-        const res = await this.withTimeout(
-          `txs-${addr.slice(0, 12)}`,
-          mempoolClient.get(url),
-          8000,
+        const res = await with429Retry<any[]>(
+          'WalletService.fetchTransactionsForAddresses',
+          () => mempoolClient.get<any[]>(url, {timeoutMs: 8000}),
         );
         if (!res.ok) {
           cursors[addr] = null;

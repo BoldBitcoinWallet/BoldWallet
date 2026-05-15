@@ -27,6 +27,7 @@ import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConf
 import database from '../services/Database';
 import {WalletService} from '../services/WalletService';
 import mempoolClient from '../services/MempoolClient';
+import LocalCache from '../services/LocalCache';
 import {useUser} from '../context/UserContext';
 const {BBMTLibNativeModule} = NativeModules;
 const ShowcaseScreen = ({navigation}: any) => {
@@ -83,6 +84,9 @@ const ShowcaseScreen = ({navigation}: any) => {
           EncryptedStorage.removeItem('psbt_mode_first_visit'),
         ]);
         dbg('EncryptedStorage preferences cleared');
+
+        await LocalCache.clear();
+        dbg('Local file cache cleared');
 
         dbg('=== ShowcaseScreen: Full reset completed');
       } catch (err) {
@@ -203,6 +207,8 @@ const ShowcaseScreen = ({navigation}: any) => {
         }
         await EncryptedStorage.setItem('keyshare', decryptedKeyshare);
         await saveKeyshareMetadata(decryptedKeyshare);
+        await LocalCache.clear();
+        appConfigRepository.remove(CONFIG_KEYS.CURRENT_ADDRESS);
         // Reset legacy wallet modal flag for new wallet
         // If legacy wallet, set to "no" (show modal); if not legacy, set to "yes" (won't show anyway)
         const isLegacy = isLegacyWallet(ks.created_at);
