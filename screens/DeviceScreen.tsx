@@ -73,7 +73,7 @@ const DeviceScreen: React.FC = () => {
         pubKey,
         chainCode,
         network || 'mainnet',
-        keyshare.created_at,
+        keyshare,
         addressType || 'segwit-native',
       );
       const outputDescriptors = {

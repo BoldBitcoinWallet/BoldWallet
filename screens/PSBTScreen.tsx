@@ -137,7 +137,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
         pubKey,
         chainCode,
         network,
-        keyshare.created_at,
+        keyshare,
       );
       const outputDescriptors = {
         legacy: descriptors.legacy,

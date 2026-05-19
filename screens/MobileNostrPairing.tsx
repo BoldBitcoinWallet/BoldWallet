@@ -47,6 +47,8 @@ import {
   getResetToMainTabsWallet,
   shortenAddress,
   saveKeyshareMetadata,
+  resolveUseLegacyDerivationPaths,
+  detectKeyshareTssBackend,
 } from '../utils';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {
@@ -1668,7 +1670,24 @@ const MobileNostrPairing = ({navigation}: any) => {
       // Save keyshare (keyshare_position will be calculated on-the-fly when needed)
       await EncryptedStorage.setItem('keyshare', keyshareJSON);
       await saveKeyshareMetadata(keyshareJSON);
-      // New wallet setups are always non-legacy, so no need to reset flag
+      try {
+        const ksParsed = JSON.parse(keyshareJSON);
+        const useLegacyPath = resolveUseLegacyDerivationPaths({
+          created_at: ksParsed.created_at,
+          tss_backend: detectKeyshareTssBackend(ksParsed),
+          local_party_key: ksParsed.local_party_key ?? '',
+          keygen_committee_keys: ksParsed.keygen_committee_keys ?? [],
+          pub_key: ksParsed.pub_key ?? '',
+          chain_code_hex: ksParsed.chain_code_hex ?? '',
+          nostr_npub: ksParsed.nostr_npub ?? null,
+        });
+        appConfigRepository.set(
+          CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND,
+          useLegacyPath ? 'no' : 'yes',
+        );
+      } catch (_e) {
+        appConfigRepository.set(CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND, 'yes');
+      }
       setMpcDone(true);
       setStatus('Key generation complete!');
       // Don't navigate away, let the backup UI handle it

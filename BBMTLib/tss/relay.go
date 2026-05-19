@@ -224,9 +224,22 @@ func deleteTssMessage(w http.ResponseWriter, r *http.Request) {
 
 	if data, found := getData(key); found {
 		messages := data.([]Message)
-		filtered := []Message{}
+		filtered := make([]Message, 0, len(messages))
 		for _, msg := range messages {
-			if !(msg.Hash == hash && msg.From == participantKey) {
+			if msg.Hash != hash {
+				filtered = append(filtered, msg)
+				continue
+			}
+			// Same payload/hash may be posted once per recipient (trio broadcast).
+			// Only drop the copy addressed to this polling party.
+			forMe := false
+			for _, to := range msg.To {
+				if to == participantKey {
+					forMe = true
+					break
+				}
+			}
+			if !forMe {
 				filtered = append(filtered, msg)
 			}
 		}

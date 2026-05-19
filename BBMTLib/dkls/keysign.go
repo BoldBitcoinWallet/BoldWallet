@@ -109,8 +109,8 @@ func NostrJoinKeysignWithSighash(
 	pumpCtx, pumpCancel := context.WithCancel(ctx)
 	defer pumpCancel()
 
-	router := NewMessageRouter(signSess.SigningIDs)
 	participatingNpubs := splitCSV(partiesNpubsCSV)
+	roundCh := make(chan []libtss.Message, 16)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -121,7 +121,11 @@ func NostrJoinKeysignWithSighash(
 			if decErr != nil {
 				return decErr
 			}
-			router.Post(signSess.SelfID, msgs)
+			in := filterMessagesFor(signSess.SelfID, msgs)
+			if len(in) == 0 {
+				return nil
+			}
+			roundCh <- in
 			return nil
 		})
 	}()
@@ -132,7 +136,7 @@ func NostrJoinKeysignWithSighash(
 		messenger: nm,
 		peers:     participatingNpubs,
 	}
-	sig, err := runSignWithSender(share, sighash, []byte(sessionID), signSess.SelfID, signSess.SigningIDs, runner, router, sessionID)
+	sig, err := runSignWithSender(share, sighash, []byte(sessionID), signSess.SelfID, signSess.SigningIDs, runner, roundCh, sessionID)
 	pumpCancel()
 	wg.Wait()
 	if err != nil {
@@ -178,16 +182,15 @@ func JoinKeysignWithSighash(
 
 	tss.InitKeysignProgress(session)
 
-	router := NewMessageRouter(signSess.SigningIDs)
 	messenger := tss.NewLANMessenger(server, session, sessionKey)
 	runner := &lanPartyRunner{
 		selfID:    signSess.SelfID,
 		localKey:  key,
 		peerIDs:   signSess.SigningIDs,
-		router:    router,
 		messenger: messenger,
 	}
 
+	roundCh := make(chan []libtss.Message, 16)
 	endCh := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -196,17 +199,20 @@ func JoinKeysignWithSighash(
 		if decErr != nil {
 			return decErr
 		}
-		router.Post(signSess.SelfID, msgs)
+		in := filterMessagesFor(signSess.SelfID, msgs)
+		if len(in) == 0 {
+			return nil
+		}
+		roundCh <- in
 		return nil
 	}, endCh, &wg)
 
-	sig, err := runSignWithSender(share, sighash, []byte(session), signSess.SelfID, signSess.SigningIDs, runner, router, session)
+	sig, err := runSignWithSender(share, sighash, []byte(session), signSess.SelfID, signSess.SigningIDs, runner, roundCh, session)
 	close(endCh)
 	wg.Wait()
 	if err != nil {
 		return "", err
 	}
-	_ = tss.LANEndSession(server, session)
 	tss.ReportKeysignProgress(session, 99, "keysign ok", true)
 	_ = ks
 	return keysignResponseJSON(sig, sighashBase64)

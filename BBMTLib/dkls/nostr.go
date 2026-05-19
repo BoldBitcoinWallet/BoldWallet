@@ -88,7 +88,7 @@ func runNostrDKG(cfg nostrtransport.Config, chaincode, localNpub string, allPart
 	nm := &nostrMessenger{messenger: messenger, ctx: ctx, localNpub: localNpub}
 
 	selfID := partyIDFromNpub(localNpub, allParties)
-	router := NewMessageRouter(PartyIdentifiers(len(allParties)))
+	roundCh := make(chan []libtss.Message, 16)
 
 	pump := nostrtransport.NewMessagePump(cfg, client)
 	pumpCtx, pumpCancel := context.WithCancel(ctx)
@@ -103,14 +103,18 @@ func runNostrDKG(cfg nostrtransport.Config, chaincode, localNpub string, allPart
 			if err != nil {
 				return err
 			}
-			router.Post(selfID, msgs)
+			in := filterMessagesFor(selfID, msgs)
+			if len(in) == 0 {
+				return nil
+			}
+			roundCh <- in
 			return nil
 		})
 	}()
 
 	tss.ReportKeygenProgress(cfg.SessionID, 2, "starting DKLs DKG", false)
 	runner := &nostrPartyRunner{selfID: selfID, localNpub: localNpub, messenger: nm, peers: allParties}
-	share, _, err := runDKGWithSender(cfg.SessionID, selfID, []byte(cfg.SessionID), threshold, runner, router)
+	share, _, err := runDKGWithSender(cfg.SessionID, selfID, []byte(cfg.SessionID), threshold, runner, roundCh)
 	pumpCancel()
 	wg.Wait()
 	if err != nil {
@@ -200,8 +204,6 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 	hash := HashMessageForDKLs([]byte(message))
 	tss.InitKeysignProgress(sessionID)
 
-	router := NewMessageRouter(signSess.SigningIDs)
-
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxTimeout)
 	defer cancel()
 
@@ -217,6 +219,7 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 	pumpCtx, pumpCancel := context.WithCancel(ctx)
 	defer pumpCancel()
 
+	roundCh := make(chan []libtss.Message, 16)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -226,7 +229,11 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 			if err != nil {
 				return err
 			}
-			router.Post(signSess.SelfID, msgs)
+			in := filterMessagesFor(signSess.SelfID, msgs)
+			if len(in) == 0 {
+				return nil
+			}
+			roundCh <- in
 			return nil
 		})
 	}()
@@ -237,7 +244,7 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 		messenger: nm,
 		peers:     allParties,
 	}
-	sig, err := runSignWithSender(share, hash, []byte(sessionID), signSess.SelfID, signSess.SigningIDs, runner, router, sessionID)
+	sig, err := runSignWithSender(share, hash, []byte(sessionID), signSess.SelfID, signSess.SigningIDs, runner, roundCh, sessionID)
 	pumpCancel()
 	wg.Wait()
 	if err != nil {

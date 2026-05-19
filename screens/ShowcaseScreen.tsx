@@ -20,7 +20,12 @@ import DocumentPicker from 'react-native-document-picker';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import RNFS from 'react-native-fs';
 import {useTheme} from '../theme';
-import {dbg, isLegacyWallet, saveKeyshareMetadata} from '../utils';
+import {
+  dbg,
+  resolveUseLegacyDerivationPaths,
+  detectKeyshareTssBackend,
+  saveKeyshareMetadata,
+} from '../utils';
 import LegalModal from '../components/LegalModal';
 import TransportModeSelector from '../components/TransportModeSelector';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
@@ -215,8 +220,19 @@ const ShowcaseScreen = ({navigation}: any) => {
         appConfigRepository.remove(CONFIG_KEYS.CURRENT_ADDRESS);
         // Reset legacy wallet modal flag for new wallet
         // If legacy wallet, set to "no" (show modal); if not legacy, set to "yes" (won't show anyway)
-        const isLegacy = isLegacyWallet(ks.created_at);
-        appConfigRepository.set(CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND, isLegacy ? 'no' : 'yes');
+        const isLegacyPath = resolveUseLegacyDerivationPaths({
+          created_at: ks.created_at,
+          tss_backend: detectKeyshareTssBackend(ks),
+          local_party_key: ks.local_party_key ?? '',
+          keygen_committee_keys: ks.keygen_committee_keys ?? [],
+          pub_key: ks.pub_key ?? '',
+          chain_code_hex: ks.chain_code_hex ?? '',
+          nostr_npub: ks.nostr_npub ?? null,
+        });
+        appConfigRepository.set(
+          CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND,
+          isLegacyPath ? 'no' : 'yes',
+        );
         // CRITICAL: Always reset network to mainnet on keyshare import
         // This ensures a clean state and proper address derivation for the new wallet
         dbg('=== Keyshare imported: Resetting network to mainnet');

@@ -133,7 +133,7 @@ export const shortenAddress = addr =>
  * @param {string} pubKey - Compressed master public key in hex
  * @param {string} chainCode - Master chain code in hex
  * @param {string} network - Network: 'mainnet' or 'testnet3'
- * @param {number|string|null|undefined} createdAt - Timestamp from keyshare.created_at
+ * @param {import('./types/keyshare').KeyshareMetadata|number|null|undefined} keyshareMeta - Metadata (preferred) or legacy created_at only
  * @param {string} addressType - Optional: current address type for primary descriptor selection
  * @returns {Promise<{legacy: string, segwitNative: string, segwitCompatible: string, primary: string}>}
  */
@@ -145,7 +145,11 @@ export const generateAllOutputDescriptors = async (
   createdAt,
   addressType = 'legacy',
 ) => {
-  const useLegacyPath = isLegacyWallet(createdAt);
+  const useLegacyPath = resolveUseLegacyDerivationPaths(
+    typeof createdAt === 'object' && createdAt !== null
+      ? createdAt
+      : {created_at: createdAt, tss_backend: 'gg18'},
+  );
   const outputDescriptors = {
     legacy: '',
     segwitNative: '',
@@ -221,20 +225,71 @@ export const generateAllOutputDescriptors = async (
 };
 
 /**
- * Check if a wallet is a legacy wallet (created before the optimized path migration)
- * @param {number|string|null|undefined} createdAt - Timestamp from keyshare.created_at
- * @returns {boolean} - true if legacy wallet (should use BIP44 for all address types)
+ * Normalize keyshare.created_at to milliseconds (GG18 uses ms; older DKLs exports used seconds).
+ * @param {number|string|null|undefined} createdAt
+ * @returns {number|null}
  */
-export const isLegacyWallet = createdAt => {
-  if (!createdAt) {
-    // If no timestamp, assume legacy for safety
+export const normalizeCreatedAtMs = createdAt => {
+  if (createdAt == null || createdAt === '') {
+    return null;
+  }
+  const n =
+    typeof createdAt === 'string' ? parseInt(createdAt, 10) : Number(createdAt);
+  if (!Number.isFinite(n) || n <= 0) {
+    return null;
+  }
+  // Values below ~2001-09-09 in ms are treated as Unix seconds.
+  if (n < 1e12) {
+    return n * 1000;
+  }
+  return n;
+};
+
+/**
+ * Check if a GG18-era wallet uses legacy BIP44-only paths (pre path-migration cutoff).
+ * Not the same as MPC backend — use resolveUseLegacyDerivationPaths for routing.
+ * @param {number|null|undefined} createdAtMs - created_at in milliseconds
+ * @returns {boolean}
+ */
+export const isLegacyWallet = createdAtMs => {
+  if (createdAtMs == null) {
     return true;
   }
-  const timestamp =
-    typeof createdAt === 'string' ? parseInt(createdAt, 10) : createdAt;
-  // Wallets created after 1765894825732 use optimized paths (BIP84/BIP49)
-  // Wallets created before or equal to this timestamp use BIP44 for all address types
-  return timestamp <= 1765894825732;
+  return createdAtMs <= 1765894825732;
+};
+
+/**
+ * Whether to use BIP44 for all address types (legacy) vs BIP84/BIP49 by type (standard).
+ *
+ * - **DKLs23**: always standard paths (ignores created_at).
+ * - **GG18** (legacy + post-cutoff): unchanged pre-migration behavior — timestamp
+ *   cutoff `1765894825732` ms decides BIP44-only vs BIP84/BIP49 by address type.
+ *
+ * @param {import('./types/keyshare').KeyshareMetadata|null|undefined} meta
+ * @returns {boolean}
+ */
+export const resolveUseLegacyDerivationPaths = meta => {
+  if (!meta || typeof meta !== 'object') {
+    return true;
+  }
+  const backend = detectKeyshareTssBackend(meta);
+  if (backend === 'dkls23') {
+    return false;
+  }
+  return isLegacyWallet(normalizeCreatedAtMs(meta.created_at));
+};
+
+/**
+ * Human-readable wallet creation time for UI (from created_at, any unit).
+ * @param {number|string|null|undefined} createdAt
+ * @returns {string|null}
+ */
+export const formatKeyshareCreatedAt = createdAt => {
+  const ms = normalizeCreatedAtMs(createdAt);
+  if (ms == null) {
+    return null;
+  }
+  return new Date(ms).toLocaleString();
 };
 
 /**
@@ -1061,28 +1116,32 @@ export const detectKeyshareTssBackend = parsed => {
   if (parsed.tss_backend === 'gg18') {
     return 'gg18';
   }
-  if (
-    typeof parsed.share_b64 === 'string' &&
-    parsed.share_b64.length > 0 &&
-    parsed.ecdsa_local_data == null
-  ) {
-    return 'dkls23';
-  }
+  // GG18 LocalState always has ecdsa_local_data — prefer that over share_b64 shape.
   if (parsed.ecdsa_local_data != null) {
     return 'gg18';
+  }
+  if (typeof parsed.share_b64 === 'string' && parsed.share_b64.length > 0) {
+    return 'dkls23';
   }
   return 'gg18';
 };
 
 function normalizeKeyshareMetaObject(parsed) {
+  const tss_backend =
+    parsed.tss_backend === 'dkls23' || parsed.tss_backend === 'gg18'
+      ? parsed.tss_backend
+      : detectKeyshareTssBackend(parsed);
+  const rawCreated = parsed.created_at ?? null;
+  const created_at =
+    rawCreated != null ? normalizeCreatedAtMs(rawCreated) : null;
   return {
     pub_key: parsed.pub_key ?? '',
     chain_code_hex: parsed.chain_code_hex ?? '',
-    created_at: parsed.created_at ?? null,
+    created_at,
     local_party_key: parsed.local_party_key ?? '',
     keygen_committee_keys: parsed.keygen_committee_keys ?? [],
     nostr_npub: parsed.nostr_npub ?? null,
-    tss_backend: detectKeyshareTssBackend(parsed),
+    tss_backend,
   };
 }
 
@@ -1122,6 +1181,66 @@ function loadAppConfigRepository() {
     dbg('keyshare meta: AppConfigRepository unavailable', e);
     return {repo: null, CONFIG_KEYS: null};
   }
+}
+
+function keyshareMetaNeedsCreatedAtBackfill(raw, normalized) {
+  if (!raw || !normalized) {
+    return false;
+  }
+  const rawCa = raw.created_at;
+  if (rawCa == null) {
+    return false;
+  }
+  return normalizeCreatedAtMs(rawCa) !== rawCa;
+}
+
+async function persistNormalizedKeyshareMeta(meta, repo, CONFIG_KEYS) {
+  const json = JSON.stringify(meta);
+  await EncryptedStorage.setItem('keyshare_meta', json);
+  if (repo && CONFIG_KEYS) {
+    try {
+      repo.set(CONFIG_KEYS.KEYSHARE_META_JSON, json);
+    } catch (e) {
+      dbg('persistNormalizedKeyshareMeta: DB mirror failed (non-fatal)', e);
+    }
+  }
+}
+
+/**
+ * Metadata cache omits MPC secrets; re-infer tss_backend from full keyshare when missing
+ * so DKLs wallets are not treated as GG18 for path policy.
+ * @param {import('./types/keyshare').KeyshareMetadata} meta
+ * @returns {Promise<import('./types/keyshare').KeyshareMetadata>}
+ */
+async function enrichMetaTssBackendFromFullKeyshare(meta) {
+  if (meta.tss_backend === 'dkls23' || meta.tss_backend === 'gg18') {
+    return meta;
+  }
+  try {
+    const full = await EncryptedStorage.getItem('keyshare');
+    if (!full || String(full).trim() === '') {
+      return meta;
+    }
+    const parsed = JSON.parse(full);
+    const backend = detectKeyshareTssBackend(parsed);
+    if (backend === meta.tss_backend) {
+      return meta;
+    }
+    return {...meta, tss_backend: backend};
+  } catch (e) {
+    dbg('enrichMetaTssBackendFromFullKeyshare: failed', e);
+    return meta;
+  }
+}
+
+function metaNeedsPersistAfterEnrich(before, after) {
+  if (!before || !after) {
+    return false;
+  }
+  return (
+    before.tss_backend !== after.tss_backend ||
+    before.created_at !== after.created_at
+  );
 }
 
 /**
@@ -1175,14 +1294,28 @@ export const getKeyshareMetadata = async () => {
     const encOk = encNorm && keyshareMetaLooksComplete(encNorm);
 
     if (encOk) {
-      if (repo && CONFIG_KEYS) {
+      let out = encNorm;
+      const enriched = await enrichMetaTssBackendFromFullKeyshare(encNorm);
+      if (metaNeedsPersistAfterEnrich(encNorm, enriched)) {
+        out = enriched;
+      }
+      if (
+        keyshareMetaNeedsCreatedAtBackfill(encParsed, out) ||
+        metaNeedsPersistAfterEnrich(encNorm, out)
+      ) {
         try {
-          repo.set(CONFIG_KEYS.KEYSHARE_META_JSON, JSON.stringify(encNorm));
+          await persistNormalizedKeyshareMeta(out, repo, CONFIG_KEYS);
+        } catch (e) {
+          dbg('getKeyshareMetadata: meta backfill failed', e);
+        }
+      } else if (repo && CONFIG_KEYS) {
+        try {
+          repo.set(CONFIG_KEYS.KEYSHARE_META_JSON, JSON.stringify(out));
         } catch (e) {
           dbg('getKeyshareMetadata: sync DB from Encrypted failed', e);
         }
       }
-      return encNorm;
+      return out;
     }
 
     const dbRaw =
@@ -1192,13 +1325,21 @@ export const getKeyshareMetadata = async () => {
     const dbOk = dbNorm && keyshareMetaLooksComplete(dbNorm);
 
     if (dbOk) {
-      try {
-        await EncryptedStorage.setItem(
-          'keyshare_meta',
-          JSON.stringify(dbNorm),
-        );
-      } catch (e) {
-        dbg('getKeyshareMetadata: backfill Encrypted from DB failed', e);
+      if (keyshareMetaNeedsCreatedAtBackfill(dbParsed, dbNorm)) {
+        try {
+          await persistNormalizedKeyshareMeta(dbNorm, repo, CONFIG_KEYS);
+        } catch (e) {
+          dbg('getKeyshareMetadata: DB created_at backfill failed', e);
+        }
+      } else {
+        try {
+          await EncryptedStorage.setItem(
+            'keyshare_meta',
+            JSON.stringify(dbNorm),
+          );
+        } catch (e) {
+          dbg('getKeyshareMetadata: backfill Encrypted from DB failed', e);
+        }
       }
       return dbNorm;
     }

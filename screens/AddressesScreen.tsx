@@ -33,7 +33,7 @@ import {
   dbg,
   getReceivePath,
   getChangePath,
-  isLegacyWallet,
+  resolveUseLegacyDerivationPaths,
   getKeyshareMetadata,
 } from '../utils';
 import AppPressable from '../components/AppPressable';
@@ -200,7 +200,7 @@ const AddressesScreen: React.FC<{navigation: any}> = ({navigation}) => {
   });
   const [rows, setRows] = useState<AddressRowVm[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [legacyCreatedAt, setLegacyCreatedAt] = useState<number | null>(null);
+  const [useLegacyPath, setUseLegacyPath] = useState(true);
   const lazySyncInFlight = useRef(false);
   const loadMoreInFlight = useRef(false);
   const pairCountRef = useRef(PAIRS_PER_PAGE);
@@ -217,23 +217,12 @@ const AddressesScreen: React.FC<{navigation: any}> = ({navigation}) => {
       try {
         const meta = await getKeyshareMetadata();
         if (!meta) return;
-        const ca = meta.created_at;
-        setLegacyCreatedAt(
-          typeof ca === 'number' ? ca : ca != null ? Number(ca) : null,
-        );
+        setUseLegacyPath(resolveUseLegacyDerivationPaths(meta));
       } catch {
-        setLegacyCreatedAt(null);
+        setUseLegacyPath(true);
       }
     })();
   }, []);
-
-  const useLegacyPath = useMemo(
-    () =>
-      legacyCreatedAt != null && !Number.isNaN(legacyCreatedAt)
-        ? isLegacyWallet(legacyCreatedAt)
-        : false,
-    [legacyCreatedAt],
-  );
 
   const computeRowsFromDb = useCallback(
     (pairCountInput: number, smartVisibleCountInput: number): AddressRowVm[] => {

@@ -19,16 +19,12 @@ export function detectKeyshareTssBackend(
   if (backend === 'gg18') {
     return 'gg18';
   }
-  // DKLs23 export format (libtss handle); GG18 uses ecdsa_local_data inside LocalState.
-  if (
-    typeof parsed.share_b64 === 'string' &&
-    parsed.share_b64.length > 0 &&
-    parsed.ecdsa_local_data == null
-  ) {
-    return 'dkls23';
-  }
+  // GG18 LocalState has ecdsa_local_data; DKLs23 has share_b64 — prefer GG18 when both cues exist.
   if (parsed.ecdsa_local_data != null) {
     return 'gg18';
+  }
+  if (typeof parsed.share_b64 === 'string' && parsed.share_b64.length > 0) {
+    return 'dkls23';
   }
   return 'gg18';
 }

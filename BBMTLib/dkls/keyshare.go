@@ -42,7 +42,7 @@ func KeyshareJSONFromHandle(share *libtss.KeyShareHandle, chainCodeHex string, c
 		LocalPartyKey:       localParty,
 		KeygenCommitteeKeys: committee,
 		ShareB64:            base64.StdEncoding.EncodeToString(exported),
-		CreatedAt:           time.Now().Unix(),
+		CreatedAt:           time.Now().UnixMilli(),
 		NostrNpub:           nostrNpub,
 		NsecHex:             nsecHex,
 	}

@@ -5,7 +5,7 @@ import {
   getChangePath,
   getMainnetAPIList,
   getReceivePath,
-  isLegacyWallet,
+  resolveUseLegacyDerivationPaths,
   getKeyshareMetadata,
 } from '../utils';
 import {
@@ -427,7 +427,7 @@ export class WalletService {
   ): Promise<{address: string; path: string}> {
     const ks = await getKeyshareMetadata();
     if (!ks) throw new Error('No keyshare found');
-    const useLegacyPath = isLegacyWallet(ks.created_at);
+    const useLegacyPath = resolveUseLegacyDerivationPaths(ks);
     const changeIdx = await getChangeIndex(network, addressType);
     const path = getChangePath(network, addressType, useLegacyPath, changeIdx);
     const btcPub = await BBMTLibNativeModule.derivePubkey(
@@ -469,7 +469,7 @@ export class WalletService {
   ): Promise<string> {
     const ks = await getKeyshareMetadata();
     if (!ks) throw new Error('No keyshare found');
-    const useLegacyPath = isLegacyWallet(ks.created_at);
+    const useLegacyPath = resolveUseLegacyDerivationPaths(ks);
     const nextIndex = (await getExternalIndex(network, addressType)) + 1;
     await setExternalIndex(network, addressType, nextIndex);
     const path = getReceivePath(network, addressType, useLegacyPath, nextIndex);
@@ -711,7 +711,7 @@ export class WalletService {
       );
       return [];
     }
-    const useLegacyPath = isLegacyWallet(ks.created_at);
+    const useLegacyPath = resolveUseLegacyDerivationPaths(ks);
     const externalIdx = await getExternalIndex(network, addressType);
     const maxUsedExternal = await getMaxUsedExternal(network, addressType);
     const changeIdx = await getChangeIndex(network, addressType);
@@ -858,7 +858,7 @@ export class WalletService {
       dbg('WalletService: getCurrentReceivePathInfo - no keyshare');
       return null;
     }
-    const useLegacyPath = isLegacyWallet(ks.created_at);
+    const useLegacyPath = resolveUseLegacyDerivationPaths(ks);
     const index = await getExternalIndex(network, addressType);
     const path = getReceivePath(network, addressType, useLegacyPath, index);
     const pub = await BBMTLibNativeModule.derivePubkey(
@@ -897,7 +897,7 @@ export class WalletService {
         dbg('WalletService: bumpExternalIndexIfCurrentUsed - no keyshare');
         return;
       }
-      const useLegacyPath = isLegacyWallet(ks.created_at);
+      const useLegacyPath = resolveUseLegacyDerivationPaths(ks);
       const currentIndex = await getExternalIndex(network, addressType);
       const path = getReceivePath(
         network,
@@ -1013,7 +1013,7 @@ export class WalletService {
       dbg('WalletService: No keyshare, skipping restore discovery');
       return;
     }
-    const useLegacyPath = isLegacyWallet(ks.created_at);
+    const useLegacyPath = resolveUseLegacyDerivationPaths(ks);
     BBMTLibNativeModule.setAPI(network, apiUrl);
 
     const prevExternalIndex = await getExternalIndex(network, addressType);
@@ -1522,7 +1522,7 @@ export class WalletService {
       try {
         const ks = await getKeyshareMetadata();
         if (!ks) throw new Error('No keyshare metadata');
-        const useLegacyPath = isLegacyWallet(ks.created_at);
+        const useLegacyPath = resolveUseLegacyDerivationPaths(ks);
         const externalIndex = await getExternalIndex(
           network,
           state.addressType,
@@ -1579,7 +1579,7 @@ export class WalletService {
       const state = await this.getStoredState();
       const ks = await getKeyshareMetadata();
       if (!ks) throw new Error('No keyshare metadata');
-      const useLegacyPath = isLegacyWallet(ks.created_at);
+      const useLegacyPath = resolveUseLegacyDerivationPaths(ks);
       const externalIndex = await getExternalIndex(state.network, addressType);
       const path = getReceivePath(
         state.network,

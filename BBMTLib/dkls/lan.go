@@ -1,9 +1,11 @@
 package dkls
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,7 +17,6 @@ type lanPartyRunner struct {
 	selfID    libtss.Identifier
 	localKey  string
 	peerIDs   []libtss.Identifier
-	router    *MessageRouter
 	messenger tss.Messenger
 }
 
@@ -64,18 +65,17 @@ func JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey string) 
 	tss.ReportKeygenProgress(session, 2, "starting DKLs DKG", false)
 
 	selfID := partyIDFromKey(key)
-	router := NewMessageRouter(PartyIdentifiers(len(parties)))
 	messenger := tss.NewLANMessenger(server, session, sessionKey)
 	peerIDs := PartyIdentifiers(len(parties))
 	runner := &lanPartyRunner{
 		selfID:    selfID,
 		localKey:  key,
 		peerIDs:   peerIDs,
-		router:    router,
 		messenger: messenger,
 	}
 
 	endCh := make(chan struct{})
+	roundCh := make(chan []libtss.Message, 16)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go startLANMessagePump(server, session, sessionKey, key, func(body string) error {
@@ -83,11 +83,19 @@ func JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey string) 
 		if decErr != nil {
 			return decErr
 		}
-		router.Post(selfID, msgs)
+		in := filterMessagesFor(selfID, msgs)
+		if len(in) == 0 {
+			return nil
+		}
+		roundCh <- in
 		return nil
 	}, endCh, &wg)
 
-	share, _, err := runDKGWithSender(session, selfID, []byte(session), threshold, runner, router)
+	sidBytes := []byte(session)
+	if decoded, decErr := hex.DecodeString(session); decErr == nil && len(decoded) > 0 {
+		sidBytes = decoded
+	}
+	share, _, err := runDKGWithSender(session, selfID, sidBytes, threshold, runner, roundCh)
 	close(endCh)
 	wg.Wait()
 	if err != nil {
@@ -100,9 +108,90 @@ func JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey string) 
 		return "", err
 	}
 	tss.ReportKeygenProgress(session, 99, "keygen ok", true)
-	_ = tss.LANEndSession(server, session)
+	// Do not call LANEndSession here — the first party to finish would delete the relay
+	// session while the peer is still in DKG (breaks duo LAN setup on device).
 	_ = tss.LANFlagPartyComplete(server, session, key)
 	return ksJSON, nil
+}
+
+// mpcNeedsMorePeerMessages reports whether session.Next should wait for more inbound
+// messages (e.g. trio LAN may deliver one HTTP message per peer per round).
+func mpcNeedsMorePeerMessages(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "not found for sender") ||
+		strings.Contains(s, "missing DKG fragment") ||
+		strings.Contains(s, "missing sign") ||
+		strings.Contains(s, "missing ")
+}
+
+func dkgNeedsMorePeerMessages(err error) bool {
+	return mpcNeedsMorePeerMessages(err)
+}
+
+func recvPeerMessageBatch(
+	roundCh <-chan []libtss.Message,
+	selfID libtss.Identifier,
+	needPeerMsgs int,
+	deadline time.Time,
+	peerQuiesce time.Duration,
+) ([]libtss.Message, error) {
+	var batch []libtss.Message
+	senders := make(map[libtss.Identifier]struct{})
+	add := func(part []libtss.Message) {
+		batch = append(batch, part...)
+		for _, m := range part {
+			if m.From != 0 && m.From != selfID {
+				senders[m.From] = struct{}{}
+			}
+		}
+	}
+	for len(senders) < needPeerMsgs {
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("DKLs timed out waiting for peer messages")
+		}
+		select {
+		case part := <-roundCh:
+			if len(part) > 0 {
+				add(part)
+			}
+			for {
+				select {
+				case more := <-roundCh:
+					if len(more) > 0 {
+						add(more)
+					}
+				default:
+					goto waitMore
+				}
+			}
+		waitMore:
+			if len(senders) >= needPeerMsgs {
+				break
+			}
+			select {
+			case part := <-roundCh:
+				if len(part) > 0 {
+					add(part)
+				}
+			case <-time.After(peerQuiesce):
+			}
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	return batch, nil
+}
+
+func filterMessagesFor(selfID libtss.Identifier, msgs []libtss.Message) []libtss.Message {
+	out := make([]libtss.Message, 0, len(msgs))
+	for _, msg := range msgs {
+		if msg.To == 0 || msg.To == selfID {
+			out = append(out, msg)
+		}
+	}
+	return out
 }
 
 func runDKGWithSender(
@@ -111,7 +200,7 @@ func runDKGWithSender(
 	sessionID []byte,
 	threshold libtss.ThresholdConfig,
 	sender messageSender,
-	router *MessageRouter,
+	roundCh <-chan []libtss.Message,
 ) (*libtss.KeyShareHandle, libtss.PublicKeyPackage, error) {
 	if err := libtss.Init(); err != nil {
 		return nil, libtss.PublicKeyPackage{}, err
@@ -127,18 +216,45 @@ func runDKGWithSender(
 		return nil, libtss.PublicKeyPackage{}, err
 	}
 
+	deadline := time.Now().Add(5 * time.Minute)
+	needPeerMsgs := int(threshold.MaxSigners) - 1
+	peerQuiesce := 400 * time.Millisecond
+	recvBatch := func() ([]libtss.Message, error) {
+		return recvPeerMessageBatch(roundCh, selfID, needPeerMsgs, deadline, peerQuiesce)
+	}
 	for {
-		in := router.Drain(selfID)
-		if len(in) == 0 {
-			time.Sleep(100 * time.Millisecond)
-			continue
+		if time.Now().After(deadline) {
+			return nil, libtss.PublicKeyPackage{}, fmt.Errorf("DKLs DKG timed out waiting for peer messages")
 		}
-		step, err := session.Next(in)
-		if err != nil {
-			return nil, libtss.PublicKeyPackage{}, err
+		var batch []libtss.Message
+		var step libtss.DKGStep
+		var err error
+		for {
+			if len(batch) == 0 {
+				batch, err = recvBatch()
+				if err != nil {
+					return nil, libtss.PublicKeyPackage{}, err
+				}
+			}
+			step, err = session.Next(batch)
+			if err != nil && dkgNeedsMorePeerMessages(err) {
+				more, recvErr := recvBatch()
+				if recvErr != nil {
+					return nil, libtss.PublicKeyPackage{}, recvErr
+				}
+				batch = append(batch, more...)
+				continue
+			}
+			break
 		}
 		if step.Complete {
+			if err != nil {
+				return nil, libtss.PublicKeyPackage{}, err
+			}
 			return step.KeyShare, step.PublicKeyPackage, nil
+		}
+		if err != nil {
+			return nil, libtss.PublicKeyPackage{}, err
 		}
 		tss.ReportKeygenProgress(progressSession, stepNo, "DKLs DKG round", false)
 		stepNo++
@@ -172,16 +288,15 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, keyshareJSON, mes
 	hash := HashMessageForDKLs([]byte(message))
 	tss.InitKeysignProgress(session)
 
-	router := NewMessageRouter(signSess.SigningIDs)
 	messenger := tss.NewLANMessenger(server, session, sessionKey)
 	runner := &lanPartyRunner{
 		selfID:    signSess.SelfID,
 		localKey:  key,
 		peerIDs:   signSess.SigningIDs,
-		router:    router,
 		messenger: messenger,
 	}
 
+	roundCh := make(chan []libtss.Message, 16)
 	endCh := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -190,11 +305,15 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, keyshareJSON, mes
 		if decErr != nil {
 			return decErr
 		}
-		router.Post(signSess.SelfID, msgs)
+		in := filterMessagesFor(signSess.SelfID, msgs)
+		if len(in) == 0 {
+			return nil
+		}
+		roundCh <- in
 		return nil
 	}, endCh, &wg)
 
-	sig, err := runSignWithSender(share, hash, []byte(session), signSess.SelfID, signSess.SigningIDs, runner, router, session)
+	sig, err := runSignWithSender(share, hash, []byte(session), signSess.SelfID, signSess.SigningIDs, runner, roundCh, session)
 	close(endCh)
 	wg.Wait()
 	if err != nil {
@@ -208,7 +327,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, keyshareJSON, mes
 		"tss_backend": BackendName,
 	}
 	raw, _ := json.Marshal(out)
-	_ = tss.LANEndSession(server, session)
+	// Do not call LANEndSession — first finisher would delete relay while peer still signs.
 	tss.ReportKeysignProgress(session, 99, "keysign ok", true)
 	return string(raw), nil
 }
@@ -226,7 +345,7 @@ func runSignWithSender(
 	selfID libtss.Identifier,
 	signingParties []libtss.Identifier,
 	sender messageSender,
-	router *MessageRouter,
+	roundCh <-chan []libtss.Message,
 	progressSession string,
 ) (libtss.Signature, error) {
 	var counterparties []libtss.Identifier
@@ -245,20 +364,51 @@ func runSignWithSender(
 		return libtss.Signature{}, err
 	}
 
+	deadline := time.Now().Add(5 * time.Minute)
+	needPeerMsgs := len(counterparties)
+	if needPeerMsgs < 1 {
+		needPeerMsgs = 1
+	}
+	peerQuiesce := 400 * time.Millisecond
+	recvBatch := func() ([]libtss.Message, error) {
+		return recvPeerMessageBatch(roundCh, selfID, needPeerMsgs, deadline, peerQuiesce)
+	}
+
 	stepNo := 3
 	for {
-		in := router.Drain(selfID)
-		if len(in) == 0 {
-			time.Sleep(100 * time.Millisecond)
-			continue
+		if time.Now().After(deadline) {
+			return libtss.Signature{}, fmt.Errorf("DKLs keysign timed out waiting for peer messages")
 		}
-		step, err := session.Next(in)
-		if err != nil {
-			return libtss.Signature{}, err
+		var batch []libtss.Message
+		var step libtss.SignStep
+		for {
+			if len(batch) == 0 {
+				var recvErr error
+				batch, recvErr = recvBatch()
+				if recvErr != nil {
+					return libtss.Signature{}, recvErr
+				}
+			}
+			step, err = session.Next(batch)
+			if err != nil && mpcNeedsMorePeerMessages(err) {
+				more, recvErr := recvBatch()
+				if recvErr != nil {
+					return libtss.Signature{}, recvErr
+				}
+				batch = append(batch, more...)
+				continue
+			}
+			break
 		}
 		if step.Complete {
+			if err != nil {
+				return libtss.Signature{}, err
+			}
 			step.Signature.Protocol = libtss.ProtocolDKLs23
 			return step.Signature, nil
+		}
+		if err != nil {
+			return libtss.Signature{}, err
 		}
 		if progressSession != "" {
 			tss.ReportKeysignProgress(progressSession, stepNo, "DKLs keysign round", false)

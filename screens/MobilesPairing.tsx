@@ -52,6 +52,8 @@ import {
   getKeyshareDisplayLabel,
   saveKeyshareMetadata,
   getKeyshareMetadata,
+  resolveUseLegacyDerivationPaths,
+  detectKeyshareTssBackend,
 } from '../utils';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {useTheme} from '../theme';
@@ -646,6 +648,18 @@ const MobilesPairing = ({navigation}: any) => {
     }
     return result;
   };
+  const formatMpcError = (error: unknown): string => {
+    if (error == null) {
+      return 'Unknown error';
+    }
+    if (typeof error === 'string') {
+      return error;
+    }
+    const e = error as {message?: string; code?: string};
+    const msg = e.message || String(error);
+    return e.code ? `${e.code}: ${msg}` : msg;
+  };
+
   const mpcTssSetup = async () => {
     try {
       setDoingMPC(true);
@@ -654,12 +668,23 @@ const MobilesPairing = ({navigation}: any) => {
       setProgress(0);
       setStatus('Processing cryptographic operations');
       dbg('mpcTssSetup...');
+      if (!masterHost) {
+        throw new Error(
+          'Master device IP is unknown. Pair devices again, then retry setup.',
+        );
+      }
       const data = await initSession();
       dbg('got session data', data);
       if (isMaster) {
         await BBMTLibNativeModule.stopRelay('stop');
         const relay = await BBMTLibNativeModule.runRelay(String(discoveryPort));
         dbg('relay start:', relay, localDevice);
+        if (
+          typeof relay === 'string' &&
+          (relay.startsWith('error:') || relay.toLowerCase().includes('fail'))
+        ) {
+          throw new Error(`Could not start LAN relay: ${relay}`);
+        }
       }
       await waitMS(2000);
       const server = `http://${masterHost}:${discoveryPort}`;
@@ -729,18 +754,30 @@ const MobilesPairing = ({navigation}: any) => {
             if (display) {
               setShareName(display);
             }
+            const useLegacyPath = resolveUseLegacyDerivationPaths({
+              created_at: ksParsed.created_at,
+              tss_backend: detectKeyshareTssBackend(ksParsed),
+              local_party_key: ksParsed.local_party_key ?? '',
+              keygen_committee_keys: ksParsed.keygen_committee_keys ?? [],
+              pub_key: ksParsed.pub_key ?? '',
+              chain_code_hex: ksParsed.chain_code_hex ?? '',
+              nostr_npub: ksParsed.nostr_npub ?? null,
+            });
+            appConfigRepository.set(
+              CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND,
+              useLegacyPath ? 'no' : 'yes',
+            );
           } catch (_e) {
             /* keep protocol party id in shareName */
           }
-          // New wallet setups are always non-legacy, so no need to reset flag
           setMpcDone(true);
           deletePreparams();
         })
         .catch((error: any) => {
           dbg('keygen error', error);
-          if (__DEV__) {
-            Alert.alert('Error', error?.message || error);
-          }
+          setMpcDone(false);
+          setProgress(0);
+          Alert.alert('Wallet setup failed', formatMpcError(error));
         })
         .finally(async () => {
           if (isMaster) {
@@ -750,7 +787,10 @@ const MobilesPairing = ({navigation}: any) => {
           }
           setDoingMPC(false);
         });
-    } catch {
+    } catch (error: unknown) {
+      setMpcDone(false);
+      setProgress(0);
+      Alert.alert('Wallet setup failed', formatMpcError(error));
       if (isMaster) {
         await waitMS(2000);
         BBMTLibNativeModule.stopRelay(localDevice);
@@ -1226,7 +1266,21 @@ const MobilesPairing = ({navigation}: any) => {
     const keysignSteps = 36;
     const keygenSteps = getKeygenStepCount(keygenBackend ?? 'dkls23', isTrio);
     const processHook = (message: string) => {
-      const msg = JSON.parse(message);
+      let msg: {
+        type?: string;
+        done?: boolean;
+        step?: number;
+        time?: number;
+        utxo_total?: number;
+        utxo_current?: number;
+        info?: string;
+      };
+      try {
+        msg = JSON.parse(message);
+      } catch (parseErr) {
+        dbg('processHook: invalid JSON', parseErr, message);
+        return;
+      }
       if (msg.type === 'keygen') {
         if (msg.done) {
           dbg('progress - keygen done');
@@ -1242,7 +1296,9 @@ const MobilesPairing = ({navigation}: any) => {
             'time',
             new Date(msg.time),
           );
-          setProgress(Math.round((100 * msg.step) / keygenSteps));
+          setProgress(
+            Math.min(99, Math.round((100 * (msg.step ?? 0)) / keygenSteps)),
+          );
         }
       } else if (msg.type === 'btc_send') {
         if (msg.done) {

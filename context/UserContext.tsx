@@ -10,7 +10,12 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {BBMTLibNativeModule} from '../native_modules';
-import {getReceivePath, isLegacyWallet, dbg, getKeyshareMetadata} from '../utils';
+import {
+  getReceivePath,
+  resolveUseLegacyDerivationPaths,
+  dbg,
+  getKeyshareMetadata,
+} from '../utils';
 import {getExternalIndex} from '../services/HdIndexService';
 type AddressType = 'legacy' | 'segwit-native' | 'segwit-compatible';
 interface UserContextType {
@@ -286,7 +291,7 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
       const ks = await getKeyshareMetadata();
       if (ks) {
         // Check if this is a legacy wallet (created before migration timestamp)
-        const useLegacyPath = isLegacyWallet(ks.created_at);
+        const useLegacyPath = resolveUseLegacyDerivationPaths(ks);
         const externalIndex = await getExternalIndex(network, currentAddressType);
         // Use receive path at current external index (HD: no address reuse)
         const path = getReceivePath(
@@ -333,7 +338,7 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         // For the other network, we need to derive a separate btcPub with that network's path
         // because btcPub is network-specific (derivation path includes coin type: 0' for mainnet, 1' for testnet)
         const otherNet = actualNet === 'mainnet' ? 'testnet3' : 'mainnet';
-        const useLegacyPathOther = isLegacyWallet(ks.created_at);
+        const useLegacyPathOther = resolveUseLegacyDerivationPaths(ks);
         const otherExternalIndex = await getExternalIndex(otherNet, currentAddressType);
         const otherPath = getReceivePath(
           otherNet,

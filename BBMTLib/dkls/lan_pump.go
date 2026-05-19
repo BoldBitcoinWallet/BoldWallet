@@ -23,16 +23,12 @@ type lanMessage struct {
 func startLANMessagePump(server, session, sessionKey, key string, onBody func(string) error, endCh <-chan struct{}, wg *sync.WaitGroup) {
 	defer wg.Done()
 	msgMap := make(map[string]bool)
-	until := time.Now().Add(120 * time.Second)
 
 	for {
 		select {
 		case <-endCh:
 			return
 		case <-time.After(500 * time.Millisecond):
-			if time.Now().After(until) {
-				return
-			}
 			resp, err := http.Get(server + "/message/" + session + "/" + key)
 			if err != nil {
 				continue

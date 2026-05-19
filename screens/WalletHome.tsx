@@ -44,7 +44,7 @@ import {
   HapticFeedback,
   getKeyshareDisplayLabel,
   getReceivePath,
-  isLegacyWallet,
+  resolveUseLegacyDerivationPaths,
   decodeSendBitcoinQR,
   getResetToMainTabsWallet,
   getKeyshareMetadata,
@@ -747,7 +747,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         await walletService.initialize();
         const currentAddressType =
           appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'segwit-native';
-        const useLegacyPath = isLegacyWallet(ks.created_at);
+        const useLegacyPath = resolveUseLegacyDerivationPaths(ks);
         const externalIndex = await getExternalIndex(
           network,
           currentAddressType,
@@ -1142,7 +1142,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         }
         const currentAddressType =
           appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'segwit-native';
-        const useLegacyPath = isLegacyWallet(ks.created_at);
+        const useLegacyPath = resolveUseLegacyDerivationPaths(ks);
         const externalIndex = await getExternalIndex(
           network,
           currentAddressType,
@@ -1388,7 +1388,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 !currentDerivationPath ||
                 currentDerivationPath.trim() === ''
               ) {
-                const useLegacyPath = isLegacyWallet(keyshare.created_at);
+                const useLegacyPath = resolveUseLegacyDerivationPaths(keyshare);
                 const normalizedNetwork =
                   network === 'testnet3' ? 'testnet' : network || 'mainnet';
                 const externalIndex = await getExternalIndex(
@@ -1491,7 +1491,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       try {
         const keyshare = await getKeyshareMetadata();
         if (keyshare) {
-          const useLegacyPath = isLegacyWallet(keyshare.created_at);
+          const useLegacyPath = resolveUseLegacyDerivationPaths(keyshare);
           const currentAddressType = addressType || 'segwit-native';
           const normalizedNetwork =
             network === 'testnet3' ? 'testnet' : network;

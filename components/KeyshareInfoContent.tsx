@@ -21,7 +21,7 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
 import Toast from 'react-native-toast-message';
-import {dbg} from '../utils';
+import {dbg, formatKeyshareCreatedAt} from '../utils';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
 import QRCodeModal from './QRCodeModal';
@@ -633,8 +633,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                         </Text>
                       </AppPressable>
                     </View>
-                    {typeof keyshareInfo.createdAt === 'number' &&
-                      keyshareInfo.createdAt > 0 && (
+                    {formatKeyshareCreatedAt(keyshareInfo.createdAt) != null && (
                         <View style={styles.walletInfoRow}>
                           <Text style={styles.keyshareDetailLabel}>
                             Created At
@@ -648,9 +647,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                               numberOfLines={1}
                               adjustsFontSizeToFit={true}
                               minimumFontScale={0.5}>
-                              {new Date(
-                                keyshareInfo.createdAt,
-                              ).toLocaleString()}
+                              {formatKeyshareCreatedAt(keyshareInfo.createdAt)}
                             </Text>
                           </AppPressable>
                         </View>

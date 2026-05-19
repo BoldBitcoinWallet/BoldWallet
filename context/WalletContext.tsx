@@ -1,6 +1,11 @@
 import React, {createContext, useContext, useState, useEffect} from 'react';
 import {NativeModules} from 'react-native';
-import {dbg, getReceivePath, isLegacyWallet, getKeyshareMetadata} from '../utils';
+import {
+  dbg,
+  getReceivePath,
+  resolveUseLegacyDerivationPaths,
+  getKeyshareMetadata,
+} from '../utils';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {getExternalIndex} from '../services/HdIndexService';
@@ -47,7 +52,7 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
       const storedAddressType = appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE);
       const currentAddressType = (storedAddressType as string) || 'segwit-native';
       // Check if this is a legacy wallet (created before migration timestamp)
-      const useLegacyPath = isLegacyWallet(ks.created_at);
+      const useLegacyPath = resolveUseLegacyDerivationPaths(ks);
       const externalIndex = await getExternalIndex(net, currentAddressType);
       const path = getReceivePath(net, currentAddressType, useLegacyPath, externalIndex);
       dbg('WalletContext: Using derivation path (external index ' + externalIndex + '):', path);
