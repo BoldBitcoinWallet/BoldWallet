@@ -4,38 +4,37 @@
 
 A secure Multi-Party Computation (MPC) Threshold Signature Scheme (TSS) library for Bitcoin, built for mobile integration on both iOS and Android.
 
-## How to Build
+## How to Build (mobile)
 
 ```bash
-# Get dependencies
-go mod tidy
+cd BBMTLib
 
-# Initialize Go Mobile (install as tool, doesn't modify go.mod)
-go install golang.org/x/mobile/bind@latest
+# GG18 (gomobile) + DKLs23 (c-shared / JNI). Use before release builds.
+./build.sh --with-dkls
 
-# Set build flags
-export GOFLAGS="-mod=mod"
+# Or separately:
+./build.sh              # tss.aar + Tss.xcframework (GG18)
+./build-dkls.sh android # libdklsmobile.so (DKLs23)
+./build-dkls.sh ios     # libdklsmobile.xcframework (macOS only)
 ```
 
-## iOS
+| Backend | Script | Android | iOS |
+|---------|--------|---------|-----|
+| GG18 (BNB) | `build.sh` | `android/app/libs/tss.aar` | `ios/Tss.xcframework` |
+| DKLs23 | `build-dkls.sh` | `jniLibs/*/libdklsmobile.so` | `ios/DklsMobile/libdklsmobile.xcframework` |
+
+Do **not** add `dkls.aar` on Android — it duplicates `go.Seq` from `tss.aar`. See [docs/DKLS_MOBILE.md](docs/DKLS_MOBILE.md).
+
+## iOS (manual gomobile)
 
 ```bash
-# Build for iOS, macOS, and iOS Simulator
-gomobile bind -v -target=ios,macos,iossimulator -tags=ios,macos,iossimulator github.com/BoldBitcoinWallet/BBMTLib/tss
+gomobile bind -v -target=ios,iossimulator,macos -o Tss.xcframework github.com/BoldBitcoinWallet/BBMTLib/tss
 ```
 
-## Android
+## Android (manual gomobile)
 
 ```bash
-# Build for Android
-gomobile bind -v -target=android github.com/BoldBitcoinWallet/BBMTLib/tss
-
-# If the following error occurs  
-"no usable NDK in /Android/Sdk: unsupported API version 16"
-# Then specify the version api with the following command
-gomobile bind -v -target=android -androidapi 21 github.com/BoldBitcoinWallet/BBMTLib/tss
-
-# Copy the generated tss.aar lib to the android/app/libs folder
+gomobile bind -v -target=android -androidapi 21 -o tss.aar github.com/BoldBitcoinWallet/BBMTLib/tss
 cp tss.aar ../android/app/libs/tss.aar
 ```
 

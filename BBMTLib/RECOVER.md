@@ -37,6 +37,21 @@ These tools should **ONLY** be used when:
 
 ---
 
+## DKLs23 (libtss)
+
+Wallets created with `tss_backend: "dkls23"` use **DKLs23 ECDSA** via [libtss](https://github.com/0xCarbon/libtss), not BNB GG18. Recovery uses `BBMTLib/scripts-dkls/`:
+
+```bash
+cd BBMTLib
+export CGO_LDFLAGS="-L../../libtss/target/release -llibtss_ffi -ldl -lm"
+./scripts-dkls/dkls-local-keygen.sh   # smoke / local 2-of-2
+# Nostr 2-party: ./scripts-dkls/dkls-nostr-keygen.sh
+```
+
+See [scripts-dkls/TESTING.md](scripts-dkls/TESTING.md) and [docs/DKLS_MOBILE.md](docs/DKLS_MOBILE.md). **GG18 and DKLs23 keyshares are not interchangeable.**
+
+---
+
 ## Available Tools
 
 You have two options for spending Bitcoin from keyshares:

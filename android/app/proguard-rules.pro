@@ -16,8 +16,12 @@
     @com.facebook.proguard.annotations.DoNotStrip *;
 }
 
-# Keep React Native bridge
+# Keep React Native bridge + New Architecture / bridgeless (TurboModules)
 -keep class com.facebook.react.** { *; }
+-keep class com.facebook.react.defaults.** { *; }
+-keep class com.facebook.react.fabric.** { *; }
+-keep,includedescriptorclasses class com.facebook.react.turbomodule.core.** { *; }
+-keep,includedescriptorclasses class com.facebook.react.internal.turbomodule.core.** { *; }
 -keep class com.facebook.hermes.** { *; }
 -keep class com.facebook.jni.** { *; }
 

@@ -1086,6 +1086,258 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun dklsHelloDkg(promise: Promise) {
+        Thread {
+            try {
+                val result = if (DklsNative.ensureLoaded()) {
+                    DklsNative.helloDkgNative()
+                } else {
+                    "DKLS: run BBMTLib/build-dkls.sh android and rebuild (libdklsmobile.so missing)"
+                }
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("DKLS_HELLO_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun dklsMpcTssSetup(
+        server: String,
+        partyID: String,
+        partiesCSV: String,
+        sessionID: String,
+        sessionKey: String,
+        chaincode: String,
+        promise: Promise,
+    ) {
+        Thread {
+            try {
+                if (!DklsNative.ensureLoaded()) {
+                    promise.reject(
+                        "DKLS_NATIVE_REQUIRED",
+                        "Run BBMTLib/build-dkls.sh android and rebuild the app",
+                        null,
+                    )
+                    return@Thread
+                }
+                val result = DklsNative.lanJoinKeygenNative(
+                    partyID,
+                    partiesCSV,
+                    sessionID,
+                    server,
+                    chaincode,
+                    sessionKey,
+                )
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("DKLS_MPC_SETUP_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun dklsNostrMpcTssSetup(
+        relaysCSV: String,
+        partyNsec: String,
+        partiesNpubsCSV: String,
+        sessionID: String,
+        sessionKey: String,
+        chaincode: String,
+        promise: Promise,
+    ) {
+        Thread {
+            try {
+                if (!DklsNative.ensureLoaded()) {
+                    promise.reject(
+                        "DKLS_NATIVE_REQUIRED",
+                        "Run BBMTLib/build-dkls.sh android and rebuild the app (libdklsmobile missing)",
+                        null,
+                    )
+                    return@Thread
+                }
+                val result = DklsNative.nostrJoinKeygenNative(
+                    relaysCSV,
+                    partyNsec,
+                    partiesNpubsCSV,
+                    sessionID,
+                    sessionKey,
+                    chaincode,
+                )
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("DKLS_NOSTR_KEYGEN_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun dklsCancelMpcSession(sessionID: String, promise: Promise) {
+        Thread {
+            try {
+                if (DklsNative.ensureLoaded()) {
+                    DklsNative.cancelMpcSessionNative(sessionID)
+                }
+                promise.resolve(null)
+            } catch (e: Throwable) {
+                promise.reject("DKLS_CANCEL_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun dklsCancelNostrMpc(promise: Promise) {
+        Thread {
+            try {
+                if (DklsNative.ensureLoaded()) {
+                    DklsNative.cancelNostrMpcNative()
+                }
+                promise.resolve(null)
+            } catch (e: Throwable) {
+                promise.reject("DKLS_CANCEL_NOSTR_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun dklsMpcSignPSBT(
+        server: String,
+        partyID: String,
+        partiesCSV: String,
+        sessionID: String,
+        sessionKey: String,
+        encKey: String,
+        decKey: String,
+        psbtBase64: String,
+        promise: Promise,
+    ) {
+        Thread {
+            try {
+                if (!DklsNative.ensureLoaded()) {
+                    promise.reject("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh android", null)
+                    return@Thread
+                }
+                val keyshare = loadKeyshareJSONFromRNES()
+                    ?: run {
+                        promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
+                        return@Thread
+                    }
+                val result = withZeroedKeyshareUtf8(keyshare) { ks ->
+                    DklsNative.mpcSignPsbtNative(
+                        server, partyID, partiesCSV, sessionID, sessionKey,
+                        encKey, decKey, ks, psbtBase64,
+                    )
+                }
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("DKLS_PSBT_LAN", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun dklsMpcSendBTCWithUTXOs(
+        server: String,
+        partyID: String,
+        partiesCSV: String,
+        sessionID: String,
+        sessionKey: String,
+        encKey: String,
+        decKey: String,
+        btcPub: String,
+        toAddress: String,
+        satoshiAmount: String,
+        satoshiFees: String,
+        utxosWithPathsJSON: String,
+        changeAddress: String,
+        promise: Promise,
+    ) {
+        Thread {
+            try {
+                if (!DklsNative.ensureLoaded()) {
+                    promise.reject("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh android", null)
+                    return@Thread
+                }
+                val keyshare = loadKeyshareJSONFromRNES()
+                    ?: run {
+                        promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
+                        return@Thread
+                    }
+                val result = withZeroedKeyshareUtf8(keyshare) { ks ->
+                    DklsNative.mpcSendBtcWithUtxosNative(
+                        server, partyID, partiesCSV, sessionID, sessionKey,
+                        encKey, decKey, ks, btcPub, toAddress,
+                        satoshiAmount, satoshiFees, utxosWithPathsJSON, changeAddress,
+                    )
+                }
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("DKLS_SEND_LAN", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun dklsNostrMpcSendBTC(
+        relaysCSV: String,
+        partiesNpubsCSV: String,
+        npubsSorted: String,
+        balanceSats: String,
+        toAddress: String,
+        satoshiAmount: String,
+        satoshiFees: String,
+        utxosWithPathsJSON: String,
+        changeAddress: String,
+        promise: Promise,
+    ) {
+        Thread {
+            try {
+                if (!DklsNative.ensureLoaded()) {
+                    promise.reject("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh android", null)
+                    return@Thread
+                }
+                val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
+                val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
+                    DklsNative.nostrMpcSendBtcWithUtxosNative(
+                        relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, ks,
+                        toAddress, satoshiAmount, satoshiFees, utxosWithPathsJSON, changeAddress,
+                    )
+                }
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("DKLS_SEND_NOSTR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun dklsNostrMpcSignPSBT(
+        relaysCSV: String,
+        partiesNpubsCSV: String,
+        npubsSorted: String,
+        psbtBase64: String,
+        promise: Promise,
+    ) {
+        Thread {
+            try {
+                if (!DklsNative.ensureLoaded()) {
+                    promise.reject("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh android", null)
+                    return@Thread
+                }
+                val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
+                val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
+                    DklsNative.nostrMpcSignPsbtNative(
+                        relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, ks, psbtBase64,
+                    )
+                }
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("DKLS_PSBT_NOSTR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
     fun parsePSBTDetails(psbtBase64: String, promise: Promise) {
         Thread {
             try {

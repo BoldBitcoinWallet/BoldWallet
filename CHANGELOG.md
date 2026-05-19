@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **DKLs23 MPC backend (libtss)** — parallel to BNB GG18: `BBMTLib/dkls` orchestration, `scripts-dkls/` deterministic tests, `TssProvider` + native `dkls*` bridge methods, CI workflow `dkls-scripts-test.yml`.
+- **Automatic backend routing** — `detectKeyshareTssBackend()` infers `gg18` vs `dkls23` from keyshare JSON (`tss_backend`, `share_b64`, or `ecdsa_local_data`). Spend/sign/PSBT use the loaded wallet’s backend; **new keygen defaults to DKLs23** (`resolveTssBackendForKeygen`).
+- **DKLs23 new-wallet setup** — duo and trio keygen on LAN and Nostr; 2-of-3 threshold in `dkls` (`ThresholdTrio`, dynamic routers); LAN relay keys `KeyShare1`–`KeyShare3`; keygen progress hooks for RN (`tss.ReportKeygenProgress`).
+- **Setup UI** — `prepareDeviceForKeygen()`, backend badge on pairing screens, DKLs-specific prepare/keygen copy; dev GG18 toggle (long-press **Choose Your Setup** on Welcome).
+- **Documentation** — `BBMTLib/docs/DKLS_MOBILE.md`, `DKLS_SECURITY.md`, RECOVER.md DKLs23 section.
+
+### Changed
+- **New wallets** use DKLs23 keygen by default (duo and trio). Opt out via `CONFIG_KEYS.DKLS23_OPTED_OUT` / `setDkls23OptedOut(true)` for legacy GG18 keygen and preparams only.
+
+### Notes
+- DKLs23 requires **new keygen**; existing GG18 keyshares keep working via detection. DKLs23 spend/sign on device still needs `libdklsmobile` (see `build-dkls.sh`).
+
+---
+
 ## [3.1.1] - 2026-05-13
 
 ### Added

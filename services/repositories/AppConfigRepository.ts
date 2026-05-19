@@ -46,6 +46,10 @@ export const CONFIG_KEYS = {
    * JSON: `{ "quotes": string[], "fetchedAt": number }` — cached lines from remote QUOTES.md for LoadingScreen ticker.
    */
   LOADING_QUOTES_JSON: 'loading_quotes_json',
+  /** When true, new keygen uses legacy BNB GG18 instead of DKLs23 (libtss). Default off. */
+  DKLS23_OPTED_OUT: 'dkls23_opted_out',
+  /** @deprecated Use DKLS23_OPTED_OUT (inverted). Kept for migration from enable_dkls23. */
+  ENABLE_DKLS23: 'enable_dkls23',
 } as const;
 
 export type ConfigKey = (typeof CONFIG_KEYS)[keyof typeof CONFIG_KEYS];

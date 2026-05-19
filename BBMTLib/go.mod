@@ -1,8 +1,9 @@
 module github.com/BoldBitcoinWallet/BBMTLib
 
-go 1.25.0
+go 1.26.0
 
 require (
+	github.com/0xCarbon/libtss/libtss-go v0.0.0
 	github.com/bnb-chain/tss-lib/v2 v2.0.2
 	github.com/btcsuite/btcd v0.24.2
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4
@@ -17,6 +18,8 @@ require (
 
 require (
 	github.com/ImVexed/fasturl v0.0.0-20230304231329-4e41488060f3 // indirect
+	github.com/awnumar/memcall v0.4.0 // indirect
+	github.com/awnumar/memguard v0.23.0 // indirect
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f // indirect
 	github.com/bytedance/sonic v1.13.1 // indirect
 	github.com/bytedance/sonic/loader v0.2.4 // indirect
@@ -59,11 +62,12 @@ require (
 	go.uber.org/multierr v1.10.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/crypto v0.44.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
+	golang.org/x/sys v0.44.0 // indirect
 	google.golang.org/protobuf v1.36.2 // indirect
 )
 
 replace (
+	github.com/0xCarbon/libtss/libtss-go => ../../libtss/libtss-go
 	github.com/agl/ed25519 => github.com/binance-chain/edwards25519 v0.0.0-20200305024217-f36fc4b53d43
 	github.com/bnb-chain/tss-lib/v2 => github.com/bnb-chain/tss-lib/v2 v2.0.2
 	github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.2-alpha.regen.4

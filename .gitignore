@@ -75,21 +75,22 @@ bundle.js
 !.yarn/sdks
 !.yarn/versions
 
-# BBMTLib
+# BBMTLib — Go builds, mobile artifacts, test data
 #
 BBMTLib/.DS_Store
+BBMTLib/bin/
 BBMTLib/*.aar
 BBMTLib/*.jar
-BBMTLib/Tss.xcframework/
+BBMTLib/Tss.xcframework/**
+BBMTLib/Dkls.xcframework/**
 BBMTLib/scripts/bin/
 BBMTLib/scripts/*.json
-# Build binaries (bold-spend cross-platform binaries - ignore these)
-BBMTLib/bin/bold-spend-*
-# Build binaries (bbmt and related binaries - ignore these)
-BBMTLib/bin/bbmt*
+# Prebuilt libtss-ffi static libs (run mobile-deps/libtss/build-libtss.sh)
+BBMTLib/mobile-deps/libtss/**/*.a
+BBMTLib/mobile-deps/libtss/target/
 # Peer configuration files
 BBMTLib/peer*.json
-# Go build artifacts
+# Go build artifacts (host)
 BBMTLib/*.exe
 BBMTLib/*.dll
 BBMTLib/*.so
@@ -305,6 +306,9 @@ proguard/
 android/app/debug/
 android/app/release/
 android/app/profile/
+# DKLs23 JNI (built by BBMTLib/build-dkls.sh android)
+android/app/src/main/jniLibs/**
+android/app/src/main/cpp/libdklsmobile.h
 
 # iOS
 *.pbxuser
@@ -327,6 +331,17 @@ ios/build/
 !*.xcworkspace/contents.xcworkspacedata
 *.xcuserdata
 *.xcscmblueprint
+# Unified bbmtmobile (BBMTLib/build-dkls.sh ios) — keep libbbmtmobile.xcframework + libbbmtmobile_go.h
+ios/Tss.xcframework/**
+ios/DklsMobile/**
+ios/DklsBridge.h
+ios/DklsBridge.mm
+ios/libbbmtmobile_go.h
+ios/BbmtMobile/*.a
+ios/BbmtMobile/libbbmtmobile-merged-*.a
+ios/BbmtMobile/libbbmtmobile-device.*
+ios/BbmtMobile/libbbmtmobile-sim.*
+ios/BbmtMobile/headers/
 
 # CocoaPods
 Pods/

@@ -49,6 +49,18 @@ import {
   saveKeyshareMetadata,
 } from '../utils';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
+import {
+  resolveTssBackendForKeygen,
+  type SetupMode,
+  type TssBackend,
+} from '../services/tssBackend';
+import {TssProvider} from '../services/TssProvider';
+import {
+  getKeygenStepCount,
+  getPrepareModalCopy,
+  prepareDeviceForKeygen,
+} from '../services/tssKeygenPrepare';
+import TssBackendBadge from '../components/TssBackendBadge';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import appConfigRepository, {
@@ -302,6 +314,10 @@ const MobileNostrPairing = ({navigation}: any) => {
   const isSendBitcoin = route.params?.mode === 'send_btc';
   const isSignPSBT = route.params?.mode === 'sign_psbt';
   const setupMode = route.params?.mode;
+  const keygenSetupMode: SetupMode | undefined =
+    setupMode === 'duo' || setupMode === 'trio' ? setupMode : undefined;
+  const [keygenBackend, setKeygenBackend] = useState<TssBackend | null>(null);
+  const prepareCopy = getPrepareModalCopy(keygenBackend ?? 'dkls23');
   // In send mode, determine isTrio from keyshare (3 devices = trio, 2 devices = duo)
   // In keygen mode, use setupMode
   const [isTrio, setIsTrio] = useState<boolean>(setupMode === 'trio');
@@ -316,6 +332,12 @@ const MobileNostrPairing = ({navigation}: any) => {
   } = useUser();
   const showPlay = activeNetwork === 'mainnet' && showMempoolPlayground;
   const ppmFile = `${RNFS.DocumentDirectoryPath}/ppm.json`;
+
+  useEffect(() => {
+    if (keygenSetupMode) {
+      resolveTssBackendForKeygen(keygenSetupMode).then(setKeygenBackend);
+    }
+  }, [keygenSetupMode]);
   // Nostr Identity
   const [localNsec, setLocalNsec] = useState<string>('');
   const [localNpub, setLocalNpub] = useState<string>('');
@@ -453,7 +475,7 @@ const MobileNostrPairing = ({navigation}: any) => {
             setIsPairing(false);
             setStatus('Aborted');
             try {
-              await BBMTLibNativeModule.cancelNostrMpc();
+              await TssProvider.cancelNostrMpc();
             } catch (e) {
               dbg('MobileNostrPairing: cancelNostrMpc failed', e);
             }
@@ -807,7 +829,7 @@ const MobileNostrPairing = ({navigation}: any) => {
   // Listen to native module events for progress tracking
   useEffect(() => {
     const eventEmitter = new NativeEventEmitter(BBMTLibNativeModule);
-    const keygenSteps = isTrio ? 25 : 18;
+    const keygenSteps = getKeygenStepCount(keygenBackend ?? 'dkls23', isTrio);
     const keysignSteps = 36;
     let utxoRange = 0;
     let utxoIndex = 0;
@@ -906,7 +928,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     return () => {
       subscription.remove();
     };
-  }, [isTrio, isSendBitcoin]);
+  }, [isTrio, isSendBitcoin, keygenBackend]);
   // Load minimal keyshare prep fields from native (full MPC blob never in JS); signing uses WithStoredKeyshare
   useEffect(() => {
     if (!isSendBitcoin && !isSignPSBT) return;
@@ -1587,7 +1609,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       );
       dbg('=== END GO BACKEND INPUT ===');
       // Call native module
-      let keyshareJSON = await BBMTLibNativeModule.nostrMpcTssSetup(
+      let keyshareJSON = await TssProvider.nostrMpcTssSetup(
         relaysCSV,
         localNsec,
         partiesNpubsCSV,
@@ -1595,6 +1617,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         sessionKey,
         chaincode,
         ppmFile,
+        keygenSetupMode,
       );
       // Validate keyshare and map keyshare positions
       let keyshare: any;
@@ -2097,7 +2120,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           value: changeAmount,
         });
       }
-      rawTxHex = await BBMTLibNativeModule.nostrMpcSendBTC(
+      rawTxHex = await TssProvider.nostrMpcSendBTC(
         nostrNativeStr(relaysCSV),
         nostrNativeStr(partiesNpubsCSV),
         nostrNativeStr(npubsSorted),
@@ -2301,7 +2324,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         psbtLength: route.params.psbtBase64?.length,
       });
       // Call native module for PSBT signing
-      await BBMTLibNativeModule.nostrMpcSignPSBT(
+      await TssProvider.nostrMpcSignPSBT(
         relaysCSV,
         partiesNpubsCSV,
         npubsSorted,
@@ -2531,13 +2554,14 @@ const MobileNostrPairing = ({navigation}: any) => {
     setIsPreParamsReady(false);
     setPrepCounter(0);
     const timeoutMinutes = 20;
-    if (!__DEV__) {
-      await deletePreparams();
-    } else {
-      dbg('preparams dev: Not deleting ppmFile');
-    }
     try {
-      await BBMTLibNativeModule.preparams(ppmFile, String(timeoutMinutes));
+      const backend = await prepareDeviceForKeygen(
+        ppmFile,
+        timeoutMinutes,
+        keygenSetupMode,
+        __DEV__,
+      );
+      setKeygenBackend(backend);
       setIsPreParamsReady(true);
       HapticFeedback.medium();
       dbg('Device prepared successfully');
@@ -4739,6 +4763,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                       </View>
                     </View>
                   )}
+                  {!isSendBitcoin && !isSignPSBT && keygenBackend ? (
+                    <TssBackendBadge backend={keygenBackend} />
+                  ) : null}
                   {/* Step Indicator */}
                   {!isSendBitcoin && !isSignPSBT && (
                     <View style={styles.stepIndicatorContainer}>
@@ -5242,12 +5269,11 @@ const MobileNostrPairing = ({navigation}: any) => {
                           </View>
                           {/* Header Text */}
                           <Text style={styles.preparingModalTitle}>
-                            Preparing Device
+                            {prepareCopy.title}
                           </Text>
-                          {/* Subtext */}
                           <Text style={styles.preparingModalSubtitle}>
-                            Could take a while, given device specs. Do not leave
-                            the app during setup.
+                            {prepareCopy.subtitle} Do not leave the app during
+                            setup.
                           </Text>
                           {/* Loading Indicator */}
                           <View style={styles.preparingProgressContainer}>
@@ -5268,12 +5294,14 @@ const MobileNostrPairing = ({navigation}: any) => {
                             <View style={styles.preparingStatusRow}>
                               <View style={styles.preparingStatusIndicator} />
                               <Text style={styles.preparingStatusText}>
-                                Computing cryptographic params
+                                {prepareCopy.statusLine}
                               </Text>
                             </View>
-                            <Text style={styles.preparingCountdownText}>
-                              Time elapsed: {prepCounter} seconds
-                            </Text>
+                            {keygenBackend === 'gg18' ? (
+                              <Text style={styles.preparingCountdownText}>
+                                Time elapsed: {prepCounter} seconds
+                              </Text>
+                            ) : null}
                           </View>
                         </View>
                       </View>

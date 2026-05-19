@@ -960,7 +960,7 @@ func MpcSendBTC(
 				// Sign the hash
 				sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 				mpcHook("joining keysign - P2WPKH", session, utxoSession, utxoIndex, utxoCount, false)
-				sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
+				sigJSON, err := DispatchJoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
 				if err != nil {
 					return "", fmt.Errorf("failed to sign P2WPKH transaction: %w", err)
 				}
@@ -997,7 +997,7 @@ func MpcSendBTC(
 
 				sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 				mpcHook("joining keysign - generic SegWit", session, utxoSession, utxoIndex, utxoCount, false)
-				sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
+				sigJSON, err := DispatchJoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
 				if err != nil {
 					return "", fmt.Errorf("failed to sign generic SegWit transaction: %w", err)
 				}
@@ -1034,7 +1034,7 @@ func MpcSendBTC(
 
 				sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 				mpcHook("joining keysign - P2PKH", session, utxoSession, utxoIndex, utxoCount, false)
-				sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
+				sigJSON, err := DispatchJoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
 				if err != nil {
 					return "", fmt.Errorf("failed to sign P2PKH transaction: %w", err)
 				}
@@ -1113,7 +1113,7 @@ func MpcSendBTC(
 					sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 					Logf("P2SH-P2WPKH sighash: %s", sighashBase64)
 					mpcHook("joining keysign - P2SH-P2WPKH", session, utxoSession, utxoIndex, utxoCount, false)
-					sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
+					sigJSON, err := DispatchJoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
 					if err != nil {
 						return "", fmt.Errorf("failed to sign P2SH-P2WPKH transaction: %w", err)
 					}
@@ -1165,7 +1165,7 @@ func MpcSendBTC(
 
 					sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 					mpcHook("joining keysign - P2SH", session, utxoSession, utxoIndex, utxoCount, false)
-					sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
+					sigJSON, err := DispatchJoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
 					if err != nil {
 						return "", fmt.Errorf("failed to sign P2SH transaction: %w", err)
 					}
@@ -1409,7 +1409,7 @@ func MpcSendBTCWithUTXOs(
 
 		sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 		mpcHook("joining keysign", session, utxoSession, i+1, utxoCount, false)
-		sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
+					sigJSON, err := DispatchJoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
 		if err != nil {
 			return "", fmt.Errorf("failed to sign input %d: %w", i, err)
 		}

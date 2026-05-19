@@ -24,6 +24,10 @@ import {dbg, isLegacyWallet, saveKeyshareMetadata} from '../utils';
 import LegalModal from '../components/LegalModal';
 import TransportModeSelector from '../components/TransportModeSelector';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
+import {
+  isDkls23OptedOut,
+  setDkls23OptedOut,
+} from '../services/tssConfig';
 import database from '../services/Database';
 import {WalletService} from '../services/WalletService';
 import mempoolClient from '../services/MempoolClient';
@@ -1145,7 +1149,23 @@ const ShowcaseScreen = ({navigation}: any) => {
                 source={require('../assets/security-icon.png')}
                 style={styles.modalHeaderIconImage}
               />
-              <Text style={styles.modalTitle}>Choose Your Setup</Text>
+              <Text
+                style={styles.modalTitle}
+                onLongPress={() => {
+                  if (!__DEV__) {
+                    return;
+                  }
+                  const useGg18 = !isDkls23OptedOut();
+                  setDkls23OptedOut(useGg18);
+                  Alert.alert(
+                    'Keygen backend (dev)',
+                    useGg18
+                      ? 'New wallets will use GG18 (legacy) until toggled again.'
+                      : 'New wallets will use DKLs23.',
+                  );
+                }}>
+                Choose Your Setup
+              </Text>
               <AppPressable
                 style={styles.closeButton}
                 onPress={() => {
@@ -1156,6 +1176,10 @@ const ShowcaseScreen = ({navigation}: any) => {
               </AppPressable>
             </View>
             <View style={styles.modalBody}>
+              <Text style={styles.modeHintLine}>
+                New wallets use DKLs23 threshold signing (2-of-2 duo, 2-of-3
+                trio).
+              </Text>
               <View style={styles.modeOptionsContainer}>
                 <AppPressable
                   style={[

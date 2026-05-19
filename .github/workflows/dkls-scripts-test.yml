@@ -1,0 +1,52 @@
+name: DKLs23 Scripts Tests
+
+on:
+  pull_request:
+    paths:
+      - 'BBMTLib/dkls/**'
+      - 'BBMTLib/scripts-dkls/**'
+      - 'BBMTLib/dklsbind/**'
+      - 'BBMTLib/dklsstub/**'
+      - 'BBMTLib/go.mod'
+      - '.github/workflows/dkls-scripts-test.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test DKLs23 scripts
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./BBMTLib
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build libtss-ffi
+        working-directory: ./libtss
+        run: cargo build --release -p libtss-ffi
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache-dependency-path: BBMTLib/go.sum
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Run DKLs script tests
+        env:
+          CGO_ENABLED: '1'
+          CGO_LDFLAGS: '-L${{ github.workspace }}/libtss/target/release -llibtss_ffi -ldl -lm -lpthread'
+        run: |
+          chmod +x scripts-dkls/*.sh
+          ./scripts-dkls/dkls-test-all.sh
+
+      - name: go test dkls package
+        env:
+          CGO_ENABLED: '1'
+          CGO_LDFLAGS: '-L${{ github.workspace }}/libtss/target/release -llibtss_ffi -ldl -lm -lpthread'
+        run: go test -count=1 ./dkls/...

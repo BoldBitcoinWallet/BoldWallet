@@ -1046,6 +1046,34 @@ export const decodeSendBitcoinQR = qrData => {
  * @property {string|null} nostr_npub
  */
 
+/**
+ * Infer MPC stack from keyshare JSON shape (GG18 vs DKLs23).
+ * @param {object} parsed
+ * @returns {'gg18'|'dkls23'}
+ */
+export const detectKeyshareTssBackend = parsed => {
+  if (!parsed || typeof parsed !== 'object') {
+    return 'gg18';
+  }
+  if (parsed.tss_backend === 'dkls23') {
+    return 'dkls23';
+  }
+  if (parsed.tss_backend === 'gg18') {
+    return 'gg18';
+  }
+  if (
+    typeof parsed.share_b64 === 'string' &&
+    parsed.share_b64.length > 0 &&
+    parsed.ecdsa_local_data == null
+  ) {
+    return 'dkls23';
+  }
+  if (parsed.ecdsa_local_data != null) {
+    return 'gg18';
+  }
+  return 'gg18';
+};
+
 function normalizeKeyshareMetaObject(parsed) {
   return {
     pub_key: parsed.pub_key ?? '',
@@ -1054,6 +1082,7 @@ function normalizeKeyshareMetaObject(parsed) {
     local_party_key: parsed.local_party_key ?? '',
     keygen_committee_keys: parsed.keygen_committee_keys ?? [],
     nostr_npub: parsed.nostr_npub ?? null,
+    tss_backend: detectKeyshareTssBackend(parsed),
   };
 }
 

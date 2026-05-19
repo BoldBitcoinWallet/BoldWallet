@@ -30,11 +30,14 @@ import {
   parsePairingCodeFromScannedData,
   computeExtensionBindResponseQr,
 } from '../utils/extensionBind';
+import type {TssBackend} from '../services/tssBackend';
 interface KeyshareInfo {
   label: string;
   supportsLocal: boolean;
   supportsNostr: boolean;
   type: 'duo' | 'trio';
+  tssBackend?: TssBackend;
+  tssBackendLabel?: string;
   pubKey: string;
   chainCode: string;
   fingerprint: string;
@@ -255,6 +258,19 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
       text2: isTrio
         ? 'Any 2 of the 3 devices/keyshares are needed for signing transactions'
         : 'Two different devices/keyshares are needed for signing transactions',
+      visibilityTime: 4000,
+    });
+  }, [keyshareInfo]);
+
+  const handleTssBackendPress = useCallback(() => {
+    if (!keyshareInfo) return;
+    const isDkls = keyshareInfo.tssBackend === 'dkls23';
+    Toast.show({
+      type: 'info',
+      text1: isDkls ? 'DKLs23 (libtss)' : 'GG18 (BNB)',
+      text2: isDkls
+        ? 'Threshold signing uses the DKLs23 MPC stack via libtss'
+        : 'Threshold signing uses the BNB GG18 MPC stack',
       visibilityTime: 4000,
     });
   }, [keyshareInfo]);
@@ -575,6 +591,30 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                         </Text>
                       </AppPressable>
                     </View>
+                    {keyshareInfo.tssBackendLabel ? (
+                      <View style={styles.walletInfoRow}>
+                        <Text style={styles.keyshareDetailLabel}>
+                          Wallet type
+                        </Text>
+                        <AppPressable
+                          onPress={handleTssBackendPress}
+                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}
+                          style={[
+                            styles.keyshareKeyContainerBadge,
+                            keyshareInfo.tssBackend === 'dkls23'
+                              ? styles.keyshareBadgeDkls
+                              : styles.keyshareBadgeGg18,
+                          ]}>
+                          <Text
+                            style={styles.keyshareBadgeText}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit={true}
+                            minimumFontScale={0.5}>
+                            {keyshareInfo.tssBackendLabel}
+                          </Text>
+                        </AppPressable>
+                      </View>
+                    ) : null}
                     <View style={styles.walletInfoRow}>
                       <Text style={styles.keyshareDetailLabel}>
                         Keyshare ID

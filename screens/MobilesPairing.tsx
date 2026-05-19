@@ -57,6 +57,18 @@ import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {waitMS, WalletService} from '../services/WalletService';
+import {
+  resolveTssBackendForKeygen,
+  type SetupMode,
+  type TssBackend,
+} from '../services/tssBackend';
+import {TssProvider} from '../services/TssProvider';
+import {
+  getKeygenStepCount,
+  getPrepareModalCopy,
+  prepareDeviceForKeygen,
+} from '../services/tssKeygenPrepare';
+import TssBackendBadge from '../components/TssBackendBadge';
 import appConfigRepository, {
   CONFIG_KEYS,
 } from '../services/repositories/AppConfigRepository';
@@ -178,6 +190,10 @@ const MobilesPairing = ({navigation}: any) => {
   const isSignPSBT = route.params?.mode === 'sign_psbt';
   const setupMode = route.params?.mode;
   const isTrio = setupMode === 'trio';
+  const keygenSetupMode: SetupMode | undefined =
+    setupMode === 'duo' || setupMode === 'trio' ? setupMode : undefined;
+  const [keygenBackend, setKeygenBackend] = useState<TssBackend | null>(null);
+  const prepareCopy = getPrepareModalCopy(keygenBackend ?? 'dkls23');
   const title =
     isSendBitcoin || isSignPSBT
       ? isSignPSBT
@@ -189,6 +205,12 @@ const MobilesPairing = ({navigation}: any) => {
     twoDevices: false,
     noVPN: false,
   });
+  useEffect(() => {
+    if (keygenSetupMode) {
+      resolveTssBackendForKeygen(keygenSetupMode).then(setKeygenBackend);
+    }
+  }, [keygenSetupMode]);
+
   const [backupChecks, setBackupChecks] = useState({
     deviceOne: false,
     deviceTwo: false,
@@ -249,7 +271,7 @@ const MobilesPairing = ({navigation}: any) => {
             const sid = activeMpcSessionIdRef.current;
             if (sid) {
               try {
-                await BBMTLibNativeModule.cancelMpcSession(sid);
+                await TssProvider.cancelMpcSession(sid);
               } catch (e) {
                 dbg('MobilesPairing: cancelMpcSession failed', e);
               }
@@ -502,23 +524,22 @@ const MobilesPairing = ({navigation}: any) => {
     setIsPreParamsReady(false);
     setPrepCounter(0);
     const timeoutMinutes = 2;
-    if (!__DEV__) {
-      await deletePreparams();
-    } else {
-      dbg('preparams dev: Not deleting ppmFile');
+    try {
+      const backend = await prepareDeviceForKeygen(
+        ppmFile,
+        timeoutMinutes,
+        keygenSetupMode,
+        __DEV__,
+      );
+      setKeygenBackend(backend);
+      setIsPreParamsReady(true);
+    } catch (error: any) {
+      setIsPreParamsReady(false);
+      Alert.alert('Error', error?.toString() || 'Unknown error occurred');
+    } finally {
+      setIsPreparing(false);
+      setPrepCounter(0);
     }
-    BBMTLibNativeModule.preparams(ppmFile, String(timeoutMinutes))
-      .then(() => {
-        setIsPreParamsReady(true);
-      })
-      .catch((error: any) => {
-        setIsPreParamsReady(false);
-        Alert.alert('Error', error?.toString() || 'Unknown error occurred');
-      })
-      .finally(() => {
-        setIsPreparing(false);
-        setPrepCounter(0);
-      });
   };
   async function initSession() {
     try {
@@ -674,7 +695,7 @@ const MobilesPairing = ({navigation}: any) => {
         decKey,
         data,
       });
-      BBMTLibNativeModule.mpcTssSetup(
+      TssProvider.mpcTssSetup(
         server,
         partyID,
         ppmFile,
@@ -684,6 +705,7 @@ const MobilesPairing = ({navigation}: any) => {
         encKey,
         decKey,
         data,
+        keygenSetupMode,
       )
         .then(async (result: any) => {
           dbg('keygen result', result.substring(0, 40).concat('...'));
@@ -890,7 +912,7 @@ const MobilesPairing = ({navigation}: any) => {
           throw 'Make sure you\'re signing the "Same PSBT" from Both Devices';
         }
         // Call PSBT signing - keyshare read inside native (RNES-compatible storage)
-        await BBMTLibNativeModule.mpcSignPSBT(
+        await TssProvider.mpcSignPSBT(
           server,
           partyID,
           partiesCSV,
@@ -1073,7 +1095,7 @@ const MobilesPairing = ({navigation}: any) => {
             : '';
           if (utxosWithPathsJSON && changeAddress) {
             const rawTxHex =
-              await BBMTLibNativeModule.mpcSendBTCWithUTXOs(
+              await TssProvider.mpcSendBTCWithUTXOs(
                 server,
                 partyID,
                 partiesCSV,
@@ -1202,7 +1224,7 @@ const MobilesPairing = ({navigation}: any) => {
     let utxoIndex = 0;
     let utxoCount = 0;
     const keysignSteps = 36;
-    const keygenSteps = isTrio ? 29 : 18;
+    const keygenSteps = getKeygenStepCount(keygenBackend ?? 'dkls23', isTrio);
     const processHook = (message: string) => {
       const msg = JSON.parse(message);
       if (msg.type === 'keygen') {
@@ -1295,7 +1317,7 @@ const MobilesPairing = ({navigation}: any) => {
     return () => {
       subscription?.remove();
     };
-  }, [isTrio, isSendBitcoin]);
+  }, [isTrio, isSendBitcoin, keygenBackend]);
   useEffect(() => {
     if (isPreparing) {
       const interval = setInterval(() => {
@@ -2742,6 +2764,10 @@ const MobilesPairing = ({navigation}: any) => {
       marginBottom: 16,
       lineHeight: 24,
     },
+    keygenBackendBadgeWrap: {
+      alignSelf: 'center',
+      marginBottom: 8,
+    },
     hidden: {
       display: 'none',
     },
@@ -3181,6 +3207,11 @@ const MobilesPairing = ({navigation}: any) => {
                 </Text>
                 {!isSendBitcoin && !isSignPSBT && (
                   <>
+                    {keygenBackend ? (
+                      <View style={styles.keygenBackendBadgeWrap}>
+                        <TssBackendBadge backend={keygenBackend} />
+                      </View>
+                    ) : null}
                     <AppPressable
                       onPress={() => {
                         navigation.dispatch(
@@ -3582,7 +3613,7 @@ const MobilesPairing = ({navigation}: any) => {
                           resizeMode="contain"
                         />
                         <Text style={styles.statusText}>
-                          Device Preparation Done
+                          {prepareCopy.successLine}
                         </Text>
                       </View>
                     </View>
@@ -3765,11 +3796,10 @@ const MobilesPairing = ({navigation}: any) => {
                                 </View>
                                 {/* Header Text */}
                                 <Text style={styles.modalTitle}>
-                                  Preparing Device
+                                  {prepareCopy.title}
                                 </Text>
-                                {/* Subtext. suggest better wording. */}
                                 <Text style={styles.modalSubtitle}>
-                                  Could take a while, given device specs.
+                                  {prepareCopy.subtitle}
                                 </Text>
                                 {/* Loading Indicator */}
                                 <View style={styles.progressContainer}>
@@ -3794,12 +3824,14 @@ const MobilesPairing = ({navigation}: any) => {
                                   <View style={styles.statusRow}>
                                     <View style={styles.statusIndicator} />
                                     <Text style={styles.finalizingStatusText}>
-                                      Computing cryptographic params
+                                      {prepareCopy.statusLine}
                                     </Text>
                                   </View>
-                                  <Text style={styles.finalizingCountdownText}>
-                                    Time elapsed: {prepCounter} seconds
-                                  </Text>
+                                  {keygenBackend === 'gg18' ? (
+                                    <Text style={styles.finalizingCountdownText}>
+                                      Time elapsed: {prepCounter} seconds
+                                    </Text>
+                                  ) : null}
                                 </View>
                               </View>
                             </View>

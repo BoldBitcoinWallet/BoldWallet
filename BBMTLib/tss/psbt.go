@@ -342,7 +342,7 @@ func MpcSignPSBT(
 		Logf("Input %d sighash: %s", i, sighashBase64)
 
 		mpcHook("joining keysign", session, utxoSession, i+1, inputCount, false)
-		sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, inputDerivePath, sighashBase64)
+		sigJSON, err := DispatchJoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, inputDerivePath, sighashBase64)
 		if err != nil {
 			return "", fmt.Errorf("failed to sign input %d: %w", i, err)
 		}
@@ -1017,7 +1017,7 @@ func runNostrMpcSignPSBTInternal(
 		Logf("Input %d sighash: %s", i, sighashBase64)
 
 		mpcHook("joining keysign (nostr)", sessionID, utxoSession, i+1, inputCount, false)
-		sigJSON, err := NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, inputDerivePath, sighashBase64)
+		sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, inputDerivePath, sighashBase64)
 		if err != nil {
 			return "", fmt.Errorf("failed to sign input %d: %w", i, err)
 		}

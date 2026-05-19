@@ -867,7 +867,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 				// We'll use a helper function that accepts base64-encoded sighash
 				sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 				mpcHook("joining keysign - P2WPKH", sessionID, utxoSession, utxoIndex, utxoCount, false)
-				sigJSON, err := NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
+				sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
 				if err != nil {
 					return "", fmt.Errorf("failed to sign P2WPKH transaction: %w", err)
 				}
@@ -904,7 +904,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 
 				sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 				mpcHook("joining keysign - generic SegWit", sessionID, utxoSession, utxoIndex, utxoCount, false)
-				sigJSON, err := NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
+				sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
 				if err != nil {
 					return "", fmt.Errorf("failed to sign generic SegWit transaction: %w", err)
 				}
@@ -941,7 +941,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 
 				sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 				mpcHook("joining keysign - P2PKH", sessionID, utxoSession, utxoIndex, utxoCount, false)
-				sigJSON, err := NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
+				sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
 				if err != nil {
 					return "", fmt.Errorf("failed to sign P2PKH transaction: %w", err)
 				}
@@ -1016,7 +1016,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 
 					sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 					mpcHook("joining keysign - P2SH-P2WPKH", sessionID, utxoSession, utxoIndex, utxoCount, false)
-					sigJSON, err := NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
+					sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
 					if err != nil {
 						return "", fmt.Errorf("failed to sign P2SH-P2WPKH transaction: %w", err)
 					}
@@ -1059,7 +1059,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 
 					sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 					mpcHook("joining keysign - P2SH", sessionID, utxoSession, utxoIndex, utxoCount, false)
-					sigJSON, err := NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
+					sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
 					if err != nil {
 						return "", fmt.Errorf("failed to sign P2SH transaction: %w", err)
 					}
@@ -1308,7 +1308,7 @@ func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, 
 
 		sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 		mpcHook("joining keysign", sessionID, utxoSession, i+1, utxoCount, false)
-		sigJSON, err := NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
+					sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
 		if err != nil {
 			return "", fmt.Errorf("failed to sign input %d: %w", i, err)
 		}

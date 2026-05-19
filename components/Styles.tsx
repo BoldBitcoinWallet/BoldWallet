@@ -284,6 +284,8 @@ export interface Styles {
   keyshareBadgeText: TextStyle;
   keyshareBadgeTrio: ViewStyle;
   keyshareBadgeDuo: ViewStyle;
+  keyshareBadgeGg18: ViewStyle;
+  keyshareBadgeDkls: ViewStyle;
   keyshareStatusBadge: ViewStyle;
   keyshareStatusBadgeText: TextStyle;
   keyshareStatusBadgeSuccess: ViewStyle;
@@ -1813,6 +1815,14 @@ export const createStyles = (theme: Theme): Styles => ({
   },
   keyshareBadgeDuo: {
     backgroundColor: theme.colors.secondary,
+  },
+  keyshareBadgeGg18: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  keyshareBadgeDkls: {
+    backgroundColor: theme.colors.secondary,
+    borderColor: theme.colors.secondary,
   },
   keyshareStatusBadge: {
     paddingHorizontal: 10,
