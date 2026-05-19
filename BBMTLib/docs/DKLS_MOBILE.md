@@ -52,7 +52,7 @@ cd BBMTLib && ./build-dkls.sh ios
 - **Default backend:** DKLs23 for new keygen (duo 2-of-2 and trio 2-of-3). GG18 preparams (`ppm.json`) run only when `DKLS23_OPTED_OUT` is set (dev: long-press **Choose Your Setup** on Welcome).
 - **Prepare step:** DKLs runs `helloDkg` — on device this only checks `libtss` linkage (`tss_version`), not a full in-process DKG (avoids iOS heap issues beside gomobile `Tss`). GG18 runs `preparams` (minutes). UI copy is backend-aware (`services/tssKeygenPrepare.ts`).
 - **LAN party names:** HTTP relay uses `KeyShare1`, `KeyShare2`, `KeyShare3` (not `party1`). Go maps these in `dkls/party.go`.
-- **Progress:** DKLs keygen reports `type: keygen` status via `tss.ReportKeygenProgress` for RN progress bars.
+- **Progress:** DKLs reports `type: keygen` / `type: keysign` via `tss.ReportKeygenProgress` / `ReportKeysignProgress`. RN maps steps in `services/mpcProgress.ts` (duo keygen denom 14, trio 22, keysign 12 per input; step 99 = done).
 
 ### Setup test matrix (manual)
 

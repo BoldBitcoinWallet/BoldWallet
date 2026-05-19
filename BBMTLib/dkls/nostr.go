@@ -83,6 +83,7 @@ func runNostrDKG(cfg nostrtransport.Config, chaincode, localNpub string, allPart
 	if err := coordinator.AwaitPeers(ctx); err != nil {
 		return "", err
 	}
+	tss.ReportKeygenProgress(cfg.SessionID, 1, "peers ready", false)
 
 	messenger := nostrtransport.NewMessenger(cfg, client)
 	nm := &nostrMessenger{messenger: messenger, ctx: ctx, localNpub: localNpub}

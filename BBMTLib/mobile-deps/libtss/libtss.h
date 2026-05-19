@@ -81,6 +81,12 @@ TssStatus tss_derive_child(TssHandle key_share, uint32_t child_number, TssHandle
 // NUL-terminated C string.
 TssStatus tss_derive_path(TssHandle key_share, const char *path, TssHandle *out_handle);
 
+// Derive along a BIP-32 path using an explicit 32-byte chain code (wallet HD root).
+TssStatus tss_derive_path_with_chain_code(TssHandle key_share,
+                                          const char *path,
+                                          const uint8_t *chain_code,
+                                          TssHandle *out_handle);
+
 // Return a pointer to the last error message (NUL-terminated).
 //
 // **Lifetime:** The returned pointer is only valid until the next libtss FFI

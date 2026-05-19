@@ -49,7 +49,6 @@ func keysignResponseJSON(sig libtss.Signature, sighashBase64 string) (string, er
 func NostrJoinKeysignWithSighash(
 	relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, keyshareJSON, derivationPath, sighashBase64 string,
 ) (string, error) {
-	_ = derivationPath
 	sighash, err := base64.StdEncoding.DecodeString(sighashBase64)
 	if err != nil {
 		return "", fmt.Errorf("decode sighash: %w", err)
@@ -136,7 +135,14 @@ func NostrJoinKeysignWithSighash(
 		messenger: nm,
 		peers:     participatingNpubs,
 	}
-	sig, err := runSignWithSender(share, sighash, []byte(sessionID), signSess.SelfID, signSess.SigningIDs, runner, roundCh, sessionID)
+	signingShare, err := deriveShareForSigning(share, derivationPath, ks.ChainCodeHex)
+	if err != nil {
+		return "", err
+	}
+	if signingShare != share {
+		defer signingShare.Free()
+	}
+	sig, err := runSignWithSender(signingShare, sighash, []byte(sessionID), signSess.SelfID, signSess.SigningIDs, runner, roundCh, sessionID)
 	pumpCancel()
 	wg.Wait()
 	if err != nil {
@@ -152,7 +158,6 @@ func JoinKeysignWithSighash(
 ) (string, error) {
 	_ = encKey
 	_ = decKey
-	_ = derivePath
 	sighash, err := base64.StdEncoding.DecodeString(sighashBase64)
 	if err != nil {
 		return "", fmt.Errorf("decode sighash: %w", err)
@@ -173,14 +178,9 @@ func JoinKeysignWithSighash(
 	}
 
 	parties := splitCSV(partiesCSV)
-	if err := tss.LANJoinSession(server, session, key); err != nil {
+	if err := lanPrepareKeysignProgress(server, session, key, parties); err != nil {
 		return "", err
 	}
-	if err := tss.LANAwaitJoiners(parties, server, session); err != nil {
-		return "", err
-	}
-
-	tss.InitKeysignProgress(session)
 
 	messenger := tss.NewLANMessenger(server, session, sessionKey)
 	runner := &lanPartyRunner{
@@ -207,13 +207,19 @@ func JoinKeysignWithSighash(
 		return nil
 	}, endCh, &wg)
 
-	sig, err := runSignWithSender(share, sighash, []byte(session), signSess.SelfID, signSess.SigningIDs, runner, roundCh, session)
+	signingShare, err := deriveShareForSigning(share, derivePath, ks.ChainCodeHex)
+	if err != nil {
+		return "", err
+	}
+	if signingShare != share {
+		defer signingShare.Free()
+	}
+	sig, err := runSignWithSender(signingShare, sighash, []byte(session), signSess.SelfID, signSess.SigningIDs, runner, roundCh, session)
 	close(endCh)
 	wg.Wait()
 	if err != nil {
 		return "", err
 	}
 	tss.ReportKeysignProgress(session, 99, "keysign ok", true)
-	_ = ks
 	return keysignResponseJSON(sig, sighashBase64)
 }

@@ -37,6 +37,20 @@ func (r *lanPartyRunner) sendMessages(msgs []libtss.Message) error {
 	return nil
 }
 
+// lanPrepareKeysignProgress mirrors LAN keygen steps 0–2 before MPC sign rounds.
+func lanPrepareKeysignProgress(server, session, key string, parties []string) error {
+	tss.InitKeysignProgress(session)
+	if err := tss.LANJoinSession(server, session, key); err != nil {
+		return fmt.Errorf("register session: %w", err)
+	}
+	tss.ReportKeysignProgress(session, 1, "waiting parties", false)
+	if err := tss.LANAwaitJoiners(parties, server, session); err != nil {
+		return fmt.Errorf("await joiners: %w", err)
+	}
+	tss.ReportKeysignProgress(session, 2, "starting DKLs keysign", false)
+	return nil
+}
+
 // JoinKeygen performs LAN DKG via HTTP relay (duo 2-of-2 or trio 2-of-3).
 func JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey string) (result string, err error) {
 	defer func() {
@@ -273,20 +287,15 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, keyshareJSON, mes
 	defer share.Free()
 
 	parties := splitCSV(partiesCSV)
-	if err := tss.LANJoinSession(server, session, key); err != nil {
-		return "", err
-	}
-	if err := tss.LANAwaitJoiners(parties, server, session); err != nil {
-		return "", err
-	}
-
 	signSess, err := ResolveSigningSessionLAN(share, ks, partiesCSV)
 	if err != nil {
 		return "", err
 	}
 
 	hash := HashMessageForDKLs([]byte(message))
-	tss.InitKeysignProgress(session)
+	if err := lanPrepareKeysignProgress(server, session, key, parties); err != nil {
+		return "", err
+	}
 
 	messenger := tss.NewLANMessenger(server, session, sessionKey)
 	runner := &lanPartyRunner{
