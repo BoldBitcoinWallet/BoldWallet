@@ -60,12 +60,9 @@ func startLANMessagePump(server, session, sessionKey, key string, onBody func(st
 					continue
 				}
 				msgMap[message.Hash] = true
-				body := message.Body
-				if sessionKey != "" {
-					body, err = tss.AesDecrypt(message.Body, sessionKey)
-					if err != nil {
-						continue
-					}
+				body, err := tss.DecryptLANRelayPayload(message.Body, sessionKey)
+				if err != nil {
+					continue
 				}
 				if err := onBody(body); err != nil {
 					continue

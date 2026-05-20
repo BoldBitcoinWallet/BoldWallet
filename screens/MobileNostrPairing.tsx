@@ -56,6 +56,7 @@ import {
 } from '../services/mempoolApiBase';
 import {prepareSendBtcMultiPathInputs} from '../services/sendBtcPrepare';
 import {
+  resolveHookProgressBackend,
   resolveTssBackend,
   resolveTssBackendForKeygen,
   type SetupMode,
@@ -857,9 +858,15 @@ const MobileNostrPairing = ({navigation}: any) => {
   // Listen to native module events for progress tracking
   useEffect(() => {
     const eventEmitter = new NativeEventEmitter(BBMTLibNativeModule);
-    const backend: TssBackend =
-      spendBackend ?? keygenBackend ?? 'dkls23';
+    const backend = resolveHookProgressBackend({
+      isSpendFlow: isSendBitcoin || isSignPSBT,
+      spendBackend,
+      keygenBackend,
+    });
     const processHook = (message: string) => {
+      if (!backend) {
+        return;
+      }
       try {
         const msg = JSON.parse(message) as MpcHookMessage;
         const result = mapMpcHookToPercent(msg, backend, {

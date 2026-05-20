@@ -3,6 +3,9 @@ import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import LocalCache from './services/LocalCache';
 import {isDebugLoggingEnabled} from './App';
+import {detectKeyshareTssBackend as detectKeyshareTssBackendCanonical} from './services/tssBackend';
+
+export {detectKeyshareTssBackendCanonical as detectKeyshareTssBackend};
 
 /** Strip trailing `#checksum` from an output descriptor (BIP 380). */
 const stripDescriptorChecksum = d => {
@@ -1112,36 +1115,11 @@ export const decodeSendBitcoinQR = qrData => {
  * @property {string|null} nostr_npub
  */
 
-/**
- * Infer MPC stack from keyshare JSON shape (GG18 vs DKLs23).
- * @param {object} parsed
- * @returns {'gg18'|'dkls23'}
- */
-export const detectKeyshareTssBackend = parsed => {
-  if (!parsed || typeof parsed !== 'object') {
-    return 'gg18';
-  }
-  if (parsed.tss_backend === 'dkls23') {
-    return 'dkls23';
-  }
-  if (parsed.tss_backend === 'gg18') {
-    return 'gg18';
-  }
-  // GG18 LocalState always has ecdsa_local_data — prefer that over share_b64 shape.
-  if (parsed.ecdsa_local_data != null) {
-    return 'gg18';
-  }
-  if (typeof parsed.share_b64 === 'string' && parsed.share_b64.length > 0) {
-    return 'dkls23';
-  }
-  return 'gg18';
-};
-
 function normalizeKeyshareMetaObject(parsed) {
   const tss_backend =
     parsed.tss_backend === 'dkls23' || parsed.tss_backend === 'gg18'
       ? parsed.tss_backend
-      : detectKeyshareTssBackend(parsed);
+      : detectKeyshareTssBackendCanonical(parsed);
   const rawCreated = parsed.created_at ?? null;
   const created_at =
     rawCreated != null ? normalizeCreatedAtMs(rawCreated) : null;

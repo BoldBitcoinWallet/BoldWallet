@@ -22,6 +22,7 @@ func TestLanJoinKeygenDuo(t *testing.T) {
 	server := "http://127.0.0.1:" + port
 	chaincode := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	session := "test-lan-session-duo"
+	sessionKey := testSessionHex(t, 32)
 
 	var wg sync.WaitGroup
 	errs := make(chan error, 2)
@@ -29,7 +30,7 @@ func TestLanJoinKeygenDuo(t *testing.T) {
 
 	run := func(key, parties string) {
 		defer wg.Done()
-		out, e := JoinKeygen(key, parties, session, server, chaincode, "")
+		out, e := JoinKeygen(key, parties, session, server, chaincode, sessionKey, "", "")
 		if e != nil {
 			errs <- e
 			return
@@ -81,8 +82,7 @@ func TestLanJoinKeygenTrio(t *testing.T) {
 	chaincode := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	session := "test-lan-session-trio"
 	parties := "KeyShare1,KeyShare2,KeyShare3"
-	// Shared AES key (mirrors mobile: sha256(sessionID, masterHost)); empty = plaintext in test.
-	sessionKey := ""
+	sessionKey := testSessionHex(t, 32)
 
 	var wg sync.WaitGroup
 	errs := make(chan error, 3)
@@ -90,7 +90,7 @@ func TestLanJoinKeygenTrio(t *testing.T) {
 
 	run := func(key string) {
 		defer wg.Done()
-		out, e := JoinKeygen(key, parties, session, server, chaincode, sessionKey)
+		out, e := JoinKeygen(key, parties, session, server, chaincode, sessionKey, "", "")
 		if e != nil {
 			errs <- e
 			return

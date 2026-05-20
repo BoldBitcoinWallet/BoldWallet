@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # BoldWallet mobile native libs:
+#   ./build-all.sh       → libtss + GG18 + DKLs (Android + iOS on macOS) — use before release
 #   ./build.sh           → GG18 gomobile (tss.aar / Tss.xcframework)
-#   ./build-dkls.sh      → DKLs23 c-shared (libdklsmobile.so / libdklsmobile.xcframework)
-#   ./build.sh --with-dkls → both (recommended before release)
+#   ./build-dkls.sh      → DKLs23 c-shared (libbbmtmobile.so / libbbmtmobile.xcframework)
+#   ./build.sh --with-dkls → GG18 + DKLs (same as build-all minus libtss pre-step / host smoke)
 #
 # Do not gomobile-bind dklsbind on Android: dkls.aar duplicates go.Seq from tss.aar.
 set -euo pipefail
@@ -142,7 +143,7 @@ export GOFLAGS="-mod=mod"
 # set the max-page-size for the linker to ensure libgojni.so is compliant.
 gomobile bind -v -target=android -androidapi 21 -ldflags="-extldflags=-Wl,-z,max-page-size=16384" -o tss.aar github.com/BoldBitcoinWallet/BBMTLib/tss
 
-# DKLs23 on Android: use ./build-dkls.sh android (libdklsmobile.so + JNI), not dkls.aar.
+# DKLs23 on Android: ./build-dkls.sh android → libbbmtmobile.so + dkls_jni (not dkls.aar).
 # A second gomobile AAR duplicates go.Seq / go.Universe from tss.aar at link time.
 
 # Copy Artifacts
@@ -197,9 +198,10 @@ if [[ "${WITH_DKLS}" -eq 1 ]]; then
   fi
 else
   warn "DKLs23 not built. For release APK/IPA also run: ./build-dkls.sh android  (and ios on macOS)"
-  warn "Or use: ./build.sh --with-dkls"
+  warn "Or use: ./build.sh --with-dkls  or  ./build-all.sh"
 fi
 
 info "Build complete!"
-info "  GG18:  android/app/libs/tss.aar, ios/Tss.xcframework"
-info "  DKLs:  android jniLibs/*/libdklsmobile.so, ios/DklsMobile/libdklsmobile.xcframework (build-dkls.sh)"
+info "  GG18:  android/app/libs/tss.aar"
+info "  DKLs:  android jniLibs/*/libbbmtmobile.so, ios/BbmtMobile/libbbmtmobile.xcframework"
+info "  All:   ./build-all.sh"

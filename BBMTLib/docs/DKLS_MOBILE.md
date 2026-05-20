@@ -14,24 +14,23 @@ cd BBMTLib
 # Prerequisites: Rust, Go 1.22+, `cargo install cargo-ndk`, Android NDK r23+
 # (set ANDROID_NDK_HOME to a numeric NDK, e.g. .../ndk/28.2.13676358 — not legacy rc*)
 
-# 1) Rust FFI (host + Android ABIs)
-./mobile-deps/libtss/build-libtss.sh
+# All native artifacts (GG18 + DKLs, Android + iOS on macOS)
+./build-all.sh
 
-# 2) Go libdklsmobile (.so / .a) + copy header for JNI
-./build-dkls.sh android    # or: ./build-dkls.sh all
-
-# 3) Rebuild the app
-cd ..
-npx react-native run-android
+# Or manually:
+# 1) ./mobile-deps/libtss/build-libtss.sh
+# 2) ./build.sh --with-dkls
+# 3) cd .. && npx react-native run-android
 ```
 
 Outputs:
 
 | Platform | Artifact |
 |----------|----------|
-| Android | `android/app/src/main/jniLibs/<abi>/libdklsmobile.so` |
+| Android GG18 | `android/app/libs/tss.aar` (gomobile; keep using main-branch / `build.sh` artifact) |
+| Android DKLs | `android/app/src/main/jniLibs/<abi>/libbbmtmobile.so` (unified `bbmtmobile` build; `Dkls*` via JNI only) |
 | Android | `android/app/src/main/jniLibs/<abi>/libdkls_jni.so` (built by `build-dkls.sh`, not app CMake) |
-| iOS | `ios/BbmtMobile/libbbmtmobile.xcframework` — **unified** GG18+DKLs (one Go runtime). Do **not** link `Tss.xcframework` + `libdklsmobile` together (heap crash). |
+| iOS | `ios/BbmtMobile/libbbmtmobile.xcframework` — **unified** GG18+DKLs (one Go runtime). Do **not** link `Tss.xcframework` + a second Go runtime (heap crash). |
 | iOS | `ios/DklsMobile/libdklsmobile_go.h` |
 
 Build iOS artifacts:
@@ -75,7 +74,7 @@ Scripts: `./scripts-dkls/main.go local-keygen` (duo), `local-keygen-3` (trio).
 
 ## Verify on device
 
-1. **Smoke:** Dev build → trigger `dklsHelloDkg` (or check logs for `DklsNative: libdklsmobile loaded`).
+1. **Smoke:** Dev build → trigger `dklsHelloDkg` (or check logs for `DklsNative: libbbmtmobile loaded`).
 2. **LAN keygen:** New wallet via **Devices Pairing** (duo or trio on same Wi‑Fi).
 3. **Nostr keygen:** New wallet via **Nostr Connect**. All devices must run a build with `libdklsmobile` linked.
 4. **GG18 regression:** Open an old wallet → send/sign should still use BNB (`tss_backend: gg18`).
@@ -87,8 +86,8 @@ Scripts: `./scripts-dkls/main.go local-keygen` (duo), `local-keygen-3` (trio).
 | Symptom | Fix |
 |---------|-----|
 | `DKLS_NATIVE_REQUIRED` | Run `./build-dkls.sh android` and rebuild app |
-| `libdklsmobile not loaded` | Check `jniLibs/arm64-v8a/libdklsmobile.so` exists |
-| CMake skipped `dkls_jni` | Build `.so` first; CMake only builds JNI if `.so` exists for that ABI |
+| `libbbmtmobile not loaded` | Check `jniLibs/arm64-v8a/libbbmtmobile.so` exists (`./build-dkls.sh android`) |
+| CMake skipped `dkls_jni` | Build `libbbmtmobile.so` first; CMake only builds JNI if it exists for that ABI |
 | Link errors building `.so` | Install NDK, set `ANDROID_NDK_HOME`, run `cargo install cargo-ndk` |
 | `Duplicate class go.Seq` (release) | Do not add `dkls.aar` alongside `tss.aar`; use `build-dkls.sh android` only |
 

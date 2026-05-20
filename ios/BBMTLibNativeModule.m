@@ -270,6 +270,8 @@ RCT_EXTERN_METHOD(dklsMpcTssSetup:(NSString *)server
                   partiesCSV:(NSString *)partiesCSV
                   sessionID:(NSString *)sessionID
                   sessionKey:(NSString *)sessionKey
+                  encKey:(NSString *)encKey
+                  decKey:(NSString *)decKey
                   chaincode:(NSString *)chaincode
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)

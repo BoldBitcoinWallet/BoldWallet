@@ -45,6 +45,8 @@ export const TssProvider = {
         partiesCSV,
         sessionID,
         sessionKey,
+        encKey,
+        decKey,
         chaincode,
       );
     }

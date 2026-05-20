@@ -15,10 +15,11 @@ func DklsVersion() *C.char {
 }
 
 //export DklsLanJoinKeygen
-func DklsLanJoinKeygen(key, parties, session, server, chaincode, sessionKey *C.char) *C.char {
+func DklsLanJoinKeygen(key, parties, session, server, chaincode, sessionKey, encKey, decKey *C.char) *C.char {
 	return cString(dkls.JoinKeygen(
 		C.GoString(key), C.GoString(parties), C.GoString(session),
 		C.GoString(server), C.GoString(chaincode), C.GoString(sessionKey),
+		C.GoString(encKey), C.GoString(decKey),
 	))
 }
 

@@ -156,8 +156,11 @@ func NostrJoinKeysignWithSighash(
 func JoinKeysignWithSighash(
 	server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshareJSON, derivePath, sighashBase64 string,
 ) (string, error) {
-	_ = encKey
-	_ = decKey
+	defer tss.ClearLANTransportKeys()
+	if err := tss.ConfigureLANTransportKeys(sessionKey, encKey, decKey); err != nil {
+		return "", err
+	}
+
 	sighash, err := base64.StdEncoding.DecodeString(sighashBase64)
 	if err != nil {
 		return "", fmt.Errorf("decode sighash: %w", err)

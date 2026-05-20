@@ -4,6 +4,7 @@ import {useNavigation} from '@react-navigation/native';
 import KeyshareInfoContent from '../components/KeyshareInfoContent';
 import {useUser} from '../context/UserContext';
 import {
+  detectKeyshareTssBackend,
   getTssBackendDisplayLabel,
   type TssBackend,
 } from '../services/tssBackend';
@@ -81,7 +82,9 @@ const DeviceScreen: React.FC = () => {
         segwitNative: descriptors.segwitNative,
         segwitCompatible: descriptors.segwitCompatible,
       };
-      const tssBackend = (keyshare.tss_backend || 'gg18') as TssBackend;
+      const tssBackend = detectKeyshareTssBackend(
+        keyshare as Record<string, unknown>,
+      );
       setKeyshareInfo({
         label,
         supportsLocal,

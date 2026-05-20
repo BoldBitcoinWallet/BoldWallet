@@ -309,6 +309,7 @@ android/app/profile/
 # DKLs23 JNI (built by BBMTLib/build-dkls.sh android)
 android/app/src/main/jniLibs/**
 android/app/src/main/cpp/libdklsmobile.h
+android/app/src/main/cpp/libbbmtmobile.h
 
 # iOS
 *.pbxuser

@@ -9,19 +9,21 @@ A secure Multi-Party Computation (MPC) Threshold Signature Scheme (TSS) library 
 ```bash
 cd BBMTLib
 
-# GG18 (gomobile) + DKLs23 (c-shared / JNI). Use before release builds.
-./build.sh --with-dkls
+# Everything for release (libtss + GG18 + DKLs, Android + iOS on macOS)
+./build-all.sh
 
-# Or separately:
-./build.sh              # tss.aar + Tss.xcframework (GG18)
-./build-dkls.sh android # libdklsmobile.so (DKLs23)
-./build-dkls.sh ios     # libdklsmobile.xcframework (macOS only)
+# Or step by step:
+./build.sh --with-dkls    # GG18 gomobile + DKLs (no libtss pre-step / host smoke)
+./build.sh              # tss.aar only (GG18)
+./build-dkls.sh android # libbbmtmobile.so (DKLs JNI; tss.aar still for GG18)
+./build-dkls.sh ios     # libbbmtmobile.xcframework (macOS only)
 ```
 
 | Backend | Script | Android | iOS |
 |---------|--------|---------|-----|
-| GG18 (BNB) | `build.sh` | `android/app/libs/tss.aar` | `ios/Tss.xcframework` |
-| DKLs23 | `build-dkls.sh` | `jniLibs/*/libdklsmobile.so` | `ios/DklsMobile/libdklsmobile.xcframework` |
+| **Both** | `build-all.sh` | `tss.aar` + `jniLibs/*/libbbmtmobile.so` | `BbmtMobile/libbbmtmobile.xcframework` |
+| GG18 (BNB) | `build.sh` | `android/app/libs/tss.aar` | legacy `Tss.xcframework` (app uses bbmtmobile on iOS) |
+| DKLs23 | `build-dkls.sh` | `jniLibs/*/libbbmtmobile.so` (+ `dkls_jni`) | `ios/BbmtMobile/libbbmtmobile.xcframework` |
 
 Do **not** add `dkls.aar` on Android — it duplicates `go.Seq` from `tss.aar`. See [docs/DKLS_MOBILE.md](docs/DKLS_MOBILE.md).
 

@@ -28,11 +28,15 @@ import {
 } from '../utils';
 import LegalModal from '../components/LegalModal';
 import TransportModeSelector from '../components/TransportModeSelector';
+import TssBackendSelector from '../components/TssBackendSelector';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {
+  getKeygenTssBackendPreference,
   isDkls23OptedOut,
   setDkls23OptedOut,
+  setKeygenTssBackendPreference,
 } from '../services/tssConfig';
+import type {TssBackend} from '../services/tssBackend';
 import database from '../services/Database';
 import {WalletService} from '../services/WalletService';
 import mempoolClient from '../services/MempoolClient';
@@ -46,7 +50,10 @@ const ShowcaseScreen = ({navigation}: any) => {
   const [agreeToTerms, setAgreeToTerms] = useState(false);
   const [agreeToPrivacy, setAgreeToPrivacy] = useState(false);
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
+  const [isBackendModalVisible, setIsBackendModalVisible] = useState(false);
   const [isModeModalVisible, setIsModeModalVisible] = useState(false);
+  const [keygenBackendChoice, setKeygenBackendChoice] =
+    useState<TssBackend>('dkls23');
   const [selectedMode, setSelectedMode] = useState<'duo' | 'trio' | null>(null);
   const [isTransportModalVisible, setIsTransportModalVisible] = useState(false);
   const [pendingMode, setPendingMode] = useState<'duo' | 'trio' | null>(null);
@@ -968,7 +975,8 @@ const ShowcaseScreen = ({navigation}: any) => {
               (!agreeToTerms || !agreeToPrivacy) && styles.disabledButton,
             ]}
             onPress={() => {
-              setIsModeModalVisible(true);
+              setKeygenBackendChoice(getKeygenTssBackendPreference());
+              setIsBackendModalVisible(true);
             }}
             disabled={!agreeToTerms || !agreeToPrivacy}>
             <View style={styles.ctaButtonIconContainer}>
@@ -1114,6 +1122,16 @@ const ShowcaseScreen = ({navigation}: any) => {
         }}
         type={legalModalType}
       />
+      <TssBackendSelector
+        visible={isBackendModalVisible}
+        onClose={() => setIsBackendModalVisible(false)}
+        onContinue={backend => {
+          setKeygenTssBackendPreference(backend);
+          setKeygenBackendChoice(backend);
+          setIsBackendModalVisible(false);
+          setIsModeModalVisible(true);
+        }}
+      />
       {/* Transport Mode Selector */}
       <TransportModeSelector
         visible={isTransportModalVisible}
@@ -1193,8 +1211,9 @@ const ShowcaseScreen = ({navigation}: any) => {
             </View>
             <View style={styles.modalBody}>
               <Text style={styles.modeHintLine}>
-                New wallets use DKLs23 threshold signing (2-of-2 duo, 2-of-3
-                trio).
+                {keygenBackendChoice === 'gg18'
+                  ? 'New wallets will use GG18 threshold signing (2-of-2 duo, 2-of-3 trio). All devices must use GG18.'
+                  : 'New wallets will use DKLs23 threshold signing (2-of-2 duo, 2-of-3 trio). All devices must use DKLs23.'}
               </Text>
               <View style={styles.modeOptionsContainer}>
                 <AppPressable

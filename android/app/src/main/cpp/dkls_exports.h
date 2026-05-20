@@ -1,4 +1,4 @@
-// Minimal C declarations for libdklsmobile.so
+// DKLs C API from libbbmtmobile.so (unified bbmtmobile build; JNI uses Dkls* only).
 #pragma once
 
 #ifdef __cplusplus
@@ -8,7 +8,7 @@ extern "C" {
 extern char *DklsHelloDkg(void);
 extern void DklsFree(char *p);
 extern char *DklsLanJoinKeygen(char *key, char *parties, char *session, char *server,
-                               char *chaincode, char *sessionKey);
+                               char *chaincode, char *sessionKey, char *encKey, char *decKey);
 extern char *DklsNostrJoinKeygen(char *relays, char *nsec, char *peers, char *session,
                                  char *sessionKey, char *chaincode);
 extern char *DklsNostrJoinKeysign(char *relays, char *nsec, char *peers, char *session,

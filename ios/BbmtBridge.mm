@@ -62,14 +62,14 @@ static void log_trampoline(const char *msg) {
 
 + (NSString *)helloDkg { return wrap(DklsHelloDkg()); }
 
-#define BBMT_DKLS_6(NAME, FN, A, B, C, D, E, F) \
-+ (NSString *)NAME:(NSString *)a parties:(NSString *)b session:(NSString *)c server:(NSString *)d chaincode:(NSString *)e sessionKey:(NSString *)f { \
-  char *ka=dupC(a), *kb=dupC(b), *kc=dupC(c), *kd=dupC(d), *ke=dupC(e), *kf=dupC(f); \
-  NSString *out = wrap(FN(ka, kb, kc, kd, ke, kf)); \
-  free(ka); free(kb); free(kc); free(kd); free(ke); free(kf); return out; \
+#define BBMT_DKLS_8(NAME, FN, A, B, C, D, E, F, G, H) \
++ (NSString *)NAME:(NSString *)a parties:(NSString *)b session:(NSString *)c server:(NSString *)d chaincode:(NSString *)e sessionKey:(NSString *)f encKey:(NSString *)g decKey:(NSString *)h { \
+  char *ka=dupC(a), *kb=dupC(b), *kc=dupC(c), *kd=dupC(d), *ke=dupC(e), *kf=dupC(f), *kg=dupC(g), *kh=dupC(h); \
+  NSString *out = wrap(FN(ka, kb, kc, kd, ke, kf, kg, kh)); \
+  free(ka); free(kb); free(kc); free(kd); free(ke); free(kf); free(kg); free(kh); return out; \
 }
 
-BBMT_DKLS_6(lanJoinKeygenWithKey, DklsLanJoinKeygen, key, parties, session, server, chaincode, sessionKey)
+BBMT_DKLS_8(lanJoinKeygenWithKey, DklsLanJoinKeygen, key, parties, session, server, chaincode, sessionKey, encKey, decKey)
 
 + (NSString *)nostrJoinKeygenWithRelays:(NSString *)relays nsec:(NSString *)nsec peers:(NSString *)peers session:(NSString *)session sessionKey:(NSString *)sessionKey chaincode:(NSString *)chaincode {
   char *r=dupC(relays),*n=dupC(nsec),*p=dupC(peers),*s=dupC(session),*sk=dupC(sessionKey),*c=dupC(chaincode);

@@ -3,7 +3,8 @@ package com.boldwallet
 import android.util.Log
 
 /**
- * JNI bridge to libdklsmobile.so (built by BBMTLib/build-dkls.sh android).
+ * JNI bridge to libbbmtmobile.so (BBMTLib/build-dkls.sh android, package ./bbmtmobile).
+ * Exposes Dkls* only; GG18 continues to use gomobile tss.aar (Tss.*).
  */
 object DklsNative {
     private const val TAG = "DklsNative"
@@ -15,10 +16,10 @@ object DklsNative {
     fun ensureLoaded(): Boolean {
         if (loaded) return true
         return try {
-            System.loadLibrary("dklsmobile")
+            System.loadLibrary("bbmtmobile")
             System.loadLibrary("dkls_jni")
             loaded = true
-            Log.i(TAG, "libdklsmobile + dkls_jni loaded")
+            Log.i(TAG, "libbbmtmobile + dkls_jni loaded")
             true
         } catch (e: UnsatisfiedLinkError) {
             Log.w(TAG, "DKLS native libs not available: ${e.message}")
@@ -36,12 +37,12 @@ object DklsNative {
     }
 
     fun helloDkgNative(): String {
-        check(loaded) { "libdklsmobile not loaded" }
+        check(loaded) { "libbbmtmobile not loaded" }
         return helloDkgJni()
     }
 
     private inline fun <T> loaded(block: () -> T): T {
-        check(loaded) { "libdklsmobile not loaded" }
+        check(loaded) { "libbbmtmobile not loaded" }
         return block()
     }
 
@@ -52,8 +53,10 @@ object DklsNative {
         server: String,
         chaincode: String,
         sessionKey: String,
+        encKey: String,
+        decKey: String,
     ): String = loaded {
-        unwrap(lanJoinKeygenJni(key, parties, session, server, chaincode, sessionKey))
+        unwrap(lanJoinKeygenJni(key, parties, session, server, chaincode, sessionKey, encKey, decKey))
     }
 
     fun nostrJoinKeygenNative(
@@ -138,12 +141,12 @@ object DklsNative {
     }
 
     fun cancelMpcSessionNative(sessionID: String): String {
-        check(loaded) { "libdklsmobile not loaded" }
+        check(loaded) { "libbbmtmobile not loaded" }
         return cancelMpcSessionJni(sessionID)
     }
 
     fun cancelNostrMpcNative(): String {
-        check(loaded) { "libdklsmobile not loaded" }
+        check(loaded) { "libbbmtmobile not loaded" }
         return cancelNostrMpcJni()
     }
 
@@ -155,6 +158,8 @@ object DklsNative {
         server: String,
         chaincode: String,
         sessionKey: String,
+        encKey: String,
+        decKey: String,
     ): String
     private external fun nostrJoinKeygenJni(
         relays: String,

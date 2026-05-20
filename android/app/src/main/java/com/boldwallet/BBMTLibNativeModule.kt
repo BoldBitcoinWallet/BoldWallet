@@ -1109,7 +1109,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 val result = if (DklsNative.ensureLoaded()) {
                     DklsNative.helloDkgNative()
                 } else {
-                    "DKLS: run BBMTLib/build-dkls.sh android and rebuild (libdklsmobile.so missing)"
+                    "DKLS: run BBMTLib/build-dkls.sh android and rebuild (libbbmtmobile.so missing)"
                 }
                 promise.resolve(result)
             } catch (e: Throwable) {
@@ -1125,6 +1125,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         partiesCSV: String,
         sessionID: String,
         sessionKey: String,
+        encKey: String,
+        decKey: String,
         chaincode: String,
         promise: Promise,
     ) {
@@ -1145,6 +1147,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     server,
                     chaincode,
                     sessionKey,
+                    encKey,
+                    decKey,
                 )
                 promise.resolve(result)
             } catch (e: Throwable) {
@@ -1168,7 +1172,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 if (!DklsNative.ensureLoaded()) {
                     promise.reject(
                         "DKLS_NATIVE_REQUIRED",
-                        "Run BBMTLib/build-dkls.sh android and rebuild the app (libdklsmobile missing)",
+                        "Run BBMTLib/build-dkls.sh android and rebuild the app (libbbmtmobile missing)",
                         null,
                     )
                     return@Thread

@@ -1,4 +1,6 @@
 import {
+  dklsKeygenPercent,
+  dklsKeysignPercent,
   getKeygenStepCount,
   getKeysignStepCount,
   mapMpcHookToPercent,
@@ -29,6 +31,36 @@ describe('getKeysignStepCount', () => {
   });
 });
 
+describe('dklsKeygenPercent', () => {
+  it('allocates prep steps 1–2 then ramps rounds (duo)', () => {
+    expect(dklsKeygenPercent(0, false)).toBe(0);
+    expect(dklsKeygenPercent(1, false)).toBe(10);
+    expect(dklsKeygenPercent(2, false)).toBe(20);
+    expect(dklsKeygenPercent(3, false)).toBe(27);
+    expect(dklsKeygenPercent(7, false)).toBe(56);
+    expect(dklsKeygenPercent(13, false)).toBe(99);
+    expect(dklsKeygenPercent(99, false)).toBe(100);
+  });
+
+  it('uses longer round span for trio', () => {
+    expect(dklsKeygenPercent(7, true)).toBe(41);
+    expect(dklsKeygenPercent(21, true)).toBe(99);
+  });
+});
+
+describe('dklsKeysignPercent', () => {
+  it('uses prep band then rounds within UTXO slice', () => {
+    const utxo: MpcProgressUtxoState = {
+      utxoCount: 2,
+      utxoIndex: 2,
+      utxoRange: 50,
+    };
+    expect(dklsKeysignPercent(1, utxo)).toBe(54);
+    expect(dklsKeysignPercent(3, utxo)).toBe(62);
+    expect(dklsKeysignPercent(12, utxo)).toBe(100);
+  });
+});
+
 describe('mapMpcHookToPercent', () => {
   describe('DKLs keygen', () => {
     it('maps early steps without hitting 100', () => {
@@ -45,14 +77,14 @@ describe('mapMpcHookToPercent', () => {
           'dkls23',
           {isTrio: false, utxo: emptyUtxo, currentProgress: 0},
         ).percent,
-      ).toBe(14);
+      ).toBe(20);
       expect(
         mapMpcHookToPercent(
           {type: 'keygen', step: 7},
           'dkls23',
           {isTrio: false, utxo: emptyUtxo, currentProgress: 0},
         ).percent,
-      ).toBe(50);
+      ).toBe(56);
     });
 
     it('treats sentinel step 99 as 100 without done flag', () => {
@@ -113,6 +145,21 @@ describe('mapMpcHookToPercent', () => {
       });
     });
 
+    it('bands keysign progress across two UTXOs for GG18', () => {
+      const utxo: MpcProgressUtxoState = {
+        utxoCount: 2,
+        utxoIndex: 2,
+        utxoRange: 50,
+      };
+      const r = mapMpcHookToPercent(
+        {type: 'keysign', step: 18},
+        'gg18',
+        {isTrio: false, utxo, currentProgress: 0},
+      );
+      // prgUTXO=50, + (50 * 18) / 36 = 75
+      expect(r.percent).toBe(75);
+    });
+
     it('bands keysign progress across two UTXOs for DKLs', () => {
       const utxo: MpcProgressUtxoState = {
         utxoCount: 2,
@@ -120,12 +167,11 @@ describe('mapMpcHookToPercent', () => {
         utxoRange: 50,
       };
       const r = mapMpcHookToPercent(
-        {type: 'keysign', step: 6},
+        {type: 'keysign', step: 8},
         'dkls23',
         {isTrio: false, utxo, currentProgress: 0},
       );
-      // prgUTXO=50, + (50 * 6) / 12 = 75
-      expect(r.percent).toBe(75);
+      expect(r.percent).toBe(83);
     });
   });
 

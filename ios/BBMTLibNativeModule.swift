@@ -708,7 +708,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
   @objc func dklsMpcTssSetup(
     _ server: String, partyID: String, partiesCSV: String, sessionID: String,
-    sessionKey: String, chaincode: String,
+    sessionKey: String, encKey: String, decKey: String, chaincode: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async { [weak self] in
@@ -721,7 +721,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
       }
       let output = BbmtBridge.lanJoinKeygen(
         withKey: partyID, parties: partiesCSV, session: sessionID, server: server,
-        chaincode: chaincode, sessionKey: sessionKey)
+        chaincode: chaincode, sessionKey: sessionKey, encKey: encKey, decKey: decKey)
       if output.hasPrefix("error:") {
         rejecter("DKLS_MPC_SETUP_ERROR", output, nil)
         return

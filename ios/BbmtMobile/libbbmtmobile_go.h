@@ -102,7 +102,7 @@ extern "C" {
 extern void BbmtFree(char* p);
 extern char* DklsHelloDkg(void);
 extern char* DklsVersion(void);
-extern char* DklsLanJoinKeygen(char* key, char* parties, char* session, char* server, char* chaincode, char* sessionKey);
+extern char* DklsLanJoinKeygen(char* key, char* parties, char* session, char* server, char* chaincode, char* sessionKey, char* encKey, char* decKey);
 extern char* DklsNostrJoinKeygen(char* relays, char* nsec, char* peers, char* session, char* sessionKey, char* chaincode);
 extern char* DklsNostrJoinKeysign(char* relays, char* nsec, char* peers, char* session, char* sessionKey, char* keyshare, char* message);
 extern char* DklsMpcSignPSBT(char* server, char* key, char* parties, char* session, char* sessionKey, char* encKey, char* decKey, char* keyshare, char* psbt);

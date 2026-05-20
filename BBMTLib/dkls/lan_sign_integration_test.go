@@ -23,7 +23,7 @@ func startTestRelay(t *testing.T, port string) {
 	time.Sleep(2 * time.Second)
 }
 
-func lanKeygenAll(t *testing.T, server, session, chaincode string, keys []string, partiesCSV string) map[string]string {
+func lanKeygenAll(t *testing.T, server, session, sessionKey, chaincode string, keys []string, partiesCSV string) map[string]string {
 	t.Helper()
 	type result struct {
 		key string
@@ -34,7 +34,7 @@ func lanKeygenAll(t *testing.T, server, session, chaincode string, keys []string
 	results := make(chan result, len(keys))
 	run := func(key string) {
 		defer wg.Done()
-		out, e := JoinKeygen(key, partiesCSV, session, server, chaincode, "")
+		out, e := JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey, "", "")
 		if e != nil {
 			errs <- e
 			return
@@ -70,7 +70,7 @@ func lanKeygenAll(t *testing.T, server, session, chaincode string, keys []string
 
 func lanKeysignAll(
 	t *testing.T,
-	server, session, partiesCSV string,
+	server, session, sessionKey, partiesCSV string,
 	keys []string,
 	keyshares []string,
 	sighashB64 string,
@@ -85,7 +85,7 @@ func lanKeysignAll(
 	run := func(key, ksJSON string) {
 		defer wg.Done()
 		out, e := JoinKeysignWithSighash(
-			server, key, partiesCSV, session, "", "", "", ksJSON, "", sighashB64,
+			server, key, partiesCSV, session, sessionKey, "", "", ksJSON, "", sighashB64,
 		)
 		if e != nil {
 			errs <- e
@@ -186,9 +186,10 @@ func TestLanKeysignDuo(t *testing.T) {
 	chaincode := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 	kgSession := "test-lan-kg-duo-sign"
+	sessionKey := testSessionHex(t, 32)
 	parties := "KeyShare1,KeyShare2"
 	keys := []string{"KeyShare1", "KeyShare2"}
-	shareByKey := lanKeygenAll(t, server, kgSession, chaincode, keys, parties)
+	shareByKey := lanKeygenAll(t, server, kgSession, sessionKey, chaincode, keys, parties)
 	keyshares := []string{shareByKey["KeyShare1"], shareByKey["KeyShare2"]}
 
 	msg := []byte("bitcoin-lan-sign-duo")
@@ -196,7 +197,7 @@ func TestLanKeysignDuo(t *testing.T) {
 	sighashB64 := base64.StdEncoding.EncodeToString(hash)
 
 	signSession := "test-lan-sign-duo"
-	sigJSON := lanKeysignAll(t, server, signSession, parties, keys, keyshares, sighashB64)
+	sigJSON := lanKeysignAll(t, server, signSession, sessionKey, parties, keys, keyshares, sighashB64)
 	verifyLanKeysignResult(t, keyshares[0], sigJSON, msg)
 }
 
@@ -208,9 +209,10 @@ func TestLanKeysignTrioSubset(t *testing.T) {
 	chaincode := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 	kgSession := "test-lan-kg-trio-sign"
+	sessionKey := testSessionHex(t, 32)
 	allParties := "KeyShare1,KeyShare2,KeyShare3"
 	allKeys := []string{"KeyShare1", "KeyShare2", "KeyShare3"}
-	shareByKey := lanKeygenAll(t, server, kgSession, chaincode, allKeys, allParties)
+	shareByKey := lanKeygenAll(t, server, kgSession, sessionKey, chaincode, allKeys, allParties)
 
 	msg := []byte("bitcoin-lan-sign-trio")
 	hash := HashMessageForDKLs(msg)
@@ -221,6 +223,6 @@ func TestLanKeysignTrioSubset(t *testing.T) {
 	signShares := []string{shareByKey["KeyShare1"], shareByKey["KeyShare3"]}
 
 	signSession := "test-lan-sign-trio"
-	sigJSON := lanKeysignAll(t, server, signSession, signParties, signKeys, signShares, sighashB64)
+	sigJSON := lanKeysignAll(t, server, signSession, sessionKey, signParties, signKeys, signShares, sighashB64)
 	verifyLanKeysignResult(t, signShares[0], sigJSON, msg)
 }

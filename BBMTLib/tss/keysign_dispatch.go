@@ -3,11 +3,14 @@ package tss
 import "encoding/json"
 
 type keyshareBackendProbe struct {
-	TssBackend string `json:"tss_backend"`
-	ShareB64   string `json:"share_b64"`
+	TssBackend       string          `json:"tss_backend"`
+	ShareB64         string          `json:"share_b64"`
+	EcdsaLocalData   json.RawMessage `json:"ecdsa_local_data"`
 }
 
 // IsDKLsKeyshareJSON reports whether the keyshare should use DKLs23 signing.
+// Matches TS detectKeyshareTssBackend: explicit backend wins; GG18 ecdsa_local_data
+// takes precedence over share_b64 when tss_backend is absent.
 func IsDKLsKeyshareJSON(keyshareJSON string) bool {
 	var p keyshareBackendProbe
 	if err := json.Unmarshal([]byte(keyshareJSON), &p); err != nil {
@@ -16,10 +19,24 @@ func IsDKLsKeyshareJSON(keyshareJSON string) bool {
 	if p.TssBackend == "dkls23" {
 		return true
 	}
-	if p.TssBackend == "" && p.ShareB64 != "" {
+	if p.TssBackend == "gg18" {
+		return false
+	}
+	if hasEcdsaLocalData(p.EcdsaLocalData) {
+		return false
+	}
+	if p.ShareB64 != "" {
 		return true
 	}
 	return false
+}
+
+func hasEcdsaLocalData(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	s := string(raw)
+	return s != "null" && s != "false" && s != `""`
 }
 
 type nostrKeysignSighashFunc func(

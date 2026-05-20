@@ -52,13 +52,18 @@ func lanPrepareKeysignProgress(server, session, key string, parties []string) er
 }
 
 // JoinKeygen performs LAN DKG via HTTP relay (duo 2-of-2 or trio 2-of-3).
-func JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey string) (result string, err error) {
+func JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey, encKey, decKey string) (result string, err error) {
+	defer tss.ClearLANTransportKeys()
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("internal error (panic): %v", r)
 			debug.PrintStack()
 		}
 	}()
+
+	if err := tss.ConfigureLANTransportKeys(sessionKey, encKey, decKey); err != nil {
+		return "", err
+	}
 
 	parties := splitCSV(partiesCSV)
 	threshold, err := ThresholdFromPartyCount(len(parties))
@@ -279,7 +284,12 @@ func runDKGWithSender(
 }
 
 // JoinKeysign performs LAN DKLs23 signing and returns signature JSON.
-func JoinKeysign(server, key, partiesCSV, session, sessionKey, keyshareJSON, message string) (string, error) {
+func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshareJSON, message string) (string, error) {
+	defer tss.ClearLANTransportKeys()
+	if err := tss.ConfigureLANTransportKeys(sessionKey, encKey, decKey); err != nil {
+		return "", err
+	}
+
 	share, ks, err := ImportKeyshare(keyshareJSON)
 	if err != nil {
 		return "", err

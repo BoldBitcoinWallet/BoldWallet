@@ -64,6 +64,7 @@ import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {waitMS, WalletService} from '../services/WalletService';
 import {
+  resolveHookProgressBackend,
   resolveTssBackend,
   resolveTssBackendForKeygen,
   type SetupMode,
@@ -1202,9 +1203,15 @@ const MobilesPairing = ({navigation}: any) => {
   useEffect(() => {
     let subscription: EmitterSubscription | undefined;
     const logEmitter = new NativeEventEmitter(BBMTLibNativeModule);
-    const backend: TssBackend =
-      spendBackend ?? keygenBackend ?? 'dkls23';
+    const backend = resolveHookProgressBackend({
+      isSpendFlow: isSendBitcoin || isSignPSBT,
+      spendBackend,
+      keygenBackend,
+    });
     const processHook = (message: string) => {
+      if (!backend) {
+        return;
+      }
       let msg: MpcHookMessage;
       try {
         msg = JSON.parse(message) as MpcHookMessage;

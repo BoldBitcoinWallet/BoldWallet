@@ -17,7 +17,9 @@ NS_ASSUME_NONNULL_BEGIN
                           session:(NSString *)session
                            server:(NSString *)server
                         chaincode:(NSString *)chaincode
-                       sessionKey:(NSString *)sessionKey;
+                       sessionKey:(NSString *)sessionKey
+                           encKey:(NSString *)encKey
+                           decKey:(NSString *)decKey;
 + (NSString *)nostrJoinKeygenWithRelays:(NSString *)relays
                                   nsec:(NSString *)nsec
                                  peers:(NSString *)peers

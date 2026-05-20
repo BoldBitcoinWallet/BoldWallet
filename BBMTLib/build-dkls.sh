@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Build libdklsmobile (Go c-shared + libtss-ffi) for host and Android ABIs.
+# Build libbbmtmobile (Go c-shared + libtss-ffi) for host and Android ABIs.
+# Android: unified bbmtmobile package (Dkls* JNI only; GG18 stays on gomobile tss.aar).
+# iOS: c-archive xcframework (Bbmt* + Dkls* via BbmtBridge).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -57,9 +59,9 @@ build_host() {
   else
     export CGO_LDFLAGS="${CGO_LDFLAGS} -ldl -lpthread"
   fi
-  info "Building dklsmobile for host..."
-  go build -buildmode=c-shared -o bin/libdklsmobile ./dklsmobile/
-  cp -f bin/libdklsmobile.h "${CPP_DIR}/libdklsmobile.h" 2>/dev/null || true
+  info "Building bbmtmobile for host..."
+  go build -buildmode=c-shared -o bin/libbbmtmobile ./bbmtmobile/
+  cp -f bin/libbbmtmobile.h "${CPP_DIR}/libbbmtmobile.h" 2>/dev/null || true
   info "Host smoke test..."
   go test -count=1 -run TestHelloDkg ./dkls/
 }
@@ -98,8 +100,9 @@ build_android_abi() {
     return 1
   fi
 
-  info "Building dklsmobile for Android ${abi}..."
+  info "Building bbmtmobile for Android ${abi}..."
   mkdir -p "${JNI_OUT}/${abi}"
+  rm -f "${JNI_OUT}/${abi}/libdklsmobile.so"
   export GOOS=android
   export GOARCH="${goarch}"
   if [ -n "${goarm}" ]; then
@@ -113,13 +116,13 @@ build_android_abi() {
   # libtss-go #cgo android only adds -lm -llog; path to static FFI comes from here.
   export CGO_LDFLAGS="-L${ffi_dir} -l:liblibtss_ffi.a -lm -llog -landroid"
 
-  go build -buildmode=c-shared -ldflags="-s -w" -o "${JNI_OUT}/${abi}/libdklsmobile.so" ./dklsmobile/
+  go build -buildmode=c-shared -ldflags="-s -w" -o "${JNI_OUT}/${abi}/libbbmtmobile.so" ./bbmtmobile/
 
-  if [ ! -f "${JNI_OUT}/${abi}/libdklsmobile.so" ]; then
+  if [ ! -f "${JNI_OUT}/${abi}/libbbmtmobile.so" ]; then
     warn "Build failed for ${abi}"
     return 1
   fi
-  info "  -> ${JNI_OUT}/${abi}/libdklsmobile.so"
+  info "  -> ${JNI_OUT}/${abi}/libbbmtmobile.so"
 }
 
 build_android_jni_abi() {
@@ -137,9 +140,9 @@ build_android_jni_abi() {
     return 1
   fi
 
-  local dkls_so="${JNI_OUT}/${abi}/libdklsmobile.so"
-  if [ ! -f "${dkls_so}" ]; then
-    warn "Skip dkls_jni for ${abi}: missing libdklsmobile.so"
+  local bbmt_so="${JNI_OUT}/${abi}/libbbmtmobile.so"
+  if [ ! -f "${bbmt_so}" ]; then
+    warn "Skip dkls_jni for ${abi}: missing libbbmtmobile.so"
     return 1
   fi
 
@@ -154,7 +157,7 @@ build_android_jni_abi() {
   "${cxx}" -shared -fPIC -O2 \
     -I"${CPP_DIR}" \
     "${CPP_DIR}/dkls_jni.cpp" \
-    -L"${JNI_OUT}/${abi}" -ldklsmobile \
+    -L"${JNI_OUT}/${abi}" -lbbmtmobile \
     -llog -landroid \
     -Wl,-z,max-page-size=0x4000 \
     -o "${out}"
@@ -176,8 +179,8 @@ build_android() {
   fi
 
   for abi in arm64-v8a armeabi-v7a x86_64; do
-    if [ -f "${JNI_OUT}/${abi}/libdklsmobile.h" ]; then
-      cp -f "${JNI_OUT}/${abi}/libdklsmobile.h" "${CPP_DIR}/libdklsmobile.h"
+    if [ -f "${JNI_OUT}/${abi}/libbbmtmobile.h" ]; then
+      cp -f "${JNI_OUT}/${abi}/libbbmtmobile.h" "${CPP_DIR}/libbbmtmobile.h"
       break
     fi
   done

@@ -31,22 +31,29 @@ Java_com_boldwallet_DklsNative_lanJoinKeygenJni(
     jstring session,
     jstring server,
     jstring chaincode,
-    jstring sessionKey) {
+    jstring sessionKey,
+    jstring encKey,
+    jstring decKey) {
   const char *k = env->GetStringUTFChars(key, nullptr);
   const char *p = env->GetStringUTFChars(parties, nullptr);
   const char *s = env->GetStringUTFChars(session, nullptr);
   const char *sv = env->GetStringUTFChars(server, nullptr);
   const char *c = env->GetStringUTFChars(chaincode, nullptr);
   const char *sk = env->GetStringUTFChars(sessionKey, nullptr);
+  const char *ek = env->GetStringUTFChars(encKey, nullptr);
+  const char *dk = env->GetStringUTFChars(decKey, nullptr);
   char *out = DklsLanJoinKeygen(
       const_cast<char *>(k), const_cast<char *>(p), const_cast<char *>(s),
-      const_cast<char *>(sv), const_cast<char *>(c), const_cast<char *>(sk));
+      const_cast<char *>(sv), const_cast<char *>(c), const_cast<char *>(sk),
+      const_cast<char *>(ek), const_cast<char *>(dk));
   env->ReleaseStringUTFChars(key, k);
   env->ReleaseStringUTFChars(parties, p);
   env->ReleaseStringUTFChars(session, s);
   env->ReleaseStringUTFChars(server, sv);
   env->ReleaseStringUTFChars(chaincode, c);
   env->ReleaseStringUTFChars(sessionKey, sk);
+  env->ReleaseStringUTFChars(encKey, ek);
+  env->ReleaseStringUTFChars(decKey, dk);
   return to_jstring(env, out);
 }
 
