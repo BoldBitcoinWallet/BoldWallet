@@ -39,6 +39,17 @@ import {estimateFee, type FeeStrategy} from '../services/feeUtils';
 import {formatFeeEstimationError} from '../services/feeErrorMessages';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 const {BBMTLibNativeModule} = NativeModules;
+
+const SEND_BITCOIN_VIDEO_GUIDE_URL =
+  'https://x.com/boldbtcwallet/status/1988332367489237160';
+
+const openSendBitcoinVideoGuide = () => {
+  Linking.openURL(SEND_BITCOIN_VIDEO_GUIDE_URL).catch(err => {
+    Alert.alert('Error', 'Unable to open the video link');
+    dbg('Error opening Send Bitcoin video guide URL:', err);
+  });
+};
+
 interface SendBitcoinModalProps {
   visible: boolean;
   onClose: () => void;
@@ -180,17 +191,17 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       color: theme.colors.text,
       flex: 1,
     },
-    closeButton: {
-      width: 30,
-      height: 30,
+    helpButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
-    closeButtonText: {
-      fontSize: theme.fontSizes?.lg || 16,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.text,
-      textAlign: 'center',
-      verticalAlign: 'middle',
-      lineHeight: 30,
+    helpIcon: {
+      width: 22,
+      height: 22,
+      opacity: 0.9,
     },
     input: {
       borderWidth: 1.5,
@@ -402,33 +413,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     },
     disabledButton: {
       opacity: 0.5,
-    },
-    // Setup Guide Hint Styles
-    setupGuideHint: {
-      marginTop: 8,
-      alignItems: 'center',
-    },
-    setupGuideHintTouchable: {
-      paddingVertical: 6,
-      paddingHorizontal: 10,
-      borderRadius: 8,
-    },
-    setupGuideHintRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-    },
-    setupGuideHintIcon: {
-      width: 16,
-      height: 16,
-      tintColor: theme.colors.text, // Use text color for better dark mode visibility
-    },
-    setupGuideHintText: {
-      fontSize: theme.fontSizes?.sm || 12,
-      fontFamily: theme.fontFamilies?.medium,
-      color: theme.colors.text, // Use text color for better dark mode readability
-      textDecorationLine: 'underline',
-      textDecorationColor: theme.colors.text + '80',
     },
   });
   const currentNetworkForValidation =
@@ -1036,10 +1020,19 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     <AppText style={styles.title}>Send Bitcoin</AppText>
                   </View>
                   <AppPressable
-                    onPress={onClose}
-                    style={styles.closeButton}
+                    onPress={openSendBitcoinVideoGuide}
+                    style={styles.helpButton}
+                    accessibilityRole="button"
+                    accessibilityLabel="Send Bitcoin video guide"
                     android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                    <Text style={styles.closeButtonText}>✖️</Text>
+                    <Image
+                      source={require('../assets/info-icon.png')}
+                      style={[
+                        styles.helpIcon,
+                        {tintColor: theme.colors.text},
+                      ]}
+                      resizeMode="contain"
+                    />
                   </AppPressable>
                 </View>
                 <ScrollView
@@ -1156,31 +1149,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     />
                   </View>
                   {renderFeeSection()}
-                  {/* Setup Guide Hint */}
-                  <View style={styles.setupGuideHint}>
-                    <AppPressable
-                      style={styles.setupGuideHintTouchable}
-                      onPress={() => {
-                        const url =
-                          'https://x.com/boldbtcwallet/status/1988332367489237160';
-                        Linking.openURL(url).catch(err => {
-                          Alert.alert('Error', 'Unable to open the video link');
-                          dbg('Error opening URL:', err);
-                        });
-                      }}
-                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                      <View style={styles.setupGuideHintRow}>
-                        <Image
-                          source={require('../assets/start-icon.png')}
-                          style={styles.setupGuideHintIcon}
-                          resizeMode="contain"
-                        />
-                        <AppText style={styles.setupGuideHintText}>
-                          🎥 Watch Send Bitcoin video guide →
-                        </AppText>
-                      </View>
-                    </AppPressable>
-                  </View>
                   <View style={styles.sendCancelButtons}>
                     <AppPressable
                       style={[

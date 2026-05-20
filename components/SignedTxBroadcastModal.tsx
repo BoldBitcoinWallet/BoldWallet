@@ -1,10 +1,9 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {
   Modal,
   View,
   Text,
   Image,
-  ActivityIndicator,
   Alert,
   StyleSheet,
 } from 'react-native';
@@ -31,6 +30,23 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
 }) => {
   const {theme} = useTheme();
   const [broadcasting, setBroadcasting] = useState(false);
+  const [broadcastDots, setBroadcastDots] = useState(0);
+
+  useEffect(() => {
+    if (!broadcasting) {
+      setBroadcastDots(0);
+      return;
+    }
+    const id = setInterval(() => {
+      setBroadcastDots(d => (d + 1) % 4);
+    }, 400);
+    return () => clearInterval(id);
+  }, [broadcasting]);
+
+  const broadcastLabel =
+    broadcasting
+      ? `Broadcasting${'.'.repeat(broadcastDots)}`
+      : 'Broadcast';
 
   const handleCopy = () => {
     Clipboard.setString(rawTxHex);
@@ -87,7 +103,7 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={onClose}>
+      onRequestClose={broadcasting ? undefined : onClose}>
       <View
         style={[
           styles.backdrop,
@@ -112,8 +128,9 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
             <AppPressable
               accessibilityRole="button"
               accessibilityLabel="Close"
-              style={styles.closeButton}
-              onPress={onClose}>
+              style={[styles.closeButton, broadcasting && styles.disabledControl]}
+              onPress={onClose}
+              disabled={broadcasting}>
               <Text
                 style={[styles.closeButtonText, {color: theme.colors.text}]}>
                 ×
@@ -130,6 +147,7 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
             <AppPressable
               style={[
                 styles.actionButton,
+                broadcasting && styles.disabledControl,
                 {
                   backgroundColor:
                     theme.colors.background === '#ffffff'
@@ -156,6 +174,7 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
             <AppPressable
               style={[
                 styles.actionButton,
+                broadcasting && styles.disabledControl,
                 {
                   backgroundColor:
                     theme.colors.background === '#ffffff'
@@ -183,6 +202,7 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
               style={[
                 styles.actionButton,
                 styles.broadcastButton,
+                broadcasting && styles.broadcastButtonBusy,
                 {
                   backgroundColor:
                     theme.colors.background === '#ffffff'
@@ -191,9 +211,17 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
                 },
               ]}
               onPress={handleBroadcast}
-              disabled={broadcasting}>
+              disabled={broadcasting}
+              accessibilityState={{busy: broadcasting, disabled: broadcasting}}
+              accessibilityLabel={broadcastLabel}>
               {broadcasting ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <Text
+                  style={[styles.broadcastBusyText, {color: theme.colors.white}]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}>
+                  {broadcastLabel}
+                </Text>
               ) : (
                 <>
                   <Image
@@ -203,7 +231,7 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
                   />
                   <Text
                     style={[styles.actionText, {color: theme.colors.white}]}>
-                    Broadcast
+                    {broadcastLabel}
                   </Text>
                 </>
               )}
@@ -283,6 +311,17 @@ const styles = StyleSheet.create({
   },
   broadcastButton: {
     borderWidth: 0,
+  },
+  broadcastButtonBusy: {
+    opacity: 0.92,
+  },
+  broadcastBusyText: {
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  disabledControl: {
+    opacity: 0.45,
   },
   actionIcon: {
     width: 22,
