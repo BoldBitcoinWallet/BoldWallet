@@ -9,32 +9,11 @@ import (
 	"github.com/BoldBitcoinWallet/BBMTLib/tss"
 )
 
-// derivationPathForLibtss converts app BIP32 paths (m/84'/1'/0'/0/0) to libtss form (m/84/1/0/0/0).
-// The wallet derives pubkeys from the MPC group key using non-hardened indices only; libtss rejects hardened markers.
-func derivationPathForLibtss(derivationPath string) (string, error) {
-	path := strings.TrimSpace(derivationPath)
-	if path == "" {
-		return "", nil
-	}
-	indices, err := tss.GetDerivePathBytes(path)
-	if err != nil {
-		return "", err
-	}
-	if len(indices) == 0 {
-		return "", fmt.Errorf("empty derivation path %q", derivationPath)
-	}
-	parts := make([]string, len(indices))
-	for i, idx := range indices {
-		parts[i] = fmt.Sprintf("%d", idx)
-	}
-	return "m/" + strings.Join(parts, "/"), nil
-}
-
 // deriveShareForSigning returns a child key share for the BIP32 path used by the UTXO.
 // chainCodeHex must match keyshare chain_code_hex (wallet HD root), not the DKG-internal chain code.
 // Caller must Free() the returned handle when it differs from the parent share.
 func deriveShareForSigning(share *libtss.KeyShareHandle, derivationPath, chainCodeHex string) (*libtss.KeyShareHandle, error) {
-	libPath, err := derivationPathForLibtss(derivationPath)
+	libPath, err := tss.DerivationPathForLibtss(derivationPath)
 	if err != nil {
 		return nil, err
 	}

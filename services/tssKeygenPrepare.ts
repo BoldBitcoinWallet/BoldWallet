@@ -34,16 +34,7 @@ export function getPrepareModalCopy(backend: TssBackend): PrepareModalCopy {
   };
 }
 
-/** Keygen progress denominator for the native progress hook (type=keygen). */
-export function getKeygenStepCount(
-  backend: TssBackend,
-  isTrio: boolean,
-): number {
-  if (backend === 'dkls23') {
-    return isTrio ? 22 : 14;
-  }
-  return isTrio ? 29 : 18;
-}
+export {getKeygenStepCount} from './mpcProgress';
 
 async function deletePreparamsFile(ppmFile: string): Promise<void> {
   try {

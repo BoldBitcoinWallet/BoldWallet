@@ -567,6 +567,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
     resolve("getOutputDescriptor", output, error, resolver)
   }
 
+  @objc func appendOutputDescriptorChecksum(
+    _ descriptorBody: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    var error: NSError?
+    let output = TssAppendOutputDescriptorChecksum(descriptorBody, &error)
+    resolve("appendOutputDescriptorChecksum", output, error, resolver)
+  }
+
   @objc func btcAddress(
     _ compressedPubkey: String, network: String, addressType: String, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock

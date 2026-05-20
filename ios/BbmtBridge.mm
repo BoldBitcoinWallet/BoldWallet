@@ -165,6 +165,11 @@ BBMT_DKLS_6(lanJoinKeygenWithKey, DklsLanJoinKeygen, key, parties, session, serv
   NSString *out = wrap(BbmtGetOutputDescriptor(k0, k1, k2, k3));
   free(k0); free(k1); free(k2); free(k3); return out;
 }
++ (NSString *)appendOutputDescriptorChecksum:(NSString *)descriptorBody {
+  char *k0=dupC(descriptorBody);
+  NSString *out = wrap(BbmtAppendOutputDescriptorChecksum(k0));
+  free(k0); return out;
+}
 + (NSString *)pubToP2WPKH:(NSString *)pub network:(NSString *)network {
   char *k0=dupC(pub); char *k1=dupC(network);
   NSString *out = wrap(BbmtPubToP2WPKH(k0, k1));

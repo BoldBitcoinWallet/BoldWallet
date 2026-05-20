@@ -111,6 +111,11 @@ func BbmtGetOutputDescriptor(hexPub, hexChain, network, addressType *C.char) *C.
 	return cString(tss.GetOutputDescriptor(goStr(hexPub), goStr(hexChain), goStr(network), goStr(addressType)))
 }
 
+//export BbmtAppendOutputDescriptorChecksum
+func BbmtAppendOutputDescriptorChecksum(descriptor *C.char) *C.char {
+	return cString(tss.AddDescriptorChecksum(goStr(descriptor)))
+}
+
 //export BbmtPubToP2WPKH
 func BbmtPubToP2WPKH(pub, network *C.char) *C.char {
 	return cString(tss.PubToP2WPKH(goStr(pub), goStr(network)))

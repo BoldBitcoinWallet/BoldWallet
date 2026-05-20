@@ -307,15 +307,15 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
     subtitle: {
       fontSize: theme.fontSizes?.base || 14,
       color: theme.colors.textSecondary,
-      marginBottom: 24,
+      marginBottom: 12,
       textAlign: 'center',
     },
     qrContainer: {
       alignItems: 'center',
-      marginBottom: 24,
+      marginBottom: 10,
       backgroundColor: 'white',
-      padding: 8,
-      borderRadius: 8,
+      padding: 6,
+      borderRadius: 6,
     },
     qrCode: {
       marginBottom: 12,

@@ -92,6 +92,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSString *)getDerivedPubKey:(NSString *)hexPub hexChain:(NSString *)hexChain path:(NSString *)path isEdDSA:(BOOL)isEdDSA;
 + (NSString *)encodeXpub:(NSString *)hexPub hexChain:(NSString *)hexChain network:(NSString *)network;
 + (NSString *)getOutputDescriptor:(NSString *)hexPub hexChain:(NSString *)hexChain network:(NSString *)network addressType:(NSString *)addressType;
++ (NSString *)appendOutputDescriptorChecksum:(NSString *)descriptorBody;
 + (NSString *)pubToP2WPKH:(NSString *)pub network:(NSString *)network;
 + (NSString *)pubToP2SHP2WKH:(NSString *)pub network:(NSString *)network;
 + (NSString *)pubToP2TR:(NSString *)pub network:(NSString *)network;

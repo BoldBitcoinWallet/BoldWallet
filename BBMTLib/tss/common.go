@@ -19,6 +19,7 @@ import (
 	"github.com/bnb-chain/tss-lib/v2/crypto/ckd"
 	"github.com/bnb-chain/tss-lib/v2/tss"
 	"github.com/btcsuite/btcd/btcec/v2"
+	btcecdsa "github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/decred/dcrd/dcrec/edwards/v2"
@@ -349,11 +350,48 @@ func GetDerivePathBytes(derivePath string) ([]uint32, error) {
 	return pathBuf, nil
 }
 
+// DerivationPathForLibtss converts wallet/PSBT paths (m/84'/1'/0'/0/0) to libtss form (m/84/1/0/0/0).
+// Pubkey derivation from the MPC group key uses non-hardened indices; libtss rejects hardened markers.
+func DerivationPathForLibtss(derivationPath string) (string, error) {
+	path := strings.TrimSpace(derivationPath)
+	if path == "" {
+		return "", nil
+	}
+	indices, err := GetDerivePathBytes(path)
+	if err != nil {
+		return "", err
+	}
+	if len(indices) == 0 {
+		return "", fmt.Errorf("empty derivation path %q", derivationPath)
+	}
+	parts := make([]string, len(indices))
+	for i, idx := range indices {
+		parts[i] = fmt.Sprintf("%d", idx)
+	}
+	return "m/" + strings.Join(parts, "/"), nil
+}
+
 func GetDERSignature(r, s *big.Int) ([]byte, error) {
-	return asn1.Marshal(ecdsaSignature{
+	der, err := asn1.Marshal(ecdsaSignature{
 		R: r,
 		S: s,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return CanonicalizeDERSignature(der)
+}
+
+// CanonicalizeDERSignature returns BIP-143/Bitcoin-standard low-S DER encoding.
+func CanonicalizeDERSignature(der []byte) ([]byte, error) {
+	if len(der) == 0 {
+		return nil, fmt.Errorf("empty DER signature")
+	}
+	sig, err := btcecdsa.ParseDERSignature(der)
+	if err != nil {
+		return nil, fmt.Errorf("parse DER signature: %w", err)
+	}
+	return sig.Serialize(), nil
 }
 
 func hexToBytes(s string) []byte {
@@ -397,7 +435,7 @@ func SecureRandom(length int) (string, error) {
 // hexChainCode: master chain code in hex (32 bytes / 64 chars)
 // network: "mainnet" or "testnet3"
 // addressType: "legacy", "segwit-native", or "segwit-compatible"
-// Returns: output descriptor string (pkh for legacy, wpkh for segwit-native, sh(wpkh) for segwit-compatible)
+// Returns: checksummed output descriptor (pkh / wpkh / sh(wpkh) with #suffix per BIP 380)
 func GetOutputDescriptor(hexPubKey, hexChainCode, network, addressType string) (result string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -543,5 +581,5 @@ func GetOutputDescriptor(hexPubKey, hexChainCode, network, addressType string) (
 		descriptor = fmt.Sprintf("pkh([%s/44'/%s/0']%s/0/*)", fingerprint, coinTypeStr, xpub)
 	}
 
-	return descriptor, nil
+	return AddDescriptorChecksum(descriptor)
 }

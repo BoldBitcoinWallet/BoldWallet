@@ -35,7 +35,7 @@ var (
 	dklsLanKeysignSighash   lanKeysignSighashFunc
 )
 
-// RegisterDKLsKeysignHandlers wires DKLs23 keysign for Bitcoin send/PSBT helpers in this package.
+// RegisterDKLsKeysignHandlers wires DKLs23 keysign for Bitcoin send and PSBT signing in this package.
 func RegisterDKLsKeysignHandlers(nostr nostrKeysignSighashFunc, lan lanKeysignSighashFunc) {
 	dklsNostrKeysignSighash = nostr
 	dklsLanKeysignSighash = lan

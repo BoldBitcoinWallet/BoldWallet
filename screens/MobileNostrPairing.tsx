@@ -50,18 +50,28 @@ import {
   resolveUseLegacyDerivationPaths,
   detectKeyshareTssBackend,
 } from '../utils';
-import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {
+  normalizeNetworkKey,
+  resolveStoredMempoolApiBase,
+} from '../services/mempoolApiBase';
+import {prepareSendBtcMultiPathInputs} from '../services/sendBtcPrepare';
+import {
+  resolveTssBackend,
   resolveTssBackendForKeygen,
   type SetupMode,
   type TssBackend,
 } from '../services/tssBackend';
 import {TssProvider} from '../services/TssProvider';
 import {
-  getKeygenStepCount,
   getPrepareModalCopy,
   prepareDeviceForKeygen,
 } from '../services/tssKeygenPrepare';
+import {
+  mapMpcHookToPercent,
+  resetMpcHookSession,
+  type MpcHookMessage,
+  type MpcProgressUtxoState,
+} from '../services/mpcProgress';
 import TssBackendBadge from '../components/TssBackendBadge';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
@@ -319,6 +329,7 @@ const MobileNostrPairing = ({navigation}: any) => {
   const keygenSetupMode: SetupMode | undefined =
     setupMode === 'duo' || setupMode === 'trio' ? setupMode : undefined;
   const [keygenBackend, setKeygenBackend] = useState<TssBackend | null>(null);
+  const [spendBackend, setSpendBackend] = useState<TssBackend | null>(null);
   const prepareCopy = getPrepareModalCopy(keygenBackend ?? 'dkls23');
   // In send mode, determine isTrio from keyshare (3 devices = trio, 2 devices = duo)
   // In keygen mode, use setupMode
@@ -340,6 +351,13 @@ const MobileNostrPairing = ({navigation}: any) => {
       resolveTssBackendForKeygen(keygenSetupMode).then(setKeygenBackend);
     }
   }, [keygenSetupMode]);
+
+  useEffect(() => {
+    if (isSendBitcoin || isSignPSBT) {
+      resolveTssBackend().then(setSpendBackend);
+    }
+  }, [isSendBitcoin, isSignPSBT]);
+
   // Nostr Identity
   const [localNsec, setLocalNsec] = useState<string>('');
   const [localNpub, setLocalNpub] = useState<string>('');
@@ -372,6 +390,12 @@ const MobileNostrPairing = ({navigation}: any) => {
   const [chaincode, setChaincode] = useState<string>('');
   // Progress
   const [progress, setProgress] = useState(0);
+  const mpcHookProgressRef = useRef(0);
+  const mpcUtxoRef = useRef<MpcProgressUtxoState>({
+    utxoIndex: 0,
+    utxoCount: 0,
+    utxoRange: 0,
+  });
   const [status, setStatus] = useState('');
   const [isPairing, setIsPairing] = useState(false);
   const [isKeygenReady, setIsKeygenReady] = useState(false); // Manual toggle for "other devices ready"
@@ -538,7 +562,9 @@ const MobileNostrPairing = ({navigation}: any) => {
     let cancelled = false;
     const load = async () => {
       setTxPreviewLoading(true);
-      const net = (route.params?.network || 'mainnet').trim();
+      const net = normalizeNetworkKey(
+        (route.params?.network || 'mainnet').trim(),
+      );
       const addrType = (route.params?.addressType || 'segwit-native').trim();
       try {
         // When QR carries UTXOs, use them directly — no re-fetch needed.
@@ -831,82 +857,49 @@ const MobileNostrPairing = ({navigation}: any) => {
   // Listen to native module events for progress tracking
   useEffect(() => {
     const eventEmitter = new NativeEventEmitter(BBMTLibNativeModule);
-    const keygenSteps = getKeygenStepCount(keygenBackend ?? 'dkls23', isTrio);
-    const keysignSteps = 36;
-    let utxoRange = 0;
-    let utxoIndex = 0;
-    let utxoCount = 0;
+    const backend: TssBackend =
+      spendBackend ?? keygenBackend ?? 'dkls23';
     const processHook = (message: string) => {
       try {
-        const msg = JSON.parse(message);
-        if (msg.type === 'keygen') {
-          if (msg.done) {
-            dbg('progress - keygen done');
-            setProgress(100);
-            setMpcDone(true);
-            // Don't navigate away, let the backup UI handle it
-          } else {
-            dbg(
-              'progress - keygen: ',
-              Math.round((100 * msg.step) / keygenSteps),
-              'step',
-              msg.step,
-              'time',
-              new Date(msg.time),
-            );
-            setProgress(Math.round((100 * msg.step) / keygenSteps));
-            dbg('keygen_hook_info:', msg.info);
-          }
-        } else if (msg.type === 'btc_send') {
-          if (msg.done) {
-            setProgress(100);
-          }
-          if (msg.utxo_total > 0) {
-            utxoCount = msg.utxo_total;
-            utxoIndex = msg.utxo_current;
-            utxoRange = 100 / utxoCount;
-            dbg('progress send_btc', {
-              utxoCount,
-              utxoIndex,
-              utxoRange,
-            });
-          }
-          dbg('btc_send_hook_info:', msg.info);
-        } else if (msg.type === 'keysign') {
-          const prgUTXO = (utxoIndex - 1) * utxoRange;
-          const progressValue =
-            utxoCount > 0
-              ? Math.round(prgUTXO + (utxoRange * msg.step) / keysignSteps)
-              : Math.round((100 * msg.step) / keysignSteps);
+        const msg = JSON.parse(message) as MpcHookMessage;
+        const result = mapMpcHookToPercent(msg, backend, {
+          isTrio,
+          utxo: mpcUtxoRef.current,
+          currentProgress: mpcHookProgressRef.current,
+        });
+        if (result.utxoState) {
+          mpcUtxoRef.current = result.utxoState;
+          dbg('progress send_btc', result.utxoState);
+        }
+        if (result.percent !== null) {
+          mpcHookProgressRef.current = result.percent;
           dbg(
-            'progress - keysign: ',
-            progressValue,
-            'prgUTXO',
-            prgUTXO,
+            'progress',
+            msg.type,
+            result.percent,
             'step',
             msg.step,
-            'range',
-            utxoRange,
-            'time',
-            new Date(msg.time),
+            'done',
+            msg.done,
           );
-          dbg('keysign_hook_info:', msg.info);
-          if (progressValue > 0) {
-            setProgress(progressValue);
-          }
-          if (progressValue > 100) {
-            setProgress(100);
-          }
-          if (msg.done) {
-            utxoIndex = 0;
-            utxoCount = 0;
-            utxoRange = 0;
-            setProgress(100);
-            setMpcDone(true);
-          }
+          setProgress(result.percent);
         }
+        if (result.mpcDone) {
+          setMpcDone(true);
+        }
+        if (msg.type === 'keygen' && msg.info) {
+          dbg('keygen_hook_info:', msg.info);
+        }
+        if (msg.type === 'keysign' && msg.info) {
+          dbg('keysign_hook_info:', msg.info);
+        }
+        if (msg.type === 'btc_send' && msg.info) {
+          dbg('btc_send_hook_info:', msg.info);
+        }
+        const step = msg.step ?? 0;
         const statusDot =
-          msg.step % 3 === 0 ? '.' : msg.step % 3 === 1 ? '..' : '...';
+          step % 3 === 0 ? '.' : step % 3 === 1 ? '..' : '...';
+        const {utxoIndex, utxoCount} = mpcUtxoRef.current;
         if (utxoCount > 0 && utxoIndex > 0 && isSendBitcoin) {
           setStatus(`Signing input ${utxoIndex}/${utxoCount}${statusDot}`);
         } else {
@@ -930,7 +923,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     return () => {
       subscription.remove();
     };
-  }, [isTrio, isSendBitcoin, keygenBackend]);
+  }, [isTrio, isSendBitcoin, isSignPSBT, keygenBackend, spendBackend]);
   // Load minimal keyshare prep fields from native (full MPC blob never in JS); signing uses WithStoredKeyshare
   useEffect(() => {
     if (!isSendBitcoin && !isSignPSBT) return;
@@ -1504,6 +1497,7 @@ const MobileNostrPairing = ({navigation}: any) => {
   const startKeygen = async () => {
     if (!canStartKeygen) return;
     setIsPairing(true);
+    resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
     setProgress(0);
     setStatus('Starting key generation...');
     try {
@@ -1713,6 +1707,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     }
     nostrAbortRef.current = false;
     setIsPairing(true);
+    resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
     setProgress(0);
     setStatus('Starting transaction signing...');
     // Store original network/API to restore after transaction
@@ -2003,115 +1998,19 @@ const MobileNostrPairing = ({navigation}: any) => {
       }
       const partiesNpubsCSV = allNpubs.sort().join(',');
       const relaysCSV = relays.join(',');
-      // HD: get next change address so change output goes to internal chain (no address reuse).
-      // Prefer the change address from route params (pre-computed by sender) to ensure both
-      // devices use the identical change output in the signed transaction.
-      let changeAddress = '';
-      const changeAddressFromParams = route.params?.changeAddress;
-      if (changeAddressFromParams && changeAddressFromParams.trim() !== '') {
-        changeAddress = changeAddressFromParams.trim();
-      } else {
-        try {
-          changeAddress =
-            (await WalletService.getInstance().getNextChangeAddress(
-              net,
-              addressTypeToUse,
-            )) || '';
-        } catch (e) {
-          dbg(
-            'MobileNostrPairing: getNextChangeAddress failed, using legacy change to sender:',
-            e,
-          );
-        }
-      }
+      const prepared = await prepareSendBtcMultiPathInputs({
+        network: net,
+        addressType: addressTypeToUse,
+        utxosJsonFromRoute: route.params?.utxosJson,
+        changeAddressFromRoute: route.params?.changeAddress,
+        senderDerivationPath: path,
+      });
+      const changeAddress = prepared.changeAddress;
+      const utxosWithPathsJSON = prepared.utxosWithPathsJSON;
 
       /** RN iOS bridge expects NSString for every arg; coerce so Hermes never passes undefined/number. */
       const nostrNativeStr = (v: unknown) =>
         v === null || v === undefined ? '' : String(v);
-      let utxosWithPathsJSON: string | null = null;
-      const utxosJsonFromQR = route.params?.utxosJson;
-      if (
-        utxosJsonFromQR &&
-        typeof utxosJsonFromQR === 'string' &&
-        utxosJsonFromQR.trim() !== ''
-      ) {
-        try {
-          const parsed = JSON.parse(utxosJsonFromQR);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            const first = parsed[0];
-            if (
-              first &&
-              typeof first.txid === 'string' &&
-              typeof first.vout === 'number' &&
-              typeof first.value === 'number'
-            ) {
-              const asUtxos = parsed.map((u: any) => ({
-                txid: u.txid,
-                vout: u.vout,
-                value: u.value,
-                derivationPath: u.derivation_path ?? u.derivationPath ?? '',
-                address: u.address,
-                scriptpubkey: u.scriptpubkey ?? '',
-                chain: 'receive' as const,
-                chainIndex: 0,
-              }));
-              const needsEnrichment = asUtxos.some(u => !u.scriptpubkey);
-              const enriched = needsEnrichment
-                ? await WalletService.getInstance().enrichUtxosWithScriptpubkey(
-                    asUtxos,
-                    apiUrl,
-                  )
-                : asUtxos;
-              const forNative = enriched.map((u: any) => ({
-                txid: u.txid,
-                vout: u.vout,
-                value: u.value,
-                derivation_path: u.derivationPath ?? u.derivation_path,
-                address: u.address,
-                scriptpubkey: u.scriptpubkey ?? '',
-              }));
-              utxosWithPathsJSON = JSON.stringify(forNative);
-              dbg(
-                'MobileNostrPairing: using UTXOs from QR (enriched)',
-                forNative.length,
-              );
-            }
-          }
-        } catch {
-          dbg(
-            'MobileNostrPairing: failed to use utxosJson from QR, will fetch',
-          );
-        }
-      }
-      if (!utxosWithPathsJSON) {
-        const utxosWithPaths =
-          await WalletService.getInstance().fetchUtxosWithPaths(
-            net,
-            addressTypeToUse,
-            apiUrl,
-          );
-        if (utxosWithPaths.length > 0 && changeAddress) {
-          const enriched =
-            await WalletService.getInstance().enrichUtxosWithScriptpubkey(
-              utxosWithPaths,
-              apiUrl,
-            );
-          const utxosForNative = enriched.map(u => ({
-            txid: u.txid,
-            vout: u.vout,
-            value: u.value,
-            derivation_path: u.derivationPath,
-            address: u.address,
-            scriptpubkey: u.scriptpubkey,
-          }));
-          utxosWithPathsJSON = JSON.stringify(utxosForNative);
-        }
-      }
-      if (!utxosWithPathsJSON || !String(changeAddress).trim()) {
-        throw new Error(
-          'Send BTC requires UTXOs and a change address (multi-path). Ensure you have spendable coins, or pass utxosJson and changeAddress from the sender.',
-        );
-      }
       const utxoList = JSON.parse(utxosWithPathsJSON) as Array<{
         txid: string;
         vout: number;
@@ -2243,6 +2142,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     }
     nostrAbortRef.current = false;
     setIsPairing(true);
+    resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
     setProgress(0);
     setStatus('Starting PSBT signing...');
     let keyshare: any;

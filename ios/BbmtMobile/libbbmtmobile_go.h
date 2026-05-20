@@ -132,6 +132,7 @@ extern char* BbmtSecP256k1Recover(char* r, char* s, char* v, char* h);
 extern char* BbmtGetDerivedPubKey(char* hexPub, char* hexChain, char* path, int isEdDSA);
 extern char* BbmtEncodeXpub(char* hexPub, char* hexChain, char* network);
 extern char* BbmtGetOutputDescriptor(char* hexPub, char* hexChain, char* network, char* addressType);
+extern char* BbmtAppendOutputDescriptorChecksum(char* descriptor);
 extern char* BbmtPubToP2WPKH(char* pub, char* network);
 extern char* BbmtPubToP2SHP2WKH(char* pub, char* network);
 extern char* BbmtPubToP2TR(char* pub, char* network);

@@ -793,6 +793,22 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun appendOutputDescriptorChecksum(descriptorBody: String, promise: Promise) {
+        try {
+            val result = Tss.appendOutputDescriptorChecksum(descriptorBody)
+            ld("appendOutputDescriptorChecksum", result)
+            promise.resolve(result)
+        } catch (e: Throwable) {
+            ld("appendOutputDescriptorChecksum", "error: ${e.stackTraceToString()}")
+            promise.reject(
+                "APPEND_DESCRIPTOR_CHECKSUM_ERROR",
+                "Failed to append descriptor checksum: ${e.message}",
+                e,
+            )
+        }
+    }
+
+    @ReactMethod
     fun btcAddress(compressedPubkey: String, network: String, addressType: String,  promise: Promise) {
         var resolved = false
         try {

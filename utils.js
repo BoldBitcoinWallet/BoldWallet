@@ -4,6 +4,15 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 import LocalCache from './services/LocalCache';
 import {isDebugLoggingEnabled} from './App';
 
+/** Strip trailing `#checksum` from an output descriptor (BIP 380). */
+const stripDescriptorChecksum = d => {
+  if (!d || typeof d !== 'string') {
+    return '';
+  }
+  const i = d.lastIndexOf('#');
+  return i >= 0 ? d.slice(0, i) : d;
+};
+
 let ips = [];
 
 export const pinRemoteIP = addr => {
@@ -167,14 +176,16 @@ export const generateAllOutputDescriptors = async (
       outputDescriptors.legacy = legacyDesc;
 
       if (legacyDesc) {
-        // For old wallets, all descriptors use BIP44 path (44') but different formats
-        // Legacy: pkh, SegWit Native: wpkh, SegWit Compatible: sh(wpkh)
-        // Simple string replacement
-        outputDescriptors.segwitNative = legacyDesc.replace(/^pkh\(/, 'wpkh(');
-        outputDescriptors.segwitCompatible = legacyDesc.replace(
-          /^pkh\(/,
-          'sh(wpkh(',
-        );
+        // Same BIP44 account key path as legacy pkh(); checksum must match transformed body (native).
+        const legacyBody = stripDescriptorChecksum(legacyDesc);
+        const segBody = legacyBody.replace(/^pkh\(/, 'wpkh(');
+        const shBody = legacyBody.replace(/^pkh\(/, 'sh(wpkh(') + ')';
+        const [segSum, shSum] = await Promise.all([
+          nativeModule.appendOutputDescriptorChecksum(segBody).catch(() => ''),
+          nativeModule.appendOutputDescriptorChecksum(shBody).catch(() => ''),
+        ]);
+        outputDescriptors.segwitNative = segSum || segBody;
+        outputDescriptors.segwitCompatible = shSum || shBody;
       }
     } else {
       // New wallets: generate proper descriptors for each address type

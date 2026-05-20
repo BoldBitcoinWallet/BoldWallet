@@ -18,7 +18,7 @@ func TestDerivePathMatchesAppBIP32(t *testing.T) {
 
 	chaincode := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	path := "m/84'/1'/0'/0/0"
-	libPath, err := derivationPathForLibtss(path)
+	libPath, err := tss.DerivationPathForLibtss(path)
 	if err != nil {
 		t.Fatal(err)
 	}

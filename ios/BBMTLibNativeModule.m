@@ -119,6 +119,10 @@ RCT_EXTERN_METHOD(getOutputDescriptor:(NSString *)hexPubkey
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(appendOutputDescriptorChecksum:(NSString *)descriptorBody
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 // Call setBtcNetwork
 RCT_EXTERN_METHOD(setBtcNetwork:(NSString *)network
                   resolver:(RCTPromiseResolveBlock)resolve

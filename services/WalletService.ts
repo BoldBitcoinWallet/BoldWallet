@@ -18,13 +18,18 @@ import {with429Retry} from './sync/rateLimitRetry';
 import appConfigRepository, {
   CONFIG_KEYS,
 } from './repositories/AppConfigRepository';
-import {resolveStoredMempoolApiBase} from './mempoolApiBase';
+import {
+  normalizeNetworkKey,
+  resolveStoredMempoolApiBase,
+} from './mempoolApiBase';
 import balanceRepository from './repositories/BalanceRepository';
 import transactionRepository from './repositories/TransactionRepository';
 import utxoRepository from './repositories/UtxoRepository';
 import priceRepository from './repositories/PriceRepository';
 import walletRepository, {type WalletAddress} from './repositories/WalletRepository';
 import syncRepository from './repositories/SyncRepository';
+import balanceSyncer from './sync/BalanceSyncer';
+import utxoSyncer from './sync/UtxoSyncer';
 import {
   getChangeIndex,
   getExternalIndex,
@@ -460,6 +465,52 @@ export class WalletService {
   }
 
   /**
+   * Force balance + UTXO refresh after broadcast so self-sends do not leave stale
+   * per-address rows (double balance) or duplicate UTXOs in SQLite.
+   */
+  public async refreshSpendStateAfterBroadcast(
+    network: string,
+    addressType: string,
+  ): Promise<void> {
+    const apiBase = resolveStoredMempoolApiBase(network);
+    if (!apiBase) {
+      dbg('WalletService: refreshSpendStateAfterBroadcast — no api base');
+      return;
+    }
+    const active = await this.getActiveAddressesWithPaths(network, addressType);
+    if (!active.length) {
+      dbg('WalletService: refreshSpendStateAfterBroadcast — no active addresses');
+      return;
+    }
+    syncRepository.invalidate('balance', `aggregate_${network}_${addressType}`);
+    const balanceEntries = active.map(a => {
+      syncRepository.invalidate('balance', `${a.address}_${network}`);
+      syncRepository.invalidate('utxos', `${a.address}_${network}`);
+      return {address: a.address, network};
+    });
+    const utxoEntries = active.map(a => ({
+      address: a.address,
+      network,
+      derivationPath: a.derivationPath,
+    }));
+    try {
+      await balanceSyncer.syncAddresses(balanceEntries, apiBase);
+    } catch (e) {
+      dbg('WalletService: refreshSpendStateAfterBroadcast balance error', e);
+    }
+    try {
+      await utxoSyncer.syncAddresses(utxoEntries, apiBase);
+    } catch (e) {
+      dbg('WalletService: refreshSpendStateAfterBroadcast utxo error', e);
+    }
+    dbg(
+      'WalletService: refreshSpendStateAfterBroadcast done for',
+      active.length,
+      'addresses',
+    );
+  }
+
+  /**
    * Derive the next receive (external) address and persist it as current.
    * Call when user requests "Get new address" to avoid address reuse.
    */
@@ -506,16 +557,67 @@ export class WalletService {
     addressType: string,
     apiUrl: string,
     signal?: AbortSignal,
+    options?: {skipEmptyCache?: boolean},
+  ): Promise<UtxoWithPath[]> {
+    const net = normalizeNetworkKey(network);
+    const addressesWithPaths = await this.getHdAddressesWithPaths(
+      net,
+      addressType || 'segwit-native',
+    );
+    if (addressesWithPaths.length === 0) {
+      return [];
+    }
+    return this.fetchUtxosForAddresses(
+      addressesWithPaths,
+      apiUrl,
+      signal,
+      options,
+    );
+  }
+
+  /** Live UTXO fetch for a single derivation path (send fallback when HD scan is empty). */
+  public async fetchUtxosAtPath(
+    network: string,
+    addressType: string,
+    derivationPath: string,
+    apiUrl: string,
+    chain: 'receive' | 'change' = 'receive',
+    chainIndex: number = 0,
+    options?: {skipEmptyCache?: boolean},
+  ): Promise<UtxoWithPath[]> {
+    const net = normalizeNetworkKey(network);
+    const ks = await getKeyshareMetadata();
+    if (!ks) {
+      return [];
+    }
+    const pub = await BBMTLibNativeModule.derivePubkey(
+      ks.pub_key,
+      ks.chain_code_hex,
+      derivationPath,
+    );
+    const address = await BBMTLibNativeModule.btcAddress(
+      pub,
+      net,
+      addressType || 'segwit-native',
+    );
+    return this.fetchUtxosForAddresses(
+      [{address, derivationPath, chain, index: chainIndex}],
+      apiUrl,
+      undefined,
+      options,
+    );
+  }
+
+  private async fetchUtxosForAddresses(
+    addressesWithPaths: HdAddressWithPath[],
+    apiUrl: string,
+    signal?: AbortSignal,
+    options?: {skipEmptyCache?: boolean},
   ): Promise<UtxoWithPath[]> {
     const baseUrl = apiUrl.replace(/\/+$/, '').replace(/\/api\/?$/, '');
     const fullApiUrl = `${baseUrl}/api`;
     const isTestnetApi = /\/testnet(\/|$)/.test(fullApiUrl);
-
-    const addressesWithPaths = await this.getHdAddressesWithPaths(
-      network,
-      addressType || 'segwit-native',
-    );
-    if (addressesWithPaths.length === 0) return [];
+    const skipEmptyCache = options?.skipEmptyCache === true;
 
     const merged: UtxoWithPath[] = [];
     const controller = signal ? undefined : new AbortController();
@@ -524,24 +626,21 @@ export class WalletService {
       setTimeout(() => controller.abort(), 20000);
     }
 
-    // Fetch UTXOs sequentially, address-by-address, to avoid hammering
-    // mempool.space and to keep behavior deterministic under slow networks.
     for (const {address, derivationPath, chain, index} of addressesWithPaths) {
       if (!this.addressMatchesNetwork(address, isTestnetApi)) {
         continue;
       }
       if (fetchSignal?.aborted) {
-        dbg('WalletService: fetchUtxosWithPaths aborted', {
+        dbg('WalletService: fetchUtxosForAddresses aborted', {
           address: address.slice(0, 12),
         });
         break;
       }
-      // Skip addresses that returned empty UTXOs recently — no need to ask
-      // the API again while the user is typing/estimating fees.
-      // Addresses with UTXOs are always re-fetched so spent coins are detected.
-      const emptyAt = this.utxoEmptyCache.get(address);
-      if (emptyAt && Date.now() - emptyAt < getUtxoEmptyCacheTtlMs()) {
-        continue;
+      if (!skipEmptyCache) {
+        const emptyAt = this.utxoEmptyCache.get(address);
+        if (emptyAt && Date.now() - emptyAt < getUtxoEmptyCacheTtlMs()) {
+          continue;
+        }
       }
 
       try {
@@ -561,8 +660,9 @@ export class WalletService {
           continue;
         }
         if (rawList.length === 0) {
-          // Cache this empty result so we skip it for the next TTL window
-          this.utxoEmptyCache.set(address, Date.now());
+          if (!skipEmptyCache) {
+            this.utxoEmptyCache.set(address, Date.now());
+          }
           continue;
         }
         for (const u of rawList) {
@@ -575,18 +675,20 @@ export class WalletService {
           });
         }
       } catch (e) {
-        dbg('WalletService: fetchUtxosWithPaths failed for address', {
+        dbg('WalletService: fetchUtxosForAddresses failed for address', {
           address: address.slice(0, 12),
           error: e,
         });
-        // skip failed address, continue with next
       }
     }
 
-    // Sort: receive first, then change; by chain index; then by block_time desc (newest first)
     merged.sort((a, b) => {
-      if (a.chain !== b.chain) return a.chain === 'receive' ? -1 : 1;
-      if (a.chainIndex !== b.chainIndex) return a.chainIndex - b.chainIndex;
+      if (a.chain !== b.chain) {
+        return a.chain === 'receive' ? -1 : 1;
+      }
+      if (a.chainIndex !== b.chainIndex) {
+        return a.chainIndex - b.chainIndex;
+      }
       const ta = a.status?.block_time ?? 0;
       const tb = b.status?.block_time ?? 0;
       return tb - ta;
@@ -1850,8 +1952,10 @@ export class WalletService {
             chain_stats.funded_txo_sum - chain_stats.spent_txo_sum;
           const addrMempool =
             mempool_stats.funded_txo_sum - mempool_stats.spent_txo_sum;
-          const balanceSats =
-            Math.max(0, addrConfirmed) + Math.max(0, addrMempool);
+          // Match BalanceSyncer: confirmed in balanceSats, mempool delta in pendingSats.
+          // Do not add max(0, mempool) to balanceSats — that double-counts self-sends
+          // (source still confirmed + destination pending incoming).
+          const balanceSats = Math.max(0, addrConfirmed);
           const now = Date.now();
 
           if (Number.isFinite(addrConfirmed) && addrConfirmed > 0) {

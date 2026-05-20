@@ -128,6 +128,9 @@ func TssEncodeXpub(_ hexPubKey: String, _ hexChainCode: String, _ network: Strin
 func TssGetOutputDescriptor(_ hexPubKey: String, _ hexChainCode: String, _ network: String, _ addressType: String, _ error: NSErrorPointer) -> String {
   bbmtResolve(BbmtBridge.getOutputDescriptor(hexPubKey, hexChain: hexChainCode, network: network, addressType: addressType), error)
 }
+func TssAppendOutputDescriptorChecksum(_ descriptorBody: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.appendOutputDescriptorChecksum(descriptorBody), error)
+}
 func TssPubToP2WPKH(_ pubKeyCompressed: String, _ mainnetORtestnet3: String, _ error: NSErrorPointer) -> String {
   bbmtResolve(BbmtBridge.pub(toP2WPKH: pubKeyCompressed, network: mainnetORtestnet3), error)
 }
