@@ -140,15 +140,9 @@ ENV GOFIPS140=${GOFIPS140}
 WORKDIR /BoldWallet/BBMTLib
 RUN --mount=type=cache,target=/root/go/pkg/mod,id=go-modules-cache,sharing=shared \
     --mount=type=cache,target=/root/.cache/go-build,id=go-build-cache,sharing=shared \
-    echo "building gomobile tss lib" && \
-    # gomobile is already installed and initialized in base stage, skip redundant steps \
+    echo "building libbbmtmobile + dkls_jni (single Android Go runtime)" && \
     export GOFLAGS="-mod=mod" && \
-    # Build Android AAR (iOS build not needed for Android APK) \
-    # Android 15 requires 16 KB page size support. \
-    /root/go/bin/gomobile bind -v -target=android -androidapi 21 -ldflags="-extldflags=-Wl,-z,max-page-size=16384" github.com/BoldBitcoinWallet/BBMTLib/tss && \
-    # Copy Android artifacts to android/app/libs \
-    cp tss.aar ../android/app/libs/tss.aar && \
-    cp tss-sources.jar ../android/app/libs/tss-sources.jar
+    bash ./build-dkls.sh android
 
 # Build Android APK (uses cached npm and Gradle dependencies)
 WORKDIR /BoldWallet/android

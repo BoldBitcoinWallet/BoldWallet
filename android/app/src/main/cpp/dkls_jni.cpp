@@ -1,10 +1,97 @@
 #include <jni.h>
+#include <android/log.h>
+#include <mutex>
 #include <stdlib.h>
 #include <string.h>
 
 #include "dkls_exports.h"
+#include <libbbmtmobile.h>
 
 namespace {
+
+JavaVM *g_jvm = nullptr;
+jobject g_hook_module = nullptr;
+jmethodID g_deliver_mpc_hook_mid = nullptr;
+jmethodID g_deliver_go_log_mid = nullptr;
+std::mutex g_hook_mutex;
+
+void bbmt_hook_trampoline(const char *msg) {
+  if (msg == nullptr) {
+    return;
+  }
+  JNIEnv *env = nullptr;
+  bool detach = false;
+  if (g_jvm == nullptr) {
+    return;
+  }
+  jint get_env = g_jvm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6);
+  if (get_env == JNI_EDETACHED) {
+    if (g_jvm->AttachCurrentThread(&env, nullptr) != 0) {
+      return;
+    }
+    detach = true;
+  } else if (get_env != JNI_OK) {
+    return;
+  }
+
+  std::lock_guard<std::mutex> lock(g_hook_mutex);
+  if (g_hook_module != nullptr && g_deliver_mpc_hook_mid != nullptr) {
+    jstring jmsg = env->NewStringUTF(msg);
+    if (jmsg != nullptr) {
+      env->CallVoidMethod(g_hook_module, g_deliver_mpc_hook_mid, jmsg);
+      env->DeleteLocalRef(jmsg);
+    }
+  }
+
+  if (detach) {
+    g_jvm->DetachCurrentThread();
+  }
+}
+
+void bbmt_go_log_trampoline(const char *msg) {
+  if (msg == nullptr) {
+    return;
+  }
+  JNIEnv *env = nullptr;
+  bool detach = false;
+  if (g_jvm == nullptr) {
+    return;
+  }
+  jint get_env = g_jvm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6);
+  if (get_env == JNI_EDETACHED) {
+    if (g_jvm->AttachCurrentThread(&env, nullptr) != 0) {
+      return;
+    }
+    detach = true;
+  } else if (get_env != JNI_OK) {
+    return;
+  }
+
+  std::lock_guard<std::mutex> lock(g_hook_mutex);
+  if (g_hook_module != nullptr && g_deliver_go_log_mid != nullptr) {
+    jstring jmsg = env->NewStringUTF(msg);
+    if (jmsg != nullptr) {
+      env->CallVoidMethod(g_hook_module, g_deliver_go_log_mid, jmsg);
+      env->DeleteLocalRef(jmsg);
+    }
+  }
+
+  if (detach) {
+    g_jvm->DetachCurrentThread();
+  }
+}
+
+void clear_bbmt_hook_listener(JNIEnv *env) {
+  std::lock_guard<std::mutex> lock(g_hook_mutex);
+  BbmtSetHookListener(nullptr);
+  BbmtSetGoLogListener(nullptr);
+  if (g_hook_module != nullptr && env != nullptr) {
+    env->DeleteGlobalRef(g_hook_module);
+    g_hook_module = nullptr;
+  }
+  g_deliver_mpc_hook_mid = nullptr;
+  g_deliver_go_log_mid = nullptr;
+}
 
 jstring to_jstring(JNIEnv *env, char *cstr) {
   if (cstr == nullptr) {
@@ -20,6 +107,111 @@ jstring to_jstring(JNIEnv *env, char *cstr) {
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_helloDkgJni(JNIEnv *env, jclass) {
   return to_jstring(env, DklsHelloDkg());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtGenerateKeyPairJni(JNIEnv *env, jclass) {
+  return to_jstring(env, BbmtGenerateKeyPair());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtSha256Jni(JNIEnv *env, jclass, jstring msg) {
+  const char *m = env->GetStringUTFChars(msg, nullptr);
+  jstring out = to_jstring(env, BbmtSha256(const_cast<char *>(m)));
+  env->ReleaseStringUTFChars(msg, m);
+  return out;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtFetchDataJni(
+    JNIEnv *env, jclass, jstring url, jstring decKey, jstring payload) {
+  const char *u = env->GetStringUTFChars(url, nullptr);
+  const char *d = env->GetStringUTFChars(decKey, nullptr);
+  const char *p = env->GetStringUTFChars(payload, nullptr);
+  char *out = BbmtFetchData(
+      const_cast<char *>(u), const_cast<char *>(d), const_cast<char *>(p));
+  env->ReleaseStringUTFChars(url, u);
+  env->ReleaseStringUTFChars(decKey, d);
+  env->ReleaseStringUTFChars(payload, p);
+  return to_jstring(env, out);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtPublishDataJni(
+    JNIEnv *env, jclass, jstring port, jstring timeout, jstring encKey,
+    jstring data, jstring mode) {
+  const char *po = env->GetStringUTFChars(port, nullptr);
+  const char *to = env->GetStringUTFChars(timeout, nullptr);
+  const char *ek = env->GetStringUTFChars(encKey, nullptr);
+  const char *da = env->GetStringUTFChars(data, nullptr);
+  const char *mo = env->GetStringUTFChars(mode, nullptr);
+  char *out = BbmtPublishData(
+      const_cast<char *>(po), const_cast<char *>(to), const_cast<char *>(ek),
+      const_cast<char *>(da), const_cast<char *>(mo));
+  env->ReleaseStringUTFChars(port, po);
+  env->ReleaseStringUTFChars(timeout, to);
+  env->ReleaseStringUTFChars(encKey, ek);
+  env->ReleaseStringUTFChars(data, da);
+  env->ReleaseStringUTFChars(mode, mo);
+  return to_jstring(env, out);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtListenForPeersJni(
+    JNIEnv *env, jclass, jstring id, jstring pubkey, jstring port,
+    jstring timeout, jstring mode) {
+  const char *i = env->GetStringUTFChars(id, nullptr);
+  const char *pk = env->GetStringUTFChars(pubkey, nullptr);
+  const char *po = env->GetStringUTFChars(port, nullptr);
+  const char *to = env->GetStringUTFChars(timeout, nullptr);
+  const char *mo = env->GetStringUTFChars(mode, nullptr);
+  char *out = BbmtListenForPeers(
+      const_cast<char *>(i), const_cast<char *>(pk), const_cast<char *>(po),
+      const_cast<char *>(to), const_cast<char *>(mo));
+  env->ReleaseStringUTFChars(id, i);
+  env->ReleaseStringUTFChars(pubkey, pk);
+  env->ReleaseStringUTFChars(port, po);
+  env->ReleaseStringUTFChars(timeout, to);
+  env->ReleaseStringUTFChars(mode, mo);
+  return to_jstring(env, out);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtDiscoverPeersJni(
+    JNIEnv *env, jclass, jstring id, jstring pubkey, jstring localIP,
+    jstring remoteIP, jstring port, jstring timeout, jstring mode) {
+  const char *i = env->GetStringUTFChars(id, nullptr);
+  const char *pk = env->GetStringUTFChars(pubkey, nullptr);
+  const char *lip = env->GetStringUTFChars(localIP, nullptr);
+  const char *rip = env->GetStringUTFChars(remoteIP, nullptr);
+  const char *po = env->GetStringUTFChars(port, nullptr);
+  const char *to = env->GetStringUTFChars(timeout, nullptr);
+  const char *mo = env->GetStringUTFChars(mode, nullptr);
+  char *out = BbmtDiscoverPeers(
+      const_cast<char *>(i), const_cast<char *>(pk), const_cast<char *>(lip),
+      const_cast<char *>(rip), const_cast<char *>(po), const_cast<char *>(to),
+      const_cast<char *>(mo));
+  env->ReleaseStringUTFChars(id, i);
+  env->ReleaseStringUTFChars(pubkey, pk);
+  env->ReleaseStringUTFChars(localIP, lip);
+  env->ReleaseStringUTFChars(remoteIP, rip);
+  env->ReleaseStringUTFChars(port, po);
+  env->ReleaseStringUTFChars(timeout, to);
+  env->ReleaseStringUTFChars(mode, mo);
+  return to_jstring(env, out);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtRunRelayJni(JNIEnv *env, jclass, jstring port) {
+  const char *p = env->GetStringUTFChars(port, nullptr);
+  jstring out = to_jstring(env, BbmtRunRelay(const_cast<char *>(p)));
+  env->ReleaseStringUTFChars(port, p);
+  return out;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtStopRelayJni(JNIEnv *env, jclass) {
+  return to_jstring(env, BbmtStopRelay());
 }
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -295,3 +487,30 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_cancelNostrMpcJni(JNIEnv *env, jclass) {
   return to_jstring(env, DklsCancelNostrMpc());
 }
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_boldwallet_DklsNative_setBbmtHookListenerJni(JNIEnv *env, jclass, jobject module) {
+  clear_bbmt_hook_listener(env);
+  if (module == nullptr) {
+    return;
+  }
+  env->GetJavaVM(&g_jvm);
+  jclass module_cls = env->GetObjectClass(module);
+  g_deliver_mpc_hook_mid =
+      env->GetMethodID(module_cls, "deliverMpcHook", "(Ljava/lang/String;)V");
+  g_deliver_go_log_mid =
+      env->GetMethodID(module_cls, "deliverGoLog", "(Ljava/lang/String;)V");
+  if (g_deliver_mpc_hook_mid == nullptr || g_deliver_go_log_mid == nullptr) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(g_hook_mutex);
+  g_hook_module = env->NewGlobalRef(module);
+  BbmtSetHookListener(&bbmt_hook_trampoline);
+  BbmtSetGoLogListener(&bbmt_go_log_trampoline);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_boldwallet_DklsNative_clearBbmtHookListenerJni(JNIEnv *env, jclass) {
+  clear_bbmt_hook_listener(env);
+}
+

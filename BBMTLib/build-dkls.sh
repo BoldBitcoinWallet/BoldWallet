@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build libbbmtmobile (Go c-shared + libtss-ffi) for host and Android ABIs.
-# Android: unified bbmtmobile package (Dkls* JNI only; GG18 stays on gomobile tss.aar).
+# Android: libbbmtmobile.so + dkls_jni (Bbmt* GG18 + Dkls*; no gomobile tss.aar).
 # iOS: c-archive xcframework (Bbmt* + Dkls* via BbmtBridge).
 set -euo pipefail
 
@@ -140,9 +140,15 @@ build_android_jni_abi() {
     return 1
   fi
 
-  local bbmt_so="${JNI_OUT}/${abi}/libbbmtmobile.so"
+  local bbmt_dir="${JNI_OUT}/${abi}"
+  local bbmt_so="${bbmt_dir}/libbbmtmobile.so"
+  local bbmt_hdr="${bbmt_dir}/libbbmtmobile.h"
   if [ ! -f "${bbmt_so}" ]; then
     warn "Skip dkls_jni for ${abi}: missing libbbmtmobile.so"
+    return 1
+  fi
+  if [ ! -f "${bbmt_hdr}" ]; then
+    warn "Skip dkls_jni for ${abi}: missing libbbmtmobile.h (GoInt ABI must match ${abi})"
     return 1
   fi
 
@@ -154,13 +160,20 @@ build_android_jni_abi() {
 
   local out="${JNI_OUT}/${abi}/libdkls_jni.so"
   info "Building dkls_jni for Android ${abi}..."
-  "${cxx}" -shared -fPIC -O2 \
+  rm -f "${out}"
+  # Per-ABI Go cgo header (GoInt32 on armeabi-v7a, GoInt64 on arm64/x86_64). Do not use cpp/libbbmtmobile.h alone.
+  if ! "${cxx}" -shared -fPIC -O2 \
+    -I"${bbmt_dir}" \
     -I"${CPP_DIR}" \
     "${CPP_DIR}/dkls_jni.cpp" \
-    -L"${JNI_OUT}/${abi}" -lbbmtmobile \
+    "${CPP_DIR}/bbmt_tss_jni.cpp" \
+    -L"${bbmt_dir}" -lbbmtmobile \
     -llog -landroid \
     -Wl,-z,max-page-size=0x4000 \
-    -o "${out}"
+    -o "${out}"; then
+    warn "dkls_jni build failed for ${abi}"
+    return 1
+  fi
   info "  -> ${out}"
 }
 
@@ -178,16 +191,14 @@ build_android() {
     return 1
   fi
 
-  for abi in arm64-v8a armeabi-v7a x86_64; do
-    if [ -f "${JNI_OUT}/${abi}/libbbmtmobile.h" ]; then
-      cp -f "${JNI_OUT}/${abi}/libbbmtmobile.h" "${CPP_DIR}/libbbmtmobile.h"
-      break
-    fi
-  done
+  build_android_jni_abi arm64-v8a aarch64-linux-android
+  build_android_jni_abi armeabi-v7a armv7a-linux-androideabi
+  build_android_jni_abi x86_64 x86_64-linux-android
 
-  build_android_jni_abi arm64-v8a aarch64-linux-android || true
-  build_android_jni_abi armeabi-v7a armv7a-linux-androideabi || true
-  build_android_jni_abi x86_64 x86_64-linux-android || true
+  # IDE convenience only (arm64); JNI builds use jniLibs/<abi>/libbbmtmobile.h above.
+  if [ -f "${JNI_OUT}/arm64-v8a/libbbmtmobile.h" ]; then
+    cp -f "${JNI_OUT}/arm64-v8a/libbbmtmobile.h" "${CPP_DIR}/libbbmtmobile.h"
+  fi
 }
 
 build_ios() {

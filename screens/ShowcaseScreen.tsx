@@ -31,12 +31,10 @@ import TransportModeSelector from '../components/TransportModeSelector';
 import TssBackendSelector from '../components/TssBackendSelector';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {
-  getKeygenTssBackendPreference,
   isDkls23OptedOut,
   setDkls23OptedOut,
   setKeygenTssBackendPreference,
 } from '../services/tssConfig';
-import type {TssBackend} from '../services/tssBackend';
 import database from '../services/Database';
 import {WalletService} from '../services/WalletService';
 import mempoolClient from '../services/MempoolClient';
@@ -52,8 +50,6 @@ const ShowcaseScreen = ({navigation}: any) => {
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
   const [isBackendModalVisible, setIsBackendModalVisible] = useState(false);
   const [isModeModalVisible, setIsModeModalVisible] = useState(false);
-  const [keygenBackendChoice, setKeygenBackendChoice] =
-    useState<TssBackend>('dkls23');
   const [selectedMode, setSelectedMode] = useState<'duo' | 'trio' | null>(null);
   const [isTransportModalVisible, setIsTransportModalVisible] = useState(false);
   const [pendingMode, setPendingMode] = useState<'duo' | 'trio' | null>(null);
@@ -975,7 +971,6 @@ const ShowcaseScreen = ({navigation}: any) => {
               (!agreeToTerms || !agreeToPrivacy) && styles.disabledButton,
             ]}
             onPress={() => {
-              setKeygenBackendChoice(getKeygenTssBackendPreference());
               setIsBackendModalVisible(true);
             }}
             disabled={!agreeToTerms || !agreeToPrivacy}>
@@ -1127,7 +1122,6 @@ const ShowcaseScreen = ({navigation}: any) => {
         onClose={() => setIsBackendModalVisible(false)}
         onContinue={backend => {
           setKeygenTssBackendPreference(backend);
-          setKeygenBackendChoice(backend);
           setIsBackendModalVisible(false);
           setIsModeModalVisible(true);
         }}
@@ -1210,11 +1204,11 @@ const ShowcaseScreen = ({navigation}: any) => {
               </AppPressable>
             </View>
             <View style={styles.modalBody}>
-              <Text style={styles.modeHintLine}>
-                {keygenBackendChoice === 'gg18'
-                  ? 'New wallets will use GG18 threshold signing (2-of-2 duo, 2-of-3 trio). All devices must use GG18.'
-                  : 'New wallets will use DKLs23 threshold signing (2-of-2 duo, 2-of-3 trio). All devices must use DKLs23.'}
-              </Text>
+              {!selectedMode ? (
+                <Text style={styles.modeHintLine}>
+                  How many phones will join this wallet setup?
+                </Text>
+              ) : null}
               <View style={styles.modeOptionsContainer}>
                 <AppPressable
                   style={[
@@ -1406,18 +1400,18 @@ const ShowcaseScreen = ({navigation}: any) => {
                     {selectedMode === 'duo' ? (
                       <Text style={styles.modeSelectedHintText}>
                         <Text style={styles.modeSelectedHintTextBold}>
-                          Duo (2/2)
+                          2 devices
                         </Text>
-                        : two devices needed for wallet setup. both of them must
-                        approve transactions when spending funds.
+                        {' '}
+                        — both phones take part in setup and co-sign every spend.
                       </Text>
                     ) : (
                       <Text style={styles.modeSelectedHintText}>
                         <Text style={styles.modeSelectedHintTextBold}>
-                          Trio (2/3)
+                          3 devices
                         </Text>
-                        : three devices needed for wallet setup. any 2 of them
-                        must approve transactions when spending funds.
+                        {' '}
+                        — all three join setup; any 2 can approve a spend.
                       </Text>
                     )}
                   </View>

@@ -80,6 +80,21 @@ func runNostrDKG(cfg nostrtransport.Config, chaincode, localNpub string, allPart
 		return "", err
 	}
 	time.Sleep(500 * time.Millisecond)
+	tss.ReportKeygenProgress(cfg.SessionID, 1, "waiting for peers", false)
+	stopPeerPulse := make(chan struct{})
+	defer close(stopPeerPulse)
+	go func() {
+		tick := 0
+		for {
+			select {
+			case <-stopPeerPulse:
+				return
+			case <-time.After(2 * time.Second):
+				tick++
+				tss.ReportKeygenProgress(cfg.SessionID, 1, fmt.Sprintf("waiting for peers (%d)", tick), false)
+			}
+		}
+	}()
 	if err := coordinator.AwaitPeers(ctx); err != nil {
 		return "", err
 	}

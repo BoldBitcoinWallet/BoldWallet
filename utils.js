@@ -3,9 +3,9 @@ import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import LocalCache from './services/LocalCache';
 import {isDebugLoggingEnabled} from './App';
-import {detectKeyshareTssBackend as detectKeyshareTssBackendCanonical} from './services/tssBackend';
+import {detectKeyshareTssBackend} from './services/tssBackend';
 
-export {detectKeyshareTssBackendCanonical as detectKeyshareTssBackend};
+export {detectKeyshareTssBackend};
 
 /** Strip trailing `#checksum` from an output descriptor (BIP 380). */
 const stripDescriptorChecksum = d => {
@@ -1119,7 +1119,7 @@ function normalizeKeyshareMetaObject(parsed) {
   const tss_backend =
     parsed.tss_backend === 'dkls23' || parsed.tss_backend === 'gg18'
       ? parsed.tss_backend
-      : detectKeyshareTssBackendCanonical(parsed);
+      : detectKeyshareTssBackend(parsed);
   const rawCreated = parsed.created_at ?? null;
   const created_at =
     rawCreated != null ? normalizeCreatedAtMs(rawCreated) : null;

@@ -6,7 +6,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wl,-z,max-page-size=0x4000")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=0x4000")
 
 # Prebuilt unified Go shared library (BBMTLib/build-dkls.sh android → ./bbmtmobile).
-# DKLs uses Dkls* via dkls_jni; GG18 remains on gomobile tss.aar.
+# Android MPC: libbbmtmobile.so via dkls_jni (Bbmt* + Dkls*); no gomobile tss.aar.
 set(BBMTMOBILE_DIR ${CMAKE_SOURCE_DIR}/src/main/jniLibs/${ANDROID_ABI})
 set(BBMTMOBILE_SO ${BBMTMOBILE_DIR}/libbbmtmobile.so)
 

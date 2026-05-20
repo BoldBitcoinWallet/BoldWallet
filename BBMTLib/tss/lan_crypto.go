@@ -1,6 +1,16 @@
 package tss
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
+
+// DeriveLANSessionKey returns the AES session key used for trio LAN (and legacy duo DKLS tests).
+// Matches mobile: sha256(sessionID + "," + masterHost).
+func DeriveLANSessionKey(sessionID, masterHost string) (string, error) {
+	seed := strings.Join([]string{sessionID, masterHost}, ",")
+	return Sha256(seed)
+}
 
 // ConfigureLANTransportKeys sets global ECIES keys used by MessengerImp when sessionKey is empty.
 // Either sessionKey (trio AES) or both encKey and decKey (duo ECIES) must be provided.

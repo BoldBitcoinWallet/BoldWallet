@@ -31,25 +31,32 @@ Detection order (canonical in `services/tssBackend.ts`):
 
 Metadata is normalized on save/import via `saveKeyshareMetadata` in `utils.js`.
 
-## Android native split
+## Android native (single runtime)
 
-- GG18: `android/app/libs/tss.aar` (gomobile) — unchanged; not used for DKLs keyshares.
-- DKLs: `libbbmtmobile.so` + `dkls_jni` (same `bbmtmobile` package as iOS; JNI exposes `Dkls*` only).
+- **One Go runtime:** `libbbmtmobile.so` + `dkls_jni` (same `bbmtmobile` package as iOS).
+- **GG18** wallet/MPC calls use `Bbmt*` JNI wrappers; **DKLs** uses `Dkls*` JNI.
+- **No** `tss.aar` (gomobile) in the app — dual runtime caused heap corruption (`bad sweepgen in refill`).
 
-Rebuild: `cd BBMTLib && ./build-all.sh` (or `./build.sh --with-dkls`).
+Rebuild: `cd BBMTLib && ./build-dkls.sh android` (and iOS xcframework as needed).
 
 ## Progress UX
 
-Hook percent uses `resolveHookProgressBackend()`:
+Native MPC reports steps via `Hook(SessionState)` JSON (`type`, `step`, `info`, `session`, `done`). React Native listens on `TssHook` events (`BBMT_DROID` / `BBMT_APPLE`).
 
-- **Keygen**: preference or resolved `keygenBackend`
-- **Send / PSBT**: waits until `spendBackend` is loaded from keyshare (no `dkls23` fallback)
+### Android hook bridge (DKLs)
 
-Progress mapping (`services/mpcProgress.ts`):
+Both stacks register hooks through `BbmtSetHookListener` / `BbmtSetGoLogListener` (JNI → `BBMTLibNativeModule.deliverMpcHook` / `deliverGoLog` → same `TssHook` / `GoLog` tags). iOS uses `BbmtBridge.setHookListener`.
 
-- **GG18**: linear `step / denominator` (variable native steps; denominators 18/29 keygen, 36 keysign per input).
-- **DKLs23**: phase-based mapping aligned to native steps `0 → 1–2 setup → 3..N rounds → 99 done` (`dklsKeygenPercent`, `dklsKeysignPercent`) so the bar does not stall then jump.
-- Spend/sign hooks use `resolveTssBackendFromCachedMeta()` when `spendBackend` is not loaded yet (correct denominator immediately).
+**Android:** `libbbmtmobile` loads at module init when present in APK; all `BBMTLibNativeModule` methods use `Bbmt*` / `Dkls*` JNI only.
+- LAN pairing UI resets the 20s countdown when discovery starts (not during native prep). `racePeerDiscovery` ignores empty discover results so `listenForPeers` can still win the race.
+
+### RN mapping and UI
+
+- Backend: `resolveMpcHookBackend()` — preference / keyshare metadata; while MPC is active, fall back so early hooks are not dropped.
+- Before keygen/keysign modals open, resolve `keygenBackend` / `spendBackend` so the first hooks map correctly.
+- Mapping (`services/mpcProgress.ts`): **GG18** linear `step / denominator`; **DKLs23** phase-based (`dklsKeygenPercent`, `dklsKeysignPercent`) for steps `0 → 1–2 setup → 3..N rounds → 99 done`.
+- UI (`services/mpcProgressUi.ts`): animated circle (`withTiming`), phase labels (“Waiting for all devices…”, “DKG round N…”), optional `session` filter for stale hooks.
+- Native polish: join-wait pulses every 2s on LAN/Nostr step 1 so follower devices do not look frozen at ~10%.
 
 ## LAN transport encryption
 
@@ -62,7 +69,7 @@ DKLs23 LAN MPC uses the same relay crypto as GG18 (`BBMTLib/tss` `MessengerImp`)
 
 `JoinKeygen` / `JoinKeysignWithSighash` call `ConfigureLANTransportKeys` before the HTTP relay pump; receive path uses `DecryptLANRelayPayload` (AES or ECIES). Nostr DKLs uses NIP-44 via `nostrtransport` (unchanged).
 
-Mobile: `TssProvider.mpcTssSetup` passes `encKey` / `decKey` into `dklsMpcTssSetup` for DKLs keygen; send/PSBT already passed them for keysign.
+Mobile: `services/lanMpcTransport.ts` resolves transport keys (same rules as GG18) before `TssProvider.mpcTssSetup` → `dklsMpcTssSetup`. Duo DKLs requires a non-empty peer ECIES pubkey from LAN pairing (`lan_peer_pubkey` in app config); trio uses `sha256(sessionID,masterHost)` as AES `sessionKey`. If pairing keys are missing, setup fails fast with a clear error instead of `DKLS_MPC_SETUP_ERROR`.
 
 ## Known constraints
 

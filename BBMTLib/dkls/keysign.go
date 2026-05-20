@@ -157,7 +157,7 @@ func JoinKeysignWithSighash(
 	server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshareJSON, derivePath, sighashBase64 string,
 ) (string, error) {
 	defer tss.ClearLANTransportKeys()
-	if err := tss.ConfigureLANTransportKeys(sessionKey, encKey, decKey); err != nil {
+	if _, _, _, err := normalizeLANTransportKeys(session, server, sessionKey, encKey, decKey); err != nil {
 		return "", err
 	}
 

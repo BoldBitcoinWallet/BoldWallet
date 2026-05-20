@@ -14,18 +14,18 @@ cd BBMTLib
 
 # Or step by step:
 ./build.sh --with-dkls    # GG18 gomobile + DKLs (no libtss pre-step / host smoke)
-./build.sh              # tss.aar only (GG18)
-./build-dkls.sh android # libbbmtmobile.so (DKLs JNI; tss.aar still for GG18)
+./build-dkls.sh android # libbbmtmobile.so + dkls_jni (GG18 + DKLs, single runtime)
+./build.sh              # gomobile tss.aar / Tss.xcframework (legacy; Android app uses bbmtmobile)
 ./build-dkls.sh ios     # libbbmtmobile.xcframework (macOS only)
 ```
 
 | Backend | Script | Android | iOS |
 |---------|--------|---------|-----|
-| **Both** | `build-all.sh` | `tss.aar` + `jniLibs/*/libbbmtmobile.so` | `BbmtMobile/libbbmtmobile.xcframework` |
-| GG18 (BNB) | `build.sh` | `android/app/libs/tss.aar` | legacy `Tss.xcframework` (app uses bbmtmobile on iOS) |
-| DKLs23 | `build-dkls.sh` | `jniLibs/*/libbbmtmobile.so` (+ `dkls_jni`) | `ios/BbmtMobile/libbbmtmobile.xcframework` |
+| **Both** | `build-all.sh` | `jniLibs/*/libbbmtmobile.so` + `dkls_jni` | `BbmtMobile/libbbmtmobile.xcframework` |
+| GG18 + DKLs | `build-dkls.sh android` | same (Bbmt* + Dkls* JNI) | `build-dkls.sh ios` |
+| Legacy gomobile | `build.sh` | (not linked in app) | optional `Tss.xcframework` |
 
-Do **not** add `dkls.aar` on Android — it duplicates `go.Seq` from `tss.aar`. See [docs/DKLS_MOBILE.md](docs/DKLS_MOBILE.md).
+Do **not** ship `tss.aar` and `libbbmtmobile.so` together — two Go runtimes corrupt the heap. See [docs/DKLS_MOBILE.md](docs/DKLS_MOBILE.md).
 
 ## iOS (manual gomobile)
 
@@ -33,11 +33,10 @@ Do **not** add `dkls.aar` on Android — it duplicates `go.Seq` from `tss.aar`. 
 gomobile bind -v -target=ios,iossimulator,macos -o Tss.xcframework github.com/BoldBitcoinWallet/BBMTLib/tss
 ```
 
-## Android (manual gomobile)
+## Android (release app)
 
 ```bash
-gomobile bind -v -target=android -androidapi 21 -o tss.aar github.com/BoldBitcoinWallet/BBMTLib/tss
-cp tss.aar ../android/app/libs/tss.aar
+./build-dkls.sh android   # libbbmtmobile.so + libdkls_jni.so per ABI
 ```
 
 ## FIPS 140-3 (SP 800-90A DRBG) (NIST) compliance

@@ -6,6 +6,13 @@
 *.jar
 Tss.xcframework/**
 Dkls.xcframework/**
+libbbmtmobile.xcframework/**
+
+# bbmtmobile / legacy dklsmobile c-shared (host; primary output is bin/)
+libbbmtmobile
+libbbmtmobile.h
+libdklsmobile
+libdklsmobile.h
 
 # c-shared / host binaries
 bin/

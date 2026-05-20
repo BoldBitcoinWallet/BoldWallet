@@ -2,6 +2,7 @@ import type {TssBackend} from './tssBackend';
 
 /** Native TssHook JSON payload (subset). */
 export type MpcHookMessage = {
+  session?: string;
   type?: string;
   step?: number;
   done?: boolean;

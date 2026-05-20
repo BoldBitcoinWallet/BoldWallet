@@ -27,7 +27,7 @@ Outputs:
 
 | Platform | Artifact |
 |----------|----------|
-| Android GG18 | `android/app/libs/tss.aar` (gomobile; keep using main-branch / `build.sh` artifact) |
+| Android (GG18 + DKLs) | `jniLibs/*/libbbmtmobile.so` + `libdkls_jni.so` (`build-dkls.sh android`; no `tss.aar`) |
 | Android DKLs | `android/app/src/main/jniLibs/<abi>/libbbmtmobile.so` (unified `bbmtmobile` build; `Dkls*` via JNI only) |
 | Android | `android/app/src/main/jniLibs/<abi>/libdkls_jni.so` (built by `build-dkls.sh`, not app CMake) |
 | iOS | `ios/BbmtMobile/libbbmtmobile.xcframework` — **unified** GG18+DKLs (one Go runtime). Do **not** link `Tss.xcframework` + a second Go runtime (heap crash). |
@@ -89,7 +89,7 @@ Scripts: `./scripts-dkls/main.go local-keygen` (duo), `local-keygen-3` (trio).
 | `libbbmtmobile not loaded` | Check `jniLibs/arm64-v8a/libbbmtmobile.so` exists (`./build-dkls.sh android`) |
 | CMake skipped `dkls_jni` | Build `libbbmtmobile.so` first; CMake only builds JNI if it exists for that ABI |
 | Link errors building `.so` | Install NDK, set `ANDROID_NDK_HOME`, run `cargo install cargo-ndk` |
-| `Duplicate class go.Seq` (release) | Do not add `dkls.aar` alongside `tss.aar`; use `build-dkls.sh android` only |
+| `Duplicate class go.Seq` / heap corruption | Do not link `tss.aar` with `libbbmtmobile.so`; use `build-dkls.sh android` only |
 
 ## Keyshare format
 

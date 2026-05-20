@@ -83,6 +83,12 @@ BBMTLib/*.aar
 BBMTLib/*.jar
 BBMTLib/Tss.xcframework/**
 BBMTLib/Dkls.xcframework/**
+BBMTLib/libbbmtmobile.xcframework/**
+# c-shared host outputs (also under bin/; ignore if written to BBMTLib root)
+BBMTLib/libbbmtmobile
+BBMTLib/libbbmtmobile.h
+BBMTLib/libdklsmobile
+BBMTLib/libdklsmobile.h
 BBMTLib/scripts/bin/
 BBMTLib/scripts/*.json
 # Prebuilt libtss-ffi static libs (run mobile-deps/libtss/build-libtss.sh)
@@ -306,10 +312,12 @@ proguard/
 android/app/debug/
 android/app/release/
 android/app/profile/
-# DKLs23 JNI (built by BBMTLib/build-dkls.sh android)
+# DKLs23 / bbmtmobile Android (BBMTLib/build-dkls.sh): libbbmtmobile.so, libbbmtmobile.h, dkls_jni.so
 android/app/src/main/jniLibs/**
-android/app/src/main/cpp/libdklsmobile.h
 android/app/src/main/cpp/libbbmtmobile.h
+# Legacy pre-bbmtmobile rename (stale headers from old builds)
+android/app/src/main/cpp/libdklsmobile.h
+**/libdklsmobile.so
 
 # iOS
 *.pbxuser
@@ -332,7 +340,7 @@ ios/build/
 !*.xcworkspace/contents.xcworkspacedata
 *.xcuserdata
 *.xcscmblueprint
-# Unified bbmtmobile (BBMTLib/build-dkls.sh ios) — keep libbbmtmobile.xcframework + libbbmtmobile_go.h
+# Unified bbmtmobile (BBMTLib/build-dkls.sh ios) — commit ios/BbmtMobile/libbbmtmobile.xcframework + libbbmtmobile_go.h
 ios/Tss.xcframework/**
 ios/DklsMobile/**
 ios/DklsBridge.h
@@ -343,6 +351,8 @@ ios/BbmtMobile/libbbmtmobile-merged-*.a
 ios/BbmtMobile/libbbmtmobile-device.*
 ios/BbmtMobile/libbbmtmobile-sim.*
 ios/BbmtMobile/headers/
+# Stale iOS outputs from pre-bbmtmobile builds (under ios/DklsMobile/ when present)
+ios/DklsMobile/libdklsmobile.xcframework/**
 
 # CocoaPods
 Pods/

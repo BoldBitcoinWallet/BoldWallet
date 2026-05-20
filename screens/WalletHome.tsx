@@ -7,7 +7,6 @@ import {
   Alert,
   Platform,
   PermissionsAndroid,
-  Linking,
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
@@ -37,7 +36,6 @@ import ExtensionPairingModal from '../components/ExtensionPairingModal';
 import AppText from '../components/AppText';
 import {
   dbg,
-  explorerWebBaseFromApiUrl,
   presentFiat,
   formatBitcoinDisplay,
   getCurrencySymbol,
@@ -1072,46 +1070,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   }, []);
   // addressType, selectedCurrency, isBlurred are seeded from appConfigRepository
   // in their useState initializers — no effect needed.
-  // Check for txId in route params and show success alert with explorer link
+  // After LAN/Nostr broadcast we land here with txId — refresh list only (no blocking alert).
   useEffect(() => {
     const txId = route.params?.txId;
-    if (txId && network) {
-      const baseUrl = explorerWebBaseFromApiUrl(
-        resolveStoredMempoolApiBase(network),
-      );
-      const explorerLink = `${baseUrl}/tx/${txId}`;
-      // Show alert with Cancel/Close and Explore buttons
-      Alert.alert(
-        '✔️ Transaction Sent',
-        `TxID: ${txId.substring(0, 8)}...${txId.substring(txId.length - 8)}`,
-        [
-          {
-            text: 'Close',
-            style: 'cancel',
-            onPress: () => {
-              // Clear the txId from route params to prevent showing again
-              transactionListRef.current?.refresh?.();
-              navigation.setParams({txId: undefined});
-            },
-          },
-          {
-            text: '🔎 Explorer',
-            style: 'default',
-            onPress: () => {
-              transactionListRef.current?.refresh?.();
-              // Clear the txId from route params
-              navigation.setParams({txId: undefined});
-              Linking.openURL(explorerLink).catch(err => {
-                dbg('Error opening explorer link:', err);
-                Alert.alert('Error', 'Failed to open explorer link');
-              });
-            },
-          },
-        ],
-        {cancelable: false},
-      );
+    if (!txId || !network) {
+      return;
     }
-  }, [route.params?.txId, apiBase, network, navigation]);
+    transactionListRef.current?.refresh?.();
+    navigation.setParams({txId: undefined});
+  }, [route.params?.txId, network, navigation]);
   // Check for signedPsbt in route params and show modal
   useEffect(() => {
     const signedPsbtParam = route.params?.signedPsbt;

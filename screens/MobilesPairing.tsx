@@ -64,23 +64,59 @@ import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {waitMS, WalletService} from '../services/WalletService';
 import {
-  resolveHookProgressBackend,
   resolveTssBackend,
   resolveTssBackendForKeygen,
   type SetupMode,
   type TssBackend,
 } from '../services/tssBackend';
+import {getKeygenTssBackendPreference} from '../services/tssConfig';
 import {TssProvider} from '../services/TssProvider';
+import {
+  parseEciesKeypairJson,
+  resolveLanKeygenTransportKeys,
+  resolveLanKeysignTransportKeys,
+} from '../services/lanMpcTransport';
+
+/** Ignore empty peer payloads so listen/discover can finish. */
+function racePeerDiscovery(
+  promises: Array<Promise<string | null>>,
+): Promise<string | null> {
+  return new Promise(resolve => {
+    let remaining = promises.length;
+    if (remaining === 0) {
+      resolve(null);
+      return;
+    }
+    for (const p of promises) {
+      p.then(value => {
+        remaining -= 1;
+        if (value) {
+          resolve(value);
+        } else if (remaining === 0) {
+          resolve(null);
+        }
+      }).catch(() => {
+        remaining -= 1;
+        if (remaining === 0) {
+          resolve(null);
+        }
+      });
+    }
+  });
+}
 import {
   getPrepareModalCopy,
   prepareDeviceForKeygen,
 } from '../services/tssKeygenPrepare';
 import {
-  mapMpcHookToPercent,
   resetMpcHookSession,
-  type MpcHookMessage,
   type MpcProgressUtxoState,
 } from '../services/mpcProgress';
+import {
+  processMpcHookMessage,
+  resolveMpcHookBackend,
+} from '../services/mpcProgressUi';
+import {useMpcCircleProgress} from '../services/useMpcCircleProgress';
 import TssBackendBadge from '../components/TssBackendBadge';
 import appConfigRepository, {
   CONFIG_KEYS,
@@ -257,6 +293,12 @@ const MobilesPairing = ({navigation}: any) => {
   const [signedTxRawHex, setSignedTxRawHex] = useState<string | null>(null);
   const mpcAbortRef = useRef(false);
   const activeMpcSessionIdRef = useRef<string | null>(null);
+  const doingMpcRef = useRef(false);
+  const {displayPercent, setCircleTarget, resetCircle} =
+    useMpcCircleProgress(doingMPC);
+  useEffect(() => {
+    doingMpcRef.current = doingMPC;
+  }, [doingMPC]);
   const broadcastSuccessPayloadRef = useRef<{
     multiPath: boolean;
     pendingKey: string;
@@ -569,11 +611,50 @@ const MobilesPairing = ({navigation}: any) => {
       setPrepCounter(0);
     }
   };
+  const sessionWaitMessage = (master: boolean, keygen: boolean) => {
+    if (keygen) {
+      return master
+        ? 'Waiting for partner to tap Join Setup (both devices, within ~20s)…'
+        : 'Connecting to partner — tap Join Setup on both devices…';
+    }
+    return master
+      ? 'Waiting for partner to start co-signing…'
+      : 'Connecting to partner for co-signing…';
+  };
+
   async function initSession() {
+    const keygenFlow = !isSendBitcoin && !isSignPSBT;
     try {
-      dbg('initSession: Starting session initialization');
-      const kp = JSON.parse(keypair);
+      const keypairJson =
+        (keypair || '').trim() ||
+        appConfigRepository.get('lan_ecies_keypair') ||
+        '';
+      const peerEnc =
+        (peerPubkey || '').trim() ||
+        appConfigRepository.get('lan_peer_pubkey') ||
+        '';
+      dbg('initSession: start', {
+        isMaster,
+        keygenFlow,
+        masterHost,
+        hasKeypair: Boolean(keypairJson),
+        hasPeerPub: Boolean(peerEnc),
+        discoveryPort,
+        timeoutSec: timeout,
+      });
+      if (!keypairJson) {
+        throw new Error(
+          'LAN keypair missing — complete device pairing, then retry setup.',
+        );
+      }
+      if (!peerEnc && !isTrio) {
+        throw new Error(
+          'Peer public key missing — complete device pairing, then retry setup.',
+        );
+      }
+      const kp = parseEciesKeypairJson(keypairJson);
       dbg('initSession: Parsed keypair', {publicKey: kp.publicKey});
+      setStatus(sessionWaitMessage(isMaster, keygenFlow));
       if (isMaster) {
         dbg('initSession: Running as master device');
         let _data = randomSeed(64);
@@ -598,14 +679,14 @@ const MobilesPairing = ({navigation}: any) => {
         }
         dbg('initSession: Publishing data', {
           masterHost,
-          data: _data,
-          peerPubkey,
+          dataLen: _data.length,
+          peerEncPrefix: peerEnc.length > 16 ? peerEnc.slice(0, 16) + '…' : peerEnc,
           discoveryPort,
           timeout,
         });
         const enckeyCSV = isTrio
-          ? [peerPubkey, peerPubkey2].filter(Boolean).join(',')
-          : peerPubkey;
+          ? [peerEnc, peerPubkey2].filter(Boolean).join(',')
+          : peerEnc;
         const published = await BBMTLibNativeModule.publishData(
           String(discoveryPort),
           String(timeout),
@@ -615,9 +696,8 @@ const MobilesPairing = ({navigation}: any) => {
         );
         if (published) {
           dbg('initSession: Data published successfully', {published});
-          // For trio the publisher returns two queries joined by '|', each containing data=<checksum>&pubkey=<key>
-          // For duo it returns a single query. Validate checksum only in duo to avoid false negatives across devices.
-          if (!isTrio) {
+          // Duo send-BTC only: validate peer echoed the same amount checksum.
+          if (!isTrio && isSendBitcoin) {
             const firstQuery = (published.split('|')[0] || published) as string;
             const dataParam = (
               firstQuery.split('&').find(p => p.startsWith('data=')) || 'data='
@@ -640,26 +720,33 @@ const MobilesPairing = ({navigation}: any) => {
           dbg('initSession: Session initialization completed successfully');
           return _data;
         } else {
-          dbg('initSession: Timeout waiting for peer device');
-          throw 'Waited too long for other devices to press (Join Tx Co-Signing)';
+          dbg('initSession: Timeout waiting for peer device (publishData)');
+          throw keygenFlow
+            ? 'Partner did not tap Join Setup in time. Both phones must tap Start/Join Setup within about 20 seconds.'
+            : 'Waited too long for the other device to start co-signing.';
         }
       } else {
         dbg('initSession: Running as peer device');
-        const payload = `${peerPubkey}/${route.params?.satoshiAmount}`;
+        const payload = isSendBitcoin
+          ? `${peerEnc}/${route.params?.satoshiAmount}`
+          : `${peerEnc}/${kp.publicKey}`;
         const checksum = await BBMTLibNativeModule.sha256(payload);
         const peerURL = `http://${masterHost}:${discoveryPort}/`;
         dbg('initSession: Fetching data from peer', {
-          payload,
-          checksum,
           peerURL,
+          checksum: checksum.slice(0, 16).concat('…'),
         });
         const rawFetched = await fetchData(peerURL, kp.privateKey, checksum);
-        dbg('initSession: Data fetched successfully', {rawFetched});
+        dbg('initSession: Data fetched successfully', {
+          len: rawFetched?.length ?? 0,
+        });
         return rawFetched;
       }
     } catch (error: any) {
       dbg('initSession: Error occurred', {error});
-      throw 'Error initializing session: \n' + error;
+      const detail =
+        error?.message ?? (typeof error === 'string' ? error : String(error));
+      throw `Error initializing session:\n${detail}`;
     }
   }
   const randomSeed = (length = 32) => {
@@ -688,18 +775,55 @@ const MobilesPairing = ({navigation}: any) => {
 
   const mpcTssSetup = async () => {
     try {
-      setDoingMPC(true);
+      let backend = keygenBackend;
+      if (!backend && keygenSetupMode) {
+        backend = await resolveTssBackendForKeygen(keygenSetupMode);
+        setKeygenBackend(backend);
+      }
       setMpcDone(false);
       setPrepCounter(0);
       resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
+      resetCircle();
       setProgress(0);
-      setStatus('Processing cryptographic operations');
-      dbg('mpcTssSetup...');
+      setDoingMPC(true);
+      setStatus('Starting wallet setup…');
+      dbg('mpcTssSetup: begin', {
+        isMaster,
+        masterHost,
+        keygenBackend: backend,
+        keygenSetupMode,
+        peerPubkeySet: Boolean(
+          peerPubkey || appConfigRepository.get('lan_peer_pubkey'),
+        ),
+        hasKeypair: Boolean(
+          keypair || appConfigRepository.get('lan_ecies_keypair'),
+        ),
+      });
       if (!masterHost) {
         throw new Error(
           'Master device IP is unknown. Pair devices again, then retry setup.',
         );
       }
+      const setupBackend =
+        backend ?? getKeygenTssBackendPreference();
+      if (
+        Platform.OS === 'android' &&
+        setupBackend === 'dkls23' &&
+        BBMTLibNativeModule.ensureDklsLanRuntime
+      ) {
+        setStatus('Loading DKLs native runtime…');
+        dbg('mpcTssSetup: ensureDklsLanRuntime');
+        await Promise.race([
+          BBMTLibNativeModule.ensureDklsLanRuntime(),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error('DKLS runtime load timed out')),
+              15000,
+            ),
+          ),
+        ]);
+      }
+      dbg('mpcTssSetup: initSession (both devices must tap Start/Join Setup now)');
       const data = await initSession();
       dbg('got session data', data);
       if (isMaster) {
@@ -725,26 +849,32 @@ const MobilesPairing = ({navigation}: any) => {
         ? 'KeyShare1,KeyShare2,KeyShare3'
         : `${partyID},${peerID}`;
       const sessionID = await BBMTLibNativeModule.sha256(`${data}/${server}`);
-      const kp = JSON.parse(keypair);
-      const encKey = isTrio ? '' : peerPubkey;
-      const decKey = isTrio ? '' : kp.privateKey;
-      let sessionKey = '';
-      if (isTrio) {
-        try {
-          const seeds = [sessionID, masterHost];
-          sessionKey = await BBMTLibNativeModule.sha256(seeds.join(','));
-        } catch {}
-      }
+      const keypairJson =
+        (keypair || '').trim() ||
+        appConfigRepository.get('lan_ecies_keypair') ||
+        '';
+      const peerPub =
+        (peerPubkey || '').trim() ||
+        appConfigRepository.get('lan_peer_pubkey') ||
+        '';
+      const transport = await resolveLanKeygenTransportKeys({
+        isTrio,
+        keypairJson,
+        peerPubkey: peerPub,
+        sessionID,
+        masterHost: masterHost || '',
+        sha256: (msg: string) => BBMTLibNativeModule.sha256(msg),
+      });
       setShareName(partyID);
+      activeMpcSessionIdRef.current = sessionID;
+      setStatus('Running wallet key generation…');
       dbg('starting keygen with', {
         server,
         partyID,
         ppmFile,
         partiesCSV,
         sessionID,
-        sessionKey,
-        encKey,
-        decKey,
+        transportMode: transport.sessionKey ? 'aes' : 'ecies',
         data,
       });
       TssProvider.mpcTssSetup(
@@ -753,9 +883,9 @@ const MobilesPairing = ({navigation}: any) => {
         ppmFile,
         partiesCSV,
         sessionID,
-        sessionKey,
-        encKey,
-        decKey,
+        transport.sessionKey,
+        transport.encKey,
+        transport.decKey,
         data,
         keygenSetupMode,
       )
@@ -804,6 +934,7 @@ const MobilesPairing = ({navigation}: any) => {
           dbg('keygen error', error);
           setMpcDone(false);
           resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
+          resetCircle();
           setProgress(0);
           Alert.alert('Wallet setup failed', formatMpcError(error));
         })
@@ -818,6 +949,7 @@ const MobilesPairing = ({navigation}: any) => {
     } catch (error: unknown) {
       setMpcDone(false);
       resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
+      resetCircle();
       setProgress(0);
       Alert.alert('Wallet setup failed', formatMpcError(error));
       if (isMaster) {
@@ -829,12 +961,17 @@ const MobilesPairing = ({navigation}: any) => {
     }
   };
   const runKeysign = async () => {
-    setDoingMPC(true);
+    let backend = spendBackend;
+    if (!backend) {
+      backend = await resolveTssBackend();
+      setSpendBackend(backend);
+    }
     setMpcDone(false);
     setPrepCounter(0);
     resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
+    resetCircle();
     setProgress(0);
-    setStatus('Processing cryptographic operations');
+    setStatus('Starting co-signing…');
     // CRITICAL: Store original network/API before transaction (declared outside try for finally block)
     // We'll use QR code network temporarily for signing, but restore original after
     let originalNetwork = '';
@@ -954,11 +1091,20 @@ const MobilesPairing = ({navigation}: any) => {
       const partiesCSV = allParties.sort().join(',');
       const sessionID = await BBMTLibNativeModule.sha256(`${data}/${server}`);
       activeMpcSessionIdRef.current = sessionID;
+      setDoingMPC(true);
       mpcAbortRef.current = false;
-      const kp = JSON.parse(keypair);
-      const encKey = peerPubkey;
-      const decKey = kp.privateKey;
-      const sessionKey = '';
+      const keypairJson =
+        (keypair || '').trim() ||
+        appConfigRepository.get('lan_ecies_keypair') ||
+        '';
+      const peerPub =
+        (peerPubkey || '').trim() ||
+        appConfigRepository.get('lan_peer_pubkey') ||
+        '';
+      const {encKey, decKey, sessionKey} = resolveLanKeysignTransportKeys({
+        keypairJson,
+        peerPubkey: peerPub,
+      });
       const decoded = data.split(':');
       dbg('public-decoded', decoded);
       if (isSignPSBT) {
@@ -1203,58 +1349,41 @@ const MobilesPairing = ({navigation}: any) => {
   useEffect(() => {
     let subscription: EmitterSubscription | undefined;
     const logEmitter = new NativeEventEmitter(BBMTLibNativeModule);
-    const backend = resolveHookProgressBackend({
-      isSpendFlow: isSendBitcoin || isSignPSBT,
-      spendBackend,
-      keygenBackend,
-    });
     const processHook = (message: string) => {
+      const backend = resolveMpcHookBackend({
+        isSpendFlow: isSendBitcoin || isSignPSBT,
+        spendBackend,
+        keygenBackend,
+        mpcActive: doingMpcRef.current,
+      });
       if (!backend) {
         return;
       }
-      let msg: MpcHookMessage;
-      try {
-        msg = JSON.parse(message) as MpcHookMessage;
-      } catch (parseErr) {
-        dbg('processHook: invalid JSON', parseErr, message);
+      const result = processMpcHookMessage(message, backend, {
+        isTrio,
+        isSendBitcoin,
+        refs: {
+          progressRef: mpcHookProgressRef,
+          utxoRef: mpcUtxoRef,
+          activeSessionRef: activeMpcSessionIdRef,
+        },
+      });
+      if (!result) {
         return;
       }
-      const result = mapMpcHookToPercent(msg, backend, {
-        isTrio,
-        utxo: mpcUtxoRef.current,
-        currentProgress: mpcHookProgressRef.current,
-      });
       if (result.utxoState) {
-        mpcUtxoRef.current = result.utxoState;
         dbg('progress send_btc', result.utxoState);
       }
       if (result.percent !== null) {
-        mpcHookProgressRef.current = result.percent;
-        dbg(
-          'progress',
-          msg.type,
-          result.percent,
-          'step',
-          msg.step,
-          'done',
-          msg.done,
-        );
+        dbg('progress hook', result.percent, result.statusLabel);
         setProgress(result.percent);
+        setCircleTarget(result.percent);
+      }
+      if (result.statusLabel) {
+        setStatus(result.statusLabel);
       }
       if (result.mpcDone) {
         setMpcDone(true);
-      }
-      if (msg.type === 'keysign' && msg.info) {
-        dbg('keysign_hook_info:', msg.info);
-      }
-      const step = msg.step ?? 0;
-      const statusDot =
-        step % 3 === 0 ? '.' : step % 3 === 1 ? '..' : '...';
-      const {utxoIndex, utxoCount} = mpcUtxoRef.current;
-      if (utxoCount > 0 && utxoIndex > 0 && isSendBitcoin) {
-        setStatus(`Signing input ${utxoIndex}/${utxoCount}${statusDot}`);
-      } else {
-        setStatus('Processing cryptographic operations' + statusDot);
       }
     };
     if (Platform.OS === 'android') {
@@ -1274,7 +1403,7 @@ const MobilesPairing = ({navigation}: any) => {
     return () => {
       subscription?.remove();
     };
-  }, [isTrio, isSendBitcoin, isSignPSBT, keygenBackend, spendBackend]);
+  }, [isTrio, isSendBitcoin, isSignPSBT, keygenBackend, spendBackend, setCircleTarget]);
   useEffect(() => {
     if (isPreparing) {
       const interval = setInterval(() => {
@@ -1343,21 +1472,31 @@ const MobilesPairing = ({navigation}: any) => {
       return;
     }
     setIsPairing(true);
-    setStatus('Syncing local IP...');
     setCountdown(timeout);
-    const jkp = await BBMTLibNativeModule.eciesKeypair();
-    setKeypair(jkp);
-    const kp = JSON.parse(jkp);
-    const meta = await getKeyshareMetadata();
-    const localShare = meta?.local_party_key || '';
+    appConfigRepository.remove('lan_peer_pubkey');
+    appConfigRepository.remove('lan_ecies_keypair');
+    setStatus('Preparing LAN pairing...');
     try {
+      // Android: keep gomobile for LAN pairing only; load libbbmtmobile at wallet setup (mpcTssSetup).
+      setStatus('Generating device keys...');
+      const jkp = await BBMTLibNativeModule.eciesKeypair();
+      const kp = parseEciesKeypairJson(jkp);
+      setKeypair(jkp);
+      setStatus('Syncing local IP...');
+      const meta = await getKeyshareMetadata();
+      const localShare = meta?.local_party_key || '';
       const pinnedIPs = getPinnedRemoteIPs();
       dbg('checking lanIP given pinnedRemotes', pinnedIPs);
       const ip = await BBMTLibNativeModule.getLanIp(pinnedIPs[0] || '');
       dbg('device local lanIP', ip);
       const deviceName = await DeviceInfo.getDeviceName();
       setLocalDevice(deviceName);
-      setStatus('Starting peer discovery...');
+      setStatus(
+        ip
+          ? 'Starting peer discovery...'
+          : 'No LAN IP found — listening for peer only...',
+      );
+      setCountdown(timeout);
       appConfigRepository.set('peerFound', '');
       const promises = [
         listenForPeerPromise(
@@ -1381,7 +1520,7 @@ const MobilesPairing = ({navigation}: any) => {
         );
       }
       let until = Date.now() + timeout * 1000;
-      let result = await Promise.race(promises);
+      let result = await racePeerDiscovery(promises);
       while (!result && Date.now() < until) {
         dbg('checking peer...');
         result = appConfigRepository.get('peerFound');
@@ -1426,6 +1565,12 @@ const MobilesPairing = ({navigation}: any) => {
         }
         const _peerPubkey = peerInfo1[2] || '';
         setPeerPubkey(_peerPubkey);
+        if (_peerPubkey) {
+          appConfigRepository.set('lan_peer_pubkey', _peerPubkey);
+        }
+        if (keypair) {
+          appConfigRepository.set('lan_ecies_keypair', keypair);
+        }
         const localInfo = (primary[1] || '').split('@');
         const _localIP = (localInfo[0] || '').split(':')[0];
         setLocalIP(_localIP || null);
@@ -1606,7 +1751,9 @@ const MobilesPairing = ({navigation}: any) => {
         // Ignore fetch errors during retry
       }
     }
-    throw 'Waited too long for other devices to press (Start Tx Co-Signing)';
+    throw isSendBitcoin || isSignPSBT
+      ? 'Waited too long for the other device to start co-signing.'
+      : 'Partner did not tap Join Setup in time. Both phones must tap Start/Join Setup within about 20 seconds.';
   }
   async function listenForPeerPromise(
     kp: any,
@@ -3867,7 +4014,9 @@ const MobilesPairing = ({navigation}: any) => {
                             All devices are ready
                           </Text>
                           <Text style={styles.warningHint}>
-                            Do not leave the app during setup.
+                            Tap {isMaster ? 'Start' : 'Join'} Setup on this
+                            phone and {isMaster ? 'Join' : 'Start'} Setup on the
+                            other within ~20s. Stay in the app.
                           </Text>
                         </View>
                         <Text style={styles.warningIcon}>⚠️</Text>
@@ -3906,7 +4055,7 @@ const MobilesPairing = ({navigation}: any) => {
                                 {/* Circular Progress */}
                                 <Progress.Circle
                                   size={80}
-                                  progress={progress / 100}
+                                  progress={displayPercent / 100}
                                   thickness={6}
                                   borderWidth={0}
                                   showsText={false}
@@ -3920,7 +4069,7 @@ const MobilesPairing = ({navigation}: any) => {
                                 {/* Progress Percentage */}
                                 <View style={styles.progressTextWrapper}>
                                   <Text style={styles.progressPercentage}>
-                                    {Math.round(progress)}%
+                                    {displayPercent}%
                                   </Text>
                                 </View>
                               </View>
@@ -4857,7 +5006,7 @@ const MobilesPairing = ({navigation}: any) => {
                             {/* Circular Progress */}
                             <Progress.Circle
                               size={80}
-                              progress={progress / 100}
+                              progress={displayPercent / 100}
                               thickness={6}
                               borderWidth={0}
                               showsText={false}
@@ -4871,7 +5020,7 @@ const MobilesPairing = ({navigation}: any) => {
                             {/* Progress Percentage */}
                             <View style={styles.progressTextWrapper}>
                               <Text style={styles.progressPercentage}>
-                                {Math.round(progress)}%
+                                {displayPercent}%
                               </Text>
                             </View>
                           </View>
@@ -4948,29 +5097,12 @@ const MobilesPairing = ({navigation}: any) => {
         rawTxHex={signedTxRawHex ?? ''}
         onBroadcastSuccess={async (txId: string) => {
           const p = broadcastSuccessPayloadRef.current;
+          broadcastSuccessPayloadRef.current = null;
+          setSignedTxRawHex(null);
           if (!p) {
-            setSignedTxRawHex(null);
             return;
           }
           try {
-            if (p.multiPath) {
-              try {
-                await WalletService.getInstance().incrementChangeIndexAfterSend(
-                  p.net,
-                  p.addressTypeToUse,
-                );
-              } catch (e) {
-                dbg('MobilesPairing: incrementChangeIndexAfterSend failed:', e);
-              }
-            }
-            try {
-              await WalletService.getInstance().refreshSpendStateAfterBroadcast(
-                p.net,
-                p.addressTypeToUse,
-              );
-            } catch (e) {
-              dbg('MobilesPairing: refreshSpendStateAfterBroadcast failed:', e);
-            }
             const apiTxShape = {
               txid: txId,
               status: {confirmed: false, block_height: null, block_time: null, block_hash: null},
@@ -5007,31 +5139,50 @@ const MobilesPairing = ({navigation}: any) => {
               ),
             );
             setMpcDone(true);
-            if (p.originalNetwork && p.originalApiUrl) {
-              try {
-                await BBMTLibNativeModule.setBtcNetwork(p.originalNetwork);
-                await BBMTLibNativeModule.setAPI(
-                  p.originalNetwork,
-                  p.originalApiUrl,
-                );
-                appConfigRepository.set('api', p.originalApiUrl);
-                const ws = WalletService.getInstance();
-                (ws as any).currentNetwork = p.originalNetwork;
-                (ws as any).currentApiUrl = p.originalApiUrl;
-              } catch (e) {
-                dbg(
-                  'MobilesPairing: Error restoring network after broadcast:',
-                  e,
-                );
+            void (async () => {
+              if (p.multiPath) {
+                try {
+                  await WalletService.getInstance().incrementChangeIndexAfterSend(
+                    p.net,
+                    p.addressTypeToUse,
+                  );
+                } catch (e) {
+                  dbg('MobilesPairing: incrementChangeIndexAfterSend failed:', e);
+                }
               }
-            }
-            if (p.isMaster) {
-              await waitMS(2000);
-              stopRelay();
-            }
-          } finally {
-            broadcastSuccessPayloadRef.current = null;
-            setSignedTxRawHex(null);
+              try {
+                await WalletService.getInstance().refreshSpendStateAfterBroadcast(
+                  p.net,
+                  p.addressTypeToUse,
+                );
+              } catch (e) {
+                dbg('MobilesPairing: refreshSpendStateAfterBroadcast failed:', e);
+              }
+              if (p.originalNetwork && p.originalApiUrl) {
+                try {
+                  await BBMTLibNativeModule.setBtcNetwork(p.originalNetwork);
+                  await BBMTLibNativeModule.setAPI(
+                    p.originalNetwork,
+                    p.originalApiUrl,
+                  );
+                  appConfigRepository.set('api', p.originalApiUrl);
+                  const ws = WalletService.getInstance();
+                  (ws as any).currentNetwork = p.originalNetwork;
+                  (ws as any).currentApiUrl = p.originalApiUrl;
+                } catch (e) {
+                  dbg(
+                    'MobilesPairing: Error restoring network after broadcast:',
+                    e,
+                  );
+                }
+              }
+              if (p.isMaster) {
+                await waitMS(2000);
+                stopRelay();
+              }
+            })();
+          } catch (e) {
+            dbg('MobilesPairing: post-broadcast cleanup failed:', e);
           }
         }}
         onClose={() => {

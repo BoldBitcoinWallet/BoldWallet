@@ -1,10 +1,18 @@
 import React, {useEffect, useState} from 'react';
-import {View, Text, StyleSheet, Modal, Image} from 'react-native';
+import {View, Text, StyleSheet, Modal, Image, Linking} from 'react-native';
 import AppPressable from './AppPressable';
 import {useTheme} from '../theme';
 import type {TssBackend} from '../services/tssBackend';
 import {getTssBackendDisplayLabel} from '../services/tssBackend';
 import {getKeygenTssBackendPreference} from '../services/tssConfig';
+
+const LIBTSS_URL = 'https://github.com/0xCarbon/libtss';
+const BNB_TSS_BLOG_URL =
+  'https://www.binance.com/en/blog/all/398654406137536512';
+
+const openExternalLink = (url: string) => {
+  Linking.openURL(url).catch(() => {});
+};
 
 interface TssBackendSelectorProps {
   visible: boolean;
@@ -118,6 +126,10 @@ const TssBackendSelector: React.FC<TssBackendSelectorProps> = ({
           ? theme.colors.subPrimary + '10'
           : theme.colors.bitcoinOrange + '20',
     },
+    optionIcon: {
+      width: 32,
+      height: 32,
+    },
     optionTitle: {
       fontSize: theme.fontSizes?.md || 15,
       fontFamily: theme.fontFamilies?.bold,
@@ -175,6 +187,11 @@ const TssBackendSelector: React.FC<TssBackendSelectorProps> = ({
       fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
     },
+    hintLink: {
+      fontFamily: theme.fontFamilies?.medium,
+      color: accent,
+      textDecorationLine: 'underline',
+    },
     continueButton: {
       marginTop: 16,
       borderRadius: 12,
@@ -195,29 +212,40 @@ const TssBackendSelector: React.FC<TssBackendSelectorProps> = ({
   const hintFor = (backend: TssBackend | null) => {
     if (backend === 'gg18') {
       return (
-        <>
-          <Text style={styles.hintText}>
-            <Text style={styles.hintTextBold}>GG18 (legacy): </Text>
-            Compatible with older Bold wallets. Prepare can take several
-            minutes. All devices in this setup must choose GG18.
+        <Text style={styles.hintText}>
+          <Text style={styles.hintTextBold}>GG18 · BNB TSS</Text>
+          {' '}
+          — Established threshold ECDSA stack. Slower prepare (often a few
+          minutes). Choose this to stay compatible with existing GG18 Bold
+          wallets. Every device must pick the same stack.
+          {'\n\n'}
+          <Text
+            style={styles.hintLink}
+            onPress={() => openExternalLink(BNB_TSS_BLOG_URL)}>
+            Binance TSS overview
           </Text>
-        </>
+        </Text>
       );
     }
     if (backend === 'dkls23') {
       return (
-        <>
-          <Text style={styles.hintText}>
-            <Text style={styles.hintTextBold}>DKLs23 (recommended): </Text>
-            Faster prepare and keygen. All devices in this setup must choose
-            DKLs23 and use a build with DKLs native support.
+        <Text style={styles.hintText}>
+          <Text style={styles.hintTextBold}>DKLs23 (recommended)</Text>
+          {' '}
+          — 0xCarbon libtss. Faster setup and signing for new wallets. Every
+          device must pick DKLs23.
+          {'\n\n'}
+          <Text
+            style={styles.hintLink}
+            onPress={() => openExternalLink(LIBTSS_URL)}>
+            0xCarbon/libtss on GitHub
           </Text>
-        </>
+        </Text>
       );
     }
     return (
       <Text style={styles.hintText}>
-        Select the MPC stack every device will use for this new wallet.
+        Pick the MPC library every phone will use for this new wallet.
       </Text>
     );
   };
@@ -259,8 +287,8 @@ const TssBackendSelector: React.FC<TssBackendSelectorProps> = ({
                 onPress={() => setSelected('dkls23')}
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <Image
-                  source={require('../assets/bitcoin-logo.png')}
-                  style={{width: 28, height: 28}}
+                  source={require('../assets/0xcarbon-lib.png')}
+                  style={styles.optionIcon}
                   resizeMode="contain"
                 />
                 <Text
@@ -270,7 +298,7 @@ const TssBackendSelector: React.FC<TssBackendSelectorProps> = ({
                   ]}>
                   DKLs23
                 </Text>
-                <Text style={styles.optionSubtitle}>Faster · default</Text>
+                <Text style={styles.optionSubtitle}>0xCarbon libtss</Text>
                 <Text style={styles.recommendedBadge}>Recommended</Text>
               </AppPressable>
               <AppPressable
@@ -281,8 +309,8 @@ const TssBackendSelector: React.FC<TssBackendSelectorProps> = ({
                 onPress={() => setSelected('gg18')}
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <Image
-                  source={require('../assets/security-icon.png')}
-                  style={[styles.modalHeaderIcon, {width: 28, height: 28}]}
+                  source={require('../assets/bnb-lib.png')}
+                  style={styles.optionIcon}
                   resizeMode="contain"
                 />
                 <Text
@@ -292,7 +320,7 @@ const TssBackendSelector: React.FC<TssBackendSelectorProps> = ({
                   ]}>
                   GG18
                 </Text>
-                <Text style={styles.optionSubtitle}>Legacy compatibility</Text>
+                <Text style={styles.optionSubtitle}>BNB TSS library</Text>
               </AppPressable>
             </View>
             <View style={styles.hintBox}>

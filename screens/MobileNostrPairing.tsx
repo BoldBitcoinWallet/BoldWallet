@@ -56,7 +56,6 @@ import {
 } from '../services/mempoolApiBase';
 import {prepareSendBtcMultiPathInputs} from '../services/sendBtcPrepare';
 import {
-  resolveHookProgressBackend,
   resolveTssBackend,
   resolveTssBackendForKeygen,
   type SetupMode,
@@ -68,11 +67,14 @@ import {
   prepareDeviceForKeygen,
 } from '../services/tssKeygenPrepare';
 import {
-  mapMpcHookToPercent,
   resetMpcHookSession,
-  type MpcHookMessage,
   type MpcProgressUtxoState,
 } from '../services/mpcProgress';
+import {
+  processMpcHookMessage,
+  resolveMpcHookBackend,
+} from '../services/mpcProgressUi';
+import {useMpcCircleProgress} from '../services/useMpcCircleProgress';
 import TssBackendBadge from '../components/TssBackendBadge';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
@@ -397,8 +399,15 @@ const MobileNostrPairing = ({navigation}: any) => {
     utxoCount: 0,
     utxoRange: 0,
   });
+  const activeMpcSessionIdRef = useRef<string | null>(null);
+  const isPairingRef = useRef(false);
   const [status, setStatus] = useState('');
   const [isPairing, setIsPairing] = useState(false);
+  const {displayPercent, setCircleTarget, resetCircle} =
+    useMpcCircleProgress(isPairing);
+  useEffect(() => {
+    isPairingRef.current = isPairing;
+  }, [isPairing]);
   const [isKeygenReady, setIsKeygenReady] = useState(false); // Manual toggle for "other devices ready"
   const [isKeysignReady, setIsKeysignReady] = useState(false); // Manual toggle for PSBT/send signing readiness
   const [canStartKeygen, setCanStartKeygen] = useState(false); // Auto-calculated: all conditions met
@@ -858,63 +867,41 @@ const MobileNostrPairing = ({navigation}: any) => {
   // Listen to native module events for progress tracking
   useEffect(() => {
     const eventEmitter = new NativeEventEmitter(BBMTLibNativeModule);
-    const backend = resolveHookProgressBackend({
-      isSpendFlow: isSendBitcoin || isSignPSBT,
-      spendBackend,
-      keygenBackend,
-    });
     const processHook = (message: string) => {
+      const backend = resolveMpcHookBackend({
+        isSpendFlow: isSendBitcoin || isSignPSBT,
+        spendBackend,
+        keygenBackend,
+        mpcActive: isPairingRef.current,
+      });
       if (!backend) {
         return;
       }
-      try {
-        const msg = JSON.parse(message) as MpcHookMessage;
-        const result = mapMpcHookToPercent(msg, backend, {
-          isTrio,
-          utxo: mpcUtxoRef.current,
-          currentProgress: mpcHookProgressRef.current,
-        });
-        if (result.utxoState) {
-          mpcUtxoRef.current = result.utxoState;
-          dbg('progress send_btc', result.utxoState);
-        }
-        if (result.percent !== null) {
-          mpcHookProgressRef.current = result.percent;
-          dbg(
-            'progress',
-            msg.type,
-            result.percent,
-            'step',
-            msg.step,
-            'done',
-            msg.done,
-          );
-          setProgress(result.percent);
-        }
-        if (result.mpcDone) {
-          setMpcDone(true);
-        }
-        if (msg.type === 'keygen' && msg.info) {
-          dbg('keygen_hook_info:', msg.info);
-        }
-        if (msg.type === 'keysign' && msg.info) {
-          dbg('keysign_hook_info:', msg.info);
-        }
-        if (msg.type === 'btc_send' && msg.info) {
-          dbg('btc_send_hook_info:', msg.info);
-        }
-        const step = msg.step ?? 0;
-        const statusDot =
-          step % 3 === 0 ? '.' : step % 3 === 1 ? '..' : '...';
-        const {utxoIndex, utxoCount} = mpcUtxoRef.current;
-        if (utxoCount > 0 && utxoIndex > 0 && isSendBitcoin) {
-          setStatus(`Signing input ${utxoIndex}/${utxoCount}${statusDot}`);
-        } else {
-          setStatus('Processing cryptographic operations' + statusDot);
-        }
-      } catch {
-        // If parsing fails, it might be a log message, just log it
-        dbg('TSS log:', message);
+      const result = processMpcHookMessage(message, backend, {
+        isTrio,
+        isSendBitcoin,
+        refs: {
+          progressRef: mpcHookProgressRef,
+          utxoRef: mpcUtxoRef,
+          activeSessionRef: activeMpcSessionIdRef,
+        },
+      });
+      if (!result) {
+        return;
+      }
+      if (result.utxoState) {
+        dbg('progress send_btc', result.utxoState);
+      }
+      if (result.percent !== null) {
+        dbg('progress hook', result.percent, result.statusLabel);
+        setProgress(result.percent);
+        setCircleTarget(result.percent);
+      }
+      if (result.statusLabel) {
+        setStatus(result.statusLabel);
+      }
+      if (result.mpcDone) {
+        setMpcDone(true);
       }
     };
     const subscription: EmitterSubscription = eventEmitter.addListener(
@@ -930,7 +917,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     return () => {
       subscription.remove();
     };
-  }, [isTrio, isSendBitcoin, isSignPSBT, keygenBackend, spendBackend]);
+  }, [isTrio, isSendBitcoin, isSignPSBT, keygenBackend, spendBackend, setCircleTarget]);
   // Load minimal keyshare prep fields from native (full MPC blob never in JS); signing uses WithStoredKeyshare
   useEffect(() => {
     if (!isSendBitcoin && !isSignPSBT) return;
@@ -1503,10 +1490,17 @@ const MobileNostrPairing = ({navigation}: any) => {
   };
   const startKeygen = async () => {
     if (!canStartKeygen) return;
+    let backend = keygenBackend;
+    if (!backend && keygenSetupMode) {
+      backend = await resolveTssBackendForKeygen(keygenSetupMode);
+      setKeygenBackend(backend);
+    }
+    activeMpcSessionIdRef.current = sessionID;
     setIsPairing(true);
     resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
+    resetCircle();
     setProgress(0);
-    setStatus('Starting key generation...');
+    setStatus('Starting key generation…');
     try {
       // Prepare parties npubs CSV (sorted)
       // IMPORTANT: Must use the same npubs and same sorting as session ID generation
@@ -1712,11 +1706,18 @@ const MobileNostrPairing = ({navigation}: any) => {
       Alert.alert('Error', 'Missing transaction parameters');
       return;
     }
+    let backend = spendBackend;
+    if (!backend) {
+      backend = await resolveTssBackend();
+      setSpendBackend(backend);
+    }
     nostrAbortRef.current = false;
+    activeMpcSessionIdRef.current = sessionID;
     setIsPairing(true);
     resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
+    resetCircle();
     setProgress(0);
-    setStatus('Starting transaction signing...');
+    setStatus('Starting transaction signing…');
     // Store original network/API to restore after transaction
     let originalNetwork = '';
     let originalApiUrl = '';
@@ -2147,11 +2148,18 @@ const MobileNostrPairing = ({navigation}: any) => {
       );
       return;
     }
+    let backend = spendBackend;
+    if (!backend) {
+      backend = await resolveTssBackend();
+      setSpendBackend(backend);
+    }
     nostrAbortRef.current = false;
+    activeMpcSessionIdRef.current = sessionID;
     setIsPairing(true);
     resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
+    resetCircle();
     setProgress(0);
-    setStatus('Starting PSBT signing...');
+    setStatus('Starting PSBT signing…');
     let keyshare: any;
     try {
       keyshare = await loadNostrKeysharePrepForSession();
@@ -6158,7 +6166,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                     {/* Circular Progress */}
                     <Progress.Circle
                       size={80}
-                      progress={progress / 100}
+                      progress={displayPercent / 100}
                       thickness={6}
                       borderWidth={0}
                       showsText={false}
@@ -6168,7 +6176,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                     {/* Progress Percentage */}
                     <View style={styles.progressTextWrapper}>
                       <Text style={styles.progressPercentage}>
-                        {Math.round(progress)}%
+                        {displayPercent}%
                       </Text>
                     </View>
                   </View>
@@ -6235,7 +6243,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                     {/* Circular Progress */}
                     <Progress.Circle
                       size={80}
-                      progress={progress / 100}
+                      progress={displayPercent / 100}
                       thickness={6}
                       borderWidth={0}
                       showsText={false}
@@ -6245,7 +6253,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                     {/* Progress Percentage */}
                     <View style={styles.progressTextWrapper}>
                       <Text style={styles.progressPercentage}>
-                        {Math.round(progress)}%
+                        {displayPercent}%
                       </Text>
                     </View>
                   </View>
@@ -6560,33 +6568,12 @@ const MobileNostrPairing = ({navigation}: any) => {
         rawTxHex={signedTxRawHex ?? ''}
         onBroadcastSuccess={async (txId: string) => {
           const p = broadcastSuccessPayloadRef.current;
+          broadcastSuccessPayloadRef.current = null;
+          setSignedTxRawHex(null);
           if (!p) {
-            setSignedTxRawHex(null);
             return;
           }
           try {
-            try {
-              await WalletService.getInstance().incrementChangeIndexAfterSend(
-                p.net,
-                p.addressTypeToUse,
-              );
-            } catch (e) {
-              dbg(
-                'MobileNostrPairing: incrementChangeIndexAfterSend failed:',
-                e,
-              );
-            }
-            try {
-              await WalletService.getInstance().refreshSpendStateAfterBroadcast(
-                p.net,
-                p.addressTypeToUse,
-              );
-            } catch (e) {
-              dbg(
-                'MobileNostrPairing: refreshSpendStateAfterBroadcast failed:',
-                e,
-              );
-            }
             const apiTxShape =
               p.inputs &&
               p.outputs &&
@@ -6657,32 +6644,55 @@ const MobileNostrPairing = ({navigation}: any) => {
               ),
             );
             setMpcDone(true);
-            if (p.originalNetwork && p.originalApiUrl) {
+            void (async () => {
               try {
-                await BBMTLibNativeModule.setBtcNetwork(p.originalNetwork);
-                await BBMTLibNativeModule.setAPI(
-                  p.originalNetwork,
-                  p.originalApiUrl,
+                await WalletService.getInstance().incrementChangeIndexAfterSend(
+                  p.net,
+                  p.addressTypeToUse,
                 );
-                appConfigRepository.set('api', p.originalApiUrl);
-                if (
-                  p.originalWalletServiceNetwork &&
-                  p.originalWalletServiceApiUrl
-                ) {
-                  const ws = WalletService.getInstance();
-                  (ws as any).currentNetwork = p.originalWalletServiceNetwork;
-                  (ws as any).currentApiUrl = p.originalWalletServiceApiUrl;
-                }
               } catch (e) {
                 dbg(
-                  'MobileNostrPairing: Error restoring network after broadcast:',
+                  'MobileNostrPairing: incrementChangeIndexAfterSend failed:',
                   e,
                 );
               }
-            }
-          } finally {
-            broadcastSuccessPayloadRef.current = null;
-            setSignedTxRawHex(null);
+              try {
+                await WalletService.getInstance().refreshSpendStateAfterBroadcast(
+                  p.net,
+                  p.addressTypeToUse,
+                );
+              } catch (e) {
+                dbg(
+                  'MobileNostrPairing: refreshSpendStateAfterBroadcast failed:',
+                  e,
+                );
+              }
+              if (p.originalNetwork && p.originalApiUrl) {
+                try {
+                  await BBMTLibNativeModule.setBtcNetwork(p.originalNetwork);
+                  await BBMTLibNativeModule.setAPI(
+                    p.originalNetwork,
+                    p.originalApiUrl,
+                  );
+                  appConfigRepository.set('api', p.originalApiUrl);
+                  if (
+                    p.originalWalletServiceNetwork &&
+                    p.originalWalletServiceApiUrl
+                  ) {
+                    const ws = WalletService.getInstance();
+                    (ws as any).currentNetwork = p.originalWalletServiceNetwork;
+                    (ws as any).currentApiUrl = p.originalWalletServiceApiUrl;
+                  }
+                } catch (e) {
+                  dbg(
+                    'MobileNostrPairing: Error restoring network after broadcast:',
+                    e,
+                  );
+                }
+              }
+            })();
+          } catch (e) {
+            dbg('MobileNostrPairing: post-broadcast cleanup failed:', e);
           }
         }}
         onClose={() => {

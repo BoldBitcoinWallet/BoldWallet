@@ -85,7 +85,7 @@ export {isDkls23OptedOut} from './tssConfig';
 /** Human-readable MPC stack label for UI (Devices tab, settings). */
 export function getTssBackendDisplayLabel(backend: TssBackend): string {
   if (backend === 'dkls23') {
-    return 'DKLs23 (libtss)';
+    return 'DKLs23 · 0xCarbon libtss';
   }
-  return 'GG18 (BNB)';
+  return 'GG18 · BNB TSS';
 }

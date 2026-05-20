@@ -44,11 +44,41 @@ func lanPrepareKeysignProgress(server, session, key string, parties []string) er
 		return fmt.Errorf("register session: %w", err)
 	}
 	tss.ReportKeysignProgress(session, 1, "waiting parties", false)
+	stopSignPulse := make(chan struct{})
+	defer close(stopSignPulse)
+	go func() {
+		tick := 0
+		for {
+			select {
+			case <-stopSignPulse:
+				return
+			case <-time.After(2 * time.Second):
+				tick++
+				tss.ReportKeysignProgress(session, 1, fmt.Sprintf("waiting for devices (%d)", tick), false)
+			}
+		}
+	}()
 	if err := tss.LANAwaitJoiners(parties, server, session); err != nil {
 		return fmt.Errorf("await joiners: %w", err)
 	}
 	tss.ReportKeysignProgress(session, 2, "starting DKLs keysign", false)
 	return nil
+}
+
+// normalizeLANTransportKeys applies GG18 LAN rules: trio AES session key or duo ECIES enc/dec.
+// If all three are empty (legacy callers / tests), derives AES session key from session + server.
+func normalizeLANTransportKeys(session, server, sessionKey, encKey, decKey string) (string, string, string, error) {
+	if len(sessionKey) == 0 && len(encKey) == 0 && len(decKey) == 0 {
+		sk, err := tss.DeriveLANSessionKey(session, server)
+		if err != nil {
+			return "", "", "", err
+		}
+		sessionKey = sk
+	}
+	if err := tss.ConfigureLANTransportKeys(sessionKey, encKey, decKey); err != nil {
+		return "", "", "", err
+	}
+	return sessionKey, encKey, decKey, nil
 }
 
 // JoinKeygen performs LAN DKG via HTTP relay (duo 2-of-2 or trio 2-of-3).
@@ -61,7 +91,7 @@ func JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey, encKey,
 		}
 	}()
 
-	if err := tss.ConfigureLANTransportKeys(sessionKey, encKey, decKey); err != nil {
+	if sessionKey, encKey, decKey, err = normalizeLANTransportKeys(session, server, sessionKey, encKey, decKey); err != nil {
 		return "", err
 	}
 
@@ -77,6 +107,21 @@ func JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey, encKey,
 		return "", fmt.Errorf("register session: %w", err)
 	}
 	tss.ReportKeygenProgress(session, 1, "waiting parties", false)
+
+	stopJoinPulse := make(chan struct{})
+	defer close(stopJoinPulse)
+	go func() {
+		tick := 0
+		for {
+			select {
+			case <-stopJoinPulse:
+				return
+			case <-time.After(2 * time.Second):
+				tick++
+				tss.ReportKeygenProgress(session, 1, fmt.Sprintf("waiting for devices (%d)", tick), false)
+			}
+		}
+	}()
 
 	if err := tss.LANAwaitJoiners(parties, server, session); err != nil {
 		return "", fmt.Errorf("await joiners: %w", err)
@@ -286,7 +331,7 @@ func runDKGWithSender(
 // JoinKeysign performs LAN DKLs23 signing and returns signature JSON.
 func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshareJSON, message string) (string, error) {
 	defer tss.ClearLANTransportKeys()
-	if err := tss.ConfigureLANTransportKeys(sessionKey, encKey, decKey); err != nil {
+	if _, _, _, err := normalizeLANTransportKeys(session, server, sessionKey, encKey, decKey); err != nil {
 		return "", err
 	}
 

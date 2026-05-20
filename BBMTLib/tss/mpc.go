@@ -60,18 +60,11 @@ func SessionState(session string) string {
 	defer statusMutex.RUnlock()
 	status, exists := statusMap[session]
 	if !exists {
-		return "{}" // Return an empty state if session doesn't exist
+		return fmt.Sprintf(`{ "session": %q }`, session)
 	}
-	step := status.Step
-	seqNo := status.SeqNo
-	index := status.Index
-	info := status.Info
-	time := status.Time
-	done := status.Done
-
 	return fmt.Sprintf(
-		`{ "time": %d, "step": %d, "type": "%s", "info": "%s", "sentNo": %d, "receivedNo": %d, "done": %t }`,
-		time, step, status.Type, info, seqNo, index, done,
+		`{ "session": %q, "time": %d, "step": %d, "type": "%s", "info": %q, "sentNo": %d, "receivedNo": %d, "done": %t }`,
+		session, status.Time, status.Step, status.Type, status.Info, status.SeqNo, status.Index, status.Done,
 	)
 }
 

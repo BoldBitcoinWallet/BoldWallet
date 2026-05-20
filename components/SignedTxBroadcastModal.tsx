@@ -15,12 +15,16 @@ import {BBMTLibNativeModule} from '../native_modules';
 import {useTheme} from '../theme';
 import {dbg} from '../utils';
 
+type BroadcastPhase = 'idle' | 'broadcasting' | 'success';
+
 interface SignedTxBroadcastModalProps {
   visible: boolean;
   rawTxHex: string;
-  onBroadcastSuccess: (txId: string) => void;
+  onBroadcastSuccess: (txId: string) => void | Promise<void>;
   onClose: () => void;
 }
+
+const SUCCESS_FLASH_MS = 450;
 
 const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
   visible,
@@ -29,24 +33,35 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
   onClose,
 }) => {
   const {theme} = useTheme();
-  const [broadcasting, setBroadcasting] = useState(false);
-  const [broadcastDots, setBroadcastDots] = useState(0);
+  const [phase, setPhase] = useState<BroadcastPhase>('idle');
+  const [dotCount, setDotCount] = useState(1);
+
+  const busy = phase === 'broadcasting' || phase === 'success';
 
   useEffect(() => {
-    if (!broadcasting) {
-      setBroadcastDots(0);
+    if (!visible) {
+      setPhase('idle');
+      setDotCount(1);
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (phase !== 'broadcasting') {
+      setDotCount(1);
       return;
     }
     const id = setInterval(() => {
-      setBroadcastDots(d => (d + 1) % 4);
-    }, 400);
+      setDotCount(d => (d % 3) + 1);
+    }, 350);
     return () => clearInterval(id);
-  }, [broadcasting]);
+  }, [phase]);
 
-  const broadcastLabel =
-    broadcasting
-      ? `Broadcasting${'.'.repeat(broadcastDots)}`
-      : 'Broadcast';
+  const broadcastAccessibilityLabel =
+    phase === 'broadcasting'
+      ? 'Broadcasting'
+      : phase === 'success'
+        ? 'Transaction sent'
+        : 'Broadcast';
 
   const handleCopy = () => {
     Clipboard.setString(rawTxHex);
@@ -76,24 +91,59 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
   };
 
   const handleBroadcast = async () => {
-    if (broadcasting || !rawTxHex) return;
-    setBroadcasting(true);
+    if (busy || !rawTxHex) return;
+    setPhase('broadcasting');
     try {
       const txId = await BBMTLibNativeModule.postTx(rawTxHex);
-      if (txId && /^[a-fA-F0-9]{64}$/.test(txId)) {
-        onBroadcastSuccess(txId);
-      } else {
+      if (!txId || !/^[a-fA-F0-9]{64}$/.test(txId)) {
         throw new Error(txId || 'Invalid txid from broadcast');
       }
+      setPhase('success');
+      await new Promise<void>(resolve =>
+        setTimeout(resolve, SUCCESS_FLASH_MS),
+      );
+      await onBroadcastSuccess(txId);
     } catch (e: any) {
       dbg('SignedTxBroadcastModal broadcast error', e);
+      setPhase('idle');
       Alert.alert(
         'Broadcast failed',
         e?.message || 'Failed to broadcast transaction',
       );
-    } finally {
-      setBroadcasting(false);
     }
+  };
+
+  const renderBroadcastContent = () => {
+    if (phase === 'broadcasting') {
+      return (
+        <Text
+          style={[styles.broadcastDotsText, {color: theme.colors.white}]}
+          accessibilityLabel="Broadcasting">
+          {'.'.repeat(dotCount)}
+        </Text>
+      );
+    }
+    if (phase === 'success') {
+      return (
+        <Text
+          style={[styles.broadcastSentText, {color: theme.colors.white}]}
+          accessibilityLabel="Sent">
+          Sent ✓
+        </Text>
+      );
+    }
+    return (
+      <>
+        <Image
+          source={require('../assets/send-icon.png')}
+          style={[styles.actionIcon, {tintColor: theme.colors.white}]}
+          resizeMode="contain"
+        />
+        <Text style={[styles.actionText, {color: theme.colors.white}]}>
+          Broadcast
+        </Text>
+      </>
+    );
   };
 
   if (!visible) return null;
@@ -103,7 +153,7 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={broadcasting ? undefined : onClose}>
+      onRequestClose={busy ? undefined : onClose}>
       <View
         style={[
           styles.backdrop,
@@ -128,9 +178,9 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
             <AppPressable
               accessibilityRole="button"
               accessibilityLabel="Close"
-              style={[styles.closeButton, broadcasting && styles.disabledControl]}
+              style={[styles.closeButton, busy && styles.disabledControl]}
               onPress={onClose}
-              disabled={broadcasting}>
+              disabled={busy}>
               <Text
                 style={[styles.closeButtonText, {color: theme.colors.text}]}>
                 ×
@@ -147,7 +197,7 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
             <AppPressable
               style={[
                 styles.actionButton,
-                broadcasting && styles.disabledControl,
+                busy && styles.disabledControl,
                 {
                   backgroundColor:
                     theme.colors.background === '#ffffff'
@@ -160,7 +210,7 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
                 },
               ]}
               onPress={handleCopy}
-              disabled={broadcasting}>
+              disabled={busy}>
               <Image
                 source={require('../assets/copy-icon.png')}
                 style={[styles.actionIcon, {tintColor: theme.colors.text}]}
@@ -174,7 +224,7 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
             <AppPressable
               style={[
                 styles.actionButton,
-                broadcasting && styles.disabledControl,
+                busy && styles.disabledControl,
                 {
                   backgroundColor:
                     theme.colors.background === '#ffffff'
@@ -187,7 +237,7 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
                 },
               ]}
               onPress={handleShare}
-              disabled={broadcasting}>
+              disabled={busy}>
               <Image
                 source={require('../assets/share-icon.png')}
                 style={[styles.actionIcon, {tintColor: theme.colors.text}]}
@@ -202,7 +252,7 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
               style={[
                 styles.actionButton,
                 styles.broadcastButton,
-                broadcasting && styles.broadcastButtonBusy,
+                busy && styles.broadcastButtonBusy,
                 {
                   backgroundColor:
                     theme.colors.background === '#ffffff'
@@ -211,30 +261,10 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
                 },
               ]}
               onPress={handleBroadcast}
-              disabled={broadcasting}
-              accessibilityState={{busy: broadcasting, disabled: broadcasting}}
-              accessibilityLabel={broadcastLabel}>
-              {broadcasting ? (
-                <Text
-                  style={[styles.broadcastBusyText, {color: theme.colors.white}]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.85}>
-                  {broadcastLabel}
-                </Text>
-              ) : (
-                <>
-                  <Image
-                    source={require('../assets/send-icon.png')}
-                    style={[styles.actionIcon, {tintColor: theme.colors.white}]}
-                    resizeMode="contain"
-                  />
-                  <Text
-                    style={[styles.actionText, {color: theme.colors.white}]}>
-                    {broadcastLabel}
-                  </Text>
-                </>
-              )}
+              disabled={busy}
+              accessibilityState={{busy, disabled: busy}}
+              accessibilityLabel={broadcastAccessibilityLabel}>
+              {renderBroadcastContent()}
             </AppPressable>
           </View>
         </View>
@@ -311,12 +341,21 @@ const styles = StyleSheet.create({
   },
   broadcastButton: {
     borderWidth: 0,
+    minWidth: 72,
   },
   broadcastButtonBusy: {
     opacity: 0.92,
   },
-  broadcastBusyText: {
-    fontSize: 12,
+  broadcastDotsText: {
+    fontSize: 28,
+    fontWeight: '700',
+    lineHeight: 32,
+    letterSpacing: 2,
+    minWidth: 40,
+    textAlign: 'center',
+  },
+  broadcastSentText: {
+    fontSize: 14,
     fontWeight: '700',
     textAlign: 'center',
   },

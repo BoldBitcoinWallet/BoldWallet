@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Build all BoldWallet native MPC artifacts: libtss FFI + GG18 (gomobile) + DKLs23 (c-shared).
 #
-# Android (both backends):
-#   android/app/libs/tss.aar
+# Android (single Go runtime, GG18 + DKLs):
 #   android/app/src/main/jniLibs/<abi>/libbbmtmobile.so
 #   android/app/src/main/jniLibs/<abi>/libdkls_jni.so
 #
@@ -63,9 +62,9 @@ bash "${ROOT}/build-dkls.sh" host
 info "build-all complete."
 echo ""
 echo "Artifacts:"
-echo "  Android GG18:  ../android/app/libs/tss.aar (gomobile; unchanged)"
-echo "  Android DKLs:  ../android/app/src/main/jniLibs/*/libbbmtmobile.so"
+echo "  Android:       ../android/app/src/main/jniLibs/*/libbbmtmobile.so"
 echo "                 ../android/app/src/main/jniLibs/*/libdkls_jni.so"
+echo "                 (Bbmt* + Dkls* JNI — no tss.aar)"
 if [[ "$(uname -s)" == "Darwin" ]]; then
   echo "  iOS (both):    ../ios/BbmtMobile/libbbmtmobile.xcframework"
   echo "                 (link only this in Xcode — not Tss.xcframework + dkls separately)"
