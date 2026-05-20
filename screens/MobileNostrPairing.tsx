@@ -6569,6 +6569,17 @@ const MobileNostrPairing = ({navigation}: any) => {
                 e,
               );
             }
+            try {
+              await WalletService.getInstance().refreshSpendStateAfterBroadcast(
+                p.net,
+                p.addressTypeToUse,
+              );
+            } catch (e) {
+              dbg(
+                'MobileNostrPairing: refreshSpendStateAfterBroadcast failed:',
+                e,
+              );
+            }
             const apiTxShape =
               p.inputs &&
               p.outputs &&

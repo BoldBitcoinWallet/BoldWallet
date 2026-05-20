@@ -1874,6 +1874,10 @@ export class WalletService {
       if (!api) throw new Error('No API URL found');
       const cleanApi = api.replace(/\/+$/, '');
 
+      if (_force) {
+        mempoolClient.invalidate(`${cleanApi}/api/address/`);
+      }
+
       // Reuse the cached address list — no re-derivation if indexes haven't changed.
       // When activeOnly is true (tap-to-refresh) only query the active address set:
       // recent-index window + UTXO holders + pending-tx addresses + current receive.

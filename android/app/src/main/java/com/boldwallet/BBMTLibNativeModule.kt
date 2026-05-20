@@ -795,7 +795,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun appendOutputDescriptorChecksum(descriptorBody: String, promise: Promise) {
         try {
-            val result = Tss.appendOutputDescriptorChecksum(descriptorBody)
+            // Pure Kotlin until tss.aar is rebuilt with Tss.appendOutputDescriptorChecksum (gomobile).
+            val result = DescriptorChecksum.appendToDescriptor(descriptorBody)
             ld("appendOutputDescriptorChecksum", result)
             promise.resolve(result)
         } catch (e: Throwable) {

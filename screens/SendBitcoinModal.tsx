@@ -36,6 +36,7 @@ import {
 } from '../services/WalletService';
 import utxoRepository from '../services/repositories/UtxoRepository';
 import {estimateFee, type FeeStrategy} from '../services/feeUtils';
+import {formatFeeEstimationError} from '../services/feeErrorMessages';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 const {BBMTLibNativeModule} = NativeModules;
 interface SendBitcoinModalProps {
@@ -659,8 +660,8 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
         setEstimatedFee(null);
         if (e.message && !e.message.includes('Invalid number')) {
           Alert.alert(
-            'Fee Estimation Error',
-            'Unable to estimate transaction fee. Please try again later.',
+            'Cannot estimate fee',
+            formatFeeEstimationError(e),
             [
               {text: 'Cancel', style: 'cancel'},
               {text: 'Retry', onPress: () => getFee(addr, amt)},

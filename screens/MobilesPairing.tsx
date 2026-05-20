@@ -4956,6 +4956,14 @@ const MobilesPairing = ({navigation}: any) => {
                 dbg('MobilesPairing: incrementChangeIndexAfterSend failed:', e);
               }
             }
+            try {
+              await WalletService.getInstance().refreshSpendStateAfterBroadcast(
+                p.net,
+                p.addressTypeToUse,
+              );
+            } catch (e) {
+              dbg('MobilesPairing: refreshSpendStateAfterBroadcast failed:', e);
+            }
             const apiTxShape = {
               txid: txId,
               status: {confirmed: false, block_height: null, block_time: null, block_hash: null},

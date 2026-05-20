@@ -78,6 +78,8 @@ import appConfigRepository, {
 
 import walletRepository from '../services/repositories/WalletRepository';
 import balanceRepository from '../services/repositories/BalanceRepository';
+import syncRepository from '../services/repositories/SyncRepository';
+import utxoRepository from '../services/repositories/UtxoRepository';
 import priceRepository from '../services/repositories/PriceRepository';
 import {getExternalIndex} from '../services/HdIndexService';
 import syncCoordinator, {
@@ -123,6 +125,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [btcPrice, setBtcPrice] = useState<string>('');
   const [btcRate, setBtcRate] = useState(0);
   const [balanceBTC, setBalanceBTC] = useState<string>('-');
+  const [spendableBTC, setSpendableBTC] = useState<string>('-');
   const [balanceFiat, setBalanceFiat] = useState<string>('0');
   const [pendingSats, setPendingSats] = useState<number>(0);
   const [_party, setParty] = useState<string>('');
@@ -381,39 +384,56 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     const currency = appConfigRepository.get(CONFIG_KEYS.CURRENCY) || 'USD';
     const effectiveType = addressType || userAddressType || 'segwit-native';
 
-    // Sum per-address balances for the known wallet addresses.
-    // The SyncCoordinator writes per-address entries; summing them
-    // gives the correct total for the current address type.
-    let totalSats = 0;
-    let totalPending = 0;
-    let newestFetch = 0;
     const addrs =
       walletAddresses.length > 0 ? walletAddresses : address ? [address] : [];
 
-    for (const a of addrs) {
-      const stored = balanceRepository.getBalance(a, network);
-      if (stored) {
-        totalSats += stored.balanceSats;
-        totalPending += stored.pendingSats;
-        if (stored.fetchedAt > newestFetch) newestFetch = stored.fetchedAt;
-      }
+    const aggKey = `aggregate_${network}_${effectiveType}`;
+    const agg = balanceRepository.getBalance(aggKey, network);
+
+    // Sum ALL per-address rows for this network (avoids stale subset when walletAddresses
+    // lists 37 discovery addresses but only 10 were refreshed in the last API sync).
+    let totalConfirmed = 0;
+    let totalPending = 0;
+    let newestFetch = 0;
+    for (const stored of balanceRepository.getBalancesForNetwork(network)) {
+      totalConfirmed += stored.balanceSats;
+      totalPending += stored.pendingSats;
+      if (stored.fetchedAt > newestFetch) newestFetch = stored.fetchedAt;
     }
 
-    // Fallback: synthetic aggregate written by getWalletBalanceAggregate
-    if (newestFetch === 0) {
-      const agg = balanceRepository.getBalance(
-        `aggregate_${network}_${effectiveType}`,
-        network,
-      );
-      if (agg) {
-        totalSats = agg.balanceSats;
-        totalPending = agg.pendingSats;
-        newestFetch = agg.fetchedAt;
-      }
+    const effectiveFromParts = Math.max(0, totalConfirmed + totalPending);
+
+    let displaySats = effectiveFromParts;
+    let pendingForChip = totalPending;
+    let balanceTs = newestFetch;
+
+    // Prefer aggregate when getWalletBalanceAggregate just synced (stamped in sync_metadata).
+    // aggregate.balanceSats is the net total (0 after spending entire balance).
+    const aggFresh = syncRepository.isFresh('balance', aggKey, 5 * 60 * 1000);
+    if (agg && aggFresh) {
+      displaySats = Math.max(0, agg.balanceSats);
+      pendingForChip = agg.pendingSats;
+      balanceTs = Math.max(balanceTs, agg.fetchedAt);
+    } else if (agg && agg.fetchedAt >= newestFetch) {
+      displaySats = Math.max(0, agg.balanceSats);
+      pendingForChip = agg.pendingSats;
+      balanceTs = Math.max(balanceTs, agg.fetchedAt);
+    } else if (agg && effectiveFromParts > agg.balanceSats + 1) {
+      // Per-address rows still show confirmed-only totals; aggregate already netted mempool.
+      displaySats = Math.max(0, agg.balanceSats);
+      pendingForChip = agg.pendingSats;
+      balanceTs = Math.max(balanceTs, agg.fetchedAt);
     }
 
-    const btc = (totalSats / 1e8).toFixed(8);
-    const balStr = totalSats > 0 ? btc : newestFetch > 0 ? '0.00000000' : '-';
+    const spendableSats =
+      addrs.length > 0
+        ? utxoRepository.getSpendableSatsForAddresses(addrs, network)
+        : 0;
+    const spendableForSend = displaySats === 0 ? 0 : spendableSats;
+
+    const btc = (displaySats / 1e8).toFixed(8);
+    const balStr =
+      displaySats > 0 ? btc : newestFetch > 0 ? '0.00000000' : '-';
     if (
       balStr !== previousBalanceRef.current &&
       previousBalanceRef.current !== '0.00000000'
@@ -424,7 +444,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
     previousBalanceRef.current = balStr;
     setBalanceBTC(balStr);
-    setPendingSats(totalPending);
+    setSpendableBTC(
+      spendableForSend > 0
+        ? (spendableForSend / 1e8).toFixed(8)
+        : balStr,
+    );
+    setPendingSats(Math.abs(pendingForChip) >= 1 ? pendingForChip : 0);
 
     // Price from DB
     const dbPrice = priceRepository.getCachedPrice(currency);
@@ -432,7 +457,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       setPriceData(dbPrice.rates);
       setBtcPrice(dbPrice.rate.toString());
       setBtcRate(dbPrice.rate);
-      const fiat = (totalSats / 1e8) * dbPrice.rate;
+      const fiat = (displaySats / 1e8) * dbPrice.rate;
       setBalanceFiat(Math.max(0, fiat).toFixed(2));
       setCacheTimestamps({price: dbPrice.timestamp, balance: newestFetch});
     }
@@ -440,8 +465,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     setBalanceError(null);
     dbg('[BALANCE] refreshFromDB:', {
       addresses: addrs.length,
-      totalSats,
+      totalConfirmed,
       totalPending,
+      effectiveFromParts,
+      aggFresh,
+      aggBalanceSats: agg?.balanceSats ?? null,
+      displaySats,
+      spendableSats,
+      spendableForSend,
       btcDisplay: balStr,
       priceRate: dbPrice?.rate ?? 0,
     });
@@ -493,9 +524,16 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     const apiUrl = `${cleanBaseApi}/api`;
     await BBMTLibNativeModule.setAPI(network, apiUrl);
 
+    // Fresh network data before balance sync (Android log showed cache hits with stale confirmed).
+    mempoolClient.invalidate(`${cleanBaseApi}/api/address/`);
+
     try {
       const effectiveAddressType =
         addressType || userAddressType || 'segwit-native';
+      syncRepository.invalidate(
+        'balance',
+        `aggregate_${network}_${effectiveAddressType}`,
+      );
       // API → DB: getWalletBalanceAggregate writes per-address + aggregate to SQLite
       // activeOnly: true = lightweight (active set); false = full sync (long-press only).
       await apiQueue.enqueue('Syncing balance…', setProgress =>
@@ -2388,7 +2426,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         <SendBitcoinModal
           visible={isSendModalVisible}
           btcToFiatRate={Big(btcRate)}
-          walletBalance={Big(balanceBTC)}
+          walletBalance={Big(
+            spendableBTC !== '-' && spendableBTC !== balanceBTC
+              ? spendableBTC
+              : balanceBTC,
+          )}
           walletAddress={address}
           onClose={() => {
             setIsSendModalVisible(false);

@@ -80,6 +80,11 @@ func DescriptorChecksum(desc string) (string, error) {
 	return string(out), nil
 }
 
+// AppendOutputDescriptorChecksum appends Sparrow-style #checksum (gomobile / Android Tss API).
+func AppendOutputDescriptorChecksum(desc string) (string, error) {
+	return AddDescriptorChecksum(desc)
+}
+
 // AddDescriptorChecksum appends #CHECKSUM to a descriptor body.
 func AddDescriptorChecksum(desc string) (string, error) {
 	if desc == "" {
