@@ -78,7 +78,7 @@ function tssBackendLogoFor(
 }
 
 const PHONE_ICON = require('../assets/phone-icon.png');
-const FINGERPRINT_ICON = require('../assets/fingerprint.png');
+const FINGERPRINT_ICON = require('../assets/id-icon.png');
 const CLOCK_ICON = require('../assets/clock-icon.png');
 const KEY_ICON = require('../assets/key-icon.png');
 
