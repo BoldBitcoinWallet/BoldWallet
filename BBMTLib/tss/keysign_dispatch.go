@@ -47,15 +47,21 @@ type lanKeysignSighashFunc func(
 	server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64 string,
 ) (string, error)
 
+type nostrKeysignRawFunc func(
+	relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, keyshareJSON, message string,
+) (string, error)
+
 var (
 	dklsNostrKeysignSighash nostrKeysignSighashFunc
 	dklsLanKeysignSighash   lanKeysignSighashFunc
+	dklsNostrKeysignRaw     nostrKeysignRawFunc
 )
 
 // RegisterDKLsKeysignHandlers wires DKLs23 keysign for Bitcoin send and PSBT signing in this package.
-func RegisterDKLsKeysignHandlers(nostr nostrKeysignSighashFunc, lan lanKeysignSighashFunc) {
+func RegisterDKLsKeysignHandlers(nostr nostrKeysignSighashFunc, lan lanKeysignSighashFunc, nostrRaw nostrKeysignRawFunc) {
 	dklsNostrKeysignSighash = nostr
 	dklsLanKeysignSighash = lan
+	dklsNostrKeysignRaw = nostrRaw
 }
 
 // DispatchNostrJoinKeysignWithSighash routes to DKLs23 or GG18 based on keyshare metadata.
@@ -76,4 +82,14 @@ func DispatchJoinKeysign(
 		return dklsLanKeysignSighash(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
 	}
 	return JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
+}
+
+// DispatchNostrJoinKeysign routes raw-message Nostr keysign to DKLs23 or GG18.
+func DispatchNostrJoinKeysign(
+	relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, keyshareJSON, derivationPath, message string,
+) (string, error) {
+	if IsDKLsKeyshareJSON(keyshareJSON) && dklsNostrKeysignRaw != nil {
+		return dklsNostrKeysignRaw(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, keyshareJSON, message)
+	}
+	return NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, keyshareJSON, derivationPath, message)
 }

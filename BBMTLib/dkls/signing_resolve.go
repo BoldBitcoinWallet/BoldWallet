@@ -62,17 +62,20 @@ func ResolveSigningSessionNostr(
 	}
 	signingIDs := make([]libtss.Identifier, len(participating))
 	for i, npub := range participating {
-		id := partyIDFromNpub(npub, committee)
-		if id < 1 {
-			return SigningSession{}, fmt.Errorf("dkls keysign: npub %q not in committee", npub)
+		id, err := partyIDFromNpub(npub, committee)
+		if err != nil {
+			return SigningSession{}, fmt.Errorf("dkls keysign: npub %q not in committee: %w", npub, err)
 		}
 		signingIDs[i] = id
 	}
 	if err := validateSelfInSigning(selfID, signingIDs); err != nil {
 		return SigningSession{}, err
 	}
-	expected := partyIDFromNpub(localNpub, committee)
-	if expected >= 1 && expected != selfID {
+	expected, err := partyIDFromNpub(localNpub, committee)
+	if err != nil {
+		return SigningSession{}, err
+	}
+	if expected != selfID {
 		return SigningSession{}, fmt.Errorf("dkls keysign: share id %d != committee index for local npub (%d)", selfID, expected)
 	}
 	peers := filterPeers(participating, localNpub)

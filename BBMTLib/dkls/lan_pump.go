@@ -1,9 +1,13 @@
 package dkls
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"sync"
@@ -11,6 +15,15 @@ import (
 
 	"github.com/BoldBitcoinWallet/BBMTLib/tss"
 )
+
+func lanPumpInterval() time.Duration {
+	if v := os.Getenv("DKLS_LAN_PUMP_MS"); v != "" {
+		if ms, err := strconv.Atoi(v); err == nil && ms > 0 {
+			return time.Duration(ms) * time.Millisecond
+		}
+	}
+	return 500 * time.Millisecond
+}
 
 type lanMessage struct {
 	From  string `json:"from"`
@@ -23,12 +36,13 @@ type lanMessage struct {
 func startLANMessagePump(server, session, sessionKey, key string, onBody func(string) error, endCh <-chan struct{}, wg *sync.WaitGroup) {
 	defer wg.Done()
 	msgMap := make(map[string]bool)
+	bodyDelivered := make(map[string]bool)
 
 	for {
 		select {
 		case <-endCh:
 			return
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(lanPumpInterval()):
 			resp, err := http.Get(server + "/message/" + session + "/" + key)
 			if err != nil {
 				continue
@@ -55,22 +69,38 @@ func startLANMessagePump(server, session, sessionKey, key string, onBody func(st
 				if message.From == key {
 					continue
 				}
-				if msgMap[message.Hash] {
-					lanDeleteMessage(server, session, key, message.Hash)
-					continue
-				}
-				msgMap[message.Hash] = true
 				body, err := tss.DecryptLANRelayPayload(message.Body, sessionKey)
 				if err != nil {
+					if os.Getenv("DKLS_LAN_PUMP_DEBUG") != "" {
+						fmt.Fprintf(os.Stderr, "dkls pump decrypt %s from %s: %v\n", key, message.From, err)
+					}
+					continue
+				}
+				bodyKey := message.From + ":" + md5Hex(body)
+				if bodyDelivered[bodyKey] {
+					if !msgMap[message.Hash] {
+						lanDeleteMessage(server, session, key, message.Hash)
+					}
+					continue
+				}
+				if msgMap[message.Hash] {
+					lanDeleteMessage(server, session, key, message.Hash)
 					continue
 				}
 				if err := onBody(body); err != nil {
 					continue
 				}
+				msgMap[message.Hash] = true
+				bodyDelivered[bodyKey] = true
 				lanDeleteMessage(server, session, key, message.Hash)
 			}
 		}
 	}
+}
+
+func md5Hex(s string) string {
+	sum := md5.Sum([]byte(s))
+	return hex.EncodeToString(sum[:])
 }
 
 func lanDeleteMessage(server, session, key, hash string) {

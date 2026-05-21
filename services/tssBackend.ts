@@ -5,9 +5,15 @@ import {getKeygenTssBackendPreference} from './tssConfig';
 
 export type TssBackend = 'gg18' | 'dkls23';
 
+type KeyshareBackendDetectionInput = {
+  tss_backend?: unknown;
+  ecdsa_local_data?: unknown;
+  share_b64?: unknown;
+};
+
 /** Detect MPC backend from a parsed keyshare object (full JSON or metadata). */
 export function detectKeyshareTssBackend(
-  parsed: Record<string, unknown> | null | undefined,
+  parsed: KeyshareBackendDetectionInput | null | undefined,
 ): TssBackend {
   if (!parsed || typeof parsed !== 'object') {
     return 'gg18';
@@ -38,7 +44,7 @@ export async function resolveTssBackend(): Promise<TssBackend> {
   const {getKeyshareMetadata} = require('../utils') as typeof import('../utils');
   const meta = await getKeyshareMetadata();
   if (meta) {
-    return detectKeyshareTssBackend(meta as Record<string, unknown>);
+    return detectKeyshareTssBackend(meta);
   }
   return 'gg18';
 }
@@ -46,11 +52,15 @@ export async function resolveTssBackend(): Promise<TssBackend> {
 export type SetupMode = 'duo' | 'trio';
 
 /**
- * Backend for new keygen — DKLs23 by default unless opted out (duo and trio).
+ * Backend for new keygen — explicit override, else user preference (duo and trio).
  */
 export async function resolveTssBackendForKeygen(
   _setupMode?: SetupMode,
+  explicit?: TssBackend | null,
 ): Promise<TssBackend> {
+  if (explicit === 'gg18' || explicit === 'dkls23') {
+    return explicit;
+  }
   return getKeygenTssBackendPreference();
 }
 
@@ -80,7 +90,7 @@ export function resolveHookProgressBackend(opts: {
   return opts.keygenBackend ?? getKeygenTssBackendPreference();
 }
 
-export {isDkls23OptedOut} from './tssConfig';
+export { isDkls23OptedOut, getKeygenTssBackendPreference } from './tssConfig';
 
 /** Human-readable MPC stack label for UI (Devices tab, settings). */
 export function getTssBackendDisplayLabel(backend: TssBackend): string {

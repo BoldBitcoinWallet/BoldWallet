@@ -50,6 +50,15 @@ export const CONFIG_KEYS = {
   DKLS23_OPTED_OUT: 'dkls23_opted_out',
   /** @deprecated Use DKLS23_OPTED_OUT (inverted). Kept for migration from enable_dkls23. */
   ENABLE_DKLS23: 'enable_dkls23',
+  /** LAN MPC: this device's KeyShare role after pairing (KeyShare1|2|3). */
+  LAN_LOCAL_PARTY: 'lan_local_party',
+  LAN_PEER_PARTY: 'lan_peer_party',
+  LAN_PEER_PARTY2: 'lan_peer_party2',
+  /** LAN MPC: IPv4 host of KeyShare1 (HTTP relay). */
+  LAN_MASTER_HOST: 'lan_master_host',
+  LAN_IS_MASTER: 'lan_is_master',
+  LAN_IS_TRIO: 'lan_is_trio',
+  LAN_PEER_PUBKEY2: 'lan_peer_pubkey2',
 } as const;
 
 export type ConfigKey = (typeof CONFIG_KEYS)[keyof typeof CONFIG_KEYS];

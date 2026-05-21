@@ -46,8 +46,70 @@ pass "local-keygen"
 /tmp/dkls-scripts validate-ks "$OUT_DIR/party1.json"
 pass "validate-ks"
 
-go test -count=1 ./dkls/ -run 'TestHelloDkg|TestDKGAndSignInProcess|TestKeyshareRoundTrip'
-pass "dkls unit tests"
+echo "==> dkls unit + join-barrier smoke (Go)"
+go test -count=1 ./dkls/ -timeout 3m -run 'TestHelloDkg|TestDKGAndSignInProcessTrio|TestDKGAndSignInProcess|TestRunDKGWithSenderTrioInProcess|TestRunDKGWithSenderInProcess|TestKeyshareRoundTrip|TestDedupe|TestRecvPeer|TestMerge|TestLanAwaitJoinersPartialTrio'
+pass "dkls unit + join-barrier tests"
+
+echo "==> dkls LAN/Nostr keysign smoke (Go)"
+go test -count=1 ./dkls/ -timeout 5m -run 'TestLanKeysign|TestNostrKeysign'
+pass "dkls keysign integration smoke"
+
+echo "==> tss backend dispatch (Go)"
+go test -count=1 ./tss/ -timeout 1m -run 'ParseTssBackend|IsDKLs'
+pass "tss dispatch unit tests"
+
+if [ "${RUN_DKLS_LAN_INTEGRATION:-0}" = "1" ]; then
+  echo "==> dkls LAN keygen integration (RUN_DKLS_LAN_INTEGRATION=1)"
+  go test -count=1 ./dkls/ -timeout 15m -run 'TestLanJoinKeygenDuo$|TestLanJoinKeygenTrio$|TestLanJoinKeygenTrioSimultaneous|TestLanJoinKeygenTrioStaggerMobile|TestLanJoinKeygenTrioDerivedSessionKey'
+  pass "dkls LAN keygen integration"
+else
+  skip "LAN keygen integration (set RUN_DKLS_LAN_INTEGRATION=1; ~1–2 min with DKLS_TEST_DKG_SEC)"
+fi
+
+if [ "${RUN_DKLS_TRIO_STRESS:-0}" = "1" ]; then
+  go test -count=1 ./dkls/ -timeout 20m -run 'TestLanJoinKeygenTrioRepeated'
+  pass "trio LAN stress (RUN_DKLS_TRIO_STRESS=1)"
+else
+  skip "trio LAN stress (set RUN_DKLS_TRIO_STRESS=1 to enable TestLanJoinKeygenTrioRepeated)"
+fi
+
+for s in dkls-lan-keygen.sh dkls-lan-keysign.sh dkls-nostr-keygen-trio.sh dkls-nostr-keysign.sh; do
+  if [ -f "${ROOT}/scripts-dkls/${s}" ]; then
+    bash -n "${ROOT}/scripts-dkls/${s}" && pass "${s} syntax"
+  fi
+done
+
+echo "==> dkls LAN shell e2e (duo keygen + keysign)"
+E2E_DIR="${ROOT}/scripts-dkls/test-e2e-output"
+rm -rf "$E2E_DIR"
+export OUTPUT_DIR="${E2E_DIR}/lan-keygen"
+export KEYSIGN_OUTPUT_DIR="${E2E_DIR}/lan-keysign"
+export PORT="${PORT:-55155}"
+if bash "${ROOT}/scripts-dkls/dkls-lan-keygen.sh" >/dev/null; then
+  pass "dkls-lan-keygen.sh"
+else
+  fail "dkls-lan-keygen.sh"
+fi
+for f in "${OUTPUT_DIR}/KeyShare1.json" "${OUTPUT_DIR}/KeyShare2.json"; do
+  /tmp/dkls-scripts validate-ks "$f" >/dev/null || fail "validate-ks $f"
+done
+pass "validate-ks on LAN keygen outputs"
+PUB1=$(jq -r '.pub_key' "${OUTPUT_DIR}/KeyShare1.json")
+PUB2=$(jq -r '.pub_key' "${OUTPUT_DIR}/KeyShare2.json")
+if [ "$PUB1" != "$PUB2" ] || [ -z "$PUB1" ]; then
+  fail "LAN keygen pub_key mismatch"
+fi
+if bash "${ROOT}/scripts-dkls/dkls-lan-keysign.sh" >/dev/null; then
+  pass "dkls-lan-keysign.sh"
+else
+  fail "dkls-lan-keysign.sh"
+fi
+SIG1=$(jq -c . "${KEYSIGN_OUTPUT_DIR}/KeyShare1.sig.json")
+SIG2=$(jq -c . "${KEYSIGN_OUTPUT_DIR}/KeyShare2.sig.json")
+if [ "$SIG1" != "$SIG2" ]; then
+  fail "LAN keysign signatures mismatch"
+fi
+pass "LAN keysign signatures match"
 
 if [ -x "${ROOT}/scripts-dkls/start-local-relay.sh" ]; then
   "${ROOT}/scripts-dkls/start-local-relay.sh" || skip "relay start failed"

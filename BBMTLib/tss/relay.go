@@ -40,6 +40,26 @@ type Message struct {
 }
 
 // ---- Helper Functions ----
+func appendUniqueParticipants(existing, add []string) []string {
+	seen := make(map[string]struct{}, len(existing)+len(add))
+	out := make([]string, 0, len(existing)+len(add))
+	for _, p := range existing {
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	for _, p := range add {
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	return out
+}
+
 func getSessionID(r *http.Request) string {
 	vars := mux.Vars(r)
 	return vars["sessionID"]
@@ -79,7 +99,7 @@ func postSession(w http.ResponseWriter, r *http.Request) {
 	key := "session-" + sessionID
 	if session, found := getData(key); found {
 		existingSession := session.(Session)
-		existingSession.Participants = append(existingSession.Participants, participants...)
+		existingSession.Participants = appendUniqueParticipants(existingSession.Participants, participants)
 		setData(key, existingSession)
 	} else {
 		setData(key, Session{SessionID: sessionID, Participants: participants})

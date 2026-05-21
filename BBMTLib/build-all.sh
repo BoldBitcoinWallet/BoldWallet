@@ -55,8 +55,8 @@ if [[ "${CLEAR_CACHE}" -eq 1 ]]; then
 fi
 bash "${ROOT}/build.sh" "${BUILD_ARGS[@]}"
 
-# --- 3) Host smoke test (DKLs package) ---
-info "[3/3] DKLs host smoke (build-dkls.sh host)"
+# --- 3) Fast host smoke (Go unit tests only; LAN keygen optional via RUN_DKLS_LAN_INTEGRATION=1) ---
+info "[3/3] DKLs host smoke (build-dkls.sh host, ~10s unless RUN_DKLS_LAN_INTEGRATION=1)"
 bash "${ROOT}/build-dkls.sh" host
 
 info "build-all complete."

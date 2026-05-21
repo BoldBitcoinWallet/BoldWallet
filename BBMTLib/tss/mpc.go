@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"runtime/debug"
 	"sort"
 	"strconv"
@@ -584,7 +585,9 @@ func (m *MessengerImp) Send(from, to, body string) error {
 		Logln("BBMTLog", "Error computing MD5 hash:", err)
 	}
 
-	status := getStatus(m.SessionID)
+	// Per-party seq so parallel LAN parties in one process (integration tests) do not share SeqNo.
+	seqKey := m.SessionID + "\x1f" + from
+	status := getStatus(seqKey)
 
 	// Marshal the request payload into JSON
 	requestBody, err := json.MarshalIndent(struct {
@@ -636,7 +639,7 @@ func (m *MessengerImp) Send(from, to, body string) error {
 	status.Info = fmt.Sprintf("Sent Message %d", status.SeqNo)
 	status.Step++
 	status.SeqNo++
-	setSeqNo(m.SessionID, status.Info, status.Step, status.SeqNo)
+	setSeqNo(seqKey, status.Info, status.Step, status.SeqNo)
 
 	return nil
 }
@@ -663,89 +666,168 @@ func (l *LocalStateAccessorImp) SaveLocalState(pubKey, localState string) error 
 }
 
 func joinSession(server, session, key string) error {
-	timeout := time.NewTimer(30 * time.Second)
+	timeout := time.NewTimer(60 * time.Second)
 	defer timeout.Stop()
+	retry := time.NewTicker(2 * time.Second)
+	defer retry.Stop()
+	sessionUrl := server + "/" + session
+	body := []byte("[\"" + key + "\"]")
+	attempts := 0
+	tryJoin := func() bool {
+		attempts++
+		bodyReader := bytes.NewReader(body)
+		resp, err := http.Post(sessionUrl, "application/json", bodyReader)
+		if err != nil {
+			Logln("BBMTLog", "joinSession: POST failed", "url=", sessionUrl, "party=", key, "attempt=", attempts, "err=", err)
+			return false
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusCreated {
+			Logln("BBMTLog", "joinSession: unexpected status", "url=", sessionUrl, "party=", key, "attempt=", attempts, "status=", resp.Status)
+			return false
+		}
+		Logln("BBMTLog", "joinSession: registered", "party=", key, "session=", session)
+		return true
+	}
+	if tryJoin() {
+		return nil
+	}
 	for {
 		select {
 		case <-timeout.C:
-			return fmt.Errorf("timeout joining the session")
-		default:
-			sessionUrl := server + "/" + session
-			body := []byte("[\"" + key + "\"]")
-			bodyReader := bytes.NewReader(body)
-			resp, err := http.Post(sessionUrl, "application/json", bodyReader)
-			if err != nil {
-				Logln("BBMTLog", "fail to get session", "error", err)
-				time.Sleep(2 * time.Second)
-			} else if resp.StatusCode != http.StatusCreated {
-				Logln("BBMTLog", "fail to check session", "status", resp.Status)
-				time.Sleep(2 * time.Second)
-			} else {
+			return fmt.Errorf(
+				"timeout joining the session (server=%s session=%s party=%s attempts=%d)",
+				server, session, key, attempts,
+			)
+		case <-retry.C:
+			if tryJoin() {
 				return nil
 			}
 		}
 	}
+}
+
+func lanJoinAwaitTimeout(partyCount int) time.Duration {
+	if s := os.Getenv("DKLS_TEST_AWAIT_SEC"); s != "" {
+		if sec, err := strconv.Atoi(s); err == nil && sec > 0 {
+			return time.Duration(sec) * time.Second
+		}
+	}
+	if partyCount >= 3 {
+		return 120 * time.Second
+	}
+	return 30 * time.Second
+}
+
+func partiesMissing(have, need []string) []string {
+	haveSet := make(map[string]struct{}, len(have))
+	for _, h := range have {
+		haveSet[h] = struct{}{}
+	}
+	var missing []string
+	for _, n := range need {
+		if _, ok := haveSet[n]; !ok {
+			missing = append(missing, n)
+		}
+	}
+	return missing
 }
 
 func awaitJoiners(parties []string, server, session string) error {
 	sessionUrl := server + "/" + session
-	timeout := time.NewTimer(30 * time.Second)
+	waitFor := lanJoinAwaitTimeout(len(parties))
+	timeout := time.NewTimer(waitFor)
 	defer timeout.Stop()
-
+	poll := time.NewTicker(2 * time.Second)
+	defer poll.Stop()
+	lastLog := time.Time{}
+	check := func() (bool, error) {
+		keys, err := fetchSessionParticipants(sessionUrl)
+		if err != nil {
+			Logln("BBMTLog", "awaitJoiners: get session failed", err)
+			return false, nil
+		}
+		if equalUnordered(keys, parties) {
+			Logln("BBMTLog", "awaitJoiners: all parties joined", session, keys)
+			return true, nil
+		}
+		if missing := partiesMissing(keys, parties); len(missing) > 0 {
+			ReportKeygenProgress(
+				session, 1,
+				fmt.Sprintf("waiting for %s", strings.Join(missing, ", ")),
+				false,
+			)
+		}
+		if time.Since(lastLog) >= 10*time.Second {
+			lastLog = time.Now()
+			Logln(
+				"BBMTLog", "awaitJoiners: waiting",
+				"session=", session,
+				"have=", keys,
+				"need=", parties,
+			)
+		}
+		return false, nil
+	}
+	if done, err := check(); err != nil || done {
+		return err
+	}
 	for {
 		select {
 		case <-timeout.C:
-			return fmt.Errorf("timeout waiting for all parties after 30 seconds")
-		default:
-			resp, err := http.Get(sessionUrl)
-			if err != nil {
-				Logln("BBMTLog", "fail to get session", "error", err)
-				continue
+			keys, _ := fetchSessionParticipants(sessionUrl)
+			return fmt.Errorf(
+				"timeout waiting for all parties after %v (have %v, need %v)",
+				waitFor, keys, parties,
+			)
+		case <-poll.C:
+			if done, err := check(); err != nil || done {
+				return err
 			}
-
-			if resp.StatusCode != http.StatusOK {
-				Logln("BBMTLog", "waiting for session...")
-				continue
-			}
-
-			var keys []string
-			buff, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return fmt.Errorf("fail to read session body: %w", err)
-			}
-
-			if err := json.Unmarshal(buff, &keys); err != nil {
-				return fmt.Errorf("fail to unmarshal session body: %w", err)
-			}
-
-			if equalUnordered(keys, parties) {
-				return nil
-			}
-
-			// backoff
-			time.Sleep(2 * time.Second)
 		}
 	}
 }
 
+func fetchSessionParticipants(sessionUrl string) ([]string, error) {
+	resp, err := http.Get(sessionUrl)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("session status %s", resp.Status)
+	}
+	buff, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	var keys []string
+	if err := json.Unmarshal(buff, &keys); err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
 func equalUnordered(a, b []string) bool {
-	if len(a) != len(b) {
+	aset := stringSet(a)
+	bset := stringSet(b)
+	if len(aset) != len(bset) {
 		return false
 	}
-
-	amap := make(map[string]int)
-	for _, val := range a {
-		amap[val]++
-	}
-
-	for _, val := range b {
-		if amap[val] == 0 {
+	for k := range bset {
+		if _, ok := aset[k]; !ok {
 			return false
 		}
-		amap[val]--
 	}
-
 	return true
+}
+
+func stringSet(vals []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(vals))
+	for _, v := range vals {
+		out[v] = struct{}{}
+	}
+	return out
 }
 
 func endSession(server, session string) error {

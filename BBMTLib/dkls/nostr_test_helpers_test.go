@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/BoldBitcoinWallet/BBMTLib/tss"
 	nostr "github.com/nbd-wtf/go-nostr"
 )
 
@@ -54,9 +55,10 @@ func relayTCPAddr(relayURL string) (host, port string, ok bool) {
 func generateNostrKeypair(t *testing.T) (nsec, npub string) {
 	t.Helper()
 	nsec = nostr.GeneratePrivateKey()
-	npub, err := nostr.GetPublicKey(nsec)
+	var err error
+	npub, err = tss.DeriveNpubFromNsec(nsec)
 	if err != nil {
-		t.Fatalf("GetPublicKey: %v", err)
+		t.Fatalf("DeriveNpubFromNsec: %v", err)
 	}
 	return nsec, npub
 }
@@ -71,7 +73,7 @@ func nostrPartiesCSV(parties []nostrParty) string {
 	for i, p := range parties {
 		npubs[i] = p.npub
 	}
-	return strings.Join(npubs, ",")
+	return strings.Join(sortedPartiesNpubs(npubs), ",")
 }
 
 func nostrKeygenAll(

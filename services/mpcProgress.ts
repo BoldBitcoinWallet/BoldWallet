@@ -41,17 +41,17 @@ export type MpcProgressResult = {
 };
 
 /**
- * GG18 keygen denominator (variable native steps; cap only).
- * DKLs uses dklsKeygenPercent instead — see BBMTLib/dkls/lan.go steps 0,1,2,3..N,99.
+ * GG18 linear denominator for legacy callers/tests only.
+ * Runtime keygen mapping uses gg18KeygenPercent (phased), not step/total.
  */
 export function getKeygenStepCount(
   backend: TssBackend,
   isTrio: boolean,
 ): number {
   if (backend === 'dkls23') {
-    return isTrio ? 22 : 14;
+    return isTrio ? 14 : 10;
   }
-  return isTrio ? 29 : 18;
+  return isTrio ? 16 : 10;
 }
 
 /** GG18 keysign denominator per input. DKLs uses dklsKeysignPercent. */
@@ -60,9 +60,17 @@ export function getKeysignStepCount(backend: TssBackend): number {
 }
 
 const DKLS_KEYGEN_PREP_END_PERCENT = 20;
-/** Last hook step index before sentinel 99 (duo ~11 DKG rounds after step 2). */
-const DKLS_KEYGEN_MAX_ROUND_STEP_DUO = 13;
-const DKLS_KEYGEN_MAX_ROUND_STEP_TRIO = 21;
+/**
+ * Last native keygen step index before 99 (DKLs DKG starts at step 3).
+ * Tuned to typical round counts so late rounds map ~75–95% before done (not ~37%).
+ */
+export const DKLS_KEYGEN_MAX_ROUND_STEP_DUO = 9;
+export const DKLS_KEYGEN_MAX_ROUND_STEP_TRIO = 11;
+
+const GG18_KEYGEN_PREP_END_PERCENT = 15;
+/** Typical visible GG18 keygen steps before done (JoinKeygen milestones + message apply). */
+export const GG18_KEYGEN_MAX_ROUND_STEP_DUO = 9;
+export const GG18_KEYGEN_MAX_ROUND_STEP_TRIO = 14;
 
 const DKLS_KEYSIGN_PREP_BAND_FRACTION = 0.15;
 /** Last keysign round step before complete (runSignWithSender starts at 3). */
@@ -95,7 +103,7 @@ export function dklsKeygenPercent(step: number, isTrio: boolean): number {
   const maxRoundStep = isTrio
     ? DKLS_KEYGEN_MAX_ROUND_STEP_TRIO
     : DKLS_KEYGEN_MAX_ROUND_STEP_DUO;
-  const roundSpan = maxRoundStep - 2;
+  const roundSpan = Math.max(1, maxRoundStep - 2);
   const roundIndex = Math.min(step - 2, roundSpan);
   const tail = 99 - DKLS_KEYGEN_PREP_END_PERCENT;
   return Math.min(
@@ -104,6 +112,60 @@ export function dklsKeygenPercent(step: number, isTrio: boolean): number {
       DKLS_KEYGEN_PREP_END_PERCENT + (tail * roundIndex) / roundSpan,
     ),
   );
+}
+
+/**
+ * GG18 keygen: sparse milestone steps then +2 per applied message.
+ * Phased mapping avoids showing ~35–40% right before done.
+ */
+export function gg18KeygenPercent(step: number, isTrio: boolean): number {
+  if (step >= MPC_PROGRESS_SENTINEL_STEP) {
+    return 100;
+  }
+  if (step <= 0) {
+    return 0;
+  }
+  if (step <= 2) {
+    return Math.round((step / 2) * GG18_KEYGEN_PREP_END_PERCENT);
+  }
+  const maxRoundStep = isTrio
+    ? GG18_KEYGEN_MAX_ROUND_STEP_TRIO
+    : GG18_KEYGEN_MAX_ROUND_STEP_DUO;
+  const roundSpan = Math.max(1, maxRoundStep - 2);
+  const roundIndex = Math.min(step - 2, roundSpan);
+  const tail = 99 - GG18_KEYGEN_PREP_END_PERCENT;
+  return Math.min(
+    99,
+    Math.round(
+      GG18_KEYGEN_PREP_END_PERCENT + (tail * roundIndex) / roundSpan,
+    ),
+  );
+}
+
+export type KeygenProgressTraceRow = {
+  step: number;
+  percent: number;
+};
+
+/** Reference curve for tests/docs (not used at runtime). */
+export function buildKeygenProgressTrace(
+  backend: TssBackend,
+  isTrio: boolean,
+  maxStep = MPC_PROGRESS_SENTINEL_STEP,
+): KeygenProgressTraceRow[] {
+  const rows: KeygenProgressTraceRow[] = [];
+  for (let step = 0; step <= maxStep; step += 1) {
+    if (step === MPC_PROGRESS_SENTINEL_STEP) {
+      rows.push({step, percent: 100});
+      continue;
+    }
+    const percent =
+      backend === 'dkls23'
+        ? dklsKeygenPercent(step, isTrio)
+        : gg18KeygenPercent(step, isTrio);
+    rows.push({step, percent});
+  }
+  return rows;
 }
 
 /**
@@ -154,6 +216,14 @@ function keysignStepToPercent(
 }
 
 /**
+ * Keygen progress bar curve — GG18-analog for all backends so LAN setup UX matches.
+ * Native step counts still differ; mapping uses the same phased prep/round bands.
+ */
+export function keygenPercentForUi(step: number, isTrio: boolean): number {
+  return gg18KeygenPercent(step, isTrio);
+}
+
+/**
  * Map a native MPC hook message to UI progress (0–100).
  * Preserves send_btc UTXO banding and monotonic progress within a session.
  */
@@ -173,12 +243,13 @@ export function mapMpcHookToPercent(
     if (msg.done) {
       return {percent: 100, mpcDone: true};
     }
-    const percent =
-      backend === 'dkls23'
-        ? dklsKeygenPercent(step, isTrio)
-        : stepToPercent(step, getKeygenStepCount(backend, isTrio));
+    const percent = keygenPercentForUi(step, isTrio);
+    const waitingJoin =
+      step <= 2 && (msg.info ?? '').toLowerCase().includes('waiting');
     return {
-      percent: Math.max(currentProgress, percent),
+      percent: waitingJoin
+        ? percent
+        : Math.max(currentProgress, percent),
     };
   }
 

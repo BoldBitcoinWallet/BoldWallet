@@ -32,6 +32,12 @@ describe('formatMpcPhaseLabel', () => {
         {isSendBitcoin: false, utxo: emptyMpcUtxoState()},
       ),
     ).toBe('Key generation · round 5');
+    expect(
+      formatMpcPhaseLabel(
+        {type: 'keygen', step: 4, info: 'keygen round 4'},
+        {isSendBitcoin: false, utxo: emptyMpcUtxoState()},
+      ),
+    ).toBe('Key generation · round 4');
   });
 
   it('labels multi-UTXO keysign for send', () => {

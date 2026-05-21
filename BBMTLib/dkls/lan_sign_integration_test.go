@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ func startTestRelay(t *testing.T, port string) {
 		t.Fatalf("RunRelay: %v", err)
 	}
 	t.Cleanup(func() { _, _ = tss.StopRelay() })
-	time.Sleep(2 * time.Second)
+	waitForRelayHTTP("http://127.0.0.1:"+port, 3*time.Second)
 }
 
 func lanKeygenAll(t *testing.T, server, session, sessionKey, chaincode string, keys []string, partiesCSV string) map[string]string {
@@ -41,14 +42,25 @@ func lanKeygenAll(t *testing.T, server, session, sessionKey, chaincode string, k
 		}
 		results <- result{key: key, js: out}
 	}
-	for i, key := range keys {
-		wg.Add(1)
-		go run(key)
-		if i < len(keys)-1 {
-			time.Sleep(2 * time.Second)
+	if os.Getenv("DKLS_LAN_SEQUENTIAL") == "1" {
+		for _, key := range keys {
+			out, e := JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey, "", "")
+			if e != nil {
+				errs <- e
+				continue
+			}
+			results <- result{key: key, js: out}
 		}
+	} else {
+		for i, key := range keys {
+			wg.Add(1)
+			go run(key)
+			if i < len(keys)-1 {
+				time.Sleep(2 * time.Second)
+			}
+		}
+		wg.Wait()
 	}
-	wg.Wait()
 	close(errs)
 	close(results)
 	var errList []error

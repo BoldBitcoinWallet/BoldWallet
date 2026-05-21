@@ -62,10 +62,14 @@ import {
   type TssBackend,
 } from '../services/tssBackend';
 import {TssProvider} from '../services/TssProvider';
+import {getPrepareModalCopy} from '../services/tssKeygenPrepare';
+import {LAN_KEYGEN_STATUS} from '../services/walletSetupUi';
 import {
-  getPrepareModalCopy,
-  prepareDeviceForKeygen,
-} from '../services/tssKeygenPrepare';
+  invokeNostrWalletKeygen,
+  resolveWalletSetupBackend,
+  runWalletSetupPrepare,
+  type WalletSetupRouteParams,
+} from '../services/walletSetupOrchestrator';
 import {
   resetMpcHookSession,
   type MpcProgressUtxoState,
@@ -310,6 +314,8 @@ const ProgressAnimatedView: React.FC<{
 
 type RouteParams = {
   mode?: string; // 'duo' | 'trio' | 'send_btc' | 'sign_psbt'
+  transport?: WalletSetupRouteParams['transport'];
+  backend?: WalletSetupRouteParams['backend'];
   addressType?: string;
   toAddress?: string;
   satoshiAmount?: string;
@@ -331,7 +337,13 @@ const MobileNostrPairing = ({navigation}: any) => {
   const setupMode = route.params?.mode;
   const keygenSetupMode: SetupMode | undefined =
     setupMode === 'duo' || setupMode === 'trio' ? setupMode : undefined;
-  const [keygenBackend, setKeygenBackend] = useState<TssBackend | null>(null);
+  const routeKeygenBackend =
+    route.params?.backend === 'gg18' || route.params?.backend === 'dkls23'
+      ? route.params.backend
+      : null;
+  const [keygenBackend, setKeygenBackend] = useState<TssBackend | null>(
+    routeKeygenBackend,
+  );
   const [spendBackend, setSpendBackend] = useState<TssBackend | null>(null);
   const prepareCopy = getPrepareModalCopy(keygenBackend ?? 'dkls23');
   // In send mode, determine isTrio from keyshare (3 devices = trio, 2 devices = duo)
@@ -885,6 +897,18 @@ const MobileNostrPairing = ({navigation}: any) => {
           utxoRef: mpcUtxoRef,
           activeSessionRef: activeMpcSessionIdRef,
         },
+        onTrace: __DEV__
+          ? ({backend: b, msg, mappedPercent}) => {
+              dbg('MpcHook trace', {
+                backend: b,
+                type: msg.type,
+                step: msg.step,
+                done: msg.done,
+                info: msg.info,
+                mappedPercent,
+              });
+            }
+          : undefined,
       });
       if (!result) {
         return;
@@ -1490,9 +1514,12 @@ const MobileNostrPairing = ({navigation}: any) => {
   };
   const startKeygen = async () => {
     if (!canStartKeygen) return;
-    let backend = keygenBackend;
+    let backend = keygenBackend ?? routeKeygenBackend;
     if (!backend && keygenSetupMode) {
-      backend = await resolveTssBackendForKeygen(keygenSetupMode);
+      backend = await resolveWalletSetupBackend(
+        routeKeygenBackend,
+        keygenSetupMode,
+      );
       setKeygenBackend(backend);
     }
     activeMpcSessionIdRef.current = sessionID;
@@ -1500,7 +1527,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
     resetCircle();
     setProgress(0);
-    setStatus('Starting key generation…');
+    setStatus(LAN_KEYGEN_STATUS.runningKeygen);
     try {
       // Prepare parties npubs CSV (sorted)
       // IMPORTANT: Must use the same npubs and same sorting as session ID generation
@@ -1606,16 +1633,17 @@ const MobileNostrPairing = ({navigation}: any) => {
       );
       dbg('=== END GO BACKEND INPUT ===');
       // Call native module
-      let keyshareJSON = await TssProvider.nostrMpcTssSetup(
+      let keyshareJSON = await invokeNostrWalletKeygen({
         relaysCSV,
-        localNsec,
+        partyNsec: localNsec,
         partiesNpubsCSV,
         sessionID,
         sessionKey,
         chaincode,
-        ppmFile,
-        keygenSetupMode,
-      );
+        ppmPath: ppmFile,
+        setupMode: keygenSetupMode,
+        backend,
+      });
       // Validate keyshare and map keyshare positions
       let keyshare: any;
       try {
@@ -2487,14 +2515,14 @@ const MobileNostrPairing = ({navigation}: any) => {
     setIsPreparing(true);
     setIsPreParamsReady(false);
     setPrepCounter(0);
-    const timeoutMinutes = 20;
     try {
-      const backend = await prepareDeviceForKeygen(
+      const backend = await runWalletSetupPrepare({
         ppmFile,
-        timeoutMinutes,
-        keygenSetupMode,
-        __DEV__,
-      );
+        transport: 'nostr',
+        setupMode: keygenSetupMode,
+        backend: keygenBackend ?? routeKeygenBackend,
+        skipDeletePpm: __DEV__,
+      });
       setKeygenBackend(backend);
       setIsPreParamsReady(true);
       HapticFeedback.medium();

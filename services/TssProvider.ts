@@ -17,9 +17,12 @@ export const TssProvider = {
   resolveTssBackend,
   resolveTssBackendForKeygen,
 
-  async helloDkg(setupMode?: SetupMode): Promise<string> {
-    const backend = await resolveTssBackendForKeygen(setupMode);
-    if (backend === 'dkls23') {
+  async helloDkg(
+    setupMode?: SetupMode,
+    backend?: TssBackend | null,
+  ): Promise<string> {
+    const resolved = await resolveTssBackendForKeygen(setupMode, backend);
+    if (resolved === 'dkls23') {
       return BBMTLibNativeModule.dklsHelloDkg();
     }
     return BBMTLibNativeModule.preparams('spike', '1');
@@ -36,9 +39,10 @@ export const TssProvider = {
     decKey: string,
     chaincode: string,
     setupMode?: SetupMode,
+    backend?: TssBackend | null,
   ): Promise<string> {
-    const backend = await resolveTssBackendForKeygen(setupMode);
-    if (backend === 'dkls23') {
+    const resolved = await resolveTssBackendForKeygen(setupMode, backend);
+    if (resolved === 'dkls23') {
       return BBMTLibNativeModule.dklsMpcTssSetup(
         server,
         partyID,
@@ -72,9 +76,10 @@ export const TssProvider = {
     chaincode: string,
     ppmPath: string,
     setupMode?: SetupMode,
+    backend?: TssBackend | null,
   ): Promise<string> {
-    const backend = await resolveTssBackendForKeygen(setupMode);
-    if (backend === 'dkls23') {
+    const resolved = await resolveTssBackendForKeygen(setupMode, backend);
+    if (resolved === 'dkls23') {
       return BBMTLibNativeModule.dklsNostrMpcTssSetup(
         relaysCSV,
         partyNsec,
@@ -93,6 +98,11 @@ export const TssProvider = {
       chaincode,
       ppmPath,
     );
+  },
+
+  /** Human-readable backend id for logs (gg18 | dkls23). */
+  normalizeBackendLabel(backend: string): 'gg18' | 'dkls23' {
+    return backend === 'dkls23' || backend === 'dkls' ? 'dkls23' : 'gg18';
   },
 
   async mpcSignPSBT(

@@ -73,9 +73,24 @@ import {getKeygenTssBackendPreference} from '../services/tssConfig';
 import {TssProvider} from '../services/TssProvider';
 import {
   parseEciesKeypairJson,
-  resolveLanKeygenTransportKeys,
   resolveLanKeysignTransportKeys,
 } from '../services/lanMpcTransport';
+import {LAN_KEYGEN_STATUS} from '../services/walletSetupUi';
+import {
+  buildLanRelayServerUrl,
+  normalizeLanHost,
+  resolveDuoLanRoles,
+  resolveTrioLanRoles,
+} from '../services/lanMpcSetup';
+import {
+  invokeLanWalletKeygen,
+  persistLanRolesFromContext,
+  resolveWalletSetupBackend,
+  runLanWalletKeygen,
+  runWalletSetupPrepare,
+  type WalletSetupRouteParams,
+} from '../services/walletSetupOrchestrator';
+import {resolveEffectiveLanKeygenContext} from '../services/lanMpcSetup';
 
 /** Ignore empty peer payloads so listen/discover can finish. */
 function racePeerDiscovery(
@@ -106,7 +121,7 @@ function racePeerDiscovery(
 }
 import {
   getPrepareModalCopy,
-  prepareDeviceForKeygen,
+  getWalletSetupKeygenModalCopy,
 } from '../services/tssKeygenPrepare';
 import {
   resetMpcHookSession,
@@ -221,6 +236,8 @@ const MobilesPairing = ({navigation}: any) => {
   const progressAnimation = useSharedValue(0);
   type RouteParams = {
     mode?: string; // 'duo' | 'trio' | 'send_btc' | 'sign_psbt'
+    transport?: WalletSetupRouteParams['transport'];
+    backend?: WalletSetupRouteParams['backend'];
     addressType?: string;
     toAddress?: string;
     satoshiAmount?: string;
@@ -247,9 +264,16 @@ const MobilesPairing = ({navigation}: any) => {
   const isTrio = setupMode === 'trio';
   const keygenSetupMode: SetupMode | undefined =
     setupMode === 'duo' || setupMode === 'trio' ? setupMode : undefined;
-  const [keygenBackend, setKeygenBackend] = useState<TssBackend | null>(null);
+  const routeKeygenBackend =
+    route.params?.backend === 'gg18' || route.params?.backend === 'dkls23'
+      ? route.params.backend
+      : null;
+  const [keygenBackend, setKeygenBackend] = useState<TssBackend | null>(
+    routeKeygenBackend,
+  );
   const [spendBackend, setSpendBackend] = useState<TssBackend | null>(null);
-  const prepareCopy = getPrepareModalCopy(keygenBackend ?? 'dkls23');
+  const prepareCopy = getPrepareModalCopy(keygenBackend ?? undefined);
+  const keygenModalCopy = getWalletSetupKeygenModalCopy();
   const title =
     isSendBitcoin || isSignPSBT
       ? isSignPSBT
@@ -593,14 +617,14 @@ const MobilesPairing = ({navigation}: any) => {
     setIsPreparing(true);
     setIsPreParamsReady(false);
     setPrepCounter(0);
-    const timeoutMinutes = 2;
     try {
-      const backend = await prepareDeviceForKeygen(
+      const backend = await runWalletSetupPrepare({
         ppmFile,
-        timeoutMinutes,
-        keygenSetupMode,
-        __DEV__,
-      );
+        transport: 'lan',
+        setupMode: keygenSetupMode,
+        backend: keygenBackend ?? routeKeygenBackend,
+        skipDeletePpm: __DEV__,
+      });
       setKeygenBackend(backend);
       setIsPreParamsReady(true);
     } catch (error: any) {
@@ -718,7 +742,7 @@ const MobilesPairing = ({navigation}: any) => {
             }
           }
           dbg('initSession: Session initialization completed successfully');
-          return _data;
+          return (_data || '').trim();
         } else {
           dbg('initSession: Timeout waiting for peer device (publishData)');
           throw keygenFlow
@@ -727,11 +751,21 @@ const MobilesPairing = ({navigation}: any) => {
         }
       } else {
         dbg('initSession: Running as peer device');
+        const masterPubForFetch = isTrio
+          ? (
+              appConfigRepository.get('lan_master_pubkey') ||
+              peerEnc ||
+              ''
+            ).trim()
+          : peerEnc;
         const payload = isSendBitcoin
           ? `${peerEnc}/${route.params?.satoshiAmount}`
-          : `${peerEnc}/${kp.publicKey}`;
+          : `${masterPubForFetch || peerEnc}/${kp.publicKey}`;
         const checksum = await BBMTLibNativeModule.sha256(payload);
-        const peerURL = `http://${masterHost}:${discoveryPort}/`;
+        const peerURL = `${buildLanRelayServerUrl(
+          normalizeLanHost(masterHost) || masterHost || '',
+          discoveryPort,
+        )}/`;
         dbg('initSession: Fetching data from peer', {
           peerURL,
           checksum: checksum.slice(0, 16).concat('…'),
@@ -740,7 +774,7 @@ const MobilesPairing = ({navigation}: any) => {
         dbg('initSession: Data fetched successfully', {
           len: rawFetched?.length ?? 0,
         });
-        return rawFetched;
+        return (rawFetched || '').trim();
       }
     } catch (error: any) {
       dbg('initSession: Error occurred', {error});
@@ -775,9 +809,12 @@ const MobilesPairing = ({navigation}: any) => {
 
   const mpcTssSetup = async () => {
     try {
-      let backend = keygenBackend;
+      let backend = keygenBackend ?? routeKeygenBackend;
       if (!backend && keygenSetupMode) {
-        backend = await resolveTssBackendForKeygen(keygenSetupMode);
+        backend = await resolveWalletSetupBackend(
+          routeKeygenBackend,
+          keygenSetupMode,
+        );
         setKeygenBackend(backend);
       }
       setMpcDone(false);
@@ -786,69 +823,14 @@ const MobilesPairing = ({navigation}: any) => {
       resetCircle();
       setProgress(0);
       setDoingMPC(true);
-      setStatus('Starting wallet setup…');
+      setStatus(LAN_KEYGEN_STATUS.starting);
       dbg('mpcTssSetup: begin', {
         isMaster,
         masterHost,
+        localParty,
         keygenBackend: backend,
         keygenSetupMode,
-        peerPubkeySet: Boolean(
-          peerPubkey || appConfigRepository.get('lan_peer_pubkey'),
-        ),
-        hasKeypair: Boolean(
-          keypair || appConfigRepository.get('lan_ecies_keypair'),
-        ),
       });
-      if (!masterHost) {
-        throw new Error(
-          'Master device IP is unknown. Pair devices again, then retry setup.',
-        );
-      }
-      const setupBackend =
-        backend ?? getKeygenTssBackendPreference();
-      if (
-        Platform.OS === 'android' &&
-        setupBackend === 'dkls23' &&
-        BBMTLibNativeModule.ensureDklsLanRuntime
-      ) {
-        setStatus('Loading DKLs native runtime…');
-        dbg('mpcTssSetup: ensureDklsLanRuntime');
-        await Promise.race([
-          BBMTLibNativeModule.ensureDklsLanRuntime(),
-          new Promise<never>((_, reject) =>
-            setTimeout(
-              () => reject(new Error('DKLS runtime load timed out')),
-              15000,
-            ),
-          ),
-        ]);
-      }
-      dbg('mpcTssSetup: initSession (both devices must tap Start/Join Setup now)');
-      const data = await initSession();
-      dbg('got session data', data);
-      if (isMaster) {
-        await BBMTLibNativeModule.stopRelay('stop');
-        const relay = await BBMTLibNativeModule.runRelay(String(discoveryPort));
-        dbg('relay start:', relay, localDevice);
-        if (
-          typeof relay === 'string' &&
-          (relay.startsWith('error:') || relay.toLowerCase().includes('fail'))
-        ) {
-          throw new Error(`Could not start LAN relay: ${relay}`);
-        }
-      }
-      await waitMS(2000);
-      const server = `http://${masterHost}:${discoveryPort}`;
-      const partyID = isTrio
-        ? localParty || (isMaster ? 'KeyShare1' : 'KeyShare2')
-        : isMaster
-        ? 'KeyShare1'
-        : 'KeyShare2';
-      const peerID = isMaster ? 'KeyShare2' : 'KeyShare1';
-      const partiesCSV = isTrio
-        ? 'KeyShare1,KeyShare2,KeyShare3'
-        : `${partyID},${peerID}`;
-      const sessionID = await BBMTLibNativeModule.sha256(`${data}/${server}`);
       const keypairJson =
         (keypair || '').trim() ||
         appConfigRepository.get('lan_ecies_keypair') ||
@@ -857,38 +839,52 @@ const MobilesPairing = ({navigation}: any) => {
         (peerPubkey || '').trim() ||
         appConfigRepository.get('lan_peer_pubkey') ||
         '';
-      const transport = await resolveLanKeygenTransportKeys({
-        isTrio,
+      if (!keygenSetupMode) {
+        throw new Error('Invalid wallet setup mode');
+      }
+      const orch = await runLanWalletKeygen({
+        setupMode: keygenSetupMode,
+        backend,
+        isMaster,
+        masterHost,
+        localParty: localParty || '',
+        peerParty,
+        peerParty2,
+        discoveryPort,
+        ppmFile,
+        initSession,
         keypairJson,
         peerPubkey: peerPub,
-        sessionID,
-        masterHost: masterHost || '',
-        sha256: (msg: string) => BBMTLibNativeModule.sha256(msg),
+        trioPreflight: isTrio
+          ? {
+              peerIP,
+              peerIP2,
+              peerDevice,
+              peerDevice2,
+              peerPubkey,
+              peerPubkey2,
+            }
+          : undefined,
       });
-      setShareName(partyID);
-      activeMpcSessionIdRef.current = sessionID;
-      setStatus('Running wallet key generation…');
+      setKeygenBackend(orch.backend);
+      setShareName(orch.partyID);
+      activeMpcSessionIdRef.current = orch.sessionID;
+      setStatus(LAN_KEYGEN_STATUS.runningKeygen);
       dbg('starting keygen with', {
-        server,
-        partyID,
+        server: orch.server,
+        partyID: orch.partyID,
+        localParty,
+        isMaster,
         ppmFile,
-        partiesCSV,
-        sessionID,
-        transportMode: transport.sessionKey ? 'aes' : 'ecies',
-        data,
+        partiesCSV: orch.partiesCSV,
+        sessionID: orch.sessionID,
+        sessionKey: orch.transport.sessionKey
+          ? orch.transport.sessionKey.slice(0, 16).concat('…')
+          : '',
+        keygenBackend: orch.backend,
+        dataLen: orch.chaincode.length,
       });
-      TssProvider.mpcTssSetup(
-        server,
-        partyID,
-        ppmFile,
-        partiesCSV,
-        sessionID,
-        transport.sessionKey,
-        transport.encKey,
-        transport.decKey,
-        data,
-        keygenSetupMode,
-      )
+      invokeLanWalletKeygen(orch, ppmFile, keygenSetupMode)
         .then(async (result: any) => {
           dbg('keygen result', result.substring(0, 40).concat('...'));
           setKeyshare(result);
@@ -1367,6 +1363,18 @@ const MobilesPairing = ({navigation}: any) => {
           utxoRef: mpcUtxoRef,
           activeSessionRef: activeMpcSessionIdRef,
         },
+        onTrace: __DEV__
+          ? ({backend: b, msg, mappedPercent}) => {
+              dbg('MpcHook trace', {
+                backend: b,
+                type: msg.type,
+                step: msg.step,
+                done: msg.done,
+                info: msg.info,
+                mappedPercent,
+              });
+            }
+          : undefined,
       });
       if (!result) {
         return;
@@ -1582,6 +1590,7 @@ const MobilesPairing = ({navigation}: any) => {
         setLocalID(localIDComputed);
         let device2Local: string | null = null;
         let remoteID2Computed: string | null = null;
+        let peerPubkey2Stored = '';
         if (isTrio && raws.length > 1) {
           const rawSecondary = raws[1] || '';
           const secondary = rawSecondary.split(',');
@@ -1591,10 +1600,10 @@ const MobilesPairing = ({navigation}: any) => {
           const _peerDevicePartyID2 = hexToString(peerInfo2[1] || '').split(
             '@',
           );
-          const peerPubkey2Local = peerInfo2[2] || '';
+          peerPubkey2Stored = peerInfo2[2] || '';
           device2Local = _peerDevicePartyID2[0] || '';
           const peerParty2Raw = _peerDevicePartyID2[1] || '';
-          setPeerPubkey2(peerPubkey2Local);
+          setPeerPubkey2(peerPubkey2Stored);
           remoteID2Computed = (
             await BBMTLibNativeModule.sha256(`${device2Local}${_peerIP2}`)
           )
@@ -1618,70 +1627,92 @@ const MobilesPairing = ({navigation}: any) => {
           _peerIP2ForRank = (peerInfo2ForRank[0] || '').split(':')[0];
           setPeerIP2(_peerIP2ForRank || null);
         }
-        const thisIDs = (_localIP || '').split(':')[0];
-        const nextIDs = (_peerIP || '').split(':')[0];
-        const next2IDs = (_peerIP2ForRank || '').split(':')[0];
-        const thisID = Number(thisIDs.split('.')[3] || '0');
-        const peerID = Number(nextIDs.split('.')[3] || '0');
-        const peer2ID = Number(next2IDs.split('.')[3] || '0');
-        dbg('==================== ALL IDs ==================== \n', {
-          thisID,
-          peerID,
-          peer2ID,
+        const localNorm = normalizeLanHost(_localIP) || _localIP;
+        const peerNorm = normalizeLanHost(_peerIP) || _peerIP;
+        const peer2Norm =
+          normalizeLanHost(_peerIP2ForRank) ||
+          normalizeLanHost(peerIP2) ||
+          _peerIP2ForRank ||
+          '';
+        dbg('==================== ALL IPs (normalized) ====================', {
+          localNorm,
+          peerNorm,
+          peer2Norm,
         });
-        dbg('==================== ALL IPs ==================== \n', {
-          _localIP,
-          _peerIP,
-          _peerIP2ForRank,
-        });
-        // Default: preserve current state to avoid flicker. Duo computes immediately; trio waits for both peers.
         let master = isMaster;
-        if (!isTrio) {
-          master = thisID > peerID;
-        }
-        // Trio: determine roles KeyShare1/2/3 based on descending IP last octet
-        if (isTrio && _peerIP2ForRank) {
-          const ids: Array<{label: 'local' | 'peer1' | 'peer2'; val: number}> =
-            [
-              {label: 'local', val: thisID},
-              {label: 'peer1', val: peerID},
-              {
-                label: 'peer2',
-                val: Number(_peerIP2ForRank.split('.')[3] || '0'),
-              },
-            ];
-          ids.sort((a, b) => b.val - a.val);
-          const rankToParty = ['KeyShare1', 'KeyShare2', 'KeyShare3'];
-          const labelToParty: {[k: string]: string} = {};
-          ids.forEach((item, idx) => {
-            labelToParty[item.label] = rankToParty[idx];
-          });
-          setLocalParty(labelToParty.local);
-          setPeerParty(labelToParty.peer1);
-          setPeerParty2(labelToParty.peer2);
-          master = labelToParty.local === 'KeyShare1';
-        }
-        master = thisID > peerID && thisID > peer2ID;
-        dbg('==================== ALL Masters ==================== \n', {
-          master,
-        });
-        // Determine master host (highest last octet) and persist for later flows
-        const candidateIPs = [_localIP, _peerIP, _peerIP2ForRank || peerIP2]
-          .filter(Boolean)
-          .map(x => String(x));
         let resolvedMasterHost: string | null = null;
-        if (candidateIPs.length > 0) {
-          resolvedMasterHost = candidateIPs.reduce((max, cur) => {
-            const lastMax = Number(
-              (max.split(':')[0] || '').split('.')[3] || '0',
-            );
-            const lastCur = Number(
-              (cur.split(':')[0] || '').split('.')[3] || '0',
-            );
-            return lastCur > lastMax ? cur : max;
+        let resolvedLocalParty = '';
+        let resolvedPeerParty = '';
+        let resolvedPeerParty2 = '';
+        if (isTrio) {
+          const trio = resolveTrioLanRoles({
+            localIP: localNorm,
+            peerIP: peerNorm,
+            peerIP2: peer2Norm,
           });
+          setLocalParty(trio.localParty);
+          setPeerParty(trio.peerParty);
+          setPeerParty2(trio.peerParty2);
+          master = trio.isMaster;
+          resolvedMasterHost = trio.masterHost;
+          resolvedLocalParty = trio.localParty;
+          resolvedPeerParty = trio.peerParty;
+          resolvedPeerParty2 = trio.peerParty2;
+        } else {
+          const duo = resolveDuoLanRoles(localNorm, peerNorm);
+          setLocalParty(duo.localParty);
+          setPeerParty(duo.peerParty);
+          master = duo.isMaster;
+          resolvedMasterHost = duo.masterHost;
+          resolvedLocalParty = duo.localParty;
+          resolvedPeerParty = duo.peerParty;
         }
         setMasterHost(resolvedMasterHost);
+        if (keygenSetupMode) {
+          persistLanRolesFromContext(
+            keygenSetupMode,
+            resolveEffectiveLanKeygenContext({
+              setupMode: keygenSetupMode,
+              state: {
+                isMaster: master,
+                masterHost: resolvedMasterHost,
+                localParty: resolvedLocalParty,
+                peerParty: resolvedPeerParty,
+                peerParty2: resolvedPeerParty2,
+              },
+            }),
+          );
+        }
+        if (isTrio) {
+          const trioRoles = resolveTrioLanRoles({
+            localIP: localNorm,
+            peerIP: peerNorm,
+            peerIP2: peer2Norm,
+          });
+          let masterPub = '';
+          if (trioRoles.isMaster) {
+            try {
+              const kp = JSON.parse(keypair);
+              masterPub = (kp?.publicKey || '').trim();
+            } catch {
+              masterPub = '';
+            }
+          } else if (trioRoles.ipByRole.KeyShare1 === peerNorm) {
+            masterPub = (_peerPubkey || '').trim();
+          } else if (trioRoles.ipByRole.KeyShare1 === peer2Norm) {
+            masterPub = peerPubkey2Stored.trim();
+          } else if (trioRoles.ipByRole.KeyShare1 === localNorm) {
+            try {
+              const kp = JSON.parse(keypair);
+              masterPub = (kp?.publicKey || '').trim();
+            } catch {
+              masterPub = '';
+            }
+          }
+          if (masterPub) {
+            appConfigRepository.set('lan_master_pubkey', masterPub);
+          }
+        }
         dbg('Master Selection', {master, masterHost: resolvedMasterHost});
         setIsMaster(master);
         setStatus('Devices Discovery Completed');
@@ -3931,11 +3962,9 @@ const MobilesPairing = ({navigation}: any) => {
                                       {prepareCopy.statusLine}
                                     </Text>
                                   </View>
-                                  {keygenBackend === 'gg18' ? (
-                                    <Text style={styles.finalizingCountdownText}>
-                                      Time elapsed: {prepCounter} seconds
-                                    </Text>
-                                  ) : null}
+                                  <Text style={styles.finalizingCountdownText}>
+                                    Time elapsed: {prepCounter} seconds
+                                  </Text>
                                 </View>
                               </View>
                             </View>
@@ -4043,12 +4072,11 @@ const MobilesPairing = ({navigation}: any) => {
                               </View>
                               {/* Header Text */}
                               <Text style={styles.modalTitle}>
-                                Finalizing Your Wallet
+                                {keygenModalCopy.title}
                               </Text>
                               {/* Subtext */}
                               <Text style={styles.modalSubtitle}>
-                                Securing your wallet with advanced cryptography.
-                                Please stay in the app...
+                                {keygenModalCopy.subtitle}
                               </Text>
                               {/* Progress Container */}
                               <View style={styles.progressContainer}>

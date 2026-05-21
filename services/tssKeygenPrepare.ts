@@ -7,32 +7,13 @@ import {
   type TssBackend,
 } from './tssBackend';
 import {TssProvider} from './TssProvider';
+import {
+  getPrepareModalCopy,
+  type PrepareModalCopy,
+} from './walletSetupUi';
 
-export type {SetupMode};
-
-export type PrepareModalCopy = {
-  title: string;
-  subtitle: string;
-  statusLine: string;
-  successLine: string;
-};
-
-export function getPrepareModalCopy(backend: TssBackend): PrepareModalCopy {
-  if (backend === 'dkls23') {
-    return {
-      title: 'Preparing wallet',
-      subtitle: 'Verifying the DKLs23 MPC stack on this device.',
-      statusLine: 'Verifying DKLs23 readiness',
-      successLine: 'Device preparation done',
-    };
-  }
-  return {
-    title: 'Preparing Device',
-    subtitle: 'Could take a while, given device specs.',
-    statusLine: 'Computing cryptographic params',
-    successLine: 'Device Preparation Done',
-  };
-}
+export type {SetupMode, PrepareModalCopy};
+export {getPrepareModalCopy, getWalletSetupKeygenModalCopy} from './walletSetupUi';
 
 export {getKeygenStepCount} from './mpcProgress';
 
@@ -55,13 +36,14 @@ export async function prepareDeviceForKeygen(
   timeoutMinutes: number,
   setupMode?: SetupMode,
   skipDeletePpm = __DEV__,
+  explicitBackend?: TssBackend | null,
 ): Promise<TssBackend> {
-  const backend = await resolveTssBackendForKeygen(setupMode);
+  const backend = await resolveTssBackendForKeygen(setupMode, explicitBackend);
   if (!skipDeletePpm) {
     await deletePreparamsFile(ppmFile);
   }
   if (backend === 'dkls23') {
-    await TssProvider.helloDkg(setupMode);
+    await TssProvider.helloDkg(setupMode, backend);
   } else {
     await BBMTLibNativeModule.preparams(ppmFile, String(timeoutMinutes));
   }

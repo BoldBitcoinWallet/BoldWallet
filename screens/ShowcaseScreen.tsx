@@ -35,6 +35,7 @@ import {
   setDkls23OptedOut,
   setKeygenTssBackendPreference,
 } from '../services/tssConfig';
+import type {TssBackend} from '../services/tssBackend';
 import database from '../services/Database';
 import {WalletService} from '../services/WalletService';
 import mempoolClient from '../services/MempoolClient';
@@ -53,6 +54,8 @@ const ShowcaseScreen = ({navigation}: any) => {
   const [selectedMode, setSelectedMode] = useState<'duo' | 'trio' | null>(null);
   const [isTransportModalVisible, setIsTransportModalVisible] = useState(false);
   const [pendingMode, setPendingMode] = useState<'duo' | 'trio' | null>(null);
+  const [pendingKeygenBackend, setPendingKeygenBackend] =
+    useState<TssBackend | null>(null);
   const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
     'terms',
   );
@@ -1122,6 +1125,7 @@ const ShowcaseScreen = ({navigation}: any) => {
         onClose={() => setIsBackendModalVisible(false)}
         onContinue={backend => {
           setKeygenTssBackendPreference(backend);
+          setPendingKeygenBackend(backend);
           setIsBackendModalVisible(false);
           setIsModeModalVisible(true);
         }}
@@ -1135,6 +1139,11 @@ const ShowcaseScreen = ({navigation}: any) => {
         }}
         onSelect={(transport: 'local' | 'nostr') => {
           if (!pendingMode) return;
+          const setupParams = {
+            mode: pendingMode,
+            transport: transport === 'local' ? ('lan' as const) : ('nostr' as const),
+            backend: pendingKeygenBackend ?? undefined,
+          };
           if (transport === 'local') {
             navigation.dispatch(
               CommonActions.reset({
@@ -1142,7 +1151,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                 routes: [
                   {
                     name: 'Devices Pairing',
-                    params: {mode: pendingMode},
+                    params: setupParams,
                   },
                 ],
               }),
@@ -1154,12 +1163,13 @@ const ShowcaseScreen = ({navigation}: any) => {
                 routes: [
                   {
                     name: 'Nostr Connect',
-                    params: {mode: pendingMode},
+                    params: setupParams,
                   },
                 ],
               }),
             );
           }
+          setPendingKeygenBackend(null);
         }}
         title="Select Pairing Method"
         description="Choose how to connect with other devices"

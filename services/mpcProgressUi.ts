@@ -24,6 +24,13 @@ export type MpcHookHandlerResult = {
   utxoState?: MpcProgressUtxoState;
 };
 
+export type MpcHookTracePayload = {
+  backend: TssBackend;
+  msg: MpcHookMessage;
+  mappedPercent: number | null;
+  displayProgress: number;
+};
+
 /** Human-readable phase line for the MPC modal (DKLS + GG18). */
 export function formatMpcPhaseLabel(
   msg: MpcHookMessage,
@@ -39,12 +46,21 @@ export function formatMpcPhaseLabel(
     if (step <= 0) {
       return 'Preparing wallet setup…';
     }
-    if (step <= 2 || info.includes('waiting')) {
+    if (
+      step <= 2 &&
+      (info.includes('waiting') || info.includes('starting keygen'))
+    ) {
       return 'Waiting for all devices…';
     }
-    if (info.includes('dkg round')) {
+    if (info.includes('round') || info.includes('message')) {
       const m = msg.info?.match(/round\s*(\d+)/i);
-      return m ? `Key generation · round ${m[1]}` : 'Key generation in progress…';
+      if (m) {
+        return `Key generation · round ${m[1]}`;
+      }
+      if (step >= 3) {
+        return `Key generation · round ${step - 2}`;
+      }
+      return 'Key generation in progress…';
     }
     if (step >= 99 || msg.done) {
       return 'Wallet setup complete';
@@ -110,6 +126,7 @@ export function processMpcHookMessage(
     isTrio: boolean;
     isSendBitcoin: boolean;
     refs: MpcHookHandlerRefs;
+    onTrace?: (payload: MpcHookTracePayload) => void;
   },
 ): MpcHookHandlerResult | null {
   let msg: MpcHookMessage;
@@ -142,7 +159,7 @@ export function processMpcHookMessage(
     percent = opts.refs.progressRef.current;
   }
 
-  return {
+  const handlerResult = {
     percent,
     statusLabel: formatMpcPhaseLabel(msg, {
       isSendBitcoin: opts.isSendBitcoin,
@@ -151,6 +168,15 @@ export function processMpcHookMessage(
     mpcDone: result.mpcDone === true,
     utxoState: result.utxoState,
   };
+
+  opts.onTrace?.({
+    backend,
+    msg,
+    mappedPercent: percent,
+    displayProgress: opts.refs.progressRef.current,
+  });
+
+  return handlerResult;
 }
 
 /** Backend for hooks: prefer resolved state; while MPC is active, fall back so early hooks are not dropped. */

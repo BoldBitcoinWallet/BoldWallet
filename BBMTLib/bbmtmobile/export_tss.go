@@ -176,6 +176,15 @@ func BbmtJoinKeygen(ppmPath, key, parties, encKey, decKey, session, server, chai
 	))
 }
 
+//export BbmtJoinKeygenWithBackend
+func BbmtJoinKeygenWithBackend(backend, ppmPath, key, parties, encKey, decKey, session, server, chaincode, sessionKey *C.char) *C.char {
+	return cString(tss.DispatchJoinKeygen(
+		goStr(backend),
+		goStr(ppmPath), goStr(key), goStr(parties), goStr(encKey), goStr(decKey),
+		goStr(session), goStr(server), goStr(chaincode), goStr(sessionKey),
+	))
+}
+
 //export BbmtNostrKeypair
 func BbmtNostrKeypair() *C.char {
 	return cString(tss.NostrKeypair())
@@ -193,9 +202,17 @@ func BbmtNostrJoinKeygen(relays, nsec, peers, session, sessionKey, chaincode, pp
 	))
 }
 
+//export BbmtNostrJoinKeygenWithBackend
+func BbmtNostrJoinKeygenWithBackend(backend, relays, nsec, peers, session, sessionKey, chaincode, ppmPath *C.char) *C.char {
+	return cString(tss.DispatchNostrJoinKeygen(
+		goStr(backend),
+		goStr(relays), goStr(nsec), goStr(peers), goStr(session), goStr(sessionKey), goStr(chaincode), goStr(ppmPath),
+	))
+}
+
 //export BbmtNostrJoinKeysign
 func BbmtNostrJoinKeysign(relays, nsec, peers, session, sessionKey, keyshare, derivePath, message *C.char) *C.char {
-	return cString(tss.NostrJoinKeysign(
+	return cString(tss.DispatchNostrJoinKeysign(
 		goStr(relays), goStr(nsec), goStr(peers), goStr(session), goStr(sessionKey),
 		goStr(keyshare), goStr(derivePath), goStr(message),
 	))

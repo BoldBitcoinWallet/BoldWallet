@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/BoldBitcoinWallet/BBMTLib/dkls"
+	"github.com/BoldBitcoinWallet/BBMTLib/tss"
 	nostr "github.com/nbd-wtf/go-nostr"
 )
 
@@ -89,6 +90,43 @@ func main() {
 		runNostrKeygenCLI()
 	case "nostr-keysign":
 		runNostrKeysignCLI()
+	case "relay":
+		if len(os.Args) < 3 {
+			fmt.Fprintf(os.Stderr, "Usage: %s relay <port>\n", os.Args[0])
+			os.Exit(1)
+		}
+		if _, err := tss.RunRelay(os.Args[2]); err != nil {
+			fmt.Fprintf(os.Stderr, "relay: %v\n", err)
+			os.Exit(1)
+		}
+		select {}
+	case "lan-keygen":
+		if len(os.Args) < 8 {
+			fmt.Fprintf(os.Stderr, "Usage: %s lan-keygen <key> <partiesCSV> <session> <server> <chaincode> <sessionKey>\n", os.Args[0])
+			os.Exit(1)
+		}
+		result, err := dkls.JoinKeygen(os.Args[2], os.Args[3], os.Args[4], os.Args[5], os.Args[6], os.Args[7], "", "")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "lan keygen: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println(result)
+	case "lan-keysign":
+		if len(os.Args) < 9 {
+			fmt.Fprintf(os.Stderr, "Usage: %s lan-keysign <server> <key> <partiesCSV> <session> <sessionKey> <keyshareFile> <message>\n", os.Args[0])
+			os.Exit(1)
+		}
+		raw, err := os.ReadFile(os.Args[7])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "read keyshare: %v\n", err)
+			os.Exit(1)
+		}
+		result, err := dkls.JoinKeysign(os.Args[2], os.Args[3], os.Args[4], os.Args[5], os.Args[6], "", "", string(raw), os.Args[8])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "lan keysign: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println(result)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", mode)
 		os.Exit(1)

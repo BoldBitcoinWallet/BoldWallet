@@ -1,6 +1,9 @@
 import {
+  buildKeygenProgressTrace,
   dklsKeygenPercent,
   dklsKeysignPercent,
+  gg18KeygenPercent,
+  keygenPercentForUi,
   getKeygenStepCount,
   getKeysignStepCount,
   mapMpcHookToPercent,
@@ -14,13 +17,11 @@ const emptyUtxo: MpcProgressUtxoState = {
 };
 
 describe('getKeygenStepCount', () => {
-  it('uses DKLs duo/trio denominators', () => {
-    expect(getKeygenStepCount('dkls23', false)).toBe(14);
-    expect(getKeygenStepCount('dkls23', true)).toBe(22);
-  });
-  it('uses GG18 duo/trio denominators', () => {
-    expect(getKeygenStepCount('gg18', false)).toBe(18);
-    expect(getKeygenStepCount('gg18', true)).toBe(29);
+  it('documents legacy linear caps (DKLs/GG18 use phased mappers at runtime)', () => {
+    expect(getKeygenStepCount('dkls23', false)).toBe(10);
+    expect(getKeygenStepCount('dkls23', true)).toBe(14);
+    expect(getKeygenStepCount('gg18', false)).toBe(10);
+    expect(getKeygenStepCount('gg18', true)).toBe(16);
   });
 });
 
@@ -36,15 +37,47 @@ describe('dklsKeygenPercent', () => {
     expect(dklsKeygenPercent(0, false)).toBe(0);
     expect(dklsKeygenPercent(1, false)).toBe(10);
     expect(dklsKeygenPercent(2, false)).toBe(20);
-    expect(dklsKeygenPercent(3, false)).toBe(27);
-    expect(dklsKeygenPercent(7, false)).toBe(56);
-    expect(dklsKeygenPercent(13, false)).toBe(99);
+    expect(dklsKeygenPercent(3, false)).toBe(31);
+    expect(dklsKeygenPercent(7, false)).toBeGreaterThanOrEqual(75);
+    expect(dklsKeygenPercent(8, false)).toBeGreaterThanOrEqual(85);
+    expect(dklsKeygenPercent(9, false)).toBe(99);
     expect(dklsKeygenPercent(99, false)).toBe(100);
   });
 
   it('uses longer round span for trio', () => {
-    expect(dklsKeygenPercent(7, true)).toBe(41);
-    expect(dklsKeygenPercent(21, true)).toBe(99);
+    expect(dklsKeygenPercent(6, true)).toBeGreaterThanOrEqual(55);
+    expect(dklsKeygenPercent(9, true)).toBeGreaterThanOrEqual(80);
+    expect(dklsKeygenPercent(11, true)).toBe(99);
+  });
+
+  it('late duo rounds are not stuck near 37% before done', () => {
+    expect(dklsKeygenPercent(6, false)).toBeGreaterThanOrEqual(60);
+    expect(dklsKeygenPercent(7, false)).toBeGreaterThanOrEqual(70);
+  });
+});
+
+describe('gg18KeygenPercent', () => {
+  it('ramps prep then rounds for duo', () => {
+    expect(gg18KeygenPercent(0, false)).toBe(0);
+    expect(gg18KeygenPercent(2, false)).toBe(15);
+    expect(gg18KeygenPercent(6, false)).toBeGreaterThanOrEqual(60);
+    expect(gg18KeygenPercent(8, false)).toBeGreaterThanOrEqual(80);
+    expect(gg18KeygenPercent(9, false)).toBe(99);
+  });
+
+  it('late steps map high enough before sentinel', () => {
+    expect(gg18KeygenPercent(7, false)).toBeGreaterThanOrEqual(70);
+    expect(gg18KeygenPercent(12, true)).toBeGreaterThanOrEqual(85);
+  });
+});
+
+describe('buildKeygenProgressTrace', () => {
+  it('produces monotonic DKLs duo curve', () => {
+    const trace = buildKeygenProgressTrace('dkls23', false, 99);
+    for (let i = 1; i < trace.length; i += 1) {
+      expect(trace[i].percent).toBeGreaterThanOrEqual(trace[i - 1].percent);
+    }
+    expect(trace[trace.length - 1].percent).toBe(100);
   });
 });
 
@@ -63,7 +96,7 @@ describe('dklsKeysignPercent', () => {
 
 describe('mapMpcHookToPercent', () => {
   describe('DKLs keygen', () => {
-    it('maps early steps without hitting 100', () => {
+    it('maps early steps without hitting 100 (GG18-analog UI curve)', () => {
       expect(
         mapMpcHookToPercent(
           {type: 'keygen', step: 0},
@@ -77,14 +110,14 @@ describe('mapMpcHookToPercent', () => {
           'dkls23',
           {isTrio: false, utxo: emptyUtxo, currentProgress: 0},
         ).percent,
-      ).toBe(20);
+      ).toBe(keygenPercentForUi(2, false));
       expect(
         mapMpcHookToPercent(
           {type: 'keygen', step: 7},
           'dkls23',
           {isTrio: false, utxo: emptyUtxo, currentProgress: 0},
         ).percent,
-      ).toBe(56);
+      ).toBeGreaterThanOrEqual(75);
     });
 
     it('treats sentinel step 99 as 100 without done flag', () => {
@@ -115,6 +148,18 @@ describe('mapMpcHookToPercent', () => {
           {isTrio: false, utxo: emptyUtxo, currentProgress: 80},
         ).percent,
       ).toBe(80);
+    });
+  });
+
+  describe('GG18 keygen', () => {
+    it('uses same phased curve as DKLS UI mapping', () => {
+      expect(
+        mapMpcHookToPercent(
+          {type: 'keygen', step: 7},
+          'gg18',
+          {isTrio: false, utxo: emptyUtxo, currentProgress: 0},
+        ).percent,
+      ).toBe(keygenPercentForUi(7, false));
     });
   });
 
@@ -156,7 +201,6 @@ describe('mapMpcHookToPercent', () => {
         'gg18',
         {isTrio: false, utxo, currentProgress: 0},
       );
-      // prgUTXO=50, + (50 * 18) / 36 = 75
       expect(r.percent).toBe(75);
     });
 

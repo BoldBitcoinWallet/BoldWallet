@@ -16,7 +16,8 @@ import (
 )
 
 func init() {
-	tss.RegisterDKLsKeysignHandlers(NostrJoinKeysignWithSighash, JoinKeysignWithSighash)
+	tss.RegisterDKLsKeysignHandlers(NostrJoinKeysignWithSighash, JoinKeysignWithSighash, NostrJoinKeysign)
+	tss.RegisterDKLsKeygenHandlers(JoinKeygen, NostrJoinKeygen)
 }
 
 func keysignResponseJSON(sig libtss.Signature, sighashBase64 string) (string, error) {

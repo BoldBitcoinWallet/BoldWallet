@@ -62,8 +62,12 @@ build_host() {
   info "Building bbmtmobile for host..."
   go build -buildmode=c-shared -o bin/libbbmtmobile ./bbmtmobile/
   cp -f bin/libbbmtmobile.h "${CPP_DIR}/libbbmtmobile.h" 2>/dev/null || true
-  info "Host smoke test..."
-  go test -count=1 -run TestHelloDkg ./dkls/
+  info "Host smoke test (fast unit + join-barrier; no LAN keygen)..."
+  go test -count=1 -timeout 3m ./dkls/ -run 'TestHelloDkg|TestDKGAndSignInProcess|TestDKGAndSignInProcessTrio|TestRunDKGWithSenderInProcess|TestRunDKGWithSenderTrioInProcess|TestDedupe|TestRecvPeer|TestMerge|TestLanAwaitJoinersPartialTrio'
+  if [ "${RUN_DKLS_LAN_INTEGRATION:-0}" = "1" ]; then
+    info "LAN keygen integration (RUN_DKLS_LAN_INTEGRATION=1, may take ~15m)..."
+    go test -count=1 -timeout 15m ./dkls/ -run 'TestLanJoinKeygenDuo$|TestLanJoinKeygenTrio$|TestLanJoinKeygenTrioDerivedSessionKey'
+  fi
 }
 
 build_android_abi() {

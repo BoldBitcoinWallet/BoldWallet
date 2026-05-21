@@ -2,9 +2,11 @@ package dkls
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"runtime/debug"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +14,8 @@ import (
 	libtss "github.com/0xCarbon/libtss/libtss-go/tss"
 	"github.com/BoldBitcoinWallet/BBMTLib/tss"
 	"github.com/BoldBitcoinWallet/BBMTLib/tss/nostrtransport"
+	nostr "github.com/nbd-wtf/go-nostr"
+	"github.com/nbd-wtf/go-nostr/nip19"
 )
 
 type nostrMessenger struct {
@@ -39,7 +43,7 @@ func NostrJoinKeygen(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKe
 	}
 
 	relays := splitCSV(relaysCSV)
-	allParties := splitCSV(partiesNpubsCSV)
+	allParties := sortedPartiesNpubs(splitCSV(partiesNpubsCSV))
 	peersNpub := filterPeers(allParties, localNpub)
 
 	cfg := nostrtransport.Config{
@@ -49,7 +53,7 @@ func NostrJoinKeygen(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKe
 		LocalNpub:     localNpub,
 		LocalNsec:     partyNsec,
 		PeersNpub:     peersNpub,
-		MaxTimeout:    90 * time.Second,
+		MaxTimeout:    5 * time.Minute,
 	}
 	cfg.ApplyDefaults()
 	if err := cfg.Validate(); err != nil {
@@ -82,7 +86,6 @@ func runNostrDKG(cfg nostrtransport.Config, chaincode, localNpub string, allPart
 	time.Sleep(500 * time.Millisecond)
 	tss.ReportKeygenProgress(cfg.SessionID, 1, "waiting for peers", false)
 	stopPeerPulse := make(chan struct{})
-	defer close(stopPeerPulse)
 	go func() {
 		tick := 0
 		for {
@@ -96,15 +99,21 @@ func runNostrDKG(cfg nostrtransport.Config, chaincode, localNpub string, allPart
 		}
 	}()
 	if err := coordinator.AwaitPeers(ctx); err != nil {
+		close(stopPeerPulse)
 		return "", err
 	}
+	close(stopPeerPulse)
 	tss.ReportKeygenProgress(cfg.SessionID, 1, "peers ready", false)
 
 	messenger := nostrtransport.NewMessenger(cfg, client)
 	nm := &nostrMessenger{messenger: messenger, ctx: ctx, localNpub: localNpub}
 
-	selfID := partyIDFromNpub(localNpub, allParties)
-	roundCh := make(chan []libtss.Message, 16)
+	selfID, err := partyIDFromNpub(localNpub, allParties)
+	if err != nil {
+		return "", err
+	}
+	// Large buffer + non-blocking enqueue: pump must not block while runDKG is inside session.Next (sync).
+	roundCh := make(chan []libtss.Message, 256)
 
 	pump := nostrtransport.NewMessagePump(cfg, client)
 	pumpCtx, pumpCancel := context.WithCancel(ctx)
@@ -119,18 +128,26 @@ func runNostrDKG(cfg nostrtransport.Config, chaincode, localNpub string, allPart
 			if err != nil {
 				return err
 			}
-			in := filterMessagesFor(selfID, msgs)
+			in := dedupeDKGInboundBySender(selfID, msgs)
 			if len(in) == 0 {
 				return nil
 			}
-			roundCh <- in
+			select {
+			case roundCh <- in:
+			default:
+				go func(batch []libtss.Message) { roundCh <- batch }(in)
+			}
 			return nil
 		})
 	}()
 
-	tss.ReportKeygenProgress(cfg.SessionID, 2, "starting DKLs DKG", false)
+	sidBytes := []byte(cfg.SessionID)
+	if decoded, decErr := hex.DecodeString(cfg.SessionID); decErr == nil && len(decoded) > 0 {
+		sidBytes = decoded
+	}
+	tss.ReportKeygenProgress(cfg.SessionID, 2, "starting keygen", false)
 	runner := &nostrPartyRunner{selfID: selfID, localNpub: localNpub, messenger: nm, peers: allParties}
-	share, _, err := runDKGWithSender(cfg.SessionID, selfID, []byte(cfg.SessionID), threshold, runner, roundCh)
+	share, _, err := runDKGWithSender(cfg.SessionID, selfID, sidBytes, threshold, runner, roundCh)
 	pumpCancel()
 	wg.Wait()
 	if err != nil {
@@ -170,13 +187,43 @@ func (r *nostrPartyRunner) sendMessages(msgs []libtss.Message) error {
 	return nil
 }
 
-func partyIDFromNpub(npub string, allParties []string) libtss.Identifier {
+func partyIDFromNpub(npub string, allParties []string) (libtss.Identifier, error) {
+	localHex, err := npubToHexKey(npub)
+	if err != nil {
+		return 0, err
+	}
 	for i, p := range allParties {
-		if p == npub {
-			return libtss.Identifier(i + 1)
+		pHex, err := npubToHexKey(p)
+		if err != nil {
+			continue
+		}
+		if pHex == localHex {
+			return libtss.Identifier(i + 1), nil
 		}
 	}
-	return 1
+	return 0, fmt.Errorf("dkls: local npub not in parties list (have %d parties)", len(allParties))
+}
+
+func npubToHexKey(npub string) (string, error) {
+	npub = strings.TrimSpace(npub)
+	if strings.HasPrefix(npub, "npub1") {
+		prefix, decoded, err := nip19.Decode(npub)
+		if err != nil || prefix != "npub" {
+			return "", fmt.Errorf("decode npub: %w", err)
+		}
+		if s, ok := decoded.(string); ok {
+			return s, nil
+		}
+		return "", fmt.Errorf("decode npub: unexpected type")
+	}
+	if len(npub) == 64 {
+		return npub, nil
+	}
+	// hex nsec path: derive npub then hex
+	if pk, err := nostr.GetPublicKey(npub); err == nil && len(pk) == 64 {
+		return pk, nil
+	}
+	return "", fmt.Errorf("invalid npub %q", npub)
 }
 
 // NostrJoinKeysign runs DKLs23 signing over Nostr.
@@ -195,7 +242,7 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 	}
 
 	relays := splitCSV(relaysCSV)
-	allParties := splitCSV(partiesNpubsCSV)
+	allParties := sortedPartiesNpubs(splitCSV(partiesNpubsCSV))
 	peersNpub := filterPeers(allParties, localNpub)
 
 	cfg := nostrtransport.Config{
@@ -205,7 +252,7 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 		LocalNpub:     localNpub,
 		LocalNsec:     partyNsec,
 		PeersNpub:     peersNpub,
-		MaxTimeout:    90 * time.Second,
+		MaxTimeout:    5 * time.Minute,
 	}
 	cfg.ApplyDefaults()
 	if err := cfg.Validate(); err != nil {
@@ -235,7 +282,7 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 	pumpCtx, pumpCancel := context.WithCancel(ctx)
 	defer pumpCancel()
 
-	roundCh := make(chan []libtss.Message, 16)
+	roundCh := make(chan []libtss.Message, 256)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -249,7 +296,11 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 			if len(in) == 0 {
 				return nil
 			}
-			roundCh <- in
+			select {
+			case roundCh <- in:
+			default:
+				go func(batch []libtss.Message) { roundCh <- batch }(in)
+			}
 			return nil
 		})
 	}()
@@ -276,6 +327,13 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 	raw, _ := json.Marshal(out)
 	tss.ReportKeysignProgress(sessionID, 99, "keysign ok", true)
 	return string(raw), nil
+}
+
+// sortedPartiesNpubs matches mobile Nostr pairing (lexicographic npub order for stable party IDs).
+func sortedPartiesNpubs(parties []string) []string {
+	out := append([]string(nil), parties...)
+	sort.Strings(out)
+	return out
 }
 
 func splitCSV(s string) []string {

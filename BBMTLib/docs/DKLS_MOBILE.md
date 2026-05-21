@@ -8,11 +8,16 @@ Do **not** add `externalNativeBuild { cmake { path "CMakeLists.txt" } }` to `and
 
 ## Build (required before device test)
 
+Nostr/LAN DKG fixes live in `BBMTLib/dkls` and ship in **`libbbmtmobile`** (not a separate DKLS binary). Mobile calls `DklsNostrJoinKeygen` → `dkls.NostrJoinKeygen` with the same sorted-npub / hex party-id logic as `dkls-nostr-test-all.sh`.
+
 ```bash
 cd BBMTLib
 
 # Prerequisites: Rust, Go 1.22+, `cargo install cargo-ndk`, Android NDK r23+
 # (set ANDROID_NDK_HOME to a numeric NDK, e.g. .../ndk/28.2.13676358 — not legacy rc*)
+
+# Optional: verify Nostr keygen on local relay before rebuilding native libs
+# RELAYS=ws://127.0.0.1:7777 ./scripts-dkls/dkls-nostr-test-all.sh
 
 # All native artifacts (GG18 + DKLs, Android + iOS on macOS)
 ./build-all.sh
