@@ -5,6 +5,7 @@
  */
 
 import appConfigRepository from './repositories/AppConfigRepository';
+import {getCommitteeKeyshareLabel, getKeyshareLabel} from '../utils';
 
 export const TRIO_PARTIES_CSV = 'KeyShare1,KeyShare2,KeyShare3';
 
@@ -127,6 +128,86 @@ export function buildLanRelayServerUrl(
     throw new Error('Invalid LAN relay host');
   }
   return `http://${h}:${port}`;
+}
+
+/** True when stored keyshare metadata represents a 2-of-3 (trio) wallet. */
+export function isTrioWalletKeyshare(
+  meta: {keygen_committee_keys?: string[] | null} | null | undefined,
+): boolean {
+  const committee = meta?.keygen_committee_keys;
+  return Array.isArray(committee) && committee.length >= 3;
+}
+
+/**
+ * LAN keysign party ids for native MPC (KeyShareN monikers).
+ * DKLs maps these to libtss ids via share.Identifier(); do not pass npubs here.
+ *
+ * Spend/sign always uses exactly two signers:
+ * - Duo wallet (2-of-2): local + peer
+ * - Trio wallet (2-of-3 DKG): local + one co-signer only — never all three KeyShares
+ *
+ * Keygen is different: trio LAN keygen uses all three (`TRIO_PARTIES_CSV`).
+ */
+export function resolveLanSigningParties(input: {
+  localParty: string;
+  /** The other device co-signing this spend (duo peer, or selected trio peer). */
+  peerParty: string;
+  /** Third role from LAN pairing; not included in keysign CSV. */
+  peerParty2?: string;
+}): {partyID: string; partiesCSV: string} {
+  const localParty = input.localParty.trim();
+  if (!localParty) {
+    throw new Error(
+      'LAN party role is missing on this device. Re-run device pairing on the same Wi‑Fi, then retry co-signing.',
+    );
+  }
+  const peerParty = input.peerParty.trim();
+  if (!peerParty) {
+    throw new Error(
+      'LAN peer role is missing. Re-run device pairing on the same Wi‑Fi, then retry co-signing.',
+    );
+  }
+  if (localParty === peerParty) {
+    throw new Error('Please use two different key shares on each device.');
+  }
+  void input.peerParty2;
+  const parties = [localParty, peerParty].sort();
+  return {partyID: localParty, partiesCSV: parties.join(',')};
+}
+
+/**
+ * DKLS LAN spend: party ids must match libtss ids from keygen committee order,
+ * not Wi‑Fi IP ranking (KeyShare1/2/3). Use npubs from discovery + keyshare metadata.
+ */
+export function resolveDklsLanSigningPartiesFromKeyshare(
+  meta: {
+    local_party_key?: string;
+    keygen_committee_keys?: string[] | null;
+  } | null,
+  peerCommitteeKey: string,
+): {partyID: string; partiesCSV: string} {
+  const localLabel = getKeyshareLabel(meta);
+  if (!localLabel) {
+    throw new Error(
+      'Could not map this device to a KeyShare role from your wallet committee. Re-import the keyshare or use Nostr co-signing.',
+    );
+  }
+  const peerKey = peerCommitteeKey.trim();
+  if (!peerKey) {
+    throw new Error(
+      'Peer identity missing from LAN pairing. Re-run device pairing, then retry co-signing.',
+    );
+  }
+  const peerLabel = getCommitteeKeyshareLabel(meta, peerKey);
+  if (!peerLabel) {
+    throw new Error(
+      'Could not map the paired device to your wallet committee. Ensure both devices use the same trio wallet, then re-pair on LAN.',
+    );
+  }
+  return resolveLanSigningParties({
+    localParty: localLabel,
+    peerParty: peerLabel,
+  });
 }
 
 export function resolveLanKeygenParties(opts: {

@@ -4,7 +4,10 @@ import {
   normalizeLanHost,
   resolveDuoLanRoles,
   resolveLanKeygenParties,
+  resolveLanSigningParties,
+  resolveDklsLanSigningPartiesFromKeyshare,
   resolveTrioLanRoles,
+  isTrioWalletKeyshare,
   TRIO_PARTIES_CSV,
 } from '../services/lanMpcSetup';
 
@@ -60,6 +63,53 @@ describe('resolveDuoLanRoles', () => {
     const r = resolveDuoLanRoles('192.168.1.20', '192.168.1.10');
     expect(r.isMaster).toBe(true);
     expect(r.masterHost).toBe('192.168.1.20');
+  });
+});
+
+describe('isTrioWalletKeyshare', () => {
+  it('detects trio from committee length', () => {
+    expect(
+      isTrioWalletKeyshare({
+        keygen_committee_keys: ['a', 'b', 'c'],
+      }),
+    ).toBe(true);
+    expect(isTrioWalletKeyshare({keygen_committee_keys: ['a', 'b']})).toBe(
+      false,
+    );
+  });
+});
+
+describe('resolveDklsLanSigningPartiesFromKeyshare', () => {
+  it('maps npub committee to KeyShare3 + peer KeyShare1 (not LAN IP roles)', () => {
+    const meta = {
+      local_party_key: 'npubCarol',
+      keygen_committee_keys: ['npubAlice', 'npubBob', 'npubCarol'],
+    };
+    const r = resolveDklsLanSigningPartiesFromKeyshare(meta, 'npubAlice');
+    expect(r.partyID).toBe('KeyShare3');
+    expect(r.partiesCSV).toBe('KeyShare1,KeyShare3');
+  });
+});
+
+describe('resolveLanSigningParties', () => {
+  it('trio 2-of-3 spend: exactly two KeyShares in CSV (local + one peer)', () => {
+    const r = resolveLanSigningParties({
+      localParty: 'KeyShare3',
+      peerParty: 'KeyShare1',
+      peerParty2: 'KeyShare2',
+    });
+    expect(r.partyID).toBe('KeyShare3');
+    expect(r.partiesCSV).toBe('KeyShare1,KeyShare3');
+    expect(r.partiesCSV.split(',')).toHaveLength(2);
+  });
+
+  it('throws when local and peer roles match', () => {
+    expect(() =>
+      resolveLanSigningParties({
+        localParty: 'KeyShare1',
+        peerParty: 'KeyShare1',
+      }),
+    ).toThrow(/two different key shares/i);
   });
 });
 

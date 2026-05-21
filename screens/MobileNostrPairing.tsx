@@ -404,7 +404,7 @@ const MobileNostrPairing = ({navigation}: any) => {
   const [sessionKey, setSessionKey] = useState<string>('');
   const [chaincode, setChaincode] = useState<string>('');
   // Progress
-  const [progress, setProgress] = useState(0);
+  const [_progress, setProgress] = useState(0);
   const mpcHookProgressRef = useRef(0);
   const mpcUtxoRef = useRef<MpcProgressUtxoState>({
     utxoIndex: 0,
@@ -1711,6 +1711,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           useLegacyPath ? 'no' : 'yes',
         );
       } catch (_e) {
+        dbg('Error parsing keyshare:', _e ?? 'unknown error');
         appConfigRepository.set(CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND, 'yes');
       }
       setMpcDone(true);
@@ -2502,15 +2503,6 @@ const MobileNostrPairing = ({navigation}: any) => {
       setPeerNonce2('');
       setPeerConnectionDetails2('');
       setPeerInputError2('');
-    }
-  };
-  const deletePreparams = async () => {
-    try {
-      dbg(`deleting ppmFile: ${ppmFile}`);
-      await RNFS.unlink(ppmFile);
-      dbg('ppmFile deleted');
-    } catch (err: any) {
-      dbg('error deleting ppmFile', err);
     }
   };
   const prepareDevice = async () => {
@@ -6674,7 +6666,7 @@ const MobileNostrPairing = ({navigation}: any) => {
               ),
             );
             setMpcDone(true);
-            void (async () => {
+            (async () => {
               try {
                 await WalletService.getInstance().incrementChangeIndexAfterSend(
                   p.net,
@@ -6720,7 +6712,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                   );
                 }
               }
-            })();
+            })().catch(e => {
+              dbg('MobileNostrPairing: post-broadcast cleanup failed:', e);
+            });
           } catch (e) {
             dbg('MobileNostrPairing: post-broadcast cleanup failed:', e);
           }

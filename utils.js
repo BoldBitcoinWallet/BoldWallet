@@ -984,6 +984,44 @@ export const getKeyshareLabel = keyshare => {
 };
 
 /**
+ * Map any committee member (npub, hex, or KeyShare-style id) to KeyShareN using the
+ * same sorted `keygen_committee_keys` order as DKG / getKeyshareLabel.
+ * @param {Object|null|undefined} keyshare
+ * @param {string} memberKey
+ * @returns {string}
+ */
+export const getCommitteeKeyshareLabel = (keyshare, memberKey) => {
+  if (!keyshare || typeof keyshare !== 'object') {
+    return '';
+  }
+  const mk =
+    typeof memberKey === 'string' ? memberKey.trim() : String(memberKey ?? '').trim();
+  if (!mk) {
+    return '';
+  }
+  const keysRaw = keyshare.keygen_committee_keys;
+  if (!Array.isArray(keysRaw) || keysRaw.length === 0) {
+    return '';
+  }
+  const committee = keysRaw
+    .map(k =>
+      typeof k === 'string' ? k.trim() : String(k == null ? '' : k).trim(),
+    )
+    .filter(Boolean);
+  if (committee.length < 2) {
+    return '';
+  }
+  const sortedKeys = [...committee].sort((a, b) =>
+    a === b ? 0 : a < b ? -1 : 1,
+  );
+  const index = sortedKeys.indexOf(mk);
+  if (index >= 0) {
+    return `KeyShare${index + 1}`;
+  }
+  return '';
+};
+
+/**
  * UI label: KeyShareN when committee mapping exists; otherwise raw MPC party id.
  * @param {Object|null|undefined} keyshare
  * @returns {string}

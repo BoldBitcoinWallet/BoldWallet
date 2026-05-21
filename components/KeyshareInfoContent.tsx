@@ -1,4 +1,5 @@
 import React, {useCallback, useState, useEffect, useRef} from 'react';
+import {useFocusEffect} from '@react-navigation/native';
 import {
   View,
   Text,
@@ -8,6 +9,7 @@ import {
   StyleSheet,
   Linking,
 } from 'react-native';
+import EncryptedStorage from 'react-native-encrypted-storage';
 import AppPressable from './AppPressable';
 import AppText from './AppText';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -22,8 +24,15 @@ import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
 import Toast from 'react-native-toast-message';
 import {dbg, formatKeyshareCreatedAt} from '../utils';
+import {
+  parseKeyshareJsonForDevView,
+  prettyPrintKeyshareJson,
+} from '../utils/keyshareDevView';
+import {isDevDebugEnabled} from '../services/devDebug';
 import {useTheme} from '../theme';
+import {getFontStyle} from '../theme/utils';
 import {createStyles} from './Styles';
+import KeyshareJsonTree from './KeyshareJsonTree';
 import QRCodeModal from './QRCodeModal';
 import QRScanner from './QRScanner';
 import {
@@ -82,8 +91,55 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
         extensionResponseQrPadding: {padding: 16},
         extensionLinkItem: {marginBottom: 8},
         extensionLinkText: {marginBottom: 0},
+        devKeyshareWarning: {
+          fontSize: theme.fontSizes?.sm || 12,
+          color: theme.colors.warning || theme.colors.textSecondary,
+          marginBottom: 8,
+        },
+        devKeyshareError: {
+          fontSize: theme.fontSizes?.sm || 12,
+          color: theme.colors.error || theme.colors.textSecondary,
+          marginBottom: 8,
+        },
+        devKeyshareActions: {
+          flexDirection: 'row' as const,
+          flexWrap: 'wrap' as const,
+          gap: 8,
+          marginBottom: 8,
+        },
+        devKeyshareActionChip: {
+          paddingVertical: 6,
+          paddingHorizontal: 10,
+          borderRadius: 8,
+          backgroundColor: theme.colors.cardBackground,
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+        },
+        devKeyshareActionText: {
+          fontSize: theme.fontSizes?.sm || 12,
+          color: theme.colors.primary,
+        },
+        devKeyshareTreeBox: {
+          maxHeight: 360,
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+          borderRadius: 8,
+          padding: 8,
+          backgroundColor: theme.colors.cardBackground || theme.colors.background,
+        },
+        devKeysharePrettyScroll: {
+          maxHeight: 360,
+        },
+        devKeysharePrettyText: {
+          fontSize: 11,
+          color: theme.colors.text,
+        },
       }),
-    [theme.colors.background],
+    [theme.colors.background, theme],
+  );
+  const devMonoStyle = React.useMemo(
+    () => getFontStyle(theme, 'monospace', 'regular'),
+    [theme],
   );
 
   // Helper function to format long strings: first 8 chars ... last 8 chars
@@ -109,6 +165,17 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   const [isCapabilitiesExpanded, setIsCapabilitiesExpanded] = useState(false);
   const [isBoldExtensionExpanded, setIsBoldExtensionExpanded] = useState(false);
   const [isWatchWalletExpanded, setIsWatchWalletExpanded] = useState(false);
+  const [devDebugEnabled, setDevDebugEnabled] = useState(false);
+  const [isDevKeyshareExpanded, setIsDevKeyshareExpanded] = useState(false);
+  const [devKeyshareView, setDevKeyshareView] = useState<'tree' | 'pretty'>(
+    'tree',
+  );
+  const [devKeyshareData, setDevKeyshareData] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
+  const [devKeyshareError, setDevKeyshareError] = useState<string | null>(null);
+  const [devKeyshareLoading, setDevKeyshareLoading] = useState(false);
 
   // Animation refs for collapsible sections
   const walletInfoRotationAnim = useSharedValue(isWalletInfoExpanded ? 1 : 0);
@@ -119,6 +186,48 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
     isBoldExtensionExpanded ? 1 : 0,
   );
   const watchWalletRotationAnim = useSharedValue(isWatchWalletExpanded ? 1 : 0);
+  const devKeyshareRotationAnim = useSharedValue(isDevKeyshareExpanded ? 1 : 0);
+
+  const loadDevKeyshareStructure = useCallback(async () => {
+    setDevKeyshareLoading(true);
+    try {
+      const raw = await EncryptedStorage.getItem('keyshare');
+      const parsed = parseKeyshareJsonForDevView(raw);
+      if ('error' in parsed) {
+        setDevKeyshareData(null);
+        setDevKeyshareError(parsed.error);
+      } else {
+        setDevKeyshareData(parsed.data);
+        setDevKeyshareError(null);
+      }
+    } catch (e) {
+      dbg('loadDevKeyshareStructure:', e);
+      setDevKeyshareData(null);
+      setDevKeyshareError('Failed to load keyshare');
+    } finally {
+      setDevKeyshareLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      isDevDebugEnabled()
+        .then(setDevDebugEnabled)
+        .catch(() => setDevDebugEnabled(false));
+    }, []),
+  );
+
+  useEffect(() => {
+    if (!devDebugEnabled || !isDevKeyshareExpanded) {
+      return;
+    }
+    loadDevKeyshareStructure();
+  }, [
+    devDebugEnabled,
+    isDevKeyshareExpanded,
+    keyshareInfo,
+    loadDevKeyshareStructure,
+  ]);
 
   // Sync animations with state
   useEffect(() => {
@@ -146,6 +255,52 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
       duration: 200,
     });
   }, [isWatchWalletExpanded, watchWalletRotationAnim]);
+
+  useEffect(() => {
+    devKeyshareRotationAnim.value = withTiming(isDevKeyshareExpanded ? 1 : 0, {
+      duration: 200,
+    });
+  }, [isDevKeyshareExpanded, devKeyshareRotationAnim]);
+
+  const handleToggleDevKeyshare = useCallback(() => {
+    setIsDevKeyshareExpanded(prev => !prev);
+  }, []);
+
+  const handleCopyDevKeyshareJson = useCallback(() => {
+    if (!devKeyshareData) {
+      return;
+    }
+    Alert.alert(
+      'Copy full keyshare JSON?',
+      'This includes secrets (MPC share, Nostr nsec). Only copy on a trusted device.',
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Copy',
+          onPress: () => {
+            Clipboard.setString(prettyPrintKeyshareJson(devKeyshareData));
+            Toast.show({
+              type: 'success',
+              text1: 'Copied',
+              text2: 'Full keyshare JSON copied to clipboard',
+            });
+          },
+        },
+      ],
+    );
+  }, [devKeyshareData]);
+
+  const devKeyshareRotateStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        rotate: `${interpolate(devKeyshareRotationAnim.value, [0, 1], [0, 90])}deg`,
+      },
+    ],
+  }));
+
+  const devKeyshareContentOpacityStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(devKeyshareRotationAnim.value, [0, 1], [0.6, 1]),
+  }));
 
   // Share text as file
   const shareTextAsFile = useCallback(
@@ -1110,6 +1265,130 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                 </Animated.View>
               )}
             </View>
+            {devDebugEnabled ? (
+              <View style={styles.keyshareInfoCard}>
+                <AppPressable
+                  style={styles.collapsibleHeader}
+                  onPress={handleToggleDevKeyshare}
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                  <View style={styles.collapsibleHeaderContent}>
+                    <Image
+                      source={require('../assets/info-icon.png')}
+                      style={styles.collapsibleHeaderIcon}
+                      resizeMode="contain"
+                    />
+                    <Text style={styles.collapsibleHeaderTitle}>
+                      Keyshare structure (dev)
+                    </Text>
+                  </View>
+                  <Animated.Text
+                    style={[
+                      styles.collapsibleChevron,
+                      devKeyshareRotateStyle,
+                      {color: theme.colors.text},
+                    ]}>
+                    ▶
+                  </Animated.Text>
+                </AppPressable>
+                {isDevKeyshareExpanded ? (
+                  <Animated.View
+                    style={[
+                      styles.collapsibleContent,
+                      devKeyshareContentOpacityStyle,
+                    ]}>
+                    <Text style={screenStyles.devKeyshareWarning}>
+                      Developer mode only. Contains secrets — do not share
+                      screenshots or exports.
+                    </Text>
+                    <View style={screenStyles.devKeyshareActions}>
+                      <AppPressable
+                        style={screenStyles.devKeyshareActionChip}
+                        onPress={() => setDevKeyshareView('tree')}
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                        <Text
+                          style={[
+                            screenStyles.devKeyshareActionText,
+                            devKeyshareView === 'tree' && {
+                              fontWeight: '700',
+                            },
+                          ]}>
+                          Tree
+                        </Text>
+                      </AppPressable>
+                      <AppPressable
+                        style={screenStyles.devKeyshareActionChip}
+                        onPress={() => setDevKeyshareView('pretty')}
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                        <Text
+                          style={[
+                            screenStyles.devKeyshareActionText,
+                            devKeyshareView === 'pretty' && {
+                              fontWeight: '700',
+                            },
+                          ]}>
+                          Pretty JSON
+                        </Text>
+                      </AppPressable>
+                      {devKeyshareData ? (
+                        <AppPressable
+                          style={screenStyles.devKeyshareActionChip}
+                          onPress={handleCopyDevKeyshareJson}
+                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                          <Text style={screenStyles.devKeyshareActionText}>
+                            Copy JSON
+                          </Text>
+                        </AppPressable>
+                      ) : null}
+                      <AppPressable
+                        style={screenStyles.devKeyshareActionChip}
+                        onPress={loadDevKeyshareStructure}
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                        <Text style={screenStyles.devKeyshareActionText}>
+                          Reload
+                        </Text>
+                      </AppPressable>
+                    </View>
+                    {devKeyshareLoading ? (
+                      <Text style={styles.modalTextCompact}>Loading…</Text>
+                    ) : devKeyshareError ? (
+                      <Text style={screenStyles.devKeyshareError}>
+                        {devKeyshareError}
+                      </Text>
+                    ) : devKeyshareData ? (
+                      devKeyshareView === 'tree' ? (
+                        <ScrollView
+                          style={screenStyles.devKeyshareTreeBox}
+                          nestedScrollEnabled
+                          showsVerticalScrollIndicator>
+                          <KeyshareJsonTree data={devKeyshareData} />
+                        </ScrollView>
+                      ) : (
+                        <ScrollView
+                          style={[
+                            screenStyles.devKeyshareTreeBox,
+                            screenStyles.devKeysharePrettyScroll,
+                          ]}
+                          nestedScrollEnabled
+                          showsVerticalScrollIndicator>
+                          <Text
+                            style={[
+                              screenStyles.devKeysharePrettyText,
+                              devMonoStyle,
+                            ]}
+                            selectable>
+                            {prettyPrintKeyshareJson(devKeyshareData)}
+                          </Text>
+                        </ScrollView>
+                      )
+                    ) : (
+                      <Text style={styles.modalTextCompact}>
+                        No keyshare loaded
+                      </Text>
+                    )}
+                  </Animated.View>
+                ) : null}
+              </View>
+            ) : null}
           </>
         ) : (
           <View style={styles.keyshareLoadingContainer}>

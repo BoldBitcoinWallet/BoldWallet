@@ -81,6 +81,11 @@ import {
   normalizeLanHost,
   resolveDuoLanRoles,
   resolveTrioLanRoles,
+  isTrioWalletKeyshare,
+  loadPersistedLanRoles,
+  persistLanPairingRoles,
+  resolveLanSigningParties,
+  resolveDklsLanSigningPartiesFromKeyshare,
 } from '../services/lanMpcSetup';
 import {
   invokeLanWalletKeygen,
@@ -187,6 +192,9 @@ const MobilesPairing = ({navigation}: any) => {
   const [peerDevice2, setPeerDevice2] = useState<string | null>(null);
   const [peerParty, setPeerParty] = useState<string | null>(null);
   const [peerParty2, setPeerParty2] = useState<string | null>(null);
+  /** Peer's `local_party_key` from LAN discovery (npub); not overwritten by IP-based KeyShare roles. */
+  const [peerCommitteeKey, setPeerCommitteeKey] = useState<string | null>(null);
+  const [peerCommitteeKey2, setPeerCommitteeKey2] = useState<string | null>(null);
   const [localParty, setLocalParty] = useState<string>('');
   const [isPairing, setIsPairing] = useState(false);
   const [countdown, setCountdown] = useState(timeout);
@@ -968,6 +976,8 @@ const MobilesPairing = ({navigation}: any) => {
     resetCircle();
     setProgress(0);
     setStatus('Starting co-signing…');
+    setDoingMPC(true);
+    setProgress(0);
     // CRITICAL: Store original network/API before transaction (declared outside try for finally block)
     // We'll use QR code network temporarily for signing, but restore original after
     let originalNetwork = '';
@@ -1076,18 +1086,46 @@ const MobilesPairing = ({navigation}: any) => {
           appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
         originalApiUrl = resolveStoredMempoolApiBase(originalNetwork);
       }
-      const partyID = _ksMeta?.local_party_key || '';
-      const allParties = [partyID];
-      if (peerParty) {
-        allParties.push(peerParty);
+      const walletIsTrio = isTrioWalletKeyshare(_ksMeta);
+      const persistedRoles = loadPersistedLanRoles();
+      let partyID: string;
+      let partiesCSV: string;
+      if (backend === 'dkls23') {
+        const peerKeyForSign =
+          (peerCommitteeKey || '').trim() ||
+          (peerParty?.startsWith('npub1') ? peerParty : '') ||
+          '';
+        ({partyID, partiesCSV} = resolveDklsLanSigningPartiesFromKeyshare(
+          _ksMeta,
+          peerKeyForSign,
+        ));
+      } else {
+        const signingLocalParty = (
+          localParty ||
+          persistedRoles.localParty ||
+          _ksMeta?.local_party_key ||
+          ''
+        ).trim();
+        const signingPeerParty = (
+          peerParty || persistedRoles.peerParty || ''
+        ).trim();
+        ({partyID, partiesCSV} = resolveLanSigningParties({
+          localParty: signingLocalParty,
+          peerParty: signingPeerParty,
+          peerParty2: peerParty2 || persistedRoles.peerParty2,
+        }));
       }
-      if (peerParty2) {
-        allParties.push(peerParty2);
-      }
-      const partiesCSV = allParties.sort().join(',');
+      dbg('runKeysign: LAN signing parties', {
+        backend,
+        walletIsTrio,
+        partyID,
+        partiesCSV,
+        keyshareLocalKey: _ksMeta?.local_party_key,
+        peerCommitteeKey,
+        lanRoles: {localParty, peerParty, peerParty2},
+      });
       const sessionID = await BBMTLibNativeModule.sha256(`${data}/${server}`);
       activeMpcSessionIdRef.current = sessionID;
-      setDoingMPC(true);
       mpcAbortRef.current = false;
       const keypairJson =
         (keypair || '').trim() ||
@@ -1567,6 +1605,7 @@ const MobilesPairing = ({navigation}: any) => {
           .toUpperCase();
         setRemoteID(remoteIDComputed);
         setPeerDevice(_peerDevice || null);
+        setPeerCommitteeKey(_peerParty || null);
         setPeerParty(_peerParty || null);
         if (localShare && _peerParty && localShare === _peerParty) {
           throw 'Please Use Two Different KeyShares per Device';
@@ -1611,11 +1650,13 @@ const MobilesPairing = ({navigation}: any) => {
             .toUpperCase();
           setRemoteID2(remoteID2Computed);
           setPeerDevice2(device2Local || null);
+          setPeerCommitteeKey2(peerParty2Raw || null);
           setPeerParty2(peerParty2Raw || null);
         } else {
           setPeerIP2(null);
           setRemoteID2(null);
           setPeerDevice2(null);
+          setPeerCommitteeKey2(null);
           setPeerParty2(null);
         }
         // Extract second peer IP for trio mode (same pattern as _peerIP)
@@ -1715,9 +1756,20 @@ const MobilesPairing = ({navigation}: any) => {
         }
         dbg('Master Selection', {master, masterHost: resolvedMasterHost});
         setIsMaster(master);
+        const trioWallet =
+          isTrio ||
+          isTrioWalletKeyshare(await getKeyshareMetadata().catch(() => null));
+        persistLanPairingRoles({
+          localParty: resolvedLocalParty || localParty,
+          peerParty: resolvedPeerParty || peerParty || '',
+          peerParty2: resolvedPeerParty2 || peerParty2 || '',
+          masterHost: resolvedMasterHost,
+          isMaster: master,
+          isTrio: trioWallet,
+        });
         setStatus('Devices Discovery Completed');
         dbg('Pairing Summary', {
-          isTrio,
+          isTrio: trioWallet,
           isMaster: master,
           roles: {localParty, peerParty, peerParty2},
           devices: {
