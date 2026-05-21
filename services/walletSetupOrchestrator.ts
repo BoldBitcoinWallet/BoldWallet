@@ -4,7 +4,9 @@
  */
 
 import {Platform} from 'react-native';
+import EncryptedStorage from 'react-native-encrypted-storage';
 import {BBMTLibNativeModule} from '../native_modules';
+import {saveKeyshareMetadata} from '../utils';
 import {waitMS} from './WalletService';
 import {
   buildLanRelayServerUrl,
@@ -284,4 +286,51 @@ export async function invokeNostrWalletKeygen(
     input.setupMode,
     backend,
   );
+}
+
+/** GG18-compatible hex encoding of bech32 nsec for the keyshare `nsec` field. */
+export function nsecFieldForKeyshareJson(bech32Nsec: string): string {
+  if (!bech32Nsec || bech32Nsec.trim() === '') {
+    throw new Error('nsec cannot be empty');
+  }
+  const bytes = new TextEncoder().encode(bech32Nsec);
+  return Array.from(bytes)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+export type FinalizeKeyshareOpts = {
+  partyNsec?: string;
+  nostrNpub?: string;
+};
+
+/**
+ * Ensure full keyshare JSON has Nostr credentials before EncryptedStorage persist.
+ * Does not alter MPC fields (share_b64, committee, etc.).
+ */
+export function finalizeKeyshareForStorage(
+  keyshareJson: string,
+  opts?: FinalizeKeyshareOpts,
+): string {
+  const parsed = JSON.parse(keyshareJson) as Record<string, unknown>;
+  if (opts?.partyNsec && (!parsed.nsec || String(parsed.nsec).trim() === '')) {
+    parsed.nsec = nsecFieldForKeyshareJson(opts.partyNsec);
+  }
+  if (opts?.nostrNpub && (!parsed.nostr_npub || String(parsed.nostr_npub).trim() === '')) {
+    parsed.nostr_npub = opts.nostrNpub;
+  }
+  return JSON.stringify(parsed);
+}
+
+/** Persist full keyshare + non-secret metadata mirror. */
+export async function persistWalletKeyshare(
+  keyshareJson: string,
+  opts?: FinalizeKeyshareOpts,
+): Promise<string> {
+  const finalized = opts
+    ? finalizeKeyshareForStorage(keyshareJson, opts)
+    : keyshareJson;
+  await EncryptedStorage.setItem('keyshare', finalized);
+  await saveKeyshareMetadata(finalized);
+  return finalized;
 }

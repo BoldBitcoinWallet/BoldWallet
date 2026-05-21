@@ -1,6 +1,7 @@
 package dkls
 
 import (
+	"encoding/json"
 	"net"
 	"os"
 	"strings"
@@ -123,12 +124,44 @@ func nostrKeygenAll(
 	if len(out) != len(parties) {
 		t.Fatalf("expected %d keyshares, got %d", len(parties), len(out))
 	}
-	for _, js := range out {
+	for npub, js := range out {
 		if err := ValidateKeyshareJSON(js); err != nil {
 			t.Fatalf("invalid keyshare: %v", err)
 		}
+		assertNostrKeyshareHasNsec(t, npub, parties, js)
 	}
 	return out
+}
+
+func assertNostrKeyshareHasNsec(t *testing.T, npub string, parties []nostrParty, js string) {
+	t.Helper()
+	var ks KeyshareJSON
+	if err := json.Unmarshal([]byte(js), &ks); err != nil {
+		t.Fatalf("parse keyshare for %s: %v", npub, err)
+	}
+	if ks.NostrNpub == "" {
+		t.Fatalf("keyshare for %s: missing nostr_npub", npub)
+	}
+	if ks.NsecHex == "" {
+		t.Fatalf("keyshare for %s: missing nsec", npub)
+	}
+	var wantNsec string
+	for _, p := range parties {
+		if p.npub == npub {
+			wantNsec = p.nsec
+			break
+		}
+	}
+	if wantNsec == "" {
+		t.Fatalf("no party nsec for npub %s", npub)
+	}
+	got, err := NsecFromKeyshareField(ks.NsecHex)
+	if err != nil {
+		t.Fatalf("keyshare for %s: decode nsec: %v", npub, err)
+	}
+	if got != wantNsec {
+		t.Fatalf("keyshare for %s: nsec mismatch", npub)
+	}
 }
 
 func nostrKeysignAll(

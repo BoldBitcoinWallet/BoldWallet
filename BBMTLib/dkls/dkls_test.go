@@ -114,3 +114,22 @@ func TestKeyshareRoundTrip(t *testing.T) {
 		t.Fatalf("backend %q", meta.TssBackend)
 	}
 }
+
+func TestNsecFieldRoundTrip(t *testing.T) {
+	const sample = "nsec1samplekeyfortestonlynotreal"
+	field, err := NsecFieldForKeyshareJSON(sample)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	got, err := NsecFromKeyshareField(field)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got != sample {
+		t.Fatalf("round-trip mismatch")
+	}
+	got2, err := NsecFromKeyshareField(sample)
+	if err != nil || got2 != sample {
+		t.Fatalf("bech32 passthrough: got %q err %v", got2, err)
+	}
+}

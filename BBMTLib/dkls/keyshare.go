@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	libtss "github.com/0xCarbon/libtss/libtss-go/tss"
@@ -51,6 +52,34 @@ func KeyshareJSONFromHandle(share *libtss.KeyShareHandle, chainCodeHex string, c
 		return "", err
 	}
 	return string(raw), nil
+}
+
+// NsecFieldForKeyshareJSON stores a bech32 nsec in the keyshare JSON field using the
+// same encoding as GG18 LocalStateNostr.SetNsec (hex of UTF-8 bytes of the nsec string).
+func NsecFieldForKeyshareJSON(bech32Nsec string) (string, error) {
+	if bech32Nsec == "" {
+		return "", fmt.Errorf("nsec cannot be empty")
+	}
+	return hex.EncodeToString([]byte(bech32Nsec)), nil
+}
+
+// NsecFromKeyshareField decodes the stored nsec field back to bech32 (nsec1…).
+func NsecFromKeyshareField(stored string) (string, error) {
+	if stored == "" {
+		return "", fmt.Errorf("nsec is empty")
+	}
+	if strings.HasPrefix(stored, "nsec1") {
+		return stored, nil
+	}
+	raw, err := hex.DecodeString(stored)
+	if err != nil {
+		return "", fmt.Errorf("decode nsec hex: %w", err)
+	}
+	out := string(raw)
+	if !strings.HasPrefix(out, "nsec1") {
+		return "", fmt.Errorf("invalid nsec format in keyshare")
+	}
+	return out, nil
 }
 
 // ImportKeyshare loads a DKLs23 keyshare from JSON.

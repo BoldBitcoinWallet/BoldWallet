@@ -46,7 +46,6 @@ import {
   getNostrRelays,
   getResetToMainTabsWallet,
   shortenAddress,
-  saveKeyshareMetadata,
   resolveUseLegacyDerivationPaths,
   detectKeyshareTssBackend,
 } from '../utils';
@@ -66,6 +65,7 @@ import {getPrepareModalCopy} from '../services/tssKeygenPrepare';
 import {LAN_KEYGEN_STATUS} from '../services/walletSetupUi';
 import {
   invokeNostrWalletKeygen,
+  persistWalletKeyshare,
   resolveWalletSetupBackend,
   runWalletSetupPrepare,
   type WalletSetupRouteParams,
@@ -1690,9 +1690,11 @@ const MobileNostrPairing = ({navigation}: any) => {
       });
       setKeyshareMapping(mapping);
       dbg('Keyshare mapping:', mapping);
-      // Save keyshare (keyshare_position will be calculated on-the-fly when needed)
-      await EncryptedStorage.setItem('keyshare', keyshareJSON);
-      await saveKeyshareMetadata(keyshareJSON);
+      // Save keyshare (embed nsec if native export omitted it)
+      keyshareJSON = await persistWalletKeyshare(keyshareJSON, {
+        partyNsec: localNsec,
+        nostrNpub: localNpub,
+      });
       try {
         const ksParsed = JSON.parse(keyshareJSON);
         const useLegacyPath = resolveUseLegacyDerivationPaths({

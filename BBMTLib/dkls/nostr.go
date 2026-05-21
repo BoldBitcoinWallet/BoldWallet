@@ -155,7 +155,11 @@ func runNostrDKG(cfg nostrtransport.Config, chaincode, localNpub string, allPart
 	}
 	defer share.Free()
 
-	ksJSON, err := KeyshareJSONFromHandle(share, chaincode, allParties, localNpub, localNpub, "")
+	nsecField, err := NsecFieldForKeyshareJSON(cfg.LocalNsec)
+	if err != nil {
+		return "", err
+	}
+	ksJSON, err := KeyshareJSONFromHandle(share, chaincode, allParties, localNpub, localNpub, nsecField)
 	if err != nil {
 		return "", err
 	}
