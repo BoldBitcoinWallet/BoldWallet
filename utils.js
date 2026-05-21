@@ -4,6 +4,10 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 import LocalCache from './services/LocalCache';
 import {isDebugLoggingEnabled} from './App';
 import {detectKeyshareTssBackend} from './services/tssBackend';
+import {BBMTLibNativeModule} from './native_modules';
+
+/** EncryptedStorage / RNES account for the full MPC keyshare blob. */
+export const KEYSHARE_STORAGE_KEY = 'keyshare';
 
 export {detectKeyshareTssBackend};
 
@@ -304,6 +308,28 @@ export const formatKeyshareCreatedAt = createdAt => {
     return null;
   }
   return new Date(ms).toLocaleString();
+};
+
+/**
+ * Full literal creation datetime for toasts / detail (locale-aware, includes timezone).
+ * @param {number|string|null|undefined} createdAt
+ * @returns {string|null}
+ */
+export const formatKeyshareCreatedAtLong = createdAt => {
+  const ms = normalizeCreatedAtMs(createdAt);
+  if (ms == null) {
+    return null;
+  }
+  return new Date(ms).toLocaleString(undefined, {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short',
+  });
 };
 
 /**
@@ -1294,6 +1320,67 @@ export const saveKeyshareMetadata = async keyshareJson => {
     dbg('saveKeyshareMetadata: failed', e);
   }
 };
+
+/**
+ * True when secure storage has the full `keyshare` blob (wallet exists).
+ * Uses native RNES key presence when available (no JSON load/decrypt through JS).
+ */
+export async function hasWalletKeyshareInSecureStorage() {
+  const native = BBMTLibNativeModule?.hasKeyshareInSecureStorage;
+  if (typeof native === 'function') {
+    try {
+      const result = await native();
+      return result === true || result === 'true' || result === 1;
+    } catch (e) {
+      dbg('hasWalletKeyshareInSecureStorage: native check failed', e);
+      return false;
+    }
+  }
+  try {
+    const raw = await EncryptedStorage.getItem(KEYSHARE_STORAGE_KEY);
+    return !!(raw && String(raw).trim());
+  } catch (e) {
+    dbg('hasWalletKeyshareInSecureStorage: fallback failed', e);
+    return false;
+  }
+}
+
+/**
+ * Initial stack route after unlock: MainTabs only when the keyshare blob exists.
+ * Clears orphan `keyshare_meta` / DB mirror when metadata exists without a blob
+ * (e.g. interrupted setup or debug keygen that saved meta only).
+ */
+/**
+ * @param {{ clearOrphanMeta?: boolean }} [opts]
+ * @returns {Promise<'MainTabs'|'Welcome'>}
+ */
+export async function resolveInitialWalletRoute(opts = {}) {
+  const clearOrphanMeta = opts.clearOrphanMeta !== false;
+  let hasKeyshare = await hasWalletKeyshareInSecureStorage();
+  if (!hasKeyshare) {
+    // Native presence check can be false on some builds; trust metadata mirror if present.
+    const meta = await getKeyshareMetadata();
+    if (meta && keyshareMetaLooksComplete(meta)) {
+      dbg(
+        'resolveInitialWalletRoute: no keyshare blob but metadata present — MainTabs',
+      );
+      hasKeyshare = true;
+    }
+  }
+  if (!hasKeyshare) {
+    if (clearOrphanMeta) {
+      try {
+        await clearKeyshareMetadata();
+      } catch (e) {
+        dbg('resolveInitialWalletRoute: clear orphan meta failed', e);
+      }
+    }
+    dbg('resolveInitialWalletRoute: no keyshare → Welcome');
+    return 'Welcome';
+  }
+  dbg('resolveInitialWalletRoute: keyshare present → MainTabs');
+  return 'MainTabs';
+}
 
 /**
  * Read the non-secret keyshare metadata without loading the full MPC blob.

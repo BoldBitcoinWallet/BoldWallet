@@ -366,4 +366,8 @@ RCT_EXTERN_METHOD(cancelNostrMpc:(RCTPromiseResolveBlock)resolve
 RCT_EXTERN_METHOD(getKeyshareNostrPrepJSON:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+// True when RNES Keychain/EncryptedSharedPreferences has `keyshare` without loading the blob
+RCT_EXTERN_METHOD(hasKeyshareInSecureStorage:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 @end

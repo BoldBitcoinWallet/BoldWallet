@@ -19,6 +19,7 @@ import {
   isLegacyWallet,
   resolveUseLegacyDerivationPaths,
   formatKeyshareCreatedAt,
+  formatKeyshareCreatedAtLong,
   detectKeyshareTssBackend,
 } from '../utils';
 
@@ -121,6 +122,18 @@ describe('resolveUseLegacyDerivationPaths', () => {
         nostr_npub: null,
       } as any),
     ).toBe(true);
+  });
+});
+
+describe('formatKeyshareCreatedAtLong', () => {
+  it('returns a long locale string for milliseconds', () => {
+    const s = formatKeyshareCreatedAtLong(POST_CUTOFF_MS);
+    expect(s).toBeTruthy();
+    expect(s!.length).toBeGreaterThan(20);
+  });
+
+  it('returns null when missing', () => {
+    expect(formatKeyshareCreatedAtLong(null)).toBeNull();
   });
 });
 

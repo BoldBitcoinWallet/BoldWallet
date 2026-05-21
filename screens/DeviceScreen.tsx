@@ -1,6 +1,5 @@
 import React, {useCallback, useState, useEffect} from 'react';
 import {NativeModules} from 'react-native';
-import {useNavigation} from '@react-navigation/native';
 import KeyshareInfoContent from '../components/KeyshareInfoContent';
 import {useUser} from '../context/UserContext';
 import {
@@ -33,16 +32,8 @@ type KeyshareInfo = {
 };
 
 const DeviceScreen: React.FC = () => {
-  const navigation = useNavigation<any>();
   const {activeNetwork: network, activeAddressType: addressType} = useUser();
   const [keyshareInfo, setKeyshareInfo] = useState<KeyshareInfo | null>(null);
-
-  const openSettingsSection = useCallback(
-    (section: string) => {
-      navigation.navigate('Settings', {expandSection: section});
-    },
-    [navigation],
-  );
 
   const loadKeyshareInfo = useCallback(async () => {
     try {
@@ -113,7 +104,6 @@ const DeviceScreen: React.FC = () => {
     <KeyshareInfoContent
       keyshareInfo={keyshareInfo}
       network={(network as 'mainnet' | 'testnet') || 'mainnet'}
-      onOpenSettingsSection={openSettingsSection}
     />
   );
 };

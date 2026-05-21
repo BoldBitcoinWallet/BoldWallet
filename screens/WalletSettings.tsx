@@ -48,6 +48,11 @@ import {
   clearKeyshareMetadata,
 } from '../utils';
 import {compareSemver} from '../utils/compareSemver';
+import {
+  promptWalletBiometricAuth,
+  WALLET_SENSITIVE_ACTION_AUTH,
+  type WalletBiometricPromptOptions,
+} from '../services/walletBiometricAuth';
 import {useTheme} from '../theme';
 import {waitMS, WalletService} from '../services/WalletService';
 import mempoolClient from '../services/MempoolClient';
@@ -691,6 +696,8 @@ const getSectionIcon = (title: string): any => {
       return require('../assets/phone-icon.png');
     case 'manchette':
       return require('../assets/megaphone-icon.png');
+    case 'updater':
+      return require('../assets/update-icon.png');
     case 'storage':
       return require('../assets/storage-icon.png');
     case 'nostr relays':
@@ -831,6 +838,78 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [buildNumberClickCount, setBuildNumberClickCount] = useState(0);
   const buildNumberClickCountRef = useRef(0);
   const buildNumberClickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const walletSensitiveAuthPendingRef = useRef(false);
+  const [walletSensitiveAuthPending, setWalletSensitiveAuthPending] =
+    useState(false);
+
+  const runWithWalletBiometric = useCallback(
+    async (
+      action: () => void | Promise<void>,
+      prompts: WalletBiometricPromptOptions,
+    ) => {
+      if (walletSensitiveAuthPendingRef.current) {
+        return;
+      }
+      walletSensitiveAuthPendingRef.current = true;
+      setWalletSensitiveAuthPending(true);
+      try {
+        const ok = await promptWalletBiometricAuth({
+          ...prompts,
+          showFailureAlert: true,
+        });
+        if (!ok) {
+          return;
+        }
+        await action();
+      } finally {
+        walletSensitiveAuthPendingRef.current = false;
+        setWalletSensitiveAuthPending(false);
+      }
+    },
+    [],
+  );
+
+  const openBackupModalWithAuth = useCallback(() => {
+    void runWithWalletBiometric(
+      () => setIsBackupModalVisible(true),
+      WALLET_SENSITIVE_ACTION_AUTH.backupKeyshare,
+    );
+  }, [runWithWalletBiometric]);
+
+  const openDeleteWalletModalWithAuth = useCallback(() => {
+    void runWithWalletBiometric(
+      () => setIsModalResetVisible(true),
+      WALLET_SENSITIVE_ACTION_AUTH.deleteWallet,
+    );
+  }, [runWithWalletBiometric]);
+
+  const enableDeveloperModeWithAuth = useCallback(() => {
+    void runWithWalletBiometric(async () => {
+      setDevDebugEnabled(true);
+      try {
+        await EncryptedStorage.setItem('devDebugEnabled', 'true');
+      } catch (error) {
+        dbg('Error saving devDebugEnabled:', error);
+      }
+      setExpandedSections(prev => ({
+        ...prev,
+        about: false,
+        devDebug: true,
+      }));
+      Toast.show({
+        type: 'success',
+        text1: 'Dev Mode Enabled',
+        text2: 'Developer debug section is now visible',
+        position: 'top',
+      });
+      buildNumberClickCountRef.current = 0;
+      setBuildNumberClickCount(0);
+      if (buildNumberClickTimeoutRef.current) {
+        clearTimeout(buildNumberClickTimeoutRef.current);
+        buildNumberClickTimeoutRef.current = null;
+      }
+    }, WALLET_SENSITIVE_ACTION_AUTH.enableDeveloperMode);
+  }, [runWithWalletBiometric]);
   const nonDevMainnetGuardRanRef = useRef(false);
   // Collapsible states
   const [expandedSections, setExpandedSections] = useState<{
@@ -839,6 +918,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     theme: false,
     haptics: false,
     manchette: false,
+    updater: false,
     displayFormat: false,
     backup: false,
     advanced: false,
@@ -1196,6 +1276,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       'theme',
       'haptics',
       'manchette',
+      'updater',
       'displayFormat',
       'backup',
       'advanced',
@@ -1531,7 +1612,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         }
         // Trigger a full app reload so all providers/contexts re‑initialize
         navigation.reset({index: 0, routes: [{name: 'Welcome'}]});
-        DeviceEventEmitter.emit('app:reload');
+        DeviceEventEmitter.emit('app:reload', {revalidateRoute: true});
       } catch (error) {
         dbg('handleResetWallet', error);
         Alert.alert('Error', 'Failed to reset wallet. Please try again.');
@@ -2769,7 +2850,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         nestedScrollEnabled={true}
         bounces={true}
         scrollEventThrottle={16}>
-        {/* App: Theme, Balance Display, Haptics, Manchette, Storage */}
+        {/* App: Theme, Balance Display, Haptics, Manchette, Updater, Storage */}
         <SettingsSectionGroup title="App" styles={styles} theme={theme}>
           <CollapsibleSection
             title="Theme"
@@ -2942,6 +3023,25 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               <Text style={styles.toggleLabel}>Visible</Text>
             </View>
           </CollapsibleSection>
+          <CollapsibleSection
+            title="Updater"
+            isExpanded={expandedSections.updater}
+            onToggle={() => toggleSection('updater')}
+            styles={styles}
+            theme={theme}>
+            <Text style={styles.toggleDescription}>
+              Lock screen version chip. When off, the chip stays visible but no
+              automatic update checks or alerts run on unlock.
+            </Text>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Off</Text>
+              <AppSwitch
+                onValueChange={handleToggleLockScreenUpdateChecker}
+                value={lockScreenUpdateCheckerEnabled}
+              />
+              <Text style={styles.toggleLabel}>On</Text>
+            </View>
+          </CollapsibleSection>
           {/* Storage - inside App */}
           <CollapsibleSection
             title="Storage"
@@ -3100,10 +3200,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             theme={theme}>
             <Text style={styles.apiName}>Backup Wallet Keyshare</Text>
             <AppPressable
-              style={[styles.button, styles.backupButton]}
-              onPress={() => {
-                setIsBackupModalVisible(true);
-              }}
+              style={[
+                styles.button,
+                styles.backupButton,
+                walletSensitiveAuthPending && styles.halfOpacity,
+              ]}
+              onPress={openBackupModalWithAuth}
+              disabled={walletSensitiveAuthPending}
               android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
               <View style={styles.buttonContent}>
                 <Image
@@ -3118,10 +3221,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               <Text style={styles.apiName}>Delete Wallet Keyshare</Text>
             </View>
             <AppPressable
-              style={[styles.button, styles.deleteButton]}
-              onPress={() => {
-                setIsModalResetVisible(true);
-              }}
+              style={[
+                styles.button,
+                styles.deleteButton,
+                walletSensitiveAuthPending && styles.halfOpacity,
+              ]}
+              onPress={openDeleteWalletModalWithAuth}
+              disabled={walletSensitiveAuthPending}
               android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
               <View style={styles.buttonContent}>
                 <Image
@@ -4158,6 +4264,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </AppPressable>
             <AppPressable
               onPress={() => {
+                if (walletSensitiveAuthPending) {
+                  return;
+                }
                 if (devDebugEnabled) {
                   Toast.show({
                     type: 'info',
@@ -4194,29 +4303,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 }
 
                 if (currentCount >= 7) {
-                  setDevDebugEnabled(true);
-                  EncryptedStorage.setItem('devDebugEnabled', 'true').catch(
-                    error => {
-                      dbg('Error saving devDebugEnabled:', error);
-                    },
-                  );
-                  setExpandedSections(prev => ({
-                    ...prev,
-                    about: false,
-                    devDebug: true,
-                  }));
-                  Toast.show({
-                    type: 'success',
-                    text1: 'Dev Mode Enabled',
-                    text2: 'Developer debug section is now visible',
-                    position: 'top',
-                  });
-                  buildNumberClickCountRef.current = 0;
-                  setBuildNumberClickCount(0);
-                  if (buildNumberClickTimeoutRef.current) {
-                    clearTimeout(buildNumberClickTimeoutRef.current);
-                    buildNumberClickTimeoutRef.current = null;
-                  }
+                  enableDeveloperModeWithAuth();
                 }
               }}
               style={styles.aboutInfoRow}
@@ -4236,18 +4323,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 )}
               </View>
             </AppPressable>
-            <Text style={styles.toggleDescription}>
-              Lock screen version chip, when off, no automatic update
-              checks/alerts are performed.
-            </Text>
-            <View style={styles.toggleContainer}>
-              <Text style={styles.toggleLabel}>Off</Text>
-              <AppSwitch
-                onValueChange={handleToggleLockScreenUpdateChecker}
-                value={lockScreenUpdateCheckerEnabled}
-              />
-              <Text style={styles.toggleLabel}>On</Text>
-            </View>
           </CollapsibleSection>
         </SettingsSectionGroup>
       </ScrollView>

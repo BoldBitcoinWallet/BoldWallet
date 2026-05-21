@@ -151,7 +151,10 @@ const KeyshareJsonTree: React.FC<JsonTreeProps> = ({
   defaultExpandDepth = 2,
 }) => {
   const {theme} = useTheme();
-  const mono = useMemo(() => getFontStyle(theme, 'monospace', 'regular'), [theme]);
+  const mono = useMemo(
+    () => getFontStyle(theme, {family: 'monospace', weight: 'normal'}),
+    [theme],
+  );
   const colors = useMemo(
     () => ({
       text: theme.colors.text,

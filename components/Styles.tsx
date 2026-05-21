@@ -326,6 +326,7 @@ export interface Styles {
   collapsibleHeaderIcon: ImageStyle;
   collapsibleHeaderTitle: TextStyle;
   collapsibleChevron: TextStyle;
+  collapsibleChevronSpinner: ViewStyle;
   collapsibleContent: ViewStyle;
   walletInfoContainer: ViewStyle;
   walletInfoTitle: TextStyle;
@@ -2136,6 +2137,10 @@ export const createStyles = (theme: Theme): Styles => ({
   collapsibleChevron: {
     fontSize: theme.fontSizes?.base || 14,
     fontFamily: theme.fontFamilies?.bold,
+  },
+  collapsibleChevronSpinner: {
+    minWidth: 20,
+    marginRight: 2,
   },
   collapsibleContent: {
     paddingHorizontal: 12,

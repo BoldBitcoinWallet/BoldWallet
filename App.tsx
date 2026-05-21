@@ -16,7 +16,6 @@ import PSBTScreen from './screens/PSBTScreen';
 import DeviceScreen from './screens/DeviceScreen';
 import LoadingScreen from './screens/LoadingScreen';
 import Zeroconf, {ImplType} from 'react-native-zeroconf';
-import ReactNativeBiometrics, {BiometryTypes} from 'react-native-biometrics';
 import DeviceInfo from 'react-native-device-info';
 import {ThemeProvider, useTheme} from './theme';
 import {WalletProvider} from './context/WalletContext';
@@ -43,13 +42,19 @@ import {
 import AppPressable from './components/AppPressable';
 import WalletSettings from './screens/WalletSettings';
 import {NativeModules} from 'react-native';
-import {dbg, pinRemoteIP, getPinnedRemoteIPs, getKeyshareMetadata} from './utils';
+import {
+  dbg,
+  pinRemoteIP,
+  getPinnedRemoteIPs,
+  resolveInitialWalletRoute,
+} from './utils';
 import MobilesPairing from './screens/MobilesPairing';
 import MobileNostrPairing from './screens/MobileNostrPairing';
 import UserPreferenceScreen from './screens/UserPreferenceScreen';
 import {CustomHeader} from './components/Header';
 import Toast from 'react-native-toast-message';
 import {createToastConfig} from './utils/toastConfig';
+import {promptWalletBiometricAuth} from './services/walletBiometricAuth';
 // Initialize react-native-screens for Fabric compatibility
 enableScreens(true);
 const {BBMTLibNativeModule} = NativeModules;
@@ -79,7 +84,6 @@ export const setDebugLoggingEnabled = (enabled: boolean) => {
 export const isDebugLoggingEnabled = () => {
   return debugLoggingEnabledRef.current;
 };
-const rnBiometrics = new ReactNativeBiometrics({allowDeviceCredentials: true});
 const zeroconf = new Zeroconf();
 const zeroOut = new Zeroconf();
 /** Tab + stack headers both pass props here; CustomHeader is typed for native stack only. */
@@ -533,21 +537,24 @@ const App = () => {
     debugLoggingEnabledRef.current,
   );
   useEffect(() => {
-    const sub = DeviceEventEmitter.addListener('app:reload', async () => {
-      //dbg('App: Received app:reload event');
-      setIsAuthenticated(false);
-      setAppResetKey(k => k + 1);
-      // Update debug logging state from ref
-      setDebugLoggingEnabledState(debugLoggingEnabledRef.current);
-      // Re-check wallet state after reload to ensure correct initial route
-      try {
-        const meta = await getKeyshareMetadata();
-        const route = meta ? 'MainTabs' : 'Welcome';
-        setInitialRoute(route);
-      } catch {
-        setInitialRoute('Welcome');
-      }
-    });
+    const sub = DeviceEventEmitter.addListener(
+      'app:reload',
+      async (payload?: {revalidateRoute?: boolean}) => {
+        setIsAuthenticated(false);
+        setAppResetKey(k => k + 1);
+        setDebugLoggingEnabledState(debugLoggingEnabledRef.current);
+        // Lock FAB: re-auth only — keep MainTabs (do not re-run wallet bootstrap).
+        // Wallet delete / import: pass { revalidateRoute: true } to re-check keyshare.
+        if (payload?.revalidateRoute) {
+          try {
+            const route = await resolveInitialWalletRoute();
+            setInitialRoute(route);
+          } catch {
+            setInitialRoute('Welcome');
+          }
+        }
+      },
+    );
     return () => sub.remove();
   }, []);
   useEffect(() => {
@@ -563,9 +570,7 @@ const App = () => {
         dbg('App: Database init error (non-fatal):', dbErr);
       }
       try {
-        const meta = await getKeyshareMetadata();
-        dbg('initializeApp keyshare found', !!meta);
-        const route = meta ? 'MainTabs' : 'Welcome';
+        const route = await resolveInitialWalletRoute();
         dbg('Setting initial route to:', route);
         setInitialRoute(route);
       } catch (error) {
@@ -714,79 +719,29 @@ const App = () => {
     };
   }, [debugLoggingEnabled]);
   const authenticateUser = async () => {
-    try {
-      dbg('Starting authentication...');
-      const {available, biometryType} = await rnBiometrics.isSensorAvailable();
-      dbg('Biometric available:', available, 'Type:', biometryType);
-      if (!available) {
-        dbg('No biometric available, skipping authentication');
-        setIsAuthenticated(true);
-        return;
-      }
-      if (
-        available &&
-        (biometryType === BiometryTypes.TouchID ||
-          biometryType === BiometryTypes.FaceID ||
-          biometryType === BiometryTypes.Biometrics)
-      ) {
-        dbg('Using biometric authentication');
-        const {success} = await rnBiometrics.simplePrompt({
-          promptMessage: 'Authenticate to access your wallet',
-          fallbackPromptMessage: 'Use your device passcode to unlock',
-        });
-        if (success) {
-          dbg('Biometric authentication successful');
-          setIsAuthenticated(true);
-        } else {
-          dbg('Biometric authentication failed');
-          Alert.alert(
-            'Authentication Failed',
-            'Unable to authenticate. Please try again.',
-            [
-              {
-                text: 'Retry',
-                onPress: () => {
-                  authenticateUser();
-                },
-              },
-            ],
-            {cancelable: false},
-          );
-        }
-      } else {
-        dbg('Using device passcode authentication');
-        const {success} = await rnBiometrics.simplePrompt({
-          promptMessage: 'Enter your device passcode to unlock',
-        });
-        if (success) {
-          dbg('Device passcode authentication successful');
-          setIsAuthenticated(true);
-        } else {
-          dbg('Device passcode authentication failed');
-          Alert.alert(
-            'Authentication Failed',
-            'Unable to authenticate. Please try again.',
-            [
-              {
-                text: 'Retry',
-                onPress: () => {
-                  authenticateUser();
-                },
-              },
-            ],
-            {cancelable: false},
-          );
-        }
-      }
-    } catch (error) {
-      dbg('Authentication Error:', error);
-      if (__DEV__) {
-        dbg('Development mode: skipping authentication due to error');
-        setIsAuthenticated(true);
-      } else {
-        Alert.alert('Error', 'Authentication failed. Please try again.');
-      }
+    dbg('Starting authentication...');
+    const success = await promptWalletBiometricAuth({
+      showFailureAlert: false,
+    });
+    if (success) {
+      dbg('Biometric authentication successful');
+      setIsAuthenticated(true);
+      return;
     }
+    dbg('Biometric authentication failed');
+    Alert.alert(
+      'Authentication Failed',
+      'Unable to authenticate. Please try again.',
+      [
+        {
+          text: 'Retry',
+          onPress: () => {
+            authenticateUser();
+          },
+        },
+      ],
+      {cancelable: false},
+    );
   };
   const handleRetryAuthentication = async () => {
     setIsAuthenticated(false);

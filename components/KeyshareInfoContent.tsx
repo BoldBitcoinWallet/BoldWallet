@@ -8,6 +8,7 @@ import {
   Alert,
   StyleSheet,
   Linking,
+  ActivityIndicator,
 } from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import AppPressable from './AppPressable';
@@ -23,12 +24,21 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
 import Toast from 'react-native-toast-message';
-import {dbg, formatKeyshareCreatedAt} from '../utils';
+import {
+  dbg,
+  formatKeyshareCreatedAt,
+  formatKeyshareCreatedAtLong,
+} from '../utils';
 import {
   parseKeyshareJsonForDevView,
   prettyPrintKeyshareJson,
 } from '../utils/keyshareDevView';
+import {colorsFromWalletFingerprint} from '../utils/fingerprintPillColors';
 import {isDevDebugEnabled} from '../services/devDebug';
+import {
+  promptWalletBiometricAuth,
+  WALLET_SENSITIVE_ACTION_AUTH,
+} from '../services/walletBiometricAuth';
 import {useTheme} from '../theme';
 import {getFontStyle} from '../theme/utils';
 import {createStyles} from './Styles';
@@ -40,6 +50,87 @@ import {
   computeExtensionBindResponseQr,
 } from '../utils/extensionBind';
 import type {TssBackend} from '../services/tssBackend';
+
+const TSS_BACKEND_LOGO = {
+  dkls23: require('../assets/0xcarbon-lib.png'),
+  gg18: require('../assets/bnb-lib.png'),
+} as const;
+
+function tssBackendLogoFor(
+  backend: TssBackend | undefined,
+  label: string | undefined,
+): (typeof TSS_BACKEND_LOGO)[keyof typeof TSS_BACKEND_LOGO] {
+  if (backend === 'dkls23') {
+    return TSS_BACKEND_LOGO.dkls23;
+  }
+  if (backend === 'gg18') {
+    return TSS_BACKEND_LOGO.gg18;
+  }
+  const hint = (label ?? '').toLowerCase();
+  if (
+    hint.includes('dkls') ||
+    hint.includes('0xcarbon') ||
+    hint.includes('libtss')
+  ) {
+    return TSS_BACKEND_LOGO.dkls23;
+  }
+  return TSS_BACKEND_LOGO.gg18;
+}
+
+const PHONE_ICON = require('../assets/phone-icon.png');
+const FINGERPRINT_ICON = require('../assets/fingerprint.png');
+const CLOCK_ICON = require('../assets/clock-icon.png');
+const KEY_ICON = require('../assets/key-icon.png');
+
+function keyshareIndexFromLabel(label: string): number | null {
+  const m = /^KeyShare(\d+)$/i.exec(String(label || '').trim());
+  if (!m) {
+    return null;
+  }
+  const n = parseInt(m[1], 10);
+  return n >= 1 && n <= 3 ? n : null;
+}
+
+function WalletModePhoneIcons({
+  type,
+  phoneIconStyle,
+  phoneIconMutedStyle,
+  rowStyle,
+}: {
+  type: 'duo' | 'trio';
+  phoneIconStyle: object;
+  phoneIconMutedStyle: object;
+  rowStyle: object;
+}) {
+  if (type === 'duo') {
+    return (
+      <View style={rowStyle}>
+        <Image
+          source={PHONE_ICON}
+          style={phoneIconStyle}
+          resizeMode="contain"
+        />
+        <Image
+          source={PHONE_ICON}
+          style={phoneIconStyle}
+          resizeMode="contain"
+        />
+      </View>
+    );
+  }
+  return (
+    <View style={rowStyle}>
+      <Image source={PHONE_ICON} style={phoneIconStyle} resizeMode="contain" />
+      <Image source={PHONE_ICON} style={phoneIconStyle} resizeMode="contain" />
+      <Image
+        source={PHONE_ICON}
+        style={phoneIconMutedStyle}
+        resizeMode="contain"
+      />
+    </View>
+  );
+}
+
 interface KeyshareInfo {
   label: string;
   supportsLocal: boolean;
@@ -61,16 +152,14 @@ interface KeyshareInfo {
 interface KeyshareInfoContentProps {
   keyshareInfo: KeyshareInfo | null;
   network: 'mainnet' | 'testnet';
-  /** When provided, "Go to Wallet Settings > Security" becomes clickable and opens Settings with this section expanded (e.g. 'backup' for Security). */
-  onOpenSettingsSection?: (section: string) => void;
 }
 const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   keyshareInfo,
   network,
-  onOpenSettingsSection,
 }) => {
   const {theme} = useTheme();
   const styles = createStyles(theme);
+  const isLightTheme = theme.colors.background === '#ffffff';
   const screenStyles = React.useMemo(
     () =>
       StyleSheet.create({
@@ -82,6 +171,9 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
           paddingBottom: 24,
         },
         walletInfoHintLink: {textDecorationLine: 'underline'},
+        walletInfoHintLinkColor: {
+          color: isLightTheme ? theme.colors.primary : theme.colors.secondary,
+        },
         bindExtensionDescription: {marginTop: 4, marginBottom: 8},
         bindExtensionButton: {
           flexDirection: 'row' as const,
@@ -98,7 +190,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
         },
         devKeyshareError: {
           fontSize: theme.fontSizes?.sm || 12,
-          color: theme.colors.error || theme.colors.textSecondary,
+          color: theme.colors.danger,
           marginBottom: 8,
         },
         devKeyshareActions: {
@@ -119,13 +211,19 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
           fontSize: theme.fontSizes?.sm || 12,
           color: theme.colors.primary,
         },
+        devKeyshareActionTextActive: {
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.primary,
+        },
         devKeyshareTreeBox: {
           maxHeight: 360,
           borderWidth: 1,
           borderColor: theme.colors.border,
           borderRadius: 8,
           padding: 8,
-          backgroundColor: theme.colors.cardBackground || theme.colors.background,
+          backgroundColor:
+            theme.colors.cardBackground || theme.colors.background,
         },
         devKeysharePrettyScroll: {
           maxHeight: 360,
@@ -134,12 +232,217 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
           fontSize: 11,
           color: theme.colors.text,
         },
+        walletInfoRowUniform: {
+          minHeight: 36,
+          paddingVertical: 5,
+          alignItems: 'center' as const,
+        },
+        tssBackendBadgeIcon: {
+          width: 20,
+          height: 20,
+        },
+        walletInfoPill: {
+          flex: 1,
+          flexShrink: 1,
+          flexDirection: 'row' as const,
+          alignItems: 'center' as const,
+          justifyContent: 'flex-start' as const,
+          gap: 8,
+          minWidth: 0,
+          height: 36,
+          minHeight: 36,
+          maxHeight: 36,
+          paddingHorizontal: 10,
+          paddingVertical: 0,
+          borderRadius: 7,
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+        },
+        /** Neutral value chips — lifted surface on the info card */
+        walletInfoPillSurface: {
+          backgroundColor: isLightTheme
+            ? theme.colors.white
+            : theme.colors.whiteOverlay08,
+        },
+        walletInfoPillDuo: {
+          backgroundColor: theme.colors.secondary,
+        },
+        walletInfoPillTrio: {
+          backgroundColor: theme.colors.primary,
+        },
+        walletInfoPillDkls: {
+          backgroundColor: theme.colors.secondary,
+        },
+        walletInfoPillGg18: {
+          backgroundColor: theme.colors.primary,
+        },
+        walletInfoPillLeading: {
+          flexDirection: 'row' as const,
+          alignItems: 'center' as const,
+          flexShrink: 0,
+          gap: 4,
+        },
+        walletInfoPillValue: {
+          flex: 1,
+          minWidth: 0,
+          textAlign: 'right' as const,
+        },
+        walletInfoPillValueBrand: {
+          flex: 1,
+          minWidth: 0,
+          textAlign: 'right' as const,
+          fontSize: theme.fontSizes?.sm || 12,
+          lineHeight: 18,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.white,
+        },
+        walletInfoPillValueNeutral: {
+          flex: 1,
+          minWidth: 0,
+          textAlign: 'right' as const,
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: theme.fontFamilies?.medium,
+          color: theme.colors.text,
+        },
+        walletInfoPillIcon: {
+          width: 20,
+          height: 20,
+        },
+        walletInfoPillFingerprint: {
+          paddingLeft: 0,
+          paddingVertical: 0,
+          gap: 0,
+          overflow: 'hidden' as const,
+        },
+        walletInfoPillFingerprintStarter: {
+          width: '25%',
+          minWidth: 44,
+          maxWidth: 72,
+          height: 36,
+          alignItems: 'center' as const,
+          justifyContent: 'center' as const,
+          marginRight: 8,
+          borderRightWidth: 1,
+          borderRightColor: theme.colors.border,
+        },
+        walletInfoPillFingerprintIcon: {
+          width: 20,
+          height: 20,
+        },
+        walletInfoPillFingerprintText: {
+          flex: 1,
+          minWidth: 0,
+          fontSize: theme.fontSizes?.sm || 12,
+          lineHeight: 18,
+          fontFamily: theme.fontFamilies?.monospace,
+          color: theme.colors.text,
+          textAlign: 'right' as const,
+        },
+        walletInfoPillClockIcon: {
+          width: 20,
+          height: 20,
+          tintColor: isLightTheme
+            ? theme.colors.primary
+            : theme.colors.bitcoinOrange,
+        },
+        walletInfoPillDateText: {
+          flex: 1,
+          minWidth: 0,
+          fontSize: theme.fontSizes?.sm || 12,
+          lineHeight: 18,
+          fontFamily: theme.fontFamilies?.medium,
+          color: theme.colors.text,
+          textAlign: 'right' as const,
+        },
+        walletInfoKeyIconWrap: {
+          width: 24,
+          height: 24,
+          alignItems: 'center' as const,
+          justifyContent: 'center' as const,
+        },
+        walletInfoKeyIcon: {
+          width: 20,
+          height: 20,
+          tintColor: isLightTheme
+            ? theme.colors.primary
+            : theme.colors.bitcoinOrange,
+        },
+        walletInfoKeyIndexBadge: {
+          position: 'absolute' as const,
+          right: -2,
+          bottom: -2,
+          minWidth: 16,
+          height: 16,
+          borderRadius: 8,
+          paddingHorizontal: 4,
+          alignItems: 'center' as const,
+          justifyContent: 'center' as const,
+          backgroundColor: isLightTheme
+            ? theme.colors.secondary
+            : theme.colors.accent,
+          borderWidth: 1,
+          borderColor: theme.colors.cardBackground,
+        },
+        walletInfoKeyIndexText: {
+          fontSize: 10,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.white,
+        },
+        walletInfoModePhoneRow: {
+          flexDirection: 'row' as const,
+          alignItems: 'center' as const,
+          gap: 4,
+        },
+        walletInfoModePhoneIcon: {
+          width: 20,
+          height: 20,
+        },
+        walletInfoPhoneOnBrandBg: {
+          width: 20,
+          height: 20,
+          tintColor: theme.colors.white,
+        },
+        walletInfoPhoneOnBrandBgMuted: {
+          width: 20,
+          height: 20,
+          tintColor: theme.colors.whiteOverlay30,
+        },
+        walletInfoPillValueClickable: {
+          flex: 1,
+          minWidth: 0,
+          fontSize: theme.fontSizes?.sm || 11,
+          lineHeight: 18,
+          textAlign: 'right' as const,
+        },
+        walletInfoPillKeyshareIdValue: {
+          flex: 1,
+          minWidth: 0,
+          fontSize: theme.fontSizes?.sm || 11,
+          lineHeight: 18,
+          letterSpacing: 0.3,
+          textAlign: 'right' as const,
+          fontFamily: theme.fontFamilies?.monospaceBold,
+          color: isLightTheme ? theme.colors.primary : theme.colors.text,
+        },
       }),
-    [theme.colors.background, theme],
+    [isLightTheme, theme],
+  );
+  const walletPhoneOnBrandStyle = screenStyles.walletInfoPhoneOnBrandBg;
+  const walletPhoneOnBrandMutedStyle =
+    screenStyles.walletInfoPhoneOnBrandBgMuted;
+  const fingerprintBandColors = React.useMemo(
+    () => colorsFromWalletFingerprint(keyshareInfo?.fingerprint, isLightTheme),
+    [keyshareInfo?.fingerprint, isLightTheme],
   );
   const devMonoStyle = React.useMemo(
-    () => getFontStyle(theme, 'monospace', 'regular'),
+    () => getFontStyle(theme, {family: 'monospace', weight: 'normal'}),
     [theme],
+  );
+  const fingerprintStarterBandStyle = React.useMemo(
+    () => ({
+      backgroundColor: fingerprintBandColors.bandBackgroundColor,
+    }),
+    [fingerprintBandColors.bandBackgroundColor],
   );
 
   // Helper function to format long strings: first 8 chars ... last 8 chars
@@ -176,6 +479,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   > | null>(null);
   const [devKeyshareError, setDevKeyshareError] = useState<string | null>(null);
   const [devKeyshareLoading, setDevKeyshareLoading] = useState(false);
+  const [devKeyshareAuthPending, setDevKeyshareAuthPending] = useState(false);
 
   // Animation refs for collapsible sections
   const walletInfoRotationAnim = useSharedValue(isWalletInfoExpanded ? 1 : 0);
@@ -262,9 +566,28 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
     });
   }, [isDevKeyshareExpanded, devKeyshareRotationAnim]);
 
-  const handleToggleDevKeyshare = useCallback(() => {
-    setIsDevKeyshareExpanded(prev => !prev);
-  }, []);
+  const handleToggleDevKeyshare = useCallback(async () => {
+    if (devKeyshareAuthPending) {
+      return;
+    }
+    if (isDevKeyshareExpanded) {
+      setIsDevKeyshareExpanded(false);
+      return;
+    }
+    setDevKeyshareAuthPending(true);
+    try {
+      const ok = await promptWalletBiometricAuth({
+        ...WALLET_SENSITIVE_ACTION_AUTH.viewKeyshareStructure,
+        showFailureAlert: true,
+      });
+      if (!ok) {
+        return;
+      }
+      setIsDevKeyshareExpanded(true);
+    } finally {
+      setDevKeyshareAuthPending(false);
+    }
+  }, [devKeyshareAuthPending, isDevKeyshareExpanded]);
 
   const handleCopyDevKeyshareJson = useCallback(() => {
     if (!devKeyshareData) {
@@ -293,7 +616,11 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   const devKeyshareRotateStyle = useAnimatedStyle(() => ({
     transform: [
       {
-        rotate: `${interpolate(devKeyshareRotationAnim.value, [0, 1], [0, 90])}deg`,
+        rotate: `${interpolate(
+          devKeyshareRotationAnim.value,
+          [0, 1],
+          [0, 90],
+        )}deg`,
       },
     ],
   }));
@@ -444,13 +771,16 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   }, [keyshareInfo]);
 
   const handleCreatedAtPress = useCallback(() => {
+    const literal = formatKeyshareCreatedAtLong(keyshareInfo?.createdAt);
+    const explanation =
+      'The wallet was initially set up on';
     Toast.show({
       type: 'info',
-      text1: 'Wallet Creation Date',
-      text2: 'This is when your wallet was initially set up and created',
-      visibilityTime: 3000,
+      text1: 'Wallet Setup Date',
+      text2: literal ? `${explanation} ${literal}` : explanation,
+      visibilityTime: 6000,
     });
-  }, []);
+  }, [keyshareInfo?.createdAt]);
 
   const handleLanHotspotPress = useCallback(() => {
     Toast.show({
@@ -706,16 +1036,38 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                     walletInfoContentOpacityStyle,
                   ]}>
                   <View style={styles.walletInfoContent}>
-                    <View style={styles.walletInfoRow}>
+                    <View
+                      style={[
+                        styles.walletInfoRow,
+                        screenStyles.walletInfoRowUniform,
+                      ]}>
                       <Text style={styles.keyshareDetailLabel}>
                         Fingerprint
                       </Text>
                       <AppPressable
                         onPress={handleWalletIdPress}
                         android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-                        style={styles.keyshareKeyContainerBadge}>
+                        style={[
+                          screenStyles.walletInfoPill,
+                          screenStyles.walletInfoPillSurface,
+                          screenStyles.walletInfoPillFingerprint,
+                        ]}>
+                        <View
+                          style={[
+                            screenStyles.walletInfoPillFingerprintStarter,
+                            fingerprintStarterBandStyle,
+                          ]}>
+                          <Image
+                            source={FINGERPRINT_ICON}
+                            style={[
+                              screenStyles.walletInfoPillFingerprintIcon,
+                              {tintColor: fingerprintBandColors.iconTint},
+                            ]}
+                            resizeMode="contain"
+                          />
+                        </View>
                         <Text
-                          style={styles.keyshareKeyTextClickable}
+                          style={screenStyles.walletInfoPillFingerprintText}
                           numberOfLines={1}
                           ellipsizeMode="middle"
                           adjustsFontSizeToFit={true}
@@ -724,19 +1076,31 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                         </Text>
                       </AppPressable>
                     </View>
-                    <View style={styles.walletInfoRow}>
+                    <View
+                      style={[
+                        styles.walletInfoRow,
+                        screenStyles.walletInfoRowUniform,
+                      ]}>
                       <Text style={styles.keyshareDetailLabel}>Keyshares</Text>
                       <AppPressable
                         onPress={handleWalletTypePress}
                         android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                         style={[
-                          styles.keyshareKeyContainerBadge,
+                          screenStyles.walletInfoPill,
                           keyshareInfo.type === 'trio'
-                            ? styles.keyshareBadgeTrio
-                            : styles.keyshareBadgeDuo,
+                            ? screenStyles.walletInfoPillTrio
+                            : screenStyles.walletInfoPillDuo,
                         ]}>
+                        <View style={screenStyles.walletInfoPillLeading}>
+                          <WalletModePhoneIcons
+                            type={keyshareInfo.type}
+                            rowStyle={screenStyles.walletInfoModePhoneRow}
+                            phoneIconStyle={walletPhoneOnBrandStyle}
+                            phoneIconMutedStyle={walletPhoneOnBrandMutedStyle}
+                          />
+                        </View>
                         <Text
-                          style={styles.keyshareBadgeText}
+                          style={screenStyles.walletInfoPillValueBrand}
                           adjustsFontSizeToFit={true}
                           minimumFontScale={0.5}
                           numberOfLines={1}>
@@ -747,7 +1111,11 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                       </AppPressable>
                     </View>
                     {keyshareInfo.tssBackendLabel ? (
-                      <View style={styles.walletInfoRow}>
+                      <View
+                        style={[
+                          styles.walletInfoRow,
+                          screenStyles.walletInfoRowUniform,
+                        ]}>
                         <Text style={styles.keyshareDetailLabel}>
                           Wallet type
                         </Text>
@@ -755,13 +1123,23 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                           onPress={handleTssBackendPress}
                           android_ripple={{color: 'rgba(0,0,0,0.1)'}}
                           style={[
-                            styles.keyshareKeyContainerBadge,
+                            screenStyles.walletInfoPill,
                             keyshareInfo.tssBackend === 'dkls23'
-                              ? styles.keyshareBadgeDkls
-                              : styles.keyshareBadgeGg18,
+                              ? screenStyles.walletInfoPillDkls
+                              : screenStyles.walletInfoPillGg18,
                           ]}>
+                          <View style={screenStyles.walletInfoPillLeading}>
+                            <Image
+                              source={tssBackendLogoFor(
+                                keyshareInfo.tssBackend,
+                                keyshareInfo.tssBackendLabel,
+                              )}
+                              style={screenStyles.tssBackendBadgeIcon}
+                              resizeMode="contain"
+                            />
+                          </View>
                           <Text
-                            style={styles.keyshareBadgeText}
+                            style={screenStyles.walletInfoPillValueBrand}
                             numberOfLines={1}
                             adjustsFontSizeToFit={true}
                             minimumFontScale={0.5}>
@@ -770,16 +1148,42 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                         </AppPressable>
                       </View>
                     ) : null}
-                    <View style={styles.walletInfoRow}>
+                    <View
+                      style={[
+                        styles.walletInfoRow,
+                        screenStyles.walletInfoRowUniform,
+                      ]}>
                       <Text style={styles.keyshareDetailLabel}>
                         Keyshare ID
                       </Text>
                       <AppPressable
                         onPress={handleKeyshareIdPress}
                         android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-                        style={styles.keyshareKeyContainerBadge}>
+                        style={[
+                          screenStyles.walletInfoPill,
+                          screenStyles.walletInfoPillSurface,
+                        ]}>
+                        <View style={screenStyles.walletInfoPillLeading}>
+                          <View style={screenStyles.walletInfoKeyIconWrap}>
+                            <Image
+                              source={KEY_ICON}
+                              style={screenStyles.walletInfoKeyIcon}
+                              resizeMode="contain"
+                            />
+                            {keyshareIndexFromLabel(keyshareInfo.label) !=
+                            null ? (
+                              <View
+                                style={screenStyles.walletInfoKeyIndexBadge}>
+                                <Text
+                                  style={screenStyles.walletInfoKeyIndexText}>
+                                  {keyshareIndexFromLabel(keyshareInfo.label)}
+                                </Text>
+                              </View>
+                            ) : null}
+                          </View>
+                        </View>
                         <Text
-                          style={styles.keyshareKeyTextClickable}
+                          style={screenStyles.walletInfoPillKeyshareIdValue}
                           numberOfLines={1}
                           ellipsizeMode="middle"
                           adjustsFontSizeToFit={true}
@@ -788,56 +1192,41 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                         </Text>
                       </AppPressable>
                     </View>
-                    {formatKeyshareCreatedAt(keyshareInfo.createdAt) != null && (
-                        <View style={styles.walletInfoRow}>
-                          <Text style={styles.keyshareDetailLabel}>
-                            Created At
-                          </Text>
-                          <AppPressable
-                            onPress={handleCreatedAtPress}
-                            android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-                            style={styles.keyshareKeyContainerBadge}>
-                            <Text
-                              style={styles.keyshareKeyTextClickable}
-                              numberOfLines={1}
-                              adjustsFontSizeToFit={true}
-                              minimumFontScale={0.5}>
-                              {formatKeyshareCreatedAt(keyshareInfo.createdAt)}
-                            </Text>
-                          </AppPressable>
-                        </View>
-                      )}
-                  </View>
-                  {onOpenSettingsSection ? (
-                    <AppPressable
-                      onPress={() => {
-                        onOpenSettingsSection('backup');
-                      }}
-                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-                      accessible={true}
-                      accessibilityRole="link"
-                      accessibilityLabel="Open Settings Security section to backup keyshare">
-                      <Text
+                    {formatKeyshareCreatedAt(keyshareInfo.createdAt) !=
+                      null && (
+                      <View
                         style={[
-                          styles.walletInfoHint,
-                          screenStyles.walletInfoHintLink,
-                          {
-                            fontSize: theme.fontSizes?.base || 14,
-                            color:
-                              theme.colors.background === '#121212' ||
-                              theme.colors.background.includes('12')
-                                ? theme.colors.secondary
-                                : theme.colors.primary,
-                          },
+                          styles.walletInfoRow,
+                          screenStyles.walletInfoRowUniform,
                         ]}>
-                        Settings &gt; Security to backup keyshare
-                      </Text>
-                    </AppPressable>
-                  ) : (
-                    <Text style={styles.walletInfoHint}>
-                      Settings &gt; Security to backup keyshare
-                    </Text>
-                  )}
+                        <Text style={styles.keyshareDetailLabel}>
+                          Created At
+                        </Text>
+                        <AppPressable
+                          onPress={handleCreatedAtPress}
+                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}
+                          style={[
+                            screenStyles.walletInfoPill,
+                            screenStyles.walletInfoPillSurface,
+                          ]}>
+                          <View style={screenStyles.walletInfoPillLeading}>
+                            <Image
+                              source={CLOCK_ICON}
+                              style={screenStyles.walletInfoPillClockIcon}
+                              resizeMode="contain"
+                            />
+                          </View>
+                          <Text
+                            style={screenStyles.walletInfoPillDateText}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit={true}
+                            minimumFontScale={0.5}>
+                            {formatKeyshareCreatedAt(keyshareInfo.createdAt)}
+                          </Text>
+                        </AppPressable>
+                      </View>
+                    )}
+                  </View>
                 </Animated.View>
               )}
             </View>
@@ -1013,12 +1402,15 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                         'https://chromewebstore.google.com/detail/bold-wallet/dpgigdojkmhknnoedgbkfdeilmlbdecf',
                       )
                     }
-                    style={[styles.watchWalletItem, screenStyles.extensionLinkItem]}>
+                    style={[
+                      styles.watchWalletItem,
+                      screenStyles.extensionLinkItem,
+                    ]}>
                     <AppText
                       variant="body"
-                      tone="primary"
                       style={[
                         screenStyles.walletInfoHintLink,
+                        screenStyles.walletInfoHintLinkColor,
                         screenStyles.extensionLinkText,
                       ]}>
                       Get Bold Wallet for Chrome →
@@ -1270,25 +1662,40 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                 <AppPressable
                   style={styles.collapsibleHeader}
                   onPress={handleToggleDevKeyshare}
-                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                  disabled={devKeyshareAuthPending}
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}
+                  accessibilityLabel="Keyshare structure developer view"
+                  accessibilityHint={
+                    isDevKeyshareExpanded
+                      ? 'Double tap to collapse'
+                      : 'Double tap to authenticate and expand keyshare JSON'
+                  }>
                   <View style={styles.collapsibleHeaderContent}>
                     <Image
-                      source={require('../assets/info-icon.png')}
+                      source={require('../assets/json-icon.png')}
                       style={styles.collapsibleHeaderIcon}
                       resizeMode="contain"
                     />
                     <Text style={styles.collapsibleHeaderTitle}>
-                      Keyshare structure (dev)
+                      Keyshare structure
                     </Text>
                   </View>
-                  <Animated.Text
-                    style={[
-                      styles.collapsibleChevron,
-                      devKeyshareRotateStyle,
-                      {color: theme.colors.text},
-                    ]}>
-                    ▶
-                  </Animated.Text>
+                  {devKeyshareAuthPending ? (
+                    <ActivityIndicator
+                      size="small"
+                      color={theme.colors.text}
+                      style={styles.collapsibleChevronSpinner}
+                    />
+                  ) : (
+                    <Animated.Text
+                      style={[
+                        styles.collapsibleChevron,
+                        devKeyshareRotateStyle,
+                        {color: theme.colors.text},
+                      ]}>
+                      ▶
+                    </Animated.Text>
+                  )}
                 </AppPressable>
                 {isDevKeyshareExpanded ? (
                   <Animated.View
@@ -1297,8 +1704,8 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                       devKeyshareContentOpacityStyle,
                     ]}>
                     <Text style={screenStyles.devKeyshareWarning}>
-                      Developer mode only. Contains secrets — do not share
-                      screenshots or exports.
+                      Developer mode only. Contains sensitive secrets — make
+                      sure you know what you are doing!
                     </Text>
                     <View style={screenStyles.devKeyshareActions}>
                       <AppPressable
@@ -1306,12 +1713,11 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                         onPress={() => setDevKeyshareView('tree')}
                         android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                         <Text
-                          style={[
-                            screenStyles.devKeyshareActionText,
-                            devKeyshareView === 'tree' && {
-                              fontWeight: '700',
-                            },
-                          ]}>
+                          style={
+                            devKeyshareView === 'tree'
+                              ? screenStyles.devKeyshareActionTextActive
+                              : screenStyles.devKeyshareActionText
+                          }>
                           Tree
                         </Text>
                       </AppPressable>
@@ -1320,12 +1726,11 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                         onPress={() => setDevKeyshareView('pretty')}
                         android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                         <Text
-                          style={[
-                            screenStyles.devKeyshareActionText,
-                            devKeyshareView === 'pretty' && {
-                              fontWeight: '700',
-                            },
-                          ]}>
+                          style={
+                            devKeyshareView === 'pretty'
+                              ? screenStyles.devKeyshareActionTextActive
+                              : screenStyles.devKeyshareActionText
+                          }>
                           Pretty JSON
                         </Text>
                       </AppPressable>

@@ -207,17 +207,21 @@ const TssBackendSelector: React.FC<TssBackendSelectorProps> = ({
       fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.white,
     },
+    selectedBackendLabel: {
+      marginTop: 8,
+      fontSize: theme.fontSizes?.sm || 11,
+      color: theme.colors.textSecondary,
+      textAlign: 'center',
+    },
   });
 
   const hintFor = (backend: TssBackend | null) => {
     if (backend === 'gg18') {
       return (
         <Text style={styles.hintText}>
-          <Text style={styles.hintTextBold}>GG18 · BNB TSS</Text>
-          {' '}
-          — Established threshold ECDSA stack. Slower prepare (often a few
-          minutes). Choose this to stay compatible with existing GG18 Bold
-          wallets. Every device must pick the same stack.
+          <Text style={styles.hintTextBold}>GG18 · BNB TSS</Text> — Binance
+          established MPC stack. Slower, heavier & battle tested.
+          Every device must pick the same stack.
           {'\n\n'}
           <Text
             style={styles.hintLink}
@@ -230,9 +234,8 @@ const TssBackendSelector: React.FC<TssBackendSelectorProps> = ({
     if (backend === 'dkls23') {
       return (
         <Text style={styles.hintText}>
-          <Text style={styles.hintTextBold}>DKLs23 (recommended)</Text>
-          {' '}
-          — 0xCarbon libtss. Faster setup and signing for new wallets. Every
+          <Text style={styles.hintTextBold}>DKLs23 (recommended)</Text> —
+          0xCarbon libtss. Faster setup and signing for new wallets. Every
           device must pick DKLs23.
           {'\n\n'}
           <Text
@@ -348,13 +351,7 @@ const TssBackendSelector: React.FC<TssBackendSelectorProps> = ({
               <Text style={styles.continueButtonText}>Continue</Text>
             </AppPressable>
             {selected ? (
-              <Text
-                style={{
-                  marginTop: 8,
-                  fontSize: 11,
-                  color: theme.colors.textSecondary,
-                  textAlign: 'center',
-                }}>
+              <Text style={styles.selectedBackendLabel}>
                 {getTssBackendDisplayLabel(selected)}
               </Text>
             ) : null}

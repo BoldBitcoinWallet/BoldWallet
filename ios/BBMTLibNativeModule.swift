@@ -220,6 +220,19 @@ class BBMTLibNativeModule: RCTEventEmitter {
     return out
   }
 
+  /// True when Keychain has a `keyshare` item without loading the blob (`kSecReturnData` false).
+  private func keyshareExistsInRNES() -> Bool {
+    let query: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrAccount as String: RNESKeychain.keyshareAccount,
+      kSecReturnData as String: false,
+      kSecMatchLimit as String: kSecMatchLimitOne,
+    ]
+    var item: CFTypeRef?
+    let status = SecItemCopyMatching(query as CFDictionary, &item)
+    return status == errSecSuccess
+  }
+
   /// Read keyshare from the same Keychain layout as `RNEncryptedStorage` iOS implementation.
   private func loadKeyshareJSONFromRNES() -> String? {
     let query: [String: Any] = [
@@ -1213,6 +1226,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
   /// Reads keyshare from RNES storage in native, parses JSON, returns a **minimal** object (only
   /// fields needed for Nostr UI / session prep). The full MPC blob is never passed to JS.
+  @objc func hasKeyshareInSecureStorage(
+    _ resolve: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      resolve(self?.keyshareExistsInRNES() ?? false)
+    }
+  }
+
   @objc func getKeyshareNostrPrepJSON(
     _ resolve: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock

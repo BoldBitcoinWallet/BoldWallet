@@ -2,18 +2,52 @@
 
 ## [Unreleased]
 
+---
+
+## [4.0.0] - 2026-05-21
+
+> **Major release:** new wallets ship on **DKLs23 (libtss)** MPC while **GG18 (BNB)** wallets keep working unchanged. Native MPC is unified under **`libbbmtmobile`** on iOS and Android. This release also ships the **3.1.1** reliability and settings work that landed on the release branch after `main` at **3.1.0**.
+
 ### Added
-- **DKLs23 MPC backend (libtss)** — parallel to BNB GG18: `BBMTLib/dkls` orchestration, `scripts-dkls/` deterministic tests, `TssProvider` + native `dkls*` bridge methods, CI workflow `dkls-scripts-test.yml`.
-- **Automatic backend routing** — `detectKeyshareTssBackend()` infers `gg18` vs `dkls23` from keyshare JSON (`tss_backend`, `share_b64`, or `ecdsa_local_data`). Spend/sign/PSBT use the loaded wallet’s backend; **new keygen defaults to DKLs23** (`resolveTssBackendForKeygen`).
-- **DKLs23 new-wallet setup** — duo and trio keygen on LAN and Nostr; 2-of-3 threshold in `dkls` (`ThresholdTrio`, dynamic routers); LAN relay keys `KeyShare1`–`KeyShare3`; keygen progress hooks for RN (`tss.ReportKeygenProgress`).
-- **Setup UI** — `prepareDeviceForKeygen()`, backend badge on pairing screens, DKLs-specific prepare/keygen copy; dev GG18 toggle (long-press **Choose Your Setup** on Welcome).
-- **Documentation** — `BBMTLib/docs/DKLS_MOBILE.md`, `DKLS_SECURITY.md`, RECOVER.md DKLs23 section.
+- **DKLs23 threshold wallets (duo 2-of-2, trio 2-of-3)** — new default MPC stack for wallet creation on **LAN** and **Nostr**, with the same Bold setup flows (Choose Your Setup → pair → keygen). Existing GG18 keyshares are detected automatically and continue to send, sign PSBTs, and co-sign on LAN/Nostr without migration.
+- **Spend, send BTC, and PSBT signing for DKLs23** — Bitcoin transactions and PSBT flows route through the wallet’s detected backend (`tss_backend: dkls23` vs `gg18`). Trio spends use **two signers** (local device + one co-signer), matching GG18 2-of-3 behavior; Nostr trio shows a **co-signer picker**, LAN picks the discovered peer with **committee-correct** party ids for DKLS (not Wi‑Fi IP slot labels).
+- **Unified native MPC runtime** — single **`libbbmtmobile`** artifact (GG18 + DKLs) replaces a second gomobile `Tss.xcframework` / `tss.aar` on device, avoiding duplicate Go runtimes and related crashes. Android loads `libbbmtmobile.so` + `libdkls_jni.so`; iOS links `BbmtMobile/libbbmtmobile.xcframework` with `BbmtBridge` / `TssShim`.
+- **Shared wallet-setup orchestration** — `walletSetupOrchestrator` + `lanMpcSetup` / `lanMpcTransport` centralize LAN/Nostr keygen prep, trio role assignment, relay reachability, and keyshare persistence (including **Nostr `nsec` embedded in the DKLS keyshare** for signing without passing secrets through JS).
+- **MPC progress UX (DKLS + GG18)** — `mpcProgress` / `mpcProgressUi` map native keygen/keysign steps to percent and phase labels; send flows show UTXO-prep progress; pairing screens surface backend-aware prepare copy (seconds for DKLS `helloDkg` vs minutes for GG18 preparams).
+- **Wallet Information (Devices)** — fingerprint color band, duo/trio phone icons, key-index badge, TSS backend logos, and **DKLs23 (libtss)** vs **GG18 (BNB)** from keyshare metadata; **Created At** tap shows full localized setup time.
+- **Wallet biometric gate** — `walletBiometricAuth` prompts before dev keyshare inspector, Settings backup/delete, and enabling developer mode (shared with lock-screen biometrics).
+- **Native keyshare presence** — `hasKeyshareInSecureStorage` on iOS/Android; `resolveInitialWalletRoute()` opens **MainTabs** only when the secure keyshare blob exists.
+- **Developer keyshare inspector** — dev builds can view a redacted JSON tree of the stored keyshare (`KeyshareJsonTree`, `keyshareDevView`) for support and QA.
+- **Send-BTC preparation layer** — `sendBtcPrepare` consolidates UTXO/path/change assembly used by Nostr and LAN send flows.
+- **Lock screen preferences (from 3.1.1)** — toggles for the **quotes manchette** and **GitHub update checker** on the unlock screen.
+- **Documentation & scripts** — `BBMTLib/docs/DKLS_MOBILE.md`, `DKLS_SECURITY.md`, `docs/GG18_DKLS_COEXISTENCE.md`, RECOVER.md DKLs23 section; `scripts-dkls/` for local/Nostr/LAN deterministic MPC tests and CI (`dkls-scripts-test.yml`).
 
 ### Changed
-- **New wallets** use DKLs23 keygen by default (duo and trio). Opt out via `CONFIG_KEYS.DKLS23_OPTED_OUT` / `setDkls23OptedOut(true)` for legacy GG18 keygen and preparams only.
+- **New wallets default to DKLs23** — opt out via developer **DKLS23_OPTED_OUT** (long-press **Choose Your Setup** on Welcome) to run legacy GG18 preparams and keygen.
+- **LAN MPC setup** — trio keygen uses sorted **KeyShare1–3** roles, master relay host, and persisted pairing roles; trio LAN keygen preflight (`trioLanKeygenPreflight`) blocks start until relay and roles are consistent.
+- **Keyshare labels everywhere** — `KeyShare1`–`KeyShare3` derived from lexicographically sorted `keygen_committee_keys` (metadata or full JSON), including committee npub→label helpers for DKLS Nostr/LAN spend.
+- **Nostr trio send/sign** — participating npubs CSV is **local + selected peer** only; session id still uses the full committee for coordination.
+- **Sync and mempool traffic (from 3.1.1)** — `SyncCoordinator` runs price/balances/UTXOs/transactions **sequentially** after HD discovery; address `/txs` fetches use **429 retry** and per-attempt timeouts.
+- **Full wallet delete** — clears app config (except migration flag), network provider and Nostr relay tables, and related native state so a deleted wallet does not leave stale prefs or metadata.
+- **Wallet Information styling** — theme-aligned value pills (neutral surfaces vs brand fills), shared border color/radius, and light/dark link colors (e.g. Chrome extension); removed bulky “Settings > Security” footer from the info card.
+- **BBMTLib NOTICE** — pragmatic third-party attribution for **libtss (0xCarbon)**, DKLs23, **go-nostr**, and **bnb-chain/tss-lib**.
 
-### Notes
-- DKLs23 requires **new keygen**; existing GG18 keyshares keep working via detection. DKLs23 spend/sign on device still needs `libdklsmobile` (see `build-dkls.sh`).
+### Fixed / hardening
+- **DKLS trio LAN co-signing** — spend/sign resolves signing parties from **keygen committee order**, fixing `local party id N not in signing set` when the device’s DKLS party id did not match LAN IP-based `KeyShare1,KeyShare2` assumptions.
+- **DKLS Nostr keyshare** — party `nsec` persisted in keyshare JSON (GG18-compatible encoding) so Nostr send/PSBT signing can load credentials from secure storage.
+- **iOS build (Xcode 26.4 / Apple Clang 21)** — CocoaPods **fmt** patch for `FMT_USE_CONSTEVAL`; **`Tss.xcframework` link-only** (no embed) on branches that still reference it; **4.0.0** uses **`libbbmtmobile`** instead.
+- **Android** — single Go runtime packaging; `ensureDklsLanRuntime` before DKLS LAN keygen where required.
+- **Fee estimation errors** — clearer user-facing messages via `feeErrorMessages`.
+- **UTXO dedup** — repository layer avoids duplicate UTXO rows during sync.
+- **Cold start without keyshare blob** — orphan `keyshare_meta` alone no longer opens the main wallet UI; metadata cleared when routing to Welcome.
+- **Lock screen reload** — `app:reload` after lock re-authenticates without re-running welcome routing; route revalidation only after wallet delete (`revalidateRoute`).
+- **Lock → Welcome regression** — unlock no longer sends users to Showcase/Welcome when a wallet keyshare is still on device.
+
+### Technical Details
+- **Version**: `package.json` **4.0.0**; Android **`versionCode` 60** / **`versionName` 4.0.0**; iOS build **60** / **`MARKETING_VERSION` 4.0.0**.
+- **Build**: `BBMTLib/build-all.sh` or `build-dkls.sh` before device QA; see `BBMTLib/docs/DKLS_MOBILE.md`.
+- **New / notable modules**: `BBMTLib/dkls/*`, `services/tssBackend.ts`, `services/walletSetupOrchestrator.ts`, `services/lanMpcSetup.ts`, `services/mpcProgress.ts`, `services/sendBtcPrepare.ts`, `services/walletBiometricAuth.ts`, `utils/fingerprintPillColors.ts`, `components/KeyshareJsonTree.tsx`, `ios/TssShim.swift`, `ios/BbmtBridge.mm`; tests `__tests__/walletKeysharePresence.test.ts`, `__tests__/fingerprintPillColors.test.ts`.
+- **Modified files** (selection): `App.tsx`, `screens/MobilesPairing.tsx`, `screens/MobileNostrPairing.tsx`, `screens/WalletSettings.tsx`, `services/TssProvider.ts`, `android/.../BBMTLibNativeModule.kt`, `ios/BBMTLibNativeModule.swift`, `BBMTLib/tss/keygen_dispatch.go`, `BBMTLib/tss/keysign_dispatch.go`, `BBMTLib/NOTICE`, `android/app/build.gradle`, `ios/BoldWallet.xcodeproj/project.pbxproj`, `utils.js`, `components/KeyshareInfoContent.tsx`.
 
 ---
 

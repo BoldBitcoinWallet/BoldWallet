@@ -185,9 +185,29 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    /** True when RNES has a `keyshare` entry without reading/decrypting the blob value. */
+    private fun keyshareExistsInRNES(): Boolean {
+        val prefs = rnesEncryptedPrefs() ?: return false
+        return prefs.contains(KEY_KEYSHARE)
+    }
+
     private fun loadKeyshareJSONFromRNES(): String? {
         val prefs = rnesEncryptedPrefs() ?: return null
         return prefs.getString(KEY_KEYSHARE, null)
+    }
+
+    /**
+     * Lightweight wallet presence check for app bootstrap (no keyshare JSON through JS).
+     */
+    @ReactMethod
+    fun hasKeyshareInSecureStorage(promise: Promise) {
+        Thread {
+            try {
+                promise.resolve(keyshareExistsInRNES())
+            } catch (e: Exception) {
+                promise.reject("KEYSHARE_EXISTS_ERROR", e.message, e)
+            }
+        }.start()
     }
 
     /** Summary line; full blob is logged separately as `raw_json=` (dev). */
