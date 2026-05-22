@@ -421,6 +421,22 @@ func Sha256(msg string) (result string, err error) {
 	return hex.EncodeToString(hashBytes), nil
 }
 
+// Sha256Bytes returns hex-encoded SHA-256 of raw bytes (not UTF-8 string).
+func Sha256Bytes(data []byte) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in Sha256Bytes: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
+	hashBytes := sha256.Sum256(data)
+	return hex.EncodeToString(hashBytes[:]), nil
+}
+
 func SecureRandom(length int) (string, error) {
 	bytes := make([]byte, (length+1)/2)
 	_, err := rand.Read(bytes)

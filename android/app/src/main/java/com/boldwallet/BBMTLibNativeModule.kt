@@ -1324,9 +1324,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     fun dklsCancelMpcSession(sessionID: String, promise: Promise) {
         Thread {
             try {
-                if (DklsNative.isLoaded()) {
-                    DklsNative.cancelMpcSessionNative(sessionID)
-                }
+                if (rejectBbmtUnavailable(promise, "dklsCancelMpcSession")) return@Thread
+                DklsNative.cancelMpcSessionNative(sessionID)
                 promise.resolve(null)
             } catch (e: Throwable) {
                 promise.reject("DKLS_CANCEL_ERROR", e.message, e)
@@ -1338,9 +1337,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     fun dklsCancelNostrMpc(promise: Promise) {
         Thread {
             try {
-                if (DklsNative.isLoaded()) {
-                    DklsNative.cancelNostrMpcNative()
-                }
+                if (rejectBbmtUnavailable(promise, "dklsCancelNostrMpc")) return@Thread
+                DklsNative.cancelNostrMpcNative()
                 promise.resolve(null)
             } catch (e: Throwable) {
                 promise.reject("DKLS_CANCEL_NOSTR_ERROR", e.message, e)
@@ -1497,6 +1495,21 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             } catch (e: Throwable) {
                 ld("parsePSBTDetails", "error: ${e.stackTraceToString()}")
                 promise.reject("PARSE_PSBT_ERROR", "Failed to parse PSBT: ${e.message}", e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun psbtIdentityHash(psbtBase64: String, promise: Promise) {
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "psbtIdentityHash")) return@Thread
+                val result = DklsNative.bbmtPsbtIdentityHashNative(psbtBase64)
+                ld("psbtIdentityHash", result.take(16) + "…")
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                ld("psbtIdentityHash", "error: ${e.stackTraceToString()}")
+                promise.reject("PSBT_IDENTITY_ERROR", "Failed to hash PSBT: ${e.message}", e)
             }
         }.start()
     }

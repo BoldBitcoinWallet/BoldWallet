@@ -8,6 +8,7 @@
 #endif
 
 static void (*pBbmtFree)(char *);
+static BOOL resolveFree(void);
 
 static char *dupC(NSString *s) {
   if (!s) return strdup("");
@@ -16,6 +17,7 @@ static char *dupC(NSString *s) {
 }
 
 static NSString *wrap(char *cstr) {
+  (void)resolveFree();
   if (!cstr) return @"";
   NSString *out = [NSString stringWithUTF8String:cstr] ?: @"";
   if (pBbmtFree) pBbmtFree(cstr);
@@ -230,6 +232,11 @@ BBMT_DKLS_8(lanJoinKeygenWithKey, DklsLanJoinKeygen, key, parties, session, serv
   NSString *out = wrap(BbmtParsePSBTDetails(k0));
   free(k0); return out;
 }
++ (NSString *)psbtIdentityHash:(NSString *)psbt {
+  char *k0=dupC(psbt);
+  NSString *out = wrap(BbmtPsbtIdentityHash(k0));
+  free(k0); return out;
+}
 
 + (NSString *)listenForPeers:(NSString *)partyId pubkey:(NSString *)pubkey port:(NSString *)port timeout:(NSString *)timeout mode:(NSString *)mode {
   char *a=dupC(partyId),*b=dupC(pubkey),*c=dupC(port),*d=dupC(timeout),*e=dupC(mode);
@@ -301,14 +308,12 @@ BBMT_DKLS_8(lanJoinKeygenWithKey, DklsLanJoinKeygen, key, parties, session, serv
 
 + (void)cancelMpcSession:(NSString *)sessionID {
   char *s = dupC(sessionID);
-  char *out = BbmtCancelMpcSession(s);
+  (void)wrap(BbmtCancelMpcSession(s));
   free(s);
-  if (out) pBbmtFree(out);
 }
 
 + (void)cancelNostrMpc {
-  char *out = BbmtCancelNostrMpc();
-  if (out) pBbmtFree(out);
+  (void)wrap(BbmtCancelNostrMpc());
 }
 
 @end

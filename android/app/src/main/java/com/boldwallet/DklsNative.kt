@@ -314,6 +314,8 @@ object DklsNative {
     }
     fun bbmtParsePSBTDetailsNative(psbt: String): String = loaded { bbmtParsePSBTDetailsJni(psbt) }
 
+    fun bbmtPsbtIdentityHashNative(psbt: String): String = loaded { unwrap(bbmtPsbtIdentityHashJni(psbt)) }
+
     private external fun helloDkgJni(): String
     private external fun bbmtGenerateKeyPairJni(): String
     private external fun bbmtSha256Jni(msg: String): String
@@ -484,4 +486,5 @@ object DklsNative {
     private external fun bbmtCancelNostrMpcJni(): String
     private external fun bbmtDisableLogsJni()
     private external fun bbmtParsePSBTDetailsJni(psbt: String): String
+    private external fun bbmtPsbtIdentityHashJni(psbt: String): String
 }

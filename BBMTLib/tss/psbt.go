@@ -199,7 +199,7 @@ func MpcSignPSBT(
 
 		// Create session for this input
 		utxoSession := fmt.Sprintf("%s%d", session, i)
-		mpcHook("signing psbt input", session, utxoSession, i+1, inputCount, false)
+		mpcHook("psbt", "signing psbt input", session, utxoSession, i+1, inputCount, false)
 
 		// Get sighash type from PSBT input, default to SigHashAll if not specified
 		sighashType := txscript.SigHashAll
@@ -313,7 +313,7 @@ func MpcSignPSBT(
 		Logf("Input %d: Signing with derivation path: %s, public key: %x...", i, inputDerivePath, inputPubKeyBytes[:min(8, len(inputPubKeyBytes))])
 		Logf("Input %d sighash: %s", i, sighashBase64)
 
-		mpcHook("joining keysign", session, utxoSession, i+1, inputCount, false)
+		mpcHook("psbt", "joining keysign", session, utxoSession, i+1, inputCount, false)
 		sigJSON, err := DispatchJoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, inputDerivePath, sighashBase64)
 		if err != nil {
 			return "", fmt.Errorf("failed to sign input %d: %w", i, err)
@@ -354,7 +354,7 @@ func MpcSignPSBT(
 			_btc_net, bip84AccountPathPrefix(), standardAccountPathPrefixes()[2])
 	}
 
-	mpcHook("psbt signing complete", session, "", inputCount, inputCount, true)
+	mpcHook("psbt", "psbt signing complete", session, "", inputCount, inputCount, true)
 
 	// Validate the signed PSBT by finalizing and checking each input
 	Logf("Validating signed PSBT before serialization...")
@@ -637,6 +637,50 @@ func findPSBTInputDerivation(
 	return "", nil, false
 }
 
+// canonicalPsbtBase64 decodes base64 (ignoring whitespace) and re-encodes so the same PSBT bytes match.
+func canonicalPsbtBase64(psbtBase64 string) (string, error) {
+	trimmed := strings.Map(func(r rune) rune {
+		if r == ' ' || r == '\n' || r == '\r' || r == '\t' {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(psbtBase64))
+	if trimmed == "" {
+		return "", fmt.Errorf("empty PSBT")
+	}
+	psbtBytes, err := base64.StdEncoding.DecodeString(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode PSBT base64: %w", err)
+	}
+	if len(psbtBytes) < 4 || psbtBytes[0] != 0x70 || psbtBytes[1] != 0x73 || psbtBytes[2] != 0x62 || psbtBytes[3] != 0x74 {
+		return "", fmt.Errorf("invalid PSBT (missing psbt magic bytes)")
+	}
+	return base64.StdEncoding.EncodeToString(psbtBytes), nil
+}
+
+// PsbtIdentityHash is the cross-device session id for the same unsigned transaction.
+// Hashes serialized UnsignedTx wire bytes (not base64 text or display JSON), so file vs QR
+// encodings and extra PSBT fields (e.g. partial signatures) do not change the hash.
+func PsbtIdentityHash(psbtBase64 string) (string, error) {
+	canonical, err := canonicalPsbtBase64(psbtBase64)
+	if err != nil {
+		return "", err
+	}
+	psbtBytes, err := base64.StdEncoding.DecodeString(canonical)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode canonical PSBT: %w", err)
+	}
+	packet, err := psbt.NewFromRawBytes(bytes.NewReader(psbtBytes), false)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse PSBT for identity: %w", err)
+	}
+	var txBuf bytes.Buffer
+	if err := packet.UnsignedTx.Serialize(&txBuf); err != nil {
+		return "", fmt.Errorf("failed to serialize unsigned tx for identity: %w", err)
+	}
+	return Sha256Bytes(txBuf.Bytes())
+}
+
 // ParsePSBTDetails extracts transaction details from a PSBT for display
 // Returns JSON with inputs, outputs, fee, and total amounts
 func ParsePSBTDetails(psbtBase64 string) (result string, err error) {
@@ -760,13 +804,13 @@ func ParsePSBTDetails(psbtBase64 string) (result string, err error) {
 	fee := max(totalInput-totalOutput, 0)
 
 	result_map := map[string]interface{}{
-		"inputs":             inputs,
-		"outputs":            outputs,
-		"fee":                fee,
-		"totalInput":         totalInput,
-		"totalOutput":        totalOutput,
-		"derivePaths":        derivePathsPerInput,
-		"outputDerivePaths":  derivePathsPerOutput,
+		"inputs":            inputs,
+		"outputs":           outputs,
+		"fee":               fee,
+		"totalInput":        totalInput,
+		"totalOutput":       totalOutput,
+		"derivePaths":       derivePathsPerInput,
+		"outputDerivePaths": derivePathsPerOutput,
 	}
 
 	jsonBytes, err := json.Marshal(result_map)
@@ -827,20 +871,26 @@ func runNostrMpcSignPSBTInternal(
 		Logln("Using testnet parameters")
 	}
 
-	// Step 1: Calculate sessionFlag for pre-agreement using PSBT hash
+	// Step 1: Calculate sessionFlag for pre-agreement using PSBT identity hash (same as LAN pairing).
 	// Format: sha256(npubsSorted,psbtHash)
-	psbtHash, err := Sha256(psbtBase64)
+	psbtHash, err := PsbtIdentityHash(psbtBase64)
 	if err != nil {
-		return "", fmt.Errorf("failed to hash PSBT: %w", err)
+		return "", fmt.Errorf("failed to hash PSBT identity: %w", err)
 	}
+	canonicalB64, err := canonicalPsbtBase64(psbtBase64)
+	if err != nil {
+		return "", fmt.Errorf("failed to canonicalize PSBT: %w", err)
+	}
+	psbtBase64 = canonicalB64
 	sessionFlag, err := Sha256(fmt.Sprintf("%s,%s", npubsSorted, psbtHash))
 	if err != nil {
 		return "", fmt.Errorf("failed to calculate sessionFlag: %w", err)
 	}
-	Logf("NostrMpcSignPSBT: calculated sessionFlag=%s (psbtHash=%s)", sessionFlag, psbtHash[:16])
+	Logf("NostrMpcSignPSBT: psbtIdentityHash=%s (unsigned tx bytes)", psbtHash)
+	Logf("NostrMpcSignPSBT: calculated sessionFlag=%s", sessionFlag)
 
 	// Step 2: Perform pre-agreement to exchange nonces
-	mpcHook("pre-agreement phase", sessionFlag, "", 0, 0, false)
+	mpcHook("psbt", "pre-agreement phase", sessionFlag, "", 0, 0, false)
 	preAgreement, err := runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag)
 	if err != nil {
 		return "", fmt.Errorf("pre-agreement failed: %w", err)
@@ -1007,7 +1057,7 @@ func runNostrMpcSignPSBTInternal(
 
 		// Create session for this input
 		utxoSession := fmt.Sprintf("%s%d", sessionID, i)
-		mpcHook("signing psbt input (nostr)", sessionID, utxoSession, i+1, inputCount, false)
+		mpcHook("psbt", "signing psbt input (nostr)", sessionID, utxoSession, i+1, inputCount, false)
 
 		// Get sighash type from PSBT input, default to SigHashAll if not specified
 		sighashType := txscript.SigHashAll
@@ -1121,7 +1171,7 @@ func runNostrMpcSignPSBTInternal(
 		Logf("Input %d: Signing with derivation path: %s, public key: %x...", i, inputDerivePath, inputPubKeyBytes[:min(8, len(inputPubKeyBytes))])
 		Logf("Input %d sighash: %s", i, sighashBase64)
 
-		mpcHook("joining keysign (nostr)", sessionID, utxoSession, i+1, inputCount, false)
+		mpcHook("psbt", "joining keysign (nostr)", sessionID, utxoSession, i+1, inputCount, false)
 		sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, inputDerivePath, sighashBase64)
 		if err != nil {
 			return "", fmt.Errorf("failed to sign input %d: %w", i, err)
@@ -1162,7 +1212,7 @@ func runNostrMpcSignPSBTInternal(
 			_btc_net, bip84AccountPathPrefix(), standardAccountPathPrefixes()[2])
 	}
 
-	mpcHook("psbt signing complete", sessionID, "", inputCount, inputCount, true)
+	mpcHook("psbt", "psbt signing complete", sessionID, "", inputCount, inputCount, true)
 
 	// Validate the signed PSBT by finalizing and checking each input
 	Logf("Validating signed PSBT before serialization...")

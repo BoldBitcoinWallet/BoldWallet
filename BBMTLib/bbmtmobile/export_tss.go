@@ -248,6 +248,11 @@ func BbmtParsePSBTDetails(psbt *C.char) *C.char {
 	return cString(tss.ParsePSBTDetails(goStr(psbt)))
 }
 
+//export BbmtPsbtIdentityHash
+func BbmtPsbtIdentityHash(psbt *C.char) *C.char {
+	return cString(tss.PsbtIdentityHash(goStr(psbt)))
+}
+
 //export BbmtMpcSignPSBT
 func BbmtMpcSignPSBT(server, key, parties, session, sessionKey, encKey, decKey, keyshare, psbt *C.char) *C.char {
 	return cString(tss.MpcSignPSBT(

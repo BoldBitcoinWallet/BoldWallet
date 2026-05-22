@@ -2,7 +2,6 @@ import {
   canonicalPsbtBase64,
   isPsbtBytes,
   parsePsbtSessionPayload,
-  psbtIdentityHash,
   readPsbtBase64FromFile,
 } from '../services/psbtIdentity';
 
@@ -20,27 +19,6 @@ describe('psbtIdentity', () => {
   it('canonicalPsbtBase64 normalizes padding and whitespace', () => {
     expect(canonicalPsbtBase64(NO_PADDING)).toBe(CANONICAL);
     expect(canonicalPsbtBase64(`  ${NO_PADDING}\n`)).toBe(CANONICAL);
-  });
-
-  it('psbtIdentityHash matches across encoding variants (raw fallback)', async () => {
-    const sha256 = async (msg: string) => `hash:${msg}`;
-    const a = await psbtIdentityHash(NO_PADDING, sha256);
-    const b = await psbtIdentityHash(CANONICAL, sha256);
-    expect(a).toBe(b);
-    expect(a).toBe(`hash:${CANONICAL}`);
-  });
-
-  it('psbtIdentityHash matches across encodings when parse details agree', async () => {
-    const details = JSON.stringify({
-      inputs: [{txid: 'ab', vout: 0, amount: 1000}],
-      outputs: [{address: 'bc1q', amount: 900}],
-      fee: 100,
-    });
-    const sha256 = async (msg: string) => `hash:${msg.length}:${msg.slice(0, 8)}`;
-    const parsePSBTDetails = async () => details;
-    const a = await psbtIdentityHash(NO_PADDING, sha256, parsePSBTDetails);
-    const b = await psbtIdentityHash(CANONICAL, sha256, parsePSBTDetails);
-    expect(a).toBe(b);
   });
 
   it('parsePsbtSessionPayload supports party keys with colons', () => {

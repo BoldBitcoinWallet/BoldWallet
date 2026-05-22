@@ -564,8 +564,6 @@ const MobilesPairing = ({navigation}: any) => {
           // For PSBT, use canonical PSBT identity hash (not raw base64 text)
           const psbtHash = await psbtIdentityHash(
             route.params.psbtBase64 || '',
-            BBMTLibNativeModule.sha256,
-            BBMTLibNativeModule.parsePSBTDetails,
           );
           _data += ':' + psbtHash;
           _data += ':' + (meta?.local_party_key || '');
@@ -1007,8 +1005,6 @@ const MobilesPairing = ({navigation}: any) => {
         const {psbtHash, peerShare} = parsePsbtSessionPayload(data);
         const localPsbtHash = await psbtIdentityHash(
           route.params.psbtBase64 || '',
-          BBMTLibNativeModule.sha256,
-          BBMTLibNativeModule.parsePSBTDetails,
         );
         dbg('starting PSBT signing...', {
           peerShare,
@@ -1071,7 +1067,6 @@ const MobilesPairing = ({navigation}: any) => {
                 ),
               ),
             );
-            setMpcDone(true);
           })
           .catch((e: any) => {
             if (!mpcAbortRef.current) {
@@ -1264,6 +1259,7 @@ const MobilesPairing = ({navigation}: any) => {
       const result = processMpcHookMessage(message, backend, {
         isTrio,
         isSendBitcoin,
+        isSignPSBT,
         refs: {
           progressRef: mpcHookProgressRef,
           utxoRef: mpcUtxoRef,
@@ -1295,7 +1291,7 @@ const MobilesPairing = ({navigation}: any) => {
       if (result.statusLabel) {
         setStatus(result.statusLabel);
       }
-      if (result.mpcDone) {
+      if (result.mpcDone && !isSendBitcoin && !isSignPSBT) {
         setMpcDone(true);
       }
     };

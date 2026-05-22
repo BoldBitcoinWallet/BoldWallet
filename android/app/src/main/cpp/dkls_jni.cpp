@@ -4,8 +4,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "dkls_exports.h"
+// Angle brackets: per-ABI jniLibs/<abi>/libbbmtmobile.h (GoInt32 on armeabi-v7a, GoInt64 on arm64).
+// Do not use quotes — cpp/libbbmtmobile.h is arm64-only (IDE convenience) and breaks v7a builds.
 #include <libbbmtmobile.h>
+
+#include "bbmt_jni_string.h"
+#include "dkls_exports.h"
 
 namespace {
 
@@ -93,16 +97,9 @@ void clear_bbmt_hook_listener(JNIEnv *env) {
   g_deliver_go_log_mid = nullptr;
 }
 
-jstring to_jstring(JNIEnv *env, char *cstr) {
-  if (cstr == nullptr) {
-    return env->NewStringUTF("");
-  }
-  jstring out = env->NewStringUTF(cstr);
-  DklsFree(cstr);
-  return out;
-}
-
 }  // namespace
+
+#define to_jstring bbmt_jni_to_jstring
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_helloDkgJni(JNIEnv *env, jclass) {
@@ -512,5 +509,21 @@ Java_com_boldwallet_DklsNative_setBbmtHookListenerJni(JNIEnv *env, jclass, jobje
 extern "C" JNIEXPORT void JNICALL
 Java_com_boldwallet_DklsNative_clearBbmtHookListenerJni(JNIEnv *env, jclass) {
   clear_bbmt_hook_listener(env);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtParsePSBTDetailsJni(JNIEnv *env, jclass, jstring psbt) {
+  const char *p = env->GetStringUTFChars(psbt, nullptr);
+  jstring out = to_jstring(env, BbmtParsePSBTDetails(const_cast<char *>(p)));
+  env->ReleaseStringUTFChars(psbt, p);
+  return out;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtPsbtIdentityHashJni(JNIEnv *env, jclass, jstring psbt) {
+  const char *p = env->GetStringUTFChars(psbt, nullptr);
+  jstring out = to_jstring(env, BbmtPsbtIdentityHash(const_cast<char *>(p)));
+  env->ReleaseStringUTFChars(psbt, p);
+  return out;
 }
 

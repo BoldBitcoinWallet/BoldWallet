@@ -1,4 +1,7 @@
 import {Buffer} from 'buffer';
+import {NativeModules} from 'react-native';
+
+const {BBMTLibNativeModule} = NativeModules;
 
 export function isPsbtBytes(bytes: Buffer): boolean {
   return (
@@ -27,30 +30,22 @@ export function canonicalPsbtBase64(input: string): string {
 }
 
 /**
- * Identity hash for LAN/Nostr pairing: same unsigned PSBT must match even when
- * file vs QR encodings differ (padding, proprietary fields, partial sigs).
+ * Identity hash for LAN/Nostr pairing (Go PsbtIdentityHash): SHA-256 of serialized
+ * unsigned transaction bytes. Same tx must match across file vs QR and partial sigs.
  */
-export async function psbtIdentityHash(
-  psbtBase64: string,
-  sha256: (message: string) => Promise<string>,
-  parsePSBTDetails?: (psbtBase64: string) => Promise<string>,
-): Promise<string> {
+export async function psbtIdentityHash(psbtBase64: string): Promise<string> {
   const canonical = canonicalPsbtBase64(psbtBase64);
-  if (parsePSBTDetails) {
-    try {
-      const detailsJson = await parsePSBTDetails(canonical);
-      if (
-        detailsJson &&
-        !detailsJson.startsWith('error') &&
-        !detailsJson.includes('failed')
-      ) {
-        return sha256(detailsJson);
-      }
-    } catch {
-      // Fall back to canonical raw bytes hash.
-    }
+  if (!BBMTLibNativeModule?.psbtIdentityHash) {
+    throw new Error('Native psbtIdentityHash is unavailable');
   }
-  return sha256(canonical);
+  const hash = await BBMTLibNativeModule.psbtIdentityHash(canonical);
+  if (!hash || typeof hash !== 'string') {
+    throw new Error('psbtIdentityHash returned empty result');
+  }
+  if (hash.startsWith('error:') || hash.startsWith('error')) {
+    throw new Error(hash);
+  }
+  return hash;
 }
 
 /** Parse master session payload: `{seed64}:{psbtHash}:{partyKey}`. */

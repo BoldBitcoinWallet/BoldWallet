@@ -1,5 +1,5 @@
 /* eslint-disable react-native/no-inline-styles */
-import React, {useState, useEffect, useRef} from 'react';
+import React, {useState, useEffect, useRef, useCallback} from 'react';
 import {
   View,
   Text,
@@ -420,14 +420,19 @@ const MobileNostrPairing = ({navigation}: any) => {
   const isPairingRef = useRef(false);
   const [status, setStatus] = useState('');
   const [isPairing, setIsPairing] = useState(false);
+  /** Sync ref before native MPC starts so TssHook events are not dropped (useEffect lags one frame). */
+  const setPairingActive = useCallback((active: boolean) => {
+    isPairingRef.current = active;
+    setIsPairing(active);
+  }, []);
   const {displayPercent, setCircleTarget, resetCircle} =
     useMpcCircleProgress(isPairing);
-  useEffect(() => {
-    isPairingRef.current = isPairing;
-  }, [isPairing]);
   const [isKeygenReady, setIsKeygenReady] = useState(false); // Manual toggle for "other devices ready"
   const [canStartKeygen, setCanStartKeygen] = useState(false); // Auto-calculated: all conditions met
   const [mpcDone, setMpcDone] = useState(false);
+  const [spendSignOutcome, setSpendSignOutcome] = useState<
+    null | 'aborted' | 'failed'
+  >(null);
   const [psbtDetails, setPsbtDetails] = useState<{
     inputs: Array<{txid: string; vout: number; amount: number}>;
     outputs: Array<{address: string; amount: number}>;
@@ -522,8 +527,11 @@ const MobileNostrPairing = ({navigation}: any) => {
           style: 'destructive',
           onPress: async () => {
             nostrAbortRef.current = true;
-            setIsPairing(false);
+            setPairingActive(false);
             setStatus('Aborted');
+            if (isSignPSBT) {
+              setSpendSignOutcome('aborted');
+            }
             try {
               await TssProvider.cancelNostrMpc();
             } catch (e) {
@@ -533,7 +541,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         },
       ],
     );
-  }, []);
+  }, [setPairingActive, isSignPSBT]);
 
   const connectionQrRef = useRef<any>(null);
   // Connection details for sharing (hex encoded)
@@ -776,6 +784,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       const result = processMpcHookMessage(message, backend, {
         isTrio,
         isSendBitcoin,
+        isSignPSBT,
         refs: {
           progressRef: mpcHookProgressRef,
           utxoRef: mpcUtxoRef,
@@ -808,7 +817,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       if (result.statusLabel) {
         setStatus(result.statusLabel);
       }
-      if (result.mpcDone) {
+      if (result.mpcDone && !isSendBitcoin && !isSignPSBT) {
         setMpcDone(true);
       }
     };
@@ -1407,7 +1416,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       setKeygenBackend(backend);
     }
     activeMpcSessionIdRef.current = sessionID;
-    setIsPairing(true);
+    setPairingActive(true);
     resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
     resetCircle();
     setProgress(0);
@@ -1613,7 +1622,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         }),
       );
     } finally {
-      setIsPairing(false);
+      setPairingActive(false);
     }
   };
   const startSendBTC = async () => {
@@ -1627,8 +1636,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       setSpendBackend(backend);
     }
     nostrAbortRef.current = false;
-    activeMpcSessionIdRef.current = sessionID;
-    setIsPairing(true);
+    // Nostr send computes sessionID in native after pre-agreement; do not filter hooks by keygen session.
+    activeMpcSessionIdRef.current = null;
+    setPairingActive(true);
     resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
     resetCircle();
     setProgress(0);
@@ -2003,7 +2013,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       };
       skipRestoreInFinallyRef.current = true;
       if (nostrAbortRef.current) {
-        setIsPairing(false);
+        setPairingActive(false);
         return;
       }
       setSignedTxRawHex(rawTxHex);
@@ -2016,7 +2026,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     } finally {
       if (skipRestoreInFinallyRef.current) {
         skipRestoreInFinallyRef.current = false;
-        setIsPairing(false);
+        setPairingActive(false);
         return;
       }
       // CRITICAL: Restore original network after transaction completes (success or failure)
@@ -2048,7 +2058,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           );
         }
       }
-      setIsPairing(false);
+      setPairingActive(false);
     }
   };
   const startSignPSBT = async () => {
@@ -2062,8 +2072,11 @@ const MobileNostrPairing = ({navigation}: any) => {
       setSpendBackend(backend);
     }
     nostrAbortRef.current = false;
-    activeMpcSessionIdRef.current = sessionID;
-    setIsPairing(true);
+    setMpcDone(false);
+    setSpendSignOutcome(null);
+    // Nostr PSBT computes sessionID in native after pre-agreement; do not filter hooks by keygen session.
+    activeMpcSessionIdRef.current = null;
+    setPairingActive(true);
     resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
     resetCircle();
     setProgress(0);
@@ -2174,7 +2187,8 @@ const MobileNostrPairing = ({navigation}: any) => {
       )
         .then(async (signedPsbt: any) => {
           if (nostrAbortRef.current) {
-            setIsPairing(false);
+            setSpendSignOutcome('aborted');
+            setPairingActive(false);
             return;
           }
           if (
@@ -2182,14 +2196,15 @@ const MobileNostrPairing = ({navigation}: any) => {
             signedPsbt.includes('error') ||
             signedPsbt.includes('failed')
           ) {
+            setSpendSignOutcome('failed');
             Alert.alert(
               'Operation Error',
               `Could not sign PSBT.\n${String(signedPsbt)}`,
             );
             dbg(localNpub, 'PSBT signing error', String(signedPsbt));
-          } else {
-            dbg(localNpub, 'PSBT signed successfully');
+            return;
           }
+          dbg(localNpub, 'PSBT signed successfully');
           dbg(
             'PSBT signing complete: Navigating to Wallet tab with signedPsbt',
           );
@@ -2207,66 +2222,31 @@ const MobileNostrPairing = ({navigation}: any) => {
               ),
             ),
           );
-          setMpcDone(true);
         })
         .catch(async (e: any) => {
           if (nostrAbortRef.current) {
-            setIsPairing(false);
+            setSpendSignOutcome('aborted');
+            setPairingActive(false);
             return;
           }
+          setSpendSignOutcome('failed');
           Alert.alert(
             'Operation Error',
             `Could not sign PSBT.\n${e?.message}`,
           );
           dbg(localNpub, 'PSBT signing error', e);
-          try {
-            navigation.dispatch(
-              CommonActions.reset(
-                getResetToMainTabsWallet(
-                  {},
-                  {
-                    showPlay,
-                    showUtxos: showUtxosTab,
-                    showAddresses: showAddressesTab,
-                    showPsbt: showPsbtTab,
-                    showWallet: showWalletTab,
-                  },
-                ),
-              ),
-            );
-          } catch (navError) {
-            dbg('Error navigating after PSBT error:', navError);
-          }
-        })
-        .finally(async () => {
-          setMpcDone(true);
         });
     } catch (error: any) {
       dbg('Sign PSBT error:', error);
-      if (!nostrAbortRef.current) {
+      if (nostrAbortRef.current) {
+        setSpendSignOutcome('aborted');
+      } else {
+        setSpendSignOutcome('failed');
         Alert.alert('Error', error?.message || 'PSBT signing failed');
       }
       setStatus('PSBT signing failed');
-      try {
-        navigation.dispatch(
-          CommonActions.reset(
-            getResetToMainTabsWallet(
-              {},
-              {
-                showPlay,
-                showUtxos: showUtxosTab,
-                showAddresses: showAddressesTab,
-                showPsbt: showPsbtTab,
-                showWallet: showWalletTab,
-              },
-            ),
-          ),
-        );
-      } catch (navError) {
-        dbg('Error navigating after PSBT error:', navError);
-      }
     } finally {
-      setIsPairing(false);
+      setPairingActive(false);
     }
   };
   // Backup functions
@@ -4479,6 +4459,46 @@ const MobileNostrPairing = ({navigation}: any) => {
                         error={txPreviewError}
                         formatFiat={formatFiat}
                       />
+                    </View>
+                  )}
+                  {isSignPSBT &&
+                    spendSignOutcome &&
+                    !isPairing &&
+                    route.params?.psbtBase64 && (
+                    <View style={styles.section}>
+                      <View style={styles.informationCard}>
+                        <Text
+                          style={[
+                            styles.statusText,
+                            {
+                              fontFamily: theme.fontFamilies?.medium,
+                              fontSize: theme.fontSizes?.md || 15,
+                            },
+                          ]}>
+                          {spendSignOutcome === 'aborted'
+                            ? 'PSBT signing was aborted.'
+                            : 'PSBT signing failed.'}
+                        </Text>
+                        {spendSignOutcome === 'failed' && status ? (
+                          <Text
+                            style={[
+                              styles.statusText,
+                              {
+                                marginTop: 6,
+                                fontFamily: theme.fontFamilies?.regular,
+                                fontSize: theme.fontSizes?.base || 14,
+                                color: theme.colors.textSecondary,
+                              },
+                            ]}>
+                            {status}
+                          </Text>
+                        ) : null}
+                        <AppPressable
+                          style={styles.backupButton}
+                          onPress={() => startSignPSBT()}>
+                          <Text style={styles.backupButtonText}>Try again</Text>
+                        </AppPressable>
+                      </View>
                     </View>
                   )}
                   {isSpendPeersReady &&

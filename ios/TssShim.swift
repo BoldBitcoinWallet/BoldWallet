@@ -97,6 +97,9 @@ func TssParsePSBTDetails(_ psbtBase64: String, _ error: NSErrorPointer) -> Strin
   bbmtResolve(BbmtBridge.parsePSBTDetails(psbtBase64), error)
 }
 
+func TssPsbtIdentityHash(_ psbtBase64: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.psbtIdentityHash(psbtBase64), error)
+}
 
 func TssSpendingHash(_ senderAddress: String, _ receiverAddress: String, _ amountSatoshi: Int64, _ error: NSErrorPointer) -> String {
   bbmtResolve(BbmtBridge.spendingHash(senderAddress, receiver: receiverAddress, amount: amountSatoshi), error)

@@ -165,7 +165,8 @@ build_android_jni_abi() {
   local out="${JNI_OUT}/${abi}/libdkls_jni.so"
   info "Building dkls_jni for Android ${abi}..."
   rm -f "${out}"
-  # Per-ABI Go cgo header (GoInt32 on armeabi-v7a, GoInt64 on arm64/x86_64). Do not use cpp/libbbmtmobile.h alone.
+  # Per-ABI Go cgo header (GoInt32 on armeabi-v7a, GoInt64 on arm64/x86_64).
+  # jniLibs/<abi> must precede cpp/ — cpp/libbbmtmobile.h is arm64-only (IDE); quoted include would pick it first.
   if ! "${cxx}" -shared -fPIC -O2 \
     -I"${bbmt_dir}" \
     -I"${CPP_DIR}" \

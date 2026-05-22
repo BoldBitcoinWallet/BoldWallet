@@ -2,18 +2,9 @@
 
 #include <libbbmtmobile.h>
 
-namespace {
+#include "bbmt_jni_string.h"
 
-jstring to_jstring(JNIEnv *env, char *cstr) {
-  if (cstr == nullptr) {
-    return env->NewStringUTF("");
-  }
-  jstring out = env->NewStringUTF(cstr);
-  DklsFree(cstr);
-  return out;
-}
-
-}  // namespace
+#define to_jstring bbmt_jni_to_jstring
 
 extern "C" {
 
@@ -506,14 +497,6 @@ Java_com_boldwallet_DklsNative_bbmtCancelNostrMpcJni(JNIEnv *env, jclass) {
 JNIEXPORT void JNICALL
 Java_com_boldwallet_DklsNative_bbmtDisableLogsJni(JNIEnv *, jclass) {
   BbmtDisableLogs();
-}
-
-JNIEXPORT jstring JNICALL
-Java_com_boldwallet_DklsNative_bbmtParsePSBTDetailsJni(JNIEnv *env, jclass, jstring psbt) {
-  const char *p = env->GetStringUTFChars(psbt, nullptr);
-  jstring out = to_jstring(env, BbmtParsePSBTDetails(const_cast<char *>(p)));
-  env->ReleaseStringUTFChars(psbt, p);
-  return out;
 }
 
 }  // extern "C"

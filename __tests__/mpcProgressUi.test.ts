@@ -40,6 +40,24 @@ describe('formatMpcPhaseLabel', () => {
     ).toBe('Key generation · round 4');
   });
 
+  it('labels PSBT coarse hooks', () => {
+    expect(
+      formatMpcPhaseLabel(
+        {type: 'psbt', info: 'pre-agreement phase'},
+        {isSendBitcoin: false, utxo: emptyMpcUtxoState()},
+      ),
+    ).toBe('Connecting co-signers for PSBT…');
+    expect(
+      formatMpcPhaseLabel(
+        {type: 'psbt', info: 'joining keysign (nostr)'},
+        {
+          isSendBitcoin: false,
+          utxo: {utxoIndex: 1, utxoCount: 2, utxoRange: 50},
+        },
+      ),
+    ).toBe('Signing PSBT · input 1 of 2');
+  });
+
   it('labels multi-UTXO keysign for send', () => {
     expect(
       formatMpcPhaseLabel(

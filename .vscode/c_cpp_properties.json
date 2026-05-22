@@ -1,0 +1,19 @@
+{
+  "configurations": [
+    {
+      "name": "Android JNI (arm64-v8a)",
+      "includePath": [
+        "${workspaceFolder}/android/app/src/main/cpp",
+        "${workspaceFolder}/android/app/src/main/jniLibs/arm64-v8a",
+        "${env:ANDROID_HOME}/ndk/27.1.12297006/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include",
+        "${env:ANDROID_HOME}/ndk/27.1.12297006/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include/aarch64-linux-android"
+      ],
+      "defines": ["ANDROID"],
+      "compilerPath": "${env:ANDROID_HOME}/ndk/27.1.12297006/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android24-clang++",
+      "cStandard": "c17",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "linux-clang-arm64"
+    }
+  ],
+  "version": 4
+}

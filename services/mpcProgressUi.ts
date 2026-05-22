@@ -36,6 +36,7 @@ export function formatMpcPhaseLabel(
   msg: MpcHookMessage,
   opts: {
     isSendBitcoin: boolean;
+    isSignPSBT?: boolean;
     utxo: MpcProgressUtxoState;
   },
 ): string {
@@ -71,7 +72,7 @@ export function formatMpcPhaseLabel(
   if (msg.type === 'keysign') {
     const {utxoIndex, utxoCount} = opts.utxo;
     if (
-      opts.isSendBitcoin &&
+      (opts.isSendBitcoin || opts.isSignPSBT) &&
       utxoCount > 0 &&
       utxoIndex > 0
     ) {
@@ -92,10 +93,27 @@ export function formatMpcPhaseLabel(
     if (step >= 99 || msg.done) {
       return 'Signature complete';
     }
-    return opts.isSendBitcoin ? 'Signing transaction…' : 'Signing PSBT…';
+    return opts.isSignPSBT ? 'Signing PSBT…' : 'Signing transaction…';
+  }
+
+  if (msg.type === 'psbt') {
+    if (info.includes('pre-agreement')) {
+      return 'Connecting co-signers for PSBT…';
+    }
+    if (info.includes('joining') || info.includes('keysign')) {
+      const {utxoIndex, utxoCount} = opts.utxo;
+      if (utxoCount > 0 && utxoIndex > 0) {
+        return `Signing PSBT · input ${utxoIndex} of ${utxoCount}`;
+      }
+      return 'Co-signing PSBT…';
+    }
+    return 'Preparing PSBT signatures…';
   }
 
   if (msg.type === 'btc_send') {
+    if (info.includes('pre-agreement')) {
+      return 'Connecting co-signers…';
+    }
     return 'Building transaction…';
   }
 
@@ -130,6 +148,7 @@ export function processMpcHookMessage(
   opts: {
     isTrio: boolean;
     isSendBitcoin: boolean;
+    isSignPSBT?: boolean;
     refs: MpcHookHandlerRefs;
     onTrace?: (payload: MpcHookTracePayload) => void;
   },
@@ -147,6 +166,8 @@ export function processMpcHookMessage(
 
   const result: MpcProgressResult = mapMpcHookToPercent(msg, backend, {
     isTrio: opts.isTrio,
+    isSendBitcoin: opts.isSendBitcoin,
+    isSignPSBT: opts.isSignPSBT,
     utxo: opts.refs.utxoRef.current,
     currentProgress: opts.refs.progressRef.current,
   });
@@ -168,6 +189,7 @@ export function processMpcHookMessage(
     percent,
     statusLabel: formatMpcPhaseLabel(msg, {
       isSendBitcoin: opts.isSendBitcoin,
+      isSignPSBT: opts.isSignPSBT,
       utxo: opts.refs.utxoRef.current,
     }),
     mpcDone: result.mpcDone === true,

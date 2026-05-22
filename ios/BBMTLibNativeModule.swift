@@ -972,6 +972,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async {
+      guard BbmtBridge.isAvailable() else {
+        rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
+        return
+      }
       var error: NSError?
       let output = TssCancelMpcSession(sessionID, &error)
       if error == nil {
@@ -987,6 +991,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async {
+      guard BbmtBridge.isAvailable() else {
+        rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
+        return
+      }
       var error: NSError?
       let output = TssCancelNostrMpc(&error)
       if error == nil {
@@ -1015,6 +1023,23 @@ class BBMTLibNativeModule: RCTEventEmitter {
       let output = TssParsePSBTDetails(psbtBase64, &error)
       self?.sendLogEvent("parsePSBTDetails", output)
       resolver(error == nil ? output : error!.localizedDescription)
+    }
+  }
+
+  @objc func psbtIdentityHash(
+    _ psbtBase64: String, resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      var error: NSError?
+      let output = TssPsbtIdentityHash(psbtBase64, &error)
+      let preview = output.count > 16 ? String(output.prefix(16)) + "…" : output
+      self?.sendLogEvent("psbtIdentityHash", preview)
+      if let error = error {
+        rejecter("PSBT_IDENTITY_ERROR", error.localizedDescription, error)
+      } else {
+        resolver(output)
+      }
     }
   }
 

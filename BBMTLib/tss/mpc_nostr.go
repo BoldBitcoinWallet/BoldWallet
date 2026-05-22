@@ -675,7 +675,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	Logf("NostrMpcSendBTC: calculated sessionFlag=%s", sessionFlag)
 
 	// Step 2: Perform pre-agreement to exchange nonces and fees
-	mpcHook("pre-agreement phase", sessionFlag, "", 0, 0, false)
+	mpcHook("btc_send", "pre-agreement phase", sessionFlag, "", 0, 0, false)
 	preAgreement, err := runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, estimatedFee)
 	if err != nil {
 		return "", fmt.Errorf("pre-agreement failed: %w", err)
@@ -705,10 +705,10 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	if _btc_net == "mainnet" {
 		params = &chaincfg.MainNetParams
 		Logln("Using mainnet parameters")
-		mpcHook("using mainnet", sessionID, "", 0, 0, false)
+		mpcHook("btc_send", "using mainnet", sessionID, "", 0, 0, false)
 	} else {
 		Logln("Using testnet parameters")
-		mpcHook("using testnet", sessionID, "", 0, 0, false)
+		mpcHook("btc_send", "using testnet", sessionID, "", 0, 0, false)
 	}
 
 	pubKeyBytes, err := hex.DecodeString(publicKey)
@@ -726,7 +726,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	Logln("Sender address decoded successfully")
 
 	toAddr, err := btcutil.DecodeAddress(receiverAddress, params)
-	mpcHook("checking receiver address", sessionID, "", 0, 0, false)
+	mpcHook("btc_send", "checking receiver address", sessionID, "", 0, 0, false)
 	if err != nil {
 		Logf("Error decoding receiver address: %v", err)
 		return "", fmt.Errorf("failed to decode receiver address: %w", err)
@@ -735,7 +735,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	Logf("Sender Address Type: %T", fromAddr)
 	Logf("Receiver Address Type: %T", toAddr)
 
-	mpcHook("fetching utxos", sessionID, "", 0, 0, false)
+	mpcHook("btc_send", "fetching utxos", sessionID, "", 0, 0, false)
 	utxos, err := FetchUTXOs(senderAddress)
 	if err != nil {
 		Logf("Error fetching UTXOs: %v", err)
@@ -743,7 +743,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	}
 	Logf("Fetched UTXOs: %+v", utxos)
 
-	mpcHook("selecting utxos", sessionID, "", 0, 0, false)
+	mpcHook("btc_send", "selecting utxos", sessionID, "", 0, 0, false)
 	selectedUTXOs, totalAmount, err := SelectUTXOs(utxos, amountSatoshi+agreedFee, "smallest")
 	if err != nil {
 		Logf("Error selecting UTXOs: %v", err)
@@ -760,7 +760,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	utxoIndex := 0
 	utxoSession := ""
 
-	mpcHook("adding inputs", sessionID, utxoSession, utxoIndex, utxoCount, false)
+	mpcHook("btc_send", "adding inputs", sessionID, utxoSession, utxoIndex, utxoCount, false)
 	for _, utxo := range selectedUTXOs {
 		hash, err := chainhash.NewHashFromStr(utxo.TxID)
 		if err != nil {
@@ -783,7 +783,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	Logln("Sufficient funds available")
 
 	// Add recipient output
-	mpcHook("creating output script", sessionID, utxoSession, utxoIndex, utxoCount, false)
+	mpcHook("btc_send", "creating output script", sessionID, utxoSession, utxoIndex, utxoCount, false)
 	pkScript, err := txscript.PayToAddrScript(toAddr)
 	if err != nil {
 		Logf("Error creating output script: %v", err)
@@ -794,7 +794,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 
 	// Add change output if necessary (use changeAddress for HD internal chain when set)
 	changeAmount := totalAmount - amountSatoshi - agreedFee
-	mpcHook("calculating change amount", sessionID, utxoSession, utxoIndex, utxoCount, false)
+	mpcHook("btc_send", "calculating change amount", sessionID, utxoSession, utxoIndex, utxoCount, false)
 
 	if changeAmount > 546 {
 		changeAddr := fromAddr
@@ -834,13 +834,13 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	prevOutFetcher := txscript.NewMultiPrevOutFetcher(prevOuts)
 
 	// Sign each input with enhanced address type support
-	mpcHook("signing inputs", sessionID, utxoSession, utxoIndex, utxoCount, false)
+	mpcHook("btc_send", "signing inputs", sessionID, utxoSession, utxoIndex, utxoCount, false)
 	for i, utxo := range selectedUTXOs {
 		// update utxo session - counter
 		utxoIndex = i + 1
 		utxoSession = fmt.Sprintf("%s%d", sessionID, i)
 
-		mpcHook("fetching utxo details", sessionID, utxoSession, utxoIndex, utxoCount, false)
+		mpcHook("btc_send", "fetching utxo details", sessionID, utxoSession, utxoIndex, utxoCount, false)
 		txOut, isWitness, err := FetchUTXODetails(utxo.TxID, utxo.Vout)
 		if err != nil {
 			Logf("Error fetching UTXO details: %v", err)
@@ -866,7 +866,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 				// Note: The sighash is already a hash, so we need to pass it as base64 directly
 				// We'll use a helper function that accepts base64-encoded sighash
 				sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
-				mpcHook("joining keysign - P2WPKH", sessionID, utxoSession, utxoIndex, utxoCount, false)
+				mpcHook("btc_send", "joining keysign - P2WPKH", sessionID, utxoSession, utxoIndex, utxoCount, false)
 				sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
 				if err != nil {
 					return "", fmt.Errorf("failed to sign P2WPKH transaction: %w", err)
@@ -903,7 +903,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 				}
 
 				sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
-				mpcHook("joining keysign - generic SegWit", sessionID, utxoSession, utxoIndex, utxoCount, false)
+				mpcHook("btc_send", "joining keysign - generic SegWit", sessionID, utxoSession, utxoIndex, utxoCount, false)
 				sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
 				if err != nil {
 					return "", fmt.Errorf("failed to sign generic SegWit transaction: %w", err)
@@ -940,7 +940,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 				}
 
 				sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
-				mpcHook("joining keysign - P2PKH", sessionID, utxoSession, utxoIndex, utxoCount, false)
+				mpcHook("btc_send", "joining keysign - P2PKH", sessionID, utxoSession, utxoIndex, utxoCount, false)
 				sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
 				if err != nil {
 					return "", fmt.Errorf("failed to sign P2PKH transaction: %w", err)
@@ -1015,7 +1015,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 					}
 
 					sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
-					mpcHook("joining keysign - P2SH-P2WPKH", sessionID, utxoSession, utxoIndex, utxoCount, false)
+					mpcHook("btc_send", "joining keysign - P2SH-P2WPKH", sessionID, utxoSession, utxoIndex, utxoCount, false)
 					sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
 					if err != nil {
 						return "", fmt.Errorf("failed to sign P2SH-P2WPKH transaction: %w", err)
@@ -1058,7 +1058,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 					}
 
 					sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
-					mpcHook("joining keysign - P2SH", sessionID, utxoSession, utxoIndex, utxoCount, false)
+					mpcHook("btc_send", "joining keysign - P2SH", sessionID, utxoSession, utxoIndex, utxoCount, false)
 					sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
 					if err != nil {
 						return "", fmt.Errorf("failed to sign P2SH transaction: %w", err)
@@ -1100,7 +1100,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 		}
 
 		// Script validation with proper prevOutFetcher
-		mpcHook("validating tx script", sessionID, utxoSession, utxoIndex, utxoCount, false)
+		mpcHook("btc_send", "validating tx script", sessionID, utxoSession, utxoIndex, utxoCount, false)
 		vm, err := txscript.NewEngine(
 			txOut.PkScript,
 			tx,
@@ -1123,7 +1123,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	}
 
 	// Serialize and broadcast
-	mpcHook("serializing tx", sessionID, utxoSession, utxoIndex, utxoCount, false)
+	mpcHook("btc_send", "serializing tx", sessionID, utxoSession, utxoIndex, utxoCount, false)
 	var signedTx bytes.Buffer
 	if err := tx.Serialize(&signedTx); err != nil {
 		Logf("Error serializing transaction: %v", err)
@@ -1132,7 +1132,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 
 	rawTx := hex.EncodeToString(signedTx.Bytes())
 	Logln("Raw Transaction (signed, not broadcast)")
-	mpcHook("signed", sessionID, utxoSession, utxoIndex, utxoCount, true)
+	mpcHook("btc_send", "signed", sessionID, utxoSession, utxoIndex, utxoCount, true)
 	return rawTx, nil
 }
 
@@ -1152,7 +1152,7 @@ func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, 
 	if err != nil {
 		return "", fmt.Errorf("failed to calculate sessionFlag: %w", err)
 	}
-	mpcHook("pre-agreement phase", sessionFlag, "", 0, 0, false)
+	mpcHook("btc_send", "pre-agreement phase", sessionFlag, "", 0, 0, false)
 	preAgreement, err := runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, estimatedFee)
 	if err != nil {
 		return "", fmt.Errorf("pre-agreement failed: %w", err)
@@ -1307,8 +1307,8 @@ func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, 
 		}
 
 		sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
-		mpcHook("joining keysign", sessionID, utxoSession, i+1, utxoCount, false)
-					sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
+		mpcHook("btc_send", "joining keysign", sessionID, utxoSession, i+1, utxoCount, false)
+		sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
 		if err != nil {
 			return "", fmt.Errorf("failed to sign input %d: %w", i, err)
 		}
@@ -1358,7 +1358,7 @@ func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, 
 	}
 	rawTx := hex.EncodeToString(signedTx.Bytes())
 	Logln("Raw Transaction (signed, not broadcast)")
-	mpcHook("signed", sessionID, "", utxoCount, utxoCount, true)
+	mpcHook("btc_send", "signed", sessionID, "", utxoCount, utxoCount, true)
 	return rawTx, nil
 }
 

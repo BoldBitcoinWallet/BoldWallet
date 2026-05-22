@@ -76,16 +76,6 @@ const DKLS_KEYSIGN_PREP_BAND_FRACTION = 0.15;
 /** Last keysign round step before complete (runSignWithSender starts at 3). */
 const DKLS_KEYSIGN_MAX_ROUND_STEP = 12;
 
-function stepToPercent(step: number, totalSteps: number): number {
-  if (step >= MPC_PROGRESS_SENTINEL_STEP) {
-    return 100;
-  }
-  if (totalSteps <= 0) {
-    return 0;
-  }
-  return Math.min(99, Math.round((100 * step) / totalSteps));
-}
-
 /**
  * DKLs keygen: native steps 0 init, 1–2 setup, 3..N MPC rounds, 99 done.
  * Linear step/total stalls low then jumps; split prep vs rounds for smoother UI.
@@ -108,9 +98,7 @@ export function dklsKeygenPercent(step: number, isTrio: boolean): number {
   const tail = 99 - DKLS_KEYGEN_PREP_END_PERCENT;
   return Math.min(
     99,
-    Math.round(
-      DKLS_KEYGEN_PREP_END_PERCENT + (tail * roundIndex) / roundSpan,
-    ),
+    Math.round(DKLS_KEYGEN_PREP_END_PERCENT + (tail * roundIndex) / roundSpan),
   );
 }
 
@@ -136,9 +124,7 @@ export function gg18KeygenPercent(step: number, isTrio: boolean): number {
   const tail = 99 - GG18_KEYGEN_PREP_END_PERCENT;
   return Math.min(
     99,
-    Math.round(
-      GG18_KEYGEN_PREP_END_PERCENT + (tail * roundIndex) / roundSpan,
-    ),
+    Math.round(GG18_KEYGEN_PREP_END_PERCENT + (tail * roundIndex) / roundSpan),
   );
 }
 
@@ -181,7 +167,8 @@ export function dklsKeysignPercent(
   if (step <= 0) {
     return 0;
   }
-  const prgUTXO = utxo.utxoCount > 0 ? (utxo.utxoIndex - 1) * utxo.utxoRange : 0;
+  const prgUTXO =
+    utxo.utxoCount > 0 ? (utxo.utxoIndex - 1) * utxo.utxoRange : 0;
   const band = utxo.utxoCount > 0 ? utxo.utxoRange : 100;
   if (step <= 2) {
     return Math.round(
@@ -232,11 +219,14 @@ export function mapMpcHookToPercent(
   backend: TssBackend,
   opts: {
     isTrio: boolean;
+    isSendBitcoin?: boolean;
+    isSignPSBT?: boolean;
     utxo: MpcProgressUtxoState;
     currentProgress: number;
   },
 ): MpcProgressResult {
   const {isTrio, utxo, currentProgress} = opts;
+  const isSendBitcoin = opts.isSendBitcoin === true;
   const step = msg.step ?? 0;
 
   if (msg.type === 'keygen') {
@@ -247,17 +237,52 @@ export function mapMpcHookToPercent(
     const waitingJoin =
       step <= 2 && (msg.info ?? '').toLowerCase().includes('waiting');
     return {
-      percent: waitingJoin
-        ? percent
-        : Math.max(currentProgress, percent),
+      percent: waitingJoin ? percent : Math.max(currentProgress, percent),
     };
+  }
+
+  if (msg.type === 'psbt') {
+    const next: MpcProgressResult = {percent: null};
+    const info = (msg.info ?? '').toLowerCase();
+
+    if (msg.done) {
+      return {percent: 100};
+    }
+
+    if (info.includes('pre-agreement')) {
+      return {percent: Math.max(currentProgress, 5)};
+    }
+
+    if ((msg.utxo_total ?? 0) > 0) {
+      const utxoCount = msg.utxo_total!;
+      const utxoIndex = msg.utxo_current ?? 0;
+      const utxoRange = 100 / utxoCount;
+      next.utxoState = {utxoCount, utxoIndex, utxoRange};
+      const base = (utxoIndex - 1) * utxoRange;
+      const hint =
+        info.includes('joining') || info.includes('keysign') ? 0.2 : 0.08;
+      const pct = Math.round(base + utxoRange * hint);
+      if (pct > 0) {
+        next.percent = Math.max(currentProgress, Math.min(99, pct));
+      }
+    }
+    return next;
   }
 
   if (msg.type === 'btc_send') {
     const next: MpcProgressResult = {percent: null};
+    const info = (msg.info ?? '').toLowerCase();
+
     if (msg.done) {
       next.percent = 100;
-    } else if ((msg.utxo_total ?? 0) > 0) {
+      return next;
+    }
+
+    if (info.includes('pre-agreement') && isSendBitcoin) {
+      return {percent: Math.max(currentProgress, 5)};
+    }
+
+    if (isSendBitcoin && (msg.utxo_total ?? 0) > 0) {
       const utxoCount = msg.utxo_total!;
       const utxoIndex = msg.utxo_current ?? 0;
       const buildCap = 15;
@@ -265,17 +290,14 @@ export function mapMpcHookToPercent(
         buildCap,
         Math.round((buildCap * utxoIndex) / utxoCount),
       );
+      next.utxoState = {
+        utxoCount,
+        utxoIndex,
+        utxoRange: 100 / utxoCount,
+      };
       if (buildPct > 0) {
         next.percent = Math.max(currentProgress, buildPct);
       }
-    }
-    if ((msg.utxo_total ?? 0) > 0) {
-      const utxoCount = msg.utxo_total!;
-      next.utxoState = {
-        utxoCount,
-        utxoIndex: msg.utxo_current ?? 0,
-        utxoRange: 100 / utxoCount,
-      };
     }
     return next;
   }

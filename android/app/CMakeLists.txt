@@ -14,7 +14,12 @@ if(EXISTS ${BBMTMOBILE_SO})
     add_library(bbmtmobile SHARED IMPORTED)
     set_target_properties(bbmtmobile PROPERTIES IMPORTED_LOCATION ${BBMTMOBILE_SO})
 
-    add_library(dkls_jni SHARED src/main/cpp/dkls_jni.cpp)
-    target_include_directories(dkls_jni PRIVATE src/main/cpp)
+    add_library(dkls_jni SHARED
+        src/main/cpp/dkls_jni.cpp
+        src/main/cpp/bbmt_tss_jni.cpp)
+    # Per-ABI Go header first (GoInt width matches ANDROID_ABI); cpp/libbbmtmobile.h is arm64-only.
+    target_include_directories(dkls_jni PRIVATE
+        ${BBMTMOBILE_DIR}
+        src/main/cpp)
     target_link_libraries(dkls_jni bbmtmobile log android)
 endif()

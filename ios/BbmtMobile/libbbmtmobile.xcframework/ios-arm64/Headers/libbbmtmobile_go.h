@@ -155,6 +155,7 @@ extern char* BbmtCancelMpcSession(char* sessionID);
 extern char* BbmtCancelNostrMpc(void);
 extern void BbmtDisableLogs(void);
 extern char* BbmtParsePSBTDetails(char* psbt);
+extern char* BbmtPsbtIdentityHash(char* psbt);
 extern char* BbmtMpcSignPSBT(char* server, char* key, char* parties, char* session, char* sessionKey, char* encKey, char* decKey, char* keyshare, char* psbt);
 extern char* BbmtMpcSendBTCWithUTXOs(char* server, char* key, char* parties, char* session, char* sessionKey, char* encKey, char* decKey, char* keyshare, char* btcPub, char* receiver, char* amount, char* fees, char* utxos, char* change);
 extern char* BbmtNostrMpcSendBTCWithUTXOs(char* relays, char* nsec, char* parties, char* npubsSorted, char* balance, char* keyshare, char* receiver, char* amount, char* fees, char* utxos, char* change);

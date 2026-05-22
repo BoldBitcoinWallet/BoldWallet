@@ -180,7 +180,12 @@ describe('mapMpcHookToPercent', () => {
       const r = mapMpcHookToPercent(
         {type: 'btc_send', utxo_total: 2, utxo_current: 1},
         'dkls23',
-        {isTrio: false, utxo: emptyUtxo, currentProgress: 0},
+        {
+          isTrio: false,
+          isSendBitcoin: true,
+          utxo: emptyUtxo,
+          currentProgress: 0,
+        },
       );
       expect(r.percent).toBe(8);
       expect(r.utxoState).toEqual({
@@ -243,6 +248,51 @@ describe('mapMpcHookToPercent', () => {
       expect(r.percent).toBe(100);
       expect(r.mpcDone).toBe(true);
       expect(r.utxoState).toEqual(emptyUtxo);
+    });
+  });
+
+  describe('PSBT signing (native type psbt)', () => {
+    it('maps pre-agreement to early progress', () => {
+      const r = mapMpcHookToPercent(
+        {
+          type: 'psbt',
+          info: 'pre-agreement phase',
+          utxo_total: 0,
+          utxo_current: 0,
+        },
+        'dkls23',
+        {isTrio: false, utxo: emptyUtxo, currentProgress: 0},
+      );
+      expect(r.percent).toBe(5);
+    });
+
+    it('bands per-input PSBT hooks across full progress range', () => {
+      const r = mapMpcHookToPercent(
+        {
+          type: 'psbt',
+          info: 'signing psbt input (nostr)',
+          utxo_total: 2,
+          utxo_current: 1,
+        },
+        'dkls23',
+        {isTrio: false, utxo: emptyUtxo, currentProgress: 0},
+      );
+      expect(r.utxoState).toEqual({
+        utxoCount: 2,
+        utxoIndex: 1,
+        utxoRange: 50,
+      });
+      expect(r.percent).toBe(4);
+    });
+
+    it('marks done on psbt signing complete', () => {
+      const r = mapMpcHookToPercent(
+        {type: 'psbt', done: true},
+        'dkls23',
+        {isTrio: false, utxo: emptyUtxo, currentProgress: 50},
+      );
+      expect(r.percent).toBe(100);
+      expect(r.mpcDone).toBeUndefined();
     });
   });
 });

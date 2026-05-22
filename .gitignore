@@ -155,7 +155,9 @@ android/gradle.properties.local
 mcps/
 
 # IDE - VSCode
-.vscode/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/c_cpp_properties.json
 *.code-workspace
 
 # IDE - JetBrains
@@ -274,8 +276,6 @@ tmp/
 temp/
 
 # Editor directories and files
-.vscode/*
-!.vscode/extensions.json
 .idea
 *.suo
 *.ntvs*
