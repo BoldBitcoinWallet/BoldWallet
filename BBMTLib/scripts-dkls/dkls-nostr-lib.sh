@@ -8,12 +8,103 @@ dkls_nostr_root() {
   echo "$DKLS_NOSTR_ROOT"
 }
 
+# Client URL for the local nostr-rs-relay (Docker -p 7777:8080 listens on 0.0.0.0:7777).
+dkls_nostr_local_relay_url() {
+  echo "ws://127.0.0.1:${DKLS_NOSTR_RELAY_PORT:-7777}"
+}
+
+# Map bind addresses to a URL Nostr clients can dial (same as Go requireNostrRelay).
+dkls_nostr_normalize_relay_host() {
+  local host="$1"
+  case "$host" in
+    0.0.0.0|"") echo "127.0.0.1" ;;
+    *) echo "$host" ;;
+  esac
+}
+
+dkls_nostr_relay_tcp_reachable() {
+  local relay_url="$1"
+  local relay="${relay_url%%,*}"
+  relay="${relay#ws://}"
+  relay="${relay#wss://}"
+  local host port
+  if [[ "$relay" == *:* ]]; then
+    host="${relay%%:*}"
+    port="${relay##*:}"
+    port="${port%%/*}"
+  else
+    host="$relay"
+    port="${DKLS_NOSTR_RELAY_PORT:-7777}"
+  fi
+  host="$(dkls_nostr_normalize_relay_host "$host")"
+  (echo >/dev/tcp/"$host"/"$port") 2>/dev/null
+}
+
+# Normalize RELAYS for Nostr WebSocket clients (never ws://0.0.0.0 — that is a bind addr only).
+dkls_nostr_normalize_relays_csv() {
+  local csv="$1"
+  local out="" part scheme rest host port norm
+  IFS=',' read -ra parts <<<"$csv"
+  for part in "${parts[@]}"; do
+    part="$(echo "$part" | xargs)"
+    [ -z "$part" ] && continue
+    if [[ "$part" == ws://* ]]; then
+      scheme="ws://"
+      rest="${part#ws://}"
+    elif [[ "$part" == wss://* ]]; then
+      scheme="wss://"
+      rest="${part#wss://}"
+    else
+      scheme="ws://"
+      rest="$part"
+    fi
+    if [[ "$rest" == *:* ]]; then
+      host="${rest%%:*}"
+      port="${rest##*:}"
+      port="${port%%/*}"
+    else
+      host="$rest"
+      port="${DKLS_NOSTR_RELAY_PORT:-7777}"
+    fi
+    norm="${scheme}$(dkls_nostr_normalize_relay_host "$host"):${port}"
+    if [ -z "$out" ]; then
+      out="$norm"
+    else
+      out="${out},${norm}"
+    fi
+  done
+  echo "$out"
+}
+
+# Prefer local relay when reachable (matches Go defaultNostrTestRelay + mobile path).
+# Set RELAYS explicitly to override. Production relays only when DKLS_NOSTR_ALLOW_PUBLIC=1
+# and local relay is down.
+dkls_nostr_resolve_relays() {
+  if [ -n "${RELAYS:-}" ]; then
+    export RELAYS="$(dkls_nostr_normalize_relays_csv "$RELAYS")"
+    return 0
+  fi
+  local local_url
+  local_url="$(dkls_nostr_local_relay_url)"
+  if dkls_nostr_relay_tcp_reachable "$local_url"; then
+    export RELAYS="$local_url"
+    return 0
+  fi
+  if [ "${DKLS_NOSTR_ALLOW_PUBLIC:-0}" = "1" ]; then
+    export RELAYS="wss://nostr.hifish.org,wss://nostr.xxi.quest,wss://bbw-nostr.xyz"
+    return 0
+  fi
+  echo "No local Nostr relay at ${local_url} (bind is often 0.0.0.0:7777; clients use ws://127.0.0.1:7777)."
+  echo "Start: BBMTLib/scripts/start-local-relay.sh"
+  echo "Or: RELAYS=ws://127.0.0.1:7777 DKLS_NOSTR_ALLOW_PUBLIC=1 (public relays — not the mobile preflight gate)"
+  return 1
+}
+
 dkls_nostr_setup() {
   DKLS_NOSTR_ROOT="$(dkls_nostr_root)"
   cd "$DKLS_NOSTR_ROOT"
 
-  RELAYS_DEFAULT="wss://nostr.hifish.org,wss://nostr.xxi.quest,wss://bbw-nostr.xyz"
-  export RELAYS="${RELAYS:-$RELAYS_DEFAULT}"
+  dkls_nostr_resolve_relays || return 1
 
   LIBTSS_RELEASE="${DKLS_NOSTR_ROOT}/../../libtss/target/release"
   if [ ! -f "${LIBTSS_RELEASE}/liblibtss_ffi.a" ] && [ ! -f "${LIBTSS_RELEASE}/liblibtss_ffi.dylib" ]; then
@@ -27,24 +118,9 @@ dkls_nostr_setup() {
 
 dkls_nostr_check_relay() {
   local relay="${RELAYS%%,*}"
-  relay="${relay#ws://}"
-  relay="${relay#wss://}"
-  local host port
-  if [[ "$relay" == *:* ]]; then
-    host="${relay%%:*}"
-    port="${relay##*:}"
-    port="${port%%/*}"
-  else
-    host="$relay"
-    port="7777"
-  fi
-  host="${host:-127.0.0.1}"
-  if [ "$host" = "0.0.0.0" ]; then
-    host="127.0.0.1"
-  fi
-  if ! (echo >/dev/tcp/"$host"/"$port") 2>/dev/null; then
-    echo "Nostr relay not reachable at ${host}:${port} (RELAYS=${RELAYS})"
-    echo "Start one with: BBMTLib/scripts/start-local-relay.sh"
+  if ! dkls_nostr_relay_tcp_reachable "$relay"; then
+    echo "Nostr relay not reachable (${RELAYS})"
+    echo "Start: BBMTLib/scripts/start-local-relay.sh  (Docker maps 0.0.0.0:${DKLS_NOSTR_RELAY_PORT:-7777})"
     return 1
   fi
   return 0

@@ -1,12 +1,15 @@
 #!/bin/bash
 # Nostr DKLS keygen verification: Go integration (duo + trio) + shell e2e.
-# Requires a reachable relay (default ws://127.0.0.1:7777 — start-local-relay.sh).
+# Same Go entrypoints as mobile (dkls.NostrJoinKeygen / BbmtNostrJoinKeygen).
 #
+# Local relay (Docker binds 0.0.0.0:7777; clients use ws://127.0.0.1:7777):
 #   cd BBMTLib
+#   ./scripts/start-local-relay.sh
 #   ./scripts-dkls/dkls-nostr-test-all.sh
 #
 # Optional:
-#   RELAYS=ws://127.0.0.1:7777     relay URL(s)
+#   DKLS_NOSTR_START_RELAY=1      start relay if port 7777 is closed
+#   RELAYS=ws://127.0.0.1:7777    override relay list (0.0.0.0 normalized to 127.0.0.1)
 #   DKLS_NOSTR_VERBOSE=1          show BBMTLog + go test -v
 #   DKLS_NOSTR_SKIP_GO=1          shell e2e only
 #   DKLS_NOSTR_SKIP_SHELL=1       Go tests only
@@ -25,7 +28,15 @@ NC='\033[0m'
 pass() { echo -e "${GREEN}PASS${NC} $*"; }
 fail() { echo -e "${RED}FAIL${NC} $*"; exit 1; }
 
-dkls_nostr_setup
+if [ "${DKLS_NOSTR_START_RELAY:-0}" = "1" ]; then
+  local_url="$(dkls_nostr_local_relay_url 2>/dev/null || echo "ws://127.0.0.1:7777")"
+  if ! dkls_nostr_relay_tcp_reachable "$local_url" 2>/dev/null; then
+    echo "==> Starting local Nostr relay..."
+    "${SCRIPT_DIR}/start-local-relay.sh" || fail "start-local-relay.sh"
+  fi
+fi
+
+dkls_nostr_setup || fail "relay setup (start BBMTLib/scripts/start-local-relay.sh or set RELAYS)"
 dkls_nostr_check_relay || fail "relay check"
 dkls_nostr_build_scripts
 pass "CGO + dkls-scripts ready (RELAYS=${RELAYS})"

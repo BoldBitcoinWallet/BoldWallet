@@ -68,15 +68,18 @@ LAN duo shell e2e (keygen + keysign + matching sigs) runs in the **default** `dk
 
 ## Nostr keygen (local relay)
 
-Start relay (`scripts/start-local-relay.sh`), then:
+The relay container listens on **0.0.0.0:7777**; Nostr clients (Go tests, shell e2e, app) must use **`ws://127.0.0.1:7777`** on the same host (scripts pick this automatically when `RELAYS` is unset).
 
 ```bash
 cd BBMTLib
-export RELAYS=ws://127.0.0.1:7777
+./scripts/start-local-relay.sh
 ./scripts-dkls/dkls-nostr-test-all.sh
+# or: DKLS_NOSTR_START_RELAY=1 ./scripts-dkls/dkls-nostr-test-all.sh
 ```
 
-One build of `dkls-scripts`, one `go test` (duo + trio), then duo and trio shell e2e. Set `DKLS_NOSTR_VERBOSE=1` for full logs.
+One build of `dkls-scripts`, one `go test` (`TestNostrJoinKeygenDuo` + `TestNostrJoinKeygenTrio`), then duo and trio shell e2e — same `dkls.NostrJoinKeygen` path as mobile after `./build-all.sh`. Set `DKLS_NOSTR_VERBOSE=1` for full logs.
+
+Three physical devices against a dev-machine relay: set app relays to `ws://<your-lan-ip>:7777` (not `0.0.0.0`).
 
 ## Keyshare format
 

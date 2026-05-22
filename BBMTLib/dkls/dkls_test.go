@@ -2,9 +2,11 @@ package dkls
 
 import (
 	"encoding/hex"
+	"strings"
 	"testing"
 
 	libtss "github.com/0xCarbon/libtss/libtss-go/tss"
+	nostr "github.com/nbd-wtf/go-nostr"
 )
 
 func TestHelloDkg(t *testing.T) {
@@ -131,5 +133,31 @@ func TestNsecFieldRoundTrip(t *testing.T) {
 	got2, err := NsecFromKeyshareField(sample)
 	if err != nil || got2 != sample {
 		t.Fatalf("bech32 passthrough: got %q err %v", got2, err)
+	}
+}
+
+func TestNsecFieldRoundTripFromHexSk(t *testing.T) {
+	skHex := nostr.GeneratePrivateKey()
+	field, err := NsecFieldForKeyshareJSON(skHex)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	got, err := NsecFromKeyshareField(field)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !strings.HasPrefix(got, "nsec1") {
+		t.Fatalf("expected bech32 nsec, got %q", got)
+	}
+	wantNpub, err := nostr.GetPublicKey(skHex)
+	if err != nil {
+		t.Fatalf("pubkey: %v", err)
+	}
+	gotNpub, err := nostr.GetPublicKey(got)
+	if err != nil {
+		t.Fatalf("pubkey from nsec: %v", err)
+	}
+	if gotNpub != wantNpub {
+		t.Fatalf("npub mismatch")
 	}
 }

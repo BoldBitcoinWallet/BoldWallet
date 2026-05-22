@@ -105,6 +105,12 @@ export function formatMpcPhaseLabel(
       return 'Waiting for all devices…';
     }
     if (info.includes('round') || info.includes('message')) {
+      if (info.includes('waiting') || info.includes('receiving')) {
+        if (step >= 3) {
+          return `Key generation · round ${step - 2} (over Nostr…)`;
+        }
+        return 'Key generation in progress…';
+      }
       const m = msg.info?.match(/round\s*(\d+)/i);
       if (m) {
         return `Key generation · round ${m[1]}`;

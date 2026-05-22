@@ -81,6 +81,39 @@ describe('mpcSessionShortLabel', () => {
 });
 
 describe('processMpcHookMessage', () => {
+  it('maps DKLS trio keygen step 4 higher than GG18 at same step', () => {
+    const dklsRefs = {
+      progressRef: {current: 0},
+      utxoRef: {current: emptyMpcUtxoState()},
+    };
+    const gg18Refs = {
+      progressRef: {current: 0},
+      utxoRef: {current: emptyMpcUtxoState()},
+    };
+    const dkls = processMpcHookMessage(
+      JSON.stringify({type: 'keygen', step: 4, info: 'keygen round'}),
+      'dkls23',
+      {isTrio: true, isSendBitcoin: false, refs: dklsRefs},
+    );
+    const gg18 = processMpcHookMessage(
+      JSON.stringify({type: 'keygen', step: 4, info: 'keygen round'}),
+      'gg18',
+      {isTrio: true, isSendBitcoin: false, refs: gg18Refs},
+    );
+    expect(dkls?.percent).toBe(38);
+    expect(gg18?.percent).toBe(29);
+    expect(dkls?.statusLabel).toBe('Key generation · round 2');
+  });
+
+  it('labels DKLS receive heartbeat with Nostr hint', () => {
+    expect(
+      formatMpcPhaseLabel(
+        {type: 'keygen', step: 5, info: 'keygen round (receiving 2)'},
+        {isSendBitcoin: false, utxo: emptyMpcUtxoState()},
+      ),
+    ).toBe('Key generation · round 3 (over Nostr…)');
+  });
+
   it('ignores hooks for a different session id', () => {
     const progressRef = {current: 0};
     const utxoRef = {current: emptyMpcUtxoState()};

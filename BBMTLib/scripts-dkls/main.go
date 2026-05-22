@@ -8,6 +8,7 @@ import (
 	"github.com/BoldBitcoinWallet/BBMTLib/dkls"
 	"github.com/BoldBitcoinWallet/BBMTLib/tss"
 	nostr "github.com/nbd-wtf/go-nostr"
+	"github.com/nbd-wtf/go-nostr/nip19"
 )
 
 func main() {
@@ -22,10 +23,20 @@ func main() {
 		out, _ := randomHex(64)
 		fmt.Print(out)
 	case "nostr-keypair":
-		nsec := nostr.GeneratePrivateKey()
-		npub, err := nostr.GetPublicKey(nsec)
+		skHex := nostr.GeneratePrivateKey()
+		pkHex, err := nostr.GetPublicKey(skHex)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "npub: %v\n", err)
+			os.Exit(1)
+		}
+		nsec, err := nip19.EncodePrivateKey(skHex)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "nsec: %v\n", err)
+			os.Exit(1)
+		}
+		npub, err := nip19.EncodePublicKey(pkHex)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "npub encode: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Printf("%s,%s", nsec, npub)
@@ -154,9 +165,19 @@ func runNostrKeygenCLI() {
 	relays := envOr("RELAYS", "ws://localhost:7777")
 	nsec := os.Getenv("NOSTR_NSEC")
 	if nsec == "" {
-		nsec = nostr.GeneratePrivateKey()
+		skHex := nostr.GeneratePrivateKey()
+		var err error
+		nsec, err = nip19.EncodePrivateKey(skHex)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "nsec encode: %v\n", err)
+			os.Exit(1)
+		}
 	}
-	npub, _ := nostr.GetPublicKey(nsec)
+	npub, err := tss.DeriveNpubFromNsec(nsec)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "npub: %v\n", err)
+		os.Exit(1)
+	}
 	peers := os.Getenv("PEERS")
 	if peers == "" {
 		fmt.Fprintf(os.Stderr, "PEERS env required (comma-separated npubs)\n")

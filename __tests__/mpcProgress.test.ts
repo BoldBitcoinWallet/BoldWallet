@@ -96,7 +96,7 @@ describe('dklsKeysignPercent', () => {
 
 describe('mapMpcHookToPercent', () => {
   describe('DKLs keygen', () => {
-    it('maps early steps without hitting 100 (GG18-analog UI curve)', () => {
+    it('maps early steps using DKLS keygen curve (not GG18)', () => {
       expect(
         mapMpcHookToPercent(
           {type: 'keygen', step: 0},
@@ -110,7 +110,7 @@ describe('mapMpcHookToPercent', () => {
           'dkls23',
           {isTrio: false, utxo: emptyUtxo, currentProgress: 0},
         ).percent,
-      ).toBe(keygenPercentForUi(2, false));
+      ).toBe(keygenPercentForUi(2, false, 'dkls23'));
       expect(
         mapMpcHookToPercent(
           {type: 'keygen', step: 7},
@@ -118,6 +118,28 @@ describe('mapMpcHookToPercent', () => {
           {isTrio: false, utxo: emptyUtxo, currentProgress: 0},
         ).percent,
       ).toBeGreaterThanOrEqual(75);
+    });
+
+    it('trio step 4 uses DKLS curve (38%) not GG18 plateau (29%)', () => {
+      expect(dklsKeygenPercent(4, true)).toBe(38);
+      expect(gg18KeygenPercent(4, true)).toBe(29);
+      expect(
+        mapMpcHookToPercent(
+          {type: 'keygen', step: 4},
+          'dkls23',
+          {isTrio: true, utxo: emptyUtxo, currentProgress: 0},
+        ).percent,
+      ).toBe(38);
+    });
+
+    it('mid-DKG trio steps are not stuck near 29%', () => {
+      expect(
+        mapMpcHookToPercent(
+          {type: 'keygen', step: 6},
+          'dkls23',
+          {isTrio: true, utxo: emptyUtxo, currentProgress: 0},
+        ).percent,
+      ).toBeGreaterThanOrEqual(55);
     });
 
     it('treats sentinel step 99 as 100 without done flag', () => {
@@ -152,14 +174,21 @@ describe('mapMpcHookToPercent', () => {
   });
 
   describe('GG18 keygen', () => {
-    it('uses same phased curve as DKLS UI mapping', () => {
+    it('uses GG18 curve unchanged when backend is gg18', () => {
       expect(
         mapMpcHookToPercent(
           {type: 'keygen', step: 7},
           'gg18',
           {isTrio: false, utxo: emptyUtxo, currentProgress: 0},
         ).percent,
-      ).toBe(keygenPercentForUi(7, false));
+      ).toBe(keygenPercentForUi(7, false, 'gg18'));
+      expect(
+        mapMpcHookToPercent(
+          {type: 'keygen', step: 4},
+          'gg18',
+          {isTrio: true, utxo: emptyUtxo, currentProgress: 0},
+        ).percent,
+      ).toBe(gg18KeygenPercent(4, true));
     });
   });
 

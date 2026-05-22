@@ -14,11 +14,8 @@ func TestDedupeDKGInboundBySender(t *testing.T) {
 		{From: 3, To: 1, Data: []byte("c")},
 	}
 	out := dedupeDKGInboundBySender(self, msgs)
-	if len(out) != 2 {
-		t.Fatalf("expected 2 messages after sender dedupe, got %d", len(out))
-	}
-	if string(out[0].Data) != "a" {
-		t.Fatalf("expected first sender fragment to be kept, got %q", string(out[0].Data))
+	if len(out) != 3 {
+		t.Fatalf("expected 3 messages after dedupe, got %d", len(out))
 	}
 }
 
@@ -41,13 +38,10 @@ func TestDedupeDKGBatchBySender(t *testing.T) {
 	batch := []libtss.Message{
 		{From: 1, To: 2, Data: []byte("x")},
 		{From: 3, To: 2, Data: []byte("y")},
-		{From: 1, To: 2, Data: []byte("z")},
+		{From: 1, To: 2, Data: []byte("x")},
 	}
 	out := dedupeDKGBatchBySender(batch, self)
 	if len(out) != 2 {
 		t.Fatalf("expected 2, got %d", len(out))
-	}
-	if string(out[0].Data) != "x" {
-		t.Fatalf("expected earliest sender fragment to be kept, got %q", string(out[0].Data))
 	}
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/BoldBitcoinWallet/BBMTLib/tss"
 	nostr "github.com/nbd-wtf/go-nostr"
+	"github.com/nbd-wtf/go-nostr/nip19"
 )
 
 const defaultNostrTestRelay = "ws://127.0.0.1:7777"
@@ -48,15 +49,24 @@ func relayTCPAddr(relayURL string) (host, port string, ok bool) {
 	host, port, err := net.SplitHostPort(relayURL)
 	if err != nil {
 		// host only, default ws port
-		return relayURL, "7777", true
+		host = relayURL
+		port = "7777"
+	}
+	switch host {
+	case "0.0.0.0", "":
+		host = "127.0.0.1"
 	}
 	return host, port, true
 }
 
 func generateNostrKeypair(t *testing.T) (nsec, npub string) {
 	t.Helper()
-	nsec = nostr.GeneratePrivateKey()
+	skHex := nostr.GeneratePrivateKey()
 	var err error
+	nsec, err = nip19.EncodePrivateKey(skHex)
+	if err != nil {
+		t.Fatalf("EncodePrivateKey: %v", err)
+	}
 	npub, err = tss.DeriveNpubFromNsec(nsec)
 	if err != nil {
 		t.Fatalf("DeriveNpubFromNsec: %v", err)
@@ -157,7 +167,11 @@ func assertNostrKeyshareHasNsec(t *testing.T, npub string, parties []nostrParty,
 	}
 	got, err := NsecFromKeyshareField(ks.NsecHex)
 	if err != nil {
-		t.Fatalf("keyshare for %s: decode nsec: %v", npub, err)
+		preview := ks.NsecHex
+		if len(preview) > 48 {
+			preview = preview[:48] + "..."
+		}
+		t.Fatalf("keyshare for %s: decode nsec: %v (nsec field preview %q)", npub, err, preview)
 	}
 	if got != wantNsec {
 		t.Fatalf("keyshare for %s: nsec mismatch", npub)

@@ -16,8 +16,8 @@ cd BBMTLib
 # Prerequisites: Rust, Go 1.22+, `cargo install cargo-ndk`, Android NDK r23+
 # (set ANDROID_NDK_HOME to a numeric NDK, e.g. .../ndk/28.2.13676358 — not legacy rc*)
 
-# Optional: verify Nostr keygen on local relay before rebuilding native libs
-# RELAYS=ws://127.0.0.1:7777 ./scripts-dkls/dkls-nostr-test-all.sh
+# Optional: verify Nostr duo+trio on local relay (same Go path as device) before rebuild
+# ./scripts/start-local-relay.sh && ./scripts-dkls/dkls-nostr-test-all.sh
 
 # All native artifacts (GG18 + DKLs, Android + iOS on macOS)
 ./build-all.sh
@@ -27,6 +27,22 @@ cd BBMTLib
 # 2) ./build.sh --with-dkls
 # 3) cd .. && npx react-native run-android
 ```
+
+## Profiling logs (device)
+
+DKLS profiling uses `tss.Logf` via `dklsLogf` with prefix `BBMTLog: dkls` so lines appear in React Native as `GoLog` / `dbg('TSS:', …)` alongside other MPC logs.
+
+- **On by default** on device builds (omit env or any value except `0` / `false`).
+- **Disable:** `DKLS_DEBUG=0` (only if you need quieter logcat).
+
+Example lines during Nostr trio keygen:
+
+- `BBMTLog: dkls nostr DKG: session=15e0eec3 parties=3 starting mpc rounds`
+- `BBMTLog: dkls DKG: session=15e0eec3 step=5 waiting for 2 peer batch(es)`
+- `BBMTLog: dkls DKG: session=15e0eec3 step=5 recv heartbeat tick=2`
+- `BBMTLog: dkls DKG: session=15e0eec3 step=5 got 2 peer sender(s) after 45s`
+
+Nostr transport chunk/relay detail still logs as `BBMTLog: MessagePump` / `Client.PublishWrap` on stderr (verbose).
 
 Outputs:
 

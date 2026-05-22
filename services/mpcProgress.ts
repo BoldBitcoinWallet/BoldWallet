@@ -213,11 +213,16 @@ function keysignStepToPercent(
 }
 
 /**
- * Keygen progress bar curve — GG18-analog for all backends so LAN setup UX matches.
- * Native step counts still differ; mapping uses the same phased prep/round bands.
+ * Keygen progress bar curve per backend (DKLS vs GG18 native step counts differ).
  */
-export function keygenPercentForUi(step: number, isTrio: boolean): number {
-  return gg18KeygenPercent(step, isTrio);
+export function keygenPercentForUi(
+  step: number,
+  isTrio: boolean,
+  backend: TssBackend,
+): number {
+  return backend === 'dkls23'
+    ? dklsKeygenPercent(step, isTrio)
+    : gg18KeygenPercent(step, isTrio);
 }
 
 /**
@@ -243,7 +248,7 @@ export function mapMpcHookToPercent(
     if (msg.done) {
       return {percent: 100, mpcDone: true};
     }
-    const percent = keygenPercentForUi(step, isTrio);
+    const percent = keygenPercentForUi(step, isTrio, backend);
     const waitingJoin =
       step <= 2 && (msg.info ?? '').toLowerCase().includes('waiting');
     return {

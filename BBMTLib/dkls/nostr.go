@@ -132,6 +132,12 @@ func runNostrDKG(cfg nostrtransport.Config, chaincode, localNpub string, allPart
 			if len(in) == 0 {
 				return nil
 			}
+			dklsLogf(
+				"nostr DKG: session=%s pump delivered %d msg(s) from %d sender(s)",
+				dkgSessionLogPrefix(cfg.SessionID),
+				len(in),
+				peerSenderCount(in, selfID),
+			)
 			select {
 			case roundCh <- in:
 			default:
@@ -146,6 +152,11 @@ func runNostrDKG(cfg nostrtransport.Config, chaincode, localNpub string, allPart
 		sidBytes = decoded
 	}
 	tss.ReportKeygenProgress(cfg.SessionID, 2, "starting keygen", false)
+	dklsLogf(
+		"nostr DKG: session=%s parties=%d starting mpc rounds",
+		dkgSessionLogPrefix(cfg.SessionID),
+		len(allParties),
+	)
 	runner := &nostrPartyRunner{selfID: selfID, localNpub: localNpub, messenger: nm, peers: allParties}
 	share, _, err := runDKGWithSender(cfg.SessionID, selfID, sidBytes, threshold, runner, roundCh)
 	pumpCancel()

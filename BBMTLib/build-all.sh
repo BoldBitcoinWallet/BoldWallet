@@ -78,3 +78,6 @@ else
 fi
 echo ""
 echo "Next: cd .. && npx react-native run-android   # or run-ios on macOS"
+echo ""
+echo "Optional Nostr trio preflight (local relay on :7777):"
+echo "  ./scripts/start-local-relay.sh && ./scripts-dkls/dkls-nostr-test-all.sh"

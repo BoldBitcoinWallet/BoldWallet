@@ -147,6 +147,11 @@ func JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey, encKey,
 		return "", fmt.Errorf("await joiners: %w", err)
 	}
 	tss.ReportKeygenProgress(session, 2, "starting keygen", false)
+	dklsLogf(
+		"LAN DKG: session=%s parties=%d starting mpc rounds",
+		dkgSessionLogPrefix(session),
+		len(parties),
+	)
 
 	selfID := partyIDFromKey(key)
 	messenger := tss.NewLANMessenger(server, session, sessionKey)
@@ -345,19 +350,17 @@ func mergeDKGPeerMessages(batch []libtss.Message, incoming []libtss.Message, sel
 }
 
 func dedupeDKGBatchBySender(batch []libtss.Message, _ libtss.Identifier) []libtss.Message {
-	// libtss DKG expects at most one inbound fragment per sender for each Next() step.
-	// LAN relay payloads may contain both broadcast + direct fragments from the same
-	// sender (or duplicates from retries), which can trigger:
-	// "deserialize failed: duplicate DKG fragment from sender".
-	//
-	// Keep the first message per sender in arrival order for this step.
-	seenSender := make(map[libtss.Identifier]struct{}, len(batch))
+	// Drop exact relay retries (same from/to/payload). Do not collapse distinct
+	// fragments from the same sender (e.g. broadcast + direct); that stalls
+	// runDKGWithSender when recvMorePeerMessages merges follow-up fragments.
+	seen := make(map[string]struct{}, len(batch))
 	out := make([]libtss.Message, 0, len(batch))
 	for _, msg := range batch {
-		if _, ok := seenSender[msg.From]; ok {
+		key := fmt.Sprintf("%d:%d:%x", msg.From, msg.To, msg.Data)
+		if _, ok := seen[key]; ok {
 			continue
 		}
-		seenSender[msg.From] = struct{}{}
+		seen[key] = struct{}{}
 		out = append(out, msg)
 	}
 	return out
@@ -378,6 +381,40 @@ func filterMessagesFor(selfID libtss.Identifier, msgs []libtss.Message) []libtss
 		}
 	}
 	return out
+}
+
+// dkgRoundRecvPulse re-reports keygen progress while blocked waiting on peer fragments.
+// Uses the current stepNo so DKLS UI percent can advance during long Nostr/LAN receives.
+func dkgRoundRecvPulse(progressSession string, pulseStep int, stop <-chan struct{}) {
+	tick := 0
+	for {
+		select {
+		case <-stop:
+			return
+		case <-time.After(3 * time.Second):
+			tick++
+			dklsLogf(
+				"DKG: session=%s step=%d recv heartbeat tick=%d",
+				dkgSessionLogPrefix(progressSession),
+				pulseStep,
+				tick,
+			)
+			tss.ReportKeygenProgress(
+				progressSession,
+				pulseStep,
+				fmt.Sprintf("keygen round (receiving %d)", tick),
+				false,
+			)
+		}
+	}
+}
+
+func dkgSessionLogPrefix(session string) string {
+	session = strings.TrimSpace(session)
+	if len(session) <= 8 {
+		return session
+	}
+	return session[:8]
 }
 
 func runDKGWithSender(
@@ -423,18 +460,57 @@ func runDKGWithSender(
 		var err error
 		for {
 			if len(batch) == 0 {
+				pulseStep := stepNo
+				if pulseStep < 3 {
+					pulseStep = 3
+				}
+				stopPulse := make(chan struct{})
+				go dkgRoundRecvPulse(progressSession, pulseStep, stopPulse)
+				waitStart := time.Now()
+				dklsLogf(
+					"DKG: session=%s step=%d waiting for %d peer batch(es)",
+					dkgSessionLogPrefix(progressSession),
+					pulseStep,
+					needPeerMsgs,
+				)
 				batch, err = recvBatch()
+				close(stopPulse)
 				if err != nil {
+					dklsLogf(
+						"DKG: session=%s step=%d recv failed after %s: %v",
+						dkgSessionLogPrefix(progressSession),
+						pulseStep,
+						time.Since(waitStart).Round(time.Second),
+						err,
+					)
 					return nil, libtss.PublicKeyPackage{}, err
 				}
+				dklsLogf(
+					"DKG: session=%s step=%d got %d peer sender(s) after %s",
+					dkgSessionLogPrefix(progressSession),
+					pulseStep,
+					peerSenderCount(batch, selfID),
+					time.Since(waitStart).Round(time.Second),
+				)
 			}
 			batch = dedupeDKGBatchBySender(batch, selfID)
 			step, err = session.Next(batch)
 			if err != nil && dkgNeedsMorePeerMessages(err) {
+				dklsLogf(
+					"DKG: session=%s step=%d need more fragments from peers",
+					dkgSessionLogPrefix(progressSession),
+					stepNo,
+				)
 				more, recvErr := recvMorePeerMessages(roundCh, selfID, deadline, peerQuiesce)
 				if recvErr != nil {
 					return nil, libtss.PublicKeyPackage{}, recvErr
 				}
+				dklsLogf(
+					"DKG: session=%s step=%d merged %d extra fragment(s)",
+					dkgSessionLogPrefix(progressSession),
+					stepNo,
+					len(filterMessagesFor(selfID, more)),
+				)
 				batch = dedupeDKGBatchBySender(mergeDKGPeerMessages(batch, more, selfID), selfID)
 				continue
 			}
@@ -444,12 +520,23 @@ func runDKGWithSender(
 			if err != nil {
 				return nil, libtss.PublicKeyPackage{}, err
 			}
+			dklsLogf(
+				"DKG: session=%s complete after step=%d",
+				dkgSessionLogPrefix(progressSession),
+				stepNo,
+			)
 			return step.KeyShare, step.PublicKeyPackage, nil
 		}
 		if err != nil {
 			return nil, libtss.PublicKeyPackage{}, err
 		}
 		tss.ReportKeygenProgress(progressSession, stepNo, "keygen round", false)
+		dklsLogf(
+			"DKG: session=%s step=%d keygen round sent (%d outbound msgs)",
+			dkgSessionLogPrefix(progressSession),
+			stepNo,
+			len(step.Messages),
+		)
 		stepNo++
 		if err := sender.sendMessages(step.Messages); err != nil {
 			return nil, libtss.PublicKeyPackage{}, err

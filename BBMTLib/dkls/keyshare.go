@@ -9,6 +9,7 @@ import (
 	"time"
 
 	libtss "github.com/0xCarbon/libtss/libtss-go/tss"
+	"github.com/nbd-wtf/go-nostr/nip19"
 )
 
 // KeyshareJSON is the on-disk / app keyshare format for DKLs23 wallets.
@@ -54,13 +55,30 @@ func KeyshareJSONFromHandle(share *libtss.KeyShareHandle, chainCodeHex string, c
 	return string(raw), nil
 }
 
-// NsecFieldForKeyshareJSON stores a bech32 nsec in the keyshare JSON field using the
-// same encoding as GG18 LocalStateNostr.SetNsec (hex of UTF-8 bytes of the nsec string).
-func NsecFieldForKeyshareJSON(bech32Nsec string) (string, error) {
-	if bech32Nsec == "" {
+// normalizeBech32Nsec accepts bech32 nsec1… or hex sk (nostr.GeneratePrivateKey format).
+func normalizeBech32Nsec(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
 		return "", fmt.Errorf("nsec cannot be empty")
 	}
-	return hex.EncodeToString([]byte(bech32Nsec)), nil
+	if strings.HasPrefix(raw, "nsec1") {
+		return raw, nil
+	}
+	if _, err := hex.DecodeString(raw); err != nil {
+		return "", fmt.Errorf("unrecognized nsec format")
+	}
+	// Match mobile / GG18 scripts: store hex(utf8(nsec1)), not hex(utf8(hex-sk)).
+	return nip19.EncodePrivateKey(raw)
+}
+
+// NsecFieldForKeyshareJSON stores a bech32 nsec in the keyshare JSON field using the
+// same encoding as GG18 LocalStateNostr.SetNsec (hex of UTF-8 bytes of the nsec string).
+func NsecFieldForKeyshareJSON(nsec string) (string, error) {
+	bech32, err := normalizeBech32Nsec(nsec)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString([]byte(bech32)), nil
 }
 
 // NsecFromKeyshareField decodes the stored nsec field back to bech32 (nsec1…).
