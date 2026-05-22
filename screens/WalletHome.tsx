@@ -403,24 +403,20 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
     let displaySats = effectiveFromParts;
     let pendingForChip = totalPending;
-    let balanceTs = newestFetch;
-
+    
     // Prefer aggregate when getWalletBalanceAggregate just synced (stamped in sync_metadata).
     // aggregate.balanceSats is the net total (0 after spending entire balance).
     const aggFresh = syncRepository.isFresh('balance', aggKey, 5 * 60 * 1000);
     if (agg && aggFresh) {
       displaySats = Math.max(0, agg.balanceSats);
       pendingForChip = agg.pendingSats;
-      balanceTs = Math.max(balanceTs, agg.fetchedAt);
     } else if (agg && agg.fetchedAt >= newestFetch) {
       displaySats = Math.max(0, agg.balanceSats);
       pendingForChip = agg.pendingSats;
-      balanceTs = Math.max(balanceTs, agg.fetchedAt);
     } else if (agg && effectiveFromParts > agg.balanceSats + 1) {
       // Per-address rows still show confirmed-only totals; aggregate already netted mempool.
       displaySats = Math.max(0, agg.balanceSats);
       pendingForChip = agg.pendingSats;
-      balanceTs = Math.max(balanceTs, agg.fetchedAt);
     }
 
     const spendableSats =
@@ -2421,7 +2417,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           navigateToPairing(transport);
           setIsTransportModalVisible(false);
         }}
-        title="Select Signing Method"
+        title="Co-Sign Via…"
         description=""
         sendBitcoinData={
           pendingSendParams

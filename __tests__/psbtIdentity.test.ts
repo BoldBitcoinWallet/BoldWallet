@@ -1,0 +1,77 @@
+import {
+  canonicalPsbtBase64,
+  isPsbtBytes,
+  parsePsbtSessionPayload,
+  psbtIdentityHash,
+  readPsbtBase64FromFile,
+} from '../services/psbtIdentity';
+
+// Minimal valid PSBT header: psbt\xff + empty global map (0x00)
+const PSBT_BYTES = Buffer.from([0x70, 0x73, 0x62, 0x74, 0xff, 0x00]);
+const CANONICAL = PSBT_BYTES.toString('base64');
+const NO_PADDING = CANONICAL.replace(/=+$/, '');
+
+describe('psbtIdentity', () => {
+  it('detects psbt magic bytes', () => {
+    expect(isPsbtBytes(PSBT_BYTES)).toBe(true);
+    expect(isPsbtBytes(Buffer.from('hello'))).toBe(false);
+  });
+
+  it('canonicalPsbtBase64 normalizes padding and whitespace', () => {
+    expect(canonicalPsbtBase64(NO_PADDING)).toBe(CANONICAL);
+    expect(canonicalPsbtBase64(`  ${NO_PADDING}\n`)).toBe(CANONICAL);
+  });
+
+  it('psbtIdentityHash matches across encoding variants (raw fallback)', async () => {
+    const sha256 = async (msg: string) => `hash:${msg}`;
+    const a = await psbtIdentityHash(NO_PADDING, sha256);
+    const b = await psbtIdentityHash(CANONICAL, sha256);
+    expect(a).toBe(b);
+    expect(a).toBe(`hash:${CANONICAL}`);
+  });
+
+  it('psbtIdentityHash matches across encodings when parse details agree', async () => {
+    const details = JSON.stringify({
+      inputs: [{txid: 'ab', vout: 0, amount: 1000}],
+      outputs: [{address: 'bc1q', amount: 900}],
+      fee: 100,
+    });
+    const sha256 = async (msg: string) => `hash:${msg.length}:${msg.slice(0, 8)}`;
+    const parsePSBTDetails = async () => details;
+    const a = await psbtIdentityHash(NO_PADDING, sha256, parsePSBTDetails);
+    const b = await psbtIdentityHash(CANONICAL, sha256, parsePSBTDetails);
+    expect(a).toBe(b);
+  });
+
+  it('parsePsbtSessionPayload supports party keys with colons', () => {
+    const seed = 'a'.repeat(64);
+    const hash = 'b'.repeat(64);
+    const party = 'npub:extra:segment';
+    const payload = `${seed}:${hash}:${party}`;
+    expect(parsePsbtSessionPayload(payload)).toEqual({
+      psbtHash: hash,
+      peerShare: party,
+    });
+  });
+
+  it('readPsbtBase64FromFile handles binary and text PSBT files', async () => {
+    const binaryPath = '/tmp/binary.psbt';
+    const textPath = '/tmp/text.psbt';
+    const textAsciiBase64 = Buffer.from(NO_PADDING, 'utf8').toString('base64');
+    const files: Record<string, {base64?: string; utf8?: string}> = {
+      [binaryPath]: {base64: CANONICAL},
+      [textPath]: {base64: textAsciiBase64, utf8: NO_PADDING},
+    };
+    const readFile = async (path: string, enc: 'base64' | 'utf8') => {
+      const entry = files[path];
+      const value = enc === 'base64' ? entry?.base64 : entry?.utf8;
+      if (value === undefined) {
+        throw new Error(`missing ${enc} for ${path}`);
+      }
+      return value;
+    };
+
+    expect(await readPsbtBase64FromFile(readFile, binaryPath)).toBe(CANONICAL);
+    expect(await readPsbtBase64FromFile(readFile, textPath)).toBe(CANONICAL);
+  });
+});

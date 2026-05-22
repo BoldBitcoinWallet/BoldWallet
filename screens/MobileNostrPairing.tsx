@@ -2210,12 +2210,14 @@ const MobileNostrPairing = ({navigation}: any) => {
           setMpcDone(true);
         })
         .catch(async (e: any) => {
-          if (!nostrAbortRef.current) {
-            Alert.alert(
-              'Operation Error',
-              `Could not sign PSBT.\n${e?.message}`,
-            );
+          if (nostrAbortRef.current) {
+            setIsPairing(false);
+            return;
           }
+          Alert.alert(
+            'Operation Error',
+            `Could not sign PSBT.\n${e?.message}`,
+          );
           dbg(localNpub, 'PSBT signing error', e);
           try {
             navigation.dispatch(
@@ -2241,7 +2243,9 @@ const MobileNostrPairing = ({navigation}: any) => {
         });
     } catch (error: any) {
       dbg('Sign PSBT error:', error);
-      Alert.alert('Error', error?.message || 'PSBT signing failed');
+      if (!nostrAbortRef.current) {
+        Alert.alert('Error', error?.message || 'PSBT signing failed');
+      }
       setStatus('PSBT signing failed');
       try {
         navigation.dispatch(

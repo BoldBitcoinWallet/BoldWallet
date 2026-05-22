@@ -75,6 +75,7 @@ import {
   coalesceLanHost,
   isLanPeerDiscoveryPayload,
   raceLanPeerDiscovery,
+  shouldWritePeerFoundCache,
   normalizeLanHost,
   resolveDuoLanRoles,
   resolveEffectiveLanKeygenContext,
@@ -124,8 +125,11 @@ import {
   psbtCollapsedSummaryLine,
   sendCollapsedRecapLine,
 } from '../components/transactionFlowUtils';
+import {
+  parsePsbtSessionPayload,
+  psbtIdentityHash,
+} from '../services/psbtIdentity';
 
-const PAIRING_GRACE_MS = 4000;
 const {BBMTLibNativeModule} = NativeModules;
 // Helper component for connection line animation
 const ConnectionLineAnimatedView: React.FC<{
@@ -557,9 +561,11 @@ const MobilesPairing = ({navigation}: any) => {
         } else if (isSignPSBT) {
           dbg('initSession: Preparing for PSBT signing');
           const meta = await getKeyshareMetadata();
-          // For PSBT, use PSBT hash instead of amount/fees
-          const psbtHash = await BBMTLibNativeModule.sha256(
+          // For PSBT, use canonical PSBT identity hash (not raw base64 text)
+          const psbtHash = await psbtIdentityHash(
             route.params.psbtBase64 || '',
+            BBMTLibNativeModule.sha256,
+            BBMTLibNativeModule.parsePSBTDetails,
           );
           _data += ':' + psbtHash;
           _data += ':' + (meta?.local_party_key || '');
@@ -840,6 +846,12 @@ const MobilesPairing = ({navigation}: any) => {
     let originalNetwork = '';
     let originalApiUrl = '';
     try {
+      if (isSignPSBT) {
+        const net = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
+        const apiUrl = resolveStoredMempoolApiBase(net);
+        await BBMTLibNativeModule.setBtcNetwork(net);
+        await BBMTLibNativeModule.setAPI(net, apiUrl);
+      }
       dbg('session init...');
       const data = await initSession();
       dbg('session init done');
@@ -990,14 +1002,13 @@ const MobilesPairing = ({navigation}: any) => {
         keypairJson,
         peerPubkey: peerPub,
       });
-      const decoded = data.split(':');
-      dbg('public-decoded', decoded);
+      dbg('public-decoded', data.split(':'));
       if (isSignPSBT) {
-        // PSBT mode: decoded[1] = psbtHash, decoded[2] = peerShare
-        const psbtHash = `${decoded[1]}`;
-        const peerShare = `${decoded[2]}`;
-        const localPsbtHash = await BBMTLibNativeModule.sha256(
+        const {psbtHash, peerShare} = parsePsbtSessionPayload(data);
+        const localPsbtHash = await psbtIdentityHash(
           route.params.psbtBase64 || '',
+          BBMTLibNativeModule.sha256,
+          BBMTLibNativeModule.parsePSBTDetails,
         );
         dbg('starting PSBT signing...', {
           peerShare,
@@ -1024,15 +1035,21 @@ const MobilesPairing = ({navigation}: any) => {
           route.params.psbtBase64 || '',
         )
           .then(async (signedPsbt: any) => {
+            if (mpcAbortRef.current) {
+              setMpcModalActive(false);
+              return;
+            }
             if (
               !signedPsbt ||
               signedPsbt.includes('error') ||
               signedPsbt.includes('failed')
             ) {
-              Alert.alert(
-                'Operation Error',
-                `Could not sign PSBT.\n${String(signedPsbt)}`,
-              );
+              if (!mpcAbortRef.current) {
+                Alert.alert(
+                  'Operation Error',
+                  `Could not sign PSBT.\n${String(signedPsbt)}`,
+                );
+              }
               dbg(partyID, 'PSBT signing error', String(signedPsbt));
             } else {
               dbg(partyID, 'PSBT signed successfully');
@@ -1057,10 +1074,12 @@ const MobilesPairing = ({navigation}: any) => {
             setMpcDone(true);
           })
           .catch((e: any) => {
-            Alert.alert(
-              'Operation Error',
-              `Could not sign PSBT.\n${e?.message}`,
-            );
+            if (!mpcAbortRef.current) {
+              Alert.alert(
+                'Operation Error',
+                `Could not sign PSBT.\n${e?.message}`,
+              );
+            }
             dbg(partyID, 'PSBT signing error', e);
           })
           .finally(async () => {
@@ -1372,8 +1391,22 @@ const MobilesPairing = ({navigation}: any) => {
     setIsPairing(true);
     pairingDeadlineRef.current = Date.now() + timeout * 1000;
     setCountdown(timeout);
+    setPeerIP(null);
+    setPeerIP2(null);
+    setPeerDevice(null);
+    setPeerDevice2(null);
+    setRemoteID(null);
+    setRemoteID2(null);
+    setPeerParty(null);
+    setPeerParty2(null);
+    setPeerCommitteeKey(null);
+    setPeerCommitteeKey2(null);
+    setPeerPubkey('');
+    setPeerPubkey2('');
+    setMasterHost(null);
     appConfigRepository.remove('lan_peer_pubkey');
     appConfigRepository.remove('lan_ecies_keypair');
+    appConfigRepository.remove('peerFound');
     setStatus('Preparing LAN pairing...');
     try {
       // Android: keep gomobile for LAN pairing only; load libbbmtmobile at wallet setup (mpcTssSetup).
@@ -1395,7 +1428,8 @@ const MobilesPairing = ({navigation}: any) => {
           ? 'Starting peer discovery...'
           : 'No LAN IP found — listening for peer only...',
       );
-      pairingDeadlineRef.current = Date.now() + timeout * 1000;
+      const until = Date.now() + timeout * 1000;
+      pairingDeadlineRef.current = until;
       setCountdown(timeout);
       appConfigRepository.set('peerFound', '');
       const promises = [
@@ -1419,28 +1453,18 @@ const MobilesPairing = ({navigation}: any) => {
           ),
         );
       }
-      const pairingDeadline = pairingDeadlineRef.current;
-      const graceUntil = pairingDeadline + PAIRING_GRACE_MS;
-      let result = await raceLanPeerDiscovery(promises);
-      while (!isLanPeerDiscoveryPayload(result) && Date.now() < pairingDeadline) {
+      let result: string | null = (await raceLanPeerDiscovery(promises)) ?? null;
+      while (!isLanPeerDiscoveryPayload(result) && Date.now() < until) {
         dbg('checking peer...');
         const cached = appConfigRepository.get('peerFound');
-        if (isLanPeerDiscoveryPayload(cached)) {
+        if (cached) {
           result = cached;
           dbg('checking peer ok...');
-          break;
+          if (isLanPeerDiscoveryPayload(result)) {
+            break;
+          }
         }
-        await waitMS(500);
-      }
-      while (!isLanPeerDiscoveryPayload(result) && Date.now() < graceUntil) {
-        setStatus('Finishing connection…');
-        const cached = appConfigRepository.get('peerFound');
-        if (isLanPeerDiscoveryPayload(cached)) {
-          result = cached;
-          dbg('checking peer ok (grace)...');
-          break;
-        }
-        await waitMS(300);
+        await waitMS(1000);
       }
       dbg('promise race result:', result);
       if (isLanPeerDiscoveryPayload(result)) {
@@ -1736,11 +1760,10 @@ const MobilesPairing = ({navigation}: any) => {
         String(timeout),
         isTrio ? 'trio' : 'duo',
       );
-      if (isLanPeerDiscoveryPayload(result)) {
+      if (shouldWritePeerFoundCache(result)) {
         appConfigRepository.set('peerFound', result);
-        return result;
       }
-      return null;
+      return result;
     } catch (error) {
       dbg('ListenForPeer Error:', error);
       return null;
@@ -1774,7 +1797,7 @@ const MobilesPairing = ({navigation}: any) => {
     while (Date.now() < until) {
       try {
         const cached = appConfigRepository.get('peerFound');
-        if (isLanPeerDiscoveryPayload(cached)) {
+        if (cached) {
           dbg('discoverPeer already found');
           return cached;
         }
@@ -1793,11 +1816,10 @@ const MobilesPairing = ({navigation}: any) => {
         );
         if (result) {
           dbg('discoverPeer result', result);
-          if (isLanPeerDiscoveryPayload(result)) {
+          if (shouldWritePeerFoundCache(result)) {
             appConfigRepository.set('peerFound', result);
-            return result;
           }
-          dbg('discoverPeer ignored non-payload result', result);
+          return result;
         }
       } catch (error) {
         dbg('DiscoverPeer Error:', error);
@@ -3640,9 +3662,7 @@ const MobilesPairing = ({navigation}: any) => {
                   <View style={{marginTop: 16}}>
                     <Text style={styles.statusText}>{status}</Text>
                     <Text style={styles.countdownText}>
-                      {countdown > 0
-                        ? `${countdown}s left to connect`
-                        : 'Finishing connection…'}
+                      {countdown}s left to connect
                     </Text>
                   </View>
                 )}
@@ -4420,7 +4440,7 @@ const MobilesPairing = ({navigation}: any) => {
                   Time elapsed: {prepCounter} seconds
                 </Text>
               </View>
-              {isSendBitcoin && (
+              {(isSendBitcoin || isSignPSBT) && (
                 <View style={styles.modalActions}>
                   <AppPressable
                     style={[

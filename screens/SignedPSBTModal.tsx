@@ -286,8 +286,8 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
     },
     modalContent: {
       backgroundColor: theme.colors.background,
-      borderRadius: 20,
-      padding: 24,
+      borderRadius: 10,
+      padding: 16,
       width: '90%',
       maxWidth: 500,
       maxHeight: '90%',
@@ -421,7 +421,6 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
           <AppPressable
           style={styles.modalContent}
           onPress={e => e.stopPropagation()}>
-          <AppText style={styles.title}>Signed PSBT</AppText>
           <AppText style={styles.subtitle}>
             Share back the signed PSBT
           </AppText>

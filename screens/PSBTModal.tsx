@@ -21,7 +21,12 @@ import BarcodeZxingScan from 'rn-barcode-zxing-scan';
 import {URDecoder} from '@ngraveio/bc-ur';
 import {dbg, formatBitcoinDisplay} from '../utils';
 import TransactionFlowDiagram from '../components/TransactionFlowDiagram';
+import {Buffer} from 'buffer';
 import {mapParsedPsbtDetails} from '../components/transactionFlowUtils';
+import {
+  canonicalPsbtBase64,
+  readPsbtBase64FromFile,
+} from '../services/psbtIdentity';
 import type {PsbtFlowDetails} from '../types/transactionFlow';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
@@ -148,10 +153,11 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
     setIsLoading(true);
     setError(null);
     try {
-      dbg('PSBT Base64 length:', base64Data.length);
+      const normalizedBase64 = canonicalPsbtBase64(base64Data);
+      dbg('PSBT Base64 length:', normalizedBase64.length);
       // Use native module to parse PSBT details
       const detailsJson = await BBMTLibNativeModule.parsePSBTDetails(
-        base64Data,
+        normalizedBase64,
       );
       dbg('Native PSBT parse result:', detailsJson.substring(0, 200));
       // Check for error response
@@ -169,7 +175,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
         fee: details.fee,
         derivePaths: details.derivePaths,
       });
-      setPsbtBase64(base64Data);
+      setPsbtBase64(normalizedBase64);
       setPsbtDetails(details);
       // Use most common derivation path for initial display/navigation
       // The signing functions will extract the correct path per input from the PSBT
@@ -195,17 +201,18 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
       });
       const file = result[0];
       dbg('Selected file:', file.name, file.type);
+      const readFile = (path: string, encoding: 'base64' | 'utf8') =>
+        RNFS.readFile(path, encoding);
       if (file.fileCopyUri) {
-        const fileContent = await RNFS.readFile(
+        const fileContent = await readPsbtBase64FromFile(
+          readFile,
           file.fileCopyUri.replace('file://', ''),
-          'base64',
         );
         await parsePSBT(fileContent);
       } else if (file.uri) {
-        // Try reading from original URI
         const uri =
           Platform.OS === 'ios' ? file.uri : file.uri.replace('file://', '');
-        const fileContent = await RNFS.readFile(uri, 'base64');
+        const fileContent = await readPsbtBase64FromFile(readFile, uri);
         await parsePSBT(fileContent);
       }
     } catch (e: any) {
@@ -289,10 +296,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
               psbtBytes[2] === 0x62 &&
               psbtBytes[3] === 0x74
             ) {
-              // Convert to base64
-              const base64 = btoa(
-                String.fromCharCode.apply(null, Array.from(psbtBytes)),
-              );
+              const base64 = Buffer.from(psbtBytes).toString('base64');
               dbg('PSBT base64 length:', base64.length);
               // Reset decoder
               urDecoderRef.current = null;
@@ -712,7 +716,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                 style={styles.importButtonIcon}
               />
               <AppText style={styles.importButtonText}>
-                Load PSBT File
+                Load PSBT
               </AppText>
             </AppPressable>
             <AppPressable
@@ -723,7 +727,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                 source={require('../assets/scan-icon.png')}
                 style={styles.importButtonIcon}
               />
-              <AppText style={styles.importButtonText}>Scan PSBT QR</AppText>
+              <AppText style={styles.importButtonText}>Scan PSBT</AppText>
             </AppPressable>
           </View>
         )}
@@ -771,7 +775,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
               showPsbtTitle={false}
               psbtDetails={psbtDetails}
               psbtBase64={psbtBase64}
-              cardStyle={{borderWidth: 0, padding: 0, backgroundColor: 'transparent'}}
+              cardStyle={styles.psbtFlowDiagramCard}
             />
             {/* Summary Bar */}
             <View style={styles.summaryBar}>
@@ -846,7 +850,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
           onClose={handleScannerClose}
           onScan={handleQRScan}
           mode="continuous"
-          title="Scan PSBT QR Code"
+          title="Scan PSBT"
           subtitle={
             urProgress && urProgress.total > 1
               ? urProgress.received >= urProgress.total
@@ -889,12 +893,12 @@ const createStyles = (theme: any) =>
       backgroundColor: theme.colors.modalBackdrop,
       justifyContent: 'center',
       alignItems: 'center',
-      padding: 20,
+      padding: 10,
     },
     modalContent: {
       backgroundColor: theme.colors.background,
-      borderRadius: 16,
-      padding: 20,
+      borderRadius: 10,
+      padding: 10,
       width: '100%',
       maxWidth: 400,
       maxHeight: '85%',
@@ -915,7 +919,7 @@ const createStyles = (theme: any) =>
     embeddedContent: {
       backgroundColor: theme.colors.cardBackground,
       borderRadius: 8,
-      padding: 16,
+      padding: 10,
       width: '100%',
       overflow: 'hidden',
     },
@@ -926,30 +930,35 @@ const createStyles = (theme: any) =>
       marginBottom: 16,
     },
     importButtonsContainer: {
+      flexDirection: 'row',
       marginBottom: 20,
+      gap: 12,
     },
     importButton: {
+      flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: theme.colors.background,
       borderRadius: 12,
-      padding: 16,
+      paddingVertical: 10,
+      paddingHorizontal: 10,
       borderWidth: 1,
       borderColor: theme.colors.border,
       borderStyle: 'dashed',
-      marginBottom: 12,
     },
     importButtonIcon: {
-      width: 24,
-      height: 24,
-      marginRight: 12,
+      width: 22,
+      height: 22,
+      marginRight: 8,
       tintColor: theme.colors.text, // Use text color for better visibility in dark mode
     },
     importButtonText: {
-      fontSize: theme.fontSizes?.lg || 16,
+      flexShrink: 1,
+      fontSize: theme.fontSizes?.base || 14,
       fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
+      textAlign: 'center',
     },
     loadingContainer: {
       alignItems: 'center',
@@ -987,6 +996,11 @@ const createStyles = (theme: any) =>
       maxHeight: Platform.OS === 'android' ? 500 : 400,
       marginBottom: 16,
       flexGrow: 0,
+    },
+    psbtFlowDiagramCard: {
+      borderWidth: 0,
+      padding: 0,
+      backgroundColor: 'transparent',
     },
     summaryHeader: {
       flexDirection: 'row',

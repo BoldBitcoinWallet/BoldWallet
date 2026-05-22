@@ -6,6 +6,27 @@
 
 import appConfigRepository from './repositories/AppConfigRepository';
 import {getCommitteeKeyshareLabel, getKeyshareLabel} from '../utils';
+import {
+  firstValidLanPeerPayload,
+  isIPv4LanHost,
+  isLanPeerDiscoveryPayload,
+  isNativeDiscoveryError,
+  normalizeLanHost,
+  pollPeerFoundUntilValid,
+  raceLanPeerDiscovery,
+  shouldWritePeerFoundCache,
+} from './lanPeerDiscovery';
+
+export {
+  firstValidLanPeerPayload,
+  isIPv4LanHost,
+  isLanPeerDiscoveryPayload,
+  isNativeDiscoveryError,
+  normalizeLanHost,
+  pollPeerFoundUntilValid,
+  raceLanPeerDiscovery,
+  shouldWritePeerFoundCache,
+};
 
 export const TRIO_PARTIES_CSV = 'KeyShare1,KeyShare2,KeyShare3';
 
@@ -16,83 +37,6 @@ export function lastIPv4Octet(host: string): number {
   }
   const n = Number(parts[3]);
   return Number.isFinite(n) ? n : 0;
-}
-
-/** True when host is a dotted IPv4 quad (LAN discovery uses IPs only). */
-export function isIPv4LanHost(host: string): boolean {
-  const parts = host.split('.');
-  if (parts.length !== 4) {
-    return false;
-  }
-  return parts.every(part => {
-    if (!/^\d{1,3}$/.test(part)) {
-      return false;
-    }
-    const n = Number(part);
-    return Number.isInteger(n) && n >= 0 && n <= 255;
-  });
-}
-
-/** Strip scheme/port; map 0.0.0.0 to null (invalid as client target). */
-export function normalizeLanHost(raw: string | null | undefined): string | null {
-  if (raw == null) {
-    return null;
-  }
-  let s = String(raw).trim();
-  if (!s) {
-    return null;
-  }
-  s = s.replace(/^https?:\/\//i, '');
-  const slash = s.indexOf('/');
-  if (slash >= 0) {
-    s = s.slice(0, slash);
-  }
-  const host = (s.split(':')[0] || '').trim();
-  if (!host || host === '0.0.0.0' || !isIPv4LanHost(host)) {
-    return null;
-  }
-  return host;
-}
-
-/**
- * Native discover/listen may return "error:…" strings on timeout — not a peer payload.
- * Valid payloads look like: "host:port@hex(device@party)@pubkey" (optionally "|" for trio).
- */
-/** Wait for every listen/discover promise; return the first valid LAN payload. */
-export async function raceLanPeerDiscovery(
-  promises: Array<Promise<string | null>>,
-): Promise<string | null> {
-  if (promises.length === 0) {
-    return null;
-  }
-  const settled = await Promise.allSettled(promises);
-  for (const entry of settled) {
-    if (
-      entry.status === 'fulfilled' &&
-      isLanPeerDiscoveryPayload(entry.value)
-    ) {
-      return entry.value;
-    }
-  }
-  return null;
-}
-
-export function isLanPeerDiscoveryPayload(
-  value: string | null | undefined,
-): boolean {
-  const raw = String(value ?? '').trim();
-  if (!raw) {
-    return false;
-  }
-  if (/^error:/i.test(raw)) {
-    return false;
-  }
-  const primary = raw.split('|')[0]?.split(',')[0]?.trim() ?? '';
-  if (!primary.includes('@')) {
-    return false;
-  }
-  const hostToken = (primary.split('@')[0] || '').split(':')[0].trim();
-  return normalizeLanHost(hostToken) != null;
 }
 
 /** First normalized LAN host among candidates (e.g. discovery payload, then getLanIp). */
