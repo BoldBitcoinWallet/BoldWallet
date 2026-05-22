@@ -1,15 +1,51 @@
 import {
   buildLanRelayServerUrl,
+  coalesceLanHost,
+  isIPv4LanHost,
   isLanMpcRelayProbeResponse,
+  isLanPeerDiscoveryPayload,
   normalizeLanHost,
   resolveDuoLanRoles,
   resolveLanKeygenParties,
   resolveLanSigningParties,
   resolveDklsLanSigningPartiesFromKeyshare,
+  resolveGg18LanSigningPartiesFromKeyshare,
   resolveTrioLanRoles,
   isTrioWalletKeyshare,
   TRIO_PARTIES_CSV,
 } from '../services/lanMpcSetup';
+
+describe('isLanPeerDiscoveryPayload', () => {
+  it('rejects native timeout error strings', () => {
+    expect(
+      isLanPeerDiscoveryPayload('error:peer discovery timed out after 5 seconds'),
+    ).toBe(false);
+  });
+
+  it('accepts a valid duo discovery line', () => {
+    const payload =
+      '192.168.1.10:55155@48656c6c6f@npub1abc,192.168.1.20:55155@6c6f63616c';
+    expect(isLanPeerDiscoveryPayload(payload)).toBe(true);
+  });
+});
+
+describe('isIPv4LanHost', () => {
+  it('rejects error token mistaken as host', () => {
+    expect(isIPv4LanHost('error')).toBe(false);
+    expect(normalizeLanHost('error')).toBeNull();
+  });
+});
+
+describe('coalesceLanHost', () => {
+  it('falls back to getLanIp when discovery packet omits local IP', () => {
+    expect(coalesceLanHost('', '192.168.1.42')).toBe('192.168.1.42');
+    expect(coalesceLanHost(undefined, null, '10.0.0.5')).toBe('10.0.0.5');
+  });
+
+  it('prefers first valid candidate', () => {
+    expect(coalesceLanHost('192.168.1.10', '192.168.1.20')).toBe('192.168.1.10');
+  });
+});
 
 describe('normalizeLanHost', () => {
   it('strips scheme and port', () => {
@@ -88,6 +124,34 @@ describe('resolveDklsLanSigningPartiesFromKeyshare', () => {
     const r = resolveDklsLanSigningPartiesFromKeyshare(meta, 'npubAlice');
     expect(r.partyID).toBe('KeyShare3');
     expect(r.partiesCSV).toBe('KeyShare1,KeyShare3');
+  });
+});
+
+describe('resolveGg18LanSigningPartiesFromKeyshare', () => {
+  it('uses keyshare local_party_key not IP-derived KeyShare slot', () => {
+    const meta = {
+      local_party_key: 'KeyShare2',
+      keygen_committee_keys: ['KeyShare1', 'KeyShare2'],
+    };
+    const r = resolveGg18LanSigningPartiesFromKeyshare(meta, {
+      peerParty: 'KeyShare1',
+      peerCommitteeKey: 'npubPeerShouldIgnoreForLanGg18',
+    });
+    expect(r.partyID).toBe('KeyShare2');
+    expect(r.partiesCSV).toBe('KeyShare1,KeyShare2');
+  });
+
+  it('uses npub committee keys for Nostr-origin GG18 wallets', () => {
+    const meta = {
+      local_party_key: 'npubAlice',
+      keygen_committee_keys: ['npubAlice', 'npubBob'],
+    };
+    const r = resolveGg18LanSigningPartiesFromKeyshare(meta, {
+      peerCommitteeKey: 'npubBob',
+      peerParty: 'KeyShare1',
+    });
+    expect(r.partyID).toBe('npubAlice');
+    expect(r.partiesCSV).toBe('npubAlice,npubBob');
   });
 });
 

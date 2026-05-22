@@ -113,7 +113,12 @@ function hookMatchesActiveSession(
   if (!hookSession || hookSession.length === 0) {
     return true;
   }
-  return hookSession === activeSession;
+  if (hookSession === activeSession) {
+    return true;
+  }
+  // LAN/Nostr multi-path signing uses per-input session ids: `${session}${index}`.
+  const suffix = hookSession.slice(activeSession.length);
+  return hookSession.startsWith(activeSession) && /^\d+$/.test(suffix);
 }
 
 /**

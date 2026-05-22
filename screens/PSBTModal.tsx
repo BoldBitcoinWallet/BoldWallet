@@ -20,25 +20,13 @@ import BarcodeZxingScan from 'rn-barcode-zxing-scan';
 // @ts-ignore - bc-ur types (Buffer polyfill is in polyfills.js)
 import {URDecoder} from '@ngraveio/bc-ur';
 import {dbg, formatBitcoinDisplay} from '../utils';
+import TransactionFlowDiagram from '../components/TransactionFlowDiagram';
+import {mapParsedPsbtDetails} from '../components/transactionFlowUtils';
+import type {PsbtFlowDetails} from '../types/transactionFlow';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 const {BBMTLibNativeModule} = NativeModules;
-// PSBT details structure (will be populated when parsing is implemented)
-interface PSBTDetails {
-  inputs: Array<{
-    txid: string;
-    vout: number;
-    amount: number; // in satoshis
-  }>;
-  outputs: Array<{
-    address: string;
-    amount: number; // in satoshis
-  }>;
-  fee: number; // in satoshis
-  totalInput: number;
-  totalOutput: number;
-  derivePaths: string[]; // Derivation path for each input (indexed array)
-}
+type PSBTDetails = PsbtFlowDetails;
 // UR (Uniform Resource) animated QR support for large PSBTs
 export interface PSBTLoaderProps {
   onClose: () => void;
@@ -172,14 +160,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
       }
       // Parse the JSON response
       const parsed = JSON.parse(detailsJson);
-      const details: PSBTDetails = {
-        inputs: parsed.inputs || [],
-        outputs: parsed.outputs || [],
-        fee: parsed.fee || 0,
-        totalInput: parsed.totalInput || 0,
-        totalOutput: parsed.totalOutput || 0,
-        derivePaths: parsed.derivePaths || parsed.derivePathPerInput || [], // Per-input derivation paths
-      };
+      const details: PSBTDetails = mapParsedPsbtDetails(parsed);
       dbg('PSBT details:', {
         inputCount: details.inputs.length,
         outputCount: details.outputs.length,
@@ -781,131 +762,17 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
             showsVerticalScrollIndicator={true}
             nestedScrollEnabled={true}
             scrollEnabled={true}>
-            {/* Transaction Flow Diagram - Vertical Mobile-Friendly Layout */}
-            <View style={styles.transactionFlow}>
-              {/* Inputs Section */}
-              <View style={styles.flowSection}>
-                <Text style={styles.flowSectionTitle}>Inputs</Text>
-                {psbtDetails.inputs.map((input, index) => {
-                  const derivePath = psbtDetails.derivePaths[index] || 'N/A';
-                  return (
-                    <View key={index} style={styles.flowItem}>
-                      <View style={styles.flowItemContent}>
-                        <View style={styles.flowItemHeader}>
-                          <Image
-                            source={require('../assets/in-icon.png')}
-                            style={styles.flowIcon}
-                            resizeMode="contain"
-                          />
-                          <View style={styles.flowItemInfo}>
-                            <Text
-                              style={styles.flowItemLabel}
-                              numberOfLines={1}
-                              ellipsizeMode="middle">
-                              {input.txid.slice(0, 8)}...
-                              {input.txid.slice(-6)}:{input.vout}
-                            </Text>
-                            <Text style={styles.flowItemPath} numberOfLines={1}>
-                              {derivePath}
-                            </Text>
-                          </View>
-                        </View>
-                        <View style={styles.flowAmount}>
-                          <Text style={styles.flowAmountBTC}>
-                            {formatBtcDisplay(input.amount)}
-                          </Text>
-                        </View>
-                      </View>
-                      {/* Flow line connector */}
-                      {index < psbtDetails.inputs.length - 1 && (
-                        <View style={styles.flowConnectorVertical} />
-                      )}
-                    </View>
-                  );
-                })}
-              </View>
-              {/* Transaction Hub (Center Arrow) */}
-              <View style={styles.transactionHubVertical}>
-                <View style={styles.hubArrow}>
-                  <Text style={styles.hubArrowText}>↓</Text>
-                </View>
-                <View style={styles.hubLabel}>
-                  <Text style={styles.hubLabelText}>Transaction</Text>
-                </View>
-              </View>
-              {/* Outputs Section */}
-              <View style={styles.flowSection}>
-                <Text style={styles.flowSectionTitle}>Outputs</Text>
-                {psbtDetails.outputs.map((output, index) => {
-                  // Determine output type: change (likely if small amount), recipient, or fee
-                  const isLikelyChange =
-                    output.amount < psbtDetails.totalInput * 0.1; // Heuristic: small outputs are often change
-                  let outputIcon = require('../assets/bitcoin-icon.png');
-                  let outputType = 'recipient';
-                  if (isLikelyChange) {
-                    outputIcon = require('../assets/consolidate-icon.png');
-                    outputType = 'change';
-                  }
-                  return (
-                    <View key={index} style={styles.flowItem}>
-                      <View style={styles.flowItemContent}>
-                        <View style={styles.flowItemHeader}>
-                          <Image
-                            source={outputIcon}
-                            style={styles.flowIcon}
-                            resizeMode="contain"
-                          />
-                          <View style={styles.flowItemInfo}>
-                            <Text
-                              style={styles.flowItemLabel}
-                              numberOfLines={1}
-                              ellipsizeMode="middle">
-                              {output.address.slice(0, 8) +
-                                '...' +
-                                output.address.slice(-6)}
-                            </Text>
-                            {outputType === 'change' && (
-                              <Text style={styles.flowItemType}>Change</Text>
-                            )}
-                          </View>
-                        </View>
-                        <View style={styles.flowAmount}>
-                          <Text style={styles.flowAmountBTC}>
-                            {formatBtcDisplay(output.amount)}
-                          </Text>
-                        </View>
-                      </View>
-                      {/* Flow line connector */}
-                      {index < psbtDetails.outputs.length - 1 && (
-                        <View style={styles.flowConnectorVertical} />
-                      )}
-                    </View>
-                  );
-                })}
-                {/* Fee as separate item */}
-                {psbtDetails.fee > 0 && (
-                  <View style={styles.flowItem}>
-                    <View style={styles.flowItemContent}>
-                      <View style={styles.flowItemHeader}>
-                        <Image
-                          source={require('../assets/send-icon.png')}
-                          style={styles.flowIcon}
-                          resizeMode="contain"
-                        />
-                        <View style={styles.flowItemInfo}>
-                          <Text style={styles.flowItemLabel}>Fee</Text>
-                        </View>
-                      </View>
-                      <View style={styles.flowAmount}>
-                        <Text style={styles.flowAmountBTC}>
-                          {formatBtcDisplay(psbtDetails.fee)}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                )}
-              </View>
-            </View>
+            <TransactionFlowDiagram
+              variant="psbt"
+              expandable={false}
+              expanded={true}
+              onToggleExpand={() => {}}
+              collapsedSummary="none"
+              showPsbtTitle={false}
+              psbtDetails={psbtDetails}
+              psbtBase64={psbtBase64}
+              cardStyle={{borderWidth: 0, padding: 0, backgroundColor: 'transparent'}}
+            />
             {/* Summary Bar */}
             <View style={styles.summaryBar}>
               <View style={styles.summaryBarContent}>
@@ -916,9 +783,9 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
                   {psbtDetails.outputs.length !== 1 ? 's' : ''} •{' '}
                   {formatBtcDisplay(psbtDetails.totalOutput + psbtDetails.fee)} total
                 </Text>
-                {psbtDetails.derivePaths.length > 0 && (
+                {(psbtDetails.derivePaths?.length ?? 0) > 0 && (
                   <Text style={styles.summaryBarPath} numberOfLines={1}>
-                    Path: {psbtDetails.derivePaths.join(', ')}
+                    Path: {psbtDetails.derivePaths!.join(', ')}
                   </Text>
                 )}
               </View>

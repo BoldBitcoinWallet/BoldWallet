@@ -75,6 +75,28 @@ describe('processMpcHookMessage', () => {
     expect(progressRef.current).toBe(0);
   });
 
+  it('accepts per-UTXO keysign session suffix', () => {
+    const progressRef = {current: 0};
+    const utxoRef = {current: emptyMpcUtxoState()};
+    const activeSessionRef = {current: 'session-a'};
+    const r = processMpcHookMessage(
+      JSON.stringify({
+        session: 'session-a0',
+        type: 'keysign',
+        step: 5,
+        info: 'DKLs keysign round',
+      }),
+      'dkls23',
+      {
+        isTrio: false,
+        isSendBitcoin: true,
+        refs: {progressRef, utxoRef, activeSessionRef},
+      },
+    );
+    expect(r).not.toBeNull();
+    expect(r?.percent).toBeGreaterThan(0);
+  });
+
   it('keeps progress monotonic across hooks', () => {
     const progressRef = {current: 50};
     const utxoRef = {current: emptyMpcUtxoState()};

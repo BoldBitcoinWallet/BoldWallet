@@ -41,24 +41,19 @@ import {
   useRoute,
 } from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import Big from 'big.js';
 import {
   dbg,
-  explorerWebBaseFromApiUrl,
   getPinnedRemoteIPs,
   hexToString,
   getResetToMainTabsWallet,
-  shortenAddress,
   getKeyshareDisplayLabel,
   saveKeyshareMetadata,
   getKeyshareMetadata,
   resolveUseLegacyDerivationPaths,
   detectKeyshareTssBackend,
+  shortenAddress,
 } from '../utils';
-import {
-  normalizeNetworkKey,
-  resolveStoredMempoolApiBase,
-} from '../services/mempoolApiBase';
+import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {prepareSendBtcMultiPathInputs} from '../services/sendBtcPrepare';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
@@ -69,7 +64,6 @@ import {
   type SetupMode,
   type TssBackend,
 } from '../services/tssBackend';
-import {getKeygenTssBackendPreference} from '../services/tssConfig';
 import {TssProvider} from '../services/TssProvider';
 import {
   parseEciesKeypairJson,
@@ -78,14 +72,18 @@ import {
 import {LAN_KEYGEN_STATUS} from '../services/walletSetupUi';
 import {
   buildLanRelayServerUrl,
+  coalesceLanHost,
+  isLanPeerDiscoveryPayload,
+  raceLanPeerDiscovery,
   normalizeLanHost,
   resolveDuoLanRoles,
+  resolveEffectiveLanKeygenContext,
   resolveTrioLanRoles,
   isTrioWalletKeyshare,
   loadPersistedLanRoles,
   persistLanPairingRoles,
-  resolveLanSigningParties,
   resolveDklsLanSigningPartiesFromKeyshare,
+  resolveGg18LanSigningPartiesFromKeyshare,
 } from '../services/lanMpcSetup';
 import {
   invokeLanWalletKeygen,
@@ -95,35 +93,6 @@ import {
   runWalletSetupPrepare,
   type WalletSetupRouteParams,
 } from '../services/walletSetupOrchestrator';
-import {resolveEffectiveLanKeygenContext} from '../services/lanMpcSetup';
-
-/** Ignore empty peer payloads so listen/discover can finish. */
-function racePeerDiscovery(
-  promises: Array<Promise<string | null>>,
-): Promise<string | null> {
-  return new Promise(resolve => {
-    let remaining = promises.length;
-    if (remaining === 0) {
-      resolve(null);
-      return;
-    }
-    for (const p of promises) {
-      p.then(value => {
-        remaining -= 1;
-        if (value) {
-          resolve(value);
-        } else if (remaining === 0) {
-          resolve(null);
-        }
-      }).catch(() => {
-        remaining -= 1;
-        if (remaining === 0) {
-          resolve(null);
-        }
-      });
-    }
-  });
-}
 import {
   getPrepareModalCopy,
   getWalletSetupKeygenModalCopy,
@@ -145,6 +114,18 @@ import database from '../services/Database';
 import transactionRepository from '../services/repositories/TransactionRepository';
 import BackupKeyshareModal from '../components/BackupKeyshareModal';
 import SignedTxBroadcastModal from '../components/SignedTxBroadcastModal';
+import TransactionFlowDiagram from '../components/TransactionFlowDiagram';
+import {useSendTxPreview} from '../hooks/useSendTxPreview';
+import PairingSpendStickyFooter, {
+  PAIRING_STICKY_FOOTER_SCROLL_PADDING,
+} from '../components/PairingSpendStickyFooter';
+import {
+  mapParsedPsbtDetails,
+  psbtCollapsedSummaryLine,
+  sendCollapsedRecapLine,
+} from '../components/transactionFlowUtils';
+
+const PAIRING_GRACE_MS = 4000;
 const {BBMTLibNativeModule} = NativeModules;
 // Helper component for connection line animation
 const ConnectionLineAnimatedView: React.FC<{
@@ -194,11 +175,11 @@ const MobilesPairing = ({navigation}: any) => {
   const [peerParty2, setPeerParty2] = useState<string | null>(null);
   /** Peer's `local_party_key` from LAN discovery (npub); not overwritten by IP-based KeyShare roles. */
   const [peerCommitteeKey, setPeerCommitteeKey] = useState<string | null>(null);
-  const [peerCommitteeKey2, setPeerCommitteeKey2] = useState<string | null>(null);
+  const [, setPeerCommitteeKey2] = useState<string | null>(null);
   const [localParty, setLocalParty] = useState<string>('');
   const [isPairing, setIsPairing] = useState(false);
   const [countdown, setCountdown] = useState(timeout);
-  const [progress, setProgress] = useState(0);
+  const pairingDeadlineRef = useRef(0);
   const mpcHookProgressRef = useRef(0);
   const mpcUtxoRef = useRef<MpcProgressUtxoState>({
     utxoIndex: 0,
@@ -207,7 +188,6 @@ const MobilesPairing = ({navigation}: any) => {
   });
   const [isPreParamsReady, setIsPreParamsReady] = useState(false);
   const [isKeygenReady, setIsKeygenReady] = useState(false);
-  const [isKeysignReady, setIsKeysignReady] = useState(false);
   const [isPrepared, setIsPrepared] = useState(false);
   const [isPreparing, setIsPreparing] = useState(false);
   const [doingMPC, setDoingMPC] = useState(false);
@@ -230,6 +210,8 @@ const MobilesPairing = ({navigation}: any) => {
     totalOutput: number;
     derivePaths?: string[];
   } | null>(null);
+  const [psbtParseError, setPsbtParseError] = useState<string | null>(null);
+  const [psbtRetryToken, setPsbtRetryToken] = useState(0);
   const {theme} = useTheme();
   const {
     activeNetwork,
@@ -312,25 +294,22 @@ const MobilesPairing = ({navigation}: any) => {
   });
   const [isBackupModalVisible, setIsBackupModalVisible] = useState(false);
 
-  // Pre-loaded UTXO preview for the send-BTC confirmation card.
-  type UTXOPreview = {address: string; value: number; derivationPath: string};
-  const [txPreview, setTxPreview] = useState<{
-    utxos: UTXOPreview[];
-    changeAddress: string;
-    changeAddressPath: string;
-    totalInputSats: number;
-  } | null>(null);
-  const [_txPreviewLoading, setTxPreviewLoading] = useState(false);
   const [txDetailsExpanded, setTxDetailsExpanded] = useState(false);
+  const {
+    preview: txPreview,
+    loading: txPreviewLoading,
+    error: txPreviewError,
+  } = useSendTxPreview(isSendBitcoin, route.params);
   const [signedTxRawHex, setSignedTxRawHex] = useState<string | null>(null);
   const mpcAbortRef = useRef(false);
   const activeMpcSessionIdRef = useRef<string | null>(null);
   const doingMpcRef = useRef(false);
+  const setMpcModalActive = useCallback((active: boolean) => {
+    doingMpcRef.current = active;
+    setDoingMPC(active);
+  }, []);
   const {displayPercent, setCircleTarget, resetCircle} =
     useMpcCircleProgress(doingMPC);
-  useEffect(() => {
-    doingMpcRef.current = doingMPC;
-  }, [doingMPC]);
   const broadcastSuccessPayloadRef = useRef<{
     multiPath: boolean;
     pendingKey: string;
@@ -365,7 +344,7 @@ const MobilesPairing = ({navigation}: any) => {
           style: 'destructive',
           onPress: async () => {
             mpcAbortRef.current = true;
-            setDoingMPC(false);
+            setMpcModalActive(false);
             setIsPairing(false);
             setStatus('Aborted');
             const sid = activeMpcSessionIdRef.current;
@@ -404,9 +383,6 @@ const MobilesPairing = ({navigation}: any) => {
   const toggleKeygenReady = () => {
     setIsKeygenReady(!isKeygenReady);
   };
-  const toggleKeysignReady = () => {
-    setIsKeysignReady(!isKeysignReady);
-  };
   // Clear all cache when entering wallet setup mode (not signing mode)
   useEffect(() => {
     const clearCacheForSetup = async () => {
@@ -437,123 +413,6 @@ const MobilesPairing = ({navigation}: any) => {
     clearCacheForSetup();
   }, [setupMode]);
 
-  // Pre-fetch UTXOs + change address so the confirmation card can show real inputs.
-  useEffect(() => {
-    if (!isSendBitcoin) {
-      return;
-    }
-    let cancelled = false;
-    const load = async () => {
-      setTxPreviewLoading(true);
-      const net = normalizeNetworkKey(
-        (route.params?.network || 'mainnet').trim(),
-      );
-      const addrType = (route.params?.addressType || 'segwit-native').trim();
-      try {
-        // When QR carries UTXOs, use them directly — no re-fetch needed.
-        const utxosFromQR = route.params?.utxosJson;
-        if (
-          utxosFromQR &&
-          typeof utxosFromQR === 'string' &&
-          utxosFromQR.trim() !== ''
-        ) {
-          const parsed = JSON.parse(utxosFromQR) as Array<{
-            txid: string;
-            vout: number;
-            value: number;
-            derivation_path?: string;
-            derivationPath?: string;
-            address: string;
-          }>;
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            const totalInputSats = parsed.reduce(
-              (s, u) => s + (u.value || 0),
-              0,
-            );
-            const chgFromParams = route.params?.changeAddress;
-            let chgAddress = '';
-            let chgPath = '';
-            if (chgFromParams && chgFromParams.trim() !== '') {
-              chgAddress = chgFromParams;
-              // derive the path for display from WalletService (index doesn't change, just the path string)
-              try {
-                const r =
-                  await WalletService.getInstance().getNextChangeAddressWithPath(
-                    net,
-                    addrType,
-                  );
-                chgPath = r.path;
-              } catch {}
-            } else {
-              const r =
-                await WalletService.getInstance().getNextChangeAddressWithPath(
-                  net,
-                  addrType,
-                );
-              chgAddress = r.address;
-              chgPath = r.path;
-            }
-            if (!cancelled) {
-              setTxPreview({
-                utxos: parsed.map(u => ({
-                  address: u.address,
-                  value: u.value,
-                  derivationPath: u.derivation_path ?? u.derivationPath ?? '',
-                })),
-                changeAddress: chgAddress,
-                changeAddressPath: chgPath,
-                totalInputSats,
-              });
-            }
-            return;
-          }
-        }
-        // Fallback: fresh fetch (sender device, or QR has no utxosJson).
-        const apiUrl = resolveStoredMempoolApiBase(net);
-        const [utxos, chgResult] = await Promise.all([
-          WalletService.getInstance().fetchUtxosWithPaths(
-            net,
-            addrType,
-            apiUrl,
-          ),
-          WalletService.getInstance().getNextChangeAddressWithPath(
-            net,
-            addrType,
-          ),
-        ]);
-        if (!cancelled) {
-          const totalInputSats = utxos.reduce((s, u) => s + u.value, 0);
-          setTxPreview({
-            utxos: utxos.map(u => ({
-              address: u.address,
-              value: u.value,
-              derivationPath: u.derivationPath,
-            })),
-            changeAddress: chgResult?.address || '',
-            changeAddressPath: chgResult?.path || '',
-            totalInputSats,
-          });
-        }
-      } catch {
-        // Non-critical: falls back to generic "HD Wallet" row.
-      } finally {
-        if (!cancelled) {
-          setTxPreviewLoading(false);
-        }
-      }
-    };
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    isSendBitcoin,
-    route.params?.network,
-    route.params?.addressType,
-    route.params?.utxosJson,
-    route.params?.changeAddress,
-  ]);
-
   // Initialize network and derivation path immediately when component loads (for send Bitcoin mode)
   const stringToHex = (str: string) => {
     return Array.from(str)
@@ -576,10 +435,6 @@ const MobilesPairing = ({navigation}: any) => {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(Number(price));
-  const sat2btcStr = (sats?: string | number) =>
-    Big(sats || 0)
-      .div(1e8)
-      .toFixed(8);
   // Parse PSBT details when PSBT is available
   useEffect(() => {
     const parsePSBT = async () => {
@@ -595,17 +450,14 @@ const MobilesPairing = ({navigation}: any) => {
           ) {
             dbg('Failed to parse PSBT details:', detailsJson);
             setPsbtDetails(null);
+            setPsbtParseError(detailsJson);
             return;
           }
           const details = JSON.parse(detailsJson);
-          setPsbtDetails({
-            inputs: details.inputs || [],
-            outputs: details.outputs || [],
-            fee: details.fee || 0,
-            totalInput: details.totalInput || 0,
-            totalOutput: details.totalOutput || 0,
-            derivePaths: details.derivePaths || [],
-          });
+          setPsbtParseError(null);
+          setPsbtDetails(
+            mapParsedPsbtDetails(details),
+          );
           dbg('PSBT details parsed:', {
             inputs: details.inputs?.length || 0,
             outputs: details.outputs?.length || 0,
@@ -614,13 +466,17 @@ const MobilesPairing = ({navigation}: any) => {
         } catch (error) {
           dbg('Error parsing PSBT details:', error);
           setPsbtDetails(null);
+          setPsbtParseError(
+            error instanceof Error ? error.message : 'Parse failed',
+          );
         }
       } else {
         setPsbtDetails(null);
+        setPsbtParseError(null);
       }
     };
     parsePSBT();
-  }, [isSignPSBT, route.params.psbtBase64]);
+  }, [isSignPSBT, route.params.psbtBase64, psbtRetryToken]);
   const preparams = async () => {
     setIsPreparing(true);
     setIsPreParamsReady(false);
@@ -829,8 +685,8 @@ const MobilesPairing = ({navigation}: any) => {
       setPrepCounter(0);
       resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
       resetCircle();
-      setProgress(0);
-      setDoingMPC(true);
+      setCircleTarget(0);
+      setMpcModalActive(true);
       setStatus(LAN_KEYGEN_STATUS.starting);
       dbg('mpcTssSetup: begin', {
         isMaster,
@@ -928,7 +784,7 @@ const MobilesPairing = ({navigation}: any) => {
               CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND,
               useLegacyPath ? 'no' : 'yes',
             );
-          } catch (_e) {
+          } catch {
             /* keep protocol party id in shareName */
           }
           setMpcDone(true);
@@ -939,7 +795,7 @@ const MobilesPairing = ({navigation}: any) => {
           setMpcDone(false);
           resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
           resetCircle();
-          setProgress(0);
+          setCircleTarget(0);
           Alert.alert('Wallet setup failed', formatMpcError(error));
         })
         .finally(async () => {
@@ -948,20 +804,20 @@ const MobilesPairing = ({navigation}: any) => {
             BBMTLibNativeModule.stopRelay(localDevice);
             dbg('relay stop:', localDevice);
           }
-          setDoingMPC(false);
+          setMpcModalActive(false);
         });
     } catch (error: unknown) {
       setMpcDone(false);
       resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
       resetCircle();
-      setProgress(0);
+      setCircleTarget(0);
       Alert.alert('Wallet setup failed', formatMpcError(error));
       if (isMaster) {
         await waitMS(2000);
         BBMTLibNativeModule.stopRelay(localDevice);
         dbg('relay stop:', localDevice);
       }
-      setDoingMPC(false);
+      setMpcModalActive(false);
     }
   };
   const runKeysign = async () => {
@@ -973,11 +829,12 @@ const MobilesPairing = ({navigation}: any) => {
     setMpcDone(false);
     setPrepCounter(0);
     resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
+    activeMpcSessionIdRef.current = null;
     resetCircle();
-    setProgress(0);
+    setCircleTarget(0);
     setStatus('Starting co-signing…');
-    setDoingMPC(true);
-    setProgress(0);
+    setMpcModalActive(true);
+    setCircleTarget(0);
     // CRITICAL: Store original network/API before transaction (declared outside try for finally block)
     // We'll use QR code network temporarily for signing, but restore original after
     let originalNetwork = '';
@@ -1100,20 +957,14 @@ const MobilesPairing = ({navigation}: any) => {
           peerKeyForSign,
         ));
       } else {
-        const signingLocalParty = (
-          localParty ||
-          persistedRoles.localParty ||
-          _ksMeta?.local_party_key ||
-          ''
-        ).trim();
-        const signingPeerParty = (
-          peerParty || persistedRoles.peerParty || ''
-        ).trim();
-        ({partyID, partiesCSV} = resolveLanSigningParties({
-          localParty: signingLocalParty,
-          peerParty: signingPeerParty,
-          peerParty2: peerParty2 || persistedRoles.peerParty2,
-        }));
+        ({partyID, partiesCSV} = resolveGg18LanSigningPartiesFromKeyshare(
+          _ksMeta,
+          {
+            peerParty,
+            peerCommitteeKey,
+            persistedPeerParty: persistedRoles.peerParty,
+          },
+        ));
       }
       dbg('runKeysign: LAN signing parties', {
         backend,
@@ -1217,7 +1068,7 @@ const MobilesPairing = ({navigation}: any) => {
               await waitMS(2000);
               stopRelay();
             }
-            setDoingMPC(false);
+            setMpcModalActive(false);
           });
         return; // Exit early for PSBT
       } else {
@@ -1238,8 +1089,6 @@ const MobilesPairing = ({navigation}: any) => {
         if (satoshiAmount !== route.params.satoshiAmount) {
           throw 'Make sure you\'re sending the "Same Bitcoin" amount from Both Devices';
         }
-
-        const apiUrl = resolveStoredMempoolApiBase(net);
 
         let usedMultiPath = false;
         try {
@@ -1320,11 +1169,11 @@ const MobilesPairing = ({navigation}: any) => {
               outputs,
             };
             if (mpcAbortRef.current) {
-              setDoingMPC(false);
+              setMpcModalActive(false);
               return;
             }
             setSignedTxRawHex(rawTxHex);
-            setDoingMPC(false);
+            setMpcModalActive(false);
         } catch (multiPathErr) {
           dbg('MobilesPairing: multi-path send failed:', multiPathErr);
           throw multiPathErr;
@@ -1369,7 +1218,7 @@ const MobilesPairing = ({navigation}: any) => {
         await waitMS(2000);
         stopRelay();
       }
-      setDoingMPC(false);
+      setMpcModalActive(false);
     }
   };
   const stopRelay = useCallback(() => {
@@ -1422,7 +1271,6 @@ const MobilesPairing = ({navigation}: any) => {
       }
       if (result.percent !== null) {
         dbg('progress hook', result.percent, result.statusLabel);
-        setProgress(result.percent);
         setCircleTarget(result.percent);
       }
       if (result.statusLabel) {
@@ -1489,12 +1337,16 @@ const MobilesPairing = ({navigation}: any) => {
     }
   }, [doingMPC]);
   useEffect(() => {
-    if (isPairing) {
-      const interval = setInterval(() => {
-        setCountdown(prevCount => (prevCount > 0 ? prevCount - 1 : 0));
-      }, 1000);
-      return () => clearInterval(interval);
+    if (!isPairing) {
+      return;
     }
+    const updateCountdown = () => {
+      const leftMs = pairingDeadlineRef.current - Date.now();
+      setCountdown(Math.max(0, Math.ceil(leftMs / 1000)));
+    };
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 250);
+    return () => clearInterval(interval);
   }, [isPairing]);
   useEffect(() => {
     if (!peerIP) {
@@ -1518,6 +1370,7 @@ const MobilesPairing = ({navigation}: any) => {
       return;
     }
     setIsPairing(true);
+    pairingDeadlineRef.current = Date.now() + timeout * 1000;
     setCountdown(timeout);
     appConfigRepository.remove('lan_peer_pubkey');
     appConfigRepository.remove('lan_ecies_keypair');
@@ -1542,6 +1395,7 @@ const MobilesPairing = ({navigation}: any) => {
           ? 'Starting peer discovery...'
           : 'No LAN IP found — listening for peer only...',
       );
+      pairingDeadlineRef.current = Date.now() + timeout * 1000;
       setCountdown(timeout);
       appConfigRepository.set('peerFound', '');
       const promises = [
@@ -1565,20 +1419,31 @@ const MobilesPairing = ({navigation}: any) => {
           ),
         );
       }
-      let until = Date.now() + timeout * 1000;
-      let result = await racePeerDiscovery(promises);
-      while (!result && Date.now() < until) {
+      const pairingDeadline = pairingDeadlineRef.current;
+      const graceUntil = pairingDeadline + PAIRING_GRACE_MS;
+      let result = await raceLanPeerDiscovery(promises);
+      while (!isLanPeerDiscoveryPayload(result) && Date.now() < pairingDeadline) {
         dbg('checking peer...');
-        result = appConfigRepository.get('peerFound');
-        if (result) {
+        const cached = appConfigRepository.get('peerFound');
+        if (isLanPeerDiscoveryPayload(cached)) {
+          result = cached;
           dbg('checking peer ok...');
           break;
-        } else {
-          await waitMS(1000);
         }
+        await waitMS(500);
+      }
+      while (!isLanPeerDiscoveryPayload(result) && Date.now() < graceUntil) {
+        setStatus('Finishing connection…');
+        const cached = appConfigRepository.get('peerFound');
+        if (isLanPeerDiscoveryPayload(cached)) {
+          result = cached;
+          dbg('checking peer ok (grace)...');
+          break;
+        }
+        await waitMS(300);
       }
       dbg('promise race result:', result);
-      if (result) {
+      if (isLanPeerDiscoveryPayload(result)) {
         dbg('Got Result', result);
         let raws = (result || '').split('|').filter(Boolean);
         // In trio, ensure both peers are present; sometimes one arrives first on iOS
@@ -1619,10 +1484,19 @@ const MobilesPairing = ({navigation}: any) => {
           appConfigRepository.set('lan_ecies_keypair', keypair);
         }
         const localInfo = (primary[1] || '').split('@');
-        const _localIP = (localInfo[0] || '').split(':')[0];
-        setLocalIP(_localIP || null);
+        const _localIPFromPacket = (localInfo[0] || '').split(':')[0].trim();
+        const localNorm = coalesceLanHost(_localIPFromPacket, ip);
+        const peerNorm = coalesceLanHost(_peerIP);
+        if (!localNorm || !peerNorm) {
+          throw new Error(
+            isTrio
+              ? 'Trio LAN setup needs three valid device IPs. Re-run pairing on the same Wi‑Fi.'
+              : 'Duo LAN setup needs two valid device IPs. Re-run pairing on the same Wi‑Fi.',
+          );
+        }
+        setLocalIP(localNorm);
         const localIDComputed = (
-          await BBMTLibNativeModule.sha256(`${deviceName}${_localIP}`)
+          await BBMTLibNativeModule.sha256(`${deviceName}${localNorm}`)
         )
           .substring(0, 4)
           .toUpperCase();
@@ -1668,17 +1542,21 @@ const MobilesPairing = ({navigation}: any) => {
           _peerIP2ForRank = (peerInfo2ForRank[0] || '').split(':')[0];
           setPeerIP2(_peerIP2ForRank || null);
         }
-        const localNorm = normalizeLanHost(_localIP) || _localIP;
-        const peerNorm = normalizeLanHost(_peerIP) || _peerIP;
-        const peer2Norm =
-          normalizeLanHost(_peerIP2ForRank) ||
-          normalizeLanHost(peerIP2) ||
-          _peerIP2ForRank ||
-          '';
+        let peer2Norm = '';
+        if (isTrio) {
+          peer2Norm = coalesceLanHost(_peerIP2ForRank, peerIP2) || '';
+          if (!peer2Norm) {
+            throw new Error(
+              'Trio LAN setup needs three valid device IPs. Re-run pairing on the same Wi‑Fi.',
+            );
+          }
+        }
         dbg('==================== ALL IPs (normalized) ====================', {
           localNorm,
           peerNorm,
           peer2Norm,
+          localIPFromPacket: _localIPFromPacket,
+          getLanIp: ip,
         });
         let master = isMaster;
         let resolvedMasterHost: string | null = null;
@@ -1733,8 +1611,8 @@ const MobilesPairing = ({navigation}: any) => {
           let masterPub = '';
           if (trioRoles.isMaster) {
             try {
-              const kp = JSON.parse(keypair);
-              masterPub = (kp?.publicKey || '').trim();
+              const parsedKeypair = JSON.parse(keypair);
+              masterPub = (parsedKeypair?.publicKey || '').trim();
             } catch {
               masterPub = '';
             }
@@ -1744,8 +1622,8 @@ const MobilesPairing = ({navigation}: any) => {
             masterPub = peerPubkey2Stored.trim();
           } else if (trioRoles.ipByRole.KeyShare1 === localNorm) {
             try {
-              const kp = JSON.parse(keypair);
-              masterPub = (kp?.publicKey || '').trim();
+              const parsedKeypair = JSON.parse(keypair);
+              masterPub = (parsedKeypair?.publicKey || '').trim();
             } catch {
               masterPub = '';
             }
@@ -1773,7 +1651,7 @@ const MobilesPairing = ({navigation}: any) => {
           isMaster: master,
           roles: {localParty, peerParty, peerParty2},
           devices: {
-            local: {device: deviceName, ip: _localIP, id: localIDComputed},
+            local: {device: deviceName, ip: localNorm, id: localIDComputed},
             peer1: {device: _peerDevice, ip: _peerIP, id: remoteIDComputed},
             peer2: isTrio
               ? {
@@ -1785,10 +1663,18 @@ const MobilesPairing = ({navigation}: any) => {
           },
           masterHost: resolvedMasterHost,
         });
-        await Promise.allSettled(promises).then(() =>
-          appConfigRepository.remove('peerFound'),
-        );
+        Promise.allSettled(promises).then(() => {
+          appConfigRepository.remove('peerFound');
+        });
       } else {
+        setPeerIP(null);
+        setPeerIP2(null);
+        setPeerDevice(null);
+        setPeerDevice2(null);
+        setRemoteID(null);
+        setRemoteID2(null);
+        setPeerParty(null);
+        setPeerParty2(null);
         setStatus('Pairing timed out. Please try again.');
         if (isFocusedRef.current) {
           Alert.alert('Pairing Timeout', 'No peer device was detected.');
@@ -1850,8 +1736,11 @@ const MobilesPairing = ({navigation}: any) => {
         String(timeout),
         isTrio ? 'trio' : 'duo',
       );
-      appConfigRepository.set('peerFound', result);
-      return result;
+      if (isLanPeerDiscoveryPayload(result)) {
+        appConfigRepository.set('peerFound', result);
+        return result;
+      }
+      return null;
     } catch (error) {
       dbg('ListenForPeer Error:', error);
       return null;
@@ -1884,10 +1773,10 @@ const MobilesPairing = ({navigation}: any) => {
     });
     while (Date.now() < until) {
       try {
-        let peerFound = appConfigRepository.get('peerFound');
-        if (peerFound) {
+        const cached = appConfigRepository.get('peerFound');
+        if (isLanPeerDiscoveryPayload(cached)) {
           dbg('discoverPeer already found');
-          return peerFound;
+          return cached;
         }
         backOff *= 2;
         const pinnedCandidatesCSV = pinnedIPs
@@ -1904,8 +1793,11 @@ const MobilesPairing = ({navigation}: any) => {
         );
         if (result) {
           dbg('discoverPeer result', result);
-          appConfigRepository.set('peerFound', result);
-          return result;
+          if (isLanPeerDiscoveryPayload(result)) {
+            appConfigRepository.set('peerFound', result);
+            return result;
+          }
+          dbg('discoverPeer ignored non-payload result', result);
         }
       } catch (error) {
         dbg('DiscoverPeer Error:', error);
@@ -2529,10 +2421,11 @@ const MobilesPairing = ({navigation}: any) => {
       justifyContent: 'center',
       position: 'relative',
       marginBottom: 20,
-      marginTop: 10,
+      marginTop: 20,
       paddingHorizontal: 8,
     },
     deviceWrapper: {
+      marginHorizontal: 10,
       alignItems: 'center',
       justifyContent: 'center',
       position: 'relative',
@@ -2931,8 +2824,8 @@ const MobilesPairing = ({navigation}: any) => {
         theme.colors.background === '#ffffff'
           ? theme.colors.white
           : theme.colors.cardBackground,
-      borderRadius: 16,
-      padding: 20,
+      borderRadius: 12,
+      padding: 10,
       marginVertical: 8,
       elevation: 3,
       shadowColor: theme.colors.shadowColor,
@@ -3176,8 +3069,9 @@ const MobilesPairing = ({navigation}: any) => {
       textAlign: 'center',
     },
     transactionDetails: {
-      padding: 6,
-      paddingTop: 0,
+      paddingTop: 4,
+      paddingHorizontal: 6,
+      marginBottom: 16,
       width: '100%',
     },
     transactionItem: {
@@ -3319,14 +3213,34 @@ const MobilesPairing = ({navigation}: any) => {
       lineHeight: 20,
     },
   });
+  const showSpendStickyFooter =
+    (isSendBitcoin || isSignPSBT) && !!peerIP && !doingMPC;
+  const spendStickySummary =
+    isSendBitcoin && route.params
+      ? sendCollapsedRecapLine(
+          route.params.satoshiAmount ?? 0,
+          route.params.toAddress || '',
+          shortenAddress,
+        )
+      : isSignPSBT && psbtDetails
+        ? psbtCollapsedSummaryLine(psbtDetails)
+        : '';
+  const spendStickyLabel = isSignPSBT
+    ? `${isMaster ? 'Start' : 'Join'} PSBT Signing`
+    : `${isMaster ? 'Start' : 'Join'} Co-Signing`;
   return (
     <SafeAreaView style={styles.root} edges={['left', 'right']}>
       <KeyboardAvoidingView
-        style={styles.flexContainer}
+        style={[styles.flexContainer, {flex: 1}]}
         behavior={'padding'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            showSpendStickyFooter && {
+              paddingBottom: PAIRING_STICKY_FOOTER_SCROLL_PADDING,
+            },
+          ]}
           removeClippedSubviews
           keyboardShouldPersistTaps="handled"
           overScrollMode="never"
@@ -3718,8 +3632,7 @@ const MobilesPairing = ({navigation}: any) => {
                     numberOfLines={2}
                     adjustsFontSizeToFit={true}
                     minimumFontScale={0.8}>
-                    ⚠️ Make sure every device security code 🏷 **** matches on
-                    all other devices screens.
+                    ⚠️ All devices' security code 🏷 should match.
                   </Text>
                 )}
                 {/* Show Countdown Timer During Pairing */}
@@ -3727,7 +3640,9 @@ const MobilesPairing = ({navigation}: any) => {
                   <View style={{marginTop: 16}}>
                     <Text style={styles.statusText}>{status}</Text>
                     <Text style={styles.countdownText}>
-                      {countdown}s left to connect
+                      {countdown > 0
+                        ? `${countdown}s left to connect`
+                        : 'Finishing connection…'}
                     </Text>
                   </View>
                 )}
@@ -4385,787 +4300,142 @@ const MobilesPairing = ({navigation}: any) => {
             {peerIP && (isSendBitcoin || isSignPSBT) && (
               <>
                 <View style={styles.informationCard}>
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      marginBottom: 8,
-                    }}>
-                    <Image
-                      source={require('../assets/cosign-icon.png')}
-                      style={{
-                        width: 28,
-                        height: 28,
-                        marginRight: 8,
-                        tintColor:
-                          theme.colors.background === '#ffffff'
-                            ? theme.colors.primary
-                            : theme.colors.bitcoinOrange,
-                        marginBottom: 8,
-                      }}
-                      resizeMode="contain"
-                    />
-                    <Text
-                      style={[
-                        styles.title,
-                        {fontSize: theme.fontSizes?.md || 15},
-                      ]}>
-                      {isSignPSBT ? 'PSBT Co-Signing' : 'Co-Signing'}
-                    </Text>
-                  </View>
                   <Text
                     style={[
-                      styles.header,
                       {fontSize: theme.fontSizes?.base || 13, marginBottom: 8},
                     ]}>
                     {isTrio
                       ? 'All devices must be ready.'
                       : 'Both devices must be ready.'}
                   </Text>
-                  {isSendBitcoin && (
-                    <View
-                      style={[
-                        styles.transactionDetails,
-                        {
-                          backgroundColor: theme.colors.cardBackground,
-                          borderRadius: 12,
-                          padding: 12,
-                          borderWidth: 1.5,
-                          borderColor: theme.colors.border,
-                        },
-                      ]}>
-                      {/* Transaction Flow */}
-                      {(() => {
-                        const accentColor =
-                          theme.colors.background === '#ffffff'
-                            ? theme.colors.primary
-                            : theme.colors.bitcoinOrange;
-                        const totalSats =
-                          Number(route.params.satoshiAmount) +
-                          Number(route.params.satoshiFees);
-                        const toAddr = route.params.toAddress || '';
-                        const net = route.params?.network || '';
-                        const isTestnet =
-                          net === 'testnet3' || net === 'testnet';
-                        const netForApi = isTestnet
-                          ? 'testnet3'
-                          : net === 'mainnet'
-                            ? 'mainnet'
-                            : net || 'mainnet';
-                        const explorerBase =
-                          explorerWebBaseFromApiUrl(
-                            resolveStoredMempoolApiBase(netForApi),
-                          ) ||
-                          (isTestnet
-                            ? 'https://mempool.space/testnet'
-                            : 'https://mempool.space');
-                        const sectionTitle = {
-                          fontSize: theme.fontSizes?.xs || 10,
-                          fontFamily: theme.fontFamilies?.bold,
-                          color: theme.colors.textSecondary,
-                          textTransform: 'uppercase' as const,
-                          letterSpacing: 0.5,
-                          marginBottom: 6,
-                        };
-                        const rowBase = {
-                          flexDirection: 'row' as const,
-                          alignItems: 'center' as const,
-                          backgroundColor:
-                            theme.colors.background === '#ffffff'
-                              ? theme.colors.primary + '06'
-                              : '#ffffff08',
-                          borderRadius: 8,
-                          padding: 8,
-                          marginBottom: 4,
-                          borderWidth: 1,
-                          borderColor: theme.colors.border,
-                        };
-                        const rowOurs = {
-                          ...rowBase,
-                          backgroundColor:
-                            theme.colors.background === '#ffffff'
-                              ? accentColor + '12'
-                              : accentColor + '1A',
-                          borderColor: accentColor + '60',
-                          paddingLeft: 11,
-                          overflow: 'hidden' as const,
-                        };
-                        const iconBase = {
-                          width: 18,
-                          height: 18,
-                          marginRight: 8,
-                        };
-                        const labelStyle = {
-                          fontSize: theme.fontSizes?.sm || 12,
-                          fontFamily: theme.fontFamilies?.monospaceBold,
-                          color: theme.colors.text,
-                        };
-                        const labelOurs = {
-                          ...labelStyle,
-                          color: accentColor,
-                        };
-                        const pathText = {
-                          fontSize: theme.fontSizes?.xs || 10,
-                          fontFamily: theme.fontFamilies?.monospace,
-                          color: theme.colors.textSecondary,
-                          marginTop: 1,
-                        };
-                        const subLabel = {
-                          fontSize: theme.fontSizes?.xs || 10,
-                          fontFamily: theme.fontFamilies?.monospace,
-                          color: theme.colors.textSecondary,
-                          fontStyle: 'italic' as const,
-                          marginTop: 1,
-                        };
-                        const amtBTC = {
-                          fontSize: theme.fontSizes?.sm || 12,
-                          fontFamily: theme.fontFamilies?.monospaceBold,
-                          color: theme.colors.text,
-                          textAlign: 'right' as const,
-                        };
-                        const amtBTCOurs = {
-                          ...amtBTC,
-                          color: accentColor,
-                        };
-                        const amtFiat = {
-                          fontSize: theme.fontSizes?.xs || 10,
-                          fontFamily: theme.fontFamilies?.monospace,
-                          color: theme.colors.textSecondary,
-                          textAlign: 'right' as const,
-                        };
-                        const changeSats =
-                          txPreview && txPreview.totalInputSats > 0
-                            ? txPreview.totalInputSats -
-                              Number(route.params.satoshiAmount) -
-                              Number(route.params.satoshiFees)
-                            : 0;
-                        const accentBar = (
-                          <View
-                            style={{
-                              position: 'absolute',
-                              left: 0,
-                              top: 0,
-                              bottom: 0,
-                              width: 3,
-                              backgroundColor: accentColor,
-                              borderTopLeftRadius: 8,
-                              borderBottomLeftRadius: 8,
-                            }}
-                          />
-                        );
-                        return (
-                          <View style={{paddingTop: 8}}>
-                            <AppPressable
-                              onPress={() =>
-                                setTxDetailsExpanded(prev => !prev)
-                              }
-                              style={{
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                paddingVertical: 6,
-                                marginBottom: 4,
-                              }}>
-                              <Text
-                                style={{
-                                  fontSize: theme.fontSizes?.sm || 12,
-                                  fontFamily: theme.fontFamilies?.bold,
-                                  color: theme.colors.textSecondary,
-                                  textTransform: 'uppercase',
-                                  letterSpacing: 0.5,
-                                }}>
-                                Spending {sat2btcStr(String(totalSats))} BTC (
-                                {route.params?.selectedCurrency}{' '}
-                                {formatFiat(route.params?.fiatAmount)}){' '}
-                                {net === 'testnet' ? '(Testnet)' : ''}
-                              </Text>
-                              <Text
-                                style={{
-                                  fontSize: 10,
-                                  color: theme.colors.textSecondary,
-                                }}>
-                                {txDetailsExpanded ? '▼' : '▶'}
-                              </Text>
-                            </AppPressable>
-                            {txDetailsExpanded && (
-                              <>
-                                {/* Inputs */}
-                                <Text style={sectionTitle}>
-                                  Inputs
-                                  {txPreview && txPreview.utxos.length > 0
-                                    ? ` (${txPreview.utxos.length})`
-                                    : ''}
-                                </Text>
-                                {txPreview && txPreview.utxos.length > 0 ? (
-                                  txPreview.utxos.map((u, idx) => (
-                                    <AppPressable
-                                      key={`${u.address}-${idx}`}
-                                      style={[
-                                        rowOurs,
-                                        {
-                                          marginBottom:
-                                            idx < txPreview.utxos.length - 1
-                                              ? 3
-                                              : 4,
-                                        },
-                                      ]}
-                                      onPress={() =>
-                                        Linking.openURL(
-                                          `${explorerBase}/address/${u.address}`,
-                                        )
-                                      }>
-                                      {accentBar}
-                                      <Image
-                                        source={require('../assets/in-icon.png')}
-                                        style={[
-                                          iconBase,
-                                          {tintColor: accentColor},
-                                        ]}
-                                        resizeMode="contain"
-                                      />
-                                      <View style={{flex: 1}}>
-                                        <Text
-                                          style={[
-                                            labelOurs,
-                                            {textDecorationLine: 'underline'},
-                                          ]}
-                                          numberOfLines={1}
-                                          ellipsizeMode="middle">
-                                          {shortenAddress(u.address)}
-                                        </Text>
-                                        <Text style={pathText}>
-                                          {u.derivationPath}
-                                        </Text>
-                                      </View>
-                                      <View style={{alignItems: 'flex-end'}}>
-                                        <Text style={amtBTCOurs}>
-                                          {sat2btcStr(String(u.value))} BTC
-                                        </Text>
-                                      </View>
-                                    </AppPressable>
-                                  ))
-                                ) : (
-                                  <View style={rowOurs}>
-                                    {accentBar}
-                                    <Image
-                                      source={require('../assets/in-icon.png')}
-                                      style={[
-                                        iconBase,
-                                        {tintColor: accentColor},
-                                      ]}
-                                      resizeMode="contain"
-                                    />
-                                    <View style={{flex: 1}}>
-                                      <Text style={labelOurs} numberOfLines={1}>
-                                        HD Wallet
-                                      </Text>
-                                    </View>
-                                    <View style={{alignItems: 'flex-end'}}>
-                                      <Text style={amtBTCOurs}>
-                                        {sat2btcStr(String(totalSats))} BTC
-                                      </Text>
-                                    </View>
-                                  </View>
-                                )}
-
-                                {/* Hub */}
-                                <View
-                                  style={{
-                                    alignItems: 'center',
-                                    paddingVertical: 8,
-                                  }}>
-                                  <View
-                                    style={{
-                                      width: 28,
-                                      height: 28,
-                                      borderRadius: 14,
-                                      backgroundColor: accentColor + '20',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                    }}>
-                                    <Text
-                                      style={{
-                                        fontSize: 14,
-                                        color: accentColor,
-                                        fontFamily: theme.fontFamilies?.bold,
-                                      }}>
-                                      ↓
-                                    </Text>
-                                  </View>
-                                  <Text
-                                    style={{
-                                      fontSize: theme.fontSizes?.xs || 10,
-                                      fontFamily: theme.fontFamilies?.bold,
-                                      color: theme.colors.textSecondary,
-                                      textTransform: 'uppercase',
-                                      letterSpacing: 0.5,
-                                      marginTop: 4,
-                                    }}>
-                                    Transaction
-                                  </Text>
-                                </View>
-
-                                {/* Outputs */}
-                                <Text style={sectionTitle}>Outputs</Text>
-                                {/* Recipient */}
-                                <AppPressable
-                                  style={rowBase}
-                                  onPress={() =>
-                                    Linking.openURL(
-                                      `${explorerBase}/address/${toAddr}`,
-                                    )
-                                  }>
-                                  <Image
-                                    source={require('../assets/bitcoin-icon.png')}
-                                    style={[
-                                      iconBase,
-                                      {tintColor: theme.colors.textSecondary},
-                                    ]}
-                                    resizeMode="contain"
-                                  />
-                                  <View style={{flex: 1}}>
-                                    <Text
-                                      style={[
-                                        labelStyle,
-                                        {textDecorationLine: 'underline'},
-                                      ]}
-                                      numberOfLines={1}
-                                      ellipsizeMode="middle">
-                                      {shortenAddress(toAddr)}
-                                    </Text>
-                                    <Text style={subLabel}>recipient</Text>
-                                  </View>
-                                  <View style={{alignItems: 'flex-end'}}>
-                                    <Text style={amtBTC}>
-                                      {sat2btcStr(route.params.satoshiAmount)}{' '}
-                                      BTC
-                                    </Text>
-                                    <Text style={amtFiat}>
-                                      {route.params.selectedCurrency}{' '}
-                                      {formatFiat(route.params.fiatAmount)}
-                                    </Text>
-                                  </View>
-                                </AppPressable>
-                                {/* Connector */}
-                                <View
-                                  style={{
-                                    width: 1,
-                                    height: 8,
-                                    backgroundColor: theme.colors.border,
-                                    marginLeft: 17,
-                                    marginBottom: 2,
-                                  }}
-                                />
-                                {/* Fee */}
-                                <View style={rowBase}>
-                                  <Image
-                                    source={require('../assets/send-icon.png')}
-                                    style={[
-                                      iconBase,
-                                      {tintColor: theme.colors.textSecondary},
-                                    ]}
-                                    resizeMode="contain"
-                                  />
-                                  <View style={{flex: 1}}>
-                                    <Text style={labelStyle}>Fee</Text>
-                                  </View>
-                                  <View style={{alignItems: 'flex-end'}}>
-                                    <Text style={amtBTC}>
-                                      {sat2btcStr(route.params.satoshiFees)} BTC
-                                    </Text>
-                                    <Text style={amtFiat}>
-                                      {route.params.selectedCurrency}{' '}
-                                      {formatFiat(route.params.fiatFees)}
-                                    </Text>
-                                  </View>
-                                </View>
-                                {/* Change output — only when we know the change address */}
-                                {txPreview && txPreview.changeAddress ? (
-                                  <>
-                                    <View
-                                      style={{
-                                        width: 1,
-                                        height: 8,
-                                        backgroundColor: theme.colors.border,
-                                        marginLeft: 17,
-                                        marginBottom: 2,
-                                      }}
-                                    />
-                                    <AppPressable
-                                      style={[rowOurs, {marginBottom: 0}]}
-                                      onPress={() =>
-                                        Linking.openURL(
-                                          `${explorerBase}/address/${txPreview.changeAddress}`,
-                                        )
-                                      }>
-                                      {accentBar}
-                                      <Image
-                                        source={require('../assets/in-icon.png')}
-                                        style={[
-                                          iconBase,
-                                          {tintColor: accentColor},
-                                        ]}
-                                        resizeMode="contain"
-                                      />
-                                      <View style={{flex: 1}}>
-                                        <Text
-                                          style={[
-                                            labelOurs,
-                                            {textDecorationLine: 'underline'},
-                                          ]}
-                                          numberOfLines={1}
-                                          ellipsizeMode="middle">
-                                          {shortenAddress(
-                                            txPreview.changeAddress,
-                                          )}
-                                        </Text>
-                                        <Text style={subLabel}>change</Text>
-                                        {txPreview.changeAddressPath ? (
-                                          <Text style={pathText}>
-                                            {txPreview.changeAddressPath}
-                                          </Text>
-                                        ) : null}
-                                      </View>
-                                      <View style={{alignItems: 'flex-end'}}>
-                                        {changeSats > 0 && (
-                                          <Text style={amtBTCOurs}>
-                                            {sat2btcStr(String(changeSats))} BTC
-                                          </Text>
-                                        )}
-                                      </View>
-                                    </AppPressable>
-                                  </>
-                                ) : null}
-                              </>
-                            )}
-                          </View>
-                        );
-                      })()}
-                    </View>
-                  )}
-                  {isSignPSBT && (
-                    <View style={styles.transactionDetails}>
-                      <Text
-                        style={[
-                          styles.transactionLabel,
-                          {
-                            fontSize: theme.fontSizes?.base || 14,
-                            marginBottom: 8,
-                          },
-                        ]}>
-                        PSBT Ready to Sign
-                      </Text>
-                      {psbtDetails ? (
-                        <>
-                          <View
-                            style={[
-                              styles.transactionItem,
-                              {
-                                flexDirection: 'row',
-                                justifyContent: 'space-between',
-                                marginBottom: 4,
-                                paddingVertical: 2,
-                              },
-                            ]}>
-                            <Text
-                              style={[
-                                styles.transactionItemLabel,
-                                {fontSize: theme.fontSizes?.sm || 12},
-                              ]}>
-                              Inputs:
-                            </Text>
-                            <Text
-                              style={[
-                                styles.transactionItemValue,
-                                {fontSize: theme.fontSizes?.sm || 12},
-                              ]}>
-                              {psbtDetails.inputs.length}
-                            </Text>
-                          </View>
-                          <View
-                            style={[
-                              styles.transactionItem,
-                              {
-                                flexDirection: 'row',
-                                justifyContent: 'space-between',
-                                marginBottom: 4,
-                                paddingVertical: 2,
-                              },
-                            ]}>
-                            <Text
-                              style={[
-                                styles.transactionItemLabel,
-                                {fontSize: theme.fontSizes?.sm || 12},
-                              ]}>
-                              Outputs:
-                            </Text>
-                            <Text
-                              style={[
-                                styles.transactionItemValue,
-                                {fontSize: theme.fontSizes?.sm || 12},
-                              ]}>
-                              {psbtDetails.outputs.length}
-                            </Text>
-                          </View>
-                          <View
-                            style={[
-                              styles.transactionItem,
-                              {
-                                flexDirection: 'row',
-                                justifyContent: 'space-between',
-                                marginBottom: 4,
-                                paddingVertical: 2,
-                              },
-                            ]}>
-                            <Text
-                              style={[
-                                styles.transactionItemLabel,
-                                {fontSize: theme.fontSizes?.sm || 12},
-                              ]}>
-                              Total Input:
-                            </Text>
-                            <Text
-                              style={[
-                                styles.transactionItemValue,
-                                {
-                                  fontSize: theme.fontSizes?.base || 13,
-                                  fontFamily: theme.fontFamilies.bold,
-                                },
-                              ]}>
-                              {sat2btcStr(psbtDetails.totalInput)} BTC
-                            </Text>
-                          </View>
-                          <View
-                            style={[
-                              styles.transactionItem,
-                              {
-                                flexDirection: 'row',
-                                justifyContent: 'space-between',
-                                marginBottom: 4,
-                                paddingVertical: 2,
-                              },
-                            ]}>
-                            <Text
-                              style={[
-                                styles.transactionItemLabel,
-                                {fontSize: theme.fontSizes?.sm || 12},
-                              ]}>
-                              Total Output:
-                            </Text>
-                            <Text
-                              style={[
-                                styles.transactionItemValue,
-                                {
-                                  fontSize: theme.fontSizes?.base || 13,
-                                  fontFamily: theme.fontFamilies.bold,
-                                },
-                              ]}>
-                              {sat2btcStr(psbtDetails.totalOutput)} BTC
-                            </Text>
-                          </View>
-                          <View
-                            style={[
-                              styles.transactionItem,
-                              {
-                                flexDirection: 'row',
-                                justifyContent: 'space-between',
-                                marginBottom: 0,
-                                paddingVertical: 2,
-                              },
-                            ]}>
-                            <Text
-                              style={[
-                                styles.transactionItemLabel,
-                                {fontSize: theme.fontSizes?.sm || 12},
-                              ]}>
-                              Fee:
-                            </Text>
-                            <Text
-                              style={[
-                                styles.transactionItemValue,
-                                {
-                                  fontSize: theme.fontSizes?.base || 13,
-                                  fontFamily: theme.fontFamilies.bold,
-                                },
-                              ]}>
-                              {sat2btcStr(psbtDetails.fee)} BTC
-                            </Text>
-                          </View>
-                          {psbtDetails.derivePaths &&
-                            psbtDetails.derivePaths.length > 1 && (
-                              <View
-                                style={[
-                                  styles.transactionItem,
-                                  {
-                                    marginTop: 4,
-                                    paddingTop: 4,
-                                    borderTopWidth: 1,
-                                    borderTopColor: theme.colors.border,
-                                    paddingVertical: 2,
-                                  },
-                                ]}>
-                                <Text
-                                  style={[
-                                    styles.transactionItemValue,
-                                    {fontSize: theme.fontSizes?.xs || 10},
-                                  ]}>
-                                  {psbtDetails.derivePaths.length} different
-                                  paths
-                                </Text>
-                              </View>
-                            )}
-                        </>
-                      ) : (
-                        <Text
-                          style={[
-                            styles.addressValue,
-                            {
-                              marginTop: 4,
-                              marginBottom: 4,
-                              fontSize: theme.fontSizes?.sm || 12,
-                            },
-                          ]}>
-                          {route.params.psbtBase64
-                            ? `PSBT (${Math.round(
-                                (route.params.psbtBase64.length || 0) / 1024,
-                              )} KB) - Parsing...`
-                            : 'No PSBT data'}
-                        </Text>
-                      )}
-                    </View>
-                  )}
-                  <AppPressable
-                    style={styles.checkboxContainer}
-                    onPress={() => {
-                      toggleKeysignReady();
-                    }}>
-                    <View
-                      style={[
-                        styles.checkbox,
-                        isKeysignReady && styles.checked,
-                      ]}
+                  {isSendBitcoin && route.params ? (
+                    <TransactionFlowDiagram
+                      variant="send"
+                      collapsedSummary="full"
+                      expanded={txDetailsExpanded}
+                      onToggleExpand={() =>
+                        setTxDetailsExpanded(prev => !prev)
+                      }
+                      sendParams={{
+                        satoshiAmount: route.params.satoshiAmount ?? 0,
+                        satoshiFees: route.params.satoshiFees ?? 0,
+                        toAddress: route.params.toAddress || '',
+                        network: route.params.network,
+                        selectedCurrency: route.params.selectedCurrency,
+                        fiatAmount: route.params.fiatAmount,
+                        fiatFees: route.params.fiatFees,
+                      }}
+                      txPreview={txPreview}
+                      loading={txPreviewLoading}
+                      error={txPreviewError}
+                      formatFiat={formatFiat}
                     />
-                    <Text style={styles.checkboxLabel}>
-                      Keep this app open during signing ⚠️
-                    </Text>
-                  </AppPressable>
-                  {doingMPC && (
-                    <Modal
-                      transparent={true}
-                      visible={doingMPC}
-                      animationType="fade"
-                      onRequestClose={
-                        () => {} /* non-dismissible: block Android back */
-                      }>
-                      <View style={styles.modalOverlay}>
-                        <View style={styles.modalContent}>
-                          {/* Icon Container */}
-                          <View style={styles.modalIconContainer}>
-                            <View style={styles.modalIconBackground}>
-                              <Image
-                                source={require('../assets/key-icon.png')}
-                                style={styles.finalizingModalIcon}
-                                resizeMode="contain"
-                              />
-                            </View>
-                          </View>
-                          {/* Header Text */}
-                          <Text style={styles.modalTitle}>
-                            {isSignPSBT
-                              ? 'PSBT Co-Signing'
-                              : 'Co-Signing Your Transaction'}
-                          </Text>
-                          {/* Subtext */}
-                          <Text style={styles.modalSubtitle}>
-                            Securing your transaction with multi-party
-                            cryptography. Please stay in the app...
-                          </Text>
-                          {/* Progress Container */}
-                          <View style={styles.progressContainer}>
-                            {/* Circular Progress */}
-                            <Progress.Circle
-                              size={80}
-                              progress={displayPercent / 100}
-                              thickness={6}
-                              borderWidth={0}
-                              showsText={false}
-                              color={
-                                theme.colors.background === '#ffffff'
-                                  ? theme.colors.primary
-                                  : theme.colors.accent
-                              }
-                              style={styles.progressCircle}
-                            />
-                            {/* Progress Percentage */}
-                            <View style={styles.progressTextWrapper}>
-                              <Text style={styles.progressPercentage}>
-                                {displayPercent}%
-                              </Text>
-                            </View>
-                          </View>
-                          {/* Status and Countdown */}
-                          <View style={styles.statusContainer}>
-                            <View style={styles.statusRow}>
-                              <View style={styles.statusIndicator} />
-                              <Text style={styles.finalizingStatusText}>
-                                {status}
-                              </Text>
-                            </View>
-                            <Text style={styles.finalizingCountdownText}>
-                              Time elapsed: {prepCounter} seconds
-                            </Text>
-                          </View>
-                          {isSendBitcoin && (
-                            <View style={styles.modalActions}>
-                              <AppPressable
-                                style={[
-                                  styles.modalButton,
-                                  {backgroundColor: theme.colors.secondary},
-                                ]}
-                                onPress={abortActiveMpc}>
-                                <Text style={styles.buttonText}>Abort</Text>
-                              </AppPressable>
-                            </View>
-                          )}
-                        </View>
-                      </View>
-                    </Modal>
-                  )}
-                  <AppPressable
-                    style={
-                      isKeysignReady
-                        ? styles.clickButton
-                        : styles.clickButtonOff
-                    }
-                    disabled={!isKeysignReady}
-                    onPress={() => {
-                      runKeysign();
-                    }}>
-                    <View style={styles.buttonContent}>
-                      <Image
-                        source={require('../assets/cosign-icon.png')}
-                        style={{
-                          width: 20,
-                          height: 20,
-                          marginRight: 8,
-                          tintColor: theme.colors.white,
-                        }}
-                        resizeMode="contain"
-                      />
-                      <Text style={styles.clickButtonText}>
-                        {isSignPSBT
-                          ? `${isMaster ? 'Start' : 'Join'} PSBT Signing`
-                          : `${isMaster ? 'Start' : 'Join'} Co-Signing`}
-                      </Text>
-                    </View>
-                  </AppPressable>
+                  ) : null}
+                  {isSignPSBT && route.params?.psbtBase64 ? (
+                    <TransactionFlowDiagram
+                      variant="psbt"
+                      collapsedSummary="full"
+                      expanded={txDetailsExpanded}
+                      onToggleExpand={() =>
+                        setTxDetailsExpanded(prev => !prev)
+                      }
+                      psbtDetails={psbtDetails}
+                      psbtBase64={route.params.psbtBase64}
+                      parseError={psbtParseError}
+                      onRetryParse={() => {
+                        setPsbtParseError(null);
+                        setPsbtDetails(null);
+                        setPsbtRetryToken(t => t + 1);
+                      }}
+                    />
+                  ) : null}
                 </View>
               </>
             )}
           </View>
         </ScrollView>
+        {showSpendStickyFooter && spendStickySummary ? (
+          <PairingSpendStickyFooter
+            summaryLine={spendStickySummary}
+            network={route.params?.network}
+            buttonLabel={spendStickyLabel}
+            onPress={() => runKeysign()}
+          />
+        ) : null}
       </KeyboardAvoidingView>
+      {doingMPC && (isSendBitcoin || isSignPSBT) && (
+        <Modal
+          transparent={true}
+          visible={doingMPC}
+          animationType="fade"
+          onRequestClose={
+            () => {} /* non-dismissible: block Android back */
+          }>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalIconContainer}>
+                <View style={styles.modalIconBackground}>
+                  <Image
+                    source={require('../assets/key-icon.png')}
+                    style={styles.finalizingModalIcon}
+                    resizeMode="contain"
+                  />
+                </View>
+              </View>
+              <Text style={styles.modalTitle}>
+                {isSignPSBT
+                  ? 'PSBT Co-Signing'
+                  : 'Co-Signing Your Transaction'}
+              </Text>
+              <Text style={styles.modalSubtitle}>
+                Securing your transaction with multi-party cryptography.
+                Please stay in the app...
+              </Text>
+              <View style={styles.progressContainer}>
+                <Progress.Circle
+                  size={80}
+                  progress={displayPercent / 100}
+                  thickness={6}
+                  borderWidth={0}
+                  showsText={false}
+                  color={
+                    theme.colors.background === '#ffffff'
+                      ? theme.colors.primary
+                      : theme.colors.accent
+                  }
+                  style={styles.progressCircle}
+                />
+                <View style={styles.progressTextWrapper}>
+                  <Text style={styles.progressPercentage}>
+                    {displayPercent}%
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.statusContainer}>
+                <View style={styles.statusRow}>
+                  <View style={styles.statusIndicator} />
+                  <Text style={styles.finalizingStatusText}>{status}</Text>
+                </View>
+                <Text style={styles.finalizingCountdownText}>
+                  Time elapsed: {prepCounter} seconds
+                </Text>
+              </View>
+              {isSendBitcoin && (
+                <View style={styles.modalActions}>
+                  <AppPressable
+                    style={[
+                      styles.modalButton,
+                      {backgroundColor: theme.colors.secondary},
+                    ]}
+                    onPress={abortActiveMpc}>
+                    <Text style={styles.buttonText}>Abort</Text>
+                  </AppPressable>
+                </View>
+              )}
+            </View>
+          </View>
+        </Modal>
+      )}
       {/* Backup Modal */}
       <BackupKeyshareModal
         visible={isBackupModalVisible}
@@ -5219,7 +4489,7 @@ const MobilesPairing = ({navigation}: any) => {
               ),
             );
             setMpcDone(true);
-            void (async () => {
+            const postBroadcastCleanup = async () => {
               if (p.multiPath) {
                 try {
                   await WalletService.getInstance().incrementChangeIndexAfterSend(
@@ -5260,7 +4530,10 @@ const MobilesPairing = ({navigation}: any) => {
                 await waitMS(2000);
                 stopRelay();
               }
-            })();
+            };
+            postBroadcastCleanup().catch(e => {
+              dbg('MobilesPairing: post-broadcast cleanup failed:', e);
+            });
           } catch (e) {
             dbg('MobilesPairing: post-broadcast cleanup failed:', e);
           }

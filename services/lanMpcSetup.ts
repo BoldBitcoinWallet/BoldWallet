@@ -18,6 +18,21 @@ export function lastIPv4Octet(host: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** True when host is a dotted IPv4 quad (LAN discovery uses IPs only). */
+export function isIPv4LanHost(host: string): boolean {
+  const parts = host.split('.');
+  if (parts.length !== 4) {
+    return false;
+  }
+  return parts.every(part => {
+    if (!/^\d{1,3}$/.test(part)) {
+      return false;
+    }
+    const n = Number(part);
+    return Number.isInteger(n) && n >= 0 && n <= 255;
+  });
+}
+
 /** Strip scheme/port; map 0.0.0.0 to null (invalid as client target). */
 export function normalizeLanHost(raw: string | null | undefined): string | null {
   if (raw == null) {
@@ -33,10 +48,64 @@ export function normalizeLanHost(raw: string | null | undefined): string | null 
     s = s.slice(0, slash);
   }
   const host = (s.split(':')[0] || '').trim();
-  if (!host || host === '0.0.0.0') {
+  if (!host || host === '0.0.0.0' || !isIPv4LanHost(host)) {
     return null;
   }
   return host;
+}
+
+/**
+ * Native discover/listen may return "error:…" strings on timeout — not a peer payload.
+ * Valid payloads look like: "host:port@hex(device@party)@pubkey" (optionally "|" for trio).
+ */
+/** Wait for every listen/discover promise; return the first valid LAN payload. */
+export async function raceLanPeerDiscovery(
+  promises: Array<Promise<string | null>>,
+): Promise<string | null> {
+  if (promises.length === 0) {
+    return null;
+  }
+  const settled = await Promise.allSettled(promises);
+  for (const entry of settled) {
+    if (
+      entry.status === 'fulfilled' &&
+      isLanPeerDiscoveryPayload(entry.value)
+    ) {
+      return entry.value;
+    }
+  }
+  return null;
+}
+
+export function isLanPeerDiscoveryPayload(
+  value: string | null | undefined,
+): boolean {
+  const raw = String(value ?? '').trim();
+  if (!raw) {
+    return false;
+  }
+  if (/^error:/i.test(raw)) {
+    return false;
+  }
+  const primary = raw.split('|')[0]?.split(',')[0]?.trim() ?? '';
+  if (!primary.includes('@')) {
+    return false;
+  }
+  const hostToken = (primary.split('@')[0] || '').split(':')[0].trim();
+  return normalizeLanHost(hostToken) != null;
+}
+
+/** First normalized LAN host among candidates (e.g. discovery payload, then getLanIp). */
+export function coalesceLanHost(
+  ...candidates: (string | null | undefined)[]
+): string | null {
+  for (const raw of candidates) {
+    const host = normalizeLanHost(raw);
+    if (host) {
+      return host;
+    }
+  }
+  return null;
 }
 
 export type TrioLanRoleAssignment = {
@@ -170,7 +239,6 @@ export function resolveLanSigningParties(input: {
   if (localParty === peerParty) {
     throw new Error('Please use two different key shares on each device.');
   }
-  void input.peerParty2;
   const parties = [localParty, peerParty].sort();
   return {partyID: localParty, partiesCSV: parties.join(',')};
 }
@@ -207,6 +275,68 @@ export function resolveDklsLanSigningPartiesFromKeyshare(
   return resolveLanSigningParties({
     localParty: localLabel,
     peerParty: peerLabel,
+  });
+}
+
+/**
+ * GG18 LAN spend/sign: use party ids stored in the keyshare (`local_party_key` and
+ * committee peers), not Wi‑Fi IP slot labels assigned during pairing UI.
+ * DKLS uses {@link resolveDklsLanSigningPartiesFromKeyshare} instead.
+ */
+export function resolveGg18LanSigningPartiesFromKeyshare(
+  meta: {
+    local_party_key?: string;
+    keygen_committee_keys?: string[] | null;
+  } | null,
+  input: {
+    peerParty?: string | null;
+    peerCommitteeKey?: string | null;
+    persistedPeerParty?: string | null;
+  },
+): {partyID: string; partiesCSV: string} {
+  const localKey = (meta?.local_party_key ?? '').trim();
+  if (!localKey) {
+    throw new Error(
+      'LAN party identity missing from keyshare. Re-import your keyshare, then retry co-signing.',
+    );
+  }
+
+  const committee = meta?.keygen_committee_keys;
+  const committeeUsesNpubs =
+    localKey.startsWith('npub1') ||
+    (Array.isArray(committee) &&
+      committee.some(k => String(k ?? '').trim().startsWith('npub1')));
+
+  let peerKey = '';
+  if (committeeUsesNpubs) {
+    peerKey =
+      (input.peerCommitteeKey ?? '').trim() ||
+      (input.peerParty?.trim().startsWith('npub1') ? input.peerParty.trim() : '') ||
+      (input.persistedPeerParty?.trim().startsWith('npub1')
+        ? input.persistedPeerParty.trim()
+        : '') ||
+      (input.peerParty ?? '').trim() ||
+      (input.persistedPeerParty ?? '').trim();
+  } else {
+    peerKey =
+      (input.peerParty ?? '').trim() || (input.persistedPeerParty ?? '').trim();
+    if (peerKey.startsWith('npub1') && meta) {
+      const label = getCommitteeKeyshareLabel(meta, peerKey);
+      if (label) {
+        peerKey = label;
+      }
+    }
+  }
+
+  if (!peerKey) {
+    throw new Error(
+      'LAN peer role is missing. Re-run device pairing on the same Wi‑Fi, then retry co-signing.',
+    );
+  }
+
+  return resolveLanSigningParties({
+    localParty: localKey,
+    peerParty: peerKey,
   });
 }
 
@@ -288,15 +418,6 @@ export type PersistedLanRoles = {
   isMaster: boolean;
   isTrio: boolean;
 };
-
-const LAN_ROLE_KEYS = [
-  'lan_local_party',
-  'lan_peer_party',
-  'lan_peer_party2',
-  'lan_master_host',
-  'lan_is_master',
-  'lan_is_trio',
-] as const;
 
 /** Persist trio/duo role assignment after LAN pairing (survives navigation / re-entry). */
 export function persistLanPairingRoles(roles: PersistedLanRoles): void {

@@ -257,6 +257,17 @@ export function mapMpcHookToPercent(
     const next: MpcProgressResult = {percent: null};
     if (msg.done) {
       next.percent = 100;
+    } else if ((msg.utxo_total ?? 0) > 0) {
+      const utxoCount = msg.utxo_total!;
+      const utxoIndex = msg.utxo_current ?? 0;
+      const buildCap = 15;
+      const buildPct = Math.min(
+        buildCap,
+        Math.round((buildCap * utxoIndex) / utxoCount),
+      );
+      if (buildPct > 0) {
+        next.percent = Math.max(currentProgress, buildPct);
+      }
     }
     if ((msg.utxo_total ?? 0) > 0) {
       const utxoCount = msg.utxo_total!;

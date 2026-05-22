@@ -182,7 +182,7 @@ describe('mapMpcHookToPercent', () => {
         'dkls23',
         {isTrio: false, utxo: emptyUtxo, currentProgress: 0},
       );
-      expect(r.percent).toBeNull();
+      expect(r.percent).toBe(8);
       expect(r.utxoState).toEqual({
         utxoCount: 2,
         utxoIndex: 1,

@@ -685,10 +685,19 @@ func ParsePSBTDetails(psbtBase64 string) (result string, err error) {
 		var value int64
 		if input.WitnessUtxo != nil {
 			value = input.WitnessUtxo.Value
+			_, addrs, _, addrErr := txscript.ExtractPkScriptAddrs(input.WitnessUtxo.PkScript, params)
+			if addrErr == nil && len(addrs) > 0 {
+				inputInfo["address"] = addrs[0].EncodeAddress()
+			}
 		} else if input.NonWitnessUtxo != nil {
 			idx := txIn.PreviousOutPoint.Index
 			if int(idx) < len(input.NonWitnessUtxo.TxOut) {
-				value = input.NonWitnessUtxo.TxOut[idx].Value
+				prevOut := input.NonWitnessUtxo.TxOut[idx]
+				value = prevOut.Value
+				_, addrs, _, addrErr := txscript.ExtractPkScriptAddrs(prevOut.PkScript, params)
+				if addrErr == nil && len(addrs) > 0 {
+					inputInfo["address"] = addrs[0].EncodeAddress()
+				}
 			}
 		}
 		inputInfo["amount"] = value
@@ -698,42 +707,66 @@ func ParsePSBTDetails(psbtBase64 string) (result string, err error) {
 		// Extract derivation path from Bip32Derivation for this input
 		var inputDerivePath string
 		if len(input.Bip32Derivation) > 0 {
-			// Use the first derivation path found for this input
-			// Convert []uint32 to string format like "m/44'/0'/0'/0/0"
-			path := input.Bip32Derivation[0].Bip32Path
-			inputDerivePath = formatBip32Path(path)
+			inputDerivePath = resolveInputDerivePath(packet, input.Bip32Derivation[0].Bip32Path)
 		}
 
 		// Store derivation path for this input (or empty if not found)
 		derivePathsPerInput = append(derivePathsPerInput, inputDerivePath)
 	}
 
-	// Calculate outputs
+	// Calculate outputs (align with packet.Outputs for Bip32 metadata)
 	var totalOutput int64
 	outputs := make([]map[string]interface{}, 0)
-	for _, txOut := range tx.TxOut {
+	derivePathsPerOutput := make([]string, 0)
+	for i, txOut := range tx.TxOut {
 		addr := "Unknown"
 		_, addrs, _, err := txscript.ExtractPkScriptAddrs(txOut.PkScript, params)
 		if err == nil && len(addrs) > 0 {
 			addr = addrs[0].EncodeAddress()
 		}
 
-		outputs = append(outputs, map[string]interface{}{
+		outputDerivePath := ""
+		isChange := false
+		if i < len(packet.Outputs) && len(packet.Outputs[i].Bip32Derivation) > 0 {
+			outputDerivePath = resolveInputDerivePath(packet, packet.Outputs[i].Bip32Derivation[0].Bip32Path)
+			// Change chain is typically index 1 in BIP84 (…/1/n).
+			path := packet.Outputs[i].Bip32Derivation[0].Bip32Path
+			if len(path) >= 2 {
+				chainIdx := path[len(path)-2]
+				if chainIdx >= 0x80000000 {
+					chainIdx -= 0x80000000
+				}
+				isChange = chainIdx == 1
+			}
+		} else if totalInput > 0 && txOut.Value > 0 && txOut.Value < totalInput/10 {
+			isChange = true
+		}
+
+		outInfo := map[string]interface{}{
 			"address": addr,
 			"amount":  txOut.Value,
-		})
+		}
+		if outputDerivePath != "" {
+			outInfo["derivationPath"] = outputDerivePath
+		}
+		if isChange {
+			outInfo["isChange"] = true
+		}
+		outputs = append(outputs, outInfo)
+		derivePathsPerOutput = append(derivePathsPerOutput, outputDerivePath)
 		totalOutput += txOut.Value
 	}
 
 	fee := max(totalInput-totalOutput, 0)
 
 	result_map := map[string]interface{}{
-		"inputs":      inputs,
-		"outputs":     outputs,
-		"fee":         fee,
-		"totalInput":  totalInput,
-		"totalOutput": totalOutput,
-		"derivePaths": derivePathsPerInput,
+		"inputs":             inputs,
+		"outputs":            outputs,
+		"fee":                fee,
+		"totalInput":         totalInput,
+		"totalOutput":        totalOutput,
+		"derivePaths":        derivePathsPerInput,
+		"outputDerivePaths":  derivePathsPerOutput,
 	}
 
 	jsonBytes, err := json.Marshal(result_map)
