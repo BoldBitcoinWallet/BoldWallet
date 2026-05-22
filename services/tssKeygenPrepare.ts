@@ -7,13 +7,13 @@ import {
   type TssBackend,
 } from './tssBackend';
 import {TssProvider} from './TssProvider';
-import {
-  getPrepareModalCopy,
-  type PrepareModalCopy,
-} from './walletSetupUi';
+import {type PrepareModalCopy} from './walletSetupUi';
 
 export type {SetupMode, PrepareModalCopy};
-export {getPrepareModalCopy, getWalletSetupKeygenModalCopy} from './walletSetupUi';
+export {
+  getPrepareModalCopy,
+  getWalletSetupKeygenModalCopy,
+} from './walletSetupUi';
 
 export {getKeygenStepCount} from './mpcProgress';
 

@@ -48,20 +48,11 @@ export async function psbtIdentityHash(psbtBase64: string): Promise<string> {
   return hash;
 }
 
-/** Parse master session payload: `{seed64}:{psbtHash}:{partyKey}`. */
-export function parsePsbtSessionPayload(data: string): {
-  psbtHash: string;
-  peerShare: string;
-} {
-  const parts = data.split(':');
-  if (parts.length < 3) {
-    throw new Error('Invalid PSBT session payload');
-  }
-  return {
-    psbtHash: parts[1],
-    peerShare: parts.slice(2).join(':'),
-  };
-}
+export {
+  isValidLanPsbtSessionPayload,
+  lanPsbtSessionPayloadMatchesHash,
+  parseLanPsbtSessionPayload as parsePsbtSessionPayload,
+} from './lanSession';
 
 /** Read a .psbt file whether it is raw binary or ASCII base64 text. */
 export async function readPsbtBase64FromFile(

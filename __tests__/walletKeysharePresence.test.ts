@@ -73,4 +73,5 @@ describe('wallet keyshare presence', () => {
     await expect(resolveInitialWalletRoute()).resolves.toBe('MainTabs');
     expect(removeItem).not.toHaveBeenCalled();
   });
+
 });

@@ -6,6 +6,7 @@ import React, {
   useMemo,
   useState,
 } from 'react';
+import {DeviceEventEmitter} from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
@@ -378,6 +379,28 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
   }, [network, deriveAllAddressesForNetwork]);
   useEffect(() => {
     refresh();
+  }, [refresh]);
+  useEffect(() => {
+    const onKeyshareReady = () => {
+      dbg('[UserContext] wallet:keyshare-ready — refreshing addresses');
+      refresh();
+    };
+    const onUnlocked = () => {
+      dbg('[UserContext] wallet:unlocked — refreshing addresses');
+      refresh();
+    };
+    const subReady = DeviceEventEmitter.addListener(
+      'wallet:keyshare-ready',
+      onKeyshareReady,
+    );
+    const subUnlocked = DeviceEventEmitter.addListener(
+      'wallet:unlocked',
+      onUnlocked,
+    );
+    return () => {
+      subReady.remove();
+      subUnlocked.remove();
+    };
   }, [refresh]);
   const handleSetActiveNetwork = useCallback(
     async (newNetwork: string) => {

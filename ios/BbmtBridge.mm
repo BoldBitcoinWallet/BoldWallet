@@ -306,14 +306,15 @@ BBMT_DKLS_8(lanJoinKeygenWithKey, DklsLanJoinKeygen, key, parties, session, serv
   free(r);free(n);free(p);free(ns);free(b);free(ks);free(ta);free(am);free(fe);free(ut);free(ch); return out;
 }
 
-+ (void)cancelMpcSession:(NSString *)sessionID {
++ (NSString *)cancelMpcSession:(NSString *)sessionID {
   char *s = dupC(sessionID);
-  (void)wrap(BbmtCancelMpcSession(s));
+  NSString *out = wrap(BbmtCancelMpcSession(s));
   free(s);
+  return out;
 }
 
-+ (void)cancelNostrMpc {
-  (void)wrap(BbmtCancelNostrMpc());
++ (NSString *)cancelNostrMpc {
+  return wrap(BbmtCancelNostrMpc());
 }
 
 @end

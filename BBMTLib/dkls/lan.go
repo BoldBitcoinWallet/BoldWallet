@@ -345,14 +345,19 @@ func mergeDKGPeerMessages(batch []libtss.Message, incoming []libtss.Message, sel
 }
 
 func dedupeDKGBatchBySender(batch []libtss.Message, _ libtss.Identifier) []libtss.Message {
-	seen := make(map[string]struct{}, len(batch))
+	// libtss DKG expects at most one inbound fragment per sender for each Next() step.
+	// LAN relay payloads may contain both broadcast + direct fragments from the same
+	// sender (or duplicates from retries), which can trigger:
+	// "deserialize failed: duplicate DKG fragment from sender".
+	//
+	// Keep the first message per sender in arrival order for this step.
+	seenSender := make(map[libtss.Identifier]struct{}, len(batch))
 	out := make([]libtss.Message, 0, len(batch))
 	for _, msg := range batch {
-		key := fmt.Sprintf("%d:%d:%x", msg.From, msg.To, msg.Data)
-		if _, ok := seen[key]; ok {
+		if _, ok := seenSender[msg.From]; ok {
 			continue
 		}
-		seen[key] = struct{}{}
+		seenSender[msg.From] = struct{}{}
 		out = append(out, msg)
 	}
 	return out

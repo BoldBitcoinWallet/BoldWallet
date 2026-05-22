@@ -1113,6 +1113,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         refreshFromDBRef.current();
 
         setLoading(true);
+        await refreshUserContext();
         const ks = await getKeyshareMetadata();
         if (!ks) {
           dbg('WalletHome: No keyshare found during initialization');

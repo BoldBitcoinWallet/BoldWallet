@@ -1,5 +1,13 @@
 import {BBMTLibNativeModule} from '../native_modules';
 import {
+  markMpcInProgress,
+  resetMpcCancelState,
+  safeCancelMpc,
+} from './mpcCancel';
+import type {MpcCancelResult} from './mpcCancel';
+
+export type {MpcCancelResult};
+import {
   resolveTssBackend,
   resolveTssBackendForKeygen,
   type SetupMode,
@@ -251,21 +259,28 @@ export const TssProvider = {
     );
   },
 
-  async cancelMpcSession(sessionID: string): Promise<void> {
-    const backend = await resolveTssBackend();
-    if (backend === 'dkls23') {
-      await BBMTLibNativeModule.dklsCancelMpcSession(sessionID);
-      return;
-    }
-    await BBMTLibNativeModule.cancelMpcSession(sessionID);
+  async cancelMpcSession(sessionID: string): Promise<MpcCancelResult> {
+    return safeCancelMpc('session', async () => {
+      const backend = await resolveTssBackend();
+      if (backend === 'dkls23') {
+        await BBMTLibNativeModule.dklsCancelMpcSession(sessionID);
+        return;
+      }
+      await BBMTLibNativeModule.cancelMpcSession(sessionID);
+    });
   },
 
-  async cancelNostrMpc(): Promise<void> {
-    const backend = await resolveTssBackend();
-    if (backend === 'dkls23') {
-      await BBMTLibNativeModule.dklsCancelNostrMpc();
-      return;
-    }
-    await BBMTLibNativeModule.cancelNostrMpc();
+  async cancelNostrMpc(): Promise<MpcCancelResult> {
+    return safeCancelMpc('nostr', async () => {
+      const backend = await resolveTssBackend();
+      if (backend === 'dkls23') {
+        await BBMTLibNativeModule.dklsCancelNostrMpc();
+        return;
+      }
+      await BBMTLibNativeModule.cancelNostrMpc();
+    });
   },
+
+  resetMpcCancelState,
+  markMpcInProgress,
 };

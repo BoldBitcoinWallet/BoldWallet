@@ -66,6 +66,10 @@ import {
   type TssBackend,
 } from '../services/tssBackend';
 import {TssProvider} from '../services/TssProvider';
+import {
+  assertCanStartNostrMpc,
+  nostrMpcCooldownMessageFromError,
+} from '../services/mpcCancel';
 import {getPrepareModalCopy} from '../services/tssKeygenPrepare';
 import {LAN_KEYGEN_STATUS} from '../services/walletSetupUi';
 import {
@@ -80,9 +84,12 @@ import {
   type MpcProgressUtxoState,
 } from '../services/mpcProgress';
 import {
+  mpcSessionShortLabel,
   processMpcHookMessage,
   resolveMpcHookBackend,
 } from '../services/mpcProgressUi';
+import {MpcModalStatusRow} from '../components/MpcModalStatusRow';
+import {MpcProgressModalHeader} from '../components/MpcProgressModalHeader';
 import {useMpcCircleProgress} from '../services/useMpcCircleProgress';
 import TssBackendBadge from '../components/TssBackendBadge';
 import {useTheme} from '../theme';
@@ -184,6 +191,10 @@ function alertMessageForNostrSendError(err: unknown): string {
     typeof (err as {message?: unknown}).message === 'string'
       ? (err as {message: string}).message
       : '';
+  const cooldown = nostrMpcCooldownMessageFromError(err);
+  if (cooldown) {
+    return cooldown;
+  }
   return msg || 'Transaction signing failed';
 }
 
@@ -339,6 +350,7 @@ const MobileNostrPairing = ({navigation}: any) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
   const isSendBitcoin = route.params?.mode === 'send_btc';
   const isSignPSBT = route.params?.mode === 'sign_psbt';
+  const isSpendFlow = isSendBitcoin || isSignPSBT;
   const setupMode = route.params?.mode;
   const keygenSetupMode: SetupMode | undefined =
     setupMode === 'duo' || setupMode === 'trio' ? setupMode : undefined;
@@ -351,9 +363,10 @@ const MobileNostrPairing = ({navigation}: any) => {
   );
   const [spendBackend, setSpendBackend] = useState<TssBackend | null>(null);
   const prepareCopy = getPrepareModalCopy(keygenBackend ?? 'dkls23');
-  // In send mode, determine isTrio from keyshare (3 devices = trio, 2 devices = duo)
-  // In keygen mode, use setupMode
+  /** Trio = 3-device Nostr keygen setup only. Spend/sign always co-sign with 2 online parties. */
   const [isTrio, setIsTrio] = useState<boolean>(setupMode === 'trio');
+  /** 2-of-3 wallet: pick which peer to sign with; still a duo signing session. */
+  const [threeKeyshareWallet, setThreeKeyshareWallet] = useState(false);
   const {theme} = useTheme();
   const {
     activeNetwork,
@@ -419,6 +432,7 @@ const MobileNostrPairing = ({navigation}: any) => {
   const activeMpcSessionIdRef = useRef<string | null>(null);
   const isPairingRef = useRef(false);
   const [status, setStatus] = useState('');
+  const [mpcSessionShort, setMpcSessionShort] = useState<string | null>(null);
   const [isPairing, setIsPairing] = useState(false);
   /** Sync ref before native MPC starts so TssHook events are not dropped (useEffect lags one frame). */
   const setPairingActive = useCallback((active: boolean) => {
@@ -519,7 +533,7 @@ const MobileNostrPairing = ({navigation}: any) => {
   const abortActiveNostrMpc = React.useCallback(() => {
     Alert.alert(
       'Abort signing?',
-      'This will stop the current Nostr MPC signing flow. You can retry anytime.',
+      'This will stop the current Nostr MPC signing flow. Wait 15 seconds before starting again.',
       [
         {text: 'Keep signing', style: 'cancel'},
         {
@@ -533,7 +547,8 @@ const MobileNostrPairing = ({navigation}: any) => {
               setSpendSignOutcome('aborted');
             }
             try {
-              await TssProvider.cancelNostrMpc();
+              const cancelResult = await TssProvider.cancelNostrMpc();
+              dbg('MobileNostrPairing: cancelNostrMpc', cancelResult.outcome);
             } catch (e) {
               dbg('MobileNostrPairing: cancelNostrMpc failed', e);
             }
@@ -817,6 +832,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       if (result.statusLabel) {
         setStatus(result.statusLabel);
       }
+      if (result.sessionShort) {
+        setMpcSessionShort(result.sessionShort);
+      }
       if (result.mpcDone && !isSendBitcoin && !isSignPSBT) {
         setMpcDone(true);
       }
@@ -846,16 +864,14 @@ const MobileNostrPairing = ({navigation}: any) => {
         const committee = prep.keygen_committee_keys;
         const localParty = prep.local_party_key;
         const localNpubFromKeyshare = prep.nostr_npub || '';
-        // Determine if trio mode based on number of devices in keyshare
         const numDevices = committee.length;
-        const isTrioMode = numDevices === 3;
-        setIsTrio(isTrioMode);
+        setThreeKeyshareWallet(numDevices === 3);
         dbg(
-          'Send mode - detected',
-          isTrioMode ? 'trio' : 'duo',
-          'mode from keyshare (',
+          'Spend/sign mode - committee size',
           numDevices,
-          'devices)',
+          numDevices === 3
+            ? '(pick co-signer; 2-party session)'
+            : '(duo wallet)',
         );
         // Set local npub if available (from native prep or keyshare_meta)
         if (localNpubFromKeyshare) {
@@ -979,8 +995,8 @@ const MobileNostrPairing = ({navigation}: any) => {
       const otherDevices = sendModeDevices.filter(d => !d.isLocal);
       // Only auto-select if no peer is currently selected
       if (!selectedPeerNpub) {
-        if (isTrio && otherDevices.length >= 2) {
-          // In trio mode, deterministically select the first peer (sorted by npub)
+        if (threeKeyshareWallet && otherDevices.length >= 2) {
+          // 2-of-3 wallet: deterministically select the first peer (sorted by npub)
           // This ensures both devices select the same peer by default
           // User can still manually change the selection
           const sortedOtherDevices = [...otherDevices].sort((a, b) => {
@@ -993,12 +1009,12 @@ const MobileNostrPairing = ({navigation}: any) => {
           if (firstPeer && firstPeer.npub) {
             setSelectedPeerNpub(firstPeer.npub);
             dbg(
-              'Auto-selected first peer in trio mode (deterministic, user can change):',
+              'Auto-selected first peer (2-of-3 wallet, user can change):',
               firstPeer.npub.substring(0, 20) + '...',
             );
           }
-        } else if (!isTrio && otherDevices.length >= 1) {
-          // In duo mode, auto-select the only other device
+        } else if (!threeKeyshareWallet && otherDevices.length >= 1) {
+          // Duo wallet: auto-select the only other device
           const otherDevice = otherDevices[0];
           if (otherDevice && otherDevice.npub) {
             setSelectedPeerNpub(otherDevice.npub);
@@ -1010,7 +1026,13 @@ const MobileNostrPairing = ({navigation}: any) => {
         }
       }
     }
-  }, [isSendBitcoin, isSignPSBT, isTrio, sendModeDevices, selectedPeerNpub]);
+  }, [
+    isSendBitcoin,
+    isSignPSBT,
+    threeKeyshareWallet,
+    sendModeDevices,
+    selectedPeerNpub,
+  ]);
   const generateLocalKeypair = async () => {
     try {
       const keypairJSON = await BBMTLibNativeModule.nostrKeypair();
@@ -1416,6 +1438,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       setKeygenBackend(backend);
     }
     activeMpcSessionIdRef.current = sessionID;
+    setMpcSessionShort(mpcSessionShortLabel(sessionID));
     setPairingActive(true);
     resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
     resetCircle();
@@ -1630,14 +1653,23 @@ const MobileNostrPairing = ({navigation}: any) => {
       Alert.alert('Error', 'Missing transaction parameters');
       return;
     }
+    try {
+      assertCanStartNostrMpc();
+    } catch (e) {
+      Alert.alert('Please wait', alertMessageForNostrSendError(e));
+      return;
+    }
     let backend = spendBackend;
     if (!backend) {
       backend = await resolveTssBackend();
       setSpendBackend(backend);
     }
     nostrAbortRef.current = false;
+    TssProvider.resetMpcCancelState('nostr');
+    TssProvider.markMpcInProgress('nostr');
     // Nostr send computes sessionID in native after pre-agreement; do not filter hooks by keygen session.
     activeMpcSessionIdRef.current = null;
+    setMpcSessionShort(null);
     setPairingActive(true);
     resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
     resetCircle();
@@ -1730,9 +1762,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         },
       );
       let keyshare: any;
-      let publicKey = '';
-      let senderAddress = '';
-      let balanceSats = '';
       let rawTxHex: string | undefined;
       let broadcastInputs:
         | Array<{
@@ -1746,34 +1775,20 @@ const MobileNostrPairing = ({navigation}: any) => {
         | Array<{scriptpubkey_address: string; value: number}>
         | undefined;
       keyshare = await loadNostrKeysharePrepForSession();
-      // Derive from address using route params
-      publicKey = await BBMTLibNativeModule.derivePubkey(
+      // Restore WalletService network state (temporarily adjusted above for API calls).
+      (walletService as any).currentNetwork = originalWalletServiceNetwork;
+      (walletService as any).currentApiUrl = originalWalletServiceApiUrl;
+      const publicKey = await BBMTLibNativeModule.derivePubkey(
         keyshare.pub_key,
         keyshare.chain_code_hex,
         path,
       );
-      senderAddress = await BBMTLibNativeModule.btcAddress(
+      const senderAddress = await BBMTLibNativeModule.btcAddress(
         publicKey,
         net,
         addressTypeToUse,
       );
-      // Get balance for sessionFlag calculation
-      // WalletService now has correct network state for this call
-      const balance = await WalletService.getInstance().getWalletBalance(
-        senderAddress,
-        0,
-        0,
-        false,
-      );
-      // Restore WalletService internal state immediately after balance fetch
-      (walletService as any).currentNetwork = originalWalletServiceNetwork;
-      (walletService as any).currentApiUrl = originalWalletServiceApiUrl;
-      dbg('MobileNostrPairing: Restored WalletService network state:', {
-        network: originalWalletServiceNetwork,
-        apiUrl: originalWalletServiceApiUrl,
-      });
-      balanceSats = Big(balance.btc).times(1e8).toFixed(0);
-      // Get all npubs from keyshare for sessionFlag calculation
+      // Build signing npubs (local + one peer). Nostr send is always a duo session.
       const allNpubsFromKeyshare: string[] = [];
       const sortedKeys = [...keyshare.keygen_committee_keys].sort();
       for (const key of sortedKeys) {
@@ -1794,8 +1809,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           dbg('Error converting hex to npub:', error);
         }
       }
-      const npubsSorted = [...allNpubsFromKeyshare].sort().join(',');
-      if (npubsSorted.length === 0 || allNpubsFromKeyshare.length < 2) {
+      if (allNpubsFromKeyshare.length < 2) {
         throw new Error(
           `Failed to get all npubs from keyshare. Got ${allNpubsFromKeyshare.length} npubs.`,
         );
@@ -1813,8 +1827,8 @@ const MobileNostrPairing = ({navigation}: any) => {
           );
         }) || localNpub; // Fallback to state if not found
       const allNpubs = [localNpubFromKeyshare];
-      if (isTrio) {
-        // For trio, use selected peer - find it by matching device in sendModeDevices
+      if (threeKeyshareWallet) {
+        // 2-of-3 wallet: use selected peer for this duo signing session
         if (selectedPeerNpub) {
           // Find the selected device in sendModeDevices to get its keyshareLabel
           const selectedDevice = sendModeDevices.find(
@@ -1911,10 +1925,10 @@ const MobileNostrPairing = ({navigation}: any) => {
             }
           }
         } else {
-          throw new Error('Please select a peer device for trio mode');
+          throw new Error('Please select a peer device to co-sign with');
         }
       } else {
-        // For duo, use the other device from allNpubsFromKeyshare (excluding local)
+        // Duo wallet: the only other keyshare is the co-signer
         const otherNpubs = allNpubsFromKeyshare.filter(
           n => n !== localNpubFromKeyshare,
         );
@@ -1930,7 +1944,14 @@ const MobileNostrPairing = ({navigation}: any) => {
         }
       }
       const partiesNpubsCSV = allNpubs.sort().join(',');
+      if (allNpubs.length !== 2) {
+        throw new Error(
+          `Nostr send requires exactly 2 signing devices, got ${allNpubs.length}`,
+        );
+      }
+      const signingNpubsSorted = partiesNpubsCSV;
       const relaysCSV = relays.join(',');
+      dbg('Nostr send BTC — duo signing npubs:', signingNpubsSorted);
       const prepared = await prepareSendBtcMultiPathInputs({
         network: net,
         addressType: addressTypeToUse,
@@ -1974,8 +1995,8 @@ const MobileNostrPairing = ({navigation}: any) => {
       rawTxHex = await TssProvider.nostrMpcSendBTC(
         nostrNativeStr(relaysCSV),
         nostrNativeStr(partiesNpubsCSV),
-        nostrNativeStr(npubsSorted),
-        nostrNativeStr(balanceSats),
+        nostrNativeStr(signingNpubsSorted),
+        nostrNativeStr('0'),
         nostrNativeStr(toAddress),
         nostrNativeStr(satoshiAmount),
         nostrNativeStr(satoshiFees),
@@ -2066,16 +2087,25 @@ const MobileNostrPairing = ({navigation}: any) => {
       Alert.alert('Error', 'Missing PSBT data');
       return;
     }
+    try {
+      assertCanStartNostrMpc();
+    } catch (e) {
+      Alert.alert('Please wait', alertMessageForNostrSendError(e));
+      return;
+    }
     let backend = spendBackend;
     if (!backend) {
       backend = await resolveTssBackend();
       setSpendBackend(backend);
     }
     nostrAbortRef.current = false;
+    TssProvider.resetMpcCancelState('nostr');
+    TssProvider.markMpcInProgress('nostr');
     setMpcDone(false);
     setSpendSignOutcome(null);
     // Nostr PSBT computes sessionID in native after pre-agreement; do not filter hooks by keygen session.
     activeMpcSessionIdRef.current = null;
+    setMpcSessionShort(null);
     setPairingActive(true);
     resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
     resetCircle();
@@ -2105,8 +2135,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           dbg('Error converting hex to npub:', error);
         }
       }
-      const npubsSorted = [...allNpubsFromKeyshare].sort().join(',');
-      if (npubsSorted.length === 0 || allNpubsFromKeyshare.length < 2) {
+      if (allNpubsFromKeyshare.length < 2) {
         throw new Error('Failed to get all npubs from keyshare');
       }
       // Find local npub
@@ -2118,7 +2147,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         ) || localNpub;
       // Build parties CSV
       const allNpubs = [localNpubFromKeyshare];
-      if (isTrio) {
+      if (threeKeyshareWallet) {
         if (selectedPeerNpub) {
           const selectedDevice = sendModeDevices.find(
             d =>
@@ -2158,7 +2187,7 @@ const MobileNostrPairing = ({navigation}: any) => {
             }
           }
         } else {
-          throw new Error('Please select a peer device for trio mode');
+          throw new Error('Please select a peer device to co-sign with');
         }
       } else {
         const otherNpubs = allNpubsFromKeyshare.filter(
@@ -2171,18 +2200,24 @@ const MobileNostrPairing = ({navigation}: any) => {
         }
       }
       const partiesNpubsCSV = allNpubs.sort().join(',');
+      if (allNpubs.length !== 2) {
+        throw new Error(
+          `Nostr PSBT signing requires exactly 2 devices, got ${allNpubs.length}`,
+        );
+      }
+      const signingNpubsSorted = partiesNpubsCSV;
       const relaysCSV = relays.join(',');
       dbg('Starting Nostr PSBT signing with:', {
         relays: relaysCSV,
         parties: partiesNpubsCSV.substring(0, 50) + '...',
-        npubsSorted: npubsSorted.substring(0, 30) + '...',
+        signingNpubs: signingNpubsSorted.substring(0, 30) + '...',
         psbtLength: route.params.psbtBase64?.length,
       });
       // Call native module for PSBT signing
       await TssProvider.nostrMpcSignPSBT(
         relaysCSV,
         partiesNpubsCSV,
-        npubsSorted,
+        signingNpubsSorted,
         route.params.psbtBase64,
       )
         .then(async (signedPsbt: any) => {
@@ -2242,7 +2277,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         setSpendSignOutcome('aborted');
       } else {
         setSpendSignOutcome('failed');
-        Alert.alert('Error', error?.message || 'PSBT signing failed');
+        Alert.alert('Error', alertMessageForNostrSendError(error));
       }
       setStatus('PSBT signing failed');
     } finally {
@@ -4003,7 +4038,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     !!localNpub &&
     sendModeDevices.length > 0 &&
     !sendModeDevices.some(d => !d.npub || !d.npub.startsWith('npub1')) &&
-    (!isTrio || !!selectedPeerNpub);
+    (!threeKeyshareWallet || !!selectedPeerNpub);
   const showSpendStickyFooter =
     isSpendPeersReady && !isPairing && !mpcDone;
   const nostrSpendDisabled = !isSpendPeersReady;
@@ -4294,14 +4329,13 @@ const MobileNostrPairing = ({navigation}: any) => {
                                           color: theme.colors.text,
                                           marginBottom: 8,
                                         }}>
-                                        {isTrio
+                                        {threeKeyshareWallet
                                           ? 'Choose Second Co-signer'
                                           : 'Second Co-Signer'}
                                       </Text>
                                       {otherDevices.map(dev => {
-                                        // In duo mode, use View (not selectable)
-                                        // In trio mode, use Pressable (selectable)
-                                        if (!isTrio) {
+                                        // 2-keyshare wallet: fixed peer. 2-of-3: pick co-signer.
+                                        if (!threeKeyshareWallet) {
                                           return (
                                             <View
                                               key={dev.keyshareLabel}
@@ -5019,24 +5053,11 @@ const MobileNostrPairing = ({navigation}: any) => {
                       }>
                       <View style={styles.modalOverlay}>
                         <View style={styles.preparingModalContent}>
-                          {/* Icon Container */}
-                          <View style={styles.preparingModalIconContainer}>
-                            <View style={styles.preparingModalIconBackground}>
-                              <Image
-                                source={require('../assets/prepare-icon.png')}
-                                style={styles.preparingModalIcon}
-                                resizeMode="contain"
-                              />
-                            </View>
-                          </View>
-                          {/* Header Text */}
-                          <Text style={styles.preparingModalTitle}>
-                            {prepareCopy.title}
-                          </Text>
-                          <Text style={styles.preparingModalSubtitle}>
-                            {prepareCopy.subtitle} Do not leave the app during
-                            setup.
-                          </Text>
+                          <MpcProgressModalHeader
+                            icon={require('../assets/prepare-icon.png')}
+                            title={prepareCopy.title}
+                            subtitle={`${prepareCopy.subtitle} Do not leave the app during setup.`}
+                          />
                           {/* Loading Indicator */}
                           <View style={styles.preparingProgressContainer}>
                             <View style={styles.preparingProgressTrack}>
@@ -5440,23 +5461,10 @@ const MobileNostrPairing = ({navigation}: any) => {
               }>
               <View style={styles.modalOverlay}>
                 <View style={styles.modalContent}>
-                  {/* Icon Container */}
-                  <View style={styles.modalIconContainer}>
-                    <View style={styles.modalIconBackground}>
-                      <Image
-                        source={require('../assets/security-icon.png')}
-                        style={styles.finalizingModalIcon}
-                        resizeMode="contain"
-                      />
-                    </View>
-                  </View>
-                  {/* Header Text */}
-                  <Text style={styles.modalTitle}>Finalizing Your Wallet</Text>
-                  {/* Subtext */}
-                  <Text style={styles.modalSubtitle}>
-                    Securing your wallet with advanced cryptography. Please stay
-                    in the app...
-                  </Text>
+                  <MpcProgressModalHeader
+                    icon={require('../assets/security-icon.png')}
+                    title="Finalizing Your Wallet"
+                  />
                   {/* Progress Container */}
                   <View style={styles.progressContainer}>
                     {/* Circular Progress */}
@@ -5478,10 +5486,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                   </View>
                   {/* Status and Countdown */}
                   <View style={styles.statusContainer}>
-                    <View style={styles.statusRow}>
-                      <View style={styles.statusIndicator} />
-                      <Text style={styles.finalizingStatusText}>{status}</Text>
-                    </View>
+                    <MpcModalStatusRow
+                      status={status}
+                      sessionShort={mpcSessionShort}
+                    />
                     <Text style={styles.finalizingCountdownText}>
                       Time elapsed: {prepCounter} seconds
                     </Text>
@@ -5513,27 +5521,14 @@ const MobileNostrPairing = ({navigation}: any) => {
               }>
               <View style={styles.modalOverlay}>
                 <View style={styles.modalContent}>
-                  {/* Icon Container */}
-                  <View style={styles.modalIconContainer}>
-                    <View style={styles.modalIconBackground}>
-                      <Image
-                        source={require('../assets/cosign-icon.png')}
-                        style={styles.finalizingModalIcon}
-                        resizeMode="contain"
-                      />
-                    </View>
-                  </View>
-                  {/* Header Text */}
-                  <Text style={styles.modalTitle}>
-                    {isSignPSBT
-                      ? 'PSBT Co-Signing'
-                      : 'Co-Signing Your Transaction'}
-                  </Text>
-                  {/* Subtext */}
-                  <Text style={styles.modalSubtitle}>
-                    Securing your transaction with multi-party cryptography.
-                    Please stay in the app...
-                  </Text>
+                  <MpcProgressModalHeader
+                    icon={require('../assets/cosign-icon.png')}
+                    title={
+                      isSignPSBT
+                        ? 'PSBT Co-Signing'
+                        : 'Co-Signing Your Transaction'
+                    }
+                  />
                   {/* Progress Container */}
                   <View style={styles.progressContainer}>
                     {/* Circular Progress */}
@@ -5555,10 +5550,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                   </View>
                   {/* Status and Countdown */}
                   <View style={styles.statusContainer}>
-                    <View style={styles.statusRow}>
-                      <View style={styles.statusIndicator} />
-                      <Text style={styles.finalizingStatusText}>{status}</Text>
-                    </View>
+                    <MpcModalStatusRow
+                      status={status}
+                      sessionShort={mpcSessionShort}
+                    />
                     <Text style={styles.finalizingCountdownText}>
                       Time elapsed: {prepCounter} seconds
                     </Text>

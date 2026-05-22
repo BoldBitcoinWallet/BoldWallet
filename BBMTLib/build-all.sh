@@ -59,6 +59,11 @@ bash "${ROOT}/build.sh" "${BUILD_ARGS[@]}"
 info "[3/3] DKLs host smoke (build-dkls.sh host, ~10s unless RUN_DKLS_LAN_INTEGRATION=1)"
 bash "${ROOT}/build-dkls.sh" host
 
+if [ -x "${ROOT}/scripts/verify-native-artifacts.sh" ]; then
+  info "[verify] native artifact checks"
+  bash "${ROOT}/scripts/verify-native-artifacts.sh" || warn "verify-native-artifacts reported issues"
+fi
+
 info "build-all complete."
 echo ""
 echo "Artifacts:"

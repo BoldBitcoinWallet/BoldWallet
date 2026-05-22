@@ -103,9 +103,12 @@ import {
   type MpcProgressUtxoState,
 } from '../services/mpcProgress';
 import {
+  mpcSessionShortLabel,
   processMpcHookMessage,
   resolveMpcHookBackend,
 } from '../services/mpcProgressUi';
+import {MpcModalStatusRow} from '../components/MpcModalStatusRow';
+import {MpcProgressModalHeader} from '../components/MpcProgressModalHeader';
 import {useMpcCircleProgress} from '../services/useMpcCircleProgress';
 import TssBackendBadge from '../components/TssBackendBadge';
 import appConfigRepository, {
@@ -126,9 +129,12 @@ import {
   sendCollapsedRecapLine,
 } from '../components/transactionFlowUtils';
 import {
-  parsePsbtSessionPayload,
-  psbtIdentityHash,
-} from '../services/psbtIdentity';
+  lanPsbtSessionPayloadMatchesHash,
+  lanSendBtcSessionPayloadMatches,
+  parseLanPsbtSessionPayload,
+  parseLanSendBtcSessionPayload,
+} from '../services/lanSession';
+import {psbtIdentityHash} from '../services/psbtIdentity';
 
 const {BBMTLibNativeModule} = NativeModules;
 // Helper component for connection line animation
@@ -166,6 +172,7 @@ const MobilesPairing = ({navigation}: any) => {
   const discoveryPort = 55055;
   const ppmFile = `${RNFS.DocumentDirectoryPath}/ppm.json`;
   const [status, setStatus] = useState('');
+  const [mpcSessionShort, setMpcSessionShort] = useState<string | null>(null);
   const [localIP, setLocalIP] = useState<string | null>(null);
   const [localID, setLocalID] = useState<string | null>(null);
   const [localDevice, setLocalDevice] = useState<string | null>(null);
@@ -254,7 +261,9 @@ const MobilesPairing = ({navigation}: any) => {
   }, [isFocused]);
   const isSendBitcoin = route.params?.mode === 'send_btc';
   const isSignPSBT = route.params?.mode === 'sign_psbt';
+  const isSpendFlow = isSendBitcoin || isSignPSBT;
   const setupMode = route.params?.mode;
+  /** Trio = 3-device LAN wallet setup (keygen) only. Spend/sign co-signing is always duo. */
   const isTrio = setupMode === 'trio';
   const keygenSetupMode: SetupMode | undefined =
     setupMode === 'duo' || setupMode === 'trio' ? setupMode : undefined;
@@ -354,7 +363,8 @@ const MobilesPairing = ({navigation}: any) => {
             const sid = activeMpcSessionIdRef.current;
             if (sid) {
               try {
-                await TssProvider.cancelMpcSession(sid);
+                const cancelResult = await TssProvider.cancelMpcSession(sid);
+                dbg('MobilesPairing: cancelMpcSession', cancelResult.outcome);
               } catch (e) {
                 dbg('MobilesPairing: cancelMpcSession failed', e);
               }
@@ -588,8 +598,8 @@ const MobilesPairing = ({navigation}: any) => {
         );
         if (published) {
           dbg('initSession: Data published successfully', {published});
-          // Duo send-BTC only: validate peer echoed the same amount checksum.
-          if (!isTrio && isSendBitcoin) {
+          // Send-BTC (always duo): validate peer echoed the same amount checksum.
+          if (isSendBitcoin) {
             const firstQuery = (published.split('|')[0] || published) as string;
             const dataParam = (
               firstQuery.split('&').find(p => p.startsWith('data=')) || 'data='
@@ -638,7 +648,27 @@ const MobilesPairing = ({navigation}: any) => {
           peerURL,
           checksum: checksum.slice(0, 16).concat('…'),
         });
-        const rawFetched = await fetchData(peerURL, kp.privateKey, checksum);
+        let acceptSessionPayload: ((data: string) => boolean) | undefined;
+        if (isSignPSBT) {
+          const localPsbtHash = await psbtIdentityHash(
+            route.params.psbtBase64 || '',
+          );
+          acceptSessionPayload = (data: string) =>
+            lanPsbtSessionPayloadMatchesHash(data, localPsbtHash);
+          setStatus('Waiting for partner to start co-signing…');
+        } else if (isSendBitcoin) {
+          const localAmount = (route.params?.satoshiAmount || '').trim();
+          const localFees = (route.params?.satoshiFees || '').trim();
+          acceptSessionPayload = (data: string) =>
+            lanSendBtcSessionPayloadMatches(data, localAmount, localFees);
+          setStatus('Waiting for partner to start co-signing…');
+        }
+        const rawFetched = await fetchData(
+          peerURL,
+          kp.privateKey,
+          checksum,
+          acceptSessionPayload,
+        );
         dbg('initSession: Data fetched successfully', {
           len: rawFetched?.length ?? 0,
         });
@@ -688,6 +718,7 @@ const MobilesPairing = ({navigation}: any) => {
       setMpcDone(false);
       setPrepCounter(0);
       resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
+      setMpcSessionShort(null);
       resetCircle();
       setCircleTarget(0);
       setMpcModalActive(true);
@@ -737,6 +768,7 @@ const MobilesPairing = ({navigation}: any) => {
       setKeygenBackend(orch.backend);
       setShareName(orch.partyID);
       activeMpcSessionIdRef.current = orch.sessionID;
+      setMpcSessionShort(mpcSessionShortLabel(orch.sessionID));
       setStatus(LAN_KEYGEN_STATUS.runningKeygen);
       dbg('starting keygen with', {
         server: orch.server,
@@ -834,6 +866,7 @@ const MobilesPairing = ({navigation}: any) => {
     setPrepCounter(0);
     resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
     activeMpcSessionIdRef.current = null;
+    setMpcSessionShort(null);
     resetCircle();
     setCircleTarget(0);
     setStatus('Starting co-signing…');
@@ -987,6 +1020,7 @@ const MobilesPairing = ({navigation}: any) => {
       });
       const sessionID = await BBMTLibNativeModule.sha256(`${data}/${server}`);
       activeMpcSessionIdRef.current = sessionID;
+      setMpcSessionShort(mpcSessionShortLabel(sessionID));
       mpcAbortRef.current = false;
       const keypairJson =
         (keypair || '').trim() ||
@@ -1002,7 +1036,7 @@ const MobilesPairing = ({navigation}: any) => {
       });
       dbg('public-decoded', data.split(':'));
       if (isSignPSBT) {
-        const {psbtHash, peerShare} = parsePsbtSessionPayload(data);
+        const {psbtHash, peerShare} = parseLanPsbtSessionPayload(data);
         const localPsbtHash = await psbtIdentityHash(
           route.params.psbtBase64 || '',
         );
@@ -1087,6 +1121,15 @@ const MobilesPairing = ({navigation}: any) => {
         return; // Exit early for PSBT
       } else {
         // Send BTC mode — UTXO multi-path only (receive + change)
+        const sendSession = parseLanSendBtcSessionPayload(data);
+        if (sendSession.satoshiAmount !== route.params.satoshiAmount?.trim()) {
+          throw 'Make sure you\'re sending the "Same Bitcoin" amount from Both Devices';
+        }
+        if (sendSession.satoshiFees !== route.params.satoshiFees?.trim()) {
+          throw 'Make sure you\'re sending the "Same Bitcoin" amount from Both Devices';
+        }
+        satoshiAmount = sendSession.satoshiAmount;
+        satoshiFees = sendSession.satoshiFees;
         const btcPub = await BBMTLibNativeModule.derivePubkey(
           _ksMeta?.pub_key || '',
           _ksMeta?.chain_code_hex || '',
@@ -1099,9 +1142,6 @@ const MobilesPairing = ({navigation}: any) => {
         );
         if (peerParty === partyID) {
           throw 'Please Use "Two Different KeyShares" per Device';
-        }
-        if (satoshiAmount !== route.params.satoshiAmount) {
-          throw 'Make sure you\'re sending the "Same Bitcoin" amount from Both Devices';
         }
 
         let usedMultiPath = false;
@@ -1290,6 +1330,9 @@ const MobilesPairing = ({navigation}: any) => {
       }
       if (result.statusLabel) {
         setStatus(result.statusLabel);
+      }
+      if (result.sessionShort) {
+        setMpcSessionShort(result.sessionShort);
       }
       if (result.mpcDone && !isSendBitcoin && !isSignPSBT) {
         setMpcDone(true);
@@ -1655,8 +1698,9 @@ const MobilesPairing = ({navigation}: any) => {
         dbg('Master Selection', {master, masterHost: resolvedMasterHost});
         setIsMaster(master);
         const trioWallet =
-          isTrio ||
-          isTrioWalletKeyshare(await getKeyshareMetadata().catch(() => null));
+          !isSpendFlow &&
+          (isTrio ||
+            isTrioWalletKeyshare(await getKeyshareMetadata().catch(() => null)));
         persistLanPairingRoles({
           localParty: resolvedLocalParty || localParty,
           peerParty: resolvedPeerParty || peerParty || '',
@@ -1720,6 +1764,7 @@ const MobilesPairing = ({navigation}: any) => {
     peerURL: string,
     privateKey: string,
     checksum: string,
+    acceptPayload?: (data: string) => boolean,
   ) {
     const until = Date.now() + timeout * 1000;
     while (Date.now() < until) {
@@ -1730,6 +1775,11 @@ const MobilesPairing = ({navigation}: any) => {
           checksum,
         );
         if (rawFetched) {
+          if (acceptPayload && !acceptPayload(rawFetched)) {
+            dbg('session payload not ready, retrying…');
+            await waitMS(2000);
+            continue;
+          }
           dbg('rawFetched:', rawFetched);
           return rawFetched;
         } else {
@@ -3902,23 +3952,11 @@ const MobilesPairing = ({navigation}: any) => {
                             }>
                             <View style={styles.modalOverlay}>
                               <View style={styles.modalContent}>
-                                {/* Icon Container */}
-                                <View style={styles.modalIconContainer}>
-                                  <View style={styles.modalIconBackground}>
-                                    <Image
-                                      source={require('../assets/prepare-icon.png')}
-                                      style={styles.finalizingModalIcon}
-                                      resizeMode="contain"
-                                    />
-                                  </View>
-                                </View>
-                                {/* Header Text */}
-                                <Text style={styles.modalTitle}>
-                                  {prepareCopy.title}
-                                </Text>
-                                <Text style={styles.modalSubtitle}>
-                                  {prepareCopy.subtitle}
-                                </Text>
+                                <MpcProgressModalHeader
+                                  icon={require('../assets/prepare-icon.png')}
+                                  title={prepareCopy.title}
+                                  subtitle={prepareCopy.subtitle}
+                                />
                                 {/* Loading Indicator */}
                                 <View style={styles.progressContainer}>
                                   <View
@@ -4043,24 +4081,11 @@ const MobilesPairing = ({navigation}: any) => {
                           }>
                           <View style={styles.modalOverlay}>
                             <View style={styles.modalContent}>
-                              {/* Icon Container */}
-                              <View style={styles.modalIconContainer}>
-                                <View style={styles.modalIconBackground}>
-                                  <Image
-                                    source={require('../assets/security-icon.png')}
-                                    style={styles.finalizingModalIcon}
-                                    resizeMode="contain"
-                                  />
-                                </View>
-                              </View>
-                              {/* Header Text */}
-                              <Text style={styles.modalTitle}>
-                                {keygenModalCopy.title}
-                              </Text>
-                              {/* Subtext */}
-                              <Text style={styles.modalSubtitle}>
-                                {keygenModalCopy.subtitle}
-                              </Text>
+                              <MpcProgressModalHeader
+                                icon={require('../assets/security-icon.png')}
+                                title={keygenModalCopy.title}
+                                subtitle={keygenModalCopy.subtitle}
+                              />
                               {/* Progress Container */}
                               <View style={styles.progressContainer}>
                                 {/* Circular Progress */}
@@ -4086,12 +4111,10 @@ const MobilesPairing = ({navigation}: any) => {
                               </View>
                               {/* Status and Countdown */}
                               <View style={styles.statusContainer}>
-                                <View style={styles.statusRow}>
-                                  <View style={styles.statusIndicator} />
-                                  <Text style={styles.finalizingStatusText}>
-                                    {status}
-                                  </Text>
-                                </View>
+                                <MpcModalStatusRow
+                                  status={status}
+                                  sessionShort={mpcSessionShort}
+                                />
                                 <Text style={styles.finalizingCountdownText}>
                                   Time elapsed: {prepCounter} seconds
                                 </Text>
@@ -4320,9 +4343,7 @@ const MobilesPairing = ({navigation}: any) => {
                     style={[
                       {fontSize: theme.fontSizes?.base || 13, marginBottom: 8},
                     ]}>
-                    {isTrio
-                      ? 'All devices must be ready.'
-                      : 'Both devices must be ready.'}
+                    Both devices must be ready.
                   </Text>
                   {isSendBitcoin && route.params ? (
                     <TransactionFlowDiagram
@@ -4389,24 +4410,14 @@ const MobilesPairing = ({navigation}: any) => {
           }>
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
-              <View style={styles.modalIconContainer}>
-                <View style={styles.modalIconBackground}>
-                  <Image
-                    source={require('../assets/key-icon.png')}
-                    style={styles.finalizingModalIcon}
-                    resizeMode="contain"
-                  />
-                </View>
-              </View>
-              <Text style={styles.modalTitle}>
-                {isSignPSBT
-                  ? 'PSBT Co-Signing'
-                  : 'Co-Signing Your Transaction'}
-              </Text>
-              <Text style={styles.modalSubtitle}>
-                Securing your transaction with multi-party cryptography.
-                Please stay in the app...
-              </Text>
+              <MpcProgressModalHeader
+                icon={require('../assets/key-icon.png')}
+                title={
+                  isSignPSBT
+                    ? 'PSBT Co-Signing'
+                    : 'Co-Signing Your Transaction'
+                }
+              />
               <View style={styles.progressContainer}>
                 <Progress.Circle
                   size={80}
@@ -4428,10 +4439,10 @@ const MobilesPairing = ({navigation}: any) => {
                 </View>
               </View>
               <View style={styles.statusContainer}>
-                <View style={styles.statusRow}>
-                  <View style={styles.statusIndicator} />
-                  <Text style={styles.finalizingStatusText}>{status}</Text>
-                </View>
+                <MpcModalStatusRow
+                  status={status}
+                  sessionShort={mpcSessionShort}
+                />
                 <Text style={styles.finalizingCountdownText}>
                   Time elapsed: {prepCounter} seconds
                 </Text>

@@ -140,14 +140,12 @@ object DklsNative {
         )
     }
 
-    fun cancelMpcSessionNative(sessionID: String): String {
-        check(loaded) { "libbbmtmobile not loaded" }
-        return cancelMpcSessionJni(sessionID)
+    fun cancelMpcSessionNative(sessionID: String): String = loaded {
+        unwrap(cancelMpcSessionJni(sessionID))
     }
 
-    fun cancelNostrMpcNative(): String {
-        check(loaded) { "libbbmtmobile not loaded" }
-        return cancelNostrMpcJni()
+    fun cancelNostrMpcNative(): String = loaded {
+        unwrap(cancelNostrMpcJni())
     }
 
     fun setBbmtHookListener(module: BBMTLibNativeModule) {
@@ -306,8 +304,12 @@ object DklsNative {
     ): String = loaded {
         unwrap(bbmtNostrMpcSignPSBTJni(relays, nsec, parties, npubsSorted, keyshare, psbt))
     }
-    fun bbmtCancelMpcSessionNative(sessionID: String): String = loaded { bbmtCancelMpcSessionJni(sessionID) }
-    fun bbmtCancelNostrMpcNative(): String = loaded { bbmtCancelNostrMpcJni() }
+    fun bbmtCancelMpcSessionNative(sessionID: String): String = loaded {
+        unwrap(bbmtCancelMpcSessionJni(sessionID))
+    }
+    fun bbmtCancelNostrMpcNative(): String = loaded {
+        unwrap(bbmtCancelNostrMpcJni())
+    }
     fun bbmtDisableLogsNative() {
         if (!loaded) return
         bbmtDisableLogsJni()

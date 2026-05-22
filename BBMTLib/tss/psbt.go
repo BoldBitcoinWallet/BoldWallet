@@ -864,6 +864,11 @@ func runNostrMpcSignPSBTInternal(
 
 	Logln("BBMTLog", "invoking NostrMpcSignPSBT...")
 
+	if _, err := beginNostrMpcOperation(); err != nil {
+		return "", err
+	}
+	defer endNostrMpcOperation()
+
 	// Log network being used
 	if _btc_net == "mainnet" {
 		Logln("Using mainnet parameters")

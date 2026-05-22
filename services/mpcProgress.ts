@@ -22,6 +22,16 @@ export function emptyMpcUtxoState(): MpcProgressUtxoState {
   return {utxoIndex: 0, utxoCount: 0, utxoRange: 0};
 }
 
+/** Progress snapshot after user abort — keeps UI consistent without implying success. */
+export function progressStateAfterAbort(
+  currentProgress: number,
+): {percent: number; statusLabel: string} {
+  return {
+    percent: Math.min(99, Math.max(0, currentProgress)),
+    statusLabel: 'Aborted',
+  };
+}
+
 /** Reset hook session refs when starting a new keygen/keysign modal. */
 export function resetMpcHookSession(
   progressRef: {current: number},

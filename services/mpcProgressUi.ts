@@ -20,9 +20,60 @@ export type MpcHookHandlerRefs = {
 export type MpcHookHandlerResult = {
   percent: number | null;
   statusLabel: string | null;
+  /** First 4 chars of MPC session id for modal display */
+  sessionShort: string | null;
   mpcDone: boolean;
   utxoState?: MpcProgressUtxoState;
 };
+
+/** Short session badge for progress modals (first 4 hex chars). */
+export function mpcSessionShortLabel(
+  session: string | null | undefined,
+): string | null {
+  const trimmed = session?.trim();
+  if (!trimmed || trimmed.length < 4) {
+    return null;
+  }
+  return trimmed.slice(0, 4);
+}
+
+/** Strip per-UTXO index suffix from LAN keysign session ids (`${session}${n}`). */
+function resolveBaseSessionId(session: string): string {
+  const trimmed = session.trim();
+  if (trimmed.length > 64) {
+    const suffix = trimmed.slice(64);
+    if (/^\d{1,3}$/.test(suffix)) {
+      return trimmed.slice(0, 64);
+    }
+  }
+  return trimmed;
+}
+
+function isNostrKeysignPhaseHook(msg: MpcHookMessage): boolean {
+  const info = (msg.info ?? '').toLowerCase();
+  return (
+    msg.type === 'keysign' ||
+    ((msg.type === 'btc_send' || msg.type === 'psbt') &&
+      (info.includes('joining') || info.includes('signed')))
+  );
+}
+
+function captureHookSessionForUi(
+  msg: MpcHookMessage,
+  activeSessionRef?: {current: string | null},
+): string | null {
+  const hookSession = msg.session?.trim();
+  if (hookSession && activeSessionRef) {
+    if (!activeSessionRef.current) {
+      activeSessionRef.current = resolveBaseSessionId(hookSession);
+    } else if (isNostrKeysignPhaseHook(msg)) {
+      // Nostr spend: replace pre-agreement sessionFlag with keysign sessionID for badge.
+      activeSessionRef.current = resolveBaseSessionId(hookSession);
+    }
+  }
+  const displaySession = activeSessionRef?.current ?? hookSession ?? null;
+  return mpcSessionShortLabel(displaySession);
+}
 
 export type MpcHookTracePayload = {
   backend: TssBackend;
@@ -114,6 +165,16 @@ export function formatMpcPhaseLabel(
     if (info.includes('pre-agreement')) {
       return 'Connecting co-signers…';
     }
+    if (info.includes('joining') || info.includes('keysign')) {
+      const {utxoIndex, utxoCount} = opts.utxo;
+      if (utxoCount > 0 && utxoIndex > 0) {
+        return `Signing · input ${utxoIndex} of ${utxoCount}`;
+      }
+      return 'Co-signing transaction…';
+    }
+    if (info.includes('signed')) {
+      return 'Signature complete';
+    }
     return 'Building transaction…';
   }
 
@@ -122,21 +183,31 @@ export function formatMpcPhaseLabel(
 
 function hookMatchesActiveSession(
   msg: MpcHookMessage,
-  activeSession: string | null | undefined,
+  activeSessionRef?: {current: string | null},
 ): boolean {
+  const activeSession = activeSessionRef?.current;
   if (!activeSession || activeSession.length === 0) {
     return true;
   }
-  const hookSession = msg.session;
+  const hookSession = msg.session?.trim();
   if (!hookSession || hookSession.length === 0) {
     return true;
   }
-  if (hookSession === activeSession) {
+  const hookBase = resolveBaseSessionId(hookSession);
+  if (hookBase === activeSession) {
     return true;
   }
   // LAN/Nostr multi-path signing uses per-input session ids: `${session}${index}`.
   const suffix = hookSession.slice(activeSession.length);
-  return hookSession.startsWith(activeSession) && /^\d+$/.test(suffix);
+  if (hookSession.startsWith(activeSession) && /^\d+$/.test(suffix)) {
+    return true;
+  }
+  // Nostr send/PSBT: pre-agreement sessionFlag → keysign sessionID (different hashes).
+  if (isNostrKeysignPhaseHook(msg) && activeSessionRef) {
+    activeSessionRef.current = hookBase;
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -160,7 +231,7 @@ export function processMpcHookMessage(
     return null;
   }
 
-  if (!hookMatchesActiveSession(msg, opts.refs.activeSessionRef?.current)) {
+  if (!hookMatchesActiveSession(msg, opts.refs.activeSessionRef)) {
     return null;
   }
 
@@ -192,6 +263,7 @@ export function processMpcHookMessage(
       isSignPSBT: opts.isSignPSBT,
       utxo: opts.refs.utxoRef.current,
     }),
+    sessionShort: captureHookSessionForUi(msg, opts.refs.activeSessionRef),
     mpcDone: result.mpcDone === true,
     utxoState: result.utxoState,
   };

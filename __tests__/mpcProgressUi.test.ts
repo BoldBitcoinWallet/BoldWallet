@@ -13,6 +13,7 @@ jest.mock('../services/tssBackend', () => ({
 
 import {
   formatMpcPhaseLabel,
+  mpcSessionShortLabel,
   processMpcHookMessage,
   resolveMpcHookBackend,
 } from '../services/mpcProgressUi';
@@ -71,6 +72,14 @@ describe('formatMpcPhaseLabel', () => {
   });
 });
 
+describe('mpcSessionShortLabel', () => {
+  it('returns first four chars of session id', () => {
+    expect(mpcSessionShortLabel('eff7381eabcd')).toBe('eff7');
+    expect(mpcSessionShortLabel('ab')).toBeNull();
+    expect(mpcSessionShortLabel(null)).toBeNull();
+  });
+});
+
 describe('processMpcHookMessage', () => {
   it('ignores hooks for a different session id', () => {
     const progressRef = {current: 0};
@@ -113,6 +122,55 @@ describe('processMpcHookMessage', () => {
     );
     expect(r).not.toBeNull();
     expect(r?.percent).toBeGreaterThan(0);
+    expect(r?.sessionShort).toBe('sess');
+  });
+
+  it('exposes sessionShort from hook when active session unset', () => {
+    const progressRef = {current: 0};
+    const utxoRef = {current: emptyMpcUtxoState()};
+    const activeSessionRef = {current: null as string | null};
+    const r = processMpcHookMessage(
+      JSON.stringify({
+        session: '11b9d1c4deadbeef',
+        type: 'psbt',
+        info: 'pre-agreement',
+      }),
+      'gg18',
+      {
+        isTrio: false,
+        isSendBitcoin: false,
+        isSignPSBT: true,
+        refs: {progressRef, utxoRef, activeSessionRef},
+      },
+    );
+    expect(r?.sessionShort).toBe('11b9');
+    expect(activeSessionRef.current).toBe('11b9d1c4deadbeef');
+  });
+
+  it('accepts Nostr keysign after pre-agreement sessionFlag', () => {
+    const progressRef = {current: 5};
+    const utxoRef = {current: emptyMpcUtxoState()};
+    const activeSessionRef = {current: 'c2a972d2406a511cdbdf23465fe15d1f369dcdc93723a3dee583f088cb9918bf'};
+    const r = processMpcHookMessage(
+      JSON.stringify({
+        session: 'f9487f081592611ab0b4a5c176f5e8a6fdf12478ea3e31157e3e5177a002a1bf0',
+        type: 'keysign',
+        step: 10,
+        info: 'Received new message 1',
+        done: false,
+      }),
+      'gg18',
+      {
+        isTrio: true,
+        isSendBitcoin: true,
+        refs: {progressRef, utxoRef, activeSessionRef},
+      },
+    );
+    expect(r).not.toBeNull();
+    expect(r?.percent).toBeGreaterThan(5);
+    expect(activeSessionRef.current).toBe(
+      'f9487f081592611ab0b4a5c176f5e8a6fdf12478ea3e31157e3e5177a002a1bf',
+    );
   });
 
   it('keeps progress monotonic across hooks', () => {

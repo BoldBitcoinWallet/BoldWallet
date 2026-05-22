@@ -1,5 +1,5 @@
 // App.tsx
-import React, {useCallback, useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {NavigationContainer} from '@react-navigation/native';
 import type {BottomTabHeaderProps} from '@react-navigation/bottom-tabs';
 import type {NativeStackHeaderProps} from '@react-navigation/native-stack';
@@ -530,8 +530,13 @@ const MainTabs = () => {
 const App = () => {
   const [initialRoute, setInitialRoute] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  // Used to force-remount providers/contexts on "app:reload"
-  const [appResetKey, setAppResetKey] = useState(0);
+  /** Remount wallet UI after lock (keeps UserProvider — avoids keychain reads while locked). */
+  const [contentResetKey, setContentResetKey] = useState(0);
+  /** Full remount including UserProvider (wallet delete / import only). */
+  const [userProviderResetKey, setUserProviderResetKey] = useState(0);
+  /** After lock FAB: auto-prompt biometrics once route is known (import/setup same session). */
+  const [awaitingLockUnlock, setAwaitingLockUnlock] = useState(false);
+  const unlockInFlightRef = useRef(false);
   // Initialize debug logging state from module-level ref
   const [debugLoggingEnabled, setDebugLoggingEnabledState] = useState(
     debugLoggingEnabledRef.current,
@@ -540,18 +545,19 @@ const App = () => {
     const sub = DeviceEventEmitter.addListener(
       'app:reload',
       async (payload?: {revalidateRoute?: boolean}) => {
+        setAwaitingLockUnlock(true);
         setIsAuthenticated(false);
-        setAppResetKey(k => k + 1);
         setDebugLoggingEnabledState(debugLoggingEnabledRef.current);
-        // Lock FAB: re-auth only — keep MainTabs (do not re-run wallet bootstrap).
-        // Wallet delete / import: pass { revalidateRoute: true } to re-check keyshare.
+        // Resolve route before remounting navigation so unlock never lands with initialRoute null.
+        try {
+          const route = await resolveInitialWalletRoute();
+          setInitialRoute(route);
+        } catch {
+          setInitialRoute('Welcome');
+        }
+        setContentResetKey(k => k + 1);
         if (payload?.revalidateRoute) {
-          try {
-            const route = await resolveInitialWalletRoute();
-            setInitialRoute(route);
-          } catch {
-            setInitialRoute('Welcome');
-          }
+          setUserProviderResetKey(k => k + 1);
         }
       },
     );
@@ -719,29 +725,45 @@ const App = () => {
     };
   }, [debugLoggingEnabled]);
   const authenticateUser = async () => {
-    dbg('Starting authentication...');
-    const success = await promptWalletBiometricAuth({
-      showFailureAlert: false,
-    });
-    if (success) {
-      dbg('Biometric authentication successful');
-      setIsAuthenticated(true);
+    if (unlockInFlightRef.current) {
       return;
     }
-    dbg('Biometric authentication failed');
-    Alert.alert(
-      'Authentication Failed',
-      'Unable to authenticate. Please try again.',
-      [
-        {
-          text: 'Retry',
-          onPress: () => {
-            authenticateUser();
-          },
-        },
-      ],
-      {cancelable: false},
-    );
+    unlockInFlightRef.current = true;
+    dbg('Starting authentication...');
+    try {
+      const success = await promptWalletBiometricAuth({
+        showFailureAlert: false,
+      });
+      if (!success) {
+        dbg('Biometric authentication failed');
+        Alert.alert(
+          'Authentication Failed',
+          'Unable to authenticate. Please try again.',
+          [
+            {
+              text: 'Retry',
+              onPress: () => {
+                authenticateUser();
+              },
+            },
+          ],
+          {cancelable: false},
+        );
+        return;
+      }
+      dbg('Biometric authentication successful');
+      try {
+        const route = await resolveInitialWalletRoute();
+        setInitialRoute(route);
+      } catch {
+        setInitialRoute('Welcome');
+      }
+      DeviceEventEmitter.emit('wallet:unlocked');
+      setAwaitingLockUnlock(false);
+      setIsAuthenticated(true);
+    } finally {
+      unlockInFlightRef.current = false;
+    }
   };
   const handleRetryAuthentication = async () => {
     setIsAuthenticated(false);
@@ -757,11 +779,17 @@ const App = () => {
     <ErrorBoundary>
       <SafeAreaProvider>
         <ThemeProvider>
-          <UserProvider key={`user-${appResetKey}`}>
+          <UserProvider key={`user-${userProviderResetKey}`}>
             {initialRoute === null || !isAuthenticated ? (
-              <LoadingScreen onRetry={handleRetryAuthentication} />
+              <LoadingScreen
+                onRetry={handleRetryAuthentication}
+                autoUnlock={awaitingLockUnlock && initialRoute !== null}
+              />
             ) : (
-              <AppContent key={`content-${appResetKey}`} initialRoute={initialRoute} />
+              <AppContent
+                key={`content-${contentResetKey}`}
+                initialRoute={initialRoute}
+              />
             )}
           </UserProvider>
         </ThemeProvider>

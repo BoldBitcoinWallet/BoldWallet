@@ -66,8 +66,8 @@ NS_ASSUME_NONNULL_BEGIN
                                    fees:(NSString *)fees
                                   utxos:(NSString *)utxos
                                  change:(NSString *)change;
-+ (void)cancelMpcSession:(NSString *)sessionID;
-+ (void)cancelNostrMpc;
++ (NSString *)cancelMpcSession:(NSString *)sessionID;
++ (NSString *)cancelNostrMpc;
 
 // GG18 / shared TSS (subset used by BBMTLibNativeModule)
 + (NSString *)publishData:(NSString *)port

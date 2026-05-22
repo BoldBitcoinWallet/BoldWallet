@@ -48,6 +48,50 @@ ndk_prebuilt_host() {
   fi
 }
 
+# Validate per-ABI libbbmtmobile.h GoInt width matches JNI pointer size.
+validate_abi_header() {
+  local abi="$1"
+  local pointer_bits="$2"
+  local hdr="${JNI_OUT}/${abi}/libbbmtmobile.h"
+  if [ ! -f "${hdr}" ]; then
+    warn "validate_abi_header: missing ${hdr}"
+    return 1
+  fi
+  if [ "${pointer_bits}" = "32" ]; then
+    grep -q 'typedef GoInt32 GoInt;' "${hdr}" || {
+      warn "${abi}: expected GoInt32 in ${hdr}"
+      return 1
+    }
+    if grep -q '_check_for_64_bit_pointer_matching_GoInt' "${hdr}"; then
+      warn "${abi}: wrong 64-bit GoInt header for 32-bit ABI"
+      return 1
+    fi
+  else
+    grep -q 'typedef GoInt64 GoInt;' "${hdr}" || {
+      warn "${abi}: expected GoInt64 in ${hdr}"
+      return 1
+    }
+    grep -q '_check_for_64_bit_pointer_matching_GoInt' "${hdr}" || {
+      warn "${abi}: missing 64-bit GoInt check in ${hdr}"
+      return 1
+    }
+  fi
+  return 0
+}
+
+print_android_build_summary() {
+  info "Android native build summary"
+  printf "  %-14s %-18s %-18s\n" "ABI" "libbbmtmobile.so" "libdkls_jni.so"
+  for abi in arm64-v8a armeabi-v7a x86_64; do
+    local so="${JNI_OUT}/${abi}/libbbmtmobile.so"
+    local jni="${JNI_OUT}/${abi}/libdkls_jni.so"
+    local s1="MISSING" s2="MISSING"
+    [ -f "${so}" ] && s1="OK"
+    [ -f "${jni}" ] && s2="OK"
+    printf "  %-14s %-18s %-18s\n" "${abi}" "${s1}" "${s2}"
+  done
+}
+
 build_host() {
   info "Building libtss-ffi (host)..."
   (cd "${LIBTSS}" && cargo build --release -p libtss-ffi)
@@ -156,6 +200,15 @@ build_android_jni_abi() {
     return 1
   fi
 
+  local pointer_bits=64
+  case "${abi}" in
+    armeabi-v7a) pointer_bits=32 ;;
+  esac
+  if ! validate_abi_header "${abi}" "${pointer_bits}"; then
+    warn "Skip dkls_jni for ${abi}: GoInt/header ABI mismatch"
+    return 1
+  fi
+
   local cxx="${ndk}/toolchains/llvm/prebuilt/${host}/bin/${clang_triple}${MIN_API}-clang++"
   if [ ! -x "${cxx}" ]; then
     warn "C++ compiler not found: ${cxx}"
@@ -180,6 +233,11 @@ build_android_jni_abi() {
     return 1
   fi
   info "  -> ${out}"
+
+  local check_jni="${ROOT}/../android/scripts/check-jni-exports.sh"
+  if [ -x "${check_jni}" ]; then
+    bash "${check_jni}" "${out}" || warn "JNI symbol check failed for ${abi}"
+  fi
 }
 
 build_android() {
@@ -203,6 +261,13 @@ build_android() {
   # IDE convenience only (arm64); JNI builds use jniLibs/<abi>/libbbmtmobile.h above.
   if [ -f "${JNI_OUT}/arm64-v8a/libbbmtmobile.h" ]; then
     cp -f "${JNI_OUT}/arm64-v8a/libbbmtmobile.h" "${CPP_DIR}/libbbmtmobile.h"
+  fi
+
+  print_android_build_summary
+
+  local verify="${ROOT}/scripts/verify-native-artifacts.sh"
+  if [ "${VERIFY_NATIVE:-1}" = "1" ] && [ -x "${verify}" ]; then
+    bash "${verify}" || warn "Native artifact verification reported issues"
   fi
 }
 

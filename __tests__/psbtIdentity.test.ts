@@ -1,6 +1,8 @@
 import {
   canonicalPsbtBase64,
   isPsbtBytes,
+  isValidLanPsbtSessionPayload,
+  lanPsbtSessionPayloadMatchesHash,
   parsePsbtSessionPayload,
   readPsbtBase64FromFile,
 } from '../services/psbtIdentity';
@@ -8,7 +10,7 @@ import {
 // Minimal valid PSBT header: psbt\xff + empty global map (0x00)
 const PSBT_BYTES = Buffer.from([0x70, 0x73, 0x62, 0x74, 0xff, 0x00]);
 const CANONICAL = PSBT_BYTES.toString('base64');
-const NO_PADDING = CANONICAL.replace(/=+$/, '');
+const NO_PADDING = CANONICAL.replace(/[=]+$/, '');
 
 describe('psbtIdentity', () => {
   it('detects psbt magic bytes', () => {
@@ -19,6 +21,32 @@ describe('psbtIdentity', () => {
   it('canonicalPsbtBase64 normalizes padding and whitespace', () => {
     expect(canonicalPsbtBase64(NO_PADDING)).toBe(CANONICAL);
     expect(canonicalPsbtBase64(`  ${NO_PADDING}\n`)).toBe(CANONICAL);
+  });
+
+  it('isValidLanPsbtSessionPayload rejects incomplete or stale payloads', () => {
+    const seed = 'a'.repeat(64);
+    const hash = 'b'.repeat(64);
+    expect(isValidLanPsbtSessionPayload(`${seed}:${hash}:npub1abc`)).toBe(
+      true,
+    );
+    expect(isValidLanPsbtSessionPayload(seed)).toBe(false);
+    expect(isValidLanPsbtSessionPayload(`${seed}:short:npub`)).toBe(false);
+    expect(
+      isValidLanPsbtSessionPayload('192.168.0.1@id@pub,192.168.0.2@id@pub'),
+    ).toBe(false);
+  });
+
+  it('lanPsbtSessionPayloadMatchesHash requires matching psbt hash', () => {
+    const seed = 'a'.repeat(64);
+    const hash = 'b'.repeat(64);
+    const payload = `${seed}:${hash}:npub1abc`;
+    expect(lanPsbtSessionPayloadMatchesHash(payload, hash)).toBe(true);
+    expect(lanPsbtSessionPayloadMatchesHash(payload, 'c'.repeat(64))).toBe(
+      false,
+    );
+    expect(lanPsbtSessionPayloadMatchesHash('not-a-session', hash)).toBe(
+      false,
+    );
   });
 
   it('parsePsbtSessionPayload supports party keys with colons', () => {

@@ -1,4 +1,4 @@
-import {Platform} from 'react-native';
+import {DeviceEventEmitter, Platform} from 'react-native';
 import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import LocalCache from './services/LocalCache';
@@ -1316,6 +1316,7 @@ export const saveKeyshareMetadata = async keyshareJson => {
       }
     }
     dbg('saveKeyshareMetadata: saved metadata');
+    DeviceEventEmitter.emit('wallet:keyshare-ready');
   } catch (e) {
     dbg('saveKeyshareMetadata: failed', e);
   }

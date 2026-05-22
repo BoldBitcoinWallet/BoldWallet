@@ -339,7 +339,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
           {/* Modal Header */}
           <View style={styles.modalHeader}>
             <Image
-              source={require('../assets/network-icon.png')}
+              source={require('../assets/cosign-icon.png')}
               style={styles.modalHeaderIconImage}
             />
             <Text style={styles.modalTitle}>{title}</Text>

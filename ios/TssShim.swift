@@ -84,13 +84,11 @@ func TssComputeTxId(_ rawTxHex: String, _ error: NSErrorPointer) -> String {
 }
 
 func TssCancelMpcSession(_ sessionID: String, _ error: NSErrorPointer) -> String {
-  BbmtBridge.cancelMpcSession(sessionID)
-  return bbmtResolve("ok", error)
+  bbmtResolve(BbmtBridge.cancelMpcSession(sessionID), error)
 }
 
 func TssCancelNostrMpc(_ error: NSErrorPointer) -> String {
-  BbmtBridge.cancelNostrMpc()
-  return bbmtResolve("ok", error)
+  bbmtResolve(BbmtBridge.cancelNostrMpc(), error)
 }
 
 func TssParsePSBTDetails(_ psbtBase64: String, _ error: NSErrorPointer) -> String {
