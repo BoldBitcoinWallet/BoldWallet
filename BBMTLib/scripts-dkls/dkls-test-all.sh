@@ -47,23 +47,24 @@ pass "local-keygen"
 pass "validate-ks"
 
 echo "==> dkls unit + join-barrier smoke (Go)"
-go test -count=1 ./dkls/ -timeout 3m -run 'TestHelloDkg|TestDKGAndSignInProcessTrio|TestDKGAndSignInProcess|TestRunDKGWithSenderTrioInProcess|TestRunDKGWithSenderInProcess|TestKeyshareRoundTrip|TestDedupe|TestRecvPeer|TestMerge|TestLanAwaitJoinersPartialTrio'
+go test -count=1 ./dkls/ -timeout 3m -run 'TestHelloDkg|TestDKGAndSignInProcessTrio|TestDKGAndSignInProcess|TestRunDKGWithSenderTrioInProcess|TestRunDKGWithSenderInProcess|TestKeyshareRoundTrip|TestDedupe|TestRecvPeer|TestMerge|TestLanAwaitJoinersPartialTrio|TestResolveSigning|TestPartyID|TestDedupeSigning|normalizeParticipating'
 pass "dkls unit + join-barrier tests"
-
-echo "==> dkls LAN/Nostr keysign smoke (Go)"
-go test -count=1 ./dkls/ -timeout 5m -run 'TestLanKeysign|TestNostrKeysign'
-pass "dkls keysign integration smoke"
 
 echo "==> tss backend dispatch (Go)"
 go test -count=1 ./tss/ -timeout 1m -run 'ParseTssBackend|IsDKLs'
 pass "tss dispatch unit tests"
 
-if [ "${RUN_DKLS_LAN_INTEGRATION:-0}" = "1" ]; then
-  echo "==> dkls LAN keygen integration (RUN_DKLS_LAN_INTEGRATION=1)"
-  go test -count=1 ./dkls/ -timeout 15m -run 'TestLanJoinKeygenDuo$|TestLanJoinKeygenTrio$|TestLanJoinKeygenTrioSimultaneous|TestLanJoinKeygenTrioStaggerMobile|TestLanJoinKeygenTrioDerivedSessionKey'
-  pass "dkls LAN keygen integration"
+if [ "${DKLS_SKIP_MPC_MATRIX:-0}" != "1" ]; then
+  echo "==> DKLS MPC matrix (LAN/Nostr keygen + keysign duo/trio)"
+  DKLS_MPC_START_RELAY="${DKLS_MPC_START_RELAY:-1}" bash "${ROOT}/scripts-dkls/dkls-mpc-matrix-test.sh"
 else
-  skip "LAN keygen integration (set RUN_DKLS_LAN_INTEGRATION=1; ~1–2 min with DKLS_TEST_DKG_SEC)"
+  skip "MPC matrix (set DKLS_SKIP_MPC_MATRIX=0; run ./scripts-dkls/dkls-mpc-matrix-test.sh)"
+fi
+
+if [ "${RUN_DKLS_LAN_INTEGRATION:-0}" = "1" ]; then
+  echo "==> dkls extra LAN keygen stress (RUN_DKLS_LAN_INTEGRATION=1)"
+  go test -count=1 ./dkls/ -timeout 15m -run 'TestLanJoinKeygenTrioSimultaneous|TestLanJoinKeygenTrioStaggerMobile|TestLanJoinKeygenTrioDerivedSessionKey'
+  pass "dkls extra LAN keygen integration"
 fi
 
 if [ "${RUN_DKLS_TRIO_STRESS:-0}" = "1" ]; then

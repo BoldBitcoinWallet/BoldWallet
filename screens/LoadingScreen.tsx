@@ -187,22 +187,22 @@ const LoadingScreen = ({onRetry, autoUnlock = false}: any) => {
   const glowScale = useRef(new Animated.Value(1)).current;
   const logoScale = useRef(new Animated.Value(1)).current;
 
-  const handlePress = async () => {
+  const handlePress = useCallback(async () => {
     setLoading(true);
     try {
       await onRetry();
     } finally {
       setLoading(false);
     }
-  };
+  }, [onRetry]);
   const autoUnlockAttemptedRef = useRef(false);
   useEffect(() => {
     if (!autoUnlock || autoUnlockAttemptedRef.current) {
       return;
     }
     autoUnlockAttemptedRef.current = true;
-    void handlePress();
-  }, [autoUnlock]);
+    handlePress().catch(() => {});
+  }, [autoUnlock, handlePress]);
   const handlePressIn = () => {
     Animated.spring(buttonScale, {
       toValue: 0.97,

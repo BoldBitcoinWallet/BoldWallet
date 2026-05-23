@@ -47,7 +47,6 @@ import {
   hexToString,
   getResetToMainTabsWallet,
   getKeyshareDisplayLabel,
-  saveKeyshareMetadata,
   getKeyshareMetadata,
   resolveUseLegacyDerivationPaths,
   detectKeyshareTssBackend,
@@ -88,7 +87,9 @@ import {
 } from '../services/lanMpcSetup';
 import {
   invokeLanWalletKeygen,
+  KEYGEN_FINALIZING_STORAGE_STATUS,
   persistLanRolesFromContext,
+  persistWalletKeyshare,
   resolveWalletSetupBackend,
   runLanWalletKeygen,
   runWalletSetupPrepare,
@@ -106,6 +107,8 @@ import {
   mpcSessionShortLabel,
   processMpcHookMessage,
   resolveMpcHookBackend,
+  staleTransportHintForKeygen,
+  trackMpcHookForTransportLiveness,
 } from '../services/mpcProgressUi';
 import {MpcModalStatusRow} from '../components/MpcModalStatusRow';
 import {MpcProgressModalHeader} from '../components/MpcProgressModalHeader';
@@ -192,6 +195,12 @@ const MobilesPairing = ({navigation}: any) => {
   const [countdown, setCountdown] = useState(timeout);
   const pairingDeadlineRef = useRef(0);
   const mpcHookProgressRef = useRef(0);
+  const lastMpcPercentBumpAtRef = useRef(Date.now());
+  const lastMpcKeygenStepRef = useRef(0);
+  const [mpcTransportPulse, setMpcTransportPulse] = useState(false);
+  const [staleTransportHint, setStaleTransportHint] = useState<string | null>(
+    null,
+  );
   const mpcUtxoRef = useRef<MpcProgressUtxoState>({
     utxoIndex: 0,
     utxoCount: 0,
@@ -317,6 +326,7 @@ const MobilesPairing = ({navigation}: any) => {
   const mpcAbortRef = useRef(false);
   const activeMpcSessionIdRef = useRef<string | null>(null);
   const doingMpcRef = useRef(false);
+  const keysharePersistedRef = useRef(false);
   const setMpcModalActive = useCallback((active: boolean) => {
     doingMpcRef.current = active;
     setDoingMPC(active);
@@ -716,6 +726,7 @@ const MobilesPairing = ({navigation}: any) => {
         setKeygenBackend(backend);
       }
       setMpcDone(false);
+      keysharePersistedRef.current = false;
       setPrepCounter(0);
       resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
       setMpcSessionShort(null);
@@ -799,10 +810,10 @@ const MobilesPairing = ({navigation}: any) => {
             dbg('Error parsing keyshare:', error);
             throw 'Error: Invalid keyshare';
           }
-          await EncryptedStorage.setItem('keyshare', result);
-          await saveKeyshareMetadata(result);
+          const persisted = await persistWalletKeyshare(result);
+          keysharePersistedRef.current = true;
           try {
-            const ksParsed = JSON.parse(result);
+            const ksParsed = JSON.parse(persisted);
             const display = getKeyshareDisplayLabel(ksParsed);
             if (display) {
               setShareName(display);
@@ -823,6 +834,7 @@ const MobilesPairing = ({navigation}: any) => {
           } catch {
             /* keep protocol party id in shareName */
           }
+          setKeyshare(result);
           setMpcDone(true);
           deletePreparams();
         })
@@ -990,15 +1002,19 @@ const MobilesPairing = ({navigation}: any) => {
       const persistedRoles = loadPersistedLanRoles();
       let partyID: string;
       let partiesCSV: string;
+      let resolvedSigningPeerParty = '';
       if (backend === 'dkls23') {
         const peerKeyForSign =
           (peerCommitteeKey || '').trim() ||
           (peerParty?.startsWith('npub1') ? peerParty : '') ||
           '';
-        ({partyID, partiesCSV} = resolveDklsLanSigningPartiesFromKeyshare(
+        const dklsParties = resolveDklsLanSigningPartiesFromKeyshare(
           _ksMeta,
           peerKeyForSign,
-        ));
+        );
+        partyID = dklsParties.partyID;
+        partiesCSV = dklsParties.partiesCSV;
+        resolvedSigningPeerParty = dklsParties.peerParty;
       } else {
         ({partyID, partiesCSV} = resolveGg18LanSigningPartiesFromKeyshare(
           _ksMeta,
@@ -1014,6 +1030,7 @@ const MobilesPairing = ({navigation}: any) => {
         walletIsTrio,
         partyID,
         partiesCSV,
+        resolvedSigningPeerParty,
         keyshareLocalKey: _ksMeta?.local_party_key,
         peerCommitteeKey,
         lanRoles: {localParty, peerParty, peerParty2},
@@ -1047,7 +1064,9 @@ const MobilesPairing = ({navigation}: any) => {
           psbtHash,
           localPsbtHash,
         });
-        if (peerParty === partyID) {
+        const signingPeerParty =
+          backend === 'dkls23' ? resolvedSigningPeerParty : peerParty;
+        if (signingPeerParty === partyID) {
           throw 'Please Use "Two Different KeyShares" per Device';
         }
         if (psbtHash !== localPsbtHash) {
@@ -1140,7 +1159,9 @@ const MobilesPairing = ({navigation}: any) => {
           net,
           addressTypeToUse,
         );
-        if (peerParty === partyID) {
+        const signingPeerParty =
+          backend === 'dkls23' ? resolvedSigningPeerParty : peerParty;
+        if (signingPeerParty === partyID) {
           throw 'Please Use "Two Different KeyShares" per Device';
         }
 
@@ -1296,10 +1317,12 @@ const MobilesPairing = ({navigation}: any) => {
       if (!backend) {
         return;
       }
+      const progressBefore = mpcHookProgressRef.current;
       const result = processMpcHookMessage(message, backend, {
         isTrio,
         isSendBitcoin,
         isSignPSBT,
+        isNostrTransport: false,
         refs: {
           progressRef: mpcHookProgressRef,
           utxoRef: mpcUtxoRef,
@@ -1321,6 +1344,15 @@ const MobilesPairing = ({navigation}: any) => {
       if (!result) {
         return;
       }
+      const transportTrack = trackMpcHookForTransportLiveness(message, result, {
+        progressBefore,
+        lastBumpAtMsRef: lastMpcPercentBumpAtRef,
+        lastKeygenStepRef: lastMpcKeygenStepRef,
+      });
+      if (transportTrack.clearStale) {
+        setStaleTransportHint(null);
+      }
+      setMpcTransportPulse(transportTrack.pulse);
       if (result.utxoState) {
         dbg('progress send_btc', result.utxoState);
       }
@@ -1335,7 +1367,11 @@ const MobilesPairing = ({navigation}: any) => {
         setMpcSessionShort(result.sessionShort);
       }
       if (result.mpcDone && !isSendBitcoin && !isSignPSBT) {
-        setMpcDone(true);
+        if (keysharePersistedRef.current) {
+          setMpcDone(true);
+        } else {
+          setStatus(KEYGEN_FINALIZING_STORAGE_STATUS);
+        }
       }
     };
     if (Platform.OS === 'android') {
@@ -1388,12 +1424,30 @@ const MobilesPairing = ({navigation}: any) => {
   }, [isPreparing, progressAnimation]);
   useEffect(() => {
     if (doingMPC) {
+      setPrepCounter(0);
+      setStaleTransportHint(null);
+      lastMpcPercentBumpAtRef.current = Date.now();
       const interval = setInterval(() => {
         setPrepCounter(prevCounter => prevCounter + 1);
+        const hint = staleTransportHintForKeygen({
+          isPairing: doingMPC,
+          isSpendFlow: isSendBitcoin || isSignPSBT,
+          displayPercent: mpcHookProgressRef.current,
+          lastBumpAtMs: lastMpcPercentBumpAtRef.current,
+          lastKeygenStep: lastMpcKeygenStepRef.current,
+          nowMs: Date.now(),
+          isNostrTransport: false,
+        });
+        setStaleTransportHint(hint);
+        if (hint) {
+          setMpcTransportPulse(true);
+        }
       }, 1000);
       return () => clearInterval(interval);
     }
-  }, [doingMPC]);
+    setStaleTransportHint(null);
+    setMpcTransportPulse(false);
+  }, [doingMPC, isSendBitcoin, isSignPSBT]);
   useEffect(() => {
     if (!isPairing) {
       return;
@@ -4114,7 +4168,19 @@ const MobilesPairing = ({navigation}: any) => {
                                 <MpcModalStatusRow
                                   status={status}
                                   sessionShort={mpcSessionShort}
+                                  pulseIndicator={
+                                    mpcTransportPulse || !!staleTransportHint
+                                  }
                                 />
+                                {staleTransportHint ? (
+                                  <Text
+                                    style={[
+                                      styles.finalizingCountdownText,
+                                      {marginBottom: 4},
+                                    ]}>
+                                    {staleTransportHint}
+                                  </Text>
+                                ) : null}
                                 <Text style={styles.finalizingCountdownText}>
                                   Time elapsed: {prepCounter} seconds
                                 </Text>
@@ -4442,7 +4508,19 @@ const MobilesPairing = ({navigation}: any) => {
                 <MpcModalStatusRow
                   status={status}
                   sessionShort={mpcSessionShort}
+                  pulseIndicator={
+                    mpcTransportPulse || !!staleTransportHint
+                  }
                 />
+                {staleTransportHint ? (
+                  <Text
+                    style={[
+                      styles.finalizingCountdownText,
+                      {marginBottom: 4},
+                    ]}>
+                    {staleTransportHint}
+                  </Text>
+                ) : null}
                 <Text style={styles.finalizingCountdownText}>
                   Time elapsed: {prepCounter} seconds
                 </Text>

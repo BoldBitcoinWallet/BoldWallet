@@ -187,9 +187,36 @@ export function resolveLanSigningParties(input: {
   return {partyID: localParty, partiesCSV: parties.join(',')};
 }
 
+/** Prefer keyshare local_party_key when it is already a committee member (LAN KeyShareN or npub). */
+function resolveDklsLocalSigningLabel(
+  meta: {
+    local_party_key?: string;
+    keygen_committee_keys?: string[] | null;
+  } | null,
+): string {
+  const localKey = (meta?.local_party_key ?? '').trim();
+  const committee = meta?.keygen_committee_keys;
+  if (localKey && Array.isArray(committee) && committee.length >= 2) {
+    const inCommittee = committee.some(
+      k => String(k ?? '').trim() === localKey,
+    );
+    if (inCommittee) {
+      const label = getCommitteeKeyshareLabel(meta, localKey);
+      if (label) {
+        return label;
+      }
+      if (localKey.startsWith('KeyShare')) {
+        return localKey;
+      }
+    }
+  }
+  return getKeyshareLabel(meta);
+}
+
 /**
  * DKLS LAN spend: party ids must match libtss ids from keygen committee order,
  * not Wi‑Fi IP ranking (KeyShare1/2/3). Use npubs from discovery + keyshare metadata.
+ * Do not pass IP-derived KeyShare roles as peerCommitteeKey — use discovery npub/KeyShare id.
  */
 export function resolveDklsLanSigningPartiesFromKeyshare(
   meta: {
@@ -197,8 +224,8 @@ export function resolveDklsLanSigningPartiesFromKeyshare(
     keygen_committee_keys?: string[] | null;
   } | null,
   peerCommitteeKey: string,
-): {partyID: string; partiesCSV: string} {
-  const localLabel = getKeyshareLabel(meta);
+): {partyID: string; peerParty: string; partiesCSV: string} {
+  const localLabel = resolveDklsLocalSigningLabel(meta);
   if (!localLabel) {
     throw new Error(
       'Could not map this device to a KeyShare role from your wallet committee. Re-import the keyshare or use Nostr co-signing.',
@@ -210,16 +237,81 @@ export function resolveDklsLanSigningPartiesFromKeyshare(
       'Peer identity missing from LAN pairing. Re-run device pairing, then retry co-signing.',
     );
   }
-  const peerLabel = getCommitteeKeyshareLabel(meta, peerKey);
+  const peerLabel = getCommitteeKeyshareLabel(meta, peerKey) || peerKey;
   if (!peerLabel) {
     throw new Error(
       'Could not map the paired device to your wallet committee. Ensure both devices use the same trio wallet, then re-pair on LAN.',
     );
   }
-  return resolveLanSigningParties({
+  if (localLabel === peerLabel) {
+    throw new Error(
+      'LAN co-signing needs two different key shares. Re-pair devices and ensure each phone holds a distinct share.',
+    );
+  }
+  const {partyID, partiesCSV} = resolveLanSigningParties({
     localParty: localLabel,
     peerParty: peerLabel,
   });
+  const unique = partiesCSV.split(',').map(s => s.trim()).filter(Boolean);
+  if (unique.length !== 2 || new Set(unique).size !== 2) {
+    throw new Error(
+      `Invalid LAN signing party set (${partiesCSV}). Re-pair on the same Wi‑Fi and retry.`,
+    );
+  }
+  return {partyID, peerParty: peerLabel, partiesCSV};
+}
+
+/**
+ * DKLS Nostr spend/sign: build sorted 2-npub CSV for native keysign (duo or trio subset).
+ */
+export function resolveDklsNostrSigningParties(
+  localNpub: string,
+  peerNpub: string,
+  meta?: {
+    keygen_committee_keys?: string[] | null;
+  } | null,
+): {partiesNpubsCSV: string; localNpub: string; peerNpub: string} {
+  const local = localNpub.trim();
+  const peer = peerNpub.trim();
+  if (!local.startsWith('npub1')) {
+    throw new Error(
+      'Local Nostr identity is missing. Re-open the wallet or re-pair before co-signing.',
+    );
+  }
+  if (!peer.startsWith('npub1')) {
+    throw new Error(
+      'Peer Nostr identity is missing. Re-connect the co-signing device, then retry.',
+    );
+  }
+  if (local === peer) {
+    throw new Error(
+      'Nostr co-signing needs two different devices. Select another peer and retry.',
+    );
+  }
+  const committee = meta?.keygen_committee_keys;
+  if (Array.isArray(committee) && committee.length >= 2) {
+    const committeeNpubs = committee
+      .map(k => String(k ?? '').trim())
+      .filter(k => k.startsWith('npub1'));
+    if (committeeNpubs.length >= 2) {
+      const inCommittee = (npub: string) =>
+        committeeNpubs.some(c => c === npub);
+      if (!inCommittee(local) || !inCommittee(peer)) {
+        throw new Error(
+          'Selected peer is not in this wallet committee. Pick a device that holds a different key share from the same wallet.',
+        );
+      }
+    }
+  }
+  const parties = [local, peer].sort();
+  if (new Set(parties).size !== 2) {
+    throw new Error('Invalid Nostr signing party set (duplicate npubs).');
+  }
+  return {
+    partiesNpubsCSV: parties.join(','),
+    localNpub: local,
+    peerNpub: peer,
+  };
 }
 
 /**

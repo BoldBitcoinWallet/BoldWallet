@@ -174,8 +174,9 @@ func runLanJoinKeygenTrio(t *testing.T, opts trioKeygenOpts) {
 	assertTrioKeysharesConsistent(t, jsons)
 }
 
-// Two-party LAN DKG against the HTTP relay (same path as mobile duo setup).
-func TestLanJoinKeygenDuo(t *testing.T) {
+// testMpcLanKeygenDuo runs 2-of-2 LAN DKG via HTTP relay (mobile duo setup path).
+func testMpcLanKeygenDuo(t *testing.T) {
+	t.Helper()
 	port := freeTestPort(t)
 	server := "http://127.0.0.1:" + port
 	_, _ = tss.StopRelay()
@@ -201,12 +202,23 @@ func TestLanJoinKeygenDuo(t *testing.T) {
 	}
 }
 
-func TestLanJoinKeygenTrio(t *testing.T) {
+// testMpcLanKeygenTrio runs 2-of-3 LAN DKG via HTTP relay (mobile trio setup path).
+func testMpcLanKeygenTrio(t *testing.T) {
+	t.Helper()
 	runLanJoinKeygenTrio(t, trioKeygenOpts{
 		session:    "test-lan-session-trio",
 		sessionKey: testSessionHex(t, 32),
 		staggerMs:  []int{0, 2000, 4000},
 	})
+}
+
+// Two-party LAN DKG against the HTTP relay (same path as mobile duo setup).
+func TestLanJoinKeygenDuo(t *testing.T) {
+	testMpcLanKeygenDuo(t)
+}
+
+func TestLanJoinKeygenTrio(t *testing.T) {
+	testMpcLanKeygenTrio(t)
 }
 
 func TestLanJoinKeygenTrioSimultaneous(t *testing.T) {

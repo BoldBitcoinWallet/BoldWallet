@@ -1,4 +1,5 @@
 import Big from 'big.js';
+import {DeviceEventEmitter} from 'react-native';
 import {BBMTLibNativeModule} from '../native_modules';
 import {
   dbg,
@@ -7,6 +8,7 @@ import {
   getReceivePath,
   resolveUseLegacyDerivationPaths,
   getKeyshareMetadata,
+  hasWalletKeyshareInSecureStorage,
 } from '../utils';
 import {
   getGapLimit,
@@ -202,6 +204,7 @@ const validateNumber = (value: any): boolean => {
 };
 export class WalletService {
   private static instance: WalletService;
+  private static keyshareReadyListenerRegistered = false;
   private abortControllers: Map<string, AbortController> = new Map();
   private currentAddress: string | null = null;
   private currentNetwork: string = 'mainnet'; // Default to mainnet
@@ -222,10 +225,16 @@ export class WalletService {
   }
   public async initialize() {
     try {
-      // Check for keyshare first
+      const hasBlob = await hasWalletKeyshareInSecureStorage();
+      if (!hasBlob) {
+        dbg(
+          'WalletService: No keyshare blob in secure storage, skipping initialization',
+        );
+        return;
+      }
       const keyshare = await getKeyshareMetadata();
       if (!keyshare) {
-        dbg('WalletService: No keyshare found, skipping initialization');
+        dbg('WalletService: No keyshare metadata, skipping initialization');
         return;
       }
       // Initialize network state from storage
@@ -407,10 +416,35 @@ export class WalletService {
       throw error;
     }
   }
+
+  /**
+   * Re-read keyshare metadata and network prefs after setup or import.
+   * Subscribed to `wallet:keyshare-ready` (emitted by saveKeyshareMetadata).
+   */
+  public async refreshAfterKeyshareReady(): Promise<void> {
+    dbg('WalletService: refreshAfterKeyshareReady');
+    this.invalidateAddressCache();
+    this.currentAddress = null;
+    await this.initialize();
+  }
+
+  private static ensureKeyshareReadyListener(): void {
+    if (WalletService.keyshareReadyListenerRegistered) {
+      return;
+    }
+    WalletService.keyshareReadyListenerRegistered = true;
+    DeviceEventEmitter.addListener('wallet:keyshare-ready', () => {
+      WalletService.getInstance()
+        .refreshAfterKeyshareReady()
+        .catch(() => {});
+    });
+  }
+
   public static getInstance(): WalletService {
     if (!WalletService.instance) {
       WalletService.instance = new WalletService();
     }
+    WalletService.ensureKeyshareReadyListener();
     return WalletService.instance;
   }
 

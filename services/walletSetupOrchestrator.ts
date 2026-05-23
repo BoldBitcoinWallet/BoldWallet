@@ -6,7 +6,7 @@
 import {Platform} from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {BBMTLibNativeModule} from '../native_modules';
-import {saveKeyshareMetadata} from '../utils';
+import {KEYSHARE_STORAGE_KEY, saveKeyshareMetadata} from '../utils';
 import {waitMS} from './WalletService';
 import {
   buildLanRelayServerUrl,
@@ -322,7 +322,24 @@ export function finalizeKeyshareForStorage(
   return JSON.stringify(parsed);
 }
 
-/** Persist full keyshare + non-secret metadata mirror. */
+/** Shown while native keygen reports done but secure storage write is still in flight. */
+export const KEYGEN_FINALIZING_STORAGE_STATUS =
+  'Finalizing secure wallet storage…';
+
+/** Read-back check that the full keyshare blob exists in RNES. */
+export async function verifyWalletKeysharePersisted(): Promise<boolean> {
+  try {
+    const raw = await EncryptedStorage.getItem(KEYSHARE_STORAGE_KEY);
+    return !!(raw && String(raw).trim());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Persist full keyshare + metadata mirror atomically for setup success.
+ * Throws if blob write or read-back verification fails (metadata write must succeed).
+ */
 export async function persistWalletKeyshare(
   keyshareJson: string,
   opts?: FinalizeKeyshareOpts,
@@ -330,7 +347,22 @@ export async function persistWalletKeyshare(
   const finalized = opts
     ? finalizeKeyshareForStorage(keyshareJson, opts)
     : keyshareJson;
-  await EncryptedStorage.setItem('keyshare', finalized);
-  await saveKeyshareMetadata(finalized);
+  if (!finalized || String(finalized).trim() === '') {
+    throw new Error('Invalid keyshare: empty payload');
+  }
+  await EncryptedStorage.setItem(KEYSHARE_STORAGE_KEY, finalized);
+  const verified = await verifyWalletKeysharePersisted();
+  if (!verified) {
+    throw new Error(
+      'Could not save your key share securely. Keep the app open and retry setup.',
+    );
+  }
+  await saveKeyshareMetadata(finalized, {throwOnError: true});
+  const verifiedAfterMeta = await verifyWalletKeysharePersisted();
+  if (!verifiedAfterMeta) {
+    throw new Error(
+      'Key share was lost during setup. Please run wallet setup again.',
+    );
+  }
   return finalized;
 }

@@ -24,6 +24,8 @@ export type MpcHookHandlerResult = {
   sessionShort: string | null;
   mpcDone: boolean;
   utxoState?: MpcProgressUtxoState;
+  /** Recv/wait heartbeat active — pulse status indicator */
+  transportLiveness?: boolean;
 };
 
 /** Short session badge for progress modals (first 4 hex chars). */
@@ -89,6 +91,7 @@ export function formatMpcPhaseLabel(
     isSendBitcoin: boolean;
     isSignPSBT?: boolean;
     utxo: MpcProgressUtxoState;
+    isNostrTransport?: boolean;
   },
 ): string {
   const step = msg.step ?? 0;
@@ -107,7 +110,10 @@ export function formatMpcPhaseLabel(
     if (info.includes('round') || info.includes('message')) {
       if (info.includes('waiting') || info.includes('receiving')) {
         if (step >= 3) {
-          return `Key generation · round ${step - 2} (over Nostr…)`;
+          const transportHint = opts.isNostrTransport
+            ? 'over Nostr…'
+            : 'from peers…';
+          return `Key generation · round ${step - 2} (${transportHint})`;
         }
         return 'Key generation in progress…';
       }
@@ -219,6 +225,64 @@ function hookMatchesActiveSession(
 /**
  * Parse native TssHook JSON and map to UI progress (monotonic, optional session filter).
  */
+/** Update refs when a hook arrives; returns whether to pulse / clear stale hint. */
+export function trackMpcHookForTransportLiveness(
+  message: string,
+  result: MpcHookHandlerResult,
+  refs: {
+    progressBefore: number;
+    lastBumpAtMsRef: {current: number};
+    lastKeygenStepRef: {current: number};
+  },
+): {pulse: boolean; clearStale: boolean} {
+  try {
+    const msg = JSON.parse(message) as MpcHookMessage;
+    if (msg.type === 'keygen' && typeof msg.step === 'number') {
+      refs.lastKeygenStepRef.current = msg.step;
+    }
+  } catch {
+    // ignore malformed hook JSON
+  }
+  const bumped =
+    result.percent !== null && result.percent > refs.progressBefore;
+  if (bumped || result.transportLiveness) {
+    refs.lastBumpAtMsRef.current = Date.now();
+  }
+  return {
+    pulse: result.transportLiveness === true,
+    clearStale: bumped || result.transportLiveness === true,
+  };
+}
+
+/** Fallback status when keygen % is flat during long outbound/inbound transport. */
+export function staleTransportHintForKeygen(opts: {
+  isPairing: boolean;
+  isSpendFlow: boolean;
+  displayPercent: number;
+  lastBumpAtMs: number;
+  lastKeygenStep: number;
+  nowMs: number;
+  isNostrTransport: boolean;
+  staleMs?: number;
+}): string | null {
+  const staleMs = opts.staleMs ?? 3000;
+  if (!opts.isPairing || opts.isSpendFlow) {
+    return null;
+  }
+  if (opts.displayPercent < 20 || opts.displayPercent >= 99) {
+    return null;
+  }
+  if (opts.lastKeygenStep < 3) {
+    return null;
+  }
+  if (opts.nowMs - opts.lastBumpAtMs < staleMs) {
+    return null;
+  }
+  return opts.isNostrTransport
+    ? 'Still exchanging data…'
+    : 'Still waiting on peers…';
+}
+
 export function processMpcHookMessage(
   message: string,
   backend: TssBackend,
@@ -226,6 +290,7 @@ export function processMpcHookMessage(
     isTrio: boolean;
     isSendBitcoin: boolean;
     isSignPSBT?: boolean;
+    isNostrTransport?: boolean;
     refs: MpcHookHandlerRefs;
     onTrace?: (payload: MpcHookTracePayload) => void;
   },
@@ -268,10 +333,12 @@ export function processMpcHookMessage(
       isSendBitcoin: opts.isSendBitcoin,
       isSignPSBT: opts.isSignPSBT,
       utxo: opts.refs.utxoRef.current,
+      isNostrTransport: opts.isNostrTransport,
     }),
     sessionShort: captureHookSessionForUi(msg, opts.refs.activeSessionRef),
     mpcDone: result.mpcDone === true,
     utxoState: result.utxoState,
+    transportLiveness: result.transportLiveness,
   };
 
   opts.onTrace?.({

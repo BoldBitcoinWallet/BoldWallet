@@ -48,7 +48,60 @@ export type MpcProgressResult = {
   percent: number | null;
   utxoState?: MpcProgressUtxoState;
   mpcDone?: boolean;
+  /** Native recv/wait heartbeat during long transport waits */
+  transportLiveness?: boolean;
 };
+
+/** Parses `keygen round (receiving N)` heartbeat tick from native info. */
+export function parseKeygenRecvHeartbeatTick(info: string): number | null {
+  const m = info.match(/receiving\s+(\d+)/i);
+  if (!m) {
+    return null;
+  }
+  const tick = parseInt(m[1], 10);
+  return Number.isFinite(tick) && tick > 0 ? tick : null;
+}
+
+/** Parses `waiting for peers (N)` join heartbeat tick. */
+export function parseKeygenWaitPeersTick(info: string): number | null {
+  const m = info.match(/waiting\s+for\s+peers\s*\((\d+)\)/i);
+  if (!m) {
+    return null;
+  }
+  const tick = parseInt(m[1], 10);
+  return Number.isFinite(tick) && tick > 0 ? tick : null;
+}
+
+const KEYGEN_RECV_CREEP_PER_TICK = 0.5;
+const KEYGEN_WAIT_PEERS_CREEP_PER_TICK = 0.3;
+
+/**
+ * Nudges keygen % upward during recv/wait heartbeats without crossing the next step band.
+ */
+export function keygenRecvLivenessPercent(
+  step: number,
+  tick: number,
+  isTrio: boolean,
+  backend: TssBackend,
+  currentProgress: number,
+  opts?: {waitPeers?: boolean},
+): number {
+  if (tick <= 0) {
+    return Math.max(currentProgress, keygenPercentForUi(step, isTrio, backend));
+  }
+  const base = keygenPercentForUi(step, isTrio, backend);
+  const nextStep = step + 1;
+  let ceiling = keygenPercentForUi(nextStep, isTrio, backend) - 1;
+  if (ceiling <= base) {
+    ceiling = Math.min(98, base + 1);
+  }
+  const perTick = opts?.waitPeers
+    ? KEYGEN_WAIT_PEERS_CREEP_PER_TICK
+    : KEYGEN_RECV_CREEP_PER_TICK;
+  const bump = Math.min(tick * perTick, Math.max(0, ceiling - base));
+  const target = Math.round(base + bump);
+  return Math.min(98, Math.max(currentProgress, target));
+}
 
 /**
  * GG18 linear denominator for legacy callers/tests only.
@@ -248,11 +301,41 @@ export function mapMpcHookToPercent(
     if (msg.done) {
       return {percent: 100, mpcDone: true};
     }
-    const percent = keygenPercentForUi(step, isTrio, backend);
+    const info = msg.info ?? '';
+    const infoLower = info.toLowerCase();
+    let percent = keygenPercentForUi(step, isTrio, backend);
+    let transportLiveness = false;
+
+    const recvTick = parseKeygenRecvHeartbeatTick(info);
+    if (recvTick !== null && infoLower.includes('receiving')) {
+      percent = keygenRecvLivenessPercent(
+        step,
+        recvTick,
+        isTrio,
+        backend,
+        currentProgress,
+      );
+      transportLiveness = true;
+    } else if (step <= 2) {
+      const waitTick = parseKeygenWaitPeersTick(info);
+      if (waitTick !== null && infoLower.includes('waiting')) {
+        percent = keygenRecvLivenessPercent(
+          step,
+          waitTick,
+          isTrio,
+          backend,
+          currentProgress,
+          {waitPeers: true},
+        );
+        transportLiveness = true;
+      }
+    }
+
     const waitingJoin =
-      step <= 2 && (msg.info ?? '').toLowerCase().includes('waiting');
+      step <= 2 && infoLower.includes('waiting') && !transportLiveness;
     return {
       percent: waitingJoin ? percent : Math.max(currentProgress, percent),
+      transportLiveness: transportLiveness || undefined,
     };
   }
 

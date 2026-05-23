@@ -18,12 +18,16 @@ import (
 )
 
 // MessagePump subscribes to relay events and feeds decrypted payloads to the TSS service.
+const maxSeenWrapEventIDs = 10000
+
 type MessagePump struct {
-	cfg         Config
-	client      *Client
-	assembler   *ChunkAssembler
-	processed   map[string]bool
-	processedMu sync.Mutex
+	cfg            Config
+	client         *Client
+	assembler      *ChunkAssembler
+	processed      map[string]bool
+	processedMu    sync.Mutex
+	seenWrapIDs    map[string]struct{}
+	seenWrapIDsMu  sync.Mutex
 }
 
 func NewMessagePump(cfg Config, client *Client) (result *MessagePump) {
@@ -38,10 +42,11 @@ func NewMessagePump(cfg Config, client *Client) (result *MessagePump) {
 
 	cfg.ApplyDefaults()
 	return &MessagePump{
-		cfg:       cfg,
-		client:    client,
-		assembler: NewChunkAssembler(cfg.ChunkTTL),
-		processed: make(map[string]bool),
+		cfg:         cfg,
+		client:      client,
+		assembler:   NewChunkAssembler(cfg.ChunkTTL),
+		processed:   make(map[string]bool),
+		seenWrapIDs: make(map[string]struct{}),
 	}
 }
 
@@ -120,6 +125,19 @@ func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) (err 
 
 		if event == nil {
 			return nil
+		}
+
+		if event.ID != "" {
+			p.seenWrapIDsMu.Lock()
+			if _, dup := p.seenWrapIDs[event.ID]; dup {
+				p.seenWrapIDsMu.Unlock()
+				return nil
+			}
+			p.seenWrapIDs[event.ID] = struct{}{}
+			if len(p.seenWrapIDs) > maxSeenWrapEventIDs {
+				p.seenWrapIDs = make(map[string]struct{})
+			}
+			p.seenWrapIDsMu.Unlock()
 		}
 
 		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump received event from %s (hex), kind=%d, content_len=%d, tags_count=%d\n", event.PubKey, event.Kind, len(event.Content), len(event.Tags))

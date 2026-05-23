@@ -4,9 +4,12 @@ import {
   dklsKeysignPercent,
   gg18KeygenPercent,
   keygenPercentForUi,
+  keygenRecvLivenessPercent,
   getKeygenStepCount,
   getKeysignStepCount,
   mapMpcHookToPercent,
+  parseKeygenRecvHeartbeatTick,
+  parseKeygenWaitPeersTick,
   type MpcProgressUtxoState,
 } from '../services/mpcProgress';
 
@@ -171,6 +174,24 @@ describe('mapMpcHookToPercent', () => {
         ).percent,
       ).toBe(80);
     });
+
+    it('creeps percent on receiving heartbeat without crossing next step', () => {
+      const base = dklsKeygenPercent(5, true);
+      const r1 = mapMpcHookToPercent(
+        {type: 'keygen', step: 5, info: 'keygen round (receiving 1)'},
+        'dkls23',
+        {isTrio: true, utxo: emptyUtxo, currentProgress: base},
+      );
+      const r8 = mapMpcHookToPercent(
+        {type: 'keygen', step: 5, info: 'keygen round (receiving 8)'},
+        'dkls23',
+        {isTrio: true, utxo: emptyUtxo, currentProgress: r1.percent ?? base},
+      );
+      expect(r1.transportLiveness).toBe(true);
+      expect(r1.percent).toBeGreaterThanOrEqual(base);
+      expect(r8.percent).toBeGreaterThan(r1.percent ?? 0);
+      expect(r8.percent).toBeLessThan(dklsKeygenPercent(6, true));
+    });
   });
 
   describe('GG18 keygen', () => {
@@ -323,5 +344,26 @@ describe('mapMpcHookToPercent', () => {
       expect(r.percent).toBe(100);
       expect(r.mpcDone).toBeUndefined();
     });
+  });
+});
+
+describe('parseKeygenRecvHeartbeatTick', () => {
+  it('parses receiving tick', () => {
+    expect(parseKeygenRecvHeartbeatTick('keygen round (receiving 2)')).toBe(2);
+    expect(parseKeygenRecvHeartbeatTick('keygen round')).toBeNull();
+  });
+});
+
+describe('keygenRecvLivenessPercent', () => {
+  it('stays monotonic with currentProgress', () => {
+    expect(
+      keygenRecvLivenessPercent(5, 4, true, 'dkls23', 50),
+    ).toBeGreaterThanOrEqual(50);
+  });
+});
+
+describe('parseKeygenWaitPeersTick', () => {
+  it('parses wait peers tick', () => {
+    expect(parseKeygenWaitPeersTick('waiting for peers (3)')).toBe(3);
   });
 });

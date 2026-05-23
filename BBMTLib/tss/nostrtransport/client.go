@@ -26,6 +26,7 @@ type Client struct {
 	pool        *nostr.SimplePool
 	urls        []string
 	validRelays []string // All valid relay URLs (for reference)
+	relayHealth *relayHealth
 	ctx         context.Context
 	cancel      context.CancelFunc
 }
@@ -136,6 +137,7 @@ func NewClient(cfg Config) (result *Client, err error) {
 			pool:        pool,
 			urls:        connectedURLs,
 			validRelays: validRelays, // Store all valid relays for reference
+			relayHealth: newRelayHealth(),
 			ctx:         ctx,
 			cancel:      cancel,
 		}, nil
@@ -612,11 +614,15 @@ func (c *Client) Subscribe(ctx context.Context, filter Filter) (result <-chan *E
 	}
 }
 
-// PublishWrap publishes a pre-signed gift wrap event (kind:1059)
-// Resiliency policy: Publishes to ALL valid relays in parallel, returns immediately on first success,
-// continues publishing to other relays in background. Only fails if ALL relays fail.
-// This ensures co-signing messages are delivered even if some relays are down or slow.
-func (c *Client) PublishWrap(ctx context.Context, wrap *Event) (err error) {
+// PublishWrap publishes a pre-signed gift wrap using critical (full) relay fan-out.
+func (c *Client) PublishWrap(ctx context.Context, wrap *Event) error {
+	return c.PublishWrapMode(ctx, wrap, PublishModeCritical)
+}
+
+// PublishWrapMode publishes a pre-signed gift wrap (kind:1059).
+// Critical: all non-blocked relays, background fan-out after first success.
+// Bulk: fast relay subset only (no extra relays); falls back to critical if all fast relays fail.
+func (c *Client) PublishWrapMode(ctx context.Context, wrap *Event, mode PublishMode) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			errMsg := fmt.Sprintf("PANIC in Client.PublishWrap: %v", r)
@@ -646,20 +652,23 @@ func (c *Client) PublishWrap(ctx context.Context, wrap *Event) (err error) {
 		wrap.CreatedAt = nostr.Now()
 	}
 
-	// Resiliency: Use ALL valid relays (not just initially connected ones)
-	// The pool will handle connections - if a relay isn't connected yet, it will try to connect
-	// This ensures we publish to all relays, including those that connected in background
-	// This is critical for co-signing resiliency across multiple relays
-	relaysToUse := c.validRelays
-	if len(relaysToUse) == 0 {
-		// Fallback to urls if validRelays not set (backward compatibility)
-		relaysToUse = c.urls
-	}
+	relaysToUse := c.relaysForPublish(mode)
 	if len(relaysToUse) == 0 {
 		return errors.New("no relays configured for publishing")
 	}
+	err = c.publishWrapToRelays(ctx, wrap, relaysToUse, mode)
+	if err == nil || mode != PublishModeBulk {
+		return err
+	}
+	// Bulk fast path failed — one critical fan-out retry across all non-blocked relays.
+	fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap bulk fast set failed, retrying critical fan-out\n")
+	return c.publishWrapToRelays(ctx, wrap, c.relaysForPublish(PublishModeCritical), PublishModeCritical)
+}
+
+func (c *Client) publishWrapToRelays(ctx context.Context, wrap *Event, relaysToUse []string, mode PublishMode) (err error) {
 	results := c.pool.PublishMany(ctx, relaysToUse, *wrap)
 	totalRelays := len(relaysToUse)
+	bulkMode := mode == PublishModeBulk
 
 	// Resiliency: Track results in background goroutine - return immediately on first success
 	// This allows co-signing to proceed quickly while other relays continue publishing in background
@@ -750,16 +759,21 @@ func (c *Client) PublishWrap(ctx context.Context, wrap *Event) (err error) {
 				if res.Error != nil {
 					failureCount++
 					allErrors = append(allErrors, res.Error)
+					if c.relayHealth != nil && shouldBlockRelay(res.Error) {
+						c.relayHealth.blockRelay(relayURL)
+					}
 					fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - relay %s error: %v (%d/%d failed)\n", relayURL, res.Error, failureCount, totalRelays)
 				} else {
 					successCount++
 					fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - relay %s success (%d/%d succeeded)\n", relayURL, successCount, totalRelays)
-					// Resilient: Return immediately on first success (non-blocking)
-					// Other relays continue publishing in background for redundancy
 					if successCount == 1 {
 						select {
 						case successCh <- true:
-							fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - first relay succeeded, returning immediately (other relays continue in background)\n")
+							if bulkMode {
+								fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - fast relay succeeded (bulk mode, no background fan-out)\n")
+							} else {
+								fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - first relay succeeded, returning immediately (other relays continue in background)\n")
+							}
 						default:
 						}
 					}
@@ -768,17 +782,12 @@ func (c *Client) PublishWrap(ctx context.Context, wrap *Event) (err error) {
 		}
 	}()
 
-	// Wait for first success or all failures (resiliency: succeed if ANY relay succeeds)
 	select {
 	case <-successCh:
-		// Resilient: At least one relay succeeded - return immediately
-		// Other relays continue publishing in background for redundancy
 		return nil
 	case err := <-errorCh:
-		// Only fails if ALL relays failed
 		return err
 	case <-ctx.Done():
-		// Context cancelled - check if we got any success (resilient: partial success is still success)
 		select {
 		case <-successCh:
 			return nil

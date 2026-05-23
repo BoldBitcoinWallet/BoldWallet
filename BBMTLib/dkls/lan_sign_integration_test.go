@@ -190,8 +190,9 @@ func parseSigHex(rHex, sHex string) ([]byte, error) {
 	return out, nil
 }
 
-// Duo LAN keysign (Send BTC / PSBT sighash path) after HTTP relay keygen.
-func TestLanKeysignDuo(t *testing.T) {
+// testMpcLanKeysignDuo: 2-of-2 LAN keysign (Send BTC / PSBT sighash path).
+func testMpcLanKeysignDuo(t *testing.T) {
+	t.Helper()
 	const port = "55997"
 	startTestRelay(t, port)
 	server := "http://127.0.0.1:" + port
@@ -213,8 +214,9 @@ func TestLanKeysignDuo(t *testing.T) {
 	verifyLanKeysignResult(t, keyshares[0], sigJSON, msg)
 }
 
-// Trio 2-of-3 subset LAN keysign (KeyShare1 + KeyShare3), same as trio spend.
-func TestLanKeysignTrioSubset(t *testing.T) {
+// testMpcLanKeysignTrioSubset: 2-of-3 LAN keysign with two participating KeyShares.
+func testMpcLanKeysignTrioSubset(t *testing.T) {
+	t.Helper()
 	const port = "55996"
 	startTestRelay(t, port)
 	server := "http://127.0.0.1:" + port
@@ -237,4 +239,14 @@ func TestLanKeysignTrioSubset(t *testing.T) {
 	signSession := "test-lan-sign-trio"
 	sigJSON := lanKeysignAll(t, server, signSession, sessionKey, signParties, signKeys, signShares, sighashB64)
 	verifyLanKeysignResult(t, signShares[0], sigJSON, msg)
+}
+
+// Duo LAN keysign (Send BTC / PSBT sighash path) after HTTP relay keygen.
+func TestLanKeysignDuo(t *testing.T) {
+	testMpcLanKeysignDuo(t)
+}
+
+// Trio 2-of-3 subset LAN keysign (KeyShare1 + KeyShare3), same as trio spend.
+func TestLanKeysignTrioSubset(t *testing.T) {
+	testMpcLanKeysignTrioSubset(t)
 }

@@ -47,6 +47,10 @@ const PairingSpendStickyFooter: React.FC<PairingSpendStickyFooterProps> = ({
       marginBottom: 8,
       textAlign: 'center',
     },
+    summaryInRow: {
+      marginBottom: 0,
+      flex: 1,
+    },
     summaryRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -99,7 +103,7 @@ const PairingSpendStickyFooter: React.FC<PairingSpendStickyFooterProps> = ({
   return (
     <View style={styles.wrap}>
       <View style={styles.summaryRow}>
-        <Text style={[styles.summary, {marginBottom: 0, flex: 1}]} numberOfLines={2}>
+        <Text style={[styles.summary, styles.summaryInRow]} numberOfLines={2}>
           {summaryLine}
         </Text>
         {network ? (

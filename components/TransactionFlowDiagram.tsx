@@ -92,6 +92,22 @@ const TransactionFlowDiagram: React.FC<TransactionFlowDiagramProps> = props => {
     expandable && props.collapsedSummary === 'full' && !props.expanded;
   const showExpandedBody = !expandable || props.expanded;
 
+  const sendNet =
+    props.variant === 'send' ? props.sendParams.network || '' : '';
+  const sendNetForApi = networkForApi(sendNet);
+  const sendExplorerBase = useMemo(() => {
+    if (props.variant !== 'send') {
+      return 'https://mempool.space';
+    }
+    const isTestnet = isTestnetNetwork(sendNet);
+    return (
+      explorerWebBaseFromApiUrl(resolveStoredMempoolApiBase(sendNetForApi)) ||
+      (isTestnet
+        ? 'https://mempool.space/testnet'
+        : 'https://mempool.space')
+    );
+  }, [props.variant, sendNet, sendNetForApi]);
+
   const accentBar = (
     <View
       style={{
@@ -454,16 +470,7 @@ const TransactionFlowDiagram: React.FC<TransactionFlowDiagramProps> = props => {
   } = props;
 
   const net = sendParams.network || '';
-  const netForApi = networkForApi(net);
-  const explorerBase = useMemo(() => {
-    const isTestnet = isTestnetNetwork(net);
-    return (
-      explorerWebBaseFromApiUrl(resolveStoredMempoolApiBase(netForApi)) ||
-      (isTestnet
-        ? 'https://mempool.space/testnet'
-        : 'https://mempool.space')
-    );
-  }, [net, netForApi]);
+  const explorerBase = sendExplorerBase;
 
   const totalSats =
     Number(sendParams.satoshiAmount) + Number(sendParams.satoshiFees);

@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// Duo Nostr keysign (PSBT / Send BTC sighash path) after Nostr keygen.
-func TestNostrKeysignDuo(t *testing.T) {
+func testMpcNostrKeysignDuo(t *testing.T) {
+	t.Helper()
 	relays := requireNostrRelay(t)
 	p1 := nostrParty{}
 	p2 := nostrParty{}
@@ -52,8 +52,8 @@ func TestNostrKeysignDuoRaw(t *testing.T) {
 	verifyLanKeysignResult(t, keyshares[0], sigJSON, []byte(msg))
 }
 
-// Trio 2-of-3 subset Nostr keysign (first + third npub), same as trio spend.
-func TestNostrKeysignTrioSubset(t *testing.T) {
+func testMpcNostrKeysignTrioSubset(t *testing.T) {
+	t.Helper()
 	relays := requireNostrRelay(t)
 	var all [3]nostrParty
 	for i := range all {
@@ -76,4 +76,14 @@ func TestNostrKeysignTrioSubset(t *testing.T) {
 	signSession := testSessionHex(t, 16)
 	sigJSON := nostrKeysignAll(t, relays, signSession, sessionKey, signCSV, signParties, signShares, sighashB64)
 	verifyLanKeysignResult(t, signShares[0], sigJSON, msg)
+}
+
+// Duo Nostr keysign (PSBT / Send BTC sighash path) after Nostr keygen.
+func TestNostrKeysignDuo(t *testing.T) {
+	testMpcNostrKeysignDuo(t)
+}
+
+// Trio 2-of-3 subset Nostr keysign (first + third npub), same as trio spend.
+func TestNostrKeysignTrioSubset(t *testing.T) {
+	testMpcNostrKeysignTrioSubset(t)
 }

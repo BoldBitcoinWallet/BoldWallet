@@ -21,7 +21,7 @@ import Animated, {
 import QRScanner from '../components/QRScanner';
 import {useNavigation, useRoute, RouteProp} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {AppState} from 'react-native';
+import {AppState, DeviceEventEmitter} from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import SendBitcoinModal from './SendBitcoinModal';
 import Toast from 'react-native-toast-message';
@@ -44,8 +44,9 @@ import {
   getReceivePath,
   resolveUseLegacyDerivationPaths,
   decodeSendBitcoinQR,
-  getResetToMainTabsWallet,
+  clearKeyshareMetadata,
   getKeyshareMetadata,
+  hasWalletKeyshareInSecureStorage,
 } from '../utils';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {validate as validateBitcoinAddress} from 'bitcoin-address-validation';
@@ -889,6 +890,25 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     },
     [network, apiBase, address],
   );
+  useEffect(() => {
+    const onKeyshareReady = () => {
+      if (!isInitializedRef.current) {
+        dbg(
+          '[WalletHome] wallet:keyshare-ready — init effect will load wallet',
+        );
+        return;
+      }
+      dbg('[WalletHome] wallet:keyshare-ready — reinitializing wallet');
+      reinitializeWallet(true).catch(e => {
+        dbg('[WalletHome] reinitializeWallet after keyshare-ready failed', e);
+      });
+    };
+    const sub = DeviceEventEmitter.addListener(
+      'wallet:keyshare-ready',
+      onKeyshareReady,
+    );
+    return () => sub.remove();
+  }, [reinitializeWallet]);
   // Listen for navigation state changes to detect returning from settings.
   // Guarded by isInitializedRef so the very first focus (mount) is a no-op —
   // the init effect handles initial boot.  Subsequent focuses (e.g. returning
@@ -1110,9 +1130,25 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
         setLoading(true);
         await refreshUserContext();
+        const hasBlob = await hasWalletKeyshareInSecureStorage();
+        if (!hasBlob) {
+          dbg(
+            'WalletHome: No keyshare blob in secure storage — redirecting to Welcome',
+          );
+          try {
+            await clearKeyshareMetadata();
+          } catch (e) {
+            dbg('WalletHome: clear orphan metadata failed', e);
+          }
+          setLoading(false);
+          isInitializedRef.current = true;
+          setIsInitialized(true);
+          navigation.reset({index: 0, routes: [{name: 'Welcome'}]});
+          return;
+        }
         const ks = await getKeyshareMetadata();
         if (!ks) {
-          dbg('WalletHome: No keyshare found during initialization');
+          dbg('WalletHome: No keyshare metadata during initialization');
           setLoading(false);
           isInitializedRef.current = true;
           setIsInitialized(true);
@@ -1124,18 +1160,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         await walletService.initialize();
         if (!ks.pub_key || !ks.chain_code_hex) {
           dbg('Error: keyshare metadata missing required fields');
-          navigation.reset(
-            getResetToMainTabsWallet(
-              {},
-              {
-                showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
-                showUtxos: showUtxosTab,
-                showAddresses: showAddressesTab,
-                showPsbt: showPsbtTab,
-                showWallet: showWalletTab,
-              },
-            ),
-          );
+          try {
+            await clearKeyshareMetadata();
+          } catch (e) {
+            dbg('WalletHome: clear incomplete metadata failed', e);
+          }
+          setLoading(false);
+          isInitializedRef.current = true;
+          setIsInitialized(true);
+          navigation.reset({index: 0, routes: [{name: 'Welcome'}]});
           return;
         }
         const currentAddressType =

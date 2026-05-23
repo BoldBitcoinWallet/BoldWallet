@@ -1,10 +1,12 @@
-import React, {createContext, useContext, useState, useEffect} from 'react';
-import {NativeModules} from 'react-native';
+import React, {createContext, useContext, useState, useEffect, useRef} from 'react';
+import {DeviceEventEmitter, NativeModules} from 'react-native';
 import {
   dbg,
   getReceivePath,
   resolveUseLegacyDerivationPaths,
+  clearKeyshareMetadata,
   getKeyshareMetadata,
+  hasWalletKeyshareInSecureStorage,
 } from '../utils';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
@@ -26,6 +28,7 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
   const [baseApi, setBaseApi] = useState<string>('');
   const [network, setNetwork] = useState<string>('mainnet');
   const [addressType, setAddressType] = useState<string>('legacy');
+  const refreshWalletRef = useRef<() => Promise<void>>(async () => {});
   const handleAddressTypeChange = async (type: string) => {
     try {
       dbg('WalletContext: Changing address type to:', type);
@@ -94,11 +97,37 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
       dbg('WalletContext: Error refreshing wallet:', error);
     }
   };
+  refreshWalletRef.current = refreshWallet;
+  useEffect(() => {
+    const onKeyshareReady = () => {
+      dbg('[WalletContext] wallet:keyshare-ready — refreshing wallet');
+      refreshWalletRef.current()?.catch(error => {
+        dbg('[WalletContext] refresh after keyshare-ready failed', error);
+      });
+    };
+    const sub = DeviceEventEmitter.addListener(
+      'wallet:keyshare-ready',
+      onKeyshareReady,
+    );
+    return () => sub.remove();
+  }, []);
   useEffect(() => {
     const initWallet = async () => {
+      const hasBlob = await hasWalletKeyshareInSecureStorage();
+      if (!hasBlob) {
+        dbg(
+          'WalletContext: No keyshare blob in secure storage, skipping initialization',
+        );
+        try {
+          await clearKeyshareMetadata();
+        } catch (e) {
+          dbg('WalletContext: clear orphan metadata failed', e);
+        }
+        return;
+      }
       const meta = await getKeyshareMetadata();
       if (!meta) {
-        dbg('WalletContext: No keyshare found, skipping initialization');
+        dbg('WalletContext: No keyshare metadata, skipping initialization');
         return;
       }
       await refreshWallet();

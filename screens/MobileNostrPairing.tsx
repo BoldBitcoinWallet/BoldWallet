@@ -46,7 +46,6 @@ import {
 import * as Progress from 'react-native-progress';
 import {CommonActions, RouteProp, useRoute} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import Big from 'big.js';
 import {
   dbg,
   getKeyshareMetadata,
@@ -59,6 +58,7 @@ import {
 } from '../utils';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {prepareSendBtcMultiPathInputs} from '../services/sendBtcPrepare';
+import {resolveDklsNostrSigningParties} from '../services/lanMpcSetup';
 import {
   resolveTssBackend,
   resolveTssBackendForKeygen,
@@ -74,6 +74,7 @@ import {getPrepareModalCopy} from '../services/tssKeygenPrepare';
 import {LAN_KEYGEN_STATUS} from '../services/walletSetupUi';
 import {
   invokeNostrWalletKeygen,
+  KEYGEN_FINALIZING_STORAGE_STATUS,
   persistWalletKeyshare,
   resolveWalletSetupBackend,
   runWalletSetupPrepare,
@@ -87,6 +88,8 @@ import {
   mpcSessionShortLabel,
   processMpcHookMessage,
   resolveMpcHookBackend,
+  staleTransportHintForKeygen,
+  trackMpcHookForTransportLiveness,
 } from '../services/mpcProgressUi';
 import {MpcModalStatusRow} from '../components/MpcModalStatusRow';
 import {MpcProgressModalHeader} from '../components/MpcProgressModalHeader';
@@ -350,7 +353,6 @@ const MobileNostrPairing = ({navigation}: any) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
   const isSendBitcoin = route.params?.mode === 'send_btc';
   const isSignPSBT = route.params?.mode === 'sign_psbt';
-  const isSpendFlow = isSendBitcoin || isSignPSBT;
   const setupMode = route.params?.mode;
   const keygenSetupMode: SetupMode | undefined =
     setupMode === 'duo' || setupMode === 'trio' ? setupMode : undefined;
@@ -364,7 +366,7 @@ const MobileNostrPairing = ({navigation}: any) => {
   const [spendBackend, setSpendBackend] = useState<TssBackend | null>(null);
   const prepareCopy = getPrepareModalCopy(keygenBackend ?? 'dkls23');
   /** Trio = 3-device Nostr keygen setup only. Spend/sign always co-sign with 2 online parties. */
-  const [isTrio, setIsTrio] = useState<boolean>(setupMode === 'trio');
+  const [isTrio] = useState<boolean>(setupMode === 'trio');
   /** 2-of-3 wallet: pick which peer to sign with; still a duo signing session. */
   const [threeKeyshareWallet, setThreeKeyshareWallet] = useState(false);
   const {theme} = useTheme();
@@ -431,6 +433,13 @@ const MobileNostrPairing = ({navigation}: any) => {
   });
   const activeMpcSessionIdRef = useRef<string | null>(null);
   const isPairingRef = useRef(false);
+  const keysharePersistedRef = useRef(false);
+  const lastMpcPercentBumpAtRef = useRef(Date.now());
+  const lastMpcKeygenStepRef = useRef(0);
+  const [mpcTransportPulse, setMpcTransportPulse] = useState(false);
+  const [staleTransportHint, setStaleTransportHint] = useState<string | null>(
+    null,
+  );
   const [status, setStatus] = useState('');
   const [mpcSessionShort, setMpcSessionShort] = useState<string | null>(null);
   const [isPairing, setIsPairing] = useState(false);
@@ -796,10 +805,12 @@ const MobileNostrPairing = ({navigation}: any) => {
       if (!backend) {
         return;
       }
+      const progressBefore = mpcHookProgressRef.current;
       const result = processMpcHookMessage(message, backend, {
         isTrio,
         isSendBitcoin,
         isSignPSBT,
+        isNostrTransport: true,
         refs: {
           progressRef: mpcHookProgressRef,
           utxoRef: mpcUtxoRef,
@@ -821,6 +832,15 @@ const MobileNostrPairing = ({navigation}: any) => {
       if (!result) {
         return;
       }
+      const transportTrack = trackMpcHookForTransportLiveness(message, result, {
+        progressBefore,
+        lastBumpAtMsRef: lastMpcPercentBumpAtRef,
+        lastKeygenStepRef: lastMpcKeygenStepRef,
+      });
+      if (transportTrack.clearStale) {
+        setStaleTransportHint(null);
+      }
+      setMpcTransportPulse(transportTrack.pulse);
       if (result.utxoState) {
         dbg('progress send_btc', result.utxoState);
       }
@@ -836,7 +856,11 @@ const MobileNostrPairing = ({navigation}: any) => {
         setMpcSessionShort(result.sessionShort);
       }
       if (result.mpcDone && !isSendBitcoin && !isSignPSBT) {
-        setMpcDone(true);
+        if (keysharePersistedRef.current) {
+          setMpcDone(true);
+        } else {
+          setStatus(KEYGEN_FINALIZING_STORAGE_STATUS);
+        }
       }
     };
     const subscription: EmitterSubscription = eventEmitter.addListener(
@@ -1440,6 +1464,8 @@ const MobileNostrPairing = ({navigation}: any) => {
     activeMpcSessionIdRef.current = sessionID;
     setMpcSessionShort(mpcSessionShortLabel(sessionID));
     setPairingActive(true);
+    keysharePersistedRef.current = false;
+    setMpcDone(false);
     resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
     resetCircle();
     setProgress(0);
@@ -1611,6 +1637,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         partyNsec: localNsec,
         nostrNpub: localNpub,
       });
+      keysharePersistedRef.current = true;
       try {
         const ksParsed = JSON.parse(keyshareJSON);
         const useLegacyPath = resolveUseLegacyDerivationPaths({
@@ -1943,15 +1970,22 @@ const MobileNostrPairing = ({navigation}: any) => {
           throw new Error('Other device npub not found in keyshare');
         }
       }
-      const partiesNpubsCSV = allNpubs.sort().join(',');
-      if (allNpubs.length !== 2) {
-        throw new Error(
-          `Nostr send requires exactly 2 signing devices, got ${allNpubs.length}`,
-        );
+      const peerNpubForSign = allNpubs.find(n => n !== localNpubFromKeyshare);
+      if (!peerNpubForSign) {
+        throw new Error('Co-signing peer npub is missing from this session.');
       }
+      const {partiesNpubsCSV, peerNpub: resolvedPeerNpub} =
+        resolveDklsNostrSigningParties(
+          localNpubFromKeyshare,
+          peerNpubForSign,
+          keyshare,
+        );
       const signingNpubsSorted = partiesNpubsCSV;
       const relaysCSV = relays.join(',');
-      dbg('Nostr send BTC — duo signing npubs:', signingNpubsSorted);
+      dbg('Nostr send BTC — signing npubs:', {
+        partiesNpubsCSV: signingNpubsSorted,
+        resolvedPeerNpub: resolvedPeerNpub.substring(0, 20) + '...',
+      });
       const prepared = await prepareSendBtcMultiPathInputs({
         network: net,
         addressType: addressTypeToUse,
@@ -2199,18 +2233,23 @@ const MobileNostrPairing = ({navigation}: any) => {
           throw new Error('Other device npub not found in keyshare');
         }
       }
-      const partiesNpubsCSV = allNpubs.sort().join(',');
-      if (allNpubs.length !== 2) {
-        throw new Error(
-          `Nostr PSBT signing requires exactly 2 devices, got ${allNpubs.length}`,
-        );
+      const peerNpubForSign = allNpubs.find(n => n !== localNpubFromKeyshare);
+      if (!peerNpubForSign) {
+        throw new Error('Co-signing peer npub is missing from this session.');
       }
+      const {partiesNpubsCSV, peerNpub: resolvedPeerNpub} =
+        resolveDklsNostrSigningParties(
+          localNpubFromKeyshare,
+          peerNpubForSign,
+          keyshare,
+        );
       const signingNpubsSorted = partiesNpubsCSV;
       const relaysCSV = relays.join(',');
       dbg('Starting Nostr PSBT signing with:', {
         relays: relaysCSV,
         parties: partiesNpubsCSV.substring(0, 50) + '...',
         signingNpubs: signingNpubsSorted.substring(0, 30) + '...',
+        resolvedPeerNpub: resolvedPeerNpub.substring(0, 20) + '...',
         psbtLength: route.params.psbtBase64?.length,
       });
       // Call native module for PSBT signing
@@ -2436,12 +2475,29 @@ const MobileNostrPairing = ({navigation}: any) => {
   useEffect(() => {
     if (isPairing) {
       setPrepCounter(0);
+      setStaleTransportHint(null);
+      lastMpcPercentBumpAtRef.current = Date.now();
       const interval = setInterval(() => {
         setPrepCounter(prevCounter => prevCounter + 1);
+        const hint = staleTransportHintForKeygen({
+          isPairing: true,
+          isSpendFlow: isSendBitcoin || isSignPSBT,
+          displayPercent: mpcHookProgressRef.current,
+          lastBumpAtMs: lastMpcPercentBumpAtRef.current,
+          lastKeygenStep: lastMpcKeygenStepRef.current,
+          nowMs: Date.now(),
+          isNostrTransport: true,
+        });
+        setStaleTransportHint(hint);
+        if (hint) {
+          setMpcTransportPulse(true);
+        }
       }, 1000);
       return () => clearInterval(interval);
     }
-  }, [isPairing]);
+    setStaleTransportHint(null);
+    setMpcTransportPulse(false);
+  }, [isPairing, isSendBitcoin, isSignPSBT]);
   // Animation for horizontal progress bar
   useEffect(() => {
     if (isPreparing) {
@@ -5489,7 +5545,19 @@ const MobileNostrPairing = ({navigation}: any) => {
                     <MpcModalStatusRow
                       status={status}
                       sessionShort={mpcSessionShort}
+                      pulseIndicator={
+                        mpcTransportPulse || !!staleTransportHint
+                      }
                     />
+                    {staleTransportHint ? (
+                      <Text
+                        style={[
+                          styles.finalizingCountdownText,
+                          {marginBottom: 4},
+                        ]}>
+                        {staleTransportHint}
+                      </Text>
+                    ) : null}
                     <Text style={styles.finalizingCountdownText}>
                       Time elapsed: {prepCounter} seconds
                     </Text>
@@ -5553,7 +5621,19 @@ const MobileNostrPairing = ({navigation}: any) => {
                     <MpcModalStatusRow
                       status={status}
                       sessionShort={mpcSessionShort}
+                      pulseIndicator={
+                        mpcTransportPulse || !!staleTransportHint
+                      }
                     />
+                    {staleTransportHint ? (
+                      <Text
+                        style={[
+                          styles.finalizingCountdownText,
+                          {marginBottom: 4},
+                        ]}>
+                        {staleTransportHint}
+                      </Text>
+                    ) : null}
                     <Text style={styles.finalizingCountdownText}>
                       Time elapsed: {prepCounter} seconds
                     </Text>

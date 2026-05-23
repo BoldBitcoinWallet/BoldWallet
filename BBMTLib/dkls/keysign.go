@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 	"time"
 
@@ -71,6 +72,12 @@ func NostrJoinKeysignWithSighash(
 		return "", fmt.Errorf("keyshare npub mismatch")
 	}
 
+	participating, err := normalizeParticipatingNpubs(partiesNpubsCSV)
+	if err != nil {
+		return "", err
+	}
+	partiesNpubsCSV = strings.Join(participating, ",")
+
 	signSess, err := ResolveSigningSessionNostr(share, ks, localNpub, partiesNpubsCSV)
 	if err != nil {
 		return "", err
@@ -109,7 +116,6 @@ func NostrJoinKeysignWithSighash(
 	pumpCtx, pumpCancel := context.WithCancel(ctx)
 	defer pumpCancel()
 
-	participatingNpubs := splitCSV(partiesNpubsCSV)
 	roundCh := make(chan []libtss.Message, 16)
 
 	var wg sync.WaitGroup
@@ -134,7 +140,7 @@ func NostrJoinKeysignWithSighash(
 		selfID:    signSess.SelfID,
 		localNpub: localNpub,
 		messenger: nm,
-		peers:     participatingNpubs,
+		peers:     append([]string{localNpub}, signSess.NostrPeers...),
 	}
 	signingShare, err := deriveShareForSigning(share, derivationPath, ks.ChainCodeHex)
 	if err != nil {
@@ -181,16 +187,21 @@ func JoinKeysignWithSighash(
 		return "", err
 	}
 
+	relayKey, err := ensureLANRelayJoinKey(key, signSess.SelfID, ks.KeygenCommitteeKeys)
+	if err != nil {
+		return "", err
+	}
+
 	parties := splitCSV(partiesCSV)
-	if err := lanPrepareKeysignProgress(server, session, key, parties); err != nil {
+	if err := lanPrepareKeysignProgress(server, session, relayKey, parties); err != nil {
 		return "", err
 	}
 
 	messenger := tss.NewLANMessenger(server, session, sessionKey)
 	runner := &lanPartyRunner{
 		selfID:    signSess.SelfID,
-		localKey:  key,
-		peerIDs:   signSess.SigningIDs,
+		localKey:  relayKey,
+		peerIDs:   signSess.LANPeerIDs,
 		messenger: messenger,
 	}
 
@@ -198,7 +209,7 @@ func JoinKeysignWithSighash(
 	endCh := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go startLANMessagePump(server, session, sessionKey, key, func(body string) error {
+	go startLANMessagePump(server, session, sessionKey, relayKey, func(body string) error {
 		msgs, decErr := DecodeMessages(body)
 		if decErr != nil {
 			return decErr

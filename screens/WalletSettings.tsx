@@ -870,21 +870,25 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   );
 
   const openBackupModalWithAuth = useCallback(() => {
-    void runWithWalletBiometric(
+    runWithWalletBiometric(
       () => setIsBackupModalVisible(true),
       WALLET_SENSITIVE_ACTION_AUTH.backupKeyshare,
-    );
+    ).catch(error => {
+      dbg('openBackupModalWithAuth failed', error);
+    });
   }, [runWithWalletBiometric]);
 
   const openDeleteWalletModalWithAuth = useCallback(() => {
-    void runWithWalletBiometric(
+    runWithWalletBiometric(
       () => setIsModalResetVisible(true),
       WALLET_SENSITIVE_ACTION_AUTH.deleteWallet,
-    );
+    ).catch(error => {
+      dbg('openDeleteWalletModalWithAuth failed', error);
+    });
   }, [runWithWalletBiometric]);
 
   const enableDeveloperModeWithAuth = useCallback(() => {
-    void runWithWalletBiometric(async () => {
+    runWithWalletBiometric(async () => {
       setDevDebugEnabled(true);
       try {
         await EncryptedStorage.setItem('devDebugEnabled', 'true');
@@ -908,7 +912,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         clearTimeout(buildNumberClickTimeoutRef.current);
         buildNumberClickTimeoutRef.current = null;
       }
-    }, WALLET_SENSITIVE_ACTION_AUTH.enableDeveloperMode);
+    }, WALLET_SENSITIVE_ACTION_AUTH.enableDeveloperMode).catch(error => {
+      dbg('enableDeveloperModeWithAuth failed', error);
+    });
   }, [runWithWalletBiometric]);
   const nonDevMainnetGuardRanRef = useRef(false);
   // Collapsible states

@@ -24,8 +24,8 @@ import {
   dbg,
   resolveUseLegacyDerivationPaths,
   detectKeyshareTssBackend,
-  saveKeyshareMetadata,
 } from '../utils';
+import {persistWalletKeyshare} from '../services/walletSetupOrchestrator';
 import LegalModal from '../components/LegalModal';
 import TransportModeSelector from '../components/TransportModeSelector';
 import TssBackendSelector from '../components/TssBackendSelector';
@@ -220,8 +220,7 @@ const ShowcaseScreen = ({navigation}: any) => {
           dbg('Error parsing keyshare:', error);
           throw 'Error: Invalid keyshare';
         }
-        await EncryptedStorage.setItem('keyshare', decryptedKeyshare);
-        await saveKeyshareMetadata(decryptedKeyshare);
+        await persistWalletKeyshare(decryptedKeyshare);
         await LocalCache.clear();
         appConfigRepository.remove(CONFIG_KEYS.CURRENT_ADDRESS);
         // Reset legacy wallet modal flag for new wallet

@@ -191,15 +191,37 @@ func (r *nostrPartyRunner) sendMessages(msgs []libtss.Message) error {
 	if err != nil {
 		return err
 	}
+	var peers []string
 	for _, peer := range r.peers {
-		if peer == r.localNpub {
-			continue
-		}
-		if err := r.messenger.Send(r.localNpub, peer, body); err != nil {
-			return err
+		if peer != r.localNpub {
+			peers = append(peers, peer)
 		}
 	}
-	return nil
+	if len(peers) == 0 {
+		return nil
+	}
+	if len(peers) == 1 {
+		return r.messenger.Send(r.localNpub, peers[0], body)
+	}
+	var wg sync.WaitGroup
+	var errMu sync.Mutex
+	var sendErr error
+	for _, peer := range peers {
+		peer := peer
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := r.messenger.Send(r.localNpub, peer, body); err != nil {
+				errMu.Lock()
+				if sendErr == nil {
+					sendErr = err
+				}
+				errMu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	return sendErr
 }
 
 func partyIDFromNpub(npub string, allParties []string) (libtss.Identifier, error) {
@@ -256,26 +278,23 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 		return "", fmt.Errorf("keyshare npub mismatch")
 	}
 
-	relays := splitCSV(relaysCSV)
-	allParties := sortedPartiesNpubs(splitCSV(partiesNpubsCSV))
-	peersNpub := filterPeers(allParties, localNpub)
+	signSess, err := ResolveSigningSessionNostr(share, ks, localNpub, partiesNpubsCSV)
+	if err != nil {
+		return "", err
+	}
 
+	relays := splitCSV(relaysCSV)
 	cfg := nostrtransport.Config{
 		Relays:        relays,
 		SessionID:     sessionID,
 		SessionKeyHex: sessionKey,
 		LocalNpub:     localNpub,
 		LocalNsec:     partyNsec,
-		PeersNpub:     peersNpub,
+		PeersNpub:     signSess.NostrPeers,
 		MaxTimeout:    5 * time.Minute,
 	}
 	cfg.ApplyDefaults()
 	if err := cfg.Validate(); err != nil {
-		return "", err
-	}
-
-	signSess, err := ResolveSigningSessionNostr(share, ks, localNpub, partiesNpubsCSV)
-	if err != nil {
 		return "", err
 	}
 
@@ -324,7 +343,7 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 		selfID:    signSess.SelfID,
 		localNpub: localNpub,
 		messenger: nm,
-		peers:     allParties,
+		peers:     append([]string{localNpub}, signSess.NostrPeers...),
 	}
 	sig, err := runSignWithSender(share, hash, []byte(sessionID), signSess.SelfID, signSess.SigningIDs, runner, roundCh, sessionID)
 	pumpCancel()

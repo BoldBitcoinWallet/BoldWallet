@@ -68,6 +68,25 @@ describe('wallet keyshare presence', () => {
     expect(removeItem).toHaveBeenCalledWith('keyshare_meta');
   });
 
+  it('resolveInitialWalletRoute does not use metadata-only fallback for complete meta', async () => {
+    nativeHas.mockResolvedValue(false);
+    getItem.mockImplementation((key: string) => {
+      if (key === 'keyshare_meta') {
+        return Promise.resolve(
+          JSON.stringify({
+            local_party_key: 'KeyShare1',
+            keygen_committee_keys: ['KeyShare1', 'KeyShare2'],
+            pub_key: 'deadbeef',
+            chain_code_hex: 'aa',
+          }),
+        );
+      }
+      return Promise.resolve(null);
+    });
+    await expect(resolveInitialWalletRoute()).resolves.toBe('Welcome');
+    expect(removeItem).toHaveBeenCalledWith('keyshare_meta');
+  });
+
   it('resolveInitialWalletRoute returns MainTabs when blob exists', async () => {
     nativeHas.mockResolvedValue(true);
     await expect(resolveInitialWalletRoute()).resolves.toBe('MainTabs');

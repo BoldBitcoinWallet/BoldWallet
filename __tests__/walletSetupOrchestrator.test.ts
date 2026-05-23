@@ -23,10 +23,12 @@ jest.mock('react-native-encrypted-storage', () => ({
   __esModule: true,
   default: {
     setItem: jest.fn(() => Promise.resolve()),
+    getItem: jest.fn(() => Promise.resolve(null)),
   },
 }));
 
 jest.mock('../utils', () => ({
+  KEYSHARE_STORAGE_KEY: 'keyshare',
   saveKeyshareMetadata: jest.fn(() => Promise.resolve()),
 }));
 
@@ -37,6 +39,7 @@ import {
   nsecFieldForKeyshareJson,
   persistWalletKeyshare,
   resolveWalletSetupBackend,
+  verifyWalletKeysharePersisted,
   WALLET_SETUP_PREPARE_TIMEOUT_MIN,
 } from '../services/walletSetupOrchestrator';
 import {resolveTssBackendForKeygen} from '../services/tssBackend';
@@ -91,12 +94,27 @@ describe('walletSetupOrchestrator', () => {
 
   it('persistWalletKeyshare writes encrypted keyshare and metadata', async () => {
     const json = JSON.stringify({pub_key: 'aa', share_b64: 'bb'});
+    (EncryptedStorage.getItem as jest.Mock).mockResolvedValue(json);
     const saved = await persistWalletKeyshare(json, {
       partyNsec: 'nsec1persisttest',
       nostrNpub: 'npub1persist',
     });
     expect(saved).toContain('"nsec"');
     expect(EncryptedStorage.setItem).toHaveBeenCalledWith('keyshare', saved);
-    expect(saveKeyshareMetadata).toHaveBeenCalledWith(saved);
+    expect(saveKeyshareMetadata).toHaveBeenCalledWith(saved, {
+      throwOnError: true,
+    });
+  });
+
+  it('persistWalletKeyshare fails when read-back verification fails', async () => {
+    (EncryptedStorage.getItem as jest.Mock).mockResolvedValue(null);
+    await expect(
+      persistWalletKeyshare(JSON.stringify({pub_key: 'aa', share_b64: 'bb'})),
+    ).rejects.toThrow(/could not save your key share securely/i);
+  });
+
+  it('verifyWalletKeysharePersisted returns false for empty storage', async () => {
+    (EncryptedStorage.getItem as jest.Mock).mockResolvedValue('  ');
+    await expect(verifyWalletKeysharePersisted()).resolves.toBe(false);
   });
 });

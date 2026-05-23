@@ -2,6 +2,7 @@ package dkls
 
 import (
 	"fmt"
+	"strings"
 
 	libtss "github.com/0xCarbon/libtss/libtss-go/tss"
 )
@@ -25,19 +26,29 @@ func ResolveSigningSessionLAN(
 	if err != nil {
 		return SigningSession{}, fmt.Errorf("share identifier: %w", err)
 	}
+	committee := ks.KeygenCommitteeKeys
+	if len(committee) < 2 {
+		return SigningSession{}, fmt.Errorf("dkls keysign: invalid committee size %d", len(committee))
+	}
 	participating := splitCSV(partiesCSV)
 	if len(participating) < 2 {
 		return SigningSession{}, fmt.Errorf("dkls keysign: need at least 2 participating parties, got %d", len(participating))
 	}
-	signingIDs := partyIDsFromKeys(participating)
+	rawIDs, err := partyIDsFromParticipatingKeys(participating, committee)
+	if err != nil {
+		return SigningSession{}, err
+	}
+	signingIDs, err := dedupeSigningIDs(rawIDs)
+	if err != nil {
+		return SigningSession{}, err
+	}
 	if err := validateSelfInSigning(selfID, signingIDs); err != nil {
 		return SigningSession{}, err
 	}
-	_ = ks // committee validated via share handle
 	return SigningSession{
 		SelfID:     selfID,
 		SigningIDs: signingIDs,
-		LANPeerIDs: signingIDs,
+		LANPeerIDs: lanPeerIDsFromSigning(selfID, signingIDs),
 	}, nil
 }
 
@@ -56,9 +67,16 @@ func ResolveSigningSessionNostr(
 	if len(committee) < 2 {
 		return SigningSession{}, fmt.Errorf("dkls keysign: invalid committee size %d", len(committee))
 	}
-	participating := splitCSV(partiesNpubsCSV)
-	if len(participating) < 2 {
-		return SigningSession{}, fmt.Errorf("dkls keysign: need at least 2 participating npubs, got %d", len(participating))
+	participating, err := normalizeParticipatingNpubs(partiesNpubsCSV)
+	if err != nil {
+		return SigningSession{}, err
+	}
+	localNpub = strings.TrimSpace(localNpub)
+	if localNpub == "" {
+		return SigningSession{}, fmt.Errorf("dkls keysign: local npub is empty")
+	}
+	if !npubInList(localNpub, participating) {
+		return SigningSession{}, fmt.Errorf("dkls keysign: local npub not in participating set %v", participating)
 	}
 	signingIDs := make([]libtss.Identifier, len(participating))
 	for i, npub := range participating {
@@ -67,6 +85,10 @@ func ResolveSigningSessionNostr(
 			return SigningSession{}, fmt.Errorf("dkls keysign: npub %q not in committee: %w", npub, err)
 		}
 		signingIDs[i] = id
+	}
+	signingIDs, err = dedupeSigningIDs(signingIDs)
+	if err != nil {
+		return SigningSession{}, err
 	}
 	if err := validateSelfInSigning(selfID, signingIDs); err != nil {
 		return SigningSession{}, err
@@ -84,6 +106,34 @@ func ResolveSigningSessionNostr(
 		SigningIDs: signingIDs,
 		NostrPeers: peers,
 	}, nil
+}
+
+// normalizeParticipatingNpubs sorts and deduplicates signing npubs (matches mobile Nostr pairing).
+func normalizeParticipatingNpubs(partiesNpubsCSV string) ([]string, error) {
+	participating := sortedPartiesNpubs(splitCSV(partiesNpubsCSV))
+	seen := make(map[string]struct{}, len(participating))
+	out := make([]string, 0, len(participating))
+	for _, npub := range participating {
+		if _, dup := seen[npub]; dup {
+			return nil, fmt.Errorf("dkls keysign: duplicate npub in participating parties: %s", npub)
+		}
+		seen[npub] = struct{}{}
+		out = append(out, npub)
+	}
+	if len(out) < 2 {
+		return nil, fmt.Errorf("dkls keysign: need at least 2 distinct participating npubs, got %d", len(out))
+	}
+	return out, nil
+}
+
+func npubInList(npub string, list []string) bool {
+	npub = strings.TrimSpace(npub)
+	for _, p := range list {
+		if strings.TrimSpace(p) == npub {
+			return true
+		}
+	}
+	return false
 }
 
 func validateSelfInSigning(selfID libtss.Identifier, signingIDs []libtss.Identifier) error {

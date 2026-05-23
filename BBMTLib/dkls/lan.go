@@ -563,16 +563,21 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 		return "", err
 	}
 
+	relayKey, err := ensureLANRelayJoinKey(key, signSess.SelfID, ks.KeygenCommitteeKeys)
+	if err != nil {
+		return "", err
+	}
+
 	hash := HashMessageForDKLs([]byte(message))
-	if err := lanPrepareKeysignProgress(server, session, key, parties); err != nil {
+	if err := lanPrepareKeysignProgress(server, session, relayKey, parties); err != nil {
 		return "", err
 	}
 
 	messenger := tss.NewLANMessenger(server, session, sessionKey)
 	runner := &lanPartyRunner{
 		selfID:    signSess.SelfID,
-		localKey:  key,
-		peerIDs:   signSess.SigningIDs,
+		localKey:  relayKey,
+		peerIDs:   signSess.LANPeerIDs,
 		messenger: messenger,
 	}
 
@@ -580,7 +585,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	endCh := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go startLANMessagePump(server, session, sessionKey, key, func(body string) error {
+	go startLANMessagePump(server, session, sessionKey, relayKey, func(body string) error {
 		msgs, decErr := DecodeMessages(body)
 		if decErr != nil {
 			return decErr

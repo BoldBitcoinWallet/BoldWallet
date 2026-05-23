@@ -17,6 +17,28 @@ Deterministic validation for the libtss (DKLs23) MPC backend, mirroring [../scri
 
 **Recovery** here means: exported DKLS keyshare JSON validates (`validate-ks`) and can be re-imported by the app (same schema as mobile backup).
 
+## MPC matrix (LAN + Nostr keygen/keysign)
+
+End-to-end Go tests for the six mobile MPC paths (duo + trio subset keysign):
+
+| Subtest | Path |
+|---------|------|
+| `LanKeygenDuo` | HTTP relay 2-of-2 DKG |
+| `LanKeygenTrio` | HTTP relay 2-of-3 DKG |
+| `NostrKeygenDuo` / `NostrKeygenTrio` | Nostr DKG (local relay) |
+| `LanKeysignDuo_2of2` | LAN Send BTC sighash keysign |
+| `LanKeysignTrioSubset_2of3` | LAN 2-of-3 spend subset |
+| `NostrKeysignDuo_2of2` / `NostrKeysignTrioSubset_2of3` | Nostr keysign |
+
+```bash
+cd BBMTLib
+./scripts/start-local-relay.sh   # once, for Nostr subtests
+./scripts-dkls/dkls-mpc-matrix-test.sh
+# or: go test ./dkls/ -count=1 -timeout 25m -run '^TestMpcMatrix$' -v
+```
+
+Included in default `./scripts-dkls/dkls-test-all.sh` unless `DKLS_SKIP_MPC_MATRIX=1`. Expect ~1–2 minutes with `DKLS_TEST_DKG_SEC=90`.
+
 ## Quick run (default pre-mobile gate, ~35s)
 
 ```bash

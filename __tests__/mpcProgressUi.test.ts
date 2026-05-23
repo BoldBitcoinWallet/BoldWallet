@@ -109,9 +109,39 @@ describe('processMpcHookMessage', () => {
     expect(
       formatMpcPhaseLabel(
         {type: 'keygen', step: 5, info: 'keygen round (receiving 2)'},
-        {isSendBitcoin: false, utxo: emptyMpcUtxoState()},
+        {isSendBitcoin: false, utxo: emptyMpcUtxoState(), isNostrTransport: true},
       ),
     ).toBe('Key generation · round 3 (over Nostr…)');
+  });
+
+  it('labels DKLS receive heartbeat with LAN hint', () => {
+    expect(
+      formatMpcPhaseLabel(
+        {type: 'keygen', step: 5, info: 'keygen round (receiving 2)'},
+        {isSendBitcoin: false, utxo: emptyMpcUtxoState(), isNostrTransport: false},
+      ),
+    ).toBe('Key generation · round 3 (from peers…)');
+  });
+
+  it('sets transportLiveness on recv heartbeat hooks', () => {
+    const progressRef = {current: 46};
+    const r = processMpcHookMessage(
+      JSON.stringify({
+        type: 'keygen',
+        step: 5,
+        info: 'keygen round (receiving 3)',
+      }),
+      'dkls23',
+      {
+        isTrio: true,
+        isSendBitcoin: false,
+        isNostrTransport: true,
+        refs: {progressRef, utxoRef: {current: emptyMpcUtxoState()}},
+      },
+    );
+    expect(r?.transportLiveness).toBe(true);
+    expect(r?.percent).toBeGreaterThan(46);
+    expect(r?.percent).toBeLessThanOrEqual(54);
   });
 
   it('ignores hooks for a different session id', () => {

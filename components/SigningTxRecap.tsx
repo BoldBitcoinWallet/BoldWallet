@@ -6,7 +6,6 @@ import type {PsbtFlowDetails} from '../types/transactionFlow';
 import {
   networkLabel,
   psbtCollapsedSummaryLine,
-  sat2btcStr,
   sendCollapsedRecapLine,
 } from './transactionFlowUtils';
 

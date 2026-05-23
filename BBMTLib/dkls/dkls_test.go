@@ -7,6 +7,7 @@ import (
 
 	libtss "github.com/0xCarbon/libtss/libtss-go/tss"
 	nostr "github.com/nbd-wtf/go-nostr"
+	"github.com/nbd-wtf/go-nostr/nip19"
 )
 
 func TestHelloDkg(t *testing.T) {
@@ -153,7 +154,15 @@ func TestNsecFieldRoundTripFromHexSk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pubkey: %v", err)
 	}
-	gotNpub, err := nostr.GetPublicKey(got)
+	_, skDecoded, err := nip19.Decode(got)
+	if err != nil {
+		t.Fatalf("decode nsec: %v", err)
+	}
+	skStr, ok := skDecoded.(string)
+	if !ok {
+		t.Fatalf("decode nsec: unexpected type %T", skDecoded)
+	}
+	gotNpub, err := nostr.GetPublicKey(skStr)
 	if err != nil {
 		t.Fatalf("pubkey from nsec: %v", err)
 	}

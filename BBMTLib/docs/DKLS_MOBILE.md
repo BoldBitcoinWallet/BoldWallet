@@ -44,6 +44,8 @@ Example lines during Nostr trio keygen:
 
 Nostr transport chunk/relay detail still logs as `BBMTLog: MessagePump` / `Client.PublishWrap` on stderr (verbose).
 
+**Nostr latency transport** (`nostrtransport`): MPC chunks use fast publish (2 relays, no background fan-out); ready/complete use full fan-out. Session blocklist drops relays that return `msg: blocked`. DKLS sends to all peers in parallel. `nostr.oxtr.dev` is filtered in app relay defaults. Rebuild `./build-all.sh` after transport changes.
+
 Outputs:
 
 | Platform | Artifact |

@@ -886,6 +886,12 @@ const DEFAULT_NOSTR_RELAYS = [
   'wss://nostr.xxi.quest',
 ];
 
+/** Relays that often reject large gift-wrap MPC events (profiling: msg: blocked). */
+const NOSTR_RELAY_DENYLIST = ['wss://nostr.oxtr.dev'];
+
+const filterUnreliableNostrRelays = relays =>
+  relays.filter(url => !NOSTR_RELAY_DENYLIST.includes(url.trim()));
+
 // Function to fetch dynamic Nostr relays from GitHub
 export const fetchDynamicNostrRelays = async () => {
   try {
@@ -916,15 +922,16 @@ export const fetchDynamicNostrRelays = async () => {
       .map(url => String(url)); // Ensure all are strings
 
     if (relays.length > 0) {
-      dbg('Fetched dynamic Nostr relays:', relays);
-      return relays;
+      const filtered = filterUnreliableNostrRelays(relays);
+      dbg('Fetched dynamic Nostr relays:', filtered);
+      return filtered;
     } else {
       dbg('No valid relays found in fetched content, using defaults');
-      return DEFAULT_NOSTR_RELAYS;
+      return filterUnreliableNostrRelays(DEFAULT_NOSTR_RELAYS);
     }
   } catch (error) {
     dbg('Failed to fetch dynamic Nostr relays:', error);
-    return DEFAULT_NOSTR_RELAYS;
+    return filterUnreliableNostrRelays(DEFAULT_NOSTR_RELAYS);
   }
 };
 
@@ -940,8 +947,9 @@ export const getNostrRelays = async (forceFetch = false) => {
           .map(r => r.trim())
           .filter(Boolean);
         if (relaysArray.length > 0) {
-          dbg('Using cached Nostr relays:', relaysArray);
-          return relaysArray;
+          const filtered = filterUnreliableNostrRelays(relaysArray);
+          dbg('Using cached Nostr relays:', filtered);
+          return filtered;
         }
       }
     } catch (error) {
@@ -1301,7 +1309,12 @@ function metaNeedsPersistAfterEnrich(before, after) {
  * Call this whenever EncryptedStorage.setItem('keyshare', …) is called.
  * @param {string} keyshareJson - Raw keyshare JSON string
  */
-export const saveKeyshareMetadata = async keyshareJson => {
+/**
+ * @param {string} keyshareJson
+ * @param {{ throwOnError?: boolean }} [opts]
+ */
+export const saveKeyshareMetadata = async (keyshareJson, opts = {}) => {
+  const throwOnError = opts.throwOnError === true;
   try {
     const parsed = JSON.parse(keyshareJson);
     const meta = normalizeKeyshareMetaObject(parsed);
@@ -1313,12 +1326,20 @@ export const saveKeyshareMetadata = async keyshareJson => {
         repo.set(CONFIG_KEYS.KEYSHARE_META_JSON, json);
       } catch (e) {
         dbg('saveKeyshareMetadata: DB mirror failed (non-fatal)', e);
+        if (throwOnError) {
+          throw e;
+        }
       }
     }
     dbg('saveKeyshareMetadata: saved metadata');
     DeviceEventEmitter.emit('wallet:keyshare-ready');
   } catch (e) {
     dbg('saveKeyshareMetadata: failed', e);
+    if (throwOnError) {
+      throw e instanceof Error
+        ? e
+        : new Error('Failed to save wallet metadata mirror');
+    }
   }
 };
 
@@ -1357,30 +1378,34 @@ export async function hasWalletKeyshareInSecureStorage() {
  */
 export async function resolveInitialWalletRoute(opts = {}) {
   const clearOrphanMeta = opts.clearOrphanMeta !== false;
-  let hasKeyshare = await hasWalletKeyshareInSecureStorage();
-  if (!hasKeyshare) {
-    // Native presence check can be false on some builds; trust metadata mirror if present.
-    const meta = await getKeyshareMetadata();
-    if (meta && keyshareMetaLooksComplete(meta)) {
-      dbg(
-        'resolveInitialWalletRoute: no keyshare blob but metadata present — MainTabs',
-      );
-      hasKeyshare = true;
-    }
-  }
+  const hasKeyshare = await hasWalletKeyshareInSecureStorage();
   if (!hasKeyshare) {
     if (clearOrphanMeta) {
       try {
+        const meta = await getKeyshareMetadata();
+        if (meta) {
+          dbg(
+            'resolveInitialWalletRoute: clearing orphan metadata (no keyshare blob)',
+          );
+        }
         await clearKeyshareMetadata();
       } catch (e) {
         dbg('resolveInitialWalletRoute: clear orphan meta failed', e);
       }
     }
-    dbg('resolveInitialWalletRoute: no keyshare → Welcome');
+    dbg('resolveInitialWalletRoute: no keyshare blob → Welcome');
     return 'Welcome';
   }
-  dbg('resolveInitialWalletRoute: keyshare present → MainTabs');
+  dbg('resolveInitialWalletRoute: keyshare blob present → MainTabs');
   return 'MainTabs';
+}
+
+/**
+ * True when the wallet can be used (secure keyshare blob exists).
+ * Metadata alone is not sufficient.
+ */
+export async function hasUsableWalletKeyshare() {
+  return hasWalletKeyshareInSecureStorage();
 }
 
 /**

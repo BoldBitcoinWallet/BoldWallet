@@ -1,3 +1,27 @@
+jest.mock('react-native-haptic-feedback', () => ({
+  trigger: jest.fn(),
+}));
+jest.mock('react-native-encrypted-storage', () => ({
+  getItem: jest.fn(),
+  setItem: jest.fn(),
+  removeItem: jest.fn(),
+}));
+jest.mock('../App', () => ({
+  isDebugLoggingEnabled: () => false,
+}));
+jest.mock('../services/LocalCache', () => ({
+  __esModule: true,
+  default: {clear: jest.fn()},
+}));
+jest.mock('../services/repositories/AppConfigRepository', () => ({
+  __esModule: true,
+  default: {
+    get: jest.fn(),
+    set: jest.fn(),
+    remove: jest.fn(),
+  },
+}));
+
 import {
   buildLanRelayServerUrl,
   coalesceLanHost,
@@ -9,6 +33,7 @@ import {
   resolveLanKeygenParties,
   resolveLanSigningParties,
   resolveDklsLanSigningPartiesFromKeyshare,
+  resolveDklsNostrSigningParties,
   resolveGg18LanSigningPartiesFromKeyshare,
   resolveTrioLanRoles,
   isTrioWalletKeyshare,
@@ -123,7 +148,48 @@ describe('resolveDklsLanSigningPartiesFromKeyshare', () => {
     };
     const r = resolveDklsLanSigningPartiesFromKeyshare(meta, 'npubAlice');
     expect(r.partyID).toBe('KeyShare3');
+    expect(r.peerParty).toBe('KeyShare1');
     expect(r.partiesCSV).toBe('KeyShare1,KeyShare3');
+  });
+
+  it('uses local_party_key when already in KeyShare committee', () => {
+    const meta = {
+      local_party_key: 'KeyShare2',
+      keygen_committee_keys: ['KeyShare1', 'KeyShare2', 'KeyShare3'],
+    };
+    const r = resolveDklsLanSigningPartiesFromKeyshare(meta, 'KeyShare1');
+    expect(r.partyID).toBe('KeyShare2');
+    expect(r.peerParty).toBe('KeyShare1');
+    expect(r.partiesCSV).toBe('KeyShare1,KeyShare2');
+  });
+
+  it('throws when local and peer resolve to the same KeyShare', () => {
+    expect(() =>
+      resolveDklsLanSigningPartiesFromKeyshare(
+        {
+          local_party_key: 'KeyShare1',
+          keygen_committee_keys: ['KeyShare1', 'KeyShare2'],
+        },
+        'KeyShare1',
+      ),
+    ).toThrow(/two different key shares/i);
+  });
+});
+
+describe('resolveDklsNostrSigningParties', () => {
+  it('builds sorted 2-npub CSV for native keysign', () => {
+    const r = resolveDklsNostrSigningParties('npub1bbb', 'npub1aaa', {
+      keygen_committee_keys: ['npub1aaa', 'npub1bbb', 'npub1ccc'],
+    });
+    expect(r.partiesNpubsCSV).toBe('npub1aaa,npub1bbb');
+    expect(r.localNpub).toBe('npub1bbb');
+    expect(r.peerNpub).toBe('npub1aaa');
+  });
+
+  it('throws when local and peer npubs match', () => {
+    expect(() =>
+      resolveDklsNostrSigningParties('npub1same', 'npub1same', null),
+    ).toThrow(/two different devices/i);
   });
 });
 
@@ -143,15 +209,15 @@ describe('resolveGg18LanSigningPartiesFromKeyshare', () => {
 
   it('uses npub committee keys for Nostr-origin GG18 wallets', () => {
     const meta = {
-      local_party_key: 'npubAlice',
-      keygen_committee_keys: ['npubAlice', 'npubBob'],
+      local_party_key: 'npub1alice',
+      keygen_committee_keys: ['npub1alice', 'npub1bob'],
     };
     const r = resolveGg18LanSigningPartiesFromKeyshare(meta, {
-      peerCommitteeKey: 'npubBob',
+      peerCommitteeKey: 'npub1bob',
       peerParty: 'KeyShare1',
     });
-    expect(r.partyID).toBe('npubAlice');
-    expect(r.partiesCSV).toBe('npubAlice,npubBob');
+    expect(r.partyID).toBe('npub1alice');
+    expect(r.partiesCSV).toBe('npub1alice,npub1bob');
   });
 });
 

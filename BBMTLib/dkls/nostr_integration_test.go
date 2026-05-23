@@ -24,8 +24,8 @@ func testSessionHex(t *testing.T, n int) string {
 	return hex.EncodeToString(b)
 }
 
-// Duo Nostr DKG against a local nostr-rs-relay (same path as mobile Nostr duo setup).
-func TestNostrJoinKeygenDuo(t *testing.T) {
+func testMpcNostrKeygenDuo(t *testing.T) {
+	t.Helper()
 	relays := requireNostrRelay(t)
 	p1 := nostrParty{}
 	p2 := nostrParty{}
@@ -42,8 +42,8 @@ func TestNostrJoinKeygenDuo(t *testing.T) {
 	}
 }
 
-// Three-party Nostr DKG (same path as mobile Nostr trio setup).
-func TestNostrJoinKeygenTrio(t *testing.T) {
+func testMpcNostrKeygenTrio(t *testing.T) {
+	t.Helper()
 	relays := requireNostrRelay(t)
 	var parties [3]nostrParty
 	for i := range parties {
@@ -58,4 +58,14 @@ func TestNostrJoinKeygenTrio(t *testing.T) {
 	if len(shareByNpub) != 3 {
 		t.Fatalf("expected 3 keyshares, got %d", len(shareByNpub))
 	}
+}
+
+// Duo Nostr DKG against a local nostr-rs-relay (same path as mobile Nostr duo setup).
+func TestNostrJoinKeygenDuo(t *testing.T) {
+	testMpcNostrKeygenDuo(t)
+}
+
+// Three-party Nostr DKG (same path as mobile Nostr trio setup).
+func TestNostrJoinKeygenTrio(t *testing.T) {
+	testMpcNostrKeygenTrio(t)
 }
