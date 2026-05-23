@@ -107,6 +107,9 @@ BBMTLib/*.dylib
 peer*.ks
 KeyShare*.share
 peer*.share
+# Local Nostr relay data (BBMTLib/scripts/start-local-relay.sh)
+BBMTLib/test-relay-data/
+
 # Testing data and temporary files
 BBMTLib/test-data/
 BBMTLib/test-keygen-output/
@@ -312,6 +315,15 @@ proguard/
 android/app/debug/
 android/app/release/
 android/app/profile/
+# Kotlin compiler session markers
+android/.kotlin/
+**/.kotlin/
+*.salive
+# ProGuard/R8 mapping (release builds; huge, regenerated)
+android/mapping.txt
+# Legacy gomobile GG18 AAR (app uses libbbmtmobile.so + dkls_jni; see BBMTLib/build-dkls.sh)
+android/app/libs/tss.aar
+android/app/libs/tss-sources.jar
 # DKLs23 / bbmtmobile Android (BBMTLib/build-dkls.sh): libbbmtmobile.so, libbbmtmobile.h, dkls_jni.so
 android/app/src/main/jniLibs/**
 android/app/src/main/cpp/libbbmtmobile.h
@@ -397,6 +409,8 @@ vendor/bundle/
 
 # Database files
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 

@@ -24,3 +24,6 @@ mobile-deps/libtss/target/
 # Scripts
 scripts/bin/
 scripts/*.json
+
+# Local Nostr relay (scripts/start-local-relay.sh)
+test-relay-data/
