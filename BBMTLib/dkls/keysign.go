@@ -103,6 +103,11 @@ func NostrJoinKeysignWithSighash(
 	RegisterCancel(sessionID, cancel)
 
 	tss.InitKeysignProgress(sessionID)
+	dklsLogf(
+		"nostr keysign: session=%s parties=%d starting mpc rounds (sighash)",
+		dkgSessionLogPrefix(sessionID),
+		len(signSess.SigningIDs),
+	)
 
 	client, err := nostrtransport.NewClient(cfg)
 	if err != nil {
@@ -131,6 +136,12 @@ func NostrJoinKeysignWithSighash(
 			if len(in) == 0 {
 				return nil
 			}
+			dklsLogf(
+				"nostr keysign: session=%s pump delivered %d msg(s) from %d sender(s) (sighash)",
+				dkgSessionLogPrefix(sessionID),
+				len(in),
+				peerSenderCount(in, signSess.SelfID),
+			)
 			roundCh <- in
 			return nil
 		})
@@ -196,6 +207,11 @@ func JoinKeysignWithSighash(
 	if err := lanPrepareKeysignProgress(server, session, relayKey, parties); err != nil {
 		return "", err
 	}
+	dklsLogf(
+		"LAN keysign: session=%s parties=%d starting mpc rounds (sighash)",
+		dkgSessionLogPrefix(session),
+		len(parties),
+	)
 
 	messenger := tss.NewLANMessenger(server, session, sessionKey)
 	runner := &lanPartyRunner{

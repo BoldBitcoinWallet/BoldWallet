@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -121,8 +120,8 @@ func JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey, encKey,
 	defer tss.ClearLANTransportKeys()
 	defer func() {
 		if r := recover(); r != nil {
+			dklsLogPanic("JoinKeygen", r)
 			err = fmt.Errorf("internal error (panic): %v", r)
-			debug.PrintStack()
 		}
 	}()
 
@@ -409,6 +408,32 @@ func dkgRoundRecvPulse(progressSession string, pulseStep int, stop <-chan struct
 	}
 }
 
+func signRoundRecvPulse(progressSession string, pulseStep int, stop <-chan struct{}) {
+	tick := 0
+	for {
+		select {
+		case <-stop:
+			return
+		case <-time.After(3 * time.Second):
+			tick++
+			dklsLogf(
+				"keysign: session=%s step=%d recv heartbeat tick=%d",
+				dkgSessionLogPrefix(progressSession),
+				pulseStep,
+				tick,
+			)
+			if progressSession != "" {
+				tss.ReportKeysignProgress(
+					progressSession,
+					pulseStep,
+					fmt.Sprintf("DKLs keysign round (receiving %d)", tick),
+					false,
+				)
+			}
+		}
+	}
+}
+
 func dkgSessionLogPrefix(session string) string {
 	session = strings.TrimSpace(session)
 	if len(session) <= 8 {
@@ -453,6 +478,10 @@ func runDKGWithSender(
 	}
 	for {
 		if time.Now().After(deadline) {
+			dklsLogErrorf(
+				"DKG: session=%s timed out waiting for peer messages",
+				dkgSessionLogPrefix(progressSession),
+			)
 			return nil, libtss.PublicKeyPackage{}, fmt.Errorf("DKLs DKG timed out waiting for peer messages")
 		}
 		var batch []libtss.Message
@@ -572,6 +601,11 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	if err := lanPrepareKeysignProgress(server, session, relayKey, parties); err != nil {
 		return "", err
 	}
+	dklsLogf(
+		"LAN keysign: session=%s parties=%d starting mpc rounds",
+		dkgSessionLogPrefix(session),
+		len(parties),
+	)
 
 	messenger := tss.NewLANMessenger(server, session, sessionKey)
 	runner := &lanPartyRunner{
@@ -662,24 +696,69 @@ func runSignWithSender(
 	stepNo := 3
 	for {
 		if time.Now().After(deadline) {
+			dklsLogErrorf(
+				"keysign: session=%s timed out waiting for peer messages",
+				dkgSessionLogPrefix(progressSession),
+			)
 			return libtss.Signature{}, fmt.Errorf("DKLs keysign timed out waiting for peer messages")
 		}
 		var batch []libtss.Message
 		var step libtss.SignStep
 		for {
 			if len(batch) == 0 {
+				pulseStep := stepNo
+				if pulseStep < 3 {
+					pulseStep = 3
+				}
+				stopPulse := make(chan struct{})
+				if progressSession != "" {
+					go signRoundRecvPulse(progressSession, pulseStep, stopPulse)
+				}
+				waitStart := time.Now()
+				dklsLogf(
+					"keysign: session=%s step=%d waiting for %d peer batch(es)",
+					dkgSessionLogPrefix(progressSession),
+					pulseStep,
+					needPeerMsgs,
+				)
 				var recvErr error
 				batch, recvErr = recvBatch()
+				close(stopPulse)
 				if recvErr != nil {
+					dklsLogErrorf(
+						"keysign: session=%s step=%d recv failed after %s: %v",
+						dkgSessionLogPrefix(progressSession),
+						pulseStep,
+						time.Since(waitStart).Round(time.Second),
+						recvErr,
+					)
 					return libtss.Signature{}, recvErr
 				}
+				dklsLogf(
+					"keysign: session=%s step=%d got %d peer sender(s) after %s",
+					dkgSessionLogPrefix(progressSession),
+					pulseStep,
+					peerSenderCount(batch, selfID),
+					time.Since(waitStart).Round(time.Second),
+				)
 			}
 			step, err = session.Next(batch)
 			if err != nil && mpcNeedsMorePeerMessages(err) {
+				dklsLogf(
+					"keysign: session=%s step=%d need more fragments from peers",
+					dkgSessionLogPrefix(progressSession),
+					stepNo,
+				)
 				more, recvErr := recvMorePeerMessages(roundCh, selfID, deadline, peerQuiesce)
 				if recvErr != nil {
 					return libtss.Signature{}, recvErr
 				}
+				dklsLogf(
+					"keysign: session=%s step=%d merged %d extra fragment(s)",
+					dkgSessionLogPrefix(progressSession),
+					stepNo,
+					len(filterMessagesFor(selfID, more)),
+				)
 				batch = dedupeDKGBatchBySender(mergeDKGPeerMessages(batch, more, selfID), selfID)
 				continue
 			}
@@ -689,6 +768,11 @@ func runSignWithSender(
 			if err != nil {
 				return libtss.Signature{}, err
 			}
+			dklsLogf(
+				"keysign: session=%s complete after step=%d",
+				dkgSessionLogPrefix(progressSession),
+				stepNo,
+			)
 			step.Signature.Protocol = libtss.ProtocolDKLs23
 			return step.Signature, nil
 		}
@@ -697,8 +781,14 @@ func runSignWithSender(
 		}
 		if progressSession != "" {
 			tss.ReportKeysignProgress(progressSession, stepNo, "DKLs keysign round", false)
-			stepNo++
 		}
+		dklsLogf(
+			"keysign: session=%s step=%d keysign round sent (%d outbound msgs)",
+			dkgSessionLogPrefix(progressSession),
+			stepNo,
+			len(step.Messages),
+		)
+		stepNo++
 		if err := sender.sendMessages(step.Messages); err != nil {
 			return libtss.Signature{}, err
 		}

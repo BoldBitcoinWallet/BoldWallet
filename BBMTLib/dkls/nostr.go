@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -32,8 +31,8 @@ func (m *nostrMessenger) Send(from, to, body string) error {
 func NostrJoinKeygen(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, chaincode string) (result string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
+			dklsLogPanic("NostrJoinKeygen", r)
 			err = fmt.Errorf("internal error (panic): %v", r)
-			debug.PrintStack()
 		}
 	}()
 
@@ -300,6 +299,11 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 
 	hash := HashMessageForDKLs([]byte(message))
 	tss.InitKeysignProgress(sessionID)
+	dklsLogf(
+		"nostr keysign: session=%s parties=%d starting mpc rounds",
+		dkgSessionLogPrefix(sessionID),
+		len(signSess.SigningIDs),
+	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxTimeout)
 	defer cancel()
@@ -330,6 +334,12 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 			if len(in) == 0 {
 				return nil
 			}
+			dklsLogf(
+				"nostr keysign: session=%s pump delivered %d msg(s) from %d sender(s)",
+				dkgSessionLogPrefix(sessionID),
+				len(in),
+				peerSenderCount(in, signSess.SelfID),
+			)
 			select {
 			case roundCh <- in:
 			default:

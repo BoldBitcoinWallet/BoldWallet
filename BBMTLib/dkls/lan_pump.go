@@ -4,7 +4,6 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -71,9 +70,7 @@ func startLANMessagePump(server, session, sessionKey, key string, onBody func(st
 				}
 				body, err := tss.DecryptLANRelayPayload(message.Body, sessionKey)
 				if err != nil {
-					if os.Getenv("DKLS_LAN_PUMP_DEBUG") != "" {
-						fmt.Fprintf(os.Stderr, "dkls pump decrypt %s from %s: %v\n", key, message.From, err)
-					}
+					dklsLogErrorf("pump decrypt %s from %s: %v", key, message.From, err)
 					continue
 				}
 				bodyKey := message.From + ":" + md5Hex(body)

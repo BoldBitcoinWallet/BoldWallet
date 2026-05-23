@@ -1,3 +1,4 @@
+import { dbg } from '../utils';
 import {getHardeningFlags} from './hardening';
 
 export type MpcCancelKind = 'session' | 'nostr';
@@ -32,7 +33,7 @@ function logCancel(kind: MpcCancelKind, outcome: MpcCancelOutcome, detail?: stri
     return;
   }
   const msg = detail ? ` [${detail}]` : '';
-  console.log(`[mpcCancel] ${kind} -> ${outcome}${msg}`);
+  dbg(`[mpcCancel] ${kind} -> ${outcome}${msg}`);
 }
 
 /** Reset cancel FSM when starting a new MPC flow. */

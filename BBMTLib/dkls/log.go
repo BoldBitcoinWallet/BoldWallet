@@ -1,12 +1,15 @@
 package dkls
 
 import (
+	"fmt"
 	"os"
+	"runtime/debug"
+	"strings"
 
 	"github.com/BoldBitcoinWallet/BBMTLib/tss"
 )
 
-// dklsDebugLogs is true when DKLS_DEBUG=1 (default on for device profiling unless explicitly "0").
+// dklsDebugLogs is true unless DKLS_DEBUG=0 or false (verbose profiling on by default).
 func dklsDebugLogs() bool {
 	v := os.Getenv("DKLS_DEBUG")
 	if v == "0" || v == "false" {
@@ -15,11 +18,32 @@ func dklsDebugLogs() bool {
 	return true
 }
 
-// dklsLogf sends profiling lines to React Native (GoLog) and logcat via tss.Logf.
+// dklsLogf logs verbose DKLs profiling (round waits, heartbeats). Gated by DKLS_DEBUG.
 // Prefix matches other MPC logs so device exports grep BBMTLog / dbg('TSS:', …).
 func dklsLogf(format string, args ...any) {
 	if !dklsDebugLogs() {
 		return
 	}
 	tss.Logf("BBMTLog: dkls "+format, args...)
+}
+
+// dklsLogln logs verbose lines like dklsLogf but without a format string.
+func dklsLogln(v ...any) {
+	if !dklsDebugLogs() {
+		return
+	}
+	msg := strings.TrimSpace(fmt.Sprintln(v...))
+	tss.Logln("BBMTLog: dkls", msg)
+}
+
+// dklsLogErrorf logs failures (timeouts, decrypt, recv errors). Never gated by DKLS_DEBUG.
+func dklsLogErrorf(format string, args ...any) {
+	tss.Logf("BBMTLog: dkls "+format, args...)
+}
+
+// dklsLogPanic logs panic + stack via tss.Logf (same pattern as BBMTLib/tss). Never gated.
+func dklsLogPanic(where string, r any) {
+	errMsg := fmt.Sprintf("PANIC in %s: %v", where, r)
+	tss.Logf("BBMTLog: dkls %s", errMsg)
+	tss.Logf("BBMTLog: dkls Stack trace: %s", string(debug.Stack()))
 }

@@ -30,10 +30,16 @@ cd BBMTLib
 
 ## Profiling logs (device)
 
-DKLS profiling uses `tss.Logf` via `dklsLogf` with prefix `BBMTLog: dkls` so lines appear in React Native as `GoLog` / `dbg('TSS:', …)` alongside other MPC logs.
+DKLS logs route through `tss.Logf` / `tss.Logln` (React Native `GoLog` / `dbg('TSS:', …)` and logcat), with prefix `BBMTLog: dkls`:
 
-- **On by default** on device builds (omit env or any value except `0` / `false`).
-- **Disable:** `DKLS_DEBUG=0` (only if you need quieter logcat).
+| Helper | Gated by `DKLS_DEBUG`? | Use |
+|--------|------------------------|-----|
+| `dklsLogf` / `dklsLogln` | Yes (off when `DKLS_DEBUG=0`) | Round waits, heartbeats, profiling |
+| `dklsLogErrorf` | No | Timeouts, decrypt/recv failures |
+| `dklsLogPanic` | No | Panic + stack (same pattern as `BBMTLib/tss`) |
+
+- **Verbose on by default** (omit env or any value except `0` / `false`).
+- **Quieter logcat:** `DKLS_DEBUG=0` (errors/panics still logged).
 
 Example lines during Nostr trio keygen:
 
@@ -42,7 +48,13 @@ Example lines during Nostr trio keygen:
 - `BBMTLog: dkls DKG: session=15e0eec3 step=5 recv heartbeat tick=2`
 - `BBMTLog: dkls DKG: session=15e0eec3 step=5 got 2 peer sender(s) after 45s`
 
-Nostr transport chunk/relay detail still logs as `BBMTLog: MessagePump` / `Client.PublishWrap` on stderr (verbose).
+Example lines during LAN/Nostr keysign:
+
+- `BBMTLog: dkls LAN keysign: session=15e0eec3 parties=2 starting mpc rounds`
+- `BBMTLog: dkls keysign: session=15e0eec3 step=4 waiting for 1 peer batch(es)`
+- `BBMTLog: dkls keysign: session=15e0eec3 complete after step=4`
+
+LAN relay decrypt failures use `dklsLogErrorf` (not stderr). Nostr transport chunk/relay detail may still log as `BBMTLog: MessagePump` / `Client.PublishWrap` from `nostrtransport`.
 
 **Nostr latency transport** (`nostrtransport`): MPC chunks use fast publish (2 relays, no background fan-out); ready/complete use full fan-out. Session blocklist drops relays that return `msg: blocked`. DKLS sends to all peers in parallel. `nostr.oxtr.dev` is filtered in app relay defaults. Rebuild `./build-all.sh` after transport changes.
 
