@@ -352,12 +352,15 @@ ios/build/
 !*.xcworkspace/contents.xcworkspacedata
 *.xcuserdata
 *.xcscmblueprint
-# Unified bbmtmobile (BBMTLib/build-dkls.sh ios) — commit ios/BbmtMobile/libbbmtmobile.xcframework + libbbmtmobile_go.h
+# Unified bbmtmobile (BBMTLib/build-dkls.sh ios) — built locally, not committed (same as android jniLibs)
 ios/Tss.xcframework/**
 ios/DklsMobile/**
 ios/DklsBridge.h
 ios/DklsBridge.mm
 ios/libbbmtmobile_go.h
+ios/BbmtMobile/libbbmtmobile.xcframework/**
+ios/BbmtMobile/libbbmtmobile_go.h
+ios/BbmtMobile/libbbmtmobile*.h
 ios/BbmtMobile/*.a
 ios/BbmtMobile/libbbmtmobile-merged-*.a
 ios/BbmtMobile/libbbmtmobile-device.*
