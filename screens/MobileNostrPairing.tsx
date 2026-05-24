@@ -44,7 +44,7 @@ import {
   sendCollapsedRecapLine,
 } from '../components/transactionFlowUtils';
 import * as Progress from 'react-native-progress';
-import {CommonActions, RouteProp, useRoute} from '@react-navigation/native';
+import {CommonActions, RouteProp, useIsFocused, useRoute} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {
   dbg,
@@ -70,6 +70,15 @@ import {
   assertCanStartNostrMpc,
   nostrMpcCooldownMessageFromError,
 } from '../services/mpcCancel';
+import {
+  isMpcAbortedOrCanceledError,
+  shouldShowMpcFlowAlert,
+  showMpcFlowAlert,
+} from '../services/mpcFlowAlerts';
+import {
+  emptyMpcTransportSubprogress,
+  type MpcTransportSubprogressState,
+} from '../services/mpcTransportProgress';
 import {getPrepareModalCopy} from '../services/tssKeygenPrepare';
 import {LAN_KEYGEN_STATUS} from '../services/walletSetupUi';
 import {
@@ -92,6 +101,7 @@ import {
   trackMpcHookForTransportLiveness,
 } from '../services/mpcProgressUi';
 import {MpcModalStatusRow} from '../components/MpcModalStatusRow';
+import MpcTransportSubprogress from '../components/MpcTransportSubprogress';
 import {MpcProgressModalHeader} from '../components/MpcProgressModalHeader';
 import {useMpcCircleProgress} from '../services/useMpcCircleProgress';
 import TssBackendBadge from '../components/TssBackendBadge';
@@ -351,6 +361,11 @@ type RouteParams = {
 };
 const MobileNostrPairing = ({navigation}: any) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
+  const isFocused = useIsFocused();
+  const isFocusedRef = useRef(isFocused);
+  useEffect(() => {
+    isFocusedRef.current = isFocused;
+  }, [isFocused]);
   const isSendBitcoin = route.params?.mode === 'send_btc';
   const isSignPSBT = route.params?.mode === 'sign_psbt';
   const setupMode = route.params?.mode;
@@ -440,6 +455,8 @@ const MobileNostrPairing = ({navigation}: any) => {
   const [staleTransportHint, setStaleTransportHint] = useState<string | null>(
     null,
   );
+  const [mpcTransportSubprogress, setMpcTransportSubprogress] =
+    useState<MpcTransportSubprogressState>(emptyMpcTransportSubprogress());
   const [status, setStatus] = useState('');
   const [mpcSessionShort, setMpcSessionShort] = useState<string | null>(null);
   const [isPairing, setIsPairing] = useState(false);
@@ -538,6 +555,11 @@ const MobileNostrPairing = ({navigation}: any) => {
   } | null>(null);
   const skipRestoreInFinallyRef = useRef(false);
   const nostrAbortRef = useRef(false);
+  const nostrFlowAlertGate = () => ({
+    aborted: nostrAbortRef.current,
+    focused: isFocusedRef.current,
+    flowActive: isPairingRef.current,
+  });
 
   const abortActiveNostrMpc = React.useCallback(() => {
     Alert.alert(
@@ -551,6 +573,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           onPress: async () => {
             nostrAbortRef.current = true;
             setPairingActive(false);
+            setMpcTransportSubprogress(emptyMpcTransportSubprogress());
             setStatus('Aborted');
             if (isSignPSBT) {
               setSpendSignOutcome('aborted');
@@ -854,6 +877,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       }
       if (result.sessionShort) {
         setMpcSessionShort(result.sessionShort);
+      }
+      if (result.transportSubprogress !== undefined) {
+        setMpcTransportSubprogress(result.transportSubprogress);
       }
       if (result.mpcDone && !isSendBitcoin && !isSignPSBT) {
         if (keysharePersistedRef.current) {
@@ -1662,15 +1688,25 @@ const MobileNostrPairing = ({navigation}: any) => {
       // Don't navigate away, let the backup UI handle it
     } catch (error: any) {
       dbg('Keygen error:', error);
-      Alert.alert('Error', error?.message || 'Key generation failed');
+      if (
+        !isMpcAbortedOrCanceledError(error) &&
+        shouldShowMpcFlowAlert(nostrFlowAlertGate())
+      ) {
+        showMpcFlowAlert(
+          'Error',
+          error?.message || 'Key generation failed',
+          nostrFlowAlertGate(),
+        );
+      }
       setStatus('Key generation failed');
-      // Navigate to index 0 (reload same page) on keygen failure
-      navigation.dispatch(
-        CommonActions.reset({
-          index: 0,
-          routes: [{name: 'Nostr Connect', params: route.params}],
-        }),
-      );
+      if (shouldShowMpcFlowAlert(nostrFlowAlertGate())) {
+        navigation.dispatch(
+          CommonActions.reset({
+            index: 0,
+            routes: [{name: 'Nostr Connect', params: route.params}],
+          }),
+        );
+      }
     } finally {
       setPairingActive(false);
     }
@@ -2075,7 +2111,16 @@ const MobileNostrPairing = ({navigation}: any) => {
     } catch (error: any) {
       dbg('Send BTC error:', error);
       if (!nostrAbortRef.current) {
-        Alert.alert('Error', alertMessageForNostrSendError(error));
+        if (
+          !isMpcAbortedOrCanceledError(error) &&
+          shouldShowMpcFlowAlert(nostrFlowAlertGate())
+        ) {
+          showMpcFlowAlert(
+            'Error',
+            alertMessageForNostrSendError(error),
+            nostrFlowAlertGate(),
+          );
+        }
       }
       setStatus('Transaction signing failed');
     } finally {
@@ -2271,10 +2316,17 @@ const MobileNostrPairing = ({navigation}: any) => {
             signedPsbt.includes('failed')
           ) {
             setSpendSignOutcome('failed');
-            Alert.alert(
-              'Operation Error',
-              `Could not sign PSBT.\n${String(signedPsbt)}`,
-            );
+            if (
+              !nostrAbortRef.current &&
+              !isMpcAbortedOrCanceledError(signedPsbt) &&
+              shouldShowMpcFlowAlert(nostrFlowAlertGate())
+            ) {
+              showMpcFlowAlert(
+                'Operation Error',
+                `Could not sign PSBT.\n${String(signedPsbt)}`,
+                nostrFlowAlertGate(),
+              );
+            }
             dbg(localNpub, 'PSBT signing error', String(signedPsbt));
             return;
           }
@@ -2304,10 +2356,16 @@ const MobileNostrPairing = ({navigation}: any) => {
             return;
           }
           setSpendSignOutcome('failed');
-          Alert.alert(
-            'Operation Error',
-            `Could not sign PSBT.\n${e?.message}`,
-          );
+          if (
+            !isMpcAbortedOrCanceledError(e) &&
+            shouldShowMpcFlowAlert(nostrFlowAlertGate())
+          ) {
+            showMpcFlowAlert(
+              'Operation Error',
+              `Could not sign PSBT.\n${e?.message}`,
+              nostrFlowAlertGate(),
+            );
+          }
           dbg(localNpub, 'PSBT signing error', e);
         });
     } catch (error: any) {
@@ -2316,7 +2374,16 @@ const MobileNostrPairing = ({navigation}: any) => {
         setSpendSignOutcome('aborted');
       } else {
         setSpendSignOutcome('failed');
-        Alert.alert('Error', alertMessageForNostrSendError(error));
+        if (
+          !isMpcAbortedOrCanceledError(error) &&
+          shouldShowMpcFlowAlert(nostrFlowAlertGate())
+        ) {
+          showMpcFlowAlert(
+            'Error',
+            alertMessageForNostrSendError(error),
+            nostrFlowAlertGate(),
+          );
+        }
       }
       setStatus('PSBT signing failed');
     } finally {
@@ -5549,6 +5616,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                         mpcTransportPulse || !!staleTransportHint
                       }
                     />
+                    <MpcTransportSubprogress
+                      subprogress={mpcTransportSubprogress}
+                    />
                     {staleTransportHint ? (
                       <Text
                         style={[
@@ -5624,6 +5694,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                       pulseIndicator={
                         mpcTransportPulse || !!staleTransportHint
                       }
+                    />
+                    <MpcTransportSubprogress
+                      subprogress={mpcTransportSubprogress}
                     />
                     {staleTransportHint ? (
                       <Text

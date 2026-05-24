@@ -374,13 +374,21 @@ type preAgreementResult struct {
 }
 
 // nostrSendBtcSessionFlag identifies a duo Nostr send pre-agreement session.
-// Uses the two signing npubs + tx intent (receiver, amount). Balance is excluded because it can differ per device.
-func nostrSendBtcSessionFlag(signingNpubsSorted, receiverAddress string, amountSatoshi int64) (string, error) {
-	return Sha256(fmt.Sprintf("%s,%d,%s", signingNpubsSorted, amountSatoshi, strings.TrimSpace(receiverAddress)))
+// Uses signing npubs + tx intent + attempt_id (master/initiator scoped per round).
+func nostrSendBtcSessionFlag(signingNpubsSorted, receiverAddress, attemptID string, amountSatoshi int64) (string, error) {
+	attemptID = strings.TrimSpace(attemptID)
+	if attemptID == "" {
+		return "", fmt.Errorf("attempt id required")
+	}
+	return Sha256(fmt.Sprintf("%s,%d,%s,%s", signingNpubsSorted, amountSatoshi, strings.TrimSpace(receiverAddress), attemptID))
 }
 
-func nostrSendBtcSessionID(signingNpubsSorted, receiverAddress string, amountSatoshi int64, fullNonce string) (string, error) {
-	return Sha256(fmt.Sprintf("%s,%d,%s,%s", signingNpubsSorted, amountSatoshi, strings.TrimSpace(receiverAddress), fullNonce))
+func nostrSendBtcSessionID(signingNpubsSorted, receiverAddress, attemptID, fullNonce string, amountSatoshi int64) (string, error) {
+	attemptID = strings.TrimSpace(attemptID)
+	if attemptID == "" {
+		return "", fmt.Errorf("attempt id required")
+	}
+	return Sha256(fmt.Sprintf("%s,%d,%s,%s,%s", signingNpubsSorted, amountSatoshi, strings.TrimSpace(receiverAddress), attemptID, fullNonce))
 }
 
 // runNostrPreAgreementSendBTC performs a pre-agreement phase internally.
@@ -541,7 +549,7 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 	case err := <-peerErrorCh:
 		return nil, fmt.Errorf("failed to receive peer message: %w", err)
 	case <-ctx.Done():
-		return nil, fmt.Errorf("timeout waiting for peer message: %w", ctx.Err())
+		return nil, NostrMpcContextErr("pre-agreement", ctx.Err())
 	}
 
 	// Parse peer's message: <peerNonce>:<satoshiFees>
@@ -681,8 +689,14 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	}
 	defer endNostrMpcOperation()
 
-	// Step 1: sessionFlag from duo signing npubs + tx intent (not wallet balance).
-	sessionFlag, err := nostrSendBtcSessionFlag(npubsSorted, receiverAddress, amountSatoshi)
+	txIntentKey := fmt.Sprintf("%s,%d,%s", npubsSorted, amountSatoshi, strings.TrimSpace(receiverAddress))
+	attemptID, err := ensureNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, txIntentKey)
+	if err != nil {
+		return "", fmt.Errorf("attempt handshake failed: %w", err)
+	}
+
+	// Step 1: sessionFlag from duo signing npubs + tx intent + attempt_id.
+	sessionFlag, err := nostrSendBtcSessionFlag(npubsSorted, receiverAddress, attemptID, amountSatoshi)
 	if err != nil {
 		return "", fmt.Errorf("failed to calculate sessionFlag: %w", err)
 	}
@@ -697,7 +711,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	Logf("NostrMpcSendBTC: pre-agreement completed - fullNonce=%s, averageFees=%d", preAgreement.fullNonce, preAgreement.averageFees)
 
 	// Step 3: Calculate actual sessionID using fullNonce (like in keygen)
-	sessionID, err := nostrSendBtcSessionID(npubsSorted, receiverAddress, amountSatoshi, preAgreement.fullNonce)
+	sessionID, err := nostrSendBtcSessionID(npubsSorted, receiverAddress, attemptID, preAgreement.fullNonce, amountSatoshi)
 	if err != nil {
 		return "", fmt.Errorf("failed to calculate sessionID: %w", err)
 	}
@@ -1161,7 +1175,18 @@ func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, 
 		}
 	}()
 
-	sessionFlag, err := nostrSendBtcSessionFlag(npubsSorted, receiverAddress, amountSatoshi)
+	if _, err := beginNostrMpcOperation(); err != nil {
+		return "", err
+	}
+	defer endNostrMpcOperation()
+
+	txIntentKey := fmt.Sprintf("%s,%d,%s", npubsSorted, amountSatoshi, strings.TrimSpace(receiverAddress))
+	attemptID, err := ensureNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, txIntentKey)
+	if err != nil {
+		return "", fmt.Errorf("attempt handshake failed: %w", err)
+	}
+
+	sessionFlag, err := nostrSendBtcSessionFlag(npubsSorted, receiverAddress, attemptID, amountSatoshi)
 	if err != nil {
 		return "", fmt.Errorf("failed to calculate sessionFlag: %w", err)
 	}
@@ -1171,7 +1196,7 @@ func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, 
 	if err != nil {
 		return "", fmt.Errorf("pre-agreement failed: %w", err)
 	}
-	sessionID, err := nostrSendBtcSessionID(npubsSorted, receiverAddress, amountSatoshi, preAgreement.fullNonce)
+	sessionID, err := nostrSendBtcSessionID(npubsSorted, receiverAddress, attemptID, preAgreement.fullNonce, amountSatoshi)
 	if err != nil {
 		return "", err
 	}
@@ -1387,11 +1412,11 @@ func runNostrKeygenInternal(cfg nostrtransport.Config, chaincode, ppmPath, local
 			result = ""
 		}
 	}()
-	rootCtx, err := beginNostrMpcOperation()
+	rootCtx, cleanup, err := AttachNostrOperationRoot()
 	if err != nil {
 		return "", err
 	}
-	defer endNostrMpcOperation()
+	defer cleanup()
 
 	ctx, cancel := context.WithTimeout(rootCtx, cfg.MaxTimeout)
 	defer cancel()
@@ -1618,11 +1643,11 @@ func runNostrKeysignInternal(cfg nostrtransport.Config, keyshare *LocalStateNost
 	status := Status{Step: 0, SeqNo: 0, Index: 0, Info: "initializing...", Type: "keysign", Done: false, Time: 0}
 	setStatus(sessionID, status)
 
-	rootCtx, err := beginNostrMpcOperation()
+	rootCtx, cleanup, err := AttachNostrOperationRoot()
 	if err != nil {
 		return "", err
 	}
-	defer endNostrMpcOperation()
+	defer cleanup()
 
 	ctx, cancel := context.WithTimeout(rootCtx, cfg.MaxTimeout)
 	defer cancel()
@@ -1785,7 +1810,7 @@ func runNostrKeysignInternal(cfg nostrtransport.Config, keyshare *LocalStateNost
 	case <-ctx.Done():
 		pumpCancel()
 		pumpWg.Wait()
-		return "", fmt.Errorf("context cancelled before keysign: %w", ctx.Err())
+		return "", NostrMpcContextErr("keysign", ctx.Err())
 	default:
 	}
 
@@ -1813,7 +1838,7 @@ func runNostrKeysignInternal(cfg nostrtransport.Config, keyshare *LocalStateNost
 	case <-ctx.Done():
 		pumpCancel()
 		pumpWg.Wait()
-		return "", fmt.Errorf("keysign timed out: %w", ctx.Err())
+		return "", NostrMpcContextErr("keysign", ctx.Err())
 	case err := <-keysignErrCh:
 		pumpCancel()
 		pumpWg.Wait()
@@ -1882,11 +1907,11 @@ func runNostrKeysignInternalWithSighash(cfg nostrtransport.Config, keyshare *Loc
 	status := Status{Step: 0, SeqNo: 0, Index: 0, Info: "initializing...", Type: "keysign", Done: false, Time: 0}
 	setStatus(sessionID, status)
 
-	rootCtx, err := beginNostrMpcOperation()
+	rootCtx, cleanup, err := AttachNostrOperationRoot()
 	if err != nil {
 		return "", err
 	}
-	defer endNostrMpcOperation()
+	defer cleanup()
 
 	ctx, cancel := context.WithTimeout(rootCtx, cfg.MaxTimeout)
 	defer cancel()
@@ -2050,7 +2075,7 @@ func runNostrKeysignInternalWithSighash(cfg nostrtransport.Config, keyshare *Loc
 	case <-ctx.Done():
 		pumpCancel()
 		pumpWg.Wait()
-		return "", fmt.Errorf("context cancelled before keysign: %w", ctx.Err())
+		return "", NostrMpcContextErr("keysign", ctx.Err())
 	default:
 	}
 
@@ -2078,7 +2103,7 @@ func runNostrKeysignInternalWithSighash(cfg nostrtransport.Config, keyshare *Loc
 	case <-ctx.Done():
 		pumpCancel()
 		pumpWg.Wait()
-		return "", fmt.Errorf("keysign timed out: %w", ctx.Err())
+		return "", NostrMpcContextErr("keysign", ctx.Err())
 	case err := <-keysignErrCh:
 		pumpCancel()
 		pumpWg.Wait()

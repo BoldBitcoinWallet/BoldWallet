@@ -111,6 +111,11 @@ import {
   trackMpcHookForTransportLiveness,
 } from '../services/mpcProgressUi';
 import {MpcModalStatusRow} from '../components/MpcModalStatusRow';
+import MpcTransportSubprogress from '../components/MpcTransportSubprogress';
+import {
+  emptyMpcTransportSubprogress,
+  type MpcTransportSubprogressState,
+} from '../services/mpcTransportProgress';
 import {MpcProgressModalHeader} from '../components/MpcProgressModalHeader';
 import {useMpcCircleProgress} from '../services/useMpcCircleProgress';
 import TssBackendBadge from '../components/TssBackendBadge';
@@ -137,6 +142,12 @@ import {
   parseLanPsbtSessionPayload,
   parseLanSendBtcSessionPayload,
 } from '../services/lanSession';
+import {generateMpcAttemptId} from '../services/mpcAttemptId';
+import {
+  isMpcAbortedOrCanceledError,
+  shouldShowMpcFlowAlert,
+  showMpcFlowAlert,
+} from '../services/mpcFlowAlerts';
 import {psbtIdentityHash} from '../services/psbtIdentity';
 
 const {BBMTLibNativeModule} = NativeModules;
@@ -201,6 +212,8 @@ const MobilesPairing = ({navigation}: any) => {
   const [staleTransportHint, setStaleTransportHint] = useState<string | null>(
     null,
   );
+  const [mpcTransportSubprogress, setMpcTransportSubprogress] =
+    useState<MpcTransportSubprogressState>(emptyMpcTransportSubprogress());
   const mpcUtxoRef = useRef<MpcProgressUtxoState>({
     utxoIndex: 0,
     utxoCount: 0,
@@ -324,6 +337,8 @@ const MobilesPairing = ({navigation}: any) => {
   } = useSendTxPreview(isSendBitcoin, route.params);
   const [signedTxRawHex, setSignedTxRawHex] = useState<string | null>(null);
   const mpcAbortRef = useRef(false);
+  /** Reject stale LAN co-sign payloads from prior attempts (same tx intent). */
+  const seenLanAttemptIdsRef = useRef<Set<string>>(new Set());
   const activeMpcSessionIdRef = useRef<string | null>(null);
   const doingMpcRef = useRef(false);
   const keysharePersistedRef = useRef(false);
@@ -354,6 +369,12 @@ const MobilesPairing = ({navigation}: any) => {
     outputs?: Array<{scriptpubkey_address: string; value: number}>;
   } | null>(null);
 
+  const mpcFlowAlertGate = () => ({
+    aborted: mpcAbortRef.current,
+    focused: isFocusedRef.current,
+    flowActive: doingMpcRef.current,
+  });
+
   const allChecked = Object.values(checks).every(Boolean);
 
   const abortActiveMpc = () => {
@@ -368,6 +389,7 @@ const MobilesPairing = ({navigation}: any) => {
           onPress: async () => {
             mpcAbortRef.current = true;
             setMpcModalActive(false);
+            setMpcTransportSubprogress(emptyMpcTransportSubprogress());
             setIsPairing(false);
             setStatus('Aborted');
             const sid = activeMpcSessionIdRef.current;
@@ -569,8 +591,9 @@ const MobilesPairing = ({navigation}: any) => {
       setStatus(sessionWaitMessage(isMaster, keygenFlow));
       if (isMaster) {
         dbg('initSession: Running as master device');
-        let _data = randomSeed(64);
-        dbg('initSession: Generated random seed');
+        const attemptId = generateMpcAttemptId();
+        let _data = `${attemptId}:${randomSeed(64)}`;
+        dbg('initSession: Generated attempt id and session seed');
         if (isSendBitcoin) {
           dbg('initSession: Preparing for Bitcoin send');
           const meta = await getKeyshareMetadata();
@@ -663,14 +686,32 @@ const MobilesPairing = ({navigation}: any) => {
           const localPsbtHash = await psbtIdentityHash(
             route.params.psbtBase64 || '',
           );
-          acceptSessionPayload = (data: string) =>
-            lanPsbtSessionPayloadMatchesHash(data, localPsbtHash);
+          acceptSessionPayload = (data: string) => {
+            if (!lanPsbtSessionPayloadMatchesHash(data, localPsbtHash)) {
+              return false;
+            }
+            try {
+              const {attemptId} = parseLanPsbtSessionPayload(data);
+              return !seenLanAttemptIdsRef.current.has(attemptId.toLowerCase());
+            } catch {
+              return false;
+            }
+          };
           setStatus('Waiting for partner to start co-signing…');
         } else if (isSendBitcoin) {
           const localAmount = (route.params?.satoshiAmount || '').trim();
           const localFees = (route.params?.satoshiFees || '').trim();
-          acceptSessionPayload = (data: string) =>
-            lanSendBtcSessionPayloadMatches(data, localAmount, localFees);
+          acceptSessionPayload = (data: string) => {
+            if (!lanSendBtcSessionPayloadMatches(data, localAmount, localFees)) {
+              return false;
+            }
+            try {
+              const {attemptId} = parseLanSendBtcSessionPayload(data);
+              return !seenLanAttemptIdsRef.current.has(attemptId.toLowerCase());
+            } catch {
+              return false;
+            }
+          };
           setStatus('Waiting for partner to start co-signing…');
         }
         const rawFetched = await fetchData(
@@ -679,6 +720,16 @@ const MobilesPairing = ({navigation}: any) => {
           checksum,
           acceptSessionPayload,
         );
+        if (isSignPSBT || isSendBitcoin) {
+          try {
+            const attemptId = isSignPSBT
+              ? parseLanPsbtSessionPayload(rawFetched).attemptId
+              : parseLanSendBtcSessionPayload(rawFetched).attemptId;
+            seenLanAttemptIdsRef.current.add(attemptId.toLowerCase());
+          } catch {
+            // validation already passed in acceptSessionPayload
+          }
+        }
         dbg('initSession: Data fetched successfully', {
           len: rawFetched?.length ?? 0,
         });
@@ -844,7 +895,16 @@ const MobilesPairing = ({navigation}: any) => {
           resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
           resetCircle();
           setCircleTarget(0);
-          Alert.alert('Wallet setup failed', formatMpcError(error));
+          if (
+            !isMpcAbortedOrCanceledError(error) &&
+            shouldShowMpcFlowAlert(mpcFlowAlertGate())
+          ) {
+            showMpcFlowAlert(
+              'Wallet setup failed',
+              formatMpcError(error),
+              mpcFlowAlertGate(),
+            );
+          }
         })
         .finally(async () => {
           if (isMaster) {
@@ -859,7 +919,16 @@ const MobilesPairing = ({navigation}: any) => {
       resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
       resetCircle();
       setCircleTarget(0);
-      Alert.alert('Wallet setup failed', formatMpcError(error));
+      if (
+        !isMpcAbortedOrCanceledError(error) &&
+        shouldShowMpcFlowAlert(mpcFlowAlertGate())
+      ) {
+        showMpcFlowAlert(
+          'Wallet setup failed',
+          formatMpcError(error),
+          mpcFlowAlertGate(),
+        );
+      }
       if (isMaster) {
         await waitMS(2000);
         BBMTLibNativeModule.stopRelay(localDevice);
@@ -1093,16 +1162,21 @@ const MobilesPairing = ({navigation}: any) => {
               signedPsbt.includes('error') ||
               signedPsbt.includes('failed')
             ) {
-              if (!mpcAbortRef.current) {
-                Alert.alert(
+              if (
+                !isMpcAbortedOrCanceledError(signedPsbt) &&
+                shouldShowMpcFlowAlert(mpcFlowAlertGate())
+              ) {
+                showMpcFlowAlert(
                   'Operation Error',
                   `Could not sign PSBT.\n${String(signedPsbt)}`,
+                  mpcFlowAlertGate(),
                 );
               }
               dbg(partyID, 'PSBT signing error', String(signedPsbt));
-            } else {
-              dbg(partyID, 'PSBT signed successfully');
+              setMpcModalActive(false);
+              return;
             }
+            dbg(partyID, 'PSBT signed successfully');
             dbg(
               'PSBT signing complete: Navigating to Wallet tab with signedPsbt',
             );
@@ -1122,10 +1196,15 @@ const MobilesPairing = ({navigation}: any) => {
             );
           })
           .catch((e: any) => {
-            if (!mpcAbortRef.current) {
-              Alert.alert(
+            if (
+              !mpcAbortRef.current &&
+              !isMpcAbortedOrCanceledError(e) &&
+              shouldShowMpcFlowAlert(mpcFlowAlertGate())
+            ) {
+              showMpcFlowAlert(
                 'Operation Error',
                 `Could not sign PSBT.\n${e?.message}`,
+                mpcFlowAlertGate(),
               );
             }
             dbg(partyID, 'PSBT signing error', e);
@@ -1261,8 +1340,16 @@ const MobilesPairing = ({navigation}: any) => {
         }
       }
     } catch (error: any) {
-      if (!mpcAbortRef.current) {
-        Alert.alert('Operation Error', error?.message || error);
+      if (
+        !mpcAbortRef.current &&
+        !isMpcAbortedOrCanceledError(error) &&
+        shouldShowMpcFlowAlert(mpcFlowAlertGate())
+      ) {
+        showMpcFlowAlert(
+          'Operation Error',
+          error?.message || error,
+          mpcFlowAlertGate(),
+        );
       }
       dbg(localDevice, 'keysign error', error);
       // CRITICAL: Restore original network even on error
@@ -1365,6 +1452,9 @@ const MobilesPairing = ({navigation}: any) => {
       }
       if (result.sessionShort) {
         setMpcSessionShort(result.sessionShort);
+      }
+      if (result.transportSubprogress !== undefined) {
+        setMpcTransportSubprogress(result.transportSubprogress);
       }
       if (result.mpcDone && !isSendBitcoin && !isSignPSBT) {
         if (keysharePersistedRef.current) {
@@ -3402,6 +3492,8 @@ const MobilesPairing = ({navigation}: any) => {
                 </Text>
                 <AppPressable
                   onPress={() => {
+                    mpcAbortRef.current = true;
+                    setMpcModalActive(false);
                     navigation.dispatch(
                       CommonActions.reset({
                         index: 0,
@@ -4172,6 +4264,9 @@ const MobilesPairing = ({navigation}: any) => {
                                     mpcTransportPulse || !!staleTransportHint
                                   }
                                 />
+                                <MpcTransportSubprogress
+                                  subprogress={mpcTransportSubprogress}
+                                />
                                 {staleTransportHint ? (
                                   <Text
                                     style={[
@@ -4511,6 +4606,9 @@ const MobilesPairing = ({navigation}: any) => {
                   pulseIndicator={
                     mpcTransportPulse || !!staleTransportHint
                   }
+                />
+                <MpcTransportSubprogress
+                  subprogress={mpcTransportSubprogress}
                 />
                 {staleTransportHint ? (
                   <Text

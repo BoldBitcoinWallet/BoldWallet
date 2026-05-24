@@ -10,6 +10,11 @@ export type MpcHookMessage = {
   utxo_current?: number;
   info?: string;
   time?: number;
+  transport?: string;
+  direction?: string;
+  chunk?: number;
+  total?: number;
+  active?: boolean;
 };
 
 export type MpcProgressUtxoState = {

@@ -1,6 +1,7 @@
 package dkls
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -331,7 +332,7 @@ func TestRunDKGWithSenderInProcess(t *testing.T) {
 	errs := make(chan error, 2)
 	run := func(id libtss.Identifier, inCh <-chan []libtss.Message) {
 		_, _, err := runDKGWithSender(
-			"s", id, sessionID, threshold,
+			context.Background(), "s", id, sessionID, threshold,
 			&routerDKGSender{selfID: id, router: router},
 			inCh,
 		)
@@ -372,7 +373,7 @@ func TestRunDKGWithSenderTrioInProcess(t *testing.T) {
 	results := make(chan partyResult, 3)
 	run := func(id libtss.Identifier, inCh <-chan []libtss.Message) {
 		share, pub, err := runDKGWithSender(
-			"s", id, sessionID, threshold,
+			context.Background(), "s", id, sessionID, threshold,
 			&routerDKGSender{selfID: id, router: router},
 			inCh,
 		)

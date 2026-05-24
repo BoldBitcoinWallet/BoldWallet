@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Added
+- **MPC `attempt_id` per co-sign round** — master/initiator generates a fresh 64-hex id each retry so identical Send BTC / PSBT intent gets isolated pre-agreement rooms on LAN and Nostr (`services/mpcAttemptId.ts`, `services/lanSession.ts`, `BBMTLib/tss/nostr_attempt.go`); Nostr initiator = lexicographically first signing npub; join side rejects already-seen LAN attempt ids.
+- **Transport upload subprogress** — thin bar under MPC modal status during outbound LAN HTTP posts and Nostr chunk publishes (`ReportTransportProgress`, `components/MpcTransportSubprogress.tsx`, `services/mpcTransportProgress.ts`); Nostr shows determinate `chunk/total`, LAN indeterminate; does not affect main MPC % ring.
+- **MPC flow alert guards** — `services/mpcFlowAlerts.ts` suppresses stale error popups after abort, unfocus, or inactive flow (`shouldShowMpcFlowAlert`, `isMpcAbortedOrCanceledError`).
+- **Nostr subscribe-only attempt handshake** — `RunSubscribeOnly` on message pump for attempt-id exchange without relay history query (`BBMTLib/tss/nostrtransport/pump.go`).
+- **Tests** — `__tests__/mpcAttemptId.test.ts`, `__tests__/mpcFlowAlerts.test.ts`, `__tests__/mpcTransportProgress.test.ts`; Go tests for session/attempt scoping, PSBT cancel context, transport hooks, DKLS cancel-all, and attach lifecycle.
+
+### Changed
+- **LAN co-sign payload format** — `{attemptId64}:{seed64}:{amount}:{fees}:{party}` (send) and `{attemptId64}:{seed64}:{psbtHash}:{party}` (PSBT); join validators require matching attempt id and tx intent.
+- **Nostr session scoping** — `sessionFlag = H(txIntent, attempt_id)`, `sessionID = H(txIntent, attempt_id, fullNonce)` for send and PSBT pre-agreement/keysign.
+- **Nostr keysign lifecycle** — per-input keysign uses `AttachNostrOperationRoot()` instead of nested `begin/end` so mobile abort keeps one active cancel handle for multi-input flows.
+- **MPC progress hooks** — `type: transport` events parsed separately from keygen/keysign percent mapping (`services/mpcProgressUi.ts`).
+
+### Fixed / hardening
+- **Same-tx co-sign retry (LAN + Nostr)** — immediate retry with both peers starting together no longer mis-sessions from stale pre-agreement nonces or consumed LAN payloads; documented in `BBMTLib/docs/DKLS_MOBILE.md`.
+- **Late timeout/error popups after Abort** — pairing screens guard wallet setup, send, and PSBT alerts/navigation on abort + screen focus; PSBT LAN path no longer navigates to Wallet on error/abort.
+- **Nostr cancel propagation** — PSBT pre-agreement uses active Nostr root context (not detached `Background`); canceled operations report `nostr mpc aborted during …` instead of timeout wording (`NostrMpcContextErr`).
+- **DKLS abort wiring** — `CancelMpcSession("")` cancels all registered sessions; Nostr DKG/keysign and MPC round loops honor `ctx.Done()` instead of waiting for wall-clock deadlines only.
+- **Nostr post-abort cooldown** — remains **15s after abort only** (not after successful co-sign), so immediate same-tx retry stays viable when both peers restart together.
+
 ---
 
 ## [4.0.0] - 2026-05-23

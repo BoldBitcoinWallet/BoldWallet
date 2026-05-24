@@ -33,6 +33,28 @@ func clearActiveNostrCtx() {
 	nostrActiveCancel = nil
 }
 
+// ActiveNostrContext returns the cancellable root for the active Nostr MPC operation.
+func ActiveNostrContext() context.Context {
+	return getActiveNostrCtx()
+}
+
+// AttachNostrOperationRoot returns the active Nostr MPC context and optional cleanup.
+// When no operation is active (standalone keysign), it begins one.
+func AttachNostrOperationRoot() (context.Context, func(), error) {
+	nostrCancelMu.Lock()
+	active := nostrActiveCtx
+	hasActive := active != nil && active.Err() == nil
+	nostrCancelMu.Unlock()
+	if hasActive {
+		return active, func() {}, nil
+	}
+	root, err := beginNostrMpcOperation()
+	if err != nil {
+		return nil, func() {}, err
+	}
+	return root, endNostrMpcOperation, nil
+}
+
 // getActiveNostrCtx returns the active Nostr MPC context, never a canceled one.
 func getActiveNostrCtx() context.Context {
 	nostrCancelMu.Lock()

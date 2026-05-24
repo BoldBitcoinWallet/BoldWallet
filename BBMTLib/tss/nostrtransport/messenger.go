@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -57,6 +58,26 @@ func (m *Messenger) SendMessage(ctx context.Context, from, to, body string) (err
 	chunks, _ := ChunkPayload(m.cfg.SessionID, to, []byte(body), m.cfg.ChunkSize)
 	fmt.Fprintf(os.Stderr, "BBMTLog: Messenger split into %d chunks\n", len(chunks))
 
+	total := len(chunks)
+	if total < 1 {
+		total = 1
+	}
+	reportTransportProgress(m.cfg.SessionID, 0, total, true)
+	defer reportTransportProgress(m.cfg.SessionID, 0, total, false)
+
+	var completed atomic.Int32
+	var progressMu sync.Mutex
+	lastProgressAt := time.Now()
+	reportChunkProgress := func(done int) {
+		progressMu.Lock()
+		defer progressMu.Unlock()
+		now := time.Now()
+		if done >= total || now.Sub(lastProgressAt) >= 200*time.Millisecond {
+			lastProgressAt = now
+			reportTransportProgress(m.cfg.SessionID, done, total, true)
+		}
+	}
+
 	window := m.cfg.ChunkPublishWindow
 	if window <= 0 {
 		window = 4
@@ -79,7 +100,10 @@ func (m *Messenger) SendMessage(ctx context.Context, from, to, body string) (err
 			defer func() { <-sem }()
 			if err := m.publishChunk(ctx, senderNpubHex, to, chunk); err != nil {
 				errOnce.Do(func() { sendErr = err })
+				return
 			}
+			done := int(completed.Add(1))
+			reportChunkProgress(done)
 		}()
 	}
 	wg.Wait()

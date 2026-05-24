@@ -1,19 +1,23 @@
 /** LAN wallet setup uses trio (3 devices) for keygen only; spend/sign sessions are always duo. */
+import {isValidMpcAttemptId} from './mpcAttemptId';
+
 const LAN_SESSION_HEX64 = /^[0-9a-f]{64}$/i;
 const LAN_SEND_BTC_SATOSHIS = /^\d+$/;
 
-/** True when payload looks like `{seed64}:{psbtHash64}:{partyKey}`. */
+/** True when payload looks like `{attemptId64}:{seed64}:{psbtHash64}:{partyKey}`. */
 export function isValidLanPsbtSessionPayload(data: string): boolean {
   const trimmed = data.trim();
   if (!trimmed) {
     return false;
   }
   const parts = trimmed.split(':');
-  if (parts.length < 3 || !parts[2]) {
+  if (parts.length < 4 || !parts[3]) {
     return false;
   }
   return (
-    LAN_SESSION_HEX64.test(parts[0]) && LAN_SESSION_HEX64.test(parts[1])
+    isValidMpcAttemptId(parts[0]) &&
+    LAN_SESSION_HEX64.test(parts[1]) &&
+    LAN_SESSION_HEX64.test(parts[2])
   );
 }
 
@@ -29,43 +33,63 @@ export function lanPsbtSessionPayloadMatchesHash(
   return psbtHash.toLowerCase() === localPsbtHash.toLowerCase();
 }
 
-/** Parse master PSBT session payload: `{seed64}:{psbtHash}:{partyKey}`. */
+/** Join device: require exact attempt id for the active co-sign round. */
+export function lanPsbtSessionPayloadMatchesAttempt(
+  data: string,
+  expectedAttemptId: string,
+  localPsbtHash: string,
+): boolean {
+  if (!expectedAttemptId || !isValidMpcAttemptId(expectedAttemptId)) {
+    return false;
+  }
+  if (!lanPsbtSessionPayloadMatchesHash(data, localPsbtHash)) {
+    return false;
+  }
+  const {attemptId} = parseLanPsbtSessionPayload(data);
+  return attemptId.toLowerCase() === expectedAttemptId.toLowerCase();
+}
+
+/** Parse master PSBT session payload: `{attemptId64}:{seed64}:{psbtHash}:{partyKey}`. */
 export function parseLanPsbtSessionPayload(data: string): {
+  attemptId: string;
   psbtHash: string;
   peerShare: string;
 } {
   const parts = data.split(':');
-  if (parts.length < 3) {
+  if (parts.length < 4) {
     throw new Error('Invalid PSBT session payload');
   }
   if (!isValidLanPsbtSessionPayload(data)) {
     throw new Error('Invalid PSBT session payload');
   }
   return {
-    psbtHash: parts[1],
-    peerShare: parts.slice(2).join(':'),
+    attemptId: parts[0],
+    psbtHash: parts[2],
+    peerShare: parts.slice(3).join(':'),
   };
 }
 
-/** True when payload looks like `{seed64}:{amount}:{fees}:{partyKey}`. */
+/** True when payload looks like `{attemptId64}:{seed64}:{amount}:{fees}:{partyKey}`. */
 export function isValidLanSendBtcSessionPayload(data: string): boolean {
   const trimmed = data.trim();
   if (!trimmed) {
     return false;
   }
   const parts = trimmed.split(':');
-  if (parts.length < 4 || !parts[3]) {
+  if (parts.length < 5 || !parts[4]) {
     return false;
   }
   return (
-    LAN_SESSION_HEX64.test(parts[0]) &&
-    LAN_SEND_BTC_SATOSHIS.test(parts[1]) &&
-    LAN_SEND_BTC_SATOSHIS.test(parts[2])
+    isValidMpcAttemptId(parts[0]) &&
+    LAN_SESSION_HEX64.test(parts[1]) &&
+    LAN_SEND_BTC_SATOSHIS.test(parts[2]) &&
+    LAN_SEND_BTC_SATOSHIS.test(parts[3])
   );
 }
 
-/** Parse master send-BTC session payload: `{seed64}:{amount}:{fees}:{partyKey}`. */
+/** Parse master send-BTC session payload: `{attemptId64}:{seed64}:{amount}:{fees}:{partyKey}`. */
 export function parseLanSendBtcSessionPayload(data: string): {
+  attemptId: string;
   satoshiAmount: string;
   satoshiFees: string;
   peerShare: string;
@@ -75,9 +99,10 @@ export function parseLanSendBtcSessionPayload(data: string): {
   }
   const parts = data.split(':');
   return {
-    satoshiAmount: parts[1],
-    satoshiFees: parts[2],
-    peerShare: parts.slice(3).join(':'),
+    attemptId: parts[0],
+    satoshiAmount: parts[2],
+    satoshiFees: parts[3],
+    peerShare: parts.slice(4).join(':'),
   };
 }
 
@@ -94,4 +119,21 @@ export function lanSendBtcSessionPayloadMatches(
   const amount = localAmount.trim();
   const fees = localFees.trim();
   return satoshiAmount === amount && satoshiFees === fees;
+}
+
+/** Join device: require exact attempt id for the active co-sign round. */
+export function lanSendBtcSessionPayloadMatchesAttempt(
+  data: string,
+  expectedAttemptId: string,
+  localAmount: string,
+  localFees: string,
+): boolean {
+  if (!expectedAttemptId || !isValidMpcAttemptId(expectedAttemptId)) {
+    return false;
+  }
+  if (!lanSendBtcSessionPayloadMatches(data, localAmount, localFees)) {
+    return false;
+  }
+  const {attemptId} = parseLanSendBtcSessionPayload(data);
+  return attemptId.toLowerCase() === expectedAttemptId.toLowerCase();
 }

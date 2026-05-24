@@ -1,6 +1,7 @@
 package dkls
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -23,7 +24,7 @@ func TestRecvPeerMessageBatch_StaggeredTrioSenders(t *testing.T) {
 		ch <- []libtss.Message{msgFrom(3)}
 	}()
 
-	batch, err := recvPeerMessageBatch(ch, selfID, 2, deadline, 50*time.Millisecond)
+	batch, err := recvPeerMessageBatch(context.Background(), ch, selfID, 2, deadline, 50*time.Millisecond)
 	if err != nil {
 		t.Fatalf("recvPeerMessageBatch: %v", err)
 	}

@@ -90,6 +90,21 @@ func TestNostrMpcAbortCooldown_BlocksRestart(t *testing.T) {
 	}
 }
 
+func TestNostrMpcFinishDoesNotBlockRestart(t *testing.T) {
+	resetNostrCancelStateForTest()
+	ctx, err := beginNostrMpcOperation()
+	if err != nil {
+		t.Fatalf("begin failed: %v", err)
+	}
+	if ctx.Err() != nil {
+		t.Fatal("expected live context")
+	}
+	endNostrMpcOperation()
+	if err := CheckNostrMpcCanStart(); err != nil {
+		t.Fatalf("expected no cooldown after finish: %v", err)
+	}
+}
+
 func TestNostrMpcAbortCooldown_AllowsAfterWait(t *testing.T) {
 	resetNostrCancelStateForTest()
 	nostrCancelMu.Lock()

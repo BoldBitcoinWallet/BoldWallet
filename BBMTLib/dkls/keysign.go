@@ -98,7 +98,7 @@ func NostrJoinKeysignWithSighash(
 		return "", err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxTimeout)
+	ctx, cancel := context.WithTimeout(tss.ActiveNostrContext(), cfg.MaxTimeout)
 	defer cancel()
 	RegisterCancel(sessionID, cancel)
 
@@ -160,7 +160,7 @@ func NostrJoinKeysignWithSighash(
 	if signingShare != share {
 		defer signingShare.Free()
 	}
-	sig, err := runSignWithSender(signingShare, sighash, []byte(sessionID), signSess.SelfID, signSess.SigningIDs, runner, roundCh, sessionID)
+	sig, err := runSignWithSender(ctx, signingShare, sighash, []byte(sessionID), signSess.SelfID, signSess.SigningIDs, runner, roundCh, sessionID)
 	pumpCancel()
 	wg.Wait()
 	if err != nil {
@@ -245,7 +245,7 @@ func JoinKeysignWithSighash(
 	if signingShare != share {
 		defer signingShare.Free()
 	}
-	sig, err := runSignWithSender(signingShare, sighash, []byte(session), signSess.SelfID, signSess.SigningIDs, runner, roundCh, session)
+	sig, err := runSignWithSender(context.Background(), signingShare, sighash, []byte(session), signSess.SelfID, signSess.SigningIDs, runner, roundCh, session)
 	close(endCh)
 	wg.Wait()
 	if err != nil {

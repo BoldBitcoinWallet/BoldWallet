@@ -1,3 +1,11 @@
+/**
+ * @format
+ */
+
+jest.mock('../utils', () => ({
+  dbg: jest.fn(),
+}));
+
 import {
   assertCanStartNostrMpc,
   canStartNostrMpc,

@@ -1,6 +1,7 @@
 package dkls
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -188,7 +189,7 @@ func JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey, encKey,
 	if decoded, decErr := hex.DecodeString(session); decErr == nil && len(decoded) > 0 {
 		sidBytes = decoded
 	}
-	share, _, err := runDKGWithSender(session, selfID, sidBytes, threshold, runner, roundCh)
+	share, _, err := runDKGWithSender(context.Background(), session, selfID, sidBytes, threshold, runner, roundCh)
 	close(endCh)
 	wg.Wait()
 	if err != nil {
@@ -241,6 +242,7 @@ func peerSenderCount(batch []libtss.Message, selfID libtss.Identifier) int {
 }
 
 func recvPeerMessageBatch(
+	ctx context.Context,
 	roundCh <-chan []libtss.Message,
 	selfID libtss.Identifier,
 	needPeerMsgs int,
@@ -254,10 +256,15 @@ func recvPeerMessageBatch(
 		}
 	}
 	for peerSenderCount(batch, selfID) < needPeerMsgs {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("DKLs operation canceled: %w", ctx.Err())
+		}
 		if time.Now().After(deadline) {
 			return nil, fmt.Errorf("DKLs timed out waiting for peer messages")
 		}
 		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("DKLs operation canceled: %w", ctx.Err())
 		case part := <-roundCh:
 			add(part)
 			for {
@@ -443,6 +450,7 @@ func dkgSessionLogPrefix(session string) string {
 }
 
 func runDKGWithSender(
+	ctx context.Context,
 	progressSession string,
 	selfID libtss.Identifier,
 	sessionID []byte,
@@ -474,9 +482,12 @@ func runDKGWithSender(
 		peerQuiesce = 800 * time.Millisecond
 	}
 	recvBatch := func() ([]libtss.Message, error) {
-		return recvPeerMessageBatch(roundCh, selfID, needPeerMsgs, deadline, peerQuiesce)
+		return recvPeerMessageBatch(ctx, roundCh, selfID, needPeerMsgs, deadline, peerQuiesce)
 	}
 	for {
+		if ctx.Err() != nil {
+			return nil, libtss.PublicKeyPackage{}, fmt.Errorf("DKLs DKG canceled: %w", ctx.Err())
+		}
 		if time.Now().After(deadline) {
 			dklsLogErrorf(
 				"DKG: session=%s timed out waiting for peer messages",
@@ -632,7 +643,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 		return nil
 	}, endCh, &wg)
 
-	sig, err := runSignWithSender(share, hash, []byte(session), signSess.SelfID, signSess.SigningIDs, runner, roundCh, session)
+	sig, err := runSignWithSender(context.Background(), share, hash, []byte(session), signSess.SelfID, signSess.SigningIDs, runner, roundCh, session)
 	close(endCh)
 	wg.Wait()
 	if err != nil {
@@ -659,6 +670,7 @@ func min(a, b int) int {
 }
 
 func runSignWithSender(
+	ctx context.Context,
 	share *libtss.KeyShareHandle,
 	message, signID []byte,
 	selfID libtss.Identifier,
@@ -690,11 +702,14 @@ func runSignWithSender(
 	}
 	peerQuiesce := 400 * time.Millisecond
 	recvBatch := func() ([]libtss.Message, error) {
-		return recvPeerMessageBatch(roundCh, selfID, needPeerMsgs, deadline, peerQuiesce)
+		return recvPeerMessageBatch(ctx, roundCh, selfID, needPeerMsgs, deadline, peerQuiesce)
 	}
 
 	stepNo := 3
 	for {
+		if ctx.Err() != nil {
+			return libtss.Signature{}, fmt.Errorf("DKLs keysign canceled: %w", ctx.Err())
+		}
 		if time.Now().After(deadline) {
 			dklsLogErrorf(
 				"keysign: session=%s timed out waiting for peer messages",

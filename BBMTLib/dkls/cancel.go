@@ -17,11 +17,21 @@ func RegisterCancel(sessionID string, cancel func()) {
 }
 
 // CancelMpcSession cancels an active DKLs MPC session.
+// Empty sessionID cancels all registered sessions (mobile abort).
 func CancelMpcSession(sessionID string) {
 	cancelMu.Lock()
+	defer cancelMu.Unlock()
+	if sessionID == "" {
+		for id, fn := range cancelFuncs {
+			if fn != nil {
+				fn()
+			}
+			delete(cancelFuncs, id)
+		}
+		return
+	}
 	fn, ok := cancelFuncs[sessionID]
 	delete(cancelFuncs, sessionID)
-	cancelMu.Unlock()
 	if ok && fn != nil {
 		fn()
 	}

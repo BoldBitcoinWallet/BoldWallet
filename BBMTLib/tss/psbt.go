@@ -887,7 +887,14 @@ func runNostrMpcSignPSBTInternal(
 		return "", fmt.Errorf("failed to canonicalize PSBT: %w", err)
 	}
 	psbtBase64 = canonicalB64
-	sessionFlag, err := Sha256(fmt.Sprintf("%s,%s", npubsSorted, psbtHash))
+
+	txIntentKey := fmt.Sprintf("%s,%s", npubsSorted, psbtHash)
+	attemptID, err := ensureNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, txIntentKey)
+	if err != nil {
+		return "", fmt.Errorf("attempt handshake failed: %w", err)
+	}
+
+	sessionFlag, err := Sha256(fmt.Sprintf("%s,%s,%s", npubsSorted, psbtHash, attemptID))
 	if err != nil {
 		return "", fmt.Errorf("failed to calculate sessionFlag: %w", err)
 	}
@@ -903,7 +910,7 @@ func runNostrMpcSignPSBTInternal(
 	Logf("NostrMpcSignPSBT: pre-agreement completed - fullNonce=%s", preAgreement.fullNonce)
 
 	// Step 3: Calculate actual sessionID using fullNonce
-	sessionID, err := Sha256(fmt.Sprintf("%s,%s,%s", npubsSorted, psbtHash, preAgreement.fullNonce))
+	sessionID, err := Sha256(fmt.Sprintf("%s,%s,%s,%s", npubsSorted, psbtHash, attemptID, preAgreement.fullNonce))
 	if err != nil {
 		return "", fmt.Errorf("failed to calculate sessionID: %w", err)
 	}
@@ -1335,8 +1342,8 @@ func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 	localMessage := peerNonce
 	Logf("runNostrPreAgreementPSBT: sending nonce: %s", localMessage)
 
-	// Context for the pre-agreement phase (2 minutes timeout)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	// Context for the pre-agreement phase (inherits active Nostr abort context).
+	ctx, cancel := context.WithTimeout(getActiveNostrCtx(), 2*time.Minute)
 	defer cancel()
 
 	// Channel to receive peer's message
@@ -1393,7 +1400,7 @@ func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 	case err := <-peerErrorCh:
 		return nil, fmt.Errorf("failed to receive peer message: %w", err)
 	case <-ctx.Done():
-		return nil, fmt.Errorf("timeout waiting for peer message: %w", ctx.Err())
+		return nil, NostrMpcContextErr("pre-agreement", ctx.Err())
 	}
 
 	// Calculate fullNonce: sorted join of both nonces

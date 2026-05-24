@@ -59,16 +59,22 @@ func NostrJoinKeygen(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKe
 		return "", err
 	}
 
-	return runNostrDKG(cfg, chaincode, localNpub, allParties)
+	rootCtx, cleanup, err := tss.AttachNostrOperationRoot()
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+	return runNostrDKG(rootCtx, cfg, chaincode, localNpub, allParties)
 }
 
-func runNostrDKG(cfg nostrtransport.Config, chaincode, localNpub string, allParties []string) (string, error) {
+func runNostrDKG(rootCtx context.Context, cfg nostrtransport.Config, chaincode, localNpub string, allParties []string) (string, error) {
 	threshold, err := ThresholdFromPartyCount(len(allParties))
 	if err != nil {
 		return "", err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxTimeout)
+	ctx, cancel := context.WithTimeout(rootCtx, cfg.MaxTimeout)
 	defer cancel()
+	RegisterCancel(cfg.SessionID, cancel)
 
 	client, err := nostrtransport.NewClient(cfg)
 	if err != nil {
@@ -157,7 +163,7 @@ func runNostrDKG(cfg nostrtransport.Config, chaincode, localNpub string, allPart
 		len(allParties),
 	)
 	runner := &nostrPartyRunner{selfID: selfID, localNpub: localNpub, messenger: nm, peers: allParties}
-	share, _, err := runDKGWithSender(cfg.SessionID, selfID, sidBytes, threshold, runner, roundCh)
+	share, _, err := runDKGWithSender(ctx, cfg.SessionID, selfID, sidBytes, threshold, runner, roundCh)
 	pumpCancel()
 	wg.Wait()
 	if err != nil {
@@ -305,8 +311,9 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 		len(signSess.SigningIDs),
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxTimeout)
+	ctx, cancel := context.WithTimeout(tss.ActiveNostrContext(), cfg.MaxTimeout)
 	defer cancel()
+	RegisterCancel(sessionID, cancel)
 
 	client, err := nostrtransport.NewClient(cfg)
 	if err != nil {
@@ -355,7 +362,7 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 		messenger: nm,
 		peers:     append([]string{localNpub}, signSess.NostrPeers...),
 	}
-	sig, err := runSignWithSender(share, hash, []byte(sessionID), signSess.SelfID, signSess.SigningIDs, runner, roundCh, sessionID)
+	sig, err := runSignWithSender(ctx, share, hash, []byte(sessionID), signSess.SelfID, signSess.SigningIDs, runner, roundCh, sessionID)
 	pumpCancel()
 	wg.Wait()
 	if err != nil {

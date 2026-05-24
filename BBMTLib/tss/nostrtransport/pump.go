@@ -50,7 +50,17 @@ func NewMessagePump(cfg Config, client *Client) (result *MessagePump) {
 	}
 }
 
-func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) (err error) {
+func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) error {
+	return p.runInternal(ctx, handler, true)
+}
+
+// RunSubscribeOnly listens for new events only (no relay history query).
+// Use for attempt-id handshakes where stale cached events must be ignored.
+func (p *MessagePump) RunSubscribeOnly(ctx context.Context, handler func([]byte) error) error {
+	return p.runInternal(ctx, handler, false)
+}
+
+func (p *MessagePump) runInternal(ctx context.Context, handler func([]byte) error, queryHistorical bool) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			errMsg := fmt.Sprintf("PANIC in MessagePump.Run: %v", r)
@@ -288,68 +298,69 @@ func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) (err 
 		return nil
 	}
 
-	// First, query for existing events BEFORE starting subscription
-	// This ensures we catch events that were published before we started listening
-	// Query in parallel to all relays (resilient - if one fails, others continue)
-	fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump querying for existing events for session %s (from last 1 minute)\n", p.cfg.SessionID)
-	queryCtx, queryCancel := context.WithTimeout(ctx, 3*time.Second)
-	defer queryCancel()
+	// First, query for existing events BEFORE starting subscription (optional).
+	// Attempt-id handshakes skip this to avoid picking stale messages on retry.
+	if queryHistorical {
+		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump querying for existing events for session %s (from last 1 minute)\n", p.cfg.SessionID)
+		queryCtx, queryCancel := context.WithTimeout(ctx, 3*time.Second)
+		defer queryCancel()
 
-	// Use all valid relays, not just initially connected ones
-	relaysToQuery := p.client.validRelays
-	if len(relaysToQuery) == 0 {
-		relaysToQuery = p.client.urls
-	}
-
-	queryDone := make(chan bool, 1)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				errMsg := fmt.Sprintf("PANIC in MessagePump.Run query goroutine: %v", r)
-				fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
-				fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
-			}
-			queryDone <- true
-		}()
-		// Query all relays in parallel
-		for _, url := range relaysToQuery {
-			go func(relayURL string) {
-				defer func() {
-					if r := recover(); r != nil {
-						errMsg := fmt.Sprintf("PANIC in MessagePump.Run relay query goroutine: %v", r)
-						fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
-						fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
-					}
-				}()
-				relay, err := p.client.GetPool().EnsureRelay(relayURL)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to ensure relay %s for query: %v\n", relayURL, err)
-					return
-				}
-				existingEvents, err := relay.QuerySync(queryCtx, filter)
-				if err == nil {
-					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump query on relay %s returned %d events for session %s\n", relayURL, len(existingEvents), p.cfg.SessionID)
-					for _, event := range existingEvents {
-						if event != nil {
-							// Process the event (this will call handler if it's a valid message)
-							processEvent(event)
-						}
-					}
-				} else {
-					fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump query on relay %s failed (non-fatal): %v\n", relayURL, err)
-				}
-			}(url)
+		// Use all valid relays, not just initially connected ones
+		relaysToQuery := p.client.validRelays
+		if len(relaysToQuery) == 0 {
+			relaysToQuery = p.client.urls
 		}
-		// Give queries time to complete
-		time.Sleep(2 * time.Second)
-	}()
 
-	// Wait for initial query to complete (with timeout) before starting subscription
-	select {
-	case <-queryDone:
-		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump initial query completed\n")
-	case <-time.After(3 * time.Second):
-		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump initial query timeout, proceeding with subscription\n")
+		queryDone := make(chan bool, 1)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					errMsg := fmt.Sprintf("PANIC in MessagePump.Run query goroutine: %v", r)
+					fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+					fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+				}
+				queryDone <- true
+			}()
+			// Query all relays in parallel
+			for _, url := range relaysToQuery {
+				go func(relayURL string) {
+					defer func() {
+						if r := recover(); r != nil {
+							errMsg := fmt.Sprintf("PANIC in MessagePump.Run relay query goroutine: %v", r)
+							fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
+							fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
+						}
+					}()
+					relay, err := p.client.GetPool().EnsureRelay(relayURL)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump failed to ensure relay %s for query: %v\n", relayURL, err)
+						return
+					}
+					existingEvents, err := relay.QuerySync(queryCtx, filter)
+					if err == nil {
+						fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump query on relay %s returned %d events for session %s\n", relayURL, len(existingEvents), p.cfg.SessionID)
+						for _, event := range existingEvents {
+							if event != nil {
+								// Process the event (this will call handler if it's a valid message)
+								processEvent(event)
+							}
+						}
+					} else {
+						fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump query on relay %s failed (non-fatal): %v\n", relayURL, err)
+					}
+				}(url)
+			}
+			// Give queries time to complete
+			time.Sleep(2 * time.Second)
+		}()
+
+		// Wait for initial query to complete (with timeout) before starting subscription
+		select {
+		case <-queryDone:
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump initial query completed\n")
+		case <-time.After(3 * time.Second):
+			fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump initial query timeout, proceeding with subscription\n")
+		}
 	}
 
 	// Retry loop: resubscribe when channel closes (e.g., network disconnection).

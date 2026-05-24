@@ -24,10 +24,14 @@ describe('psbtIdentity', () => {
   });
 
   it('isValidLanPsbtSessionPayload rejects incomplete or stale payloads', () => {
+    const attempt = 'e'.repeat(64);
     const seed = 'a'.repeat(64);
     const hash = 'b'.repeat(64);
+    expect(
+      isValidLanPsbtSessionPayload(`${attempt}:${seed}:${hash}:npub1abc`),
+    ).toBe(true);
     expect(isValidLanPsbtSessionPayload(`${seed}:${hash}:npub1abc`)).toBe(
-      true,
+      false,
     );
     expect(isValidLanPsbtSessionPayload(seed)).toBe(false);
     expect(isValidLanPsbtSessionPayload(`${seed}:short:npub`)).toBe(false);
@@ -37,9 +41,10 @@ describe('psbtIdentity', () => {
   });
 
   it('lanPsbtSessionPayloadMatchesHash requires matching psbt hash', () => {
+    const attempt = 'e'.repeat(64);
     const seed = 'a'.repeat(64);
     const hash = 'b'.repeat(64);
-    const payload = `${seed}:${hash}:npub1abc`;
+    const payload = `${attempt}:${seed}:${hash}:npub1abc`;
     expect(lanPsbtSessionPayloadMatchesHash(payload, hash)).toBe(true);
     expect(lanPsbtSessionPayloadMatchesHash(payload, 'c'.repeat(64))).toBe(
       false,
@@ -50,11 +55,13 @@ describe('psbtIdentity', () => {
   });
 
   it('parsePsbtSessionPayload supports party keys with colons', () => {
+    const attempt = 'e'.repeat(64);
     const seed = 'a'.repeat(64);
     const hash = 'b'.repeat(64);
     const party = 'npub:extra:segment';
-    const payload = `${seed}:${hash}:${party}`;
+    const payload = `${attempt}:${seed}:${hash}:${party}`;
     expect(parsePsbtSessionPayload(payload)).toEqual({
+      attemptId: attempt,
       psbtHash: hash,
       peerShare: party,
     });

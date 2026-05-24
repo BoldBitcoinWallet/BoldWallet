@@ -612,6 +612,9 @@ func (m *MessengerImp) Send(from, to, body string) error {
 	url := m.Server + "/message/" + m.SessionID
 	Logln("BBMTLog", "sending message...")
 
+	ReportTransportProgress(m.SessionID, "lan", "out", 0, 1, true)
+	defer ReportTransportProgress(m.SessionID, "lan", "out", 0, 1, false)
+
 	// Prepare the HTTP request
 	resp, err := http.Post(url, "application/json", bytes.NewReader(requestBody))
 	if err != nil {

@@ -10,6 +10,10 @@ import {
   type MpcProgressResult,
   type MpcProgressUtxoState,
 } from './mpcProgress';
+import {
+  mapTransportHookToSubprogress,
+  type MpcTransportSubprogressState,
+} from './mpcTransportProgress';
 
 export type MpcHookHandlerRefs = {
   progressRef: {current: number};
@@ -26,6 +30,8 @@ export type MpcHookHandlerResult = {
   utxoState?: MpcProgressUtxoState;
   /** Recv/wait heartbeat active — pulse status indicator */
   transportLiveness?: boolean;
+  /** Outbound LAN/Nostr upload subprogress (orthogonal to main %) */
+  transportSubprogress?: MpcTransportSubprogressState | null;
 };
 
 /** Short session badge for progress modals (first 4 hex chars). */
@@ -304,6 +310,17 @@ export function processMpcHookMessage(
 
   if (!hookMatchesActiveSession(msg, opts.refs.activeSessionRef)) {
     return null;
+  }
+
+  if (msg.type === 'transport') {
+    const transportSubprogress = mapTransportHookToSubprogress(msg);
+    return {
+      percent: null,
+      statusLabel: null,
+      sessionShort: captureHookSessionForUi(msg, opts.refs.activeSessionRef),
+      mpcDone: false,
+      transportSubprogress,
+    };
   }
 
   const result: MpcProgressResult = mapMpcHookToPercent(msg, backend, {

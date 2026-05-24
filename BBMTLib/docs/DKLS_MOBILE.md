@@ -116,6 +116,24 @@ Scripts: `./scripts-dkls/main.go local-keygen` (duo), `local-keygen-3` (trio).
 5. **Spend / PSBT:** DKLs23 wallets use the same `TssProvider` paths; native `dkls*` methods call Go (`NostrMpcSendBTC`, `MpcSignPSBT`, etc.) with per-input DKLs keysign.
 6. **Devices tab:** Wallet Information shows **Wallet type** (`DKLs23 (libtss)` vs `GG18 (BNB)`).
 
+### Co-sign retries and `attempt_id`
+
+Repeating the **same** Send BTC or PSBT co-sign (same amount/receiver or same PSBT hash) used to risk Nostr pre-agreement picking a **stale peer nonce** from relay history, leaving each phone in a different keysign room. Retries are now isolated per round:
+
+| Transport | Who creates `attempt_id` | Pre-agreement room |
+|-----------|--------------------------|--------------------|
+| **LAN** | Start Co-sign (master) in QR/relay payload | New random seed + `attempt_id` per master retry |
+| **Nostr** | Lexicographically first signing npub (initiator) | `sessionFlag = H(txIntent, attempt_id)` |
+
+**Rules for users:**
+
+- Both devices must tap **Start / Join Co-sign** for the **same round** (do not retry on one phone alone).
+- **LAN join** ignores relay payloads whose `attempt_id` was already consumed on this device.
+- With a fresh `attempt_id` per round, you can **retry the same tx immediately** when both peers start together — no ~60s relay wait is required.
+- A **15s cooldown** applies only after **abort** (not after a successful co-sign).
+
+Per-input keysign subsessions remain `sessionID + inputIndex` (unchanged).
+
 ## Troubleshooting
 
 | Symptom | Fix |
