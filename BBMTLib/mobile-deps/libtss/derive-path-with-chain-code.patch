@@ -1,0 +1,225 @@
+diff --git a/libtss-ffi/libtss.h b/libtss-ffi/libtss.h
+index 1d614bc..4615cfa 100644
+--- a/libtss-ffi/libtss.h
++++ b/libtss-ffi/libtss.h
+@@ -81,6 +81,12 @@ TssStatus tss_derive_child(TssHandle key_share, uint32_t child_number, TssHandle
+ // NUL-terminated C string.
+ TssStatus tss_derive_path(TssHandle key_share, const char *path, TssHandle *out_handle);
+ 
++// Derive along a BIP-32 path using an explicit 32-byte chain code (wallet HD root).
++TssStatus tss_derive_path_with_chain_code(TssHandle key_share,
++                                          const char *path,
++                                          const uint8_t *chain_code,
++                                          TssHandle *out_handle);
++
+ // Return a pointer to the last error message (NUL-terminated).
+ //
+ // **Lifetime:** The returned pointer is only valid until the next libtss FFI
+diff --git a/libtss-ffi/src/derive.rs b/libtss-ffi/src/derive.rs
+index cd46e9a..f6e6365 100644
+--- a/libtss-ffi/src/derive.rs
++++ b/libtss-ffi/src/derive.rs
+@@ -58,3 +58,39 @@ pub extern "C" fn tss_derive_path(
+         Ok(())
+     })
+ }
++
++/// Derive along a BIP-32 path using an explicit 32-byte chain code (wallet HD root).
++#[no_mangle]
++pub extern "C" fn tss_derive_path_with_chain_code(
++    key_share: TssHandle,
++    path: *const libc::c_char,
++    chain_code: *const u8,
++    out_handle: *mut TssHandle,
++) -> TssStatus {
++    ffi_entry!({
++        let out = unsafe { out_handle.as_mut() }
++            .ok_or_else(|| libtss::TssError::InvalidConfig("out_handle is null".into()))?;
++        *out = 0;
++
++        if path.is_null() {
++            return Err(libtss::TssError::InvalidConfig("path is null".into()));
++        }
++        if chain_code.is_null() {
++            return Err(libtss::TssError::InvalidConfig("chain_code is null".into()));
++        }
++        let path_str = unsafe { std::ffi::CStr::from_ptr(path) }
++            .to_str()
++            .map_err(|_| libtss::TssError::InvalidConfig("path is not valid UTF-8".into()))?;
++        let mut chain_code_bytes = [0u8; 32];
++        unsafe {
++            std::ptr::copy_nonoverlapping(chain_code, chain_code_bytes.as_mut_ptr(), 32);
++        }
++
++        let handle = borrow_key_share(key_share)?;
++        let derived =
++            libtss::derive_path_with_chain_code(&handle, path_str, chain_code_bytes)?;
++        *out = derived.handle_id();
++        std::mem::forget(derived);
++        Ok(())
++    })
++}
+diff --git a/libtss-go/tss/derive.go b/libtss-go/tss/derive.go
+index d6131ee..212eaa7 100644
+--- a/libtss-go/tss/derive.go
++++ b/libtss-go/tss/derive.go
+@@ -63,3 +63,31 @@ func DerivePath(keyShare *KeyShareHandle, path string) (*KeyShareHandle, error)
+ 	}
+ 	return newKeyShareHandle(out), nil
+ }
++
++// DerivePathWithChainCode derives along path using an explicit BIP-32 chain code (wallet HD).
++func DerivePathWithChainCode(keyShare *KeyShareHandle, path string, chainCode []byte) (*KeyShareHandle, error) {
++	if err := checkNonNil("keyShare", keyShare); err != nil {
++		return nil, err
++	}
++	if len(chainCode) != 32 {
++		return nil, fmt.Errorf("chainCode must be 32 bytes, got %d", len(chainCode))
++	}
++	handle, err := keyShare.native.value()
++	if err != nil {
++		return nil, err
++	}
++	if strings.ContainsRune(path, 0) {
++		return nil, fmt.Errorf("path must not contain NUL bytes")
++	}
++	cPath := C.CString(path)
++	defer C.free(unsafe.Pointer(cPath))
++	var out C.TssHandle
++	cc := (*C.uint8_t)(C.CBytes(chainCode))
++	defer C.free(unsafe.Pointer(cc))
++	if err := callStatus(func() C.TssStatus {
++		return C.tss_derive_path_with_chain_code(handle, cPath, cc, &out)
++	}); err != nil {
++		return nil, err
++	}
++	return newKeyShareHandle(out), nil
++}
+diff --git a/libtss-go/tss/tss.go b/libtss-go/tss/tss.go
+index 249dea9..1b5a2c6 100644
+--- a/libtss-go/tss/tss.go
++++ b/libtss-go/tss/tss.go
+@@ -1,7 +1,8 @@
+ package tss
+ 
+ /*
+-#cgo linux LDFLAGS: -L${SRCDIR}/../../target/debug -L${SRCDIR}/../../target/release -l:liblibtss_ffi.a -ldl -lm -lpthread
++#cgo linux,!android LDFLAGS: -L${SRCDIR}/../../target/debug -L${SRCDIR}/../../target/release -l:liblibtss_ffi.a -ldl -lm -lpthread
++#cgo android LDFLAGS: -lm -llog -landroid
+ #cgo darwin LDFLAGS: -L${SRCDIR}/../../target/debug -L${SRCDIR}/../../target/release -llibtss_ffi -lm -framework Security -framework CoreFoundation
+ #include "tss_ffi.h"
+ */
+diff --git a/libtss/src/derive.rs b/libtss/src/derive.rs
+index 657c072..b56d05d 100644
+--- a/libtss/src/derive.rs
++++ b/libtss/src/derive.rs
+@@ -1,5 +1,6 @@
+ use std::collections::BTreeMap;
+ 
++use dkls23_secp256k1::{Party, PublicKeyPackage as DklsPublicKeyPackage};
+ use frost_secp256k1_tr as frost_tr;
+ use hmac::{Hmac, Mac};
+ use sha2::Sha512;
+@@ -50,6 +51,27 @@ pub fn derive_child(
+ ///
+ /// Hardened derivation segments (e.g. `"m/44'/0'"`) are rejected.
+ /// All indices must be < 2^31.
++/// Derive along `path` using an explicit BIP-32 chain code (e.g. wallet `chain_code_hex`).
++///
++/// This matches public-key derivation via `GetDerivedPubKey` in BoldWallet, which uses the
++/// keyshare chain code rather than the DKG-internal root chain code embedded in the party.
++pub fn derive_path_with_chain_code(
++    key_share: &KeyShareHandle,
++    path: &str,
++    chain_code: [u8; 32],
++) -> Result<KeyShareHandle, TssError> {
++    match key_share.ciphersuite() {
++        Ciphersuite::Secp256k1ECDSA => {
++            derive_dkls_path_with_chain_code(key_share, path, chain_code)
++        }
++        Ciphersuite::Secp256r1ECDSA => {
++            derive_dkls_r1_path_with_chain_code(key_share, path, chain_code)
++        }
++        Ciphersuite::Secp256k1Taproot => derive_path(key_share, path),
++        _ => Err(TssError::ProtocolMismatch),
++    }
++}
++
+ pub fn derive_path(key_share: &KeyShareHandle, path: &str) -> Result<KeyShareHandle, TssError> {
+     match key_share.ciphersuite() {
+         Ciphersuite::Secp256k1ECDSA => derive_dkls_path(key_share, path),
+@@ -86,11 +108,29 @@ fn derive_dkls_child(
+ 
+ fn derive_dkls_path(key_share: &KeyShareHandle, path: &str) -> Result<KeyShareHandle, TssError> {
+     let party = keyshare::clone_dkls_party(key_share)?;
++    derive_dkls_party_path(party, keyshare::clone_dkls_pubkey(key_share)?, path)
++}
++
++fn derive_dkls_path_with_chain_code(
++    key_share: &KeyShareHandle,
++    path: &str,
++    chain_code: [u8; 32],
++) -> Result<KeyShareHandle, TssError> {
++    let mut party = keyshare::clone_dkls_party(key_share)?;
++    party.derivation_data.chain_code = chain_code;
++    derive_dkls_party_path(party, keyshare::clone_dkls_pubkey(key_share)?, path)
++}
++
++fn derive_dkls_party_path(
++    party: Party,
++    pubkey: DklsPublicKeyPackage,
++    path: &str,
++) -> Result<KeyShareHandle, TssError> {
+     let derived_party = party.derive_from_path(path, dkls23_secp256k1::compute_eth_address)?;
+ 
+     let segments = dkls23_secp256k1::protocols::derivation::parse_path(path)?;
+     let mut current_party = party;
+-    let mut pubkey = keyshare::clone_dkls_pubkey(key_share)?;
++    let mut pubkey = pubkey;
+     for child_number in segments {
+         pubkey = pubkey.derive_child(&current_party.derivation_data.chain_code, child_number)?;
+         current_party =
+@@ -115,11 +155,29 @@ fn derive_dkls_r1_child(
+ 
+ fn derive_dkls_r1_path(key_share: &KeyShareHandle, path: &str) -> Result<KeyShareHandle, TssError> {
+     let party = keyshare::clone_dkls_r1_party(key_share)?;
++    derive_dkls_r1_party_path(party, keyshare::clone_dkls_r1_pubkey(key_share)?, path)
++}
++
++fn derive_dkls_r1_path_with_chain_code(
++    key_share: &KeyShareHandle,
++    path: &str,
++    chain_code: [u8; 32],
++) -> Result<KeyShareHandle, TssError> {
++    let mut party = keyshare::clone_dkls_r1_party(key_share)?;
++    party.derivation_data.chain_code = chain_code;
++    derive_dkls_r1_party_path(party, keyshare::clone_dkls_r1_pubkey(key_share)?, path)
++}
++
++fn derive_dkls_r1_party_path(
++    party: dkls23_secp256r1::Party,
++    pubkey: dkls23_secp256r1::PublicKeyPackage,
++    path: &str,
++) -> Result<KeyShareHandle, TssError> {
+     let derived_party = party.derive_from_path(path, dkls23_secp256r1::compute_neo3_address)?;
+ 
+     let segments = dkls23_secp256r1::protocols::derivation::parse_path(path)?;
+     let mut current_party = party;
+-    let mut pubkey = keyshare::clone_dkls_r1_pubkey(key_share)?;
++    let mut pubkey = pubkey;
+     for child_number in segments {
+         pubkey = pubkey.derive_child(&current_party.derivation_data.chain_code, child_number)?;
+         current_party =
+diff --git a/libtss/src/lib.rs b/libtss/src/lib.rs
+index 29cb8bc..279d00b 100644
+--- a/libtss/src/lib.rs
++++ b/libtss/src/lib.rs
+@@ -16,7 +16,7 @@ pub use address::{
+     bitcoin_address, bitcoin_address_hrp, cosmos_address, cosmos_address_hrp, ethereum_address,
+     neo3_address, sui_r1_address, tron_address,
+ };
+-pub use derive::{derive_child, derive_path};
++pub use derive::{derive_child, derive_path, derive_path_with_chain_code};
+ pub use error::TssError;
+ pub use handle::{
+     HandleRegistry, CAT_DKG_SESSION, CAT_DKLS_KEY, CAT_DKLS_R1_KEY, CAT_FROST_KEY,
