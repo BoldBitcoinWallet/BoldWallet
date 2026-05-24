@@ -14,6 +14,7 @@ import AppText from '../components/AppText';
 import Clipboard from '@react-native-clipboard/clipboard';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
+import {safeUnlink} from '../services/rnfsSafe';
 import {dbg} from '../utils';
 import {useTheme} from '../theme';
 import {capitalize} from 'lodash';
@@ -77,11 +78,7 @@ const ReceiveModal: React.FC<{
         });
       }).then(async (base64Data: any) => {
         const filePath = `${RNFS.TemporaryDirectoryPath}/bitcoin-${network}-address.jpg`;
-        const fileExists = await RNFS.exists(filePath);
-        if (fileExists) {
-          dbg('Deleting existing file...');
-          await RNFS.unlink(filePath);
-        }
+        await safeUnlink(filePath);
         dbg('Writing base64 to file...');
         await RNFS.writeFile(filePath, base64Data, 'base64');
         dbg('Sharing QR code...');
@@ -94,9 +91,7 @@ const ReceiveModal: React.FC<{
           failOnCancel: false,
         });
         dbg('Share completed successfully');
-        await RNFS.unlink(filePath).catch(err => {
-          dbg('Cleanup error:', err);
-        });
+        await safeUnlink(filePath);
       });
     } catch (error) {
       dbg('Error sharing QR code:', error);

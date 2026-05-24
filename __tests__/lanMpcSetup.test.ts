@@ -19,6 +19,7 @@ jest.mock('../services/repositories/AppConfigRepository', () => ({
     get: jest.fn(),
     set: jest.fn(),
     remove: jest.fn(),
+    getBool: jest.fn(),
   },
 }));
 
@@ -30,6 +31,7 @@ import {
   isLanPeerDiscoveryPayload,
   normalizeLanHost,
   resolveDuoLanRoles,
+  resolveEffectiveLanKeygenContext,
   resolveLanKeygenParties,
   resolveLanSigningParties,
   resolveDklsLanSigningPartiesFromKeyshare,
@@ -240,6 +242,51 @@ describe('resolveLanSigningParties', () => {
         peerParty: 'KeyShare1',
       }),
     ).toThrow(/two different key shares/i);
+  });
+});
+
+describe('resolveEffectiveLanKeygenContext', () => {
+  const appConfigRepository = require('../services/repositories/AppConfigRepository')
+    .default as {get: jest.Mock; getBool: jest.Mock};
+
+  beforeEach(() => {
+    appConfigRepository.get.mockReturnValue(null);
+    appConfigRepository.getBool.mockImplementation((key: string) => {
+      if (key === 'lan_is_master') {
+        return true;
+      }
+      if (key === 'lan_is_trio') {
+        return false;
+      }
+      return false;
+    });
+  });
+
+  it('uses live isMaster state instead of stale persisted master flag', () => {
+    appConfigRepository.get.mockImplementation((key: string) => {
+      if (key === 'lan_local_party') {
+        return 'KeyShare2';
+      }
+      if (key === 'lan_peer_party') {
+        return 'KeyShare1';
+      }
+      if (key === 'lan_master_host') {
+        return '192.168.1.10';
+      }
+      return null;
+    });
+    const ctx = resolveEffectiveLanKeygenContext({
+      setupMode: 'duo',
+      state: {
+        isMaster: false,
+        masterHost: '192.168.1.10',
+        localParty: 'KeyShare2',
+        peerParty: 'KeyShare1',
+        peerParty2: null,
+      },
+    });
+    expect(ctx.isMaster).toBe(false);
+    expect(ctx.localParty).toBe('KeyShare2');
   });
 });
 

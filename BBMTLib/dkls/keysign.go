@@ -128,11 +128,7 @@ func NostrJoinKeysignWithSighash(
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		defer func() {
-			if r := recover(); r != nil {
-				dklsLogPanic("NostrJoinKeysignWithSighash message pump", r)
-			}
-		}()
+		defer recoverGoroutine("NostrJoinKeysignWithSighash message pump")
 		_ = pump.Run(pumpCtx, func(payload []byte) error {
 			msgs, decErr := DecodeMessages(string(payload))
 			if decErr != nil {

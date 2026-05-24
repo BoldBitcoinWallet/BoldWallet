@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"runtime/debug"
 	"strconv"
 	"strings"
 
@@ -40,6 +39,39 @@ func GetThreshold(value int) (int, error) {
 	}
 	threshold := int(math.Ceil(float64(value)*2.0/3.0)) - 1
 	return threshold, nil
+}
+
+func isHex64(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		if (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// normalizeChainCodeHex returns a 64-char hex chain code for GG18 keygen.
+// Accepts raw 64-char hex or LAN handshake `{attemptId64}:{seed64}` (uses seed).
+func normalizeChainCodeHex(chaincode string) (string, error) {
+	chaincode = strings.TrimSpace(chaincode)
+	if chaincode == "" {
+		return "", fmt.Errorf("ChainCodeHex is empty")
+	}
+	if isHex64(chaincode) {
+		return strings.ToLower(chaincode), nil
+	}
+	if idx := strings.Index(chaincode, ":"); idx > 0 {
+		attemptID := chaincode[:idx]
+		seed := chaincode[idx+1:]
+		if isHex64(attemptID) && isHex64(seed) {
+			return strings.ToLower(seed), nil
+		}
+	}
+	return "", fmt.Errorf("invalid chain code hex")
 }
 
 // GetHexEncodedPubKey returns the hexadecimal encoded string representation of an ECDSA/EDDSA public key.
@@ -105,15 +137,7 @@ func HashToInt(hash []byte, c elliptic.Curve) *big.Int {
 // network: "mainnet" or "testnet3"
 // Returns: xpub (mainnet) or tpub (testnet) encoded string at account level m/44/0/0
 func EncodeXpub(hexPubKey, hexChainCode, network string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in EncodeXpub: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("EncodeXpub", &err, &result)
 
 	if len(hexPubKey) == 0 {
 		return "", errors.New("empty pub key")
@@ -250,15 +274,7 @@ func base58Encode(input []byte) string {
 }
 
 func GetDerivedPubKey(hexPubKey, hexChainCode, path string, isEdDSA bool) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in GetDerivedPubKey: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("GetDerivedPubKey", &err, &result)
 
 	if isEdDSA {
 		return "", errors.New("don't support to derive pubkey for EdDSA now")
@@ -405,15 +421,7 @@ func hexToBytes(s string) []byte {
 }
 
 func Sha256(msg string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in Sha256: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("Sha256", &err, &result)
 
 	hash := sha256.New()
 	hash.Write([]byte(msg))
@@ -423,15 +431,7 @@ func Sha256(msg string) (result string, err error) {
 
 // Sha256Bytes returns hex-encoded SHA-256 of raw bytes (not UTF-8 string).
 func Sha256Bytes(data []byte) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in Sha256Bytes: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("Sha256Bytes", &err, &result)
 
 	hashBytes := sha256.Sum256(data)
 	return hex.EncodeToString(hashBytes[:]), nil
@@ -453,15 +453,7 @@ func SecureRandom(length int) (string, error) {
 // addressType: "legacy", "segwit-native", or "segwit-compatible"
 // Returns: checksummed output descriptor (pkh / wpkh / sh(wpkh) with #suffix per BIP 380)
 func GetOutputDescriptor(hexPubKey, hexChainCode, network, addressType string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in GetOutputDescriptor: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("GetOutputDescriptor", &err, &result)
 
 	if len(hexPubKey) == 0 {
 		return "", errors.New("empty pub key")

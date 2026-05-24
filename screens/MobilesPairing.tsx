@@ -30,6 +30,7 @@ import {NativeModules} from 'react-native';
 import DeviceInfo from 'react-native-device-info';
 import NetInfo from '@react-native-community/netinfo';
 import RNFS from 'react-native-fs';
+import {safeUnlink} from '../services/rnfsSafe';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import * as Progress from 'react-native-progress';
 import {
@@ -98,6 +99,7 @@ import {
 import {
   getPrepareModalCopy,
   getWalletSetupKeygenModalCopy,
+  getWalletSetupPrepCardCopy,
 } from '../services/tssKeygenPrepare';
 import {
   resetMpcHookSession,
@@ -137,6 +139,8 @@ import {
   sendCollapsedRecapLine,
 } from '../components/transactionFlowUtils';
 import {
+  isNativeFetchErrorPayload,
+  isValidLanKeygenSessionPayload,
   lanPsbtSessionPayloadMatchesHash,
   lanSendBtcSessionPayloadMatches,
   parseLanPsbtSessionPayload,
@@ -298,6 +302,7 @@ const MobilesPairing = ({navigation}: any) => {
   );
   const [spendBackend, setSpendBackend] = useState<TssBackend | null>(null);
   const prepareCopy = getPrepareModalCopy(keygenBackend ?? undefined);
+  const prepCardCopy = getWalletSetupPrepCardCopy(keygenBackend ?? undefined);
   const keygenModalCopy = getWalletSetupKeygenModalCopy();
   const title =
     isSendBitcoin || isSignPSBT
@@ -365,7 +370,12 @@ const MobilesPairing = ({navigation}: any) => {
     originalNetwork?: string;
     originalApiUrl?: string;
     isMaster?: boolean;
-    inputs?: Array<{txid: string; vout: number; value: number; scriptpubkey_address: string}>;
+    inputs?: Array<{
+      txid: string;
+      vout: number;
+      value: number;
+      scriptpubkey_address: string;
+    }>;
     outputs?: Array<{scriptpubkey_address: string; value: number}>;
   } | null>(null);
 
@@ -436,6 +446,19 @@ const MobilesPairing = ({navigation}: any) => {
       if (setupMode === 'duo' || setupMode === 'trio') {
         try {
           dbg('=== MobilesPairing: Clearing all cache for wallet setup');
+          for (const key of [
+            CONFIG_KEYS.LAN_LOCAL_PARTY,
+            CONFIG_KEYS.LAN_PEER_PARTY,
+            CONFIG_KEYS.LAN_PEER_PARTY2,
+            CONFIG_KEYS.LAN_MASTER_HOST,
+            CONFIG_KEYS.LAN_IS_MASTER,
+            CONFIG_KEYS.LAN_IS_TRIO,
+            'lan_ecies_keypair',
+            'lan_peer_pubkey',
+            'lan_master_pubkey',
+          ]) {
+            appConfigRepository.remove(key);
+          }
           // Clear SQLite wallet data
           database.clearWalletData();
           dbg('SQLite wallet data cleared');
@@ -466,13 +489,9 @@ const MobilesPairing = ({navigation}: any) => {
       .join('');
   };
   const deletePreparams = async () => {
-    try {
-      dbg(`deleting ppmFile: ${ppmFile}`);
-      await RNFS.unlink(ppmFile);
-      dbg('ppmFile deleted');
-    } catch (err: any) {
-      dbg('error deleting ppmFile', err);
-    }
+    dbg(`deleting ppmFile: ${ppmFile}`);
+    await safeUnlink(ppmFile);
+    dbg('ppmFile delete attempted');
   };
   // Password validation functions (match WalletSettings rules)
   const formatFiat = (price?: string) =>
@@ -501,9 +520,7 @@ const MobilesPairing = ({navigation}: any) => {
           }
           const details = JSON.parse(detailsJson);
           setPsbtParseError(null);
-          setPsbtDetails(
-            mapParsedPsbtDetails(details),
-          );
+          setPsbtDetails(mapParsedPsbtDetails(details));
           dbg('PSBT details parsed:', {
             inputs: details.inputs?.length || 0,
             outputs: details.outputs?.length || 0,
@@ -555,6 +572,16 @@ const MobilesPairing = ({navigation}: any) => {
       ? 'Waiting for partner to start co-signing…'
       : 'Connecting to partner for co-signing…';
   };
+
+  /** Free discoveryPort from pairing listen/publish before keygen/sign handshake. */
+  async function ensureLanHandshakePortFree() {
+    try {
+      await BBMTLibNativeModule.stopRelay('pre-handshake-cleanup');
+    } catch {
+      // best-effort: native may already be idle
+    }
+    await waitMS(750);
+  }
 
   async function initSession() {
     const keygenFlow = !isSendBitcoin && !isSignPSBT;
@@ -615,20 +642,42 @@ const MobilesPairing = ({navigation}: any) => {
         dbg('initSession: Publishing data', {
           masterHost,
           dataLen: _data.length,
-          peerEncPrefix: peerEnc.length > 16 ? peerEnc.slice(0, 16) + '…' : peerEnc,
+          peerEncPrefix:
+            peerEnc.length > 16 ? peerEnc.slice(0, 16) + '…' : peerEnc,
           discoveryPort,
           timeout,
         });
         const enckeyCSV = isTrio
           ? [peerEnc, peerPubkey2].filter(Boolean).join(',')
           : peerEnc;
-        const published = await BBMTLibNativeModule.publishData(
-          String(discoveryPort),
-          String(timeout),
-          enckeyCSV,
-          _data,
-          isTrio ? 'trio' : 'duo',
-        );
+        const publishHandshake = () =>
+          BBMTLibNativeModule.publishData(
+            String(discoveryPort),
+            String(timeout),
+            enckeyCSV,
+            _data,
+            isTrio ? 'trio' : 'duo',
+          );
+        const publishStartedAt = Date.now();
+        await ensureLanHandshakePortFree();
+        let published = '';
+        const maxPublishAttempts = 3;
+        for (let attempt = 0; attempt < maxPublishAttempts; attempt++) {
+          if (attempt > 0) {
+            dbg('initSession: publishData retry', {attempt});
+            await ensureLanHandshakePortFree();
+          }
+          const attemptStart = Date.now();
+          published = await publishHandshake();
+          if (published) {
+            break;
+          }
+          const attemptMs = Date.now() - attemptStart;
+          // Full native wait means the partner never connected — do not spin retries.
+          if (attemptMs >= timeout * 1000 - 2000) {
+            break;
+          }
+        }
         if (published) {
           dbg('initSession: Data published successfully', {published});
           // Send-BTC (always duo): validate peer echoed the same amount checksum.
@@ -655,7 +704,17 @@ const MobilesPairing = ({navigation}: any) => {
           dbg('initSession: Session initialization completed successfully');
           return (_data || '').trim();
         } else {
-          dbg('initSession: Timeout waiting for peer device (publishData)');
+          const elapsedMs = Date.now() - publishStartedAt;
+          const likelyPortConflict = elapsedMs < timeout * 1000 - 2000;
+          dbg('initSession: publishData did not complete', {
+            elapsedMs,
+            likelyPortConflict,
+          });
+          if (likelyPortConflict) {
+            throw keygenFlow
+              ? 'Setup channel is busy on this phone (pairing may still be listening). Wait a moment, then tap Start/Join Setup again on both phones.'
+              : 'Co-signing channel is busy on this phone. Wait a moment, then retry on both devices.';
+          }
           throw keygenFlow
             ? 'Partner did not tap Join Setup in time. Both phones must tap Start/Join Setup within about 20 seconds.'
             : 'Waited too long for the other device to start co-signing.';
@@ -702,7 +761,9 @@ const MobilesPairing = ({navigation}: any) => {
           const localAmount = (route.params?.satoshiAmount || '').trim();
           const localFees = (route.params?.satoshiFees || '').trim();
           acceptSessionPayload = (data: string) => {
-            if (!lanSendBtcSessionPayloadMatches(data, localAmount, localFees)) {
+            if (
+              !lanSendBtcSessionPayloadMatches(data, localAmount, localFees)
+            ) {
               return false;
             }
             try {
@@ -713,12 +774,16 @@ const MobilesPairing = ({navigation}: any) => {
             }
           };
           setStatus('Waiting for partner to start co-signing…');
+        } else if (keygenFlow) {
+          acceptSessionPayload = (data: string) =>
+            isValidLanKeygenSessionPayload(data);
         }
         const rawFetched = await fetchData(
           peerURL,
           kp.privateKey,
           checksum,
           acceptSessionPayload,
+          keygenFlow ? 90 : timeout,
         );
         if (isSignPSBT || isSendBitcoin) {
           try {
@@ -803,6 +868,7 @@ const MobilesPairing = ({navigation}: any) => {
       if (!keygenSetupMode) {
         throw new Error('Invalid wallet setup mode');
       }
+      await ensureLanHandshakePortFree();
       const orch = await runLanWalletKeygen({
         setupMode: keygenSetupMode,
         backend,
@@ -846,74 +912,75 @@ const MobilesPairing = ({navigation}: any) => {
         keygenBackend: orch.backend,
         dataLen: orch.chaincode.length,
       });
-      invokeLanWalletKeygen(orch, ppmFile, keygenSetupMode)
-        .then(async (result: any) => {
-          dbg('keygen result', result.substring(0, 40).concat('...'));
-          setKeyshare(result);
-          // validate keyshare
-          try {
-            const ks = JSON.parse(result);
-            if (!ks.pub_key) {
-              throw 'Error: pub_key or chain_code_hex not found in keyshare';
-            }
-            dbg('Party loaded', ks.local_party_key);
-          } catch (error) {
-            dbg('Error parsing keyshare:', error);
-            throw 'Error: Invalid keyshare';
+      try {
+        const result = await invokeLanWalletKeygen(
+          orch,
+          ppmFile,
+          keygenSetupMode,
+        );
+        dbg('keygen result', result.substring(0, 40).concat('...'));
+        setKeyshare(result);
+        try {
+          const ks = JSON.parse(result);
+          if (!ks.pub_key) {
+            throw 'Error: pub_key or chain_code_hex not found in keyshare';
           }
-          const persisted = await persistWalletKeyshare(result);
-          keysharePersistedRef.current = true;
-          try {
-            const ksParsed = JSON.parse(persisted);
-            const display = getKeyshareDisplayLabel(ksParsed);
-            if (display) {
-              setShareName(display);
-            }
-            const useLegacyPath = resolveUseLegacyDerivationPaths({
-              created_at: ksParsed.created_at,
-              tss_backend: detectKeyshareTssBackend(ksParsed),
-              local_party_key: ksParsed.local_party_key ?? '',
-              keygen_committee_keys: ksParsed.keygen_committee_keys ?? [],
-              pub_key: ksParsed.pub_key ?? '',
-              chain_code_hex: ksParsed.chain_code_hex ?? '',
-              nostr_npub: ksParsed.nostr_npub ?? null,
-            });
-            appConfigRepository.set(
-              CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND,
-              useLegacyPath ? 'no' : 'yes',
-            );
-          } catch {
-            /* keep protocol party id in shareName */
+          dbg('Party loaded', ks.local_party_key);
+        } catch (error) {
+          dbg('Error parsing keyshare:', error);
+          throw 'Error: Invalid keyshare';
+        }
+        const persisted = await persistWalletKeyshare(result);
+        keysharePersistedRef.current = true;
+        try {
+          const ksParsed = JSON.parse(persisted);
+          const display = getKeyshareDisplayLabel(ksParsed);
+          if (display) {
+            setShareName(display);
           }
-          setKeyshare(result);
-          setMpcDone(true);
-          deletePreparams();
-        })
-        .catch((error: any) => {
-          dbg('keygen error', error);
-          setMpcDone(false);
-          resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
-          resetCircle();
-          setCircleTarget(0);
-          if (
-            !isMpcAbortedOrCanceledError(error) &&
-            shouldShowMpcFlowAlert(mpcFlowAlertGate())
-          ) {
-            showMpcFlowAlert(
-              'Wallet setup failed',
-              formatMpcError(error),
-              mpcFlowAlertGate(),
-            );
-          }
-        })
-        .finally(async () => {
-          if (isMaster) {
-            await waitMS(2000);
-            BBMTLibNativeModule.stopRelay(localDevice);
-            dbg('relay stop:', localDevice);
-          }
-          setMpcModalActive(false);
-        });
+          const useLegacyPath = resolveUseLegacyDerivationPaths({
+            created_at: ksParsed.created_at,
+            tss_backend: detectKeyshareTssBackend(ksParsed),
+            local_party_key: ksParsed.local_party_key ?? '',
+            keygen_committee_keys: ksParsed.keygen_committee_keys ?? [],
+            pub_key: ksParsed.pub_key ?? '',
+            chain_code_hex: ksParsed.chain_code_hex ?? '',
+            nostr_npub: ksParsed.nostr_npub ?? null,
+          });
+          appConfigRepository.set(
+            CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND,
+            useLegacyPath ? 'no' : 'yes',
+          );
+        } catch {
+          /* keep protocol party id in shareName */
+        }
+        setKeyshare(result);
+        setMpcDone(true);
+        deletePreparams();
+      } catch (error: unknown) {
+        dbg('keygen error', error);
+        setMpcDone(false);
+        resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
+        resetCircle();
+        setCircleTarget(0);
+        if (
+          !isMpcAbortedOrCanceledError(error) &&
+          shouldShowMpcFlowAlert(mpcFlowAlertGate())
+        ) {
+          showMpcFlowAlert(
+            'Wallet setup failed',
+            formatMpcError(error),
+            mpcFlowAlertGate(),
+          );
+        }
+      } finally {
+        if (isMaster) {
+          await waitMS(2000);
+          BBMTLibNativeModule.stopRelay(localDevice);
+          dbg('relay stop:', localDevice);
+        }
+        setMpcModalActive(false);
+      }
     } catch (error: unknown) {
       setMpcDone(false);
       resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
@@ -965,6 +1032,7 @@ const MobilesPairing = ({navigation}: any) => {
         await BBMTLibNativeModule.setAPI(net, apiUrl);
       }
       dbg('session init...');
+      await ensureLanHandshakePortFree();
       const data = await initSession();
       dbg('session init done');
       dbg('spending hash:', route.params.spendingHash);
@@ -1260,74 +1328,84 @@ const MobilesPairing = ({navigation}: any) => {
           }>;
           const pendingKeyMultiPath =
             utxoListParsed[0]?.address || senderAddress;
-          const rawTxHex =
-              await TssProvider.mpcSendBTCWithUTXOs(
-                server,
-                partyID,
-                partiesCSV,
-                sessionID,
-                sessionKey,
-                encKey,
-                decKey,
-                btcPub,
-                toAddress,
-                satoshiAmount,
-                satoshiFees,
-                utxosWithPathsJSON,
-                changeAddress,
-              );
-            dbg(partyID, 'signed tx (multi-path), len=', rawTxHex?.length);
-            if (
-              !rawTxHex ||
-              typeof rawTxHex !== 'string' ||
-              rawTxHex.length % 2 !== 0 ||
-              !/^[a-fA-F0-9]+$/.test(rawTxHex)
-            ) {
-              throw rawTxHex || 'Invalid signed transaction';
-            }
-            usedMultiPath = true;
-            const pendingKey = pendingKeyMultiPath;
-            const utxoList = JSON.parse(utxosWithPathsJSON) as Array<{txid: string; vout: number; value: number; address?: string}>;
-            const inputs = utxoList.map((u: any) => ({
-              txid: u.txid,
-              vout: u.vout,
-              value: u.value,
-              scriptpubkey_address: u.address ?? '',
-            }));
-            const totalInput = utxoList.reduce((s: number, u: any) => s + (u.value || 0), 0);
-            const changeAmount = totalInput - Number(satoshiAmount) - Number(satoshiFees);
-            const outputs: Array<{scriptpubkey_address: string; value: number}> = [
-              {scriptpubkey_address: toAddress, value: Number(satoshiAmount)},
-            ];
-            if (changeAmount > 0) {
-              outputs.push({scriptpubkey_address: changeAddress, value: changeAmount});
-            }
-            broadcastSuccessPayloadRef.current = {
-              multiPath: true,
-              pendingKey,
-              toAddress,
-              satoshiAmount,
-              satoshiFees,
-              net,
-              addressTypeToUse,
-              showPlay,
-              showUtxosTab,
-              showAddressesTab,
-              showPsbtTab,
-              showWalletTab,
-              senderAddress,
-              originalNetwork,
-              originalApiUrl,
-              isMaster,
-              inputs,
-              outputs,
-            };
-            if (mpcAbortRef.current) {
-              setMpcModalActive(false);
-              return;
-            }
-            setSignedTxRawHex(rawTxHex);
+          const rawTxHex = await TssProvider.mpcSendBTCWithUTXOs(
+            server,
+            partyID,
+            partiesCSV,
+            sessionID,
+            sessionKey,
+            encKey,
+            decKey,
+            btcPub,
+            toAddress,
+            satoshiAmount,
+            satoshiFees,
+            utxosWithPathsJSON,
+            changeAddress,
+          );
+          dbg(partyID, 'signed tx (multi-path), len=', rawTxHex?.length);
+          if (
+            !rawTxHex ||
+            typeof rawTxHex !== 'string' ||
+            rawTxHex.length % 2 !== 0 ||
+            !/^[a-fA-F0-9]+$/.test(rawTxHex)
+          ) {
+            throw rawTxHex || 'Invalid signed transaction';
+          }
+          usedMultiPath = true;
+          const pendingKey = pendingKeyMultiPath;
+          const utxoList = JSON.parse(utxosWithPathsJSON) as Array<{
+            txid: string;
+            vout: number;
+            value: number;
+            address?: string;
+          }>;
+          const inputs = utxoList.map((u: any) => ({
+            txid: u.txid,
+            vout: u.vout,
+            value: u.value,
+            scriptpubkey_address: u.address ?? '',
+          }));
+          const totalInput = utxoList.reduce(
+            (s: number, u: any) => s + (u.value || 0),
+            0,
+          );
+          const changeAmount =
+            totalInput - Number(satoshiAmount) - Number(satoshiFees);
+          const outputs: Array<{scriptpubkey_address: string; value: number}> =
+            [{scriptpubkey_address: toAddress, value: Number(satoshiAmount)}];
+          if (changeAmount > 0) {
+            outputs.push({
+              scriptpubkey_address: changeAddress,
+              value: changeAmount,
+            });
+          }
+          broadcastSuccessPayloadRef.current = {
+            multiPath: true,
+            pendingKey,
+            toAddress,
+            satoshiAmount,
+            satoshiFees,
+            net,
+            addressTypeToUse,
+            showPlay,
+            showUtxosTab,
+            showAddressesTab,
+            showPsbtTab,
+            showWalletTab,
+            senderAddress,
+            originalNetwork,
+            originalApiUrl,
+            isMaster,
+            inputs,
+            outputs,
+          };
+          if (mpcAbortRef.current) {
             setMpcModalActive(false);
+            return;
+          }
+          setSignedTxRawHex(rawTxHex);
+          setMpcModalActive(false);
         } catch (multiPathErr) {
           dbg('MobilesPairing: multi-path send failed:', multiPathErr);
           throw multiPathErr;
@@ -1453,7 +1531,7 @@ const MobilesPairing = ({navigation}: any) => {
       if (result.sessionShort) {
         setMpcSessionShort(result.sessionShort);
       }
-      if (result.transportSubprogress !== undefined) {
+      if (result.transportSubprogress) {
         setMpcTransportSubprogress(result.transportSubprogress);
       }
       if (result.mpcDone && !isSendBitcoin && !isSignPSBT) {
@@ -1481,7 +1559,14 @@ const MobilesPairing = ({navigation}: any) => {
     return () => {
       subscription?.remove();
     };
-  }, [isTrio, isSendBitcoin, isSignPSBT, keygenBackend, spendBackend, setCircleTarget]);
+  }, [
+    isTrio,
+    isSendBitcoin,
+    isSignPSBT,
+    keygenBackend,
+    spendBackend,
+    setCircleTarget,
+  ]);
   useEffect(() => {
     if (isPreparing) {
       const interval = setInterval(() => {
@@ -1616,10 +1701,7 @@ const MobilesPairing = ({navigation}: any) => {
       setCountdown(timeout);
       appConfigRepository.set('peerFound', '');
       const promises = [
-        listenForPeerPromise(
-          kp,
-          stringToHex(`${deviceName}@${localShare}`),
-        ),
+        listenForPeerPromise(kp, stringToHex(`${deviceName}@${localShare}`)),
       ];
       if (ip) {
         setLocalIP(ip);
@@ -1636,7 +1718,8 @@ const MobilesPairing = ({navigation}: any) => {
           ),
         );
       }
-      let result: string | null = (await raceLanPeerDiscovery(promises)) ?? null;
+      let result: string | null =
+        (await raceLanPeerDiscovery(promises)) ?? null;
       while (!isLanPeerDiscoveryPayload(result) && Date.now() < until) {
         dbg('checking peer...');
         const cached = appConfigRepository.get('peerFound');
@@ -1844,7 +1927,9 @@ const MobilesPairing = ({navigation}: any) => {
         const trioWallet =
           !isSpendFlow &&
           (isTrio ||
-            isTrioWalletKeyshare(await getKeyshareMetadata().catch(() => null)));
+            isTrioWalletKeyshare(
+              await getKeyshareMetadata().catch(() => null),
+            ));
         persistLanPairingRoles({
           localParty: resolvedLocalParty || localParty,
           peerParty: resolvedPeerParty || peerParty || '',
@@ -1909,8 +1994,9 @@ const MobilesPairing = ({navigation}: any) => {
     privateKey: string,
     checksum: string,
     acceptPayload?: (data: string) => boolean,
+    timeoutSec: number = timeout,
   ) {
-    const until = Date.now() + timeout * 1000;
+    const until = Date.now() + timeoutSec * 1000;
     while (Date.now() < until) {
       try {
         const rawFetched = await BBMTLibNativeModule.fetchData(
@@ -1919,6 +2005,11 @@ const MobilesPairing = ({navigation}: any) => {
           checksum,
         );
         if (rawFetched) {
+          if (isNativeFetchErrorPayload(rawFetched)) {
+            dbg('fetchData error payload, retrying…', rawFetched.slice(0, 80));
+            await waitMS(2000);
+            continue;
+          }
           if (acceptPayload && !acceptPayload(rawFetched)) {
             dbg('session payload not ready, retrying…');
             await waitMS(2000);
@@ -2330,6 +2421,17 @@ const MobilesPairing = ({navigation}: any) => {
       lineHeight: 20,
       marginBottom: 16,
       marginTop: 4,
+    },
+    prepCardSecurityLink: {
+      fontSize: theme.fontSizes?.sm || 13,
+      fontFamily: theme.fontFamilies?.medium,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.accent
+          : theme.colors.bitcoinOrange,
+      textDecorationLine: 'underline',
+      marginBottom: 16,
+      alignSelf: 'flex-start',
     },
     enhancedCheckboxContainer: {
       flexDirection: 'row',
@@ -3435,8 +3537,8 @@ const MobilesPairing = ({navigation}: any) => {
           shortenAddress,
         )
       : isSignPSBT && psbtDetails
-        ? psbtCollapsedSummaryLine(psbtDetails)
-        : '';
+      ? psbtCollapsedSummaryLine(psbtDetails)
+      : '';
   const spendStickyLabel = isSignPSBT
     ? `${isMaster ? 'Start' : 'Join'} PSBT Signing`
     : `${isMaster ? 'Start' : 'Join'} Co-Signing`;
@@ -3934,111 +4036,21 @@ const MobilesPairing = ({navigation}: any) => {
                   )) ||
                     (!isPreParamsReady && (
                       <View style={styles.informationCard}>
-                        <View
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            borderRadius: 12,
-                            padding: 16,
-                            marginBottom: 18,
-                            backgroundColor: theme.colors.background,
-                          }}>
-                          <View style={{flex: 1}}>
-                            <View
-                              style={{
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                marginBottom: 8,
-                              }}>
-                              <Image
-                                source={require('../assets/security-icon.png')}
-                                style={{
-                                  width: 24,
-                                  height: 24,
-                                  marginRight: 8,
-                                  tintColor:
-                                    theme.colors.background === '#ffffff'
-                                      ? theme.colors.primary
-                                      : theme.colors.bitcoinOrange,
-                                }}
-                                resizeMode="contain"
-                              />
-                              <Text
-                                style={{
-                                  fontSize: theme.fontSizes?.xl || 18,
-                                  fontFamily: theme.fontFamilies.bold,
-                                  color: theme.colors.text,
-                                  marginRight: 8,
-                                }}>
-                                Superior Security
-                              </Text>
-                              <View
-                                style={{
-                                  backgroundColor:
-                                    theme.colors.background === '#ffffff'
-                                      ? theme.colors.primary + '20'
-                                      : theme.colors.bitcoinOrange + '20',
-                                  paddingHorizontal: 8,
-                                  paddingVertical: 2,
-                                  borderRadius: 8,
-                                }}>
-                                <Text
-                                  style={{
-                                    fontSize: theme.fontSizes?.xs || 9,
-                                    fontFamily: theme.fontFamilies.bold,
-                                    color:
-                                      theme.colors.background === '#ffffff'
-                                        ? theme.colors.primary
-                                        : theme.colors.bitcoinOrange,
-                                    letterSpacing: 1,
-                                  }}>
-                                  ENTERPRISE-GRADE
-                                </Text>
-                              </View>
-                            </View>
-                            <Text
-                              style={{
-                                fontSize: theme.fontSizes?.base || 13,
-                                fontFamily: theme.fontFamilies.regular,
-                                color: theme.colors.textSecondary,
-                                lineHeight: 18,
-                              }}>
-                              <Text
-                                style={{
-                                  fontSize: theme.fontSizes?.base || 13,
-                                  fontFamily: theme.fontFamilies.bold,
-                                  color:
-                                    theme.colors.background === '#ffffff'
-                                      ? theme.colors.primary
-                                      : theme.colors.bitcoinOrange,
-                                  fontStyle: 'italic',
-                                }}>
-                                Institutional-grade security in the palm of your
-                                hands.
-                              </Text>{' '}
-                              MPC•TSS cryptography ensures your keys are
-                              distributed across devices—no single device can
-                              compromise your wallet.{' '}
-                              <Text
-                                style={{
-                                  fontSize: theme.fontSizes?.base || 13,
-                                  fontFamily: theme.fontFamilies.medium,
-                                  color:
-                                    theme.colors.background === '#ffffff'
-                                      ? theme.colors.accent
-                                      : theme.colors.bitcoinOrange,
-                                  textDecorationLine: 'underline',
-                                }}
-                                onPress={() => {
-                                  Linking.openURL(
-                                    'https://www.binance.com/en/square/post/17681517589057',
-                                  );
-                                }}>
-                                Learn more
-                              </Text>
-                            </Text>
-                          </View>
-                        </View>
+                        <Text style={styles.requirementsTitle}>
+                          {prepCardCopy.title}
+                        </Text>
+                        <Text style={styles.requirementsDescription}>
+                          {prepCardCopy.description}
+                        </Text>
+                        <AppPressable
+                          onPress={() => {
+                            Linking.openURL(prepCardCopy.securityLinkUrl);
+                          }}
+                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                          <Text style={styles.prepCardSecurityLink}>
+                            {prepCardCopy.securityLinkLabel}
+                          </Text>
+                        </AppPressable>
                         <AppPressable
                           style={[
                             styles.checkboxContainer,
@@ -4511,9 +4523,7 @@ const MobilesPairing = ({navigation}: any) => {
                       variant="send"
                       collapsedSummary="full"
                       expanded={txDetailsExpanded}
-                      onToggleExpand={() =>
-                        setTxDetailsExpanded(prev => !prev)
-                      }
+                      onToggleExpand={() => setTxDetailsExpanded(prev => !prev)}
                       sendParams={{
                         satoshiAmount: route.params.satoshiAmount ?? 0,
                         satoshiFees: route.params.satoshiFees ?? 0,
@@ -4534,9 +4544,7 @@ const MobilesPairing = ({navigation}: any) => {
                       variant="psbt"
                       collapsedSummary="full"
                       expanded={txDetailsExpanded}
-                      onToggleExpand={() =>
-                        setTxDetailsExpanded(prev => !prev)
-                      }
+                      onToggleExpand={() => setTxDetailsExpanded(prev => !prev)}
                       psbtDetails={psbtDetails}
                       psbtBase64={route.params.psbtBase64}
                       parseError={psbtParseError}
@@ -4566,17 +4574,13 @@ const MobilesPairing = ({navigation}: any) => {
           transparent={true}
           visible={doingMPC}
           animationType="fade"
-          onRequestClose={
-            () => {} /* non-dismissible: block Android back */
-          }>
+          onRequestClose={() => {} /* non-dismissible: block Android back */}>
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <MpcProgressModalHeader
                 icon={require('../assets/key-icon.png')}
                 title={
-                  isSignPSBT
-                    ? 'PSBT Co-Signing'
-                    : 'Co-Signing Your Transaction'
+                  isSignPSBT ? 'PSBT Co-Signing' : 'Co-Signing Your Transaction'
                 }
               />
               <View style={styles.progressContainer}>
@@ -4603,19 +4607,14 @@ const MobilesPairing = ({navigation}: any) => {
                 <MpcModalStatusRow
                   status={status}
                   sessionShort={mpcSessionShort}
-                  pulseIndicator={
-                    mpcTransportPulse || !!staleTransportHint
-                  }
+                  pulseIndicator={mpcTransportPulse || !!staleTransportHint}
                 />
                 <MpcTransportSubprogress
                   subprogress={mpcTransportSubprogress}
                 />
                 {staleTransportHint ? (
                   <Text
-                    style={[
-                      styles.finalizingCountdownText,
-                      {marginBottom: 4},
-                    ]}>
+                    style={[styles.finalizingCountdownText, {marginBottom: 4}]}>
                     {staleTransportHint}
                   </Text>
                 ) : null}
@@ -4658,7 +4657,12 @@ const MobilesPairing = ({navigation}: any) => {
           try {
             const apiTxShape = {
               txid: txId,
-              status: {confirmed: false, block_height: null, block_time: null, block_hash: null},
+              status: {
+                confirmed: false,
+                block_height: null,
+                block_time: null,
+                block_hash: null,
+              },
               fee: Number(p.satoshiFees),
               vin: (p.inputs ?? []).map(inp => ({
                 prevout: {
@@ -4700,7 +4704,10 @@ const MobilesPairing = ({navigation}: any) => {
                     p.addressTypeToUse,
                   );
                 } catch (e) {
-                  dbg('MobilesPairing: incrementChangeIndexAfterSend failed:', e);
+                  dbg(
+                    'MobilesPairing: incrementChangeIndexAfterSend failed:',
+                    e,
+                  );
                 }
               }
               try {
@@ -4709,7 +4716,10 @@ const MobilesPairing = ({navigation}: any) => {
                   p.addressTypeToUse,
                 );
               } catch (e) {
-                dbg('MobilesPairing: refreshSpendStateAfterBroadcast failed:', e);
+                dbg(
+                  'MobilesPairing: refreshSpendStateAfterBroadcast failed:',
+                  e,
+                );
               }
               if (p.originalNetwork && p.originalApiUrl) {
                 try {

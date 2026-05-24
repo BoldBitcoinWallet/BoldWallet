@@ -3,12 +3,15 @@
  */
 
 import {
+  isNativeFetchErrorPayload,
+  isValidLanKeygenSessionPayload,
   isValidLanPsbtSessionPayload,
   isValidLanSendBtcSessionPayload,
   lanPsbtSessionPayloadMatchesAttempt,
   lanPsbtSessionPayloadMatchesHash,
   lanSendBtcSessionPayloadMatches,
   lanSendBtcSessionPayloadMatchesAttempt,
+  parseLanKeygenSessionPayload,
   parseLanPsbtSessionPayload,
   parseLanSendBtcSessionPayload,
 } from '../services/lanSession';
@@ -16,6 +19,39 @@ import {
 describe('lanSession', () => {
   const attempt = 'e'.repeat(64);
   const seed = 'a'.repeat(64);
+
+  describe('keygen handshake', () => {
+    it('isNativeFetchErrorPayload detects native transport errors', () => {
+      expect(
+        isNativeFetchErrorPayload(
+          'error:error getting data: connection refused',
+        ),
+      ).toBe(true);
+      expect(isNativeFetchErrorPayload('attempt:seed')).toBe(false);
+      expect(isNativeFetchErrorPayload('')).toBe(false);
+    });
+
+    it('isValidLanKeygenSessionPayload accepts attemptId:seed only', () => {
+      expect(isValidLanKeygenSessionPayload(`${attempt}:${seed}`)).toBe(true);
+      expect(
+        isValidLanKeygenSessionPayload(
+          'error:error getting data: connection refused',
+        ),
+      ).toBe(false);
+      expect(isValidLanKeygenSessionPayload(`${attempt}:short`)).toBe(false);
+      expect(isValidLanKeygenSessionPayload('not-a-payload')).toBe(false);
+    });
+
+    it('parseLanKeygenSessionPayload extracts attempt id and seed', () => {
+      expect(parseLanKeygenSessionPayload(`${attempt}:${seed}`)).toEqual({
+        attemptId: attempt,
+        seed,
+      });
+      expect(() => parseLanKeygenSessionPayload('not-a-payload')).toThrow(
+        'Invalid LAN keygen session payload',
+      );
+    });
+  });
 
   describe('PSBT', () => {
     it('rejects discovery-style payloads', () => {

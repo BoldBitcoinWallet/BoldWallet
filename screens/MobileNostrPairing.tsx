@@ -114,6 +114,7 @@ import database from '../services/Database';
 import transactionRepository from '../services/repositories/TransactionRepository';
 import {WalletService} from '../services/WalletService';
 import RNFS from 'react-native-fs';
+import {safeUnlink} from '../services/rnfsSafe';
 const {BBMTLibNativeModule} = NativeModules;
 
 /** Normalize keygen_committee_keys from native/bridge (array, JSON string, or numeric-key object). */
@@ -878,7 +879,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       if (result.sessionShort) {
         setMpcSessionShort(result.sessionShort);
       }
-      if (result.transportSubprogress !== undefined) {
+      if (result.transportSubprogress) {
         setMpcTransportSubprogress(result.transportSubprogress);
       }
       if (result.mpcDone && !isSendBitcoin && !isSignPSBT) {
@@ -2433,10 +2434,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         });
       });
       const filePath = `${RNFS.TemporaryDirectoryPath}/boldwallet-connection-details.jpg`;
-      const fileExists = await RNFS.exists(filePath);
-      if (fileExists) {
-        await RNFS.unlink(filePath);
-      }
+      await safeUnlink(filePath);
       await RNFS.writeFile(filePath, base64Data, 'base64');
       await Share.open({
         title: 'Bold Wallet Connection Details',
@@ -2446,8 +2444,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         isNewTask: true,
         failOnCancel: false,
       });
-      // Best-effort cleanup
-      await RNFS.unlink(filePath).catch(() => {});
+      await safeUnlink(filePath);
       setIsQRModalVisible(false);
     } catch (error: any) {
       dbg('Error sharing connection details (QR + text):', error);

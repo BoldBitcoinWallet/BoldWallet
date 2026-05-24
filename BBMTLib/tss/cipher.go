@@ -4,21 +4,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"runtime/debug"
 
 	eciesgo "github.com/ecies/go/v2"
 )
 
 func GenerateKeyPair() (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in GenerateKeyPair: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("GenerateKeyPair", &err, &result)
 
 	privKey, err := eciesgo.GenerateKey()
 	if err != nil {
@@ -40,15 +31,7 @@ func GenerateKeyPair() (result string, err error) {
 }
 
 func EciesPubkeyFromPrivateKey(privateKeyHex string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in EciesPubkeyFromPrivateKey: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("EciesPubkeyFromPrivateKey", &err, &result)
 
 	privateKey, err := eciesgo.NewPrivateKeyFromHex(privateKeyHex)
 	if err != nil {
@@ -58,15 +41,7 @@ func EciesPubkeyFromPrivateKey(privateKeyHex string) (result string, err error) 
 }
 
 func EciesEncrypt(data, publicKeyHex string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in EciesEncrypt: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("EciesEncrypt", &err, &result)
 
 	publicKey, err := eciesgo.NewPublicKeyFromHex(publicKeyHex)
 	if err != nil {
@@ -81,15 +56,7 @@ func EciesEncrypt(data, publicKeyHex string) (result string, err error) {
 }
 
 func EciesDecrypt(encryptedData, privateKeyHex string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in EciesDecrypt: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("EciesDecrypt", &err, &result)
 
 	privateKey, err := eciesgo.NewPrivateKeyFromHex(privateKeyHex)
 	if err != nil {

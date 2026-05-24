@@ -4,6 +4,45 @@ import {isValidMpcAttemptId} from './mpcAttemptId';
 const LAN_SESSION_HEX64 = /^[0-9a-f]{64}$/i;
 const LAN_SEND_BTC_SATOSHIS = /^\d+$/;
 
+/** Native fetchData resolves transport failures as `error:...` strings. */
+export function isNativeFetchErrorPayload(
+  raw: string | null | undefined,
+): boolean {
+  return (
+    typeof raw === 'string' && raw.trim().toLowerCase().startsWith('error:')
+  );
+}
+
+/** True when payload looks like `{attemptId64}:{seed64}` (duo/trio keygen handshake). */
+export function isValidLanKeygenSessionPayload(data: string): boolean {
+  const trimmed = data.trim();
+  if (!trimmed || isNativeFetchErrorPayload(trimmed)) {
+    return false;
+  }
+  const parts = trimmed.split(':');
+  if (parts.length < 2) {
+    return false;
+  }
+  return (
+    isValidMpcAttemptId(parts[0]) && LAN_SESSION_HEX64.test(parts[1])
+  );
+}
+
+/** Parse LAN keygen handshake: `{attemptId64}:{seed64}`. Seed is the 32-byte chain code hex. */
+export function parseLanKeygenSessionPayload(data: string): {
+  attemptId: string;
+  seed: string;
+} {
+  if (!isValidLanKeygenSessionPayload(data)) {
+    throw new Error('Invalid LAN keygen session payload');
+  }
+  const parts = data.trim().split(':');
+  return {
+    attemptId: parts[0],
+    seed: parts[1],
+  };
+}
+
 /** True when payload looks like `{attemptId64}:{seed64}:{psbtHash64}:{partyKey}`. */
 export function isValidLanPsbtSessionPayload(data: string): boolean {
   const trimmed = data.trim();

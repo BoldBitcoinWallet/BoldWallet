@@ -39,14 +39,7 @@ func (m *Messenger) Cfg() Config {
 
 // SendMessage encrypts, chunks, and publishes a TSS message body string using NIP-44 rumor/wrap/seal.
 func (m *Messenger) SendMessage(ctx context.Context, from, to, body string) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in Messenger.SendMessage: %v", r)
-			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
-			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-		}
-	}()
+	defer recoverAsError("Messenger.SendMessage", &err, nil)
 
 	fmt.Fprintf(os.Stderr, "BBMTLog: Messenger sending message from %s to %s (%d bytes)\n", from, to, len(body))
 

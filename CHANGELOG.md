@@ -3,19 +3,28 @@
 ## [Unreleased]
 
 ### Added
+- **LAN keygen session parser** — `parseLanKeygenSessionPayload()` in `services/lanSession.ts` extracts the 64-char chain-code seed from `{attemptId64}:{seed64}` handshake payloads.
+- **LAN prep card copy** — `WALLET_SETUP_PREP_CARD` / `getWalletSetupPrepCardCopy()` in `services/walletSetupUi.ts` (task-first prep text shared for future LAN/Nostr parity).
+- **Shared MPC panic recover helpers** — `BBMTLib/tss/panic.go` (`LogPanic`, `RecoverAsError`, `RecoverGoroutine`, `normalizeChainCodeHex`); mirror in `BBMTLib/dkls/log.go` and `tss/nostrtransport/panic.go`; DKLS `panic_test.go`, `tss/common_test.go`.
 - **MPC `attempt_id` per co-sign round** — master/initiator generates a fresh 64-hex id each retry so identical Send BTC / PSBT intent gets isolated pre-agreement rooms on LAN and Nostr (`services/mpcAttemptId.ts`, `services/lanSession.ts`, `BBMTLib/tss/nostr_attempt.go`); Nostr initiator = lexicographically first signing npub; join side rejects already-seen LAN attempt ids.
 - **Transport upload subprogress** — thin bar under MPC modal status during outbound LAN HTTP posts and Nostr chunk publishes (`ReportTransportProgress`, `components/MpcTransportSubprogress.tsx`, `services/mpcTransportProgress.ts`); Nostr shows determinate `chunk/total`, LAN indeterminate; does not affect main MPC % ring.
 - **MPC flow alert guards** — `services/mpcFlowAlerts.ts` suppresses stale error popups after abort, unfocus, or inactive flow (`shouldShowMpcFlowAlert`, `isMpcAbortedOrCanceledError`).
 - **Nostr subscribe-only attempt handshake** — `RunSubscribeOnly` on message pump for attempt-id exchange without relay history query (`BBMTLib/tss/nostrtransport/pump.go`).
-- **Tests** — `__tests__/mpcAttemptId.test.ts`, `__tests__/mpcFlowAlerts.test.ts`, `__tests__/mpcTransportProgress.test.ts`; Go tests for session/attempt scoping, PSBT cancel context, transport hooks, DKLS cancel-all, and attach lifecycle.
+- **Tests** — `__tests__/mpcAttemptId.test.ts`, `__tests__/mpcFlowAlerts.test.ts`, `__tests__/mpcTransportProgress.test.ts`, `__tests__/lanSession.test.ts` (keygen payload + error detection), `__tests__/walletSetupUi.test.ts`; Go `BBMTLib/tss/peers_publish_test.go`, `tss/common_test.go` (`normalizeChainCodeHex`), `dkls/panic_test.go`; DKLS cancel-all, transport hooks, and attach lifecycle.
 
 ### Changed
+- **LAN wallet-setup prep UI** — replaced “Superior Security / ENTERPRISE-GRADE” marketing block with a short task-first card (“Prepare this device” + optional “About multi-device security” link) on `MobilesPairing.tsx`.
+- **GG18/tss panic handling** — inline defer/recover blocks refactored to shared helpers (same `internal error (panic): %v` format preserved).
 - **LAN co-sign payload format** — `{attemptId64}:{seed64}:{amount}:{fees}:{party}` (send) and `{attemptId64}:{seed64}:{psbtHash}:{party}` (PSBT); join validators require matching attempt id and tx intent.
 - **Nostr session scoping** — `sessionFlag = H(txIntent, attempt_id)`, `sessionID = H(txIntent, attempt_id, fullNonce)` for send and PSBT pre-agreement/keysign.
 - **Nostr keysign lifecycle** — per-input keysign uses `AttachNostrOperationRoot()` instead of nested `begin/end` so mobile abort keeps one active cancel handle for multi-input flows.
 - **MPC progress hooks** — `type: transport` events parsed separately from keygen/keysign percent mapping (`services/mpcProgressUi.ts`).
 
 ### Fixed / hardening
+- **GG18 LAN keygen chaincode** — `runLanWalletKeygen` passes only the 64-char **seed** from the LAN handshake to native keygen (full `{attemptId}:{seed}` still binds `sessionID`); Go `normalizeChainCodeHex` fallback in `JoinKeygen` / Nostr keygen fixes `encoding/hex: invalid byte: ':'` when legacy callers pass the full payload. Also corrects DKLS `chain_code_hex` in exported keyshares.
+- **LAN duo join-first wallet setup** — publish handshake validates non-empty encrypted `data` + expected peer pubkey (probes no longer complete publish); joiner retries `fetchData` on native `error:` payloads and validates keygen session shape; extended LAN keygen join wait; `releaseLanHandshakePort` on setup entry and relay stop.
+- **DKLS panic recover parity with GG18** — `recoverAsError` on all DKLS mobile entry points (`JoinKeygen`, `JoinKeysign`, `HelloDkg`, etc.) plus LAN/Nostr pump goroutines; panics surface as `internal error (panic): …` instead of killing the process.
+- **DKLS Go tests under `-short`** — LAN/Nostr integration matrix skipped in short mode (`skipIntegrationIfShort`); `go test ./dkls/... -short` ~13s vs full integration suite.
 - **Same-tx co-sign retry (LAN + Nostr)** — immediate retry with both peers starting together no longer mis-sessions from stale pre-agreement nonces or consumed LAN payloads; documented in `BBMTLib/docs/DKLS_MOBILE.md`.
 - **Late timeout/error popups after Abort** — pairing screens guard wallet setup, send, and PSBT alerts/navigation on abort + screen focus; PSBT LAN path no longer navigates to Wallet on error/abort.
 - **Nostr cancel propagation** — PSBT pre-agreement uses active Nostr root context (not detached `Background`); canceled operations report `nostr mpc aborted during …` instead of timeout wording (`NostrMpcContextErr`).

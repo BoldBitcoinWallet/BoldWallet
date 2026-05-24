@@ -4,18 +4,18 @@ import "time"
 
 // Config defines the runtime parameters required to run a Nostr-backed MPC session.
 type Config struct {
-	Relays         []string
-	SessionID      string
-	SessionKeyHex  string
-	LocalNpub      string
-	LocalNsec      string
-	PeersNpub      []string
-	ChunkSize              int
-	ChunkTTL               time.Duration
-	MaxTimeout             time.Duration
-	ConnectTimeout         time.Duration
-	FastPublishRelayCount  int // bulk MPC chunks: publish to first N non-blocked relays only
-	ChunkPublishWindow     int // max concurrent chunk publishes per message
+	Relays                []string
+	SessionID             string
+	SessionKeyHex         string
+	LocalNpub             string
+	LocalNsec             string
+	PeersNpub             []string
+	ChunkSize             int
+	ChunkTTL              time.Duration
+	MaxTimeout            time.Duration
+	ConnectTimeout        time.Duration
+	FastPublishRelayCount int // bulk MPC chunks: publish to first N non-blocked relays only
+	ChunkPublishWindow    int // max concurrent chunk publishes per message
 }
 
 func (c *Config) ApplyDefaults() {

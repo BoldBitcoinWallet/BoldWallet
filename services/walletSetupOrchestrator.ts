@@ -22,6 +22,7 @@ import {
 } from './lanMpcTransport';
 import {assertTrioLanKeygenReady} from './trioLanKeygenPreflight';
 import {LAN_KEYGEN_STATUS} from './walletSetupUi';
+import {parseLanKeygenSessionPayload} from './lanSession';
 import {TssProvider} from './TssProvider';
 import type {SetupMode, TssBackend} from './tssBackend';
 import {resolveTssBackendForKeygen} from './tssBackend';
@@ -170,6 +171,14 @@ export async function runLanWalletKeygen(
   await ensureDklsRuntimeIfNeeded(backend);
 
   const data = (await input.initSession()).trim();
+  let chaincode: string;
+  try {
+    chaincode = parseLanKeygenSessionPayload(data).seed;
+  } catch {
+    throw new Error(
+      'Invalid LAN keygen handshake — complete device pairing and retry setup on both phones.',
+    );
+  }
   if (ctx.isMaster) {
     await BBMTLibNativeModule.stopRelay('stop');
     await BBMTLibNativeModule.runRelay(String(input.discoveryPort));
@@ -186,7 +195,10 @@ export async function runLanWalletKeygen(
     });
   }
 
-  await waitMS(input.postRelayWaitMs ?? 2000);
+  // Master starts the relay; joiner still probes — give join-first flows headroom.
+  const postRelayMs =
+    input.postRelayWaitMs ?? (ctx.isMaster && !isTrio ? 5000 : 2000);
+  await waitMS(postRelayMs);
 
   const {partyID, partiesCSV} = resolveLanKeygenParties({
     isTrio,
@@ -214,7 +226,7 @@ export async function runLanWalletKeygen(
     partiesCSV,
     sessionID,
     transport,
-    chaincode: data,
+    chaincode,
     statusLines: LAN_KEYGEN_STATUS,
   };
 }

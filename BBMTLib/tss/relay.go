@@ -318,15 +318,7 @@ func listen(port string) *http.Server {
 var server *http.Server = nil
 
 func RunRelay(port string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in RunRelay: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("RunRelay", &err, &result)
 
 	// Stop existing server if any (unlock before calling to avoid deadlock)
 	serverMutex.Lock()
@@ -354,15 +346,7 @@ func RunRelay(port string) (result string, err error) {
 }
 
 func StopRelay() (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in StopRelay: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("StopRelay", &err, &result)
 
 	serverMutex.Lock()
 	defer serverMutex.Unlock()

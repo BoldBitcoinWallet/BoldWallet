@@ -19,6 +19,7 @@ import AppPressable from '../components/AppPressable';
 import DocumentPicker from 'react-native-document-picker';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import RNFS from 'react-native-fs';
+import {safeUnlink} from '../services/rnfsSafe';
 import {useTheme} from '../theme';
 import {
   dbg,
@@ -165,16 +166,10 @@ const ShowcaseScreen = ({navigation}: any) => {
   const handleContentUri = async (uri: any) => {
     try {
       const localFilePath = `${RNFS.DocumentDirectoryPath}/tempFile.txt`;
-      // Check if the file already exists and delete it if it does
-      if (await RNFS.exists(localFilePath)) {
-        await RNFS.unlink(localFilePath);
-      }
-      // Copy the file to a local path
+      await safeUnlink(localFilePath);
       await RNFS.copyFile(uri, localFilePath);
-      // Read the file content as base64
       const content = await RNFS.readFile(localFilePath, 'base64');
-      // Clean up the temporary file
-      await RNFS.unlink(localFilePath);
+      await safeUnlink(localFilePath);
       return content;
     } catch (_error) {
       dbg('Error handling content URI:', _error);

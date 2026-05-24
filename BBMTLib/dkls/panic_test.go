@@ -37,6 +37,21 @@ func TestRecoverAsErrorNilResult(t *testing.T) {
 	}
 }
 
+func TestRecoverAsErrorClear(t *testing.T) {
+	var err error
+	var cleared bool
+	func() {
+		defer recoverAsErrorClear("TestRecoverAsErrorClear", &err, func() { cleared = true })
+		panic("clear test")
+	}()
+	if err == nil || !strings.Contains(err.Error(), "internal error (panic)") {
+		t.Fatalf("expected panic error, got: %v", err)
+	}
+	if !cleared {
+		t.Fatal("expected clear callback to run")
+	}
+}
+
 func TestHelloDkgSmoke(t *testing.T) {
 	result, err := HelloDkg()
 	if err != nil {

@@ -19,6 +19,7 @@ import "testing"
 //
 // Or: ./scripts-dkls/dkls-mpc-matrix-test.sh
 func TestMpcMatrix(t *testing.T) {
+	skipIntegrationIfShort(t, "DKLS MPC matrix integration")
 	t.Run("LanKeygenDuo", testMpcLanKeygenDuo)
 	t.Run("LanKeygenTrio", testMpcLanKeygenTrio)
 	t.Run("NostrKeygenDuo", testMpcNostrKeygenDuo)

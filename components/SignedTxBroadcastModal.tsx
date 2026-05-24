@@ -13,6 +13,7 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import AppPressable from './AppPressable';
 import {BBMTLibNativeModule} from '../native_modules';
 import {useTheme} from '../theme';
+import {safeUnlink} from '../services/rnfsSafe';
 import {dbg} from '../utils';
 
 type BroadcastPhase = 'idle' | 'broadcasting' | 'success';
@@ -83,7 +84,7 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
         filename,
         failOnCancel: false,
       });
-      await RNFS.unlink(filePath).catch(() => {});
+      await safeUnlink(filePath);
     } catch (e: any) {
       dbg('SignedTxBroadcastModal share error', e);
       Alert.alert('Error', e?.message || 'Failed to share transaction');

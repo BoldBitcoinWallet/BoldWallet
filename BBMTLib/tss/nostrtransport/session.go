@@ -35,14 +35,7 @@ func NewSessionCoordinator(cfg Config, client *Client) (result *SessionCoordinat
 }
 
 func (s *SessionCoordinator) AwaitPeers(ctx context.Context) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in SessionCoordinator.AwaitPeers: %v", r)
-			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
-			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-		}
-	}()
+	defer recoverAsError("SessionCoordinator.AwaitPeers", &err, nil)
 
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.ConnectTimeout)
 	defer cancel()
@@ -415,14 +408,7 @@ func (s *SessionCoordinator) allPeersSeen(seen *sync.Map, expected map[string]st
 }
 
 func (s *SessionCoordinator) PublishReady(ctx context.Context) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in SessionCoordinator.PublishReady: %v", r)
-			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
-			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-		}
-	}()
+	defer recoverAsError("SessionCoordinator.PublishReady", &err, nil)
 
 	// Convert sender npub to hex for rumor
 	senderNpubHex, err := npubToHex(s.cfg.LocalNpub)
@@ -490,14 +476,7 @@ func (s *SessionCoordinator) PublishReady(ctx context.Context) (err error) {
 }
 
 func (s *SessionCoordinator) PublishComplete(ctx context.Context, phase string) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in SessionCoordinator.PublishComplete: %v", r)
-			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
-			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-		}
-	}()
+	defer recoverAsError("SessionCoordinator.PublishComplete", &err, nil)
 
 	// Convert sender npub to hex for rumor
 	senderNpubHex, err := npubToHex(s.cfg.LocalNpub)

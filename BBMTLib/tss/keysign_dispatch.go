@@ -3,9 +3,9 @@ package tss
 import "encoding/json"
 
 type keyshareBackendProbe struct {
-	TssBackend       string          `json:"tss_backend"`
-	ShareB64         string          `json:"share_b64"`
-	EcdsaLocalData   json.RawMessage `json:"ecdsa_local_data"`
+	TssBackend     string          `json:"tss_backend"`
+	ShareB64       string          `json:"share_b64"`
+	EcdsaLocalData json.RawMessage `json:"ecdsa_local_data"`
 }
 
 // IsDKLsKeyshareJSON reports whether the keyshare should use DKLs23 signing.

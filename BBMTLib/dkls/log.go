@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"runtime/debug"
-	"strings"
 
 	"github.com/BoldBitcoinWallet/BBMTLib/tss"
 )
@@ -27,15 +26,6 @@ func dklsLogf(format string, args ...any) {
 	tss.Logf("BBMTLog: dkls "+format, args...)
 }
 
-// dklsLogln logs verbose lines like dklsLogf but without a format string.
-func dklsLogln(v ...any) {
-	if !dklsDebugLogs() {
-		return
-	}
-	msg := strings.TrimSpace(fmt.Sprintln(v...))
-	tss.Logln("BBMTLog: dkls", msg)
-}
-
 // dklsLogErrorf logs failures (timeouts, decrypt, recv errors). Never gated by DKLS_DEBUG.
 func dklsLogErrorf(format string, args ...any) {
 	tss.Logf("BBMTLog: dkls "+format, args...)
@@ -52,9 +42,27 @@ func dklsLogPanic(where string, r any) {
 func recoverAsError(where string, err *error, result *string) {
 	if r := recover(); r != nil {
 		dklsLogPanic(where, r)
-		*err = fmt.Errorf("internal error (panic): %v", r)
+		*err = tss.PanicError(r)
 		if result != nil {
 			*result = ""
 		}
+	}
+}
+
+// recoverAsErrorClear sets err on panic and runs clear for non-string result types.
+func recoverAsErrorClear(where string, err *error, clear func()) {
+	if r := recover(); r != nil {
+		dklsLogPanic(where, r)
+		*err = tss.PanicError(r)
+		if clear != nil {
+			clear()
+		}
+	}
+}
+
+// recoverGoroutine logs a panic in a dkls goroutine without converting to error.
+func recoverGoroutine(where string) {
+	if r := recover(); r != nil {
+		dklsLogPanic(where, r)
 	}
 }

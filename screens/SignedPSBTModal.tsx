@@ -13,6 +13,7 @@ import QRCode from 'react-native-qrcode-svg';
 import Clipboard from '@react-native-clipboard/clipboard';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
+import {safeUnlink} from '../services/rnfsSafe';
 // @ts-ignore - bc-ur types (Buffer polyfill is in polyfills.js)
 import {UREncoder} from '@ngraveio/bc-ur';
 // @ts-ignore - bc-ur-registry types
@@ -126,11 +127,7 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
       const filename = `signed-psbt.${month}${day}.${year}.${hours}${minutes}.psbt`;
       const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
       const filePath = `${tempDir}/${filename}`;
-      // Check if file exists and delete
-      const fileExists = await RNFS.exists(filePath);
-      if (fileExists) {
-        await RNFS.unlink(filePath);
-      }
+      await safeUnlink(filePath);
       // Write base64 PSBT to file (as binary)
       await RNFS.writeFile(filePath, signedPsbtBase64, 'base64');
       // Share the file
@@ -143,10 +140,7 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
         isNewTask: true,
         failOnCancel: false,
       });
-      // Cleanup
-      try {
-        await RNFS.unlink(filePath);
-      } catch {}
+      await safeUnlink(filePath);
     } catch (error: any) {
       dbg('Error sharing PSBT file:', error);
       if (error?.message !== 'User did not share') {
@@ -172,10 +166,7 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
         });
       });
       const filePath = `${RNFS.TemporaryDirectoryPath}/signed-psbt-qr.jpg`;
-      const fileExists = await RNFS.exists(filePath);
-      if (fileExists) {
-        await RNFS.unlink(filePath);
-      }
+      await safeUnlink(filePath);
       await RNFS.writeFile(filePath, base64Data, 'base64');
       await Share.open({
         title: 'Share Signed PSBT QR Code',
@@ -185,10 +176,7 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
         isNewTask: true,
         failOnCancel: false,
       });
-      // Cleanup
-      try {
-        await RNFS.unlink(filePath);
-      } catch {}
+      await safeUnlink(filePath);
     } catch (error: any) {
       dbg('Error sharing QR code:', error);
       if (error?.message !== 'User did not share') {

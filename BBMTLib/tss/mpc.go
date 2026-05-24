@@ -14,7 +14,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -174,15 +173,7 @@ func setStatus(session string, status Status) {
 }
 
 func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chaincode, sessionKey string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in JoinKeygen: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("JoinKeygen", &err, &result)
 
 	parties := strings.Split(partiesCSV, ",")
 
@@ -253,10 +244,15 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	Logln("BBMTLog", "downloadMessage active...")
 	go downloadMessage(server, session, sessionKey, key, *tssServerImp, endCh, wg)
 	Logln("BBMTLog", "doing ECDSA keygen...")
+	chainCodeHex, err := normalizeChainCodeHex(chaincode)
+	if err != nil {
+		close(endCh)
+		return "", fmt.Errorf("fail to normalize chain code: %w", err)
+	}
 	_, err = tssServerImp.KeygenECDSA(&KeygenRequest{
 		LocalPartyID: key,
 		AllParties:   strings.Join(parties, ","),
-		ChainCodeHex: chaincode,
+		ChainCodeHex: chainCodeHex,
 	})
 	if err != nil {
 		close(endCh)
@@ -298,15 +294,7 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 }
 
 func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath, message string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in JoinKeysign: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("JoinKeysign", &err, &result)
 	parties := strings.Split(partiesCSV, ",")
 
 	// Ensure the session has a cancel channel (prefix-cancellable) and clean it up at end.
@@ -462,15 +450,7 @@ func md5Hash(data string) (string, error) {
 }
 
 func AesEncrypt(data, key string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in AesEncrypt: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("AesEncrypt", &err, &result)
 
 	decodedKey, err := hex.DecodeString(key)
 	if err != nil {
@@ -494,15 +474,7 @@ func AesEncrypt(data, key string) (result string, err error) {
 }
 
 func AesDecrypt(encryptedData, key string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in AesDecrypt: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("AesDecrypt", &err, &result)
 
 	// Decode the key from hex
 	decodedKey, err := hex.DecodeString(key)

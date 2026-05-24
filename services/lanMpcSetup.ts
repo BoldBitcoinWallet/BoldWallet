@@ -500,7 +500,8 @@ export function resolveEffectiveLanKeygenContext(input: {
 } {
   const persisted = loadPersistedLanRoles();
   const isTrio = input.setupMode === 'trio' || persisted.isTrio;
-  const isMaster = input.state.isMaster || persisted.isMaster;
+  // Trust live pairing state; stale persisted isMaster caused both phones to register KeyShare1.
+  const isMaster = input.state.isMaster;
   const masterHost =
     normalizeLanHost(input.state.masterHost) || persisted.masterHost;
   const localParty =

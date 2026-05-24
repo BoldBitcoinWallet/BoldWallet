@@ -81,7 +81,11 @@ func RunDKGParty(selfID libtss.Identifier, sessionID []byte, router *MessageRout
 }
 
 // RunDKGPartyWithThreshold runs DKG for one party with an explicit threshold.
-func RunDKGPartyWithThreshold(selfID libtss.Identifier, sessionID []byte, threshold libtss.ThresholdConfig, router *MessageRouter) (*libtss.KeyShareHandle, libtss.PublicKeyPackage, error) {
+func RunDKGPartyWithThreshold(selfID libtss.Identifier, sessionID []byte, threshold libtss.ThresholdConfig, router *MessageRouter) (share *libtss.KeyShareHandle, pub libtss.PublicKeyPackage, err error) {
+	defer recoverAsErrorClear("RunDKGPartyWithThreshold", &err, func() {
+		share = nil
+		pub = libtss.PublicKeyPackage{}
+	})
 	if err := libtss.Init(); err != nil {
 		return nil, libtss.PublicKeyPackage{}, fmt.Errorf("tss init: %w", err)
 	}
@@ -117,7 +121,11 @@ func RunDKGInProcess(sessionID []byte) ([]*libtss.KeyShareHandle, libtss.PublicK
 }
 
 // RunDKGInProcessWithThreshold runs n-party DKG in-process (duo or trio).
-func RunDKGInProcessWithThreshold(sessionID []byte, threshold libtss.ThresholdConfig) ([]*libtss.KeyShareHandle, libtss.PublicKeyPackage, error) {
+func RunDKGInProcessWithThreshold(sessionID []byte, threshold libtss.ThresholdConfig) (shares []*libtss.KeyShareHandle, pubkeys libtss.PublicKeyPackage, err error) {
+	defer recoverAsErrorClear("RunDKGInProcessWithThreshold", &err, func() {
+		shares = nil
+		pubkeys = libtss.PublicKeyPackage{}
+	})
 	if err := libtss.Init(); err != nil {
 		return nil, libtss.PublicKeyPackage{}, fmt.Errorf("tss init: %w", err)
 	}
@@ -135,8 +143,7 @@ func RunDKGInProcessWithThreshold(sessionID []byte, threshold libtss.ThresholdCo
 		defer session.Free()
 	}
 
-	shares := make([]*libtss.KeyShareHandle, n)
-	var pubkeys libtss.PublicKeyPackage
+	shares = make([]*libtss.KeyShareHandle, n)
 	for {
 		nextRound := make([][]libtss.Message, n)
 		completed := 0
@@ -161,7 +168,8 @@ func RunDKGInProcessWithThreshold(sessionID []byte, threshold libtss.ThresholdCo
 }
 
 // RunSignParty runs signing for one party using the shared router.
-func RunSignParty(share *libtss.KeyShareHandle, message []byte, signID []byte, router *MessageRouter) (libtss.Signature, error) {
+func RunSignParty(share *libtss.KeyShareHandle, message []byte, signID []byte, router *MessageRouter) (sig libtss.Signature, err error) {
+	defer recoverAsErrorClear("RunSignParty", &err, func() { sig = libtss.Signature{} })
 	selfID, err := share.Identifier()
 	if err != nil {
 		return libtss.Signature{}, err
@@ -210,7 +218,8 @@ func counterpartiesFor(selfID libtss.Identifier, signingParties []libtss.Identif
 }
 
 // RunSignInProcess signs with all participants in-process (for scripts/tests).
-func RunSignInProcess(shares []*libtss.KeyShareHandle, message []byte) (libtss.Signature, error) {
+func RunSignInProcess(shares []*libtss.KeyShareHandle, message []byte) (sig libtss.Signature, err error) {
+	defer recoverAsErrorClear("RunSignInProcess", &err, func() { sig = libtss.Signature{} })
 	if err := libtss.Init(); err != nil {
 		return libtss.Signature{}, fmt.Errorf("tss init: %w", err)
 	}

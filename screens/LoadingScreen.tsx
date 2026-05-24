@@ -35,7 +35,7 @@ import {LoadingQuotesMarquee} from './loading/LoadingQuotesMarquee';
 /** iOS reports a large bottom safe area; with strip padding it sits too high vs Android — trim only for the manchette. */
 const IOS_QUOTES_STRIP_BOTTOM_INSET_TRIM = 32;
 
-const LoadingScreen = ({onRetry, autoUnlock = false}: any) => {
+const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
   const {theme} = useTheme();
   const insets = useSafeAreaInsets();
   const quotesStripBottomInset = useMemo(() => {
@@ -195,14 +195,6 @@ const LoadingScreen = ({onRetry, autoUnlock = false}: any) => {
       setLoading(false);
     }
   }, [onRetry]);
-  const autoUnlockAttemptedRef = useRef(false);
-  useEffect(() => {
-    if (!autoUnlock || autoUnlockAttemptedRef.current) {
-      return;
-    }
-    autoUnlockAttemptedRef.current = true;
-    handlePress().catch(() => {});
-  }, [autoUnlock, handlePress]);
   const handlePressIn = () => {
     Animated.spring(buttonScale, {
       toValue: 0.97,

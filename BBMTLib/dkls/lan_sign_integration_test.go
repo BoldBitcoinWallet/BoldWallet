@@ -243,10 +243,12 @@ func testMpcLanKeysignTrioSubset(t *testing.T) {
 
 // Duo LAN keysign (Send BTC / PSBT sighash path) after HTTP relay keygen.
 func TestLanKeysignDuo(t *testing.T) {
+	skipIntegrationIfShort(t, "LAN keysign integration")
 	testMpcLanKeysignDuo(t)
 }
 
 // Trio 2-of-3 subset LAN keysign (KeyShare1 + KeyShare3), same as trio spend.
 func TestLanKeysignTrioSubset(t *testing.T) {
+	skipIntegrationIfShort(t, "LAN keysign integration")
 	testMpcLanKeysignTrioSubset(t)
 }

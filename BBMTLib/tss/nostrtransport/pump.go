@@ -21,13 +21,13 @@ import (
 const maxSeenWrapEventIDs = 10000
 
 type MessagePump struct {
-	cfg            Config
-	client         *Client
-	assembler      *ChunkAssembler
-	processed      map[string]bool
-	processedMu    sync.Mutex
-	seenWrapIDs    map[string]struct{}
-	seenWrapIDsMu  sync.Mutex
+	cfg           Config
+	client        *Client
+	assembler     *ChunkAssembler
+	processed     map[string]bool
+	processedMu   sync.Mutex
+	seenWrapIDs   map[string]struct{}
+	seenWrapIDsMu sync.Mutex
 }
 
 func NewMessagePump(cfg Config, client *Client) (result *MessagePump) {
@@ -61,14 +61,7 @@ func (p *MessagePump) RunSubscribeOnly(ctx context.Context, handler func([]byte)
 }
 
 func (p *MessagePump) runInternal(ctx context.Context, handler func([]byte) error, queryHistorical bool) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in MessagePump.Run: %v", r)
-			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
-			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-		}
-	}()
+	defer recoverAsError("MessagePump.Run", &err, nil)
 
 	// Convert local npub to hex for comparison (event.PubKey is hex)
 	localNpubHex := p.cfg.LocalNpub
@@ -129,7 +122,7 @@ func (p *MessagePump) runInternal(ctx context.Context, handler func([]byte) erro
 				errMsg := fmt.Sprintf("PANIC in MessagePump.processEvent: %v", r)
 				fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
 				fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
-				err = fmt.Errorf("internal error (panic): %v", r)
+				err = panicError(r)
 			}
 		}()
 

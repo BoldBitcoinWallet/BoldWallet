@@ -24,6 +24,7 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import Toast from 'react-native-toast-message';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
+import {safeUnlink} from '../services/rnfsSafe';
 import QRCodeModal from '../components/QRCodeModal';
 import SignedPSBTModal from './SignedPSBTModal';
 import {WalletService} from '../services/WalletService';
@@ -171,10 +172,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       try {
         const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
         const filePath = `${tempDir}/${filename}`;
-        const fileExists = await RNFS.exists(filePath);
-        if (fileExists) {
-          await RNFS.unlink(filePath);
-        }
+        await safeUnlink(filePath);
         await RNFS.writeFile(filePath, text, 'utf8');
         await Share.open({
           title,
@@ -185,9 +183,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
           isNewTask: true,
           failOnCancel: false,
         });
-        try {
-          await RNFS.unlink(filePath);
-        } catch {}
+        await safeUnlink(filePath);
       } catch (error: any) {
         if (error?.message !== 'User did not share') {
           Alert.alert('Error', 'Failed to share file');

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -94,15 +93,7 @@ func GetNetwork() (string, error) {
 // FetchUTXOs fetches UTXOs for a given address
 // The mempool.space API returns both confirmed and unconfirmed UTXOs by default
 func FetchUTXOs(address string) (result []UTXO, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in FetchUTXOs: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic) fetching UTXOs: %v", r)
-			result = nil
-		}
-	}()
+	defer RecoverAsErrorf("FetchUTXOs", &err, "internal error (panic) fetching UTXOs: %v", func() { result = nil })
 
 	url := fmt.Sprintf("%s/address/%s/utxo", _api_url, address)
 	Logf("Fetching UTXOs from endpoint: %s", url)
@@ -176,15 +167,7 @@ func FetchUTXOs(address string) (result []UTXO, err error) {
 }
 
 func TotalUTXO(address string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in TotalUTXO: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("TotalUTXO", &err, &result)
 
 	utxos, err := FetchUTXOs(address)
 	if err != nil {
@@ -199,16 +182,10 @@ func TotalUTXO(address string) (result string, err error) {
 }
 
 func FetchUTXODetails(txID string, vout uint32) (result *wire.TxOut, isWitnessResult bool, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in FetchUTXODetails: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic) fetching UTXO details: %v", r)
-			result = nil
-			isWitnessResult = false
-		}
-	}()
+	defer RecoverAsErrorf("FetchUTXODetails", &err, "internal error (panic) fetching UTXO details: %v", func() {
+		result = nil
+		isWitnessResult = false
+	})
 
 	url := fmt.Sprintf("%s/tx/%s", _api_url, txID)
 	Logf("Fetching UTXO details from endpoint: %s", url)
@@ -355,16 +332,10 @@ func postTxOnce(rawTxHex string) (string, error) {
 
 // SelectUTXOs selects the optimal set of UTXOs based on the strategy
 func SelectUTXOs(utxos []UTXO, totalAmount int64, strategy string) (result []UTXO, totalSelectedResult int64, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in SelectUTXOs: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic) selecting UTXOs: %v", r)
-			result = nil
-			totalSelectedResult = 0
-		}
-	}()
+	defer RecoverAsErrorf("SelectUTXOs", &err, "internal error (panic) selecting UTXOs: %v", func() {
+		result = nil
+		totalSelectedResult = 0
+	})
 
 	// Sort UTXOs based on the strategy
 	switch strategy {
@@ -421,16 +392,10 @@ func (u *utxoWithPathJSON) toUTXOWithPath() UTXOWithPath {
 
 // SelectUTXOsWithPaths selects UTXOs from a pool with per-UTXO derivation paths.
 func SelectUTXOsWithPaths(utxos []UTXOWithPath, totalAmount int64, strategy string) (result []UTXOWithPath, totalSelectedResult int64, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in SelectUTXOsWithPaths: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic) selecting UTXOs: %v", r)
-			result = nil
-			totalSelectedResult = 0
-		}
-	}()
+	defer RecoverAsErrorf("SelectUTXOsWithPaths", &err, "internal error (panic) selecting UTXOs: %v", func() {
+		result = nil
+		totalSelectedResult = 0
+	})
 
 	// Sort by (TxID, Vout) first for determinism, then by strategy
 	sort.Slice(utxos, func(i, j int) bool {
@@ -506,15 +471,7 @@ func mpcHook(hookType, info, session, utxo_session string, utxo_current, utxo_to
 }
 
 func SpendingHash(senderAddress, receiverAddress string, amountSatoshi int64) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in SpendingHash: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("SpendingHash", &err, &result)
 
 	Logln("BBMTLog", "invoking SpendingHash...")
 
@@ -574,15 +531,7 @@ func SpendingHash(senderAddress, receiverAddress string, amountSatoshi int64) (r
 // deterministic SHA-256 hex over "txid:vout" pairs - identical across
 // co-signing devices as long as they supply the same UTXO set.
 func SpendingHashWithUTXOs(utxosWithPathsJSON, receiverAddress, amountSatoshiStr string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in SpendingHashWithUTXOs: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("SpendingHashWithUTXOs", &err, &result)
 
 	Logln("BBMTLog", "invoking SpendingHashWithUTXOs...")
 
@@ -630,15 +579,7 @@ func SpendingHashWithUTXOs(utxosWithPathsJSON, receiverAddress, amountSatoshiStr
 }
 
 func EstimateFees(senderAddress, receiverAddress string, amountSatoshi int64) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in EstimateFees: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("EstimateFees", &err, &result)
 
 	Logln("BBMTLog", "invoking EstimateFees...")
 
@@ -696,15 +637,7 @@ func EstimateFees(senderAddress, receiverAddress string, amountSatoshi int64) (r
 // utxosWithPathsJSON: JSON array of {txid, vout, value, derivation_path or derivationPath}
 // changeAddress: used for change output size estimation (e.g. next HD change address)
 func EstimateFeeWithUTXOs(utxosWithPathsJSON, receiverAddress, amountSatoshiStr, changeAddress string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in EstimateFeeWithUTXOs: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("EstimateFeeWithUTXOs", &err, &result)
 
 	Logln("BBMTLog", "invoking EstimateFeeWithUTXOs...")
 	Logf("GoLog: EstimateFeeWithUTXOs input receiverAddress=%s amountSatoshi=%s changeAddress=%s", receiverAddress, amountSatoshiStr, changeAddress)
@@ -785,15 +718,7 @@ func MpcSendBTC(
 	server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath,
 	/* btc */
 	publicKey, senderAddress, receiverAddress string, amountSatoshi, estimatedFee int64) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in MpcSendBTC: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("MpcSendBTC", &err, &result)
 
 	Logln("BBMTLog", "invoking MpcSendBTC...")
 
@@ -1254,15 +1179,7 @@ func MpcSendBTCWithUTXOs(
 	server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare string,
 	publicKey, receiverAddress, amountSatoshiStr, estimatedFeeStr, utxosWithPathsJSON, changeAddress string,
 ) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in MpcSendBTCWithUTXOs: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("MpcSendBTCWithUTXOs", &err, &result)
 
 	amountSatoshi, parseErr := strconv.ParseInt(amountSatoshiStr, 10, 64)
 	if parseErr != nil {
@@ -1632,15 +1549,7 @@ func calculateFees(senderAddress string, utxos []UTXO, satoshiAmount int64, rece
 }
 
 func SecP256k1Recover(r, s, v, h string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in SecP256k1Recover: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("SecP256k1Recover", &err, &result)
 
 	// Decode r, s into bytes
 	rBytes := hexToBytes(r)
@@ -1670,15 +1579,7 @@ func SecP256k1Recover(r, s, v, h string) (result string, err error) {
 }
 
 func PubToP2KH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in PubToP2KH: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("PubToP2KH", &err, &result)
 
 	// Decode the hex string to bytes
 	pubKeyBytes, err := hex.DecodeString(pubKeyCompressed)
@@ -1709,15 +1610,7 @@ func PubToP2KH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err e
 }
 
 func PubToP2WPKH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in PubToP2WPKH: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("PubToP2WPKH", &err, &result)
 
 	// Decode hex-encoded compressed public key
 	pubKeyBytes, err := hex.DecodeString(pubKeyCompressed)
@@ -1750,15 +1643,7 @@ func PubToP2WPKH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err
 }
 
 func PubToP2SHP2WKH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in PubToP2SHP2WKH: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("PubToP2SHP2WKH", &err, &result)
 
 	// Decode hex-encoded compressed public key
 	pubKeyBytes, err := hex.DecodeString(pubKeyCompressed)
@@ -1801,15 +1686,7 @@ func PubToP2SHP2WKH(pubKeyCompressed, mainnetORtestnet3 string) (result string, 
 }
 
 func PubToP2TR(pubKeyCompressedHex, mainnetORtestnet3 string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in PubToP2TR: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("PubToP2TR", &err, &result)
 
 	// Decode the compressed public key
 	pubKeyBytes, err := hex.DecodeString(pubKeyCompressedHex)

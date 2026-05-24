@@ -46,5 +46,12 @@ export function isMpcAbortedOrCanceledError(err: unknown): boolean {
       : typeof err === 'string'
         ? err
         : '';
+  if (
+    /timeout waiting for all parties|timeout joining the session|await joiners/i.test(
+      msg,
+    )
+  ) {
+    return false;
+  }
   return /aborted|canceled|cancelled|context canceled/i.test(msg);
 }

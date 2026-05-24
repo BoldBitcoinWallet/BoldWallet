@@ -33,15 +33,7 @@ import (
 // Returns: base64-encoded signed PSBT
 func MpcSignPSBT(
 	server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, psbtBase64 string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in MpcSignPSBT: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("MpcSignPSBT", &err, &result)
 
 	Logln("BBMTLog", "invoking MpcSignPSBT...")
 
@@ -684,15 +676,7 @@ func PsbtIdentityHash(psbtBase64 string) (string, error) {
 // ParsePSBTDetails extracts transaction details from a PSBT for display
 // Returns JSON with inputs, outputs, fee, and total amounts
 func ParsePSBTDetails(psbtBase64 string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in ParsePSBTDetails: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("ParsePSBTDetails", &err, &result)
 
 	params := &chaincfg.TestNet3Params
 	if _btc_net == "mainnet" {
@@ -835,15 +819,7 @@ func ParsePSBTDetails(psbtBase64 string) (result string, err error) {
 func NostrMpcSignPSBT(
 	relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted,
 	keyshareJSON, psbtBase64 string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in NostrMpcSignPSBT: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("NostrMpcSignPSBT", &err, &result)
 
 	return runNostrMpcSignPSBTInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, keyshareJSON, psbtBase64)
 }
@@ -852,15 +828,7 @@ func NostrMpcSignPSBT(
 func runNostrMpcSignPSBTInternal(
 	relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted,
 	keyshareJSON, psbtBase64 string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in runNostrMpcSignPSBTInternal: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("runNostrMpcSignPSBTInternal", &err, &result)
 
 	Logln("BBMTLog", "invoking NostrMpcSignPSBT...")
 
@@ -1260,7 +1228,7 @@ func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 			errMsg := fmt.Sprintf("PANIC in runNostrPreAgreementPSBT: %v", r)
 			Logf("BBMTLog: %s", errMsg)
 			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
+			err = PanicError(r)
 			result = nil
 		}
 	}()
@@ -1358,7 +1326,7 @@ func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 				Logf("BBMTLog: %s", errMsg)
 				Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
 				select {
-				case peerErrorCh <- fmt.Errorf("internal error (panic): %v", r):
+				case peerErrorCh <- PanicError(r):
 				default:
 				}
 			}

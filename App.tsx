@@ -534,8 +534,6 @@ const App = () => {
   const [contentResetKey, setContentResetKey] = useState(0);
   /** Full remount including UserProvider (wallet delete / import only). */
   const [userProviderResetKey, setUserProviderResetKey] = useState(0);
-  /** After lock FAB: auto-prompt biometrics once route is known (import/setup same session). */
-  const [awaitingLockUnlock, setAwaitingLockUnlock] = useState(false);
   const unlockInFlightRef = useRef(false);
   // Initialize debug logging state from module-level ref
   const [debugLoggingEnabled, setDebugLoggingEnabledState] = useState(
@@ -545,7 +543,6 @@ const App = () => {
     const sub = DeviceEventEmitter.addListener(
       'app:reload',
       async (payload?: {revalidateRoute?: boolean}) => {
-        setAwaitingLockUnlock(true);
         setIsAuthenticated(false);
         setDebugLoggingEnabledState(debugLoggingEnabledRef.current);
         // Resolve route before remounting navigation so unlock never lands with initialRoute null.
@@ -759,7 +756,6 @@ const App = () => {
         setInitialRoute('Welcome');
       }
       DeviceEventEmitter.emit('wallet:unlocked');
-      setAwaitingLockUnlock(false);
       setIsAuthenticated(true);
     } finally {
       unlockInFlightRef.current = false;
@@ -781,10 +777,7 @@ const App = () => {
         <ThemeProvider>
           <UserProvider key={`user-${userProviderResetKey}`}>
             {initialRoute === null || !isAuthenticated ? (
-              <LoadingScreen
-                onRetry={handleRetryAuthentication}
-                autoUnlock={awaitingLockUnlock && initialRoute !== null}
-              />
+              <LoadingScreen onRetry={handleRetryAuthentication} />
             ) : (
               <AppContent
                 key={`content-${contentResetKey}`}

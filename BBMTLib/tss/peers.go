@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -58,15 +57,7 @@ func prepareLanHandshakeBind(port string) {
 }
 
 func ListenForPeers(id, pubkey, port, timeout, mode string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in ListenForPeers: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("ListenForPeers", &err, &result)
 
 	Logln("BBMTLog", "Listening for peer...")
 
@@ -111,13 +102,7 @@ func ListenForPeers(id, pubkey, port, timeout, mode string) (result string, err 
 
 		if srcIP != "" && dstIP != "" && srcPubkey != "" {
 			go func(remoteAddr string) {
-				defer func() {
-					if r := recover(); r != nil {
-						errMsg := fmt.Sprintf("PANIC in ListenForPeers callback goroutine: %v", r)
-						Logf("BBMTLog: %s", errMsg)
-						Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-					}
-				}()
+				defer RecoverGoroutine("ListenForPeers callback goroutine")
 				client := http.Client{Timeout: 2 * time.Second}
 				srcIPParsed, _, err := net.SplitHostPort(remoteAddr)
 				if err != nil {
@@ -212,15 +197,7 @@ func isPortInUse(port string) bool {
 }
 
 func DiscoverPeers(id, pubkey, localIP, remoteIPsCSV, port, timeout, mode string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in DiscoverPeers: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("DiscoverPeers", &err, &result)
 
 	if localIP == "" {
 		return "", fmt.Errorf("no local IP detected, skipping peer discovery")
@@ -321,15 +298,7 @@ func DiscoverPeers(id, pubkey, localIP, remoteIPsCSV, port, timeout, mode string
 }
 
 func FetchData(url, decKey, data string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in FetchData: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("FetchData", &err, &result)
 
 	client := http.Client{
 		Timeout: 5 * time.Second,
@@ -382,15 +351,7 @@ func validatePublishHandshakeQuery(mode, enckey, qPub, qData string) bool {
 }
 
 func PublishData(port, timeout, enckey, data, mode string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in PublishData: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("PublishData", &err, &result)
 
 	Logln("BBMTLog", "publishing data...")
 	published := make(chan string)

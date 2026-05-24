@@ -1,5 +1,5 @@
-import RNFS from 'react-native-fs';
 import {BBMTLibNativeModule} from '../native_modules';
+import {safeUnlink} from './rnfsSafe';
 import {
   getTssBackendDisplayLabel,
   resolveTssBackendForKeygen,
@@ -13,19 +13,13 @@ export type {SetupMode, PrepareModalCopy};
 export {
   getPrepareModalCopy,
   getWalletSetupKeygenModalCopy,
+  getWalletSetupPrepCardCopy,
 } from './walletSetupUi';
 
 export {getKeygenStepCount} from './mpcProgress';
 
 async function deletePreparamsFile(ppmFile: string): Promise<void> {
-  try {
-    const exists = await RNFS.exists(ppmFile);
-    if (exists) {
-      await RNFS.unlink(ppmFile);
-    }
-  } catch {
-    // ignore missing file
-  }
+  await safeUnlink(ppmFile);
 }
 
 /**

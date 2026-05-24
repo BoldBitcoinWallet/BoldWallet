@@ -62,10 +62,12 @@ func testMpcNostrKeygenTrio(t *testing.T) {
 
 // Duo Nostr DKG against a local nostr-rs-relay (same path as mobile Nostr duo setup).
 func TestNostrJoinKeygenDuo(t *testing.T) {
+	skipIntegrationIfShort(t, "Nostr DKG integration")
 	testMpcNostrKeygenDuo(t)
 }
 
 // Three-party Nostr DKG (same path as mobile Nostr trio setup).
 func TestNostrJoinKeygenTrio(t *testing.T) {
+	skipIntegrationIfShort(t, "Nostr DKG integration")
 	testMpcNostrKeygenTrio(t)
 }

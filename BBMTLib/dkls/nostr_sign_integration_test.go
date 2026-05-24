@@ -32,6 +32,7 @@ func testMpcNostrKeysignDuo(t *testing.T) {
 
 // Duo raw-message Nostr keysign (scripts-dkls nostr-keysign CLI path).
 func TestNostrKeysignDuoRaw(t *testing.T) {
+	skipIntegrationIfShort(t, "Nostr keysign integration")
 	relays := requireNostrRelay(t)
 	p1 := nostrParty{}
 	p2 := nostrParty{}
@@ -80,10 +81,12 @@ func testMpcNostrKeysignTrioSubset(t *testing.T) {
 
 // Duo Nostr keysign (PSBT / Send BTC sighash path) after Nostr keygen.
 func TestNostrKeysignDuo(t *testing.T) {
+	skipIntegrationIfShort(t, "Nostr keysign integration")
 	testMpcNostrKeysignDuo(t)
 }
 
 // Trio 2-of-3 subset Nostr keysign (first + third npub), same as trio spend.
 func TestNostrKeysignTrioSubset(t *testing.T) {
+	skipIntegrationIfShort(t, "Nostr keysign integration")
 	testMpcNostrKeysignTrioSubset(t)
 }

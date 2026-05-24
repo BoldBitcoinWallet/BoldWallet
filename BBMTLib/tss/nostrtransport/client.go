@@ -37,15 +37,7 @@ func (c *Client) GetPool() *nostr.SimplePool {
 }
 
 func NewClient(cfg Config) (result *Client, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in NewClient: %v", r)
-			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
-			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = nil
-		}
-	}()
+	defer recoverAsErrorClear("NewClient", &err, func() { result = nil })
 
 	cfg.ApplyDefaults()
 	if err := cfg.Validate(); err != nil {
@@ -238,14 +230,7 @@ func (c *Client) Close(reason string) {
 }
 
 func (c *Client) Publish(ctx context.Context, event *Event) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in Client.Publish: %v", r)
-			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
-			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-		}
-	}()
+	defer recoverAsError("Client.Publish", &err, nil)
 
 	if event == nil {
 		return errors.New("nil event")
@@ -347,7 +332,7 @@ func (c *Client) Publish(ctx context.Context, event *Event) (err error) {
 				fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
 				fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
 				select {
-				case errorCh <- fmt.Errorf("internal error (panic): %v", r):
+				case errorCh <- panicError(r):
 				default:
 				}
 			}
@@ -453,15 +438,7 @@ func (c *Client) Publish(ctx context.Context, event *Event) (err error) {
 }
 
 func (c *Client) Subscribe(ctx context.Context, filter Filter) (result <-chan *Event, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in Client.Subscribe: %v", r)
-			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
-			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = nil
-		}
-	}()
+	defer recoverAsErrorClear("Client.Subscribe", &err, func() { result = nil })
 
 	// Use all valid relays, not just initially connected ones
 	relaysToUse := c.validRelays
@@ -623,14 +600,7 @@ func (c *Client) PublishWrap(ctx context.Context, wrap *Event) error {
 // Critical: all non-blocked relays, background fan-out after first success.
 // Bulk: fast relay subset only (no extra relays); falls back to critical if all fast relays fail.
 func (c *Client) PublishWrapMode(ctx context.Context, wrap *Event, mode PublishMode) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in Client.PublishWrap: %v", r)
-			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
-			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-		}
-	}()
+	defer recoverAsError("Client.PublishWrap", &err, nil)
 
 	if wrap == nil {
 		return errors.New("nil wrap event")
@@ -683,7 +653,7 @@ func (c *Client) publishWrapToRelays(ctx context.Context, wrap *Event, relaysToU
 				fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
 				fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
 				select {
-				case errorCh <- fmt.Errorf("internal error (panic): %v", r):
+				case errorCh <- panicError(r):
 				default:
 				}
 			}

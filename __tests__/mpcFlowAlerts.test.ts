@@ -40,4 +40,14 @@ describe('mpcFlowAlerts', () => {
       false,
     );
   });
+
+  it('still surfaces await-joiners timeouts (not treated as user abort)', () => {
+    expect(
+      isMpcAbortedOrCanceledError(
+        new Error(
+          'await joiners: timeout waiting for all parties after 30s (have [KeyShare1], need [KeyShare1 KeyShare2])',
+        ),
+      ),
+    ).toBe(false);
+  });
 });

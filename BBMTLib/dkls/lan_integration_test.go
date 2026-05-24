@@ -215,14 +215,17 @@ func testMpcLanKeygenTrio(t *testing.T) {
 
 // Two-party LAN DKG against the HTTP relay (same path as mobile duo setup).
 func TestLanJoinKeygenDuo(t *testing.T) {
+	skipIntegrationIfShort(t, "LAN DKG integration")
 	testMpcLanKeygenDuo(t)
 }
 
 func TestLanJoinKeygenTrio(t *testing.T) {
+	skipIntegrationIfShort(t, "LAN DKG integration")
 	testMpcLanKeygenTrio(t)
 }
 
 func TestLanJoinKeygenTrioSimultaneous(t *testing.T) {
+	skipIntegrationIfShort(t, "LAN DKG integration")
 	runLanJoinKeygenTrio(t, trioKeygenOpts{
 		session:    "test-lan-trio-simul",
 		sessionKey: testSessionHex(t, 32),
@@ -231,6 +234,7 @@ func TestLanJoinKeygenTrioSimultaneous(t *testing.T) {
 }
 
 func TestLanJoinKeygenTrioStaggerMobile(t *testing.T) {
+	skipIntegrationIfShort(t, "LAN DKG integration")
 	runLanJoinKeygenTrio(t, trioKeygenOpts{
 		session:    "test-lan-trio-mobile-stagger",
 		sessionKey: testSessionHex(t, 32),
@@ -239,6 +243,7 @@ func TestLanJoinKeygenTrioStaggerMobile(t *testing.T) {
 }
 
 func TestLanJoinKeygenTrioDerivedSessionKey(t *testing.T) {
+	skipIntegrationIfShort(t, "LAN DKG integration")
 	runLanJoinKeygenTrio(t, trioKeygenOpts{
 		session: "test-lan-trio-derived-session",
 		sessionKey: "",

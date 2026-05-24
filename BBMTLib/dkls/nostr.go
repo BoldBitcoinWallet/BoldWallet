@@ -62,7 +62,8 @@ func NostrJoinKeygen(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKe
 	return runNostrDKG(rootCtx, cfg, chaincode, localNpub, allParties)
 }
 
-func runNostrDKG(rootCtx context.Context, cfg nostrtransport.Config, chaincode, localNpub string, allParties []string) (string, error) {
+func runNostrDKG(rootCtx context.Context, cfg nostrtransport.Config, chaincode, localNpub string, allParties []string) (result string, err error) {
+	defer recoverAsError("runNostrDKG", &err, &result)
 	threshold, err := ThresholdFromPartyCount(len(allParties))
 	if err != nil {
 		return "", err
@@ -87,11 +88,7 @@ func runNostrDKG(rootCtx context.Context, cfg nostrtransport.Config, chaincode, 
 	tss.ReportKeygenProgress(cfg.SessionID, 1, "waiting for peers", false)
 	stopPeerPulse := make(chan struct{})
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				dklsLogPanic("NostrJoinKeygen peer pulse", r)
-			}
-		}()
+		defer recoverGoroutine("NostrJoinKeygen peer pulse")
 		tick := 0
 		for {
 			select {
@@ -128,11 +125,7 @@ func runNostrDKG(rootCtx context.Context, cfg nostrtransport.Config, chaincode, 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		defer func() {
-			if r := recover(); r != nil {
-				dklsLogPanic("NostrJoinKeygen message pump", r)
-			}
-		}()
+		defer recoverGoroutine("NostrJoinKeygen message pump")
 		_ = pump.Run(pumpCtx, func(payload []byte) error {
 			msgs, err := DecodeMessages(string(payload))
 			if err != nil {
@@ -152,11 +145,7 @@ func runNostrDKG(rootCtx context.Context, cfg nostrtransport.Config, chaincode, 
 			case roundCh <- in:
 			default:
 				go func(batch []libtss.Message) {
-					defer func() {
-						if r := recover(); r != nil {
-							dklsLogPanic("NostrJoinKeygen roundCh batch send", r)
-						}
-					}()
+					defer recoverGoroutine("NostrJoinKeygen roundCh batch send")
 					roundCh <- batch
 				}(in)
 			}
@@ -228,11 +217,7 @@ func (r *nostrPartyRunner) sendMessages(msgs []libtss.Message) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			defer func() {
-				if r := recover(); r != nil {
-					dklsLogPanic("nostrPartyRunner Send", r)
-				}
-			}()
+			defer recoverGoroutine("nostrPartyRunner Send")
 			if err := r.messenger.Send(r.localNpub, peer, body); err != nil {
 				errMu.Lock()
 				if sendErr == nil {
@@ -350,11 +335,7 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		defer func() {
-			if r := recover(); r != nil {
-				dklsLogPanic("NostrJoinKeysign message pump", r)
-			}
-		}()
+		defer recoverGoroutine("NostrJoinKeysign message pump")
 		_ = pump.Run(pumpCtx, func(payload []byte) error {
 			msgs, err := DecodeMessages(string(payload))
 			if err != nil {
@@ -374,11 +355,7 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 			case roundCh <- in:
 			default:
 				go func(batch []libtss.Message) {
-					defer func() {
-						if r := recover(); r != nil {
-							dklsLogPanic("NostrJoinKeysign roundCh batch send", r)
-						}
-					}()
+					defer recoverGoroutine("NostrJoinKeysign roundCh batch send")
 					roundCh <- batch
 				}(in)
 			}

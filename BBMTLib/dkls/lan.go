@@ -176,11 +176,7 @@ func JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey, encKey,
 		case roundCh <- in:
 		default:
 			go func(batch []libtss.Message) {
-				defer func() {
-					if r := recover(); r != nil {
-						dklsLogPanic("JoinKeygen roundCh batch send", r)
-					}
-				}()
+				defer recoverGoroutine("JoinKeygen roundCh batch send")
 				roundCh <- batch
 			}(in)
 		}
@@ -459,7 +455,11 @@ func runDKGWithSender(
 	threshold libtss.ThresholdConfig,
 	sender messageSender,
 	roundCh <-chan []libtss.Message,
-) (*libtss.KeyShareHandle, libtss.PublicKeyPackage, error) {
+) (share *libtss.KeyShareHandle, pub libtss.PublicKeyPackage, err error) {
+	defer recoverAsErrorClear("runDKGWithSender", &err, func() {
+		share = nil
+		pub = libtss.PublicKeyPackage{}
+	})
 	if err := libtss.Init(); err != nil {
 		return nil, libtss.PublicKeyPackage{}, err
 	}
@@ -674,7 +674,8 @@ func runSignWithSender(
 	sender messageSender,
 	roundCh <-chan []libtss.Message,
 	progressSession string,
-) (libtss.Signature, error) {
+) (sig libtss.Signature, err error) {
+	defer recoverAsErrorClear("runSignWithSender", &err, func() { sig = libtss.Signature{} })
 	var counterparties []libtss.Identifier
 	for _, id := range signingParties {
 		if id != selfID {

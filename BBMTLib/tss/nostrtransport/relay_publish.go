@@ -19,8 +19,8 @@ const (
 
 // Client relay health state (session-scoped for the Client lifetime).
 type relayHealth struct {
-	mu             sync.Mutex
-	blockedRelays  map[string]struct{}
+	mu            sync.Mutex
+	blockedRelays map[string]struct{}
 }
 
 func newRelayHealth() *relayHealth {

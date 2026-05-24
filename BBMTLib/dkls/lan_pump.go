@@ -34,11 +34,7 @@ type lanMessage struct {
 // startLANMessagePump polls the HTTP relay and delivers decoded libtss payloads.
 func startLANMessagePump(server, session, sessionKey, key string, onBody func(string) error, endCh <-chan struct{}, wg *sync.WaitGroup) {
 	defer wg.Done()
-	defer func() {
-		if r := recover(); r != nil {
-			dklsLogPanic("startLANMessagePump", r)
-		}
-	}()
+	defer recoverGoroutine("startLANMessagePump")
 	msgMap := make(map[string]bool)
 	bodyDelivered := make(map[string]bool)
 

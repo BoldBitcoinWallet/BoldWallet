@@ -47,15 +47,7 @@ func decodeNsecFromBech32(nsec string) (string, error) {
 // DeriveNpubFromNsec derives a bech32 npub from a bech32 nsec (or hex nsec).
 // This function handles both bech32 (nsec1...) and hex formats.
 func DeriveNpubFromNsec(partyNsec string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in DeriveNpubFromNsec: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("DeriveNpubFromNsec", &err, &result)
 
 	// Decode nsec from bech32 to hex if needed
 	skHex, err := decodeNsecFromBech32(partyNsec)
@@ -82,15 +74,7 @@ func DeriveNpubFromNsec(partyNsec string) (result string, err error) {
 // Returns: {"nsec": "...", "npub": "..."}
 // Both nsec and npub are returned in bech32 format (nsec1... and npub1...)
 func NostrKeypair() (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in NostrKeypair: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("NostrKeypair", &err, &result)
 
 	// Generate private key in hex format
 	skHex := nostr.GeneratePrivateKey()
@@ -125,15 +109,7 @@ func NostrKeypair() (result string, err error) {
 
 // HexToNpub converts a hex public key to bech32 npub format.
 func HexToNpub(hexKey string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in HexToNpub: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("HexToNpub", &err, &result)
 
 	// Decode hex string to bytes
 	pkHex, err := hex.DecodeString(hexKey)
@@ -160,15 +136,7 @@ func HexToNpub(hexKey string) (result string, err error) {
 //   - chaincode: Chain code in hex
 //   - ppmPath: Path to pre-params file (optional, empty string means generate new pre-params)
 func NostrJoinKeygen(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, chaincode, ppmPath string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in NostrJoinKeygen: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("NostrJoinKeygen", &err, &result)
 
 	// Initialize status tracking (similar to JoinKeygen)
 	status := Status{Step: 0, SeqNo: 0, Index: 0, Info: "initializing...", Type: "keygen", Done: false, Time: 0}
@@ -228,15 +196,7 @@ func NostrJoinKeygen(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKe
 // NostrJoinKeysignWithSighash performs a Nostr-based keysign with a base64-encoded sighash (already a hash).
 // This is used for Bitcoin transaction signing where the sighash is already computed.
 func NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, keyshareJSON, derivationPath, sighashBase64 string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in NostrJoinKeysignWithSighash: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("NostrJoinKeysignWithSighash", &err, &result)
 
 	// Derive npub from nsec (handles bech32 format)
 	localNpub, err := DeriveNpubFromNsec(partyNsec)
@@ -300,15 +260,7 @@ func NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, sessionI
 // NostrJoinKeysign performs a Nostr-based keysign and returns the signature JSON.
 // The message will be hashed internally before signing.
 func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, keyshareJSON, derivationPath, message string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in NostrJoinKeysign: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("NostrJoinKeysign", &err, &result)
 
 	// Derive npub from nsec (handles bech32 format)
 	localNpub, err := DeriveNpubFromNsec(partyNsec)
@@ -401,7 +353,7 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 			errMsg := fmt.Sprintf("PANIC in runNostrPreAgreementSendBTC: %v", r)
 			Logf("BBMTLog: %s", errMsg)
 			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
+			err = PanicError(r)
 			result = nil
 		}
 	}()
@@ -504,7 +456,7 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 				Logf("BBMTLog: %s", errMsg)
 				Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
 				select {
-				case peerErrorCh <- fmt.Errorf("internal error (panic): %v", r):
+				case peerErrorCh <- PanicError(r):
 				default:
 				}
 			}
@@ -589,15 +541,7 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 // - averageFees: average of both satoshiFees
 // Returns JSON: {"fullNonce": "...", "averageFees": 1234}
 func NostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag string, localSatoshiFees int64) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in NostrPreAgreementSendBTC: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("NostrPreAgreementSendBTC", &err, &result)
 
 	preAgreementResult, err := runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, localSatoshiFees)
 	if err != nil {
@@ -628,15 +572,7 @@ func NostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 // NostrMpcSendBTC performs a Nostr-based MPC Bitcoin transaction.
 // changeAddress: when non-empty, change output is sent here (HD internal chain); otherwise to senderAddress.
 func NostrMpcSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON, derivePath, publicKey, senderAddress, receiverAddress string, amountSatoshi, estimatedFee int64, changeAddress string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in NostrMpcSendBTC: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("NostrMpcSendBTC", &err, &result)
 	return runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON, derivePath, publicKey, senderAddress, receiverAddress, amountSatoshi, estimatedFee, changeAddress)
 }
 
@@ -644,15 +580,7 @@ func NostrMpcSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balance
 // utxosWithPathsJSON: JSON array of {txid, vout, value, derivation_path or derivationPath}
 // changeAddress: HD change address for change output (required)
 func NostrMpcSendBTCWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON, receiverAddress, amountSatoshiStr, estimatedFeeStr, utxosWithPathsJSON, changeAddress string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in NostrMpcSendBTCWithUTXOs: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("NostrMpcSendBTCWithUTXOs", &err, &result)
 
 	amountSatoshi, parseErr := strconv.ParseInt(amountSatoshiStr, 10, 64)
 	if parseErr != nil {
@@ -669,15 +597,7 @@ func NostrMpcSendBTCWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted
 // This is analogous to MpcSendBTC but uses NostrJoinKeysign instead of JoinKeysign.
 // It performs pre-agreement internally to establish sessionID and unified fees.
 func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, _, keyshareJSON, derivePath, publicKey, senderAddress, receiverAddress string, amountSatoshi, estimatedFee int64, changeAddress string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in runNostrMpcSendBTCInternal: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("runNostrMpcSendBTCInternal", &err, &result)
 	if changeAddress == "" {
 		changeAddress = senderAddress
 	}
@@ -1165,15 +1085,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 
 // runNostrMpcSendBTCInternalWithUTXOs implements multi-path Nostr MPC send using pre-fetched UTXOs.
 func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, _, keyshareJSON, receiverAddress string, amountSatoshi, estimatedFee int64, utxosWithPathsJSON, changeAddress string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in runNostrMpcSendBTCInternalWithUTXOs: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("runNostrMpcSendBTCInternalWithUTXOs", &err, &result)
 
 	if _, err := beginNostrMpcOperation(); err != nil {
 		return "", err
@@ -1403,15 +1315,7 @@ func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, 
 
 // runNostrKeygenInternal is the internal implementation of Nostr keygen.
 func runNostrKeygenInternal(cfg nostrtransport.Config, chaincode, ppmPath, localNpub, sessionID string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in runNostrKeygenInternal: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("runNostrKeygenInternal", &err, &result)
 	rootCtx, cleanup, err := AttachNostrOperationRoot()
 	if err != nil {
 		return "", err
@@ -1514,7 +1418,7 @@ func runNostrKeygenInternal(cfg nostrtransport.Config, chaincode, ppmPath, local
 				Logf("BBMTLog: %s", errMsg)
 				Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
 				select {
-				case pumpErrCh <- fmt.Errorf("internal error (panic): %v", r):
+				case pumpErrCh <- PanicError(r):
 				default:
 				}
 			}
@@ -1547,10 +1451,15 @@ func runNostrKeygenInternal(cfg nostrtransport.Config, chaincode, ppmPath, local
 	// Run keygen
 	allParties := append([]string{localNpub}, cfg.PeersNpub...)
 	partiesCSV := strings.Join(allParties, ",")
+	chainCodeHex, normErr := normalizeChainCodeHex(chaincode)
+	if normErr != nil {
+		pumpCancel()
+		return "", fmt.Errorf("fail to normalize chain code: %w", normErr)
+	}
 	_, err = tssService.KeygenECDSA(&KeygenRequest{
 		LocalPartyID: localNpub,
 		AllParties:   partiesCSV,
-		ChainCodeHex: chaincode,
+		ChainCodeHex: chainCodeHex,
 	})
 	if err != nil {
 		pumpCancel()
@@ -1628,15 +1537,7 @@ func runNostrKeygenInternal(cfg nostrtransport.Config, chaincode, ppmPath, local
 
 // runNostrKeysignInternal is the internal implementation of Nostr keysign.
 func runNostrKeysignInternal(cfg nostrtransport.Config, keyshare *LocalStateNostr, derivePath, message string, allParties []string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in runNostrKeysignInternal: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("runNostrKeysignInternal", &err, &result)
 	sessionID := cfg.SessionID
 
 	// Initialize status tracking
@@ -1740,7 +1641,7 @@ func runNostrKeysignInternal(cfg nostrtransport.Config, keyshare *LocalStateNost
 				Logf("BBMTLog: %s", errMsg)
 				Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
 				select {
-				case pumpErrCh <- fmt.Errorf("internal error (panic): %v", r):
+				case pumpErrCh <- PanicError(r):
 				default:
 				}
 			}
@@ -1892,15 +1793,7 @@ func runNostrKeysignInternal(cfg nostrtransport.Config, keyshare *LocalStateNost
 
 // runNostrKeysignInternalWithSighash is similar to runNostrKeysignInternal but accepts a base64-encoded sighash directly.
 func runNostrKeysignInternalWithSighash(cfg nostrtransport.Config, keyshare *LocalStateNostr, derivePath, sighashBase64 string, allParties []string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in runNostrKeysignInternalWithSighash: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("runNostrKeysignInternalWithSighash", &err, &result)
 	sessionID := cfg.SessionID
 
 	// Initialize status tracking
@@ -2007,7 +1900,7 @@ func runNostrKeysignInternalWithSighash(cfg nostrtransport.Config, keyshare *Loc
 				Logf("BBMTLog: %s", errMsg)
 				Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
 				select {
-				case pumpErrCh <- fmt.Errorf("internal error (panic): %v", r):
+				case pumpErrCh <- PanicError(r):
 				default:
 				}
 			}
@@ -2161,27 +2054,12 @@ type nostrLocalStateAccessor struct {
 }
 
 func (a *nostrLocalStateAccessor) GetLocalState(pubKey string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in nostrLocalStateAccessor.GetLocalState: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("nostrLocalStateAccessor.GetLocalState", &err, &result)
 	return "", fmt.Errorf("GetLocalState not supported in Nostr keygen")
 }
 
 func (a *nostrLocalStateAccessor) SaveLocalState(pubKey, localState string) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in nostrLocalStateAccessor.SaveLocalState: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-		}
-	}()
+	defer RecoverAsError("nostrLocalStateAccessor.SaveLocalState", &err, nil)
 	if a.saveFunc != nil {
 		return a.saveFunc(pubKey, localState)
 	}
@@ -2194,15 +2072,7 @@ type nostrKeysignStateAccessor struct {
 }
 
 func (a *nostrKeysignStateAccessor) GetLocalState(pubKey string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in nostrKeysignStateAccessor.GetLocalState: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("nostrKeysignStateAccessor.GetLocalState", &err, &result)
 	if a.keyshare == nil {
 		return "", fmt.Errorf("keyshare not loaded")
 	}
@@ -2219,14 +2089,7 @@ func (a *nostrKeysignStateAccessor) GetLocalState(pubKey string) (result string,
 }
 
 func (a *nostrKeysignStateAccessor) SaveLocalState(pubkey, localState string) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in nostrKeysignStateAccessor.SaveLocalState: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-		}
-	}()
+	defer RecoverAsError("nostrKeysignStateAccessor.SaveLocalState", &err, nil)
 	// Keysign doesn't modify the keyshare, so we don't need to save
 	return nil
 }
@@ -2240,14 +2103,7 @@ type nostrMessengerAdapter struct {
 
 // Send implements Messenger interface.
 func (a *nostrMessengerAdapter) Send(from, to, body string) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in nostrMessengerAdapter.Send: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-		}
-	}()
+	defer RecoverAsError("nostrMessengerAdapter.Send", &err, nil)
 
 	cfg := a.messenger.Cfg()
 	status := getStatus(cfg.SessionID)

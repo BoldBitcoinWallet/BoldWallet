@@ -25,6 +25,7 @@ import AppPressable from './AppPressable';
 import StaticQRCode from './StaticQRCode';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
+import {safeUnlink} from '../services/rnfsSafe';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
 interface QRCodeModalProps {
@@ -97,10 +98,7 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
           });
         });
         const filePath = `${RNFS.TemporaryDirectoryPath}/${filename}`;
-        const fileExists = await RNFS.exists(filePath);
-        if (fileExists) {
-          await RNFS.unlink(filePath);
-        }
+        await safeUnlink(filePath);
         await RNFS.writeFile(filePath, base64Data, 'base64');
         await Share.open({
           title: shareTitle,
@@ -110,7 +108,7 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
           isNewTask: true,
           failOnCancel: false,
         });
-        await RNFS.unlink(filePath).catch(() => {});
+        await safeUnlink(filePath);
       } catch (error: any) {
         if (error?.message !== 'User did not share') {
           Alert.alert('Error', 'Failed to share QR code');
