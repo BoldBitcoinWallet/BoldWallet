@@ -50,7 +50,8 @@ func keysignResponseJSON(sig libtss.Signature, sighashBase64 string) (string, er
 // NostrJoinKeysignWithSighash signs a base64-encoded 32-byte Bitcoin sighash over Nostr.
 func NostrJoinKeysignWithSighash(
 	relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, keyshareJSON, derivationPath, sighashBase64 string,
-) (string, error) {
+) (result string, err error) {
+	defer recoverAsError("NostrJoinKeysignWithSighash", &err, &result)
 	sighash, err := base64.StdEncoding.DecodeString(sighashBase64)
 	if err != nil {
 		return "", fmt.Errorf("decode sighash: %w", err)
@@ -127,6 +128,11 @@ func NostrJoinKeysignWithSighash(
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				dklsLogPanic("NostrJoinKeysignWithSighash message pump", r)
+			}
+		}()
 		_ = pump.Run(pumpCtx, func(payload []byte) error {
 			msgs, decErr := DecodeMessages(string(payload))
 			if decErr != nil {
@@ -173,8 +179,9 @@ func NostrJoinKeysignWithSighash(
 // JoinKeysignWithSighash performs LAN DKLs23 signing for a base64-encoded 32-byte sighash.
 func JoinKeysignWithSighash(
 	server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshareJSON, derivePath, sighashBase64 string,
-) (string, error) {
+) (result string, err error) {
 	defer tss.ClearLANTransportKeys()
+	defer recoverAsError("JoinKeysignWithSighash", &err, &result)
 	if _, _, _, err := normalizeLANTransportKeys(session, server, sessionKey, encKey, decKey); err != nil {
 		return "", err
 	}

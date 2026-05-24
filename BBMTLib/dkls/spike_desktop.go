@@ -10,7 +10,8 @@ import (
 )
 
 // HelloDkg runs an in-process 2-of-2 DKLs23 DKG smoke test (host / CI).
-func HelloDkg() (string, error) {
+func HelloDkg() (result string, err error) {
+	defer recoverAsError("HelloDkg", &err, &result)
 	sessionID := []byte("boldwallet-dkls-spike")
 	shares, pubkeys, err := RunDKGInProcess(sessionID)
 	if err != nil {

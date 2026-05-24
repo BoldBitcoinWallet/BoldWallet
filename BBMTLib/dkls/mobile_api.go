@@ -37,7 +37,8 @@ func NostrMpcSendBTCWithUTXOs(
 	)
 }
 
-func CancelNostrMpc() (string, error) {
+func CancelNostrMpc() (result string, err error) {
+	defer recoverAsError("CancelNostrMpc", &err, &result)
 	CancelMpcSession("")
 	_, _ = tss.CancelNostrMpc()
 	return "ok", nil

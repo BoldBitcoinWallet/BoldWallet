@@ -9,8 +9,53 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
+
+// Ephemeral LAN HTTP servers (peer discovery + publish handshake) share discoveryPort
+// with the MPC relay. Only one may bind at a time per device.
+var (
+	lanHandshakeMu       sync.Mutex
+	lanHandshakeListener net.Listener
+	lanHandshakeServer   *http.Server
+)
+
+func releaseLanHandshakePort() {
+	lanHandshakeMu.Lock()
+	defer lanHandshakeMu.Unlock()
+	if lanHandshakeListener != nil {
+		lanHandshakeListener.Close()
+		lanHandshakeListener = nil
+	}
+	if lanHandshakeServer != nil {
+		lanHandshakeServer.Close()
+		lanHandshakeServer = nil
+	}
+}
+
+func registerLanHandshakePort(l net.Listener, s *http.Server) {
+	lanHandshakeMu.Lock()
+	defer lanHandshakeMu.Unlock()
+	lanHandshakeListener = l
+	lanHandshakeServer = s
+}
+
+// StopLanHandshake releases discovery/publish HTTP listeners (not the MPC relay).
+func StopLanHandshake() string {
+	releaseLanHandshakePort()
+	return "ok"
+}
+
+func prepareLanHandshakeBind(port string) {
+	releaseLanHandshakePort()
+	if isPortInUse(port) {
+		Logln("BBMTLog", "Port", port, "busy before LAN handshake; stopping prior listeners")
+		StopRelay()
+		releaseLanHandshakePort()
+		time.Sleep(1 * time.Second)
+	}
+}
 
 func ListenForPeers(id, pubkey, port, timeout, mode string) (result string, err error) {
 	defer func() {
@@ -39,12 +84,7 @@ func ListenForPeers(id, pubkey, port, timeout, mode string) (result string, err 
 	ipToPayload := make(map[string]string)
 	collectedIPs := make([]string, 0, expectedPeers)
 
-	// Ensure no existing server is running on this port
-	if isPortInUse(port) {
-		Logln("BBMTLog", "Port", port, "is already in use. Stopping previous server...")
-		StopRelay()
-		time.Sleep(1 * time.Second) // Ensure cleanup
-	}
+	prepareLanHandshakeBind(port)
 
 	// HTTP handler to detect peer IP
 	mux := http.NewServeMux()
@@ -122,17 +162,19 @@ func ListenForPeers(id, pubkey, port, timeout, mode string) (result string, err 
 	})
 
 	// Create and start server
-	server := &http.Server{Addr: "0.0.0.0:" + port, Handler: mux}
+	listenServer := &http.Server{Addr: "0.0.0.0:" + port, Handler: mux}
 	listener, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		Logln("BBMTLog", "Error binding to port:", err)
 		return "", err
 	}
+	registerLanHandshakePort(listener, listenServer)
+	defer releaseLanHandshakePort()
 
 	// Start HTTP server
 	go func() {
 		Logln("BBMTLog", "Waiting for peer connection on port:", port, ", timeout:", timeout)
-		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+		if err := listenServer.Serve(listener); err != nil && err != http.ErrServerClosed {
 			Logln("BBMTLog", "HTTP server error:", err)
 		}
 	}()
@@ -150,15 +192,11 @@ func ListenForPeers(id, pubkey, port, timeout, mode string) (result string, err 
 		// signal handler to stop accepting new work
 		close(stopServer)
 		time.Sleep(2 * time.Second)
-		listener.Close()
-		server.Close()
 		return peerIPs, nil
 	case <-time.After(time.Duration(tout) * time.Second):
 		Logln("BBMTLog", "Timeout reached, shutting down server...")
 		// signal handler to stop accepting new work
 		close(stopServer)
-		listener.Close()
-		server.Close()
 		return "", fmt.Errorf("timeout waiting for peer connection")
 	}
 }
@@ -322,6 +360,27 @@ func FetchData(url, decKey, data string) (result string, err error) {
 	return decryptedData, nil
 }
 
+// validatePublishHandshakeQuery ensures GET / is a peer fetch (data + pubkey), not a probe.
+func validatePublishHandshakeQuery(mode, enckey, qPub, qData string) bool {
+	qPub = strings.TrimSpace(qPub)
+	qData = strings.TrimSpace(qData)
+	if qPub == "" || qData == "" {
+		return false
+	}
+	if strings.EqualFold(mode, "trio") {
+		allowed := map[string]struct{}{}
+		for _, k := range strings.Split(enckey, ",") {
+			k = strings.TrimSpace(k)
+			if k != "" {
+				allowed[k] = struct{}{}
+			}
+		}
+		_, ok := allowed[qPub]
+		return ok
+	}
+	return qPub == strings.TrimSpace(enckey)
+}
+
 func PublishData(port, timeout, enckey, data, mode string) (result string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -344,39 +403,30 @@ func PublishData(port, timeout, enckey, data, mode string) (result string, err e
 	payloads := make([]string, 0, expected)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		qPub := r.URL.Query().Get("pubkey")
+		qData := r.URL.Query().Get("data")
+		if !validatePublishHandshakeQuery(mode, enckey, qPub, qData) {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+
 		// Determine encryption key per request
 		selectedPub := enckey
 		if expected == 2 { // trio mode
-			// enckey CSV provided in function parameter
-			allowed := map[string]struct{}{}
-			for _, k := range strings.Split(enckey, ",") {
-				k = strings.TrimSpace(k)
-				if k != "" {
-					allowed[k] = struct{}{}
-				}
-			}
-			// read client-provided pubkey from query
-			qPub := r.URL.Query().Get("pubkey")
-			if _, ok := allowed[qPub]; !ok {
-				// Not an expected key; ignore this request
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return
-			}
-			selectedPub = qPub
+			selectedPub = strings.TrimSpace(qPub)
 		}
 
 		encryptedData, err := EciesEncrypt(data, selectedPub)
 		if err != nil {
 			http.Error(w, "error", http.StatusInternalServerError)
 			Logln("BBMTLog", "error publishing:", err)
-			published <- "error"
 			return
 		}
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, encryptedData)
 
 		if expected == 1 {
-			// duo: return first query observed
+			// duo: return first validated handshake query observed
 			published <- r.URL.RawQuery
 			return
 		}
@@ -398,19 +448,22 @@ func PublishData(port, timeout, enckey, data, mode string) (result string, err e
 	if server != nil {
 		StopRelay()
 	}
+	prepareLanHandshakeBind(port)
 
 	// Create and start server
-	server := &http.Server{Addr: "0.0.0.0:" + port, Handler: mux}
+	pubServer := &http.Server{Addr: "0.0.0.0:" + port, Handler: mux}
 	listener, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		Logln("BBMTLog", "Error binding to port:", err)
 		return "", err
 	}
+	registerLanHandshakePort(listener, pubServer)
+	defer releaseLanHandshakePort()
 
 	// Start HTTP server
 	go func() {
 		Logln("BBMTLog", "Waiting for peer connection on port:", port, ", timeout:", timeout)
-		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+		if err := pubServer.Serve(listener); err != nil && err != http.ErrServerClosed {
 			Logln("BBMTLog", "HTTP server error:", err)
 		}
 	}()
@@ -424,13 +477,9 @@ func PublishData(port, timeout, enckey, data, mode string) (result string, err e
 	case data := <-published:
 		Logln("BBMTLog", "published. received:", data)
 		time.Sleep(1000)
-		listener.Close()
-		server.Close()
 		return data, nil
 	case <-time.After(time.Duration(tout) * time.Second):
 		Logln("BBMTLog", "Timeout reached, shutting down server...")
-		listener.Close()
-		server.Close()
 		return "", fmt.Errorf("timeout waiting for peer connection")
 	}
 }

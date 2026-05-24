@@ -719,6 +719,7 @@ func lanJoinAwaitTimeout(partyCount int) time.Duration {
 	if partyCount >= 3 {
 		return 120 * time.Second
 	}
+	// Duo: joiner probes relay after master starts it; allow time for Join-first pacing.
 	return 30 * time.Second
 }
 

@@ -119,12 +119,7 @@ func normalizeLANTransportKeys(session, server, sessionKey, encKey, decKey strin
 // JoinKeygen performs LAN DKG via HTTP relay (duo 2-of-2 or trio 2-of-3).
 func JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey, encKey, decKey string) (result string, err error) {
 	defer tss.ClearLANTransportKeys()
-	defer func() {
-		if r := recover(); r != nil {
-			dklsLogPanic("JoinKeygen", r)
-			err = fmt.Errorf("internal error (panic): %v", r)
-		}
-	}()
+	defer recoverAsError("JoinKeygen", &err, &result)
 
 	if sessionKey, encKey, decKey, err = normalizeLANTransportKeys(session, server, sessionKey, encKey, decKey); err != nil {
 		return "", err
@@ -180,7 +175,14 @@ func JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey, encKey,
 		select {
 		case roundCh <- in:
 		default:
-			go func(batch []libtss.Message) { roundCh <- batch }(in)
+			go func(batch []libtss.Message) {
+				defer func() {
+					if r := recover(); r != nil {
+						dklsLogPanic("JoinKeygen roundCh batch send", r)
+					}
+				}()
+				roundCh <- batch
+			}(in)
 		}
 		return nil
 	}, endCh, &wg)
@@ -585,8 +587,9 @@ func runDKGWithSender(
 }
 
 // JoinKeysign performs LAN DKLs23 signing and returns signature JSON.
-func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshareJSON, message string) (string, error) {
+func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshareJSON, message string) (result string, err error) {
 	defer tss.ClearLANTransportKeys()
+	defer recoverAsError("JoinKeysign", &err, &result)
 	if _, _, _, err := normalizeLANTransportKeys(session, server, sessionKey, encKey, decKey); err != nil {
 		return "", err
 	}
@@ -660,13 +663,6 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	// Do not call LANEndSession — first finisher would delete relay while peer still signs.
 	tss.ReportKeysignProgress(session, 99, "keysign ok", true)
 	return string(raw), nil
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func runSignWithSender(

@@ -366,10 +366,10 @@ func StopRelay() (result string, err error) {
 
 	serverMutex.Lock()
 	defer serverMutex.Unlock()
-	if server == nil {
-		return "already_closed", nil
+	if server != nil {
+		server.Close()
+		server = nil
 	}
-	server.Close()
-	server = nil
+	releaseLanHandshakePort()
 	return "ok", nil
 }

@@ -47,3 +47,14 @@ func dklsLogPanic(where string, r any) {
 	tss.Logf("BBMTLog: dkls %s", errMsg)
 	tss.Logf("BBMTLog: dkls Stack trace: %s", string(debug.Stack()))
 }
+
+// recoverAsError converts a recovered panic into err (mirrors BBMTLib/tss defer recover pattern).
+func recoverAsError(where string, err *error, result *string) {
+	if r := recover(); r != nil {
+		dklsLogPanic(where, r)
+		*err = fmt.Errorf("internal error (panic): %v", r)
+		if result != nil {
+			*result = ""
+		}
+	}
+}
