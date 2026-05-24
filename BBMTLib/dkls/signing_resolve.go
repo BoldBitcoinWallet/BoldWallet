@@ -9,10 +9,10 @@ import (
 
 // SigningSession maps a 2-of-n keysign round to libtss party identifiers (same as DKG).
 type SigningSession struct {
-	SelfID       libtss.Identifier
-	SigningIDs   []libtss.Identifier
-	NostrPeers   []string // participating npubs excluding local (Nostr transport)
-	LANPeerIDs   []libtss.Identifier
+	SelfID     libtss.Identifier
+	SigningIDs []libtss.Identifier
+	NostrPeers []string // participating npubs excluding local (Nostr transport)
+	LANPeerIDs []libtss.Identifier
 }
 
 // ResolveSigningSessionLAN maps LAN party monikers (KeyShareN) to DKG identifiers.

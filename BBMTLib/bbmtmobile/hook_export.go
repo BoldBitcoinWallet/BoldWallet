@@ -17,10 +17,10 @@ import (
 )
 
 var (
-	hookMu     sync.RWMutex
-	hookFn     C.bbmt_hook_fn
-	goLogMu    sync.RWMutex
-	goLogFn    C.bbmt_hook_fn
+	hookMu  sync.RWMutex
+	hookFn  C.bbmt_hook_fn
+	goLogMu sync.RWMutex
+	goLogFn C.bbmt_hook_fn
 )
 
 type bridgeHookListener struct{}

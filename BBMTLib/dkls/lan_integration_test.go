@@ -245,7 +245,7 @@ func TestLanJoinKeygenTrioStaggerMobile(t *testing.T) {
 func TestLanJoinKeygenTrioDerivedSessionKey(t *testing.T) {
 	skipIntegrationIfShort(t, "LAN DKG integration")
 	runLanJoinKeygenTrio(t, trioKeygenOpts{
-		session: "test-lan-trio-derived-session",
+		session:    "test-lan-trio-derived-session",
 		sessionKey: "",
 		staggerMs:  []int{0, 2000, 4000},
 	})
@@ -409,4 +409,3 @@ func TestRunDKGWithSenderTrioInProcess(t *testing.T) {
 	pumpWG.Wait()
 	assertTrioKeysharesConsistent(t, jsons)
 }
-

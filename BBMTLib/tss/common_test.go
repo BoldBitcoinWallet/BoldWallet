@@ -29,7 +29,7 @@ func TestNormalizeChainCodeHex(t *testing.T) {
 	if _, err := normalizeChainCodeHex("not-hex"); err == nil {
 		t.Fatal("expected error for invalid")
 	}
-	if _, err := normalizeChainCodeHex(attempt+":short"); err == nil {
+	if _, err := normalizeChainCodeHex(attempt + ":short"); err == nil {
 		t.Fatal("expected error for short seed")
 	}
 }

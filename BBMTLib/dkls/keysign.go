@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
+	libtss "github.com/0xCarbon/libtss/libtss-go/tss"
 	"github.com/BoldBitcoinWallet/BBMTLib/tss"
 	"github.com/BoldBitcoinWallet/BBMTLib/tss/nostrtransport"
-	libtss "github.com/0xCarbon/libtss/libtss-go/tss"
 )
 
 func init() {
