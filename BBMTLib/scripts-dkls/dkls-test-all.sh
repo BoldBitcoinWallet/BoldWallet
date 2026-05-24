@@ -23,7 +23,7 @@ if [ ! -f "${LIBTSS_RELEASE}/liblibtss_ffi.a" ] && [ ! -f "${LIBTSS_RELEASE}/lib
 fi
 
 export CGO_ENABLED=1
-export CGO_LDFLAGS="-L${LIBTSS_RELEASE} -llibtss_ffi -lm -framework Security -framework CoreFoundation"
+source "${ROOT}/scripts-dkls/cgo-env.sh"
 
 go build -o /tmp/dkls-scripts ./scripts-dkls/main.go
 pass "built scripts-dkls helper"

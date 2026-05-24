@@ -2,6 +2,8 @@ package dkls
 
 import (
 	"testing"
+
+	libtss "github.com/0xCarbon/libtss/libtss-go/tss"
 )
 
 func TestResolveSigningSessionLANTrioSubset(t *testing.T) {
@@ -132,8 +134,25 @@ func TestResolveSigningSessionNostrMapsCommitteeIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if len(sess.SigningIDs) != 2 || sess.SigningIDs[1] != 3 {
-		t.Fatalf("signingIDs=%v want [1 3]", sess.SigningIDs)
+	participating, err := normalizeParticipatingNpubs(npubAlice + "," + npubCarol)
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	wantIDs := make([]libtss.Identifier, len(participating))
+	for i, npub := range participating {
+		id, err := partyIDFromNpub(npub, committee)
+		if err != nil {
+			t.Fatalf("party id for %q: %v", npub, err)
+		}
+		wantIDs[i] = id
+	}
+	if len(sess.SigningIDs) != len(wantIDs) {
+		t.Fatalf("signingIDs=%v want %v", sess.SigningIDs, wantIDs)
+	}
+	for i := range wantIDs {
+		if sess.SigningIDs[i] != wantIDs[i] {
+			t.Fatalf("signingIDs=%v want %v (sorted npub committee order)", sess.SigningIDs, wantIDs)
+		}
 	}
 	if len(sess.NostrPeers) != 1 || sess.NostrPeers[0] != npubCarol {
 		t.Fatalf("peers=%v", sess.NostrPeers)

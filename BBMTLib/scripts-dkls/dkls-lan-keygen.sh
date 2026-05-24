@@ -10,7 +10,7 @@ mkdir -p "$OUTPUT_DIR"
 
 LIBTSS_RELEASE="${ROOT}/../../libtss/target/release"
 export CGO_ENABLED=1
-export CGO_LDFLAGS="-L${LIBTSS_RELEASE} -llibtss_ffi -lm -framework Security -framework CoreFoundation"
+source "${ROOT}/scripts-dkls/cgo-env.sh"
 export DKLS_TEST_DKG_SEC="${DKLS_TEST_DKG_SEC:-90}"
 export DKLS_LAN_PUMP_MS="${DKLS_LAN_PUMP_MS:-100}"
 

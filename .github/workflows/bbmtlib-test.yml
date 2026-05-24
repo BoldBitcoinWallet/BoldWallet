@@ -5,12 +5,15 @@ on:
     paths:
       - 'BBMTLib/**'
       - '.github/workflows/bbmtlib-test.yml'
+      - '.github/actions/setup-libtss/**'
   workflow_dispatch:
 
 jobs:
   test:
     name: Test BBMTLib
     runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: '1'
     
     defaults:
       run:
@@ -20,10 +23,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup libtss
+        uses: ./.github/actions/setup-libtss
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.26'
           cache-dependency-path: BBMTLib/go.sum
 
       - name: Verify Go version

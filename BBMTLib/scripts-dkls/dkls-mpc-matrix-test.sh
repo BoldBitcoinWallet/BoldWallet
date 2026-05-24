@@ -37,7 +37,7 @@ if [ ! -f "${LIBTSS_RELEASE}/liblibtss_ffi.a" ] && [ ! -f "${LIBTSS_RELEASE}/lib
 fi
 
 export CGO_ENABLED=1
-export CGO_LDFLAGS="-L${LIBTSS_RELEASE} -llibtss_ffi -lm -framework Security -framework CoreFoundation"
+source "${ROOT}/scripts-dkls/cgo-env.sh"
 export RELAYS="${RELAYS:-ws://127.0.0.1:7777}"
 
 if [ "${DKLS_MPC_START_RELAY:-1}" = "1" ]; then

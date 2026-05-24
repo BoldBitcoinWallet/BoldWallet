@@ -1,0 +1,25 @@
+name: Setup libtss
+description: Clone 0xCarbon/libtss beside BoldWallet and build libtss-ffi for BBMTLib CGO.
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout libtss (sibling of BoldWallet)
+      shell: bash
+      run: |
+        LIBTSS_DIR="${GITHUB_WORKSPACE}/../libtss"
+        if [ ! -f "${LIBTSS_DIR}/libtss-go/go.mod" ]; then
+          git clone --depth 1 https://github.com/0xCarbon/libtss.git "${LIBTSS_DIR}"
+        fi
+        echo "LIBTSS_DIR=${LIBTSS_DIR}" >> "${GITHUB_ENV}"
+        test -f "${LIBTSS_DIR}/libtss-go/go.mod"
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Build libtss-ffi
+      shell: bash
+      run: |
+        cd "${LIBTSS_DIR}"
+        cargo build --release -p libtss-ffi
+        test -f target/release/liblibtss_ffi.a
