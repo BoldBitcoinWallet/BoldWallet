@@ -104,6 +104,8 @@ func NostrJoinKeysignWithSighash(
 	RegisterCancel(sessionID, cancel)
 
 	tss.InitKeysignProgress(sessionID)
+	tss.ReportKeysignProgress(sessionID, 1, "waiting for peers", false)
+	tss.ReportKeysignProgress(sessionID, 2, "starting DKLs keysign", false)
 	dklsLogf(
 		"nostr keysign: session=%s parties=%d starting mpc rounds (sighash)",
 		dkgSessionLogPrefix(sessionID),

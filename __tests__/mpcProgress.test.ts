@@ -3,6 +3,7 @@ import {
   dklsKeygenPercent,
   dklsKeysignPercent,
   gg18KeygenPercent,
+  gg18KeygenPercentForTransport,
   keygenPercentForUi,
   keygenRecvLivenessPercent,
   getKeygenStepCount,
@@ -10,6 +11,7 @@ import {
   mapMpcHookToPercent,
   parseKeygenRecvHeartbeatTick,
   parseKeygenWaitPeersTick,
+  parseKeysignRecvHeartbeatTick,
   type MpcProgressUtxoState,
 } from '../services/mpcProgress';
 
@@ -60,17 +62,16 @@ describe('dklsKeygenPercent', () => {
 });
 
 describe('gg18KeygenPercent', () => {
-  it('ramps prep then rounds for duo', () => {
+  it('uses linear transport-tuned curve for duo', () => {
     expect(gg18KeygenPercent(0, false)).toBe(0);
-    expect(gg18KeygenPercent(2, false)).toBe(15);
-    expect(gg18KeygenPercent(6, false)).toBeGreaterThanOrEqual(60);
-    expect(gg18KeygenPercent(8, false)).toBeGreaterThanOrEqual(80);
-    expect(gg18KeygenPercent(9, false)).toBe(99);
+    expect(gg18KeygenPercent(2, false)).toBe(11);
+    expect(gg18KeygenPercent(9, false)).toBe(50);
+    expect(gg18KeygenPercent(18, false)).toBe(99);
   });
 
-  it('late steps map high enough before sentinel', () => {
-    expect(gg18KeygenPercent(7, false)).toBeGreaterThanOrEqual(70);
-    expect(gg18KeygenPercent(12, true)).toBeGreaterThanOrEqual(85);
+  it('supports dedicated Nostr trio denominator', () => {
+    expect(gg18KeygenPercentForTransport(10, true, false)).toBe(34);
+    expect(gg18KeygenPercentForTransport(10, true, true)).toBe(40);
   });
 });
 
@@ -123,9 +124,9 @@ describe('mapMpcHookToPercent', () => {
       ).toBeGreaterThanOrEqual(75);
     });
 
-    it('trio step 4 uses DKLS curve (38%) not GG18 plateau (29%)', () => {
+    it('trio step 4 uses DKLS curve (38%) above GG18 linear baseline', () => {
       expect(dklsKeygenPercent(4, true)).toBe(38);
-      expect(gg18KeygenPercent(4, true)).toBe(29);
+      expect(gg18KeygenPercent(4, true)).toBe(14);
       expect(
         mapMpcHookToPercent(
           {type: 'keygen', step: 4},
@@ -211,6 +212,21 @@ describe('mapMpcHookToPercent', () => {
         ).percent,
       ).toBe(gg18KeygenPercent(4, true));
     });
+
+    it('uses Nostr denominator when transport is Nostr', () => {
+      expect(
+        mapMpcHookToPercent(
+          {type: 'keygen', step: 10},
+          'gg18',
+          {
+            isTrio: true,
+            isNostrTransport: true,
+            utxo: emptyUtxo,
+            currentProgress: 0,
+          },
+        ).percent,
+      ).toBe(40);
+    });
   });
 
   describe('GG18 keysign', () => {
@@ -237,7 +253,7 @@ describe('mapMpcHookToPercent', () => {
           currentProgress: 0,
         },
       );
-      expect(r.percent).toBe(8);
+      expect(r.percent).toBeNull();
       expect(r.utxoState).toEqual({
         utxoCount: 2,
         utxoIndex: 1,
@@ -285,7 +301,7 @@ describe('mapMpcHookToPercent', () => {
       ).toBeNull();
     });
 
-    it('clears utxo state on keysign done', () => {
+    it('does not clear utxo state on keysign done', () => {
       const r = mapMpcHookToPercent(
         {type: 'keysign', done: true},
         'dkls23',
@@ -297,7 +313,43 @@ describe('mapMpcHookToPercent', () => {
       );
       expect(r.percent).toBe(100);
       expect(r.mpcDone).toBe(true);
-      expect(r.utxoState).toEqual(emptyUtxo);
+      expect(r.utxoState).toBeUndefined();
+    });
+
+    it('does not jump to 100% on input 2 of 6 completion', () => {
+      const r = mapMpcHookToPercent(
+        {type: 'keysign', done: true},
+        'dkls23',
+        {
+          isTrio: true,
+          isSendBitcoin: true,
+          utxo: {utxoCount: 6, utxoIndex: 2, utxoRange: 100 / 6},
+          currentProgress: 24,
+        },
+      );
+      expect(r.percent).toBe(33);
+      expect(r.mpcDone).toBe(false);
+    });
+
+    it('keeps keysign heartbeat monotonic and below band end', () => {
+      const utxo: MpcProgressUtxoState = {
+        utxoCount: 6,
+        utxoIndex: 2,
+        utxoRange: 100 / 6,
+      };
+      const r = mapMpcHookToPercent(
+        {type: 'keysign', step: 6, info: 'DKLs keysign round (receiving 4)'},
+        'dkls23',
+        {
+          isTrio: true,
+          isSendBitcoin: true,
+          utxo,
+          currentProgress: 24,
+        },
+      );
+      expect(r.transportLiveness).toBe(true);
+      expect(r.percent).toBeGreaterThan(24);
+      expect(r.percent).toBeLessThanOrEqual(33);
     });
   });
 
@@ -316,7 +368,7 @@ describe('mapMpcHookToPercent', () => {
       expect(r.percent).toBe(5);
     });
 
-    it('bands per-input PSBT hooks across full progress range', () => {
+    it('updates per-input PSBT band state without forcing main percent', () => {
       const r = mapMpcHookToPercent(
         {
           type: 'psbt',
@@ -332,7 +384,7 @@ describe('mapMpcHookToPercent', () => {
         utxoIndex: 1,
         utxoRange: 50,
       });
-      expect(r.percent).toBe(4);
+      expect(r.percent).toBeNull();
     });
 
     it('marks done on psbt signing complete', () => {
@@ -365,5 +417,15 @@ describe('keygenRecvLivenessPercent', () => {
 describe('parseKeygenWaitPeersTick', () => {
   it('parses wait peers tick', () => {
     expect(parseKeygenWaitPeersTick('waiting for peers (3)')).toBe(3);
+    expect(parseKeygenWaitPeersTick('waiting for devices (2)')).toBe(2);
+    expect(parseKeygenWaitPeersTick('waiting parties (4)')).toBe(4);
+  });
+});
+
+describe('parseKeysignRecvHeartbeatTick', () => {
+  it('parses keysign receiving tick', () => {
+    expect(parseKeysignRecvHeartbeatTick('DKLs keysign round (receiving 2)')).toBe(
+      2,
+    );
   });
 });

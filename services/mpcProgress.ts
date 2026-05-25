@@ -57,6 +57,24 @@ export type MpcProgressResult = {
   transportLiveness?: boolean;
 };
 
+function hasActiveUtxoBand(utxo: MpcProgressUtxoState): boolean {
+  return utxo.utxoCount > 0 && utxo.utxoIndex > 0 && utxo.utxoRange > 0;
+}
+
+function bandEndPercent(
+  utxo: MpcProgressUtxoState,
+  opts?: {finalCapTo99?: boolean},
+): number {
+  if (!hasActiveUtxoBand(utxo)) {
+    return 100;
+  }
+  const rawEnd = Math.round(utxo.utxoIndex * utxo.utxoRange);
+  if (opts?.finalCapTo99 && utxo.utxoIndex < utxo.utxoCount) {
+    return Math.min(99, rawEnd);
+  }
+  return Math.min(100, rawEnd);
+}
+
 /** Parses `keygen round (receiving N)` heartbeat tick from native info. */
 export function parseKeygenRecvHeartbeatTick(info: string): number | null {
   const m = info.match(/receiving\s+(\d+)/i);
@@ -69,7 +87,19 @@ export function parseKeygenRecvHeartbeatTick(info: string): number | null {
 
 /** Parses `waiting for peers (N)` join heartbeat tick. */
 export function parseKeygenWaitPeersTick(info: string): number | null {
-  const m = info.match(/waiting\s+for\s+peers\s*\((\d+)\)/i);
+  const m = info.match(
+    /waiting(?:\s+for\s+(?:peers|devices))?(?:\s+parties)?\s*\((\d+)\)/i,
+  );
+  if (!m) {
+    return null;
+  }
+  const tick = parseInt(m[1], 10);
+  return Number.isFinite(tick) && tick > 0 ? tick : null;
+}
+
+/** Parses `DKLs keysign round (receiving N)` heartbeat tick from native info. */
+export function parseKeysignRecvHeartbeatTick(info: string): number | null {
+  const m = info.match(/receiving\s+(\d+)/i);
   if (!m) {
     return null;
   }
@@ -79,6 +109,7 @@ export function parseKeygenWaitPeersTick(info: string): number | null {
 
 const KEYGEN_RECV_CREEP_PER_TICK = 0.5;
 const KEYGEN_WAIT_PEERS_CREEP_PER_TICK = 0.3;
+const KEYSIGN_RECV_CREEP_PER_TICK = 0.35;
 
 /**
  * Nudges keygen % upward during recv/wait heartbeats without crossing the next step band.
@@ -89,14 +120,18 @@ export function keygenRecvLivenessPercent(
   isTrio: boolean,
   backend: TssBackend,
   currentProgress: number,
-  opts?: {waitPeers?: boolean},
+  opts?: {waitPeers?: boolean; isNostrTransport?: boolean},
 ): number {
   if (tick <= 0) {
-    return Math.max(currentProgress, keygenPercentForUi(step, isTrio, backend));
+    return Math.max(
+      currentProgress,
+      keygenPercentForUi(step, isTrio, backend, opts?.isNostrTransport),
+    );
   }
-  const base = keygenPercentForUi(step, isTrio, backend);
+  const base = keygenPercentForUi(step, isTrio, backend, opts?.isNostrTransport);
   const nextStep = step + 1;
-  let ceiling = keygenPercentForUi(nextStep, isTrio, backend) - 1;
+  let ceiling =
+    keygenPercentForUi(nextStep, isTrio, backend, opts?.isNostrTransport) - 1;
   if (ceiling <= base) {
     ceiling = Math.min(98, base + 1);
   }
@@ -106,6 +141,38 @@ export function keygenRecvLivenessPercent(
   const bump = Math.min(tick * perTick, Math.max(0, ceiling - base));
   const target = Math.round(base + bump);
   return Math.min(98, Math.max(currentProgress, target));
+}
+
+export function keysignRecvLivenessPercent(
+  step: number,
+  tick: number,
+  backend: TssBackend,
+  utxo: MpcProgressUtxoState,
+  currentProgress: number,
+): number {
+  if (tick <= 0) {
+    const base =
+      backend === 'dkls23'
+        ? dklsKeysignPercent(step, utxo)
+        : keysignStepToPercent(step, backend, utxo);
+    return Math.max(currentProgress, base);
+  }
+  const base =
+    backend === 'dkls23'
+      ? dklsKeysignPercent(step, utxo)
+      : keysignStepToPercent(step, backend, utxo);
+  const bandEnd = bandEndPercent(utxo, {finalCapTo99: true});
+  const nextStepPercent =
+    backend === 'dkls23'
+      ? dklsKeysignPercent(step + 1, utxo)
+      : keysignStepToPercent(step + 1, backend, utxo);
+  let ceiling = Math.min(bandEnd, nextStepPercent - 1);
+  if (ceiling <= base) {
+    ceiling = Math.min(bandEnd, base + 1);
+  }
+  const bump = Math.min(tick * KEYSIGN_RECV_CREEP_PER_TICK, ceiling - base);
+  const target = Math.round(base + Math.max(0, bump));
+  return Math.min(bandEnd, Math.max(currentProgress, target));
 }
 
 /**
@@ -135,7 +202,6 @@ const DKLS_KEYGEN_PREP_END_PERCENT = 20;
 export const DKLS_KEYGEN_MAX_ROUND_STEP_DUO = 9;
 export const DKLS_KEYGEN_MAX_ROUND_STEP_TRIO = 11;
 
-const GG18_KEYGEN_PREP_END_PERCENT = 15;
 /** Typical visible GG18 keygen steps before done (JoinKeygen milestones + message apply). */
 export const GG18_KEYGEN_MAX_ROUND_STEP_DUO = 9;
 export const GG18_KEYGEN_MAX_ROUND_STEP_TRIO = 14;
@@ -175,25 +241,22 @@ export function dklsKeygenPercent(step: number, isTrio: boolean): number {
  * Phased mapping avoids showing ~35–40% right before done.
  */
 export function gg18KeygenPercent(step: number, isTrio: boolean): number {
+  return gg18KeygenPercentForTransport(step, isTrio, false);
+}
+
+export function gg18KeygenPercentForTransport(
+  step: number,
+  isTrio: boolean,
+  isNostrTransport: boolean,
+): number {
   if (step >= MPC_PROGRESS_SENTINEL_STEP) {
     return 100;
   }
   if (step <= 0) {
     return 0;
   }
-  if (step <= 2) {
-    return Math.round((step / 2) * GG18_KEYGEN_PREP_END_PERCENT);
-  }
-  const maxRoundStep = isTrio
-    ? GG18_KEYGEN_MAX_ROUND_STEP_TRIO
-    : GG18_KEYGEN_MAX_ROUND_STEP_DUO;
-  const roundSpan = Math.max(1, maxRoundStep - 2);
-  const roundIndex = Math.min(step - 2, roundSpan);
-  const tail = 99 - GG18_KEYGEN_PREP_END_PERCENT;
-  return Math.min(
-    99,
-    Math.round(GG18_KEYGEN_PREP_END_PERCENT + (tail * roundIndex) / roundSpan),
-  );
+  const linearSteps = isTrio ? (isNostrTransport ? 25 : 29) : 18;
+  return Math.min(99, Math.round((99 * step) / linearSteps));
 }
 
 export type KeygenProgressTraceRow = {
@@ -257,17 +320,13 @@ function keysignStepToPercent(
   utxo: MpcProgressUtxoState,
 ): number {
   const keysignSteps = getKeysignStepCount(backend);
-  if (step >= MPC_PROGRESS_SENTINEL_STEP) {
-    return 100;
-  }
+  const boundedStep = Math.max(0, Math.min(step, keysignSteps));
   if (utxo.utxoCount > 0) {
     const prgUTXO = (utxo.utxoIndex - 1) * utxo.utxoRange;
-    return Math.min(
-      100,
-      Math.round(prgUTXO + (utxo.utxoRange * step) / keysignSteps),
-    );
+    const raw = Math.round(prgUTXO + (utxo.utxoRange * boundedStep) / keysignSteps);
+    return Math.min(bandEndPercent(utxo), raw);
   }
-  return Math.min(100, Math.round((100 * step) / keysignSteps));
+  return Math.min(100, Math.round((100 * boundedStep) / keysignSteps));
 }
 
 /**
@@ -277,10 +336,11 @@ export function keygenPercentForUi(
   step: number,
   isTrio: boolean,
   backend: TssBackend,
+  isNostrTransport = false,
 ): number {
   return backend === 'dkls23'
     ? dklsKeygenPercent(step, isTrio)
-    : gg18KeygenPercent(step, isTrio);
+    : gg18KeygenPercentForTransport(step, isTrio, isNostrTransport);
 }
 
 /**
@@ -294,12 +354,15 @@ export function mapMpcHookToPercent(
     isTrio: boolean;
     isSendBitcoin?: boolean;
     isSignPSBT?: boolean;
+    isNostrTransport?: boolean;
     utxo: MpcProgressUtxoState;
     currentProgress: number;
   },
 ): MpcProgressResult {
   const {isTrio, utxo, currentProgress} = opts;
   const isSendBitcoin = opts.isSendBitcoin === true;
+  const isSignPSBT = opts.isSignPSBT === true;
+  const isNostrTransport = opts.isNostrTransport === true;
   const step = msg.step ?? 0;
 
   if (msg.type === 'keygen') {
@@ -308,7 +371,7 @@ export function mapMpcHookToPercent(
     }
     const info = msg.info ?? '';
     const infoLower = info.toLowerCase();
-    let percent = keygenPercentForUi(step, isTrio, backend);
+    let percent = keygenPercentForUi(step, isTrio, backend, isNostrTransport);
     let transportLiveness = false;
 
     const recvTick = parseKeygenRecvHeartbeatTick(info);
@@ -319,6 +382,7 @@ export function mapMpcHookToPercent(
         isTrio,
         backend,
         currentProgress,
+        {isNostrTransport},
       );
       transportLiveness = true;
     } else if (step <= 2) {
@@ -330,7 +394,7 @@ export function mapMpcHookToPercent(
           isTrio,
           backend,
           currentProgress,
-          {waitPeers: true},
+          {waitPeers: true, isNostrTransport},
         );
         transportLiveness = true;
       }
@@ -361,13 +425,6 @@ export function mapMpcHookToPercent(
       const utxoIndex = msg.utxo_current ?? 0;
       const utxoRange = 100 / utxoCount;
       next.utxoState = {utxoCount, utxoIndex, utxoRange};
-      const base = (utxoIndex - 1) * utxoRange;
-      const hint =
-        info.includes('joining') || info.includes('keysign') ? 0.2 : 0.08;
-      const pct = Math.round(base + utxoRange * hint);
-      if (pct > 0) {
-        next.percent = Math.max(currentProgress, Math.min(99, pct));
-      }
     }
     return next;
   }
@@ -388,31 +445,55 @@ export function mapMpcHookToPercent(
     if (isSendBitcoin && (msg.utxo_total ?? 0) > 0) {
       const utxoCount = msg.utxo_total!;
       const utxoIndex = msg.utxo_current ?? 0;
-      const buildCap = 15;
-      const buildPct = Math.min(
-        buildCap,
-        Math.round((buildCap * utxoIndex) / utxoCount),
-      );
       next.utxoState = {
         utxoCount,
         utxoIndex,
         utxoRange: 100 / utxoCount,
       };
-      if (buildPct > 0) {
-        next.percent = Math.max(currentProgress, buildPct);
-      }
     }
     return next;
   }
 
   if (msg.type === 'keysign') {
-    if (msg.done) {
+    const spendFlowWithBands =
+      (isSendBitcoin || isSignPSBT) && hasActiveUtxoBand(utxo);
+    if (msg.done || step >= MPC_PROGRESS_SENTINEL_STEP) {
+      if (spendFlowWithBands) {
+        const atFinalInput = utxo.utxoIndex >= utxo.utxoCount;
+        return {
+          percent: Math.max(
+            currentProgress,
+            bandEndPercent(utxo, {finalCapTo99: !atFinalInput}),
+          ),
+          mpcDone: atFinalInput,
+        };
+      }
       return {
         percent: 100,
         mpcDone: true,
-        utxoState: {utxoIndex: 0, utxoCount: 0, utxoRange: 0},
       };
     }
+
+    const info = msg.info ?? '';
+    const infoLower = info.toLowerCase();
+    const recvTick = parseKeysignRecvHeartbeatTick(info);
+    if (
+      recvTick !== null &&
+      infoLower.includes('receiving') &&
+      infoLower.includes('keysign')
+    ) {
+      return {
+        percent: keysignRecvLivenessPercent(
+          step,
+          recvTick,
+          backend,
+          utxo,
+          currentProgress,
+        ),
+        transportLiveness: true,
+      };
+    }
+
     const raw =
       backend === 'dkls23'
         ? dklsKeysignPercent(step, utxo)
@@ -420,7 +501,10 @@ export function mapMpcHookToPercent(
     if (raw <= 0) {
       return {percent: null};
     }
-    const percent = Math.min(100, Math.max(currentProgress, raw));
+    const cappedRaw = spendFlowWithBands
+      ? Math.min(raw, bandEndPercent(utxo, {finalCapTo99: true}))
+      : raw;
+    const percent = Math.min(100, Math.max(currentProgress, cappedRaw));
     return {percent};
   }
 

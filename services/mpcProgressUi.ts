@@ -327,6 +327,7 @@ export function processMpcHookMessage(
     isTrio: opts.isTrio,
     isSendBitcoin: opts.isSendBitcoin,
     isSignPSBT: opts.isSignPSBT,
+    isNostrTransport: opts.isNostrTransport,
     utxo: opts.refs.utxoRef.current,
     currentProgress: opts.refs.progressRef.current,
   });

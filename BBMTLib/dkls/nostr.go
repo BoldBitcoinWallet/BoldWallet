@@ -308,6 +308,8 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 
 	hash := HashMessageForDKLs([]byte(message))
 	tss.InitKeysignProgress(sessionID)
+	tss.ReportKeysignProgress(sessionID, 1, "waiting for peers", false)
+	tss.ReportKeysignProgress(sessionID, 2, "starting DKLs keysign", false)
 	dklsLogf(
 		"nostr keysign: session=%s parties=%d starting mpc rounds",
 		dkgSessionLogPrefix(sessionID),

@@ -101,7 +101,7 @@ describe('processMpcHookMessage', () => {
       {isTrio: true, isSendBitcoin: false, refs: gg18Refs},
     );
     expect(dkls?.percent).toBe(38);
-    expect(gg18?.percent).toBe(29);
+    expect(gg18?.percent).toBe(14);
     expect(dkls?.statusLabel).toBe('Key generation · round 2');
   });
 
@@ -234,6 +234,72 @@ describe('processMpcHookMessage', () => {
     expect(activeSessionRef.current).toBe(
       'f9487f081592611ab0b4a5c176f5e8a6fdf12478ea3e31157e3e5177a002a1bf',
     );
+  });
+
+  it('accepts Nostr PSBT keysign transition from sessionFlag to per-input session', () => {
+    const progressRef = {current: 5};
+    const utxoRef = {current: emptyMpcUtxoState()};
+    const activeSessionRef = {
+      current:
+        'abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd',
+    };
+    const first = processMpcHookMessage(
+      JSON.stringify({
+        session:
+          'f9487f081592611ab0b4a5c176f5e8a6fdf12478ea3e31157e3e5177a002a1bf0',
+        type: 'psbt',
+        info: 'joining keysign (nostr)',
+        utxo_current: 1,
+        utxo_total: 3,
+      }),
+      'gg18',
+      {
+        isTrio: true,
+        isSendBitcoin: false,
+        isSignPSBT: true,
+        refs: {progressRef, utxoRef, activeSessionRef},
+      },
+    );
+    expect(first).not.toBeNull();
+    expect(activeSessionRef.current).toBe(
+      'f9487f081592611ab0b4a5c176f5e8a6fdf12478ea3e31157e3e5177a002a1bf',
+    );
+
+    const second = processMpcHookMessage(
+      JSON.stringify({
+        session:
+          'f9487f081592611ab0b4a5c176f5e8a6fdf12478ea3e31157e3e5177a002a1bf1',
+        type: 'keysign',
+        step: 10,
+        info: 'Received new message 2',
+      }),
+      'gg18',
+      {
+        isTrio: true,
+        isSendBitcoin: false,
+        isSignPSBT: true,
+        refs: {progressRef, utxoRef, activeSessionRef},
+      },
+    );
+    expect(second).not.toBeNull();
+    expect(second?.percent).toBeGreaterThanOrEqual(9);
+  });
+
+  it('does not mark spend as done on mid-input keysign done', () => {
+    const progressRef = {current: 20};
+    const utxoRef = {current: {utxoIndex: 2, utxoCount: 6, utxoRange: 100 / 6}};
+    const r = processMpcHookMessage(
+      JSON.stringify({type: 'keysign', done: true}),
+      'dkls23',
+      {
+        isTrio: true,
+        isSendBitcoin: true,
+        refs: {progressRef, utxoRef},
+      },
+    );
+    expect(r?.percent).toBe(33);
+    expect(r?.mpcDone).toBe(false);
+    expect(progressRef.current).toBe(33);
   });
 
   it('keeps progress monotonic across hooks', () => {
