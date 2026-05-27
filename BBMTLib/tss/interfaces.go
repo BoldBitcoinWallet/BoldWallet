@@ -75,6 +75,7 @@ func (l *LocalStateNostr) GetNsec() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("decode hex: %w", err)
 	}
+	defer clear(rawNsec)
 	return string(rawNsec), nil
 }
 

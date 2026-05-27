@@ -113,6 +113,7 @@ func ImportKeyshare(jsonStr string) (*libtss.KeyShareHandle, *KeyshareJSON, erro
 	if err != nil {
 		return nil, nil, fmt.Errorf("decode share_b64: %w", err)
 	}
+	defer clear(data)
 	share, err := libtss.ImportKeyShare(libtss.CiphersuiteSecp256k1ECDSA, data)
 	if err != nil {
 		return nil, nil, err

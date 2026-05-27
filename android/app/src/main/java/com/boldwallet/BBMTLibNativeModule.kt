@@ -210,7 +210,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
-    /** Summary line; full blob is logged separately as `raw_json=` (dev). */
+    /** Summary line only; never logs keyshare contents. */
     private fun logNsecKeyshareDiag(rawLen: Int, obj: JSONObject?, nsecVal: Any?) {
         val keysCsv = obj?.keys()?.asSequence()?.sorted()?.joinToString(",") ?: "(nil)"
         val nsecDesc =
@@ -248,7 +248,6 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     ld("nsecFromKeyshare", "FAIL: no_encrypted_prefs_blob key=$KEY_KEYSHARE")
                     throw Exception("No keyshare found in secure storage")
                 }
-        ld("nsecFromKeyshare", "raw_json=$raw")
         val rawLen = raw.toByteArray(Charsets.UTF_8).size
         var obj: JSONObject? = null
         var parseEx: JSONException? = null
@@ -271,7 +270,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     ?: run {
                         ld(
                             "nsecFromKeyshare",
-                            "FAIL: json_parse and no regex nsec rawLen=$rawLen msg=${parseEx?.message} raw_json=$raw",
+                            "FAIL: json_parse and no regex nsec rawLen=$rawLen msg=${parseEx?.message}",
                         )
                         throw Exception("Could not parse keyshare JSON (nsec not extractable)")
                     }

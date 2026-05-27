@@ -95,7 +95,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
     return s.isEmpty ? nil : s
   }
 
-  /// Debug: summary line (lengths / types). Full JSON is logged separately as `raw_json=`.
+  /// Debug: summary line (lengths / types) only.
   private func logNsecKeyshareDiag(rawLen: Int, obj: [String: Any]?, nsecVal: Any?) {
     let keysCsv = obj.map { $0.keys.sorted().joined(separator: ",") } ?? "(nil)"
     let nsecDesc: String
@@ -127,7 +127,6 @@ class BBMTLibNativeModule: RCTEventEmitter {
         domain: "BBMTLibNativeModule", code: 1,
         userInfo: [NSLocalizedDescriptionKey: "No keyshare found in secure storage"])
     }
-    sendLogEvent("nsecFromKeyshare", "raw_json=\(raw)")
     let rawLen = raw.utf8.count
     let data = raw.data(using: .utf8)
     var obj: [String: Any]?
@@ -157,7 +156,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
       } else {
         sendLogEvent(
           "nsecFromKeyshare",
-          "FAIL: json_parse and no regex nsec rawLen=\(rawLen) err=\(errDesc) raw_json=\(raw)")
+          "FAIL: json_parse and no regex nsec rawLen=\(rawLen) err=\(errDesc)")
         throw NSError(
           domain: "BBMTLibNativeModule", code: 6,
           userInfo: [

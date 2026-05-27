@@ -462,7 +462,7 @@ func runDKGWithSender(
 		share = nil
 		pub = libtss.PublicKeyPackage{}
 	})
-	if err := libtss.Init(); err != nil {
+	if err := initLibtss(); err != nil {
 		return nil, libtss.PublicKeyPackage{}, err
 	}
 	session, outMsgs, err := libtss.NewDKGSession(threshold, selfID, sessionID)
@@ -694,7 +694,7 @@ func runSignWithSender(
 	}
 	session, outMsgs, err := libtss.NewSignSession(share, message, counterparties, signID)
 	if err != nil {
-		return libtss.Signature{}, err
+		return libtss.Signature{}, wrapNonceReuseError(err)
 	}
 	defer session.Free()
 
@@ -807,7 +807,7 @@ func runSignWithSender(
 			return step.Signature, nil
 		}
 		if err != nil {
-			return libtss.Signature{}, err
+			return libtss.Signature{}, wrapNonceReuseError(err)
 		}
 		if progressSession != "" {
 			tss.ReportKeysignProgress(progressSession, stepNo, "DKLs keysign round", false)

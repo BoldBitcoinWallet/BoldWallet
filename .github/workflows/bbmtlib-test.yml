@@ -6,6 +6,7 @@ on:
       - 'BBMTLib/**'
       - '.github/workflows/bbmtlib-test.yml'
       - '.github/actions/setup-libtss/**'
+      - '.github/scripts/check-sensitive-logs.sh'
   workflow_dispatch:
 
 jobs:
@@ -34,6 +35,9 @@ jobs:
 
       - name: Verify Go version
         run: go version
+
+      - name: Check sensitive log regressions
+        run: bash ../.github/scripts/check-sensitive-logs.sh
 
       - name: Install dependencies
         run: go mod download

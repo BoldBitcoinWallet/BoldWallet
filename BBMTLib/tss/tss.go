@@ -234,6 +234,7 @@ func (s *ServiceImpl) applyMessageToTssInstance(localParty tss.Party, msg string
 	if err != nil {
 		return "", fmt.Errorf("failed to decode inbound message: %w", err)
 	}
+	defer clear(decodedMsg)
 	if err := json.Unmarshal(decodedMsg, &msgFromTss); err != nil {
 		return "", fmt.Errorf("failed to parse inbound message payload: %w", err)
 	}

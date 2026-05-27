@@ -5,8 +5,9 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/md5"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -430,23 +431,22 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	return string(sigStr), nil
 }
 
-func md5Hash(data string) (string, error) {
-	// Create a new MD5 hash
-	hasher := md5.New()
+func computePayloadDigest(data string) string {
+	sum := sha256.Sum256([]byte(data))
+	return "d1:" + hex.EncodeToString(sum[:])
+}
 
-	// Write the data to the hasher
-	_, err := hasher.Write([]byte(data))
+func computePayloadAuthTag(data, keyHex string) (string, error) {
+	key, err := hex.DecodeString(strings.TrimSpace(keyHex))
 	if err != nil {
-		return "", fmt.Errorf("failed to write data to hasher: %w", err)
+		return "", fmt.Errorf("failed to decode auth key: %w", err)
 	}
-
-	// Get the hashed data
-	hashBytes := hasher.Sum(nil)
-
-	// Convert the hash to a hexadecimal string
-	hashHex := hex.EncodeToString(hashBytes)
-
-	return hashHex, nil
+	defer clear(key)
+	mac := hmac.New(sha256.New, key)
+	if _, err := mac.Write([]byte(data)); err != nil {
+		return "", fmt.Errorf("failed to compute auth tag: %w", err)
+	}
+	return "h1:" + hex.EncodeToString(mac.Sum(nil)), nil
 }
 
 func AesEncrypt(data, key string) (result string, err error) {
@@ -551,10 +551,12 @@ func (m *MessengerImp) Send(from, to, body string) error {
 		}
 	}
 
-	// Compute MD5 hash of the body
-	hash, err := md5Hash(body)
-	if err != nil {
-		Logln("BBMTLog", "Error computing MD5 hash:", err)
+	hash := computePayloadDigest(body)
+	if len(m.SessionKey) > 0 {
+		hash, err = computePayloadAuthTag(body, m.SessionKey)
+		if err != nil {
+			return fmt.Errorf("failed to compute payload auth tag: %w", err)
+		}
 	}
 
 	// Per-party seq so parallel LAN parties in one process (integration tests) do not share SeqNo.
@@ -1018,13 +1020,32 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 					}
 				}
 				if message.Hash != "" {
-					computedHash, hashErr := md5Hash(body)
-					if hashErr != nil {
-						Logln("BBMTLog", "Failed to verify message hash:", hashErr)
-						continue
-					}
-					if !strings.EqualFold(computedHash, message.Hash) {
-						Logln("BBMTLog", "Message hash mismatch; dropping message", message.SeqNo)
+					switch {
+					case strings.HasPrefix(message.Hash, "h1:"):
+						if len(sessionKey) == 0 {
+							Logln("BBMTLog", "Missing session key for authenticated payload", message.SeqNo)
+							deleteMessage(server, session, key, message.Hash)
+							continue
+						}
+						expectedTag, tagErr := computePayloadAuthTag(body, sessionKey)
+						if tagErr != nil {
+							Logln("BBMTLog", "Failed to verify payload auth tag:", tagErr)
+							continue
+						}
+						if !hmac.Equal([]byte(expectedTag), []byte(message.Hash)) {
+							Logln("BBMTLog", "Payload auth-tag mismatch; dropping message", message.SeqNo)
+							deleteMessage(server, session, key, message.Hash)
+							continue
+						}
+					case strings.HasPrefix(message.Hash, "d1:"):
+						expectedDigest := computePayloadDigest(body)
+						if expectedDigest != message.Hash {
+							Logln("BBMTLog", "Payload digest mismatch; dropping message", message.SeqNo)
+							deleteMessage(server, session, key, message.Hash)
+							continue
+						}
+					default:
+						Logln("BBMTLog", "Unknown payload hash format; dropping message", message.SeqNo)
 						deleteMessage(server, session, key, message.Hash)
 						continue
 					}

@@ -86,7 +86,7 @@ func RunDKGPartyWithThreshold(selfID libtss.Identifier, sessionID []byte, thresh
 		share = nil
 		pub = libtss.PublicKeyPackage{}
 	})
-	if err := libtss.Init(); err != nil {
+	if err := initLibtss(); err != nil {
 		return nil, libtss.PublicKeyPackage{}, fmt.Errorf("tss init: %w", err)
 	}
 
@@ -126,7 +126,7 @@ func RunDKGInProcessWithThreshold(sessionID []byte, threshold libtss.ThresholdCo
 		shares = nil
 		pubkeys = libtss.PublicKeyPackage{}
 	})
-	if err := libtss.Init(); err != nil {
+	if err := initLibtss(); err != nil {
 		return nil, libtss.PublicKeyPackage{}, fmt.Errorf("tss init: %w", err)
 	}
 
@@ -183,7 +183,7 @@ func RunSignParty(share *libtss.KeyShareHandle, message []byte, signID []byte, r
 
 	session, outMsgs, err := libtss.NewSignSession(share, message, counterpartiesFor(selfID, signingParties), signID)
 	if err != nil {
-		return libtss.Signature{}, err
+		return libtss.Signature{}, wrapNonceReuseError(err)
 	}
 	defer session.Free()
 
@@ -197,7 +197,7 @@ func RunSignParty(share *libtss.KeyShareHandle, message []byte, signID []byte, r
 		}
 		step, err := session.Next(in)
 		if err != nil {
-			return libtss.Signature{}, err
+			return libtss.Signature{}, wrapNonceReuseError(err)
 		}
 		if step.Complete {
 			step.Signature.Protocol = libtss.ProtocolDKLs23
@@ -220,7 +220,7 @@ func counterpartiesFor(selfID libtss.Identifier, signingParties []libtss.Identif
 // RunSignInProcess signs with all participants in-process (for scripts/tests).
 func RunSignInProcess(shares []*libtss.KeyShareHandle, message []byte) (sig libtss.Signature, err error) {
 	defer recoverAsErrorClear("RunSignInProcess", &err, func() { sig = libtss.Signature{} })
-	if err := libtss.Init(); err != nil {
+	if err := initLibtss(); err != nil {
 		return libtss.Signature{}, fmt.Errorf("tss init: %w", err)
 	}
 
@@ -239,7 +239,7 @@ func RunSignInProcess(shares []*libtss.KeyShareHandle, message []byte) (sig libt
 	for i, share := range shares {
 		session, messages, err := libtss.NewSignSession(share, message, counterpartiesFor(ids[i], ids), signID)
 		if err != nil {
-			return libtss.Signature{}, err
+			return libtss.Signature{}, wrapNonceReuseError(err)
 		}
 		sessions[i] = session
 		round[i] = messages
@@ -253,7 +253,7 @@ func RunSignInProcess(shares []*libtss.KeyShareHandle, message []byte) (sig libt
 		for i := range sessions {
 			step, err := sessions[i].Next(collectPeerMessages(round, i, ids[i]))
 			if err != nil {
-				return libtss.Signature{}, err
+				return libtss.Signature{}, wrapNonceReuseError(err)
 			}
 			if step.Complete {
 				sig = step.Signature
