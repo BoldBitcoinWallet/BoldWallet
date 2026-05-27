@@ -129,7 +129,14 @@ func runNostrDKG(rootCtx context.Context, cfg nostrtransport.Config, chaincode, 
 		_ = pump.Run(pumpCtx, func(payload []byte) error {
 			msgs, err := DecodeMessages(string(payload))
 			if err != nil {
-				return err
+				// Corrupt/foreign payloads must not kill the entire subscription loop.
+				// LAN pump already treats decode failures as non-fatal and continues.
+				dklsLogErrorf(
+					"nostr DKG: session=%s dropping undecodable payload: %v",
+					dkgSessionLogPrefix(cfg.SessionID),
+					err,
+				)
+				return nil
 			}
 			in := dedupeDKGInboundBySender(selfID, msgs)
 			if len(in) == 0 {
@@ -341,7 +348,13 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 		_ = pump.Run(pumpCtx, func(payload []byte) error {
 			msgs, err := DecodeMessages(string(payload))
 			if err != nil {
-				return err
+				// Keep the pump alive on malformed payloads to avoid cascading timeouts.
+				dklsLogErrorf(
+					"nostr keysign: session=%s dropping undecodable payload: %v",
+					dkgSessionLogPrefix(sessionID),
+					err,
+				)
+				return nil
 			}
 			in := filterMessagesFor(signSess.SelfID, msgs)
 			if len(in) == 0 {

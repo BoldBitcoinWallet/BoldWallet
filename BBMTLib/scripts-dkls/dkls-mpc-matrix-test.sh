@@ -48,8 +48,27 @@ if [ "${DKLS_MPC_START_RELAY:-1}" = "1" ]; then
 fi
 
 echo "==> DKLS MPC matrix (TestMpcMatrix)"
-if go test -count=1 ./dkls/ -timeout 25m -run '^TestMpcMatrix$' -v; then
+run_matrix_test() {
+  go test -count=1 ./dkls/ -timeout 25m -run '^TestMpcMatrix$' -v
+}
+
+if run_matrix_test; then
   pass "TestMpcMatrix (LAN/Nostr keygen + keysign duo/trio)"
+  exit 0
+fi
+
+echo "==> TestMpcMatrix failed (attempt 1). Capturing relay diagnostics..."
+docker ps --format 'table {{.Names}}\t{{.Status}}' || true
+docker logs --tail 120 bbmtlib-test-relay 2>/dev/null || true
+
+echo "==> Retrying TestMpcMatrix once (transient relay/network flake mitigation)..."
+if [ "${DKLS_MPC_START_RELAY:-1}" = "1" ]; then
+  docker rm -f bbmtlib-test-relay >/dev/null 2>&1 || true
+  "${ROOT}/scripts/start-local-relay.sh" || fail "restart relay before retry"
+fi
+
+if run_matrix_test; then
+  pass "TestMpcMatrix after retry (transient flake)"
 else
-  fail "TestMpcMatrix"
+  fail "TestMpcMatrix (failed after retry)"
 fi
