@@ -45,3 +45,20 @@ func TestDedupeDKGBatchBySender(t *testing.T) {
 		t.Fatalf("expected 2, got %d", len(out))
 	}
 }
+
+func TestMPCConsumedTrackerFiltersRelayReplay(t *testing.T) {
+	self := libtss.Identifier(1)
+	tracker := newMPCConsumedTracker()
+	first := []libtss.Message{{From: 2, To: 1, Data: []byte("round-4")}}
+	tracker.markConsumed(first)
+
+	replay := tracker.filterNew(append([]libtss.Message(nil), first...), self)
+	if len(replay) != 0 {
+		t.Fatalf("expected replay to be dropped, got %d", len(replay))
+	}
+
+	fresh := tracker.filterNew([]libtss.Message{{From: 3, To: 1, Data: []byte("round-4-b")}}, self)
+	if len(fresh) != 1 {
+		t.Fatalf("expected 1 fresh fragment, got %d", len(fresh))
+	}
+}

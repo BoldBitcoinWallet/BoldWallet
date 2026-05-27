@@ -355,6 +355,53 @@ func mergeDKGPeerMessages(batch []libtss.Message, incoming []libtss.Message, sel
 	return batch
 }
 
+func mpcMessageKey(msg libtss.Message) string {
+	return fmt.Sprintf("%d:%d:%x", msg.From, msg.To, msg.Data)
+}
+
+// mpcConsumedTracker drops Nostr/LAN relay replays of fragments already fed to libtss.
+type mpcConsumedTracker struct {
+	seen map[string]struct{}
+}
+
+func newMPCConsumedTracker() *mpcConsumedTracker {
+	return &mpcConsumedTracker{seen: make(map[string]struct{})}
+}
+
+func (t *mpcConsumedTracker) filterNew(batch []libtss.Message, selfID libtss.Identifier) []libtss.Message {
+	batch = dedupeDKGBatchBySender(batch, selfID)
+	out := make([]libtss.Message, 0, len(batch))
+	replayed := 0
+	for _, msg := range batch {
+		key := mpcMessageKey(msg)
+		if _, ok := t.seen[key]; ok {
+			replayed++
+			continue
+		}
+		out = append(out, msg)
+	}
+	if replayed > 0 {
+		dklsLogf("MPC: ignoring %d replayed fragment(s) already consumed", replayed)
+	}
+	return out
+}
+
+func (t *mpcConsumedTracker) markConsumed(batch []libtss.Message) {
+	for _, msg := range batch {
+		t.seen[mpcMessageKey(msg)] = struct{}{}
+	}
+}
+
+func mpcIsDuplicateFragment(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "duplicate DKG fragment") ||
+		strings.Contains(s, "duplicate sign fragment") ||
+		strings.Contains(s, "duplicate ")
+}
+
 func dedupeDKGBatchBySender(batch []libtss.Message, _ libtss.Identifier) []libtss.Message {
 	// Drop exact relay retries (same from/to/payload). Do not collapse distinct
 	// fragments from the same sender (e.g. broadcast + direct); that stalls
@@ -362,7 +409,7 @@ func dedupeDKGBatchBySender(batch []libtss.Message, _ libtss.Identifier) []libts
 	seen := make(map[string]struct{}, len(batch))
 	out := make([]libtss.Message, 0, len(batch))
 	for _, msg := range batch {
-		key := fmt.Sprintf("%d:%d:%x", msg.From, msg.To, msg.Data)
+		key := mpcMessageKey(msg)
 		if _, ok := seen[key]; ok {
 			continue
 		}
@@ -486,6 +533,7 @@ func runDKGWithSender(
 		peerQuiesce = 800 * time.Millisecond
 	}
 	missingFragmentRetries := 0
+	consumed := newMPCConsumedTracker()
 	recvBatch := func() ([]libtss.Message, error) {
 		return recvPeerMessageBatch(ctx, roundCh, selfID, needPeerMsgs, deadline, peerQuiesce)
 	}
@@ -538,8 +586,21 @@ func runDKGWithSender(
 					time.Since(waitStart).Round(time.Second),
 				)
 			}
-			batch = dedupeDKGBatchBySender(batch, selfID)
+			batch = consumed.filterNew(batch, selfID)
+			if len(filterMessagesFor(selfID, batch)) == 0 {
+				batch = nil
+				continue
+			}
 			step, err = session.Next(batch)
+			if err != nil && mpcIsDuplicateFragment(err) {
+				dklsLogf(
+					"DKG: session=%s step=%d duplicate fragment from relay replay, waiting for fresh batch",
+					dkgSessionLogPrefix(progressSession),
+					stepNo,
+				)
+				batch = nil
+				continue
+			}
 			if err != nil && dkgNeedsMorePeerMessages(err) {
 				missingFragmentRetries++
 				if missingFragmentRetries > maxMissingFragmentRetries {
@@ -562,9 +623,14 @@ func runDKGWithSender(
 					stepNo,
 					len(filterMessagesFor(selfID, more)),
 				)
-				batch = dedupeDKGBatchBySender(mergeDKGPeerMessages(batch, more, selfID), selfID)
+				batch = consumed.filterNew(mergeDKGPeerMessages(batch, more, selfID), selfID)
+				if len(filterMessagesFor(selfID, batch)) == 0 {
+					batch = nil
+					continue
+				}
 				continue
 			}
+			consumed.markConsumed(batch)
 			missingFragmentRetries = 0
 			break
 		}
@@ -709,6 +775,7 @@ func runSignWithSender(
 	}
 	peerQuiesce := 400 * time.Millisecond
 	missingFragmentRetries := 0
+	consumed := newMPCConsumedTracker()
 	recvBatch := func() ([]libtss.Message, error) {
 		return recvPeerMessageBatch(ctx, roundCh, selfID, needPeerMsgs, deadline, peerQuiesce)
 	}
@@ -765,7 +832,21 @@ func runSignWithSender(
 					time.Since(waitStart).Round(time.Second),
 				)
 			}
+			batch = consumed.filterNew(batch, selfID)
+			if len(filterMessagesFor(selfID, batch)) == 0 {
+				batch = nil
+				continue
+			}
 			step, err = session.Next(batch)
+			if err != nil && mpcIsDuplicateFragment(err) {
+				dklsLogf(
+					"keysign: session=%s step=%d duplicate fragment from relay replay, waiting for fresh batch",
+					dkgSessionLogPrefix(progressSession),
+					stepNo,
+				)
+				batch = nil
+				continue
+			}
 			if err != nil && mpcNeedsMorePeerMessages(err) {
 				missingFragmentRetries++
 				if missingFragmentRetries > maxMissingFragmentRetries {
@@ -788,9 +869,14 @@ func runSignWithSender(
 					stepNo,
 					len(filterMessagesFor(selfID, more)),
 				)
-				batch = dedupeDKGBatchBySender(mergeDKGPeerMessages(batch, more, selfID), selfID)
+				batch = consumed.filterNew(mergeDKGPeerMessages(batch, more, selfID), selfID)
+				if len(filterMessagesFor(selfID, batch)) == 0 {
+					batch = nil
+					continue
+				}
 				continue
 			}
+			consumed.markConsumed(batch)
 			missingFragmentRetries = 0
 			break
 		}
