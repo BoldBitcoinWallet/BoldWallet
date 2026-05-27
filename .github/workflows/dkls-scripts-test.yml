@@ -19,17 +19,19 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CGO_ENABLED: '1'
+      # Node 20 EOL on Actions runners; v6 actions use Node 24 (see GitHub changelog Sep 2025).
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     defaults:
       run:
         working-directory: ./BBMTLib
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup libtss
         uses: ./.github/actions/setup-libtss
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
           cache-dependency-path: BBMTLib/go.sum
