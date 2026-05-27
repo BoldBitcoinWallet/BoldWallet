@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/BoldBitcoinWallet/BBMTLib/tss/nostrtransport"
@@ -55,8 +56,7 @@ func MpcSignPSBT(
 	if keyshareData.ChainCodeHex == "" {
 		return "", fmt.Errorf("keyshare missing chain_code_hex")
 	}
-	Logf("Keyshare parsed: pub_key (hex, full)=%s, chaincode (hex, full)=%s", truncateHex(keyshareData.PubKey), truncateHex(keyshareData.ChainCodeHex))
-	Logf("Keyshare parsed: pub_key (hex) length=%d, chaincode (hex) length=%d", len(keyshareData.PubKey), len(keyshareData.ChainCodeHex))
+	Logf("Keyshare parsed successfully")
 
 	// Decode PSBT from base64
 	psbtBytes, err := base64.StdEncoding.DecodeString(psbtBase64)
@@ -118,11 +118,7 @@ func MpcSignPSBT(
 		Logf("PSBT has no XPubs")
 	}
 
-	psbtJSON, err := json.MarshalIndent(packet, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal PSBT: %w", err)
-	}
-	Logf("PSBT_JSON: %s", string(psbtJSON))
+	Logf("PSBT parsed to JSON for validation")
 
 	// Get the unsigned transaction
 	tx := packet.UnsignedTx
@@ -303,7 +299,7 @@ func MpcSignPSBT(
 		// MPC sign the sighash
 		sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 		Logf("Input %d: Signing with derivation path: %s, public key: %x...", i, inputDerivePath, inputPubKeyBytes[:min(8, len(inputPubKeyBytes))])
-		Logf("Input %d sighash: %s", i, sighashBase64)
+		Logf("Input %d computed sighash", i)
 
 		mpcHook("psbt", "joining keysign", session, utxoSession, i+1, inputCount, false)
 		sigJSON, err := DispatchJoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, inputDerivePath, sighashBase64)
@@ -871,11 +867,11 @@ func runNostrMpcSignPSBTInternal(
 
 	// Step 2: Perform pre-agreement to exchange nonces
 	mpcHook("psbt", "pre-agreement phase", sessionFlag, "", 0, 0, false)
-	preAgreement, err := runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag)
+	preAgreement, err := runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, attemptID)
 	if err != nil {
 		return "", fmt.Errorf("pre-agreement failed: %w", err)
 	}
-	Logf("NostrMpcSignPSBT: pre-agreement completed - fullNonce=%s", preAgreement.fullNonce)
+	Logf("NostrMpcSignPSBT: pre-agreement completed")
 
 	// Step 3: Calculate actual sessionID using fullNonce
 	sessionID, err := Sha256(fmt.Sprintf("%s,%s,%s,%s", npubsSorted, psbtHash, attemptID, preAgreement.fullNonce))
@@ -888,7 +884,7 @@ func runNostrMpcSignPSBTInternal(
 	if err != nil {
 		return "", fmt.Errorf("failed to calculate sessionKey: %w", err)
 	}
-	Logf("NostrMpcSignPSBT: calculated sessionID=%s, sessionKey=%s", sessionID, sessionKey)
+	Logf("NostrMpcSignPSBT: derived session credentials")
 
 	// Parse keyshare JSON to get xpub and chaincode for deriving public keys
 	var keyshareData LocalStateNostr
@@ -901,8 +897,7 @@ func runNostrMpcSignPSBTInternal(
 	if keyshareData.ChainCodeHex == "" {
 		return "", fmt.Errorf("keyshare missing chain_code_hex")
 	}
-	Logf("Keyshare parsed: pub_key (hex, full)=%s, chaincode (hex, full)=%s", truncateHex(keyshareData.PubKey), truncateHex(keyshareData.ChainCodeHex))
-	Logf("Keyshare parsed: pub_key (hex) length=%d, chaincode (hex) length=%d", len(keyshareData.PubKey), len(keyshareData.ChainCodeHex))
+	Logf("Keyshare parsed successfully")
 
 	// Decode PSBT from base64
 	psbtBytes, err := base64.StdEncoding.DecodeString(psbtBase64)
@@ -964,12 +959,7 @@ func runNostrMpcSignPSBTInternal(
 		Logf("PSBT has no XPubs")
 	}
 
-	// JSON of the whole packet
-	psbtJSON, err := json.MarshalIndent(packet, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal PSBT: %w", err)
-	}
-	Logf("PSBT_JSON: %s", string(psbtJSON))
+	Logf("PSBT parsed to JSON for validation")
 
 	// Get the unsigned transaction
 	tx := packet.UnsignedTx
@@ -1149,7 +1139,7 @@ func runNostrMpcSignPSBTInternal(
 		// MPC sign the sighash via Nostr
 		sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 		Logf("Input %d: Signing with derivation path: %s, public key: %x...", i, inputDerivePath, inputPubKeyBytes[:min(8, len(inputPubKeyBytes))])
-		Logf("Input %d sighash: %s", i, sighashBase64)
+		Logf("Input %d computed sighash", i)
 
 		mpcHook("psbt", "joining keysign (nostr)", sessionID, utxoSession, i+1, inputCount, false)
 		sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, inputDerivePath, sighashBase64)
@@ -1222,7 +1212,7 @@ type psbtPreAgreementResult struct {
 // runNostrPreAgreementPSBT performs a pre-agreement phase for PSBT signing
 // Both parties exchange their peerNonce, then agree on:
 // - fullNonce: sorted join of both peerNonces (like in keygen)
-func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag string) (result *psbtPreAgreementResult, err error) {
+func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, attemptID string) (result *psbtPreAgreementResult, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			errMsg := fmt.Sprintf("PANIC in runNostrPreAgreementPSBT: %v", r)
@@ -1278,8 +1268,7 @@ func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 		return nil, fmt.Errorf("failed to generate peerNonce: %w", err)
 	}
 
-	Logf("runNostrPreAgreementPSBT: sessionFlag=%s, localNpub=%s, peerNpub=%s, peerNonce=%s",
-		sessionFlag, localNpub, peerNpub, peerNonce)
+	Logf("runNostrPreAgreementPSBT: initialized pre-agreement")
 
 	// Create config for pre-agreement
 	cfg := nostrtransport.Config{
@@ -1306,9 +1295,12 @@ func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 
 	messenger := nostrtransport.NewMessenger(cfg, client)
 
-	// Prepare our message: just the nonce
-	localMessage := peerNonce
-	Logf("runNostrPreAgreementPSBT: sending nonce: %s", localMessage)
+	// Prepare our payload: attempt binding + nonce + timestamp.
+	localMessage, err := encodePreAgreementPayload(attemptID, peerNonce, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode pre-agreement payload: %w", err)
+	}
+	Logf("runNostrPreAgreementPSBT: sending pre-agreement message")
 
 	// Context for the pre-agreement phase (inherits active Nostr abort context).
 	ctx, cancel := context.WithTimeout(getActiveNostrCtx(), 2*time.Minute)
@@ -1317,6 +1309,8 @@ func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 	// Channel to receive peer's message
 	peerMessageCh := make(chan string, 1)
 	peerErrorCh := make(chan error, 1)
+	sawPeerPayload := false
+	var peerPayloadMu sync.Mutex
 
 	// Start listening for peer's message
 	go func() {
@@ -1333,9 +1327,16 @@ func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 		}()
 
 		pump := nostrtransport.NewMessagePump(cfg, client)
-		err := pump.Run(ctx, func(payload []byte) error {
+		err := pump.RunSubscribeOnly(ctx, func(payload []byte) error {
 			peerMessage := string(payload)
-			Logf("runNostrPreAgreementPSBT: received peer message: %s", peerMessage)
+			Logf("runNostrPreAgreementPSBT: received peer message")
+			peerPayloadMu.Lock()
+			if sawPeerPayload {
+				peerPayloadMu.Unlock()
+				return fmt.Errorf("duplicate pre-agreement payload from peer")
+			}
+			sawPeerPayload = true
+			peerPayloadMu.Unlock()
 			select {
 			case peerMessageCh <- peerMessage:
 			default:
@@ -1360,23 +1361,29 @@ func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 	}
 	Logf("runNostrPreAgreementPSBT: sent nonce to peer")
 
-	// Wait for peer's nonce
-	var peerNonceReceived string
+	// Wait for peer payload
+	var peerMessage string
 	select {
-	case peerNonceReceived = <-peerMessageCh:
-		Logf("runNostrPreAgreementPSBT: received peer nonce: %s", peerNonceReceived)
+	case peerMessage = <-peerMessageCh:
+		Logf("runNostrPreAgreementPSBT: received peer nonce")
 	case err := <-peerErrorCh:
 		return nil, fmt.Errorf("failed to receive peer message: %w", err)
 	case <-ctx.Done():
 		return nil, NostrMpcContextErr("pre-agreement", ctx.Err())
 	}
 
+	peerPayload, err := decodeAndValidatePreAgreementPayload(peerMessage, attemptID, false)
+	if err != nil {
+		return nil, fmt.Errorf("invalid peer pre-agreement payload: %w", err)
+	}
+	peerNonceReceived := strings.ToLower(strings.TrimSpace(peerPayload.Nonce))
+
 	// Calculate fullNonce: sorted join of both nonces
-	allNonces := []string{peerNonce, strings.TrimSpace(peerNonceReceived)}
+	allNonces := []string{strings.ToLower(strings.TrimSpace(peerNonce)), peerNonceReceived}
 	sort.Strings(allNonces)
 	fullNonce := strings.Join(allNonces, ",")
 
-	Logf("runNostrPreAgreementPSBT: fullNonce=%s", fullNonce)
+	Logf("runNostrPreAgreementPSBT: combined nonce computed")
 
 	return &psbtPreAgreementResult{
 		fullNonce: fullNonce,

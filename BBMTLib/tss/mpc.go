@@ -595,17 +595,11 @@ func (m *MessengerImp) Send(from, to, body string) error {
 	}
 	defer resp.Body.Close()
 
-	// Log the response
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		Logln("BBMTLog", "fail to read response: ", err)
-		return fmt.Errorf("fail to read response: %w", err)
-	}
 	Logln("BBMTLog", "message sent, status:", resp.Status)
 
 	// Check for non-200 status codes
 	if resp.StatusCode != http.StatusOK {
-		Logln("BBMTLog", "message sent, response body:", string(respBody)[:min(80, len(string(respBody)))]+"...")
+		Logln("BBMTLog", "message send failed with non-200 response")
 		return fmt.Errorf("fail to send message: %s", resp.Status)
 	}
 
@@ -1023,8 +1017,20 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 						}
 					}
 				}
+				if message.Hash != "" {
+					computedHash, hashErr := md5Hash(body)
+					if hashErr != nil {
+						Logln("BBMTLog", "Failed to verify message hash:", hashErr)
+						continue
+					}
+					if !strings.EqualFold(computedHash, message.Hash) {
+						Logln("BBMTLog", "Message hash mismatch; dropping message", message.SeqNo)
+						deleteMessage(server, session, key, message.Hash)
+						continue
+					}
+				}
 
-				Logln("BBMTLog", "Applying message body:", body[:min(50, len(body))])
+				Logln("BBMTLog", "Applying inbound message body")
 				if err := tssServerImp.ApplyData(body); err != nil {
 					Logln("BBMTLog", "Failed to apply message data:", err)
 				}

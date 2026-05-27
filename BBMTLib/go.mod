@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/0xCarbon/libtss/libtss-go v0.0.0
-	github.com/bnb-chain/tss-lib/v2 v2.0.2
+	github.com/bnb-chain/tss-lib/v3 v3.0.0
 	github.com/btcsuite/btcd v0.24.2
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4
 	github.com/btcsuite/btcd/btcutil v1.1.5
@@ -17,6 +17,7 @@ require (
 )
 
 require (
+	filippo.io/bigmod v0.1.0 // indirect
 	github.com/ImVexed/fasturl v0.0.0-20230304231329-4e41488060f3 // indirect
 	github.com/awnumar/memcall v0.4.0 // indirect
 	github.com/awnumar/memguard v0.23.0 // indirect
@@ -69,6 +70,6 @@ require (
 replace (
 	github.com/0xCarbon/libtss/libtss-go => ../../libtss/libtss-go
 	github.com/agl/ed25519 => github.com/binance-chain/edwards25519 v0.0.0-20200305024217-f36fc4b53d43
-	github.com/bnb-chain/tss-lib/v2 => github.com/bnb-chain/tss-lib/v2 v2.0.2
+	github.com/bnb-chain/tss-lib/v3 => github.com/bnb-chain/tss-lib/v3 v3.0.0
 	github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.2-alpha.regen.4
 )

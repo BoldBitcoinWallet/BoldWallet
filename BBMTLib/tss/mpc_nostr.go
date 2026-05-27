@@ -235,7 +235,7 @@ func NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, sessionI
 		}
 	}
 
-	Logf("NostrJoinKeysignWithSighash: sessionID=%s, localNpub=%s, allParties=%v, peersNpub=%v", sessionID, localNpub, allParties, peersNpub)
+	Logf("NostrJoinKeysignWithSighash: signing session initialized")
 
 	// Create config
 	cfg := nostrtransport.Config{
@@ -325,6 +325,74 @@ type preAgreementResult struct {
 	averageFees int64
 }
 
+type preAgreementPayload struct {
+	AttemptID string `json:"attempt_id"`
+	Nonce     string `json:"nonce"`
+	Fees      *int64 `json:"fees,omitempty"`
+	SentAtMs  int64  `json:"sent_at_ms"`
+}
+
+const (
+	preAgreementClockSkew = 15 * time.Second
+	preAgreementMaxAge    = 2 * time.Minute
+)
+
+func isHexLen(value string, n int) bool {
+	value = strings.TrimSpace(value)
+	if len(value) != n {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+func encodePreAgreementPayload(attemptID, nonce string, fees *int64) (string, error) {
+	payload := preAgreementPayload{
+		AttemptID: strings.TrimSpace(attemptID),
+		Nonce:     strings.ToLower(strings.TrimSpace(nonce)),
+		Fees:      fees,
+		SentAtMs:  time.Now().UnixMilli(),
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
+func decodeAndValidatePreAgreementPayload(raw string, expectedAttemptID string, requireFees bool) (*preAgreementPayload, error) {
+	var payload preAgreementPayload
+	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &payload); err != nil {
+		return nil, fmt.Errorf("invalid pre-agreement payload json")
+	}
+	if !isHexLen(payload.Nonce, 64) {
+		return nil, fmt.Errorf("invalid pre-agreement nonce")
+	}
+	if expectedAttemptID != "" && payload.AttemptID != expectedAttemptID {
+		return nil, fmt.Errorf("attempt id mismatch")
+	}
+	if payload.SentAtMs <= 0 {
+		return nil, fmt.Errorf("missing pre-agreement timestamp")
+	}
+	now := time.Now()
+	sentAt := time.UnixMilli(payload.SentAtMs)
+	if sentAt.After(now.Add(preAgreementClockSkew)) {
+		return nil, fmt.Errorf("pre-agreement timestamp is in the future")
+	}
+	if now.Sub(sentAt) > preAgreementMaxAge {
+		return nil, fmt.Errorf("stale pre-agreement payload")
+	}
+	if requireFees {
+		if payload.Fees == nil {
+			return nil, fmt.Errorf("missing pre-agreement fees")
+		}
+		if *payload.Fees < 0 {
+			return nil, fmt.Errorf("invalid pre-agreement fees")
+		}
+	}
+	return &payload, nil
+}
+
 // nostrSendBtcSessionFlag identifies a duo Nostr send pre-agreement session.
 // Uses signing npubs + tx intent + attempt_id (master/initiator scoped per round).
 func nostrSendBtcSessionFlag(signingNpubsSorted, receiverAddress, attemptID string, amountSatoshi int64) (string, error) {
@@ -347,7 +415,7 @@ func nostrSendBtcSessionID(signingNpubsSorted, receiverAddress, attemptID, fullN
 // Both parties exchange their peerNonce and satoshiFees, then agree on:
 // - fullNonce: sorted join of both peerNonces (like in keygen)
 // - averageFees: average of both satoshiFees
-func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag string, localSatoshiFees int64) (result *preAgreementResult, err error) {
+func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, attemptID string, localSatoshiFees int64) (result *preAgreementResult, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			errMsg := fmt.Sprintf("PANIC in runNostrPreAgreementSendBTC: %v", r)
@@ -403,8 +471,7 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 		return nil, fmt.Errorf("failed to generate peerNonce: %w", err)
 	}
 
-	Logf("runNostrPreAgreementSendBTC: sessionFlag=%s, localNpub=%s, peerNpub=%s, peerNonce=%s, localFees=%d",
-		sessionFlag, localNpub, peerNpub, peerNonce, localSatoshiFees)
+	Logf("runNostrPreAgreementSendBTC: initialized pre-agreement")
 
 	// Create config for pre-agreement (using sessionFlag as sessionID)
 	cfg := nostrtransport.Config{
@@ -431,9 +498,13 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 
 	messenger := nostrtransport.NewMessenger(cfg, client)
 
-	// Prepare our message: <peerNonce>:<satoshiFees>
-	localMessage := fmt.Sprintf("%s:%d", peerNonce, localSatoshiFees)
-	Logf("runNostrPreAgreementSendBTC: sending message: %s", localMessage)
+	// Prepare our message payload.
+	localFees := localSatoshiFees
+	localMessage, err := encodePreAgreementPayload(attemptID, peerNonce, &localFees)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode pre-agreement payload: %w", err)
+	}
+	Logf("runNostrPreAgreementSendBTC: sending pre-agreement payload")
 
 	// Context for the pre-agreement phase
 	// Timeout: 16 seconds - fail fast if peer doesn't respond quickly
@@ -444,11 +515,10 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 	// Channel to receive peer's message
 	peerMessageCh := make(chan string, 1)
 	peerErrorCh := make(chan error, 1)
+	sawPeerPayload := false
+	var peerPayloadMu sync.Mutex
 
-	// Start listening for peer's message
-	// Note: The MessagePump will receive messages that match the session tag,
-	// including messages that were sent before we started listening (if they're
-	// still in the relay's cache, typically last 1-2 minutes)
+	// Start listening for peer's message.
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -464,9 +534,16 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 
 		// Create message pump to receive messages
 		pump := nostrtransport.NewMessagePump(cfg, client)
-		err := pump.Run(ctx, func(payload []byte) error {
+		err := pump.RunSubscribeOnly(ctx, func(payload []byte) error {
 			peerMessage := string(payload)
-			Logf("runNostrPreAgreementSendBTC: received peer message: %s", peerMessage)
+			Logf("runNostrPreAgreementSendBTC: received pre-agreement payload")
+			peerPayloadMu.Lock()
+			if sawPeerPayload {
+				peerPayloadMu.Unlock()
+				return fmt.Errorf("duplicate pre-agreement payload from peer")
+			}
+			sawPeerPayload = true
+			peerPayloadMu.Unlock()
 			select {
 			case peerMessageCh <- peerMessage:
 			default:
@@ -491,32 +568,26 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 	if err != nil {
 		return nil, fmt.Errorf("failed to send pre-agreement message: %w", err)
 	}
-	Logf("runNostrPreAgreementSendBTC: sent message to peer")
+	Logf("runNostrPreAgreementSendBTC: sent pre-agreement payload")
 
 	// Wait for peer's message
 	var peerMessage string
 	select {
 	case peerMessage = <-peerMessageCh:
-		Logf("runNostrPreAgreementSendBTC: received peer message: %s", peerMessage)
+		Logf("runNostrPreAgreementSendBTC: processing peer payload")
 	case err := <-peerErrorCh:
 		return nil, fmt.Errorf("failed to receive peer message: %w", err)
 	case <-ctx.Done():
 		return nil, NostrMpcContextErr("pre-agreement", ctx.Err())
 	}
 
-	// Parse peer's message: <peerNonce>:<satoshiFees>
-	parts := strings.Split(peerMessage, ":")
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid peer message format: expected 'nonce:fees', got: %s", peerMessage)
-	}
-	peerNonceReceived := strings.TrimSpace(parts[0])
-	peerFeesStr := strings.TrimSpace(parts[1])
-	peerFees, err := strconv.ParseInt(peerFeesStr, 10, 64)
+	peerPayload, err := decodeAndValidatePreAgreementPayload(peerMessage, attemptID, true)
 	if err != nil {
-		return nil, fmt.Errorf("invalid peer fees format: %s", peerFeesStr)
+		return nil, fmt.Errorf("invalid peer pre-agreement payload: %w", err)
 	}
-
-	Logf("runNostrPreAgreementSendBTC: parsed peer message - nonce=%s, fees=%d", peerNonceReceived, peerFees)
+	peerNonceReceived := strings.ToLower(strings.TrimSpace(peerPayload.Nonce))
+	peerFees := *peerPayload.Fees
+	Logf("runNostrPreAgreementSendBTC: validated peer pre-agreement payload")
 
 	// Calculate fullNonce: sorted join of both nonces (like in keygen)
 	allNonces := []string{peerNonce, peerNonceReceived}
@@ -526,7 +597,7 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 	// Calculate average fees
 	averageFees := (localSatoshiFees + peerFees) / 2
 
-	Logf("runNostrPreAgreementSendBTC: fullNonce=%s, averageFees=%d", fullNonce, averageFees)
+	Logf("runNostrPreAgreementSendBTC: combined nonce and average fee computed")
 
 	return &preAgreementResult{
 		fullNonce:   fullNonce,
@@ -543,7 +614,11 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 func NostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag string, localSatoshiFees int64) (result string, err error) {
 	defer RecoverAsError("NostrPreAgreementSendBTC", &err, &result)
 
-	preAgreementResult, err := runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, localSatoshiFees)
+	preAgreementAttemptID, err := Sha256(strings.TrimSpace(sessionFlag))
+	if err != nil {
+		return "", err
+	}
+	preAgreementResult, err := runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, preAgreementAttemptID, localSatoshiFees)
 	if err != nil {
 		return "", err
 	}
@@ -624,11 +699,11 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 
 	// Step 2: Perform pre-agreement to exchange nonces and fees
 	mpcHook("btc_send", "pre-agreement phase", sessionFlag, "", 0, 0, false)
-	preAgreement, err := runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, estimatedFee)
+	preAgreement, err := runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, attemptID, estimatedFee)
 	if err != nil {
 		return "", fmt.Errorf("pre-agreement failed: %w", err)
 	}
-	Logf("NostrMpcSendBTC: pre-agreement completed - fullNonce=%s, averageFees=%d", preAgreement.fullNonce, preAgreement.averageFees)
+	Logf("NostrMpcSendBTC: pre-agreement completed")
 
 	// Step 3: Calculate actual sessionID using fullNonce (like in keygen)
 	sessionID, err := nostrSendBtcSessionID(npubsSorted, receiverAddress, attemptID, preAgreement.fullNonce, amountSatoshi)
@@ -643,7 +718,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 		return "", fmt.Errorf("failed to calculate sessionKey: %w", err)
 	}
 
-	Logf("NostrMpcSendBTC: calculated sessionID=%s, sessionKey=%s, using agreed fees=%d", sessionID, sessionKey, preAgreement.averageFees)
+	Logf("NostrMpcSendBTC: derived session credentials and agreed fees")
 
 	// Step 5: Use the agreed average fees instead of estimatedFee
 	agreedFee := preAgreement.averageFees
@@ -1104,7 +1179,7 @@ func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, 
 	}
 	Logf("NostrMpcSendBTCWithUTXOs: signingNpubs=%s sessionFlag=%s", npubsSorted, sessionFlag)
 	mpcHook("btc_send", "pre-agreement phase", sessionFlag, "", 0, 0, false)
-	preAgreement, err := runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, estimatedFee)
+	preAgreement, err := runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, attemptID, estimatedFee)
 	if err != nil {
 		return "", fmt.Errorf("pre-agreement failed: %w", err)
 	}

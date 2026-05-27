@@ -34,6 +34,8 @@ func mpcDeadline(prod time.Duration) time.Time {
 	return time.Now().Add(time.Duration(sec) * time.Second)
 }
 
+const maxMissingFragmentRetries = 6
+
 // waitForRelayHTTP blocks until the LAN relay accepts HTTP or maxWait elapses.
 func waitForRelayHTTP(server string, maxWait time.Duration) {
 	deadline := time.Now().Add(maxWait)
@@ -483,6 +485,7 @@ func runDKGWithSender(
 	if threshold.MaxSigners >= 3 {
 		peerQuiesce = 800 * time.Millisecond
 	}
+	missingFragmentRetries := 0
 	recvBatch := func() ([]libtss.Message, error) {
 		return recvPeerMessageBatch(ctx, roundCh, selfID, needPeerMsgs, deadline, peerQuiesce)
 	}
@@ -538,10 +541,16 @@ func runDKGWithSender(
 			batch = dedupeDKGBatchBySender(batch, selfID)
 			step, err = session.Next(batch)
 			if err != nil && dkgNeedsMorePeerMessages(err) {
+				missingFragmentRetries++
+				if missingFragmentRetries > maxMissingFragmentRetries {
+					return nil, libtss.PublicKeyPackage{}, fmt.Errorf("DKLs DKG aborted: too many missing-fragment retries (%d)", missingFragmentRetries)
+				}
 				dklsLogf(
-					"DKG: session=%s step=%d need more fragments from peers",
+					"DKG: session=%s step=%d need more fragments from peers (retry=%d/%d)",
 					dkgSessionLogPrefix(progressSession),
 					stepNo,
+					missingFragmentRetries,
+					maxMissingFragmentRetries,
 				)
 				more, recvErr := recvMorePeerMessages(roundCh, selfID, deadline, peerQuiesce)
 				if recvErr != nil {
@@ -556,6 +565,7 @@ func runDKGWithSender(
 				batch = dedupeDKGBatchBySender(mergeDKGPeerMessages(batch, more, selfID), selfID)
 				continue
 			}
+			missingFragmentRetries = 0
 			break
 		}
 		if step.Complete {
@@ -698,6 +708,7 @@ func runSignWithSender(
 		needPeerMsgs = 1
 	}
 	peerQuiesce := 400 * time.Millisecond
+	missingFragmentRetries := 0
 	recvBatch := func() ([]libtss.Message, error) {
 		return recvPeerMessageBatch(ctx, roundCh, selfID, needPeerMsgs, deadline, peerQuiesce)
 	}
@@ -756,10 +767,16 @@ func runSignWithSender(
 			}
 			step, err = session.Next(batch)
 			if err != nil && mpcNeedsMorePeerMessages(err) {
+				missingFragmentRetries++
+				if missingFragmentRetries > maxMissingFragmentRetries {
+					return libtss.Signature{}, fmt.Errorf("DKLs keysign aborted: too many missing-fragment retries (%d)", missingFragmentRetries)
+				}
 				dklsLogf(
-					"keysign: session=%s step=%d need more fragments from peers",
+					"keysign: session=%s step=%d need more fragments from peers (retry=%d/%d)",
 					dkgSessionLogPrefix(progressSession),
 					stepNo,
+					missingFragmentRetries,
+					maxMissingFragmentRetries,
 				)
 				more, recvErr := recvMorePeerMessages(roundCh, selfID, deadline, peerQuiesce)
 				if recvErr != nil {
@@ -774,6 +791,7 @@ func runSignWithSender(
 				batch = dedupeDKGBatchBySender(mergeDKGPeerMessages(batch, more, selfID), selfID)
 				continue
 			}
+			missingFragmentRetries = 0
 			break
 		}
 		if step.Complete {

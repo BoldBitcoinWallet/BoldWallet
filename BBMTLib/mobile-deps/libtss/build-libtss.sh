@@ -5,8 +5,16 @@ set -euo pipefail
 BBMTLIB="$(cd "$(dirname "$0")/../.." && pwd)"
 LIBTSS="$(cd "${BBMTLIB}/../../libtss" && pwd)"
 OUT="$(cd "$(dirname "$0")" && pwd)"
+LIBTSS_REF_EXPECTED="ae1f891ee2dd67b6e841eaf673f7a1c0e8040815"
 
 info() { echo "==> $*"; }
+
+LIBTSS_REF_ACTUAL="$(git -C "${LIBTSS}" rev-parse HEAD)"
+if [ "${LIBTSS_REF_ACTUAL}" != "${LIBTSS_REF_EXPECTED}" ]; then
+  echo "ERROR: libtss revision mismatch: got ${LIBTSS_REF_ACTUAL}, expected ${LIBTSS_REF_EXPECTED}" >&2
+  exit 1
+fi
+info "Using pinned libtss revision ${LIBTSS_REF_ACTUAL}"
 
 info "Building libtss-ffi (host release)..."
 (cd "${LIBTSS}" && cargo build --release -p libtss-ffi)

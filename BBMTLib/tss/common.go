@@ -14,9 +14,9 @@ import (
 	"strconv"
 	"strings"
 
-	tcrypto "github.com/bnb-chain/tss-lib/v2/crypto"
-	"github.com/bnb-chain/tss-lib/v2/crypto/ckd"
-	"github.com/bnb-chain/tss-lib/v2/tss"
+	tcrypto "github.com/bnb-chain/tss-lib/v3/crypto"
+	"github.com/bnb-chain/tss-lib/v3/crypto/ckd"
+	"github.com/bnb-chain/tss-lib/v3/tss"
 	"github.com/btcsuite/btcd/btcec/v2"
 	btcecdsa "github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	"github.com/btcsuite/btcd/btcutil"
