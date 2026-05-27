@@ -210,12 +210,12 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
         },
         devKeyshareActionText: {
           fontSize: theme.fontSizes?.sm || 12,
-          color: theme.colors.primary,
+          color: theme.colors.text,
         },
         devKeyshareActionTextActive: {
           fontSize: theme.fontSizes?.sm || 12,
           fontFamily: theme.fontFamilies?.bold,
-          color: theme.colors.primary,
+          color: theme.colors.text,
         },
         devKeyshareTreeBox: {
           maxHeight: 360,
@@ -1740,14 +1740,6 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                           </Text>
                         </AppPressable>
                       ) : null}
-                      <AppPressable
-                        style={screenStyles.devKeyshareActionChip}
-                        onPress={loadDevKeyshareStructure}
-                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                        <Text style={screenStyles.devKeyshareActionText}>
-                          Reload
-                        </Text>
-                      </AppPressable>
                     </View>
                     {devKeyshareLoading ? (
                       <Text style={styles.modalTextCompact}>Loading…</Text>

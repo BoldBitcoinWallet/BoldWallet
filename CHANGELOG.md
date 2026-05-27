@@ -62,7 +62,7 @@
 - **LAN discovery helpers** — `isIPv4LanHost`, `isLanPeerDiscoveryPayload`, `raceLanPeerDiscovery`, and `coalesceLanHost` filter native `error:…` strings and non-IP hosts from peer discovery.
 - **`resolveGg18LanSigningPartiesFromKeyshare`** — GG18 LAN spend/sign resolves `local_party_key` and committee peers from the keyshare (npub-aware), matching the DKLS committee-correct signing path.
 - **Lock screen preferences (from 3.1.1)** — toggles for the **quotes manchette** and **GitHub update checker** on the unlock screen.
-- **Documentation & scripts** — `BBMTLib/docs/DKLS_MOBILE.md`, `DKLS_SECURITY.md`, `docs/GG18_DKLS_COEXISTENCE.md`, RECOVER.md DKLs23 section; `scripts-dkls/` for local/Nostr/LAN deterministic MPC tests and CI (`dkls-scripts-test.yml`).
+- **Documentation & scripts** — `BBMTLib/docs/DKLS_MOBILE.md`, `DKLS_SECURITY.md`, `docs/GG18_DKLS_COEXISTENCE.md`, `BBMTLib/docs/SELF_CUSTODY_OPERATIONS.md` (self-custody recovery/ops runbook for 2-of-2 and 2-of-3), RECOVER.md DKLs23 section; `scripts-dkls/` for local/Nostr/LAN deterministic MPC tests, `scripts-dkls/security-release-gate.sh` (sensitive-log scan + pinned libtss + MPC tests), and CI (`dkls-scripts-test.yml`, `.github/scripts/check-sensitive-logs.sh`).
 
 ### Changed
 - **Keygen success UX** — LAN/Nostr pairing only reports MPC complete (`mpcDone`) after `persistWalletKeyshare` succeeds; UI can show finalizing-storage status until verified.
@@ -82,6 +82,7 @@
 - **LAN/Nostr pairing spend & sign** — large refactor onto shared transaction UI (`TransactionFlowDiagram`, sticky footer, `useSendTxPreview`); removed duplicated inline preview/flow blocks (~2k lines net).
 - **`PSBTModal`** — uses shared `TransactionFlowDiagram` and `mapParsedPsbtDetails` instead of a one-off flow layout.
 - **MPC progress during send/keysign** — UTXO-build phase maps to early percent before per-UTXO signing; progress hooks accept per-input session ids (`${session}${index}` suffix) for multi-path LAN/Nostr signing.
+- **GG18 Go dependency pin** — upgraded BNB TSS library from `github.com/bnb-chain/tss-lib/v2 v2.0.2` to `github.com/bnb-chain/tss-lib/v3 v3.0.0` (module path migration to `/v3` across `BBMTLib/tss/*`).
 
 ### Fixed / hardening
 - **DKLS LAN keysign party IDs** — `partyIDFromParticipatingKey` maps Wi‑Fi/LAN monikers and **KeyShareN** labels via sorted `keygen_committee_keys` (npub committees included); duplicate peer labels rejected; LAN relay join key aligned with `share.Identifier()`; signing resolve passes **peers-only** `LANPeerIDs` / `NostrPeers`.
@@ -92,6 +93,13 @@
 - **LAN peer discovery** — ignores native timeout `error:…` payloads and hostnames/non-IPv4 tokens so discovery does not treat failures as peers.
 - **PSBT change labeling** — change outputs prefer BIP32 chain index from PSBT output derivation when present, with amount heuristic as fallback only.
 - **DKLS Nostr keyshare** — party `nsec` persisted in keyshare JSON (GG18-compatible encoding) so Nostr send/PSBT signing can load credentials from secure storage.
+- **MPC security hardening (DKLS23 + GG18)** — sensitive logging redaction in Go (`sanitizeLogMessage`), iOS/Android (no `raw_json` keyshare logs), and native modules; pre-agreement Nostr paths use **subscribe-only** relay reads with strict JSON payload validation (`attempt_id`, nonce format, timestamp freshness); GG18 `UpdateFromBytes` runs on a single goroutine (no concurrent party mutation); inbound parse errors no longer echo raw wire payloads.
+- **LAN transport integrity** — relay envelopes use SHA-256 digest (`d1:`) and, when a session key is present, HMAC-SHA256 auth tags (`h1:`); receive path rejects mismatched envelopes.
+- **libtss supply-chain pin** — CI and local builds verify `libtss` at commit `ae1f891ee2dd67b6e841eaf673f7a1c0e8040815` (`.github/actions/setup-libtss/action.yml`, `BBMTLib/mobile-deps/libtss/build-libtss.sh`).
+- **DKLS nonce-reuse handling** — signing paths map libtss nonce-reuse failures to `ErrNonceReuseDetected` and fail closed (`BBMTLib/dkls/security.go`).
+- **DKLS availability hardening** — bounded missing-fragment retries (`maxMissingFragmentRetries = 6`) to reduce griefing from withheld MPC fragments.
+- **Memory hygiene** — sensitive decode buffers cleared after use in keyshare import and GG18 message parsing (`clear()` helpers).
+- **libtss init** — `initLibtss()` attempts `OptMlock` with safe fallback when `CAP_IPC_LOCK` is unavailable.
 - **iOS build (Xcode 26.4 / Apple Clang 21)** — CocoaPods **fmt** patch for `FMT_USE_CONSTEVAL`; **`Tss.xcframework` link-only** (no embed) on branches that still reference it; **4.0.0** uses **`libbbmtmobile`** instead.
 - **Android** — single Go runtime packaging; `ensureDklsLanRuntime` before DKLS LAN keygen where required.
 - **Fee estimation errors** — clearer user-facing messages via `feeErrorMessages`.
@@ -101,8 +109,9 @@
 
 ### Technical Details
 - **Version**: `package.json` **4.0.0**; Android **`versionCode` 60** / **`versionName` 4.0.0**; iOS build **60** / **`MARKETING_VERSION` 4.0.0**.
+- **GG18 dependency baseline**: `github.com/bnb-chain/tss-lib/v3` pinned to **`v3.0.0`**.
 - **Build**: `BBMTLib/build-all.sh` or `build-dkls.sh` before device QA; see `BBMTLib/docs/DKLS_MOBILE.md`. Rebuild native after Go changes (`libbbmtmobile.xcframework` / `tss.aar`).
-- **New / notable modules**: `BBMTLib/dkls/mpc_matrix_test.go`, `BBMTLib/dkls/party_test.go`, `BBMTLib/scripts-dkls/dkls-mpc-matrix-test.sh`, `BBMTLib/tss/nostrtransport/relay_publish.go`, `BBMTLib/dkls/*`, `services/tssBackend.ts`, `services/walletSetupOrchestrator.ts`, `services/lanMpcSetup.ts`, `services/mpcProgress.ts`, `services/sendBtcPrepare.ts`, `services/walletBiometricAuth.ts`, `utils/fingerprintPillColors.ts`, `components/KeyshareJsonTree.tsx`, `components/TransactionFlowDiagram.tsx`, `components/SigningTxRecap.tsx`, `components/PairingSpendStickyFooter.tsx`, `components/transactionFlowUtils.ts`, `hooks/useSendTxPreview.ts`, `types/transactionFlow.ts`, `ios/TssShim.swift`, `ios/BbmtBridge.mm`; tests `__tests__/walletRouteGuard.test.ts`, `__tests__/walletKeyshareRefresh.test.ts`, `__tests__/walletKeysharePresence.test.ts`, `__tests__/fingerprintPillColors.test.ts`, `__tests__/transactionFlowUtils.test.ts`, `__tests__/lanMpcSetup.test.ts` (GG18 + DKLS LAN signing, discovery payload).
+- **New / notable modules**: `BBMTLib/dkls/mpc_matrix_test.go`, `BBMTLib/dkls/party_test.go`, `BBMTLib/dkls/security.go`, `BBMTLib/scripts-dkls/dkls-mpc-matrix-test.sh`, `BBMTLib/scripts-dkls/security-release-gate.sh`, `.github/scripts/check-sensitive-logs.sh`, `BBMTLib/tss/nostrtransport/relay_publish.go`, `BBMTLib/dkls/*`, `services/tssBackend.ts`, `services/walletSetupOrchestrator.ts`, `services/lanMpcSetup.ts`, `services/mpcProgress.ts`, `services/sendBtcPrepare.ts`, `services/walletBiometricAuth.ts`, `utils/fingerprintPillColors.ts`, `components/KeyshareJsonTree.tsx`, `components/TransactionFlowDiagram.tsx`, `components/SigningTxRecap.tsx`, `components/PairingSpendStickyFooter.tsx`, `components/transactionFlowUtils.ts`, `hooks/useSendTxPreview.ts`, `types/transactionFlow.ts`, `ios/TssShim.swift`, `ios/BbmtBridge.mm`; tests `__tests__/walletRouteGuard.test.ts`, `__tests__/walletKeyshareRefresh.test.ts`, `__tests__/walletKeysharePresence.test.ts`, `__tests__/fingerprintPillColors.test.ts`, `__tests__/transactionFlowUtils.test.ts`, `__tests__/lanMpcSetup.test.ts` (GG18 + DKLS LAN signing, discovery payload).
 - **Modified files** (selection): `BBMTLib/dkls/party.go`, `signing_resolve.go`, `keysign.go`, `lan.go`, `nostr.go`, `App.tsx`, `screens/MobilesPairing.tsx`, `screens/MobileNostrPairing.tsx`, `screens/ShowcaseScreen.tsx`, `screens/WalletHome.tsx`, `screens/PSBTModal.tsx`, `screens/WalletSettings.tsx`, `context/WalletContext.tsx`, `services/WalletService.ts`, `services/TssProvider.ts`, `BBMTLib/tss/psbt.go`, `android/.../BBMTLibNativeModule.kt`, `ios/BBMTLibNativeModule.swift`, `BBMTLib/tss/keygen_dispatch.go`, `BBMTLib/tss/keysign_dispatch.go`, `BBMTLib/NOTICE`, `android/app/build.gradle`, `ios/BoldWallet.xcodeproj/project.pbxproj`, `utils.js`, `components/KeyshareInfoContent.tsx`.
 
 ---

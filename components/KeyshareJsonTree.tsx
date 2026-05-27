@@ -29,8 +29,17 @@ function formatPrimitive(value: unknown): string {
   if (typeof value === 'string') {
     return JSON.stringify(value);
   }
-  if (typeof value === 'boolean' || typeof value === 'number') {
+  if (typeof value === 'boolean') {
     return String(value);
+  }
+  if (typeof value === 'number') {
+    if (Number.isNaN(value)) return 'NaN';
+    if (value === Infinity) return 'Infinity';
+    if (value === -Infinity) return '-Infinity';
+    return String(value);
+  }
+  if (typeof value === 'bigint') {
+    return value.toString();
   }
   return String(value);
 }
@@ -79,12 +88,15 @@ const TreeNode: React.FC<TreeNodeProps> = ({
     return (
       <View style={[treeStyles.row, {marginLeft: depth * 12}]}>
         {label != null ? (
-          <Text style={[treeStyles.key, {color: colors.key}, mono]}>{label}: </Text>
+          <Text style={[treeStyles.key, {color: colors.key}, mono]}>
+            {label}
+            {': '}
+          </Text>
         ) : null}
         <AppPressable
           disabled={!isLong}
           onPress={() => isLong && setLongExpanded(e => !e)}
-          android_ripple={{color: 'rgba(0,0,0,0.06)'}}>
+          android_ripple={{color: colors.ripple}}>
           <Text
             style={[treeStyles.primitive, {color: colors.text}, mono]}
             selectable>
@@ -112,7 +124,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
       <AppPressable
         onPress={toggle}
         style={treeStyles.branchHeader}
-        android_ripple={{color: 'rgba(0,0,0,0.06)'}}>
+        android_ripple={{color: colors.ripple}}>
         <Text style={[treeStyles.chevron, {color: colors.textSecondary}]}>
           {expanded ? '▼' : '▶'}
         </Text>
@@ -151,6 +163,7 @@ const KeyshareJsonTree: React.FC<JsonTreeProps> = ({
   defaultExpandDepth = 2,
 }) => {
   const {theme} = useTheme();
+  const isLightTheme = theme.colors.background === '#ffffff';
   const mono = useMemo(
     () => getFontStyle(theme, {family: 'monospace', weight: 'normal'}),
     [theme],
@@ -160,9 +173,10 @@ const KeyshareJsonTree: React.FC<JsonTreeProps> = ({
       text: theme.colors.text,
       textSecondary: theme.colors.textSecondary,
       border: theme.colors.border || 'rgba(128,128,128,0.35)',
-      key: theme.colors.primary,
+      key: theme.colors.text,
+      ripple: isLightTheme ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)',
     }),
-    [theme],
+    [isLightTheme, theme],
   );
 
   return (
