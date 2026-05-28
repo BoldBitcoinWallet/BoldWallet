@@ -123,9 +123,11 @@ func JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey, encKey,
 	defer tss.ClearLANTransportKeys()
 	defer recoverAsError("JoinKeygen", &err, &result)
 
-	if sessionKey, encKey, decKey, err = normalizeLANTransportKeys(session, server, sessionKey, encKey, decKey); err != nil {
+	normalizedSessionKey, _, _, err := normalizeLANTransportKeys(session, server, sessionKey, encKey, decKey)
+	if err != nil {
 		return "", err
 	}
+	sessionKey = normalizedSessionKey
 
 	parties := splitCSV(partiesCSV)
 	threshold, err := ThresholdFromPartyCount(len(parties))
@@ -349,9 +351,7 @@ func recvMorePeerMessages(
 }
 
 func mergeDKGPeerMessages(batch []libtss.Message, incoming []libtss.Message, selfID libtss.Identifier) []libtss.Message {
-	for _, msg := range filterMessagesFor(selfID, incoming) {
-		batch = append(batch, msg)
-	}
+	batch = append(batch, filterMessagesFor(selfID, incoming)...)
 	return batch
 }
 

@@ -270,23 +270,6 @@ func ValidateKeyshareJSON(raw string) error {
 	return err
 }
 
-type localDKGRunner struct {
-	selfID libtss.Identifier
-	peerCh map[libtss.Identifier]chan []libtss.Message
-}
-
-func (r *localDKGRunner) sendMessages(msgs []libtss.Message) error {
-	for id, ch := range r.peerCh {
-		if id == r.selfID {
-			continue
-		}
-		if batch := filterMessagesFor(id, msgs); len(batch) > 0 {
-			ch <- batch
-		}
-	}
-	return nil
-}
-
 type routerDKGSender struct {
 	selfID libtss.Identifier
 	router *MessageRouter

@@ -36,8 +36,3 @@ func recoverAsErrorClear(where string, err *error, clear func()) {
 	}
 }
 
-func recoverGoroutine(where string) {
-	if r := recover(); r != nil {
-		logPanic(where, r)
-	}
-}
