@@ -96,6 +96,8 @@ KEY_PASSWORD="your_key_password"
 > sh docker-apk-builder.sh --fdroid --git=main #optional, which git "branch,tag, or commit-hash" to use
 ```
 
+For F-Droid builds, the Docker path now bootstraps pinned `libtss` plus Rust `libtss-ffi` and then runs `BBMTLib/build-dkls.sh android` (single runtime: `libbbmtmobile.so` + `libdkls_jni.so`).
+
 ![image](https://github.com/user-attachments/assets/eb8f1a45-b2cb-46ec-a061-fc0cb4f10448)
   
 ### ✍️ Via Manual Build
@@ -104,8 +106,10 @@ Manual build, requires manual and extra efforts to compiles the app on your PC.
 BoldWallet is a typical React Native Mobile Based App ( android / iOS ).
 - Built using node v20.18.1
   - npm install
-  - To rebuild the android/app/libs/tss.aar:
-    - Check the BBMTLib/README.md, Android Section
+  - For Android native libs (release path):
+    - `cd BBMTLib && ./build-dkls.sh android`
+    - This is the Android v4 runtime path (`libbbmtmobile.so` + `libdkls_jni.so`)
+    - `build-all.sh` is optional for full matrix/local smoke workflows
   - For Android APK build:
     - cd android
     - ./release.sh

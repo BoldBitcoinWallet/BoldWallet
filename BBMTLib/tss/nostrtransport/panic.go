@@ -35,4 +35,3 @@ func recoverAsErrorClear(where string, err *error, clear func()) {
 		}
 	}
 }
-

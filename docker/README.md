@@ -37,6 +37,8 @@ docker/
 ./docker/scripts/docker-apk-builder.sh --remote=ssh://user@linux-server
 ```
 
+For `--fdroid`, the image also bootstraps pinned `libtss`, installs Rust tooling (`cargo-ndk`), and builds Android native libs with `BBMTLib/build-dkls.sh android` (`libbbmtmobile.so` + `libdkls_jni.so`).
+
 ### Extract APK from Existing Image
 
 ```bash

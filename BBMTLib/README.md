@@ -19,6 +19,17 @@ cd BBMTLib
 ./build-dkls.sh ios     # libbbmtmobile.xcframework (macOS only)
 ```
 
+For F-Droid / Android release builds, prefer this minimal path:
+
+```bash
+cd BBMTLib
+bash mobile-deps/libtss/setup-libtss.sh
+cargo install cargo-ndk
+./build-dkls.sh android
+```
+
+`build-all.sh` remains useful for local full-matrix builds, but is not required to produce the Android APK native artifacts.
+
 | Backend | Script | Android | iOS |
 |---------|--------|---------|-----|
 | **Both** | `build-all.sh` | `jniLibs/*/libbbmtmobile.so` + `dkls_jni` | `BbmtMobile/libbbmtmobile.xcframework` |
