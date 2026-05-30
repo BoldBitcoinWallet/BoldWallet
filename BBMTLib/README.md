@@ -23,7 +23,7 @@ For F-Droid / Android release builds, prefer this minimal path:
 
 ```bash
 cd BBMTLib
-bash mobile-deps/libtss/setup-libtss.sh
+bash mobile-deps/libtss/setup-libtss.sh   # clones BoldBitcoinWallet/libtss + vendor submodules
 cargo install cargo-ndk
 ./build-dkls.sh android
 ```

@@ -96,7 +96,7 @@ KEY_PASSWORD="your_key_password"
 > sh docker-apk-builder.sh --fdroid --git=main #optional, which git "branch,tag, or commit-hash" to use
 ```
 
-For F-Droid builds, the Docker path now bootstraps pinned `libtss` plus Rust `libtss-ffi` and then runs `BBMTLib/build-dkls.sh android` (single runtime: `libbbmtmobile.so` + `libdkls_jni.so`).
+For F-Droid builds, the Docker path bootstraps pinned [`BoldBitcoinWallet/libtss`](https://github.com/BoldBitcoinWallet/libtss) (with vendored frost/DKLs23 submodules), installs Rust tooling (`cargo-ndk`), and builds Android native libs with `BBMTLib/build-dkls.sh android` (`libbbmtmobile.so` + `libdkls_jni.so`).
 
 ![image](https://github.com/user-attachments/assets/eb8f1a45-b2cb-46ec-a061-fc0cb4f10448)
   

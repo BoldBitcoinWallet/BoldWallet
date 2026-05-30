@@ -5,7 +5,7 @@ set -euo pipefail
 BBMTLIB="$(cd "$(dirname "$0")/../.." && pwd)"
 LIBTSS="$(cd "${BBMTLIB}/../../libtss" && pwd)"
 OUT="$(cd "$(dirname "$0")" && pwd)"
-LIBTSS_REF_EXPECTED="ae1f891ee2dd67b6e841eaf673f7a1c0e8040815"
+LIBTSS_REF_EXPECTED="7a712f345b710f98e7f7a26582427ad814852a63"
 
 info() { echo "==> $*"; }
 

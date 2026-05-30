@@ -1,5 +1,5 @@
 name: Setup libtss
-description: Clone 0xCarbon/libtss beside BoldWallet and build libtss-ffi for BBMTLib CGO.
+description: Clone BoldBitcoinWallet/libtss beside BoldWallet and build libtss-ffi for BBMTLib CGO.
 
 runs:
   using: composite
@@ -8,17 +8,16 @@ runs:
       shell: bash
       run: |
         LIBTSS_DIR="${GITHUB_WORKSPACE}/../libtss"
-        LIBTSS_REF="ae1f891ee2dd67b6e841eaf673f7a1c0e8040815"
-        PATCH="${GITHUB_WORKSPACE}/BBMTLib/mobile-deps/libtss/derive-path-with-chain-code.patch"
+        LIBTSS_REF="7a712f345b710f98e7f7a26582427ad814852a63"
         rm -rf "${LIBTSS_DIR}"
-        git clone https://github.com/0xCarbon/libtss.git "${LIBTSS_DIR}"
+        git clone --recurse-submodules https://github.com/BoldBitcoinWallet/libtss.git "${LIBTSS_DIR}"
         git -C "${LIBTSS_DIR}" checkout "${LIBTSS_REF}"
+        git -C "${LIBTSS_DIR}" submodule update --init --recursive
         ACTUAL_REF="$(git -C "${LIBTSS_DIR}" rev-parse HEAD)"
         if [ "${ACTUAL_REF}" != "${LIBTSS_REF}" ]; then
           echo "libtss revision mismatch: got ${ACTUAL_REF}, expected ${LIBTSS_REF}" >&2
           exit 1
         fi
-        git -C "${LIBTSS_DIR}" apply "${PATCH}"
         echo "LIBTSS_DIR=${LIBTSS_DIR}" >> "${GITHUB_ENV}"
         echo "LIBTSS_REF=${LIBTSS_REF}" >> "${GITHUB_ENV}"
         test -f "${LIBTSS_DIR}/libtss-go/go.mod"

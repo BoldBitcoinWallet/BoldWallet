@@ -3,12 +3,12 @@ Copyright 2025–2026 Bold Bitcoin Wallet
 
 This product includes software from the following open-source projects:
 
-- libtss (0xCarbon) — DKLs23 MPC backend
-  Source: https://github.com/0xCarbon/libtss
-  License: Apache-2.0 (LICENSE-APACHE in upstream repository)
+- libtss — DKLs23 MPC backend
+  Distribution: https://github.com/BoldBitcoinWallet/libtss (Bold Bitcoin Wallet sustained fork)
+  Upstream: https://github.com/0xCarbon/libtss (Apache-2.0 OR MIT)
   Use: Distributed key generation and threshold signing via libtss-go and libtss-ffi.
-  Integration: Prebuilt native libraries under mobile-deps/libtss; Go bindings in BBMTLib/dkls.
-  Protocol: DKLs23 (https://github.com/0xCarbon/DKLs23)
+  Integration: Native libraries built from pinned libtss checkout; Go bindings in BBMTLib/dkls.
+  Vendored Rust deps (org mirrors): frost (ZcashFoundation/frost), DKLs23 (0xCarbon/DKLs23)
 
 - Mobile TSS Lib (Vultisig) — GG18 MPC stack
   Source: https://github.com/vultisig/mobile-tss-lib
@@ -17,7 +17,9 @@ This product includes software from the following open-source projects:
 
 This product also uses the following third-party libraries as dependencies:
 
-- Binance TSS Lib (MIT) — https://github.com/bnb-chain/tss-lib
+- Binance TSS Lib (MIT)
+  Distribution: https://github.com/BoldBitcoinWallet/tss-lib (v3.0.0)
+  Upstream: https://github.com/bnb-chain/tss-lib
 - go-nostr (MIT) — https://github.com/nbd-wtf/go-nostr — Nostr relay transport for MPC
 - btcsuite / btcd (MIT)
 - decred / dcrd (ISC)
