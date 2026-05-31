@@ -1,5 +1,35 @@
 # Changelog
 
+## [4.0.1] - 2026-05-31
+
+> **Patch release:** external intake for wallet setup and payments — share-sheet import for keyshares and PSBTs, BIP-21 / HTTPS pay links, and guards that block overwriting an existing wallet. Fixes iOS build issues introduced with the Share Extension and deep-link native modules, and the Android QR scanner SIGABRT reported in [#71](https://github.com/BoldBitcoinWallet/BoldWallet/issues/71).
+
+### Added
+- **Never-overwrite wallet guard** — `assertNoExistingWallet()` / `WalletAlreadyLoadedError` in `services/walletGuard.ts`; enforced before keyshare persistence in `walletSetupOrchestrator` and manual restore on **Welcome**; Setup/Restore disabled when a keyshare is already loaded.
+- **Unified incoming file router** — `IncomingShareHandler` + `incomingShareBridge` / `incomingFileClassifier` route shared `.share` keyshares and `.psbt` files (extension hint or magic-byte peek); PSBT opens **PSBT** tab with `sharedPsbtBase64`; keyshare opens password modal then verified persist.
+- **Keyshare import from share / files** — `services/keyshareImport.ts` and `KeyshareImportPasswordModal` (read URI → decrypt → `persistWalletKeyshare`); shared alert helpers for wallet-already-loaded and invalid keyshare.
+- **Deep link routing** — `incomingUrlRouter` + `IncomingUrlHandler` for `bitcoin:` pay URIs, `boldwallet://import-keyshare`, and HTTPS `https://boldbitcoinwallet.com/pay?…` / `www` variant; **Send** prefill via `sendAddress` / `sendAmountBtc` on **WalletHome** and `initialAmountBtc` on **SendBitcoinModal**.
+- **Native URL / share bridges** — `IncomingUrlModule` and `KeyshareShareModule` (iOS Swift + Android Kotlin); cold-start pending URL/file via App Group / UserDefaults; **BoldWalletShareExtension** (iOS Share Sheet) for keyshare and PSBT files.
+- **Platform declarations** — Android intent filters for `bitcoin:`, `boldwallet:`, `.share`, `.psbt`, and verified App Links on `/pay` (`boldbitcoinwallet.com` + `www`); iOS Associated Domains, custom URL schemes, and `.psbt` document type in **Info.plist**.
+- **Deep-link server docs** — `docs/deep-links/` templates (AASA, assetlinks) and setup notes; live files hosted on **boldbitcoinwallet.com** via the `welcome` repo (`/.well-known/` + `/pay` landing).
+- **Tests** — `__tests__/walletGuard.test.ts`, `incomingUrlRouter.test.ts`, `incomingFileClassifier.test.ts`, `keyshareImport.test.ts`, `keyshareShareBridge.test.ts`; orchestrator guard coverage.
+
+### Changed
+- **Welcome / Showcase** — blocks new setup or restore when a wallet is present; share-import and deep-link keyshare paths reuse the same never-overwrite rules as in-app restore.
+- **React Navigation linking** — `App.tsx` prefixes include `bitcoin:`, `boldwallet:`, `https://boldbitcoinwallet.com`, and `https://www.boldbitcoinwallet.com` for in-app URL handling alongside native delivery.
+- **QR scanner lifecycle (Android)** — `QRScanner` / `QRScanner.foss` call `stopQrReader()` when the modal closes or the app reloads; clears stale ZXing callbacks before navigation (e.g. Welcome → setup flow).
+
+### Fixed
+- **[#71](https://github.com/BoldBitcoinWallet/BoldWallet/issues/71) — Android SIGABRT in `BarcodeZxingScanModule.onActivityResult`** — patch `rn-barcode-zxing-scan`: clear callback before invoke, ignore unrelated request codes, bail when React instance is inactive, swallow stale-callback `RuntimeException`; add `stopQrReader()`; trim patch-package artifact noise from `android/build/` transforms.
+- **Never-overwrite wallet** — wallet cannot be silently replaced by a second keyshare import (setup, restore, or share sheet).
+- **iOS build (Xcode 26.4)** — Share Extension bridging header scoped per target (no project-wide `SWIFT_OBJC_BRIDGING_HEADER` bleed); `#import <React/RCTEventEmitter.h>` before `BoldWallet-Swift.h` in **AppDelegate.mm**; `import UIKit` in `KeyshareShareAppDelegate.swift` for launch-option URL handling.
+
+### Technical Details
+- **Version**: `package.json` **4.0.1**; Android **`versionCode` 61** / **`versionName` 4.0.1**; iOS build **61** / **`MARKETING_VERSION` 4.0.1**.
+- **New modules**: `services/walletGuard.ts`, `services/incomingUrlRouter.ts`, `services/incomingUrlBridge.ts`, `services/incomingShareBridge.ts`, `services/incomingFileClassifier.ts`, `services/keyshareImport.ts`, `services/psbtImport.ts`, `components/IncomingShareHandler.tsx`, `components/IncomingUrlHandler.tsx`, `components/KeyshareImportPasswordModal.tsx`, `ios/BoldWalletShareExtension/*`, `ios/IncomingUrlModule.*`, `ios/KeyshareShareModule.*`, `ios/KeyshareShareAppDelegate.swift`, `android/.../IncomingUrlModule.kt`, `android/.../KeyshareShareModule.kt`.
+
+---
+
 ## [4.0.0] - 2026-05-31
 
 > **Major release:** new wallets ship on **DKLs23 (libtss)** MPC while **GG18 (BNB)** wallets keep working unchanged. Native MPC is unified under **`libbbmtmobile`** on iOS and Android. This release also ships the **3.1.1** reliability and settings work that landed on the release branch after `main` at **3.1.0**, plus hardened DKLS spend/sign party mapping, verified keyshare persistence after keygen/import, strict launch without the secure blob, and post-setup context refresh.

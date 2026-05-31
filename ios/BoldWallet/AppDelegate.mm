@@ -1,6 +1,7 @@
 #import "AppDelegate.h"
 
 #import <React/RCTBundleURLProvider.h>
+#import <React/RCTEventEmitter.h>
 #import <ReactAppDependencyProvider/RCTAppDependencyProvider.h>
 #import "BoldWallet-Swift.h"
 
