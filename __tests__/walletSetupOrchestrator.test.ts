@@ -32,7 +32,13 @@ jest.mock('../utils', () => ({
   saveKeyshareMetadata: jest.fn(() => Promise.resolve()),
 }));
 
+jest.mock('../services/walletGuard', () => ({
+  assertNoExistingWallet: jest.fn(() => Promise.resolve()),
+  WalletAlreadyLoadedError: class WalletAlreadyLoadedError extends Error {},
+}));
+
 import EncryptedStorage from 'react-native-encrypted-storage';
+import {assertNoExistingWallet} from '../services/walletGuard';
 import {saveKeyshareMetadata} from '../utils';
 import {
   finalizeKeyshareForStorage,
@@ -99,6 +105,7 @@ describe('walletSetupOrchestrator', () => {
       partyNsec: 'nsec1persisttest',
       nostrNpub: 'npub1persist',
     });
+    expect(assertNoExistingWallet).toHaveBeenCalled();
     expect(saved).toContain('"nsec"');
     expect(EncryptedStorage.setItem).toHaveBeenCalledWith('keyshare', saved);
     expect(saveKeyshareMetadata).toHaveBeenCalledWith(saved, {

@@ -126,6 +126,21 @@ const QRScanner: React.FC<QRScannerProps> = ({
       paddingHorizontal: 20,
     },
   });
+  const clearQrReaderCallback = useCallback(() => {
+    BarcodeZxingScan.stopQrReader?.();
+  }, []);
+  const handleClose = useCallback(() => {
+    if (mode === 'continuous' && Platform.OS === 'android' && isScanning) {
+      BarcodeZxingScan.stopContinuousScan();
+      setIsScanning(false);
+    }
+    clearQrReaderCallback();
+    if (scanSubscriptionRef.current) {
+      scanSubscriptionRef.current.remove();
+      scanSubscriptionRef.current = null;
+    }
+    onClose();
+  }, [mode, isScanning, clearQrReaderCallback, onClose]);
   // Handle continuous scanning for Android
   useEffect(() => {
     if (visible && mode === 'continuous' && Platform.OS === 'android') {
@@ -173,8 +188,9 @@ const QRScanner: React.FC<QRScannerProps> = ({
         BarcodeZxingScan.stopContinuousScan();
         setIsScanning(false);
       }
+      clearQrReaderCallback();
     };
-  }, [visible, mode, onScan, showProgress, title, isScanning]);
+  }, [visible, mode, onScan, showProgress, title, isScanning, clearQrReaderCallback]);
   // Handle single scan
   const handleSingleScan = useCallback(() => {
     // Set custom status message before opening scanner (if supported)
@@ -214,12 +230,17 @@ const QRScanner: React.FC<QRScannerProps> = ({
       });
     }
   }, [subtitle, onScan, onClose]);
-  // Auto-start single scan when modal opens
+  // Auto-start single scan when modal opens; clear stale callback when closed
   useEffect(() => {
     if (visible && mode === 'single' && !isScanning) {
       handleSingleScan();
+    } else if (!visible && mode === 'single') {
+      clearQrReaderCallback();
+      if (BarcodeZxingScan.setStatusMessage) {
+        BarcodeZxingScan.setStatusMessage('');
+      }
     }
-  }, [visible, mode, isScanning, handleSingleScan]);
+  }, [visible, mode, isScanning, handleSingleScan, clearQrReaderCallback]);
   const isAnimatedQR = showProgress && progress && progress.total > 1;
   const progressPercent = isAnimatedQR
     ? Math.min(
@@ -245,7 +266,7 @@ const QRScanner: React.FC<QRScannerProps> = ({
         visible={visible}
         transparent={false}
         animationType="fade"
-        onRequestClose={onClose}>
+        onRequestClose={handleClose}>
         <View style={styles.scannerContainer}>
           <View style={styles.qrFrame} />
           {(title || subtitle || showProgress) && (
@@ -263,13 +284,7 @@ const QRScanner: React.FC<QRScannerProps> = ({
           )}
           <AppPressable
             style={styles.closeScannerButton}
-            onPress={() => {
-              if (isScanning) {
-                BarcodeZxingScan.stopContinuousScan();
-                setIsScanning(false);
-              }
-              onClose();
-            }}
+            onPress={handleClose}
             android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
             <Text style={styles.closeScannerButtonText}>{closeButtonText}</Text>
           </AppPressable>

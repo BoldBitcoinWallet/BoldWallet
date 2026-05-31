@@ -319,6 +319,9 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
       isScanningRef.current = false;
       setIsScanning(false);
     }
+    if (BarcodeZxingScan?.stopQrReader) {
+      BarcodeZxingScan.stopQrReader();
+    }
     if (scanSubscriptionRef.current) {
       scanSubscriptionRef.current.remove();
       scanSubscriptionRef.current = null;
@@ -437,6 +440,9 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
     } else if (!visible && mode === 'single') {
       // Reset scanning state when modal closes
       isScanningRef.current = false;
+      if (BarcodeZxingScan?.stopQrReader) {
+        BarcodeZxingScan.stopQrReader();
+      }
       // Clear custom status message
       if (BarcodeZxingScan && BarcodeZxingScan.setStatusMessage) {
         BarcodeZxingScan.setStatusMessage('');

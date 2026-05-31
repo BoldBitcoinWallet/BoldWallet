@@ -46,6 +46,7 @@ export interface PSBTLoaderProps {
   useOverlay?: boolean;
   // Optional middle button to render between Cancel and Co-Sign buttons
   middleButton?: React.ReactNode;
+  initialPsbtBase64?: string;
 }
 export interface PSBTModalProps extends PSBTLoaderProps {
   visible: boolean;
@@ -56,6 +57,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
   disableCancelWhenEmpty = false,
   useOverlay = true,
   middleButton,
+  initialPsbtBase64,
 }) => {
   const {theme} = useTheme();
   const {showSats, balanceFormattingEnabled} = useUser();
@@ -192,6 +194,11 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
       setIsLoading(false);
     }
   }, []);
+  useEffect(() => {
+    if (initialPsbtBase64) {
+      void parsePSBT(initialPsbtBase64);
+    }
+  }, [initialPsbtBase64, parsePSBT]);
   // Handle file upload
   const handleUploadFile = useCallback(async () => {
     try {

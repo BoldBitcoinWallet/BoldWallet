@@ -2,6 +2,7 @@
 
 #import <React/RCTBundleURLProvider.h>
 #import <ReactAppDependencyProvider/RCTAppDependencyProvider.h>
+#import "BoldWallet-Swift.h"
 
 // Deletes all Keychain items accessible by this app if this is the first time the user launches the app
 static void ClearKeychainIfNecessary() {
@@ -38,7 +39,32 @@ static void ClearKeychainIfNecessary() {
   self.initialProps = @{};
   self.dependencyProvider = [RCTAppDependencyProvider new];
 
+  [KeyshareShareAppDelegate handleLaunchOptions:launchOptions];
+
   return [super application:application didFinishLaunchingWithOptions:launchOptions];
+}
+
+- (BOOL)application:(UIApplication *)application
+            openURL:(NSURL *)url
+            options:(NSDictionary<UIApplicationOpenURLOptionsKey,id> *)options
+{
+  if ([KeyshareShareAppDelegate handleIncomingURL:url]) {
+    return YES;
+  }
+  return [super application:application openURL:url options:options];
+}
+
+- (BOOL)application:(UIApplication *)application
+continueUserActivity:(NSUserActivity *)userActivity
+  restorationHandler:(void (^)(NSArray<id<UIUserActivityRestoring>> * _Nullable))restorationHandler
+{
+  if ([userActivity.activityType isEqualToString:NSUserActivityTypeBrowsingWeb]) {
+    NSURL *url = userActivity.webpageURL;
+    if (url != nil && [KeyshareShareAppDelegate handleUniversalLink:url]) {
+      return YES;
+    }
+  }
+  return [super application:application continueUserActivity:userActivity restorationHandler:restorationHandler];
 }
 
 - (NSURL *)sourceURLForBridge:(RCTBridge *)bridge

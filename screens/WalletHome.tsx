@@ -35,6 +35,10 @@ import LegacyWalletModal from '../components/LegacyWalletModal';
 import ExtensionPairingModal from '../components/ExtensionPairingModal';
 import AppText from '../components/AppText';
 import {
+  parseIncomingUrl,
+  extractBitcoinAddressFromPaymentInput,
+} from '../services/incomingUrlRouter';
+import {
   dbg,
   presentFiat,
   formatBitcoinDisplay,
@@ -95,6 +99,8 @@ const {BBMTLibNativeModule} = NativeModules;
 type RouteParams = {
   txId?: string;
   signedPsbt?: string;
+  sendAddress?: string;
+  sendAmountBtc?: string;
 };
 const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
@@ -235,6 +241,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [initialSendAddress, setInitialSendAddress] = useState<string | null>(
     null,
   );
+  const [initialSendAmountBtc, setInitialSendAmountBtc] = useState<
+    string | null
+  >(null);
   const [scannedFromQR, setScannedFromQR] = useState(false); // Track if data came from QR scan
   const [priceData, setPriceData] = useState<{[key: string]: number}>({});
   const [_segwitCompatibleAddress, setSegwitCompatibleAddress] =
@@ -1101,6 +1110,16 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       navigation.setParams({signedPsbt: undefined});
     }
   }, [route.params?.signedPsbt, navigation]);
+  useEffect(() => {
+    const sendAddress = route.params?.sendAddress;
+    if (!sendAddress) {
+      return;
+    }
+    setInitialSendAddress(sendAddress);
+    setInitialSendAmountBtc(route.params?.sendAmountBtc ?? null);
+    setIsSendModalVisible(true);
+    navigation.setParams({sendAddress: undefined, sendAmountBtc: undefined});
+  }, [route.params?.sendAddress, route.params?.sendAmountBtc, navigation]);
   const handleTransactionUpdate = useCallback(
     async (pendingTxs: any[], pending: number) => {
       _setPendingSent(pending);
@@ -1721,13 +1740,17 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         return;
       }
 
-      // Support BIP-21: "bitcoin:<address>" or "bitcoin:<address>?amount=..."
-      const addressCandidate = trimmed.startsWith('bitcoin:')
-        ? trimmed
-            .replace(/^bitcoin:/i, '')
-            .split('?')[0]
-            .trim()
-        : trimmed;
+      // Support BIP-21 / universal pay links and plain addresses via shared parser
+      const parsed = parseIncomingUrl(trimmed);
+      let addressCandidate: string;
+      let amountBtc: string | undefined;
+      if (parsed.kind === 'bitcoin-pay' || parsed.kind === 'universal-pay') {
+        addressCandidate = parsed.address;
+        amountBtc = parsed.amountBtc;
+      } else {
+        addressCandidate =
+          extractBitcoinAddressFromPaymentInput(trimmed) ?? trimmed;
+      }
       const networkForValidation =
         network === 'testnet3' ? 'testnet' : network || 'mainnet';
       if (
@@ -1735,6 +1758,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         validateBitcoinAddressEnhanced(addressCandidate, networkForValidation)
       ) {
         setInitialSendAddress(addressCandidate);
+        setInitialSendAmountBtc(amountBtc ?? null);
         setIsSendModalVisible(true);
         return;
       }
@@ -2425,10 +2449,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           onClose={() => {
             setIsSendModalVisible(false);
             setInitialSendAddress(null);
+            setInitialSendAmountBtc(null);
           }}
           onSend={handleSend}
           selectedCurrency={selectedCurrency}
           initialAddress={initialSendAddress ?? undefined}
+          initialAmountBtc={initialSendAmountBtc ?? undefined}
         />
       )}
       <TransportModeSelector
