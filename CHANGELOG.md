@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased]
+## [4.0.0] - 2026-05-23
+
+> **Major release:** new wallets ship on **DKLs23 (libtss)** MPC while **GG18 (BNB)** wallets keep working unchanged. Native MPC is unified under **`libbbmtmobile`** on iOS and Android. This release also ships the **3.1.1** reliability and settings work that landed on the release branch after `main` at **3.1.0**, plus hardened DKLS spend/sign party mapping, verified keyshare persistence after keygen/import, strict launch without the secure blob, and post-setup context refresh.
 
 ### Added
 - **LAN keygen session parser** — `parseLanKeygenSessionPayload()` in `services/lanSession.ts` extracts the 64-char chain-code seed from `{attemptId64}:{seed64}` handshake payloads.
@@ -11,33 +13,6 @@
 - **MPC flow alert guards** — `services/mpcFlowAlerts.ts` suppresses stale error popups after abort, unfocus, or inactive flow (`shouldShowMpcFlowAlert`, `isMpcAbortedOrCanceledError`).
 - **Nostr subscribe-only attempt handshake** — `RunSubscribeOnly` on message pump for attempt-id exchange without relay history query (`BBMTLib/tss/nostrtransport/pump.go`).
 - **Tests** — `__tests__/mpcAttemptId.test.ts`, `__tests__/mpcFlowAlerts.test.ts`, `__tests__/mpcTransportProgress.test.ts`, `__tests__/lanSession.test.ts` (keygen payload + error detection), `__tests__/walletSetupUi.test.ts`; Go `BBMTLib/tss/peers_publish_test.go`, `tss/common_test.go` (`normalizeChainCodeHex`), `dkls/panic_test.go`; DKLS cancel-all, transport hooks, and attach lifecycle.
-
-### Changed
-- **LAN wallet-setup prep UI** — replaced “Superior Security / ENTERPRISE-GRADE” marketing block with a short task-first card (“Prepare this device” + optional “About multi-device security” link) on `MobilesPairing.tsx`.
-- **GG18/tss panic handling** — inline defer/recover blocks refactored to shared helpers (same `internal error (panic): %v` format preserved).
-- **LAN co-sign payload format** — `{attemptId64}:{seed64}:{amount}:{fees}:{party}` (send) and `{attemptId64}:{seed64}:{psbtHash}:{party}` (PSBT); join validators require matching attempt id and tx intent.
-- **Nostr session scoping** — `sessionFlag = H(txIntent, attempt_id)`, `sessionID = H(txIntent, attempt_id, fullNonce)` for send and PSBT pre-agreement/keysign.
-- **Nostr keysign lifecycle** — per-input keysign uses `AttachNostrOperationRoot()` instead of nested `begin/end` so mobile abort keeps one active cancel handle for multi-input flows.
-- **MPC progress hooks** — `type: transport` events parsed separately from keygen/keysign percent mapping (`services/mpcProgressUi.ts`).
-
-### Fixed / hardening
-- **GG18 LAN keygen chaincode** — `runLanWalletKeygen` passes only the 64-char **seed** from the LAN handshake to native keygen (full `{attemptId}:{seed}` still binds `sessionID`); Go `normalizeChainCodeHex` fallback in `JoinKeygen` / Nostr keygen fixes `encoding/hex: invalid byte: ':'` when legacy callers pass the full payload. Also corrects DKLS `chain_code_hex` in exported keyshares.
-- **LAN duo join-first wallet setup** — publish handshake validates non-empty encrypted `data` + expected peer pubkey (probes no longer complete publish); joiner retries `fetchData` on native `error:` payloads and validates keygen session shape; extended LAN keygen join wait; `releaseLanHandshakePort` on setup entry and relay stop.
-- **DKLS panic recover parity with GG18** — `recoverAsError` on all DKLS mobile entry points (`JoinKeygen`, `JoinKeysign`, `HelloDkg`, etc.) plus LAN/Nostr pump goroutines; panics surface as `internal error (panic): …` instead of killing the process.
-- **DKLS Go tests under `-short`** — LAN/Nostr integration matrix skipped in short mode (`skipIntegrationIfShort`); `go test ./dkls/... -short` ~13s vs full integration suite.
-- **Same-tx co-sign retry (LAN + Nostr)** — immediate retry with both peers starting together no longer mis-sessions from stale pre-agreement nonces or consumed LAN payloads; documented in `BBMTLib/docs/DKLS_MOBILE.md`.
-- **Late timeout/error popups after Abort** — pairing screens guard wallet setup, send, and PSBT alerts/navigation on abort + screen focus; PSBT LAN path no longer navigates to Wallet on error/abort.
-- **Nostr cancel propagation** — PSBT pre-agreement uses active Nostr root context (not detached `Background`); canceled operations report `nostr mpc aborted during …` instead of timeout wording (`NostrMpcContextErr`).
-- **DKLS abort wiring** — `CancelMpcSession("")` cancels all registered sessions; Nostr DKG/keysign and MPC round loops honor `ctx.Done()` instead of waiting for wall-clock deadlines only.
-- **Nostr post-abort cooldown** — remains **15s after abort only** (not after successful co-sign), so immediate same-tx retry stays viable when both peers restart together.
-
----
-
-## [4.0.0] - 2026-05-23
-
-> **Major release:** new wallets ship on **DKLs23 (libtss)** MPC while **GG18 (BNB)** wallets keep working unchanged. Native MPC is unified under **`libbbmtmobile`** on iOS and Android. This release also ships the **3.1.1** reliability and settings work that landed on the release branch after `main` at **3.1.0**, plus hardened DKLS spend/sign party mapping, verified keyshare persistence after keygen/import, strict launch without the secure blob, and post-setup context refresh.
-
-### Added
 - **DKLS MPC matrix tests** — `TestMpcMatrix` in `BBMTLib/dkls/mpc_matrix_test.go` covers LAN/Nostr **keygen** (duo + trio) and **keysign** (2-of-2 duo, 2-of-3 subset); `./scripts-dkls/dkls-mpc-matrix-test.sh` and inclusion in `dkls-test-all.sh` (skip with `DKLS_SKIP_MPC_MATRIX=1`).
 - **RN DKLS signing party resolution** — `resolveDklsLanSigningPartiesFromKeyshare` and `resolveDklsNostrSigningParties` in `lanMpcSetup.ts`, wired into LAN/Nostr pairing spend flows (committee order and npub-aware labels, peers-only for transport).
 - **Verified keyshare persistence** — `persistWalletKeyshare` writes the blob, read-back verifies, then saves metadata (`throwOnError`); `KEYGEN_FINALIZING_STORAGE_STATUS` while storage completes; `verifyWalletKeysharePersisted()` helper.
@@ -65,6 +40,12 @@
 - **Documentation & scripts** — `BBMTLib/docs/DKLS_MOBILE.md`, `DKLS_SECURITY.md`, `docs/GG18_DKLS_COEXISTENCE.md`, `BBMTLib/docs/SELF_CUSTODY_OPERATIONS.md` (self-custody recovery/ops runbook for 2-of-2 and 2-of-3), RECOVER.md DKLs23 section; `scripts-dkls/` for local/Nostr/LAN deterministic MPC tests, `scripts-dkls/security-release-gate.sh` (sensitive-log scan + pinned libtss + MPC tests), and CI (`dkls-scripts-test.yml`, `.github/scripts/check-sensitive-logs.sh`).
 
 ### Changed
+- **LAN wallet-setup prep UI** — replaced “Superior Security / ENTERPRISE-GRADE” marketing block with a short task-first card (“Prepare this device” + optional “About multi-device security” link) on `MobilesPairing.tsx`.
+- **GG18/tss panic handling** — inline defer/recover blocks refactored to shared helpers (same `internal error (panic): %v` format preserved).
+- **LAN co-sign payload format** — `{attemptId64}:{seed64}:{amount}:{fees}:{party}` (send) and `{attemptId64}:{seed64}:{psbtHash}:{party}` (PSBT); join validators require matching attempt id and tx intent.
+- **Nostr session scoping** — `sessionFlag = H(txIntent, attempt_id)`, `sessionID = H(txIntent, attempt_id, fullNonce)` for send and PSBT pre-agreement/keysign.
+- **Nostr keysign lifecycle** — per-input keysign uses `AttachNostrOperationRoot()` instead of nested `begin/end` so mobile abort keeps one active cancel handle for multi-input flows.
+- **MPC progress hooks** — `type: transport` events parsed separately from keygen/keysign percent mapping (`services/mpcProgressUi.ts`).
 - **Keygen success UX** — LAN/Nostr pairing only reports MPC complete (`mpcDone`) after `persistWalletKeyshare` succeeds; UI can show finalizing-storage status until verified.
 - **Keyshare import** — Welcome/Showcase restore uses `persistWalletKeyshare` (same verify path as setup) instead of raw `EncryptedStorage.setItem` + metadata only.
 - **Cold start routing** — `resolveInitialWalletRoute()` no longer opens **MainTabs** on orphan `keyshare_meta`; missing blob clears stale metadata and routes to **Welcome**.
@@ -85,6 +66,15 @@
 - **GG18 Go dependency pin** — upgraded BNB TSS library from `github.com/bnb-chain/tss-lib/v2 v2.0.2` to `github.com/bnb-chain/tss-lib/v3 v3.0.0` (module path migration to `/v3` across `BBMTLib/tss/*`).
 
 ### Fixed / hardening
+- **GG18 LAN keygen chaincode** — `runLanWalletKeygen` passes only the 64-char **seed** from the LAN handshake to native keygen (full `{attemptId}:{seed}` still binds `sessionID`); Go `normalizeChainCodeHex` fallback in `JoinKeygen` / Nostr keygen fixes `encoding/hex: invalid byte: ':'` when legacy callers pass the full payload. Also corrects DKLS `chain_code_hex` in exported keyshares.
+- **LAN duo join-first wallet setup** — publish handshake validates non-empty encrypted `data` + expected peer pubkey (probes no longer complete publish); joiner retries `fetchData` on native `error:` payloads and validates keygen session shape; extended LAN keygen join wait; `releaseLanHandshakePort` on setup entry and relay stop.
+- **DKLS panic recover parity with GG18** — `recoverAsError` on all DKLS mobile entry points (`JoinKeygen`, `JoinKeysign`, `HelloDkg`, etc.) plus LAN/Nostr pump goroutines; panics surface as `internal error (panic): …` instead of killing the process.
+- **DKLS Go tests under `-short`** — LAN/Nostr integration matrix skipped in short mode (`skipIntegrationIfShort`); `go test ./dkls/... -short` ~13s vs full integration suite.
+- **Same-tx co-sign retry (LAN + Nostr)** — immediate retry with both peers starting together no longer mis-sessions from stale pre-agreement nonces or consumed LAN payloads; documented in `BBMTLib/docs/DKLS_MOBILE.md`.
+- **Late timeout/error popups after Abort** — pairing screens guard wallet setup, send, and PSBT alerts/navigation on abort + screen focus; PSBT LAN path no longer navigates to Wallet on error/abort.
+- **Nostr cancel propagation** — PSBT pre-agreement uses active Nostr root context (not detached `Background`); canceled operations report `nostr mpc aborted during …` instead of timeout wording (`NostrMpcContextErr`).
+- **DKLS abort wiring** — `CancelMpcSession("")` cancels all registered sessions; Nostr DKG/keysign and MPC round loops honor `ctx.Done()` instead of waiting for wall-clock deadlines only.
+- **Nostr post-abort cooldown** — remains **15s after abort only** (not after successful co-sign), so immediate same-tx retry stays viable when both peers restart together.
 - **DKLS LAN keysign party IDs** — `partyIDFromParticipatingKey` maps Wi‑Fi/LAN monikers and **KeyShareN** labels via sorted `keygen_committee_keys` (npub committees included); duplicate peer labels rejected; LAN relay join key aligned with `share.Identifier()`; signing resolve passes **peers-only** `LANPeerIDs` / `NostrPeers`.
 - **DKLS Nostr keysign** — participating npub list normalized and deduped; transport/runner use co-signer peers only (not full committee in the signing set).
 - **Signing resolve** — committee-aware LAN resolve in `signing_resolve.go`; integration tests updated for duo/trio LAN and Nostr keysign paths.
